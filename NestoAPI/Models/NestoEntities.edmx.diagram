@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="3.0" xmlns:edmx="http://schemas.microsoft.com/ado/2009/11/edmx">
+ <!-- EF Designer content (DO NOT EDIT MANUALLY BELOW HERE) -->
+  <edmx:Designer xmlns="http://schemas.microsoft.com/ado/2009/11/edmx">
+    <!-- Diagram content (shape and connector positions) -->
+    <edmx:Diagrams>
+      <Diagram DiagramId="b0f9c70bf1124b14bb8400d17c716cb1" Name="Diagram1" ZoomLevel="63">
+        <EntityTypeShape EntityType="NVModel.EnviosAgencia" Width="1.5" PointX="0.75" PointY="0.75" IsExpanded="true" />
+        <EntityTypeShape EntityType="NVModel.Empresa" Width="1.5" PointX="0.75" PointY="31.75" />
+        <AssociationConnector Association="NVModel.FK_Empresas_Empresas" />
+        <AssociationConnector Association="NVModel.FK_EnviosAgencia_Empresas" />
+        <EntityTypeShape EntityType="NVModel.CabPedidoVta" Width="1.5" PointX="3.625" PointY="25.375" />
+        <EntityTypeShape EntityType="NVModel.LinPedidoVta" Width="1.5" PointX="5.875" PointY="42.125" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoVta_CabPedidoVta" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoVta_Empresas" />
+        <EntityTypeShape EntityType="NVModel.Cliente" Width="1.5" PointX="3" PointY="35.25" />
+        <AssociationConnector Association="NVModel.FK_CabPedidoVta_Clientes" />
+        <AssociationConnector Association="NVModel.FK_Clientes_Clientes" />
+        <AssociationConnector Association="NVModel.FK_Clientes_Clientes1" />
+        <AssociationConnector Association="NVModel.FK_Clientes_Clientes2" />
+        <AssociationConnector Association="NVModel.FK_Clientes_Empresas" />
+        <AssociationConnector Association="NVModel.FK_EnviosAgencia_Clientes" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoVta_Clientes" />
+        <EntityTypeShape EntityType="NVModel.Producto" Width="1.5" PointX="3" PointY="47.625" />
+        <AssociationConnector Association="NVModel.FK_Productos_Empresas" />
+        <AssociationConnector Association="NVModel.FK_Productos_Productos" />
+        <EntityTypeShape EntityType="NVModel.Familia" Width="1.5" PointX="0.75" PointY="47.625" />
+        <EntityTypeShape EntityType="NVModel.SubGruposProducto" Width="1.5" PointX="3.75" PointY="51" />
+        <AssociationConnector Association="NVModel.FK_Familias_Empresas" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoVta_Familias" />
+        <AssociationConnector Association="NVModel.FK_Productos_Familias" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoVta_SubGruposProducto" />
+        <AssociationConnector Association="NVModel.FK_Productos_SubGruposProducto" />
+      </Diagram>
+    </edmx:Diagrams>
+  </edmx:Designer>
+</edmx:Edmx>

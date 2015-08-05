@@ -1,0 +1,1781 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<edmx:Edmx Version="3.0" xmlns:edmx="http://schemas.microsoft.com/ado/2009/11/edmx">
+  <!-- EF Runtime content -->
+  <edmx:Runtime>
+    <!-- SSDL content -->
+    <edmx:StorageModels>
+    <Schema Namespace="NVModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2008" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+        <EntityType Name="CabPedidoVta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="int" Nullable="false" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="Fecha" Type="datetime" />
+          <Property Name="Forma Pago" Type="char" MaxLength="3" />
+          <Property Name="PlazosPago" Type="char" MaxLength="10" />
+          <Property Name="Primer Vencimiento" Type="datetime" />
+          <Property Name="IVA" Type="char" MaxLength="3" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" />
+          <Property Name="Comentarios" Type="text" />
+          <Property Name="ComentarioPicking" Type="text" />
+          <Property Name="Periodo Facturacion" Type="char" MaxLength="3" />
+          <Property Name="Ruta" Type="char" MaxLength="3" />
+          <Property Name="Serie" Type="char" MaxLength="3" />
+          <Property Name="CCC" Type="char" MaxLength="3" />
+          <Property Name="Origen" Type="char" MaxLength="3" />
+          <Property Name="Agrupada" Type="bit" Nullable="false" />
+          <Property Name="MotivoDevolución" Type="char" MaxLength="3" />
+          <Property Name="ContactoCobro" Type="char" MaxLength="3" />
+          <Property Name="NoComisiona" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="NotaEntrega" Type="bit" Nullable="false" />
+          <Property Name="vtoBuenoPlazosPago" Type="bit" Nullable="false" />
+          <Property Name="Operador" Type="char" MaxLength="3" />
+          <Property Name="FijarPrimerVto" Type="bit" Nullable="false" />
+          <Property Name="MantenerJunto" Type="bit" Nullable="false" />
+          <Property Name="ServirJunto" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="Clientes">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº Cliente" />
+            <PropertyRef Name="Contacto" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="ClientePrincipal" Type="bit" Nullable="false" />
+          <Property Name="Nombre" Type="char" MaxLength="50" />
+          <Property Name="Dirección" Type="char" MaxLength="50" />
+          <Property Name="Población" Type="char" MaxLength="30" />
+          <Property Name="Teléfono" Type="char" MaxLength="29" />
+          <Property Name="Fax" Type="char" MaxLength="29" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" />
+          <Property Name="Comentarios" Type="text" />
+          <Property Name="CodPostal" Type="char" MaxLength="5" />
+          <Property Name="CIF/NIF" Type="char" MaxLength="9" />
+          <Property Name="Provincia" Type="char" MaxLength="30" />
+          <Property Name="Estado" Type="smallint" />
+          <Property Name="IVA" Type="char" MaxLength="3" />
+          <Property Name="Grupo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="PeriodoFacturación" Type="char" MaxLength="3" />
+          <Property Name="CCC" Type="char" MaxLength="3" />
+          <Property Name="Ruta" Type="char" MaxLength="3" />
+          <Property Name="NºCopiasAlbarán" Type="tinyint" Nullable="false" />
+          <Property Name="NºCopiasFactura" Type="tinyint" Nullable="false" />
+          <Property Name="ComentarioRuta" Type="char" MaxLength="50" />
+          <Property Name="ComentarioPicking" Type="char" MaxLength="50" />
+          <Property Name="GeneraBonificación" Type="bit" Nullable="false" />
+          <Property Name="RecargoPvp" Type="decimal" Precision="5" Scale="4" />
+          <Property Name="Web" Type="char" MaxLength="50" />
+          <Property Name="BloquearPlazosPago" Type="bit" Nullable="false" />
+          <Property Name="AvisarAntesCobro" Type="bit" Nullable="false" />
+          <Property Name="ContactoDefecto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="ContactoCobro" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="ContactoBonificacion" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="AlbaranValorado" Type="bit" Nullable="false" />
+          <Property Name="Cadena" Type="char" MaxLength="3" />
+          <Property Name="NoComisiona" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="Operador" Type="char" MaxLength="3" />
+          <Property Name="DiasEnServir" Type="char" MaxLength="5" Nullable="false" />
+          <Property Name="ServirJunto" Type="bit" Nullable="false" />
+          <Property Name="MantenerJunto" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="Empresas">
+          <Key>
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nombre" Type="char" MaxLength="30" />
+          <Property Name="NIF" Type="char" MaxLength="9" Nullable="false" />
+          <Property Name="Sufijo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="MostrarMenú" Type="bit" Nullable="false" />
+          <Property Name="IVA por defecto" Type="char" MaxLength="3" />
+          <Property Name="CtaDtoCliente" Type="char" MaxLength="10" />
+          <Property Name="CtaDescuentoVta" Type="char" MaxLength="10" />
+          <Property Name="CtaDtoPPVta" Type="char" MaxLength="10" />
+          <Property Name="CtaDtoProveedor" Type="char" MaxLength="10" />
+          <Property Name="CtaDescuentoCmp" Type="char" MaxLength="10" />
+          <Property Name="CtaDtoPPCmp" Type="char" MaxLength="10" />
+          <Property Name="DelegaciónVarios" Type="char" MaxLength="3" />
+          <Property Name="FormaVentaVarios" Type="char" MaxLength="3" />
+          <Property Name="CtaCaja" Type="char" MaxLength="10" />
+          <Property Name="CtaDescuadre" Type="char" MaxLength="10" />
+          <Property Name="LongitudCuenta" Type="tinyint" />
+          <Property Name="FormaPagoTalón" Type="char" MaxLength="3" />
+          <Property Name="FormaPagoEfectivo" Type="char" MaxLength="3" />
+          <Property Name="FormaPagoTarjeta" Type="char" MaxLength="3" />
+          <Property Name="FormaPagoPagaré" Type="char" MaxLength="3" />
+          <Property Name="PlazosPagoDefecto" Type="char" MaxLength="10" />
+          <Property Name="VendedorVarios" Type="char" MaxLength="3" />
+          <Property Name="Dirección" Type="char" MaxLength="50" />
+          <Property Name="Dirección2" Type="char" MaxLength="50" />
+          <Property Name="Teléfono" Type="char" MaxLength="29" />
+          <Property Name="Fax" Type="char" MaxLength="29" />
+          <Property Name="CodPostal" Type="char" MaxLength="5" />
+          <Property Name="Población" Type="char" MaxLength="30" />
+          <Property Name="Provincia" Type="char" MaxLength="30" />
+          <Property Name="Texto" Type="char" MaxLength="50" />
+          <Property Name="Logotipo" Type="char" MaxLength="50" />
+          <Property Name="TipoIvaDefecto" Type="char" MaxLength="3" />
+          <Property Name="GeneraBonificaciónDefecto" Type="bit" Nullable="false" />
+          <Property Name="VigenciaBonificación" Type="tinyint" Nullable="false" />
+          <Property Name="CtaRegularización" Type="char" MaxLength="10" />
+          <Property Name="CtaRemanente" Type="char" MaxLength="10" />
+          <Property Name="CtaDiferenciasNegativasEjerciciosAnteriores" Type="char" MaxLength="10" />
+          <Property Name="CtaAPagarIVA" Type="char" MaxLength="10" />
+          <Property Name="CtaACompensarIVA" Type="char" MaxLength="10" />
+          <Property Name="TipoIvaDefectoSoportado" Type="char" MaxLength="3" />
+          <Property Name="ProductoRegularizaciones" Type="char" MaxLength="15" />
+          <Property Name="ProductoReparacion" Type="char" MaxLength="15" />
+          <Property Name="Email" Type="char" MaxLength="50" />
+          <Property Name="Web" Type="char" MaxLength="50" />
+          <Property Name="EmpresaDatafono" Type="char" MaxLength="3" />
+          <Property Name="EmpresaCurso" Type="bit" Nullable="false" />
+          <Property Name="EstadoReembolsado" Type="char" MaxLength="3" />
+          <Property Name="ProveedorCostes" Type="char" MaxLength="10" />
+          <Property Name="ctaDiferenciasEnCompras" Type="char" MaxLength="10" />
+          <Property Name="UltAsientoContable" Type="int" Nullable="false" />
+          <Property Name="ProveedorIRPF" Type="char" MaxLength="10" />
+          <Property Name="ContactoProveedorIRPF" Type="char" MaxLength="3" />
+          <Property Name="PorcentajeFacturadoNoEntregadoParaPedidoCmpAuto" Type="decimal" Precision="5" Scale="2" Nullable="false" />
+          <Property Name="TextoFactura" Type="text" />
+          <Property Name="StockAntiguo" Type="int" Nullable="false" />
+          <Property Name="EstadoProductoRegalo" Type="int" />
+          <Property Name="InformeAlbaran" Type="char" MaxLength="50" />
+          <Property Name="InformeFactura" Type="char" MaxLength="50" />
+          <Property Name="InformePedidoCmp" Type="char" MaxLength="50" />
+          <Property Name="InformeCartaPagare" Type="char" MaxLength="50" />
+          <Property Name="InformeCartaPagareManual" Type="char" MaxLength="50" />
+          <Property Name="ImpresoraPagare" Type="char" MaxLength="30" />
+          <Property Name="OcultarB" Type="bit" Nullable="false" />
+          <Property Name="MostrarOperador" Type="bit" Nullable="false" />
+          <Property Name="MaxPickingListado" Type="int" />
+          <Property Name="MaxPickingPorListar" Type="int" />
+          <Property Name="InformeFacturaConMembrete" Type="char" MaxLength="50" />
+          <Property Name="VerFormaVentaCng" Type="bit" Nullable="false" />
+          <Property Name="PreciosRenting36" Type="money" />
+          <Property Name="PreciosRenting48" Type="money" />
+          <Property Name="PreciosRentingImporte" Type="money" />
+          <Property Name="PorcentajeVR36" Type="decimal" Precision="5" Scale="4" />
+          <Property Name="PorcentajeVR48" Type="decimal" Precision="5" Scale="4" />
+          <Property Name="PorcentajeRentingProductos" Type="decimal" Precision="5" Scale="4" />
+          <Property Name="PorcentajeRentingServicios" Type="decimal" Precision="5" Scale="4" />
+          <Property Name="EnviarCorreoProductoNuevo" Type="bit" Nullable="false" />
+          <Property Name="ctaTrabajosRealizados" Type="char" MaxLength="10" />
+          <Property Name="FechaPicking" Type="datetime" />
+          <Property Name="BloquearTraspasoRuta" Type="bit" Nullable="false" />
+          <Property Name="RutaImpagado" Type="char" MaxLength="3" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="EnviosAgencia">
+          <Key>
+            <PropertyRef Name="Numero" />
+          </Key>
+          <Property Name="Numero" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Agencia" Type="int" Nullable="false" />
+          <Property Name="Cliente" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="Pedido" Type="int" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="Fecha" Type="date" Nullable="false" />
+          <Property Name="Servicio" Type="smallint" Nullable="false" />
+          <Property Name="Horario" Type="smallint" Nullable="false" />
+          <Property Name="Bultos" Type="smallint" Nullable="false" />
+          <Property Name="Retorno" Type="smallint" Nullable="false" />
+          <Property Name="Nombre" Type="varchar" MaxLength="80" />
+          <Property Name="Direccion" Type="varchar" MaxLength="80" />
+          <Property Name="CodPostal" Type="varchar" MaxLength="5" />
+          <Property Name="Poblacion" Type="varchar" MaxLength="80" />
+          <Property Name="Provincia" Type="varchar" MaxLength="80" />
+          <Property Name="Pais" Type="int" Nullable="false" />
+          <Property Name="Telefono" Type="varchar" MaxLength="9" />
+          <Property Name="Movil" Type="varchar" MaxLength="9" />
+          <Property Name="Email" Type="varchar" MaxLength="200" />
+          <Property Name="Observaciones" Type="varchar" MaxLength="80" />
+          <Property Name="Atencion" Type="varchar" MaxLength="80" />
+          <Property Name="Reembolso" Type="money" Nullable="false" />
+          <Property Name="FechaPagoReembolso" Type="date" />
+          <Property Name="CodigoBarras" Type="nvarchar" MaxLength="14" />
+          <Property Name="NombrePlaza" Type="varchar" MaxLength="80" />
+          <Property Name="Nemonico" Type="varchar" MaxLength="3" />
+          <Property Name="TelefonoPlaza" Type="varchar" MaxLength="27" />
+          <Property Name="EmailPlaza" Type="varchar" MaxLength="200" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" />
+          <Property Name="FechaFactura" Type="date" />
+          <Property Name="ImporteGasto" Type="money" Nullable="false" />
+          <Property Name="FechaRetornoRecibido" Type="date" />
+          <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="Familias">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Descripción" Type="char" MaxLength="50" />
+          <Property Name="TipoExclusiva" Type="char" MaxLength="3" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="%DtoMáximoComisión" Type="decimal" Precision="4" Scale="2" Nullable="false" />
+          <Property Name="%ComisiónFija" Type="decimal" Precision="4" Scale="2" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="LinPedidoVta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="Nº Orden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="int" Nullable="false" />
+          <Property Name="Nº Orden" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="TipoLinea" Type="tinyint" />
+          <Property Name="Producto" Type="char" MaxLength="15" />
+          <Property Name="Almacén" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Fecha Entrega" Type="datetime" Nullable="false" />
+          <Property Name="Texto" Type="char" MaxLength="50" />
+          <Property Name="Cantidad" Type="smallint" />
+          <Property Name="Precio" Type="money" />
+          <Property Name="IVA" Type="char" MaxLength="3" />
+          <Property Name="PorcentajeIVA" Type="tinyint" Nullable="false" />
+          <Property Name="PorcentajeRE" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="Bruto" Type="money" Nullable="false" />
+          <Property Name="DescuentoCliente" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="DescuentoProducto" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="Descuento" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="DescuentoPP" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="SumaDescuentos" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="ImporteDto" Type="money" Nullable="false" />
+          <Property Name="Base Imponible" Type="money" Nullable="false" />
+          <Property Name="ImporteIVA" Type="money" Nullable="false" />
+          <Property Name="ImporteRE" Type="money" Nullable="false" />
+          <Property Name="Total" Type="money" Nullable="false" />
+          <Property Name="Aplicar Dto" Type="bit" Nullable="false" />
+          <Property Name="Delegación" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Forma Venta" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nº Albarán" Type="int" />
+          <Property Name="Fecha Albarán" Type="datetime" />
+          <Property Name="Nº Factura" Type="char" MaxLength="10" />
+          <Property Name="Fecha Factura" Type="datetime" />
+          <Property Name="Picking" Type="int" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="Grupo" Type="char" MaxLength="3" />
+          <Property Name="SubGrupo" Type="char" MaxLength="3" />
+          <Property Name="NºOferta" Type="int" />
+          <Property Name="GeneraBonificación" Type="bit" Nullable="false" />
+          <Property Name="Familia" Type="char" MaxLength="10" />
+          <Property Name="TipoExclusiva" Type="char" MaxLength="3" />
+          <Property Name="YaFacturado" Type="bit" Nullable="false" />
+          <Property Name="VtoBueno" Type="bit" Nullable="false" />
+          <Property Name="Coste" Type="money" Nullable="false" />
+          <Property Name="BlancoParaBorrar" Type="char" MaxLength="20" />
+          <Property Name="Reponer" Type="bit" Nullable="false" />
+          <Property Name="PrecioTarifa" Type="money" />
+          <Property Name="Recoger" Type="int" Nullable="false" />
+          <Property Name="LineaParcial" Type="bit" Nullable="false" />
+          <Property Name="EstadoProducto" Type="int" />
+          <Property Name="CentroCoste" Type="char" MaxLength="3" />
+          <Property Name="Departamento" Type="char" MaxLength="3" />
+          <Property Name="NumSerie" Type="char" MaxLength="30" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="Productos">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Nombre" Type="char" MaxLength="50" />
+          <Property Name="Grupo" Type="char" MaxLength="3" />
+          <Property Name="PVP" Type="money" />
+          <Property Name="IVA Soportado" Type="char" MaxLength="3" />
+          <Property Name="IVA Repercutido" Type="char" MaxLength="3" />
+          <Property Name="Comentarios" Type="text" />
+          <Property Name="Estado" Type="smallint" />
+          <Property Name="CodBarras" Type="char" MaxLength="13" />
+          <Property Name="Aplicar Dto" Type="bit" Nullable="false" />
+          <Property Name="SubGrupo" Type="char" MaxLength="3" />
+          <Property Name="Tamaño" Type="smallint" />
+          <Property Name="UnidadMedida" Type="char" MaxLength="5" />
+          <Property Name="Familia" Type="char" MaxLength="10" />
+          <Property Name="Foto" Type="char" MaxLength="50" />
+          <Property Name="PrecioMedio" Type="money" />
+          <Property Name="Ficticio" Type="bit" Nullable="false" />
+          <Property Name="FechaInicio" Type="datetime" />
+          <Property Name="FechaFinal" Type="datetime" />
+          <Property Name="NumeroSesiones" Type="tinyint" />
+          <Property Name="MateriaPrima" Type="bit" Nullable="false" />
+          <Property Name="UnidadesPorEtiqueta" Type="smallint" Nullable="false" />
+          <Property Name="VariasOpciones" Type="bit" Nullable="false" />
+          <Property Name="Ubicar" Type="bit" Nullable="false" />
+          <Property Name="ProductoAnterior" Type="char" MaxLength="15" />
+          <Property Name="GestionStockManual" Type="bit" Nullable="false" />
+          <Property Name="RoturaStockProveedor" Type="bit" Nullable="false" />
+          <Property Name="ProductosPorCaja" Type="int" Nullable="false" />
+          <Property Name="CantidadMinimaPedido" Type="int" Nullable="false" />
+          <Property Name="Revisado" Type="bit" Nullable="false" />
+          <Property Name="ComentariosFactura" Type="text" />
+          <Property Name="NecesitaNumSerie" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="SubGruposProducto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Grupo" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Grupo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Descripción" Type="char" MaxLength="50" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <Association Name="FK_CabPedidoVta_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="Clientes1" Type="Self.Clientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="Clientes1">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="ContactoDefecto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_Clientes1">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="Clientes1" Type="Self.Clientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="Clientes1">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="ContactoCobro" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_Clientes2">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="Clientes1" Type="Self.Clientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="Clientes1">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="ContactoBonificacion" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Clientes">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="0..1" />
+          <End Role="Empresas1" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Empresas1">
+              <PropertyRef Name="IVA por defecto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosAgencia_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="EnviosAgencia" Type="Self.EnviosAgencia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="EnviosAgencia">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosAgencia_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="EnviosAgencia" Type="Self.EnviosAgencia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="EnviosAgencia">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Familias_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="Familias" Type="Self.Familias" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Familias">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_CabPedidoVta">
+          <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="1" />
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_Familias">
+          <End Role="Familias" Type="Self.Familias" Multiplicity="0..1" />
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Familias">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_SubGruposProducto">
+          <End Role="SubGruposProducto" Type="Self.SubGruposProducto" Multiplicity="0..1" />
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="SubGruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="SubGrupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="Productos" Type="Self.Productos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Productos">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_Familias">
+          <End Role="Familias" Type="Self.Familias" Multiplicity="0..1" />
+          <End Role="Productos" Type="Self.Productos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Familias">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="0..1" />
+          <End Role="Productos1" Type="Self.Productos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Productos1">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="ProductoAnterior" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_SubGruposProducto">
+          <End Role="SubGruposProducto" Type="Self.SubGruposProducto" Multiplicity="0..1" />
+          <End Role="Productos" Type="Self.Productos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="SubGruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="SubGrupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityContainer Name="NVModelStoreContainer">
+          <EntitySet Name="CabPedidoVta" EntityType="Self.CabPedidoVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Clientes" EntityType="Self.Clientes" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Empresas" EntityType="Self.Empresas" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="EnviosAgencia" EntityType="Self.EnviosAgencia" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Familias" EntityType="Self.Familias" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Productos" EntityType="Self.Productos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="SubGruposProducto" EntityType="Self.SubGruposProducto" Schema="dbo" store:Type="Tables" />
+          <AssociationSet Name="FK_CabPedidoVta_Clientes" Association="Self.FK_CabPedidoVta_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_Clientes" Association="Self.FK_Clientes_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="Clientes1" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_Clientes1" Association="Self.FK_Clientes_Clientes1">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="Clientes1" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_Clientes2" Association="Self.FK_Clientes_Clientes2">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="Clientes1" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_Empresas" Association="Self.FK_Clientes_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Clientes" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_Empresas" Association="Self.FK_Empresas_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Empresas1" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosAgencia_Clientes" Association="Self.FK_EnviosAgencia_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosAgencia_Empresas" Association="Self.FK_EnviosAgencia_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Familias_Empresas" Association="Self.FK_Familias_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Familias" EntitySet="Familias" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_CabPedidoVta" Association="Self.FK_LinPedidoVta_CabPedidoVta">
+            <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_Clientes" Association="Self.FK_LinPedidoVta_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_Empresas" Association="Self.FK_LinPedidoVta_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_Familias" Association="Self.FK_LinPedidoVta_Familias">
+            <End Role="Familias" EntitySet="Familias" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_SubGruposProducto" Association="Self.FK_LinPedidoVta_SubGruposProducto">
+            <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_Empresas" Association="Self.FK_Productos_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Productos" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_Familias" Association="Self.FK_Productos_Familias">
+            <End Role="Familias" EntitySet="Familias" />
+            <End Role="Productos" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_Productos" Association="Self.FK_Productos_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="Productos1" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_SubGruposProducto" Association="Self.FK_Productos_SubGruposProducto">
+            <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
+            <End Role="Productos" EntitySet="Productos" />
+          </AssociationSet>
+        </EntityContainer>
+      </Schema></edmx:StorageModels>
+    <!-- CSDL content -->
+    <edmx:ConceptualModels>
+      <Schema Namespace="NVModel" Alias="Self" annotation:UseStrongSpatialTypes="false" xmlns:annotation="http://schemas.microsoft.com/ado/2009/02/edm/annotation" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm">
+        <EntityType Name="EnviosAgencia">
+          <Key>
+            <PropertyRef Name="Numero" />
+          </Key>
+          <Property Name="Numero" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" MaxLength="3" FixedLength="true" Unicode="false" Nullable="false" />
+          <Property Name="Agencia" Type="Int32" Nullable="false" />
+          <Property Name="Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Pedido" Type="Int32" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="0" />
+          <Property Name="Servicio" Type="Int16" Nullable="false" />
+          <Property Name="Horario" Type="Int16" Nullable="false" />
+          <Property Name="Bultos" Type="Int16" Nullable="false" />
+          <Property Name="Retorno" Type="Int16" Nullable="false" />
+          <Property Name="Nombre" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
+          <Property Name="Direccion" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
+          <Property Name="CodPostal" Type="String" MaxLength="5" FixedLength="false" Unicode="false" />
+          <Property Name="Poblacion" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
+          <Property Name="Provincia" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
+          <Property Name="Telefono" Type="String" MaxLength="9" FixedLength="false" Unicode="false" />
+          <Property Name="Movil" Type="String" MaxLength="9" FixedLength="false" Unicode="false" />
+          <Property Name="Email" Type="String" MaxLength="200" FixedLength="false" Unicode="false" />
+          <Property Name="Observaciones" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
+          <Property Name="Atencion" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
+          <Property Name="Reembolso" Type="Decimal" Precision="19" Scale="4" Nullable="false" />
+          <Property Name="FechaPagoReembolso" Type="DateTime" Precision="0" />
+          <Property Name="CodigoBarras" Type="String" MaxLength="14" FixedLength="false" Unicode="true" />
+          <Property Name="NombrePlaza" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
+          <Property Name="Nemonico" Type="String" MaxLength="3" FixedLength="false" Unicode="false" />
+          <Property Name="TelefonoPlaza" Type="String" MaxLength="27" FixedLength="false" Unicode="false" />
+          <Property Name="EmailPlaza" Type="String" MaxLength="200" FixedLength="false" Unicode="false" />
+          <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FechaFactura" Type="DateTime" Precision="0" />
+          <Property Name="ImporteGasto" Type="Decimal" Precision="19" Scale="4" Nullable="false" />
+          <Property Name="FechaRetornoRecibido" Type="DateTime" Precision="0" />
+          <Property Name="Usuario" Type="String" MaxLength="50" FixedLength="false" Unicode="false" Nullable="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_EnviosAgencia_Empresas" FromRole="EnviosAgencia" ToRole="Empresa" />
+          <Property Name="Pais" Type="Int32" Nullable="false" />
+          <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_EnviosAgencia_Clientes" FromRole="EnviosAgencia" ToRole="Cliente" />
+        </EntityType>
+        <EntityContainer Name="NVEntities" annotation:LazyLoadingEnabled="true">
+          <EntitySet Name="EnviosAgencias" EntityType="Self.EnviosAgencia" />
+          <EntitySet Name="Empresas" EntityType="NVModel.Empresa" />
+          <AssociationSet Name="FK_Empresas_Empresas" Association="NVModel.FK_Empresas_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Empresa1" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosAgencia_Empresas" Association="NVModel.FK_EnviosAgencia_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencias" />
+          </AssociationSet>
+          <EntitySet Name="CabPedidoVtas" EntityType="NVModel.CabPedidoVta" />
+          <EntitySet Name="LinPedidoVtas" EntityType="NVModel.LinPedidoVta" />
+          <AssociationSet Name="FK_LinPedidoVta_CabPedidoVta" Association="NVModel.FK_LinPedidoVta_CabPedidoVta">
+            <End Role="CabPedidoVta" EntitySet="CabPedidoVtas" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_Empresas" Association="NVModel.FK_LinPedidoVta_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+          </AssociationSet>
+          <EntitySet Name="Clientes" EntityType="NVModel.Cliente" />
+          <AssociationSet Name="FK_CabPedidoVta_Clientes" Association="NVModel.FK_CabPedidoVta_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="CabPedidoVta" EntitySet="CabPedidoVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_Clientes" Association="NVModel.FK_Clientes_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="Cliente1" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_Clientes1" Association="NVModel.FK_Clientes_Clientes1">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="Cliente1" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_Clientes2" Association="NVModel.FK_Clientes_Clientes2">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="Cliente1" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_Empresas" Association="NVModel.FK_Clientes_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Cliente" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosAgencia_Clientes" Association="NVModel.FK_EnviosAgencia_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencias" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_Clientes" Association="NVModel.FK_LinPedidoVta_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+          </AssociationSet>
+          <EntitySet Name="Productos" EntityType="NVModel.Producto" />
+          <AssociationSet Name="FK_Productos_Empresas" Association="NVModel.FK_Productos_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Producto" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_Productos" Association="NVModel.FK_Productos_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="Producto1" EntitySet="Productos" />
+          </AssociationSet>
+          <EntitySet Name="Familias" EntityType="NVModel.Familia" />
+          <EntitySet Name="SubGruposProductoes" EntityType="NVModel.SubGruposProducto" />
+          <AssociationSet Name="FK_Familias_Empresas" Association="NVModel.FK_Familias_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Familia" EntitySet="Familias" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_Familias" Association="NVModel.FK_LinPedidoVta_Familias">
+            <End Role="Familia" EntitySet="Familias" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_Familias" Association="NVModel.FK_Productos_Familias">
+            <End Role="Familia" EntitySet="Familias" />
+            <End Role="Producto" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_SubGruposProducto" Association="NVModel.FK_LinPedidoVta_SubGruposProducto">
+            <End Role="SubGruposProducto" EntitySet="SubGruposProductoes" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_SubGruposProducto" Association="NVModel.FK_Productos_SubGruposProducto">
+            <End Role="SubGruposProducto" EntitySet="SubGruposProductoes" />
+            <End Role="Producto" EntitySet="Productos" />
+          </AssociationSet>
+        </EntityContainer>
+        <EntityType Name="Empresa">
+          <Key>
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nombre" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="NIF" Type="String" Nullable="false" MaxLength="9" FixedLength="true" Unicode="false" />
+          <Property Name="Sufijo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="MostrarMenú" Type="Boolean" Nullable="false" />
+          <Property Name="IVA_por_defecto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDtoCliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDescuentoVta" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDtoPPVta" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDtoProveedor" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDescuentoCmp" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDtoPPCmp" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="DelegaciónVarios" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaVentaVarios" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CtaCaja" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDescuadre" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="LongitudCuenta" Type="Byte" />
+          <Property Name="FormaPagoTalón" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaPagoEfectivo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaPagoTarjeta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaPagoPagaré" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PlazosPagoDefecto" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="VendedorVarios" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Dirección" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Dirección2" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="CodPostal" Type="String" MaxLength="5" FixedLength="true" Unicode="false" />
+          <Property Name="Población" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="Provincia" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="Texto" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Logotipo" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="TipoIvaDefecto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="GeneraBonificaciónDefecto" Type="Boolean" Nullable="false" />
+          <Property Name="VigenciaBonificación" Type="Byte" Nullable="false" />
+          <Property Name="CtaRegularización" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaRemanente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDiferenciasNegativasEjerciciosAnteriores" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaAPagarIVA" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaACompensarIVA" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="TipoIvaDefectoSoportado" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ProductoRegularizaciones" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="ProductoReparacion" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Email" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Web" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="EmpresaDatafono" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="EmpresaCurso" Type="Boolean" Nullable="false" />
+          <Property Name="EstadoReembolsado" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ProveedorCostes" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ctaDiferenciasEnCompras" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="UltAsientoContable" Type="Int32" Nullable="false" />
+          <Property Name="ProveedorIRPF" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoProveedorIRPF" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PorcentajeFacturadoNoEntregadoParaPedidoCmpAuto" Type="Decimal" Nullable="false" Precision="5" Scale="2" />
+          <Property Name="TextoFactura" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="StockAntiguo" Type="Int32" Nullable="false" />
+          <Property Name="EstadoProductoRegalo" Type="Int32" />
+          <Property Name="InformeAlbaran" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="InformeFactura" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="InformePedidoCmp" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="InformeCartaPagare" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="InformeCartaPagareManual" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="ImpresoraPagare" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="OcultarB" Type="Boolean" Nullable="false" />
+          <Property Name="MostrarOperador" Type="Boolean" Nullable="false" />
+          <Property Name="MaxPickingListado" Type="Int32" />
+          <Property Name="MaxPickingPorListar" Type="Int32" />
+          <Property Name="InformeFacturaConMembrete" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="VerFormaVentaCng" Type="Boolean" Nullable="false" />
+          <Property Name="PreciosRenting36" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="PreciosRenting48" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="PreciosRentingImporte" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="PorcentajeVR36" Type="Decimal" Precision="5" Scale="4" />
+          <Property Name="PorcentajeVR48" Type="Decimal" Precision="5" Scale="4" />
+          <Property Name="PorcentajeRentingProductos" Type="Decimal" Precision="5" Scale="4" />
+          <Property Name="PorcentajeRentingServicios" Type="Decimal" Precision="5" Scale="4" />
+          <Property Name="EnviarCorreoProductoNuevo" Type="Boolean" Nullable="false" />
+          <Property Name="ctaTrabajosRealizados" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="FechaPicking" Type="DateTime" Precision="3" />
+          <Property Name="BloquearTraspasoRuta" Type="Boolean" Nullable="false" />
+          <Property Name="RutaImpagado" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresas1" Relationship="NVModel.FK_Empresas_Empresas" FromRole="Empresa" ToRole="Empresa1" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Empresas_Empresas" FromRole="Empresa1" ToRole="Empresa" />
+          <NavigationProperty Name="EnviosAgencias" Relationship="NVModel.FK_EnviosAgencia_Empresas" FromRole="Empresa" ToRole="EnviosAgencia" />
+          <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_Empresas" FromRole="Empresa" ToRole="LinPedidoVta" />
+          <NavigationProperty Name="Clientes" Relationship="NVModel.FK_Clientes_Empresas" FromRole="Empresa" ToRole="Cliente" />
+          <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_Empresas" FromRole="Empresa" ToRole="Producto" />
+          <NavigationProperty Name="Familias" Relationship="NVModel.FK_Familias_Empresas" FromRole="Empresa" ToRole="Familia" />
+        </EntityType>
+        <Association Name="FK_Empresas_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa1" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Empresa1">
+              <PropertyRef Name="IVA_por_defecto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosAgencia_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.EnviosAgencia" Role="EnviosAgencia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="EnviosAgencia">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="CabPedidoVta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="Int32" Nullable="false" />
+          <Property Name="Nº_Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha" Type="DateTime" Precision="3" />
+          <Property Name="Forma_Pago" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PlazosPago" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Primer_Vencimiento" Type="DateTime" Precision="3" />
+          <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="ComentarioPicking" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Periodo_Facturacion" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Ruta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Serie" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CCC" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Origen" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Agrupada" Type="Boolean" Nullable="false" />
+          <Property Name="MotivoDevolución" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoCobro" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NoComisiona" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="NotaEntrega" Type="Boolean" Nullable="false" />
+          <Property Name="vtoBuenoPlazosPago" Type="Boolean" Nullable="false" />
+          <Property Name="Operador" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FijarPrimerVto" Type="Boolean" Nullable="false" />
+          <Property Name="MantenerJunto" Type="Boolean" Nullable="false" />
+          <Property Name="ServirJunto" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_CabPedidoVta" FromRole="CabPedidoVta" ToRole="LinPedidoVta" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_CabPedidoVta_Clientes" FromRole="CabPedidoVta" ToRole="Cliente" />
+        </EntityType>
+        <EntityType Name="LinPedidoVta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="Nº_Orden" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="Int32" Nullable="false" />
+          <Property Name="Nº_Orden" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Nº_Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="TipoLinea" Type="Byte" />
+          <Property Name="Producto" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Almacén" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha_Entrega" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Texto" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Cantidad" Type="Int16" />
+          <Property Name="Precio" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PorcentajeIVA" Type="Byte" Nullable="false" />
+          <Property Name="PorcentajeRE" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="Bruto" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="DescuentoCliente" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="DescuentoProducto" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="Descuento" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="DescuentoPP" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="SumaDescuentos" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="ImporteDto" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Base_Imponible" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="ImporteIVA" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="ImporteRE" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Total" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Aplicar_Dto" Type="Boolean" Nullable="false" />
+          <Property Name="Delegación" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Forma_Venta" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Albarán" Type="Int32" />
+          <Property Name="Fecha_Albarán" Type="DateTime" Precision="3" />
+          <Property Name="Nº_Factura" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha_Factura" Type="DateTime" Precision="3" />
+          <Property Name="Picking" Type="Int32" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="Grupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="SubGrupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºOferta" Type="Int32" />
+          <Property Name="GeneraBonificación" Type="Boolean" Nullable="false" />
+          <Property Name="Familia" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="TipoExclusiva" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="YaFacturado" Type="Boolean" Nullable="false" />
+          <Property Name="VtoBueno" Type="Boolean" Nullable="false" />
+          <Property Name="Coste" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="BlancoParaBorrar" Type="String" MaxLength="20" FixedLength="true" Unicode="false" />
+          <Property Name="Reponer" Type="Boolean" Nullable="false" />
+          <Property Name="PrecioTarifa" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="Recoger" Type="Int32" Nullable="false" />
+          <Property Name="LineaParcial" Type="Boolean" Nullable="false" />
+          <Property Name="EstadoProducto" Type="Int32" />
+          <Property Name="CentroCoste" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Departamento" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NumSerie" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="CabPedidoVta" Relationship="NVModel.FK_LinPedidoVta_CabPedidoVta" FromRole="LinPedidoVta" ToRole="CabPedidoVta" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_LinPedidoVta_Empresas" FromRole="LinPedidoVta" ToRole="Empresa" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_LinPedidoVta_Clientes" FromRole="LinPedidoVta" ToRole="Cliente" />
+          <NavigationProperty Name="Familia1" Relationship="NVModel.FK_LinPedidoVta_Familias" FromRole="LinPedidoVta" ToRole="Familia" />
+          <NavigationProperty Name="SubGruposProducto" Relationship="NVModel.FK_LinPedidoVta_SubGruposProducto" FromRole="LinPedidoVta" ToRole="SubGruposProducto" />
+        </EntityType>
+        <Association Name="FK_LinPedidoVta_CabPedidoVta">
+          <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1" />
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="Cliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº_Cliente" />
+            <PropertyRef Name="Contacto" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Cliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ClientePrincipal" Type="Boolean" Nullable="false" />
+          <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Dirección" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Población" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="CodPostal" Type="String" MaxLength="5" FixedLength="true" Unicode="false" />
+          <Property Name="CIF_NIF" Type="String" MaxLength="9" FixedLength="true" Unicode="false" />
+          <Property Name="Provincia" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="Estado" Type="Int16" />
+          <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Grupo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PeriodoFacturación" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CCC" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Ruta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºCopiasAlbarán" Type="Byte" Nullable="false" />
+          <Property Name="NºCopiasFactura" Type="Byte" Nullable="false" />
+          <Property Name="ComentarioRuta" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="ComentarioPicking" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="GeneraBonificación" Type="Boolean" Nullable="false" />
+          <Property Name="RecargoPvp" Type="Decimal" Precision="5" Scale="4" />
+          <Property Name="Web" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="BloquearPlazosPago" Type="Boolean" Nullable="false" />
+          <Property Name="AvisarAntesCobro" Type="Boolean" Nullable="false" />
+          <Property Name="ContactoDefecto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoCobro" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoBonificacion" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="AlbaranValorado" Type="Boolean" Nullable="false" />
+          <Property Name="Cadena" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NoComisiona" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="Operador" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="DiasEnServir" Type="String" Nullable="false" MaxLength="5" FixedLength="true" Unicode="false" />
+          <Property Name="ServirJunto" Type="Boolean" Nullable="false" />
+          <Property Name="MantenerJunto" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="CabPedidoVtas" Relationship="NVModel.FK_CabPedidoVta_Clientes" FromRole="Cliente" ToRole="CabPedidoVta" />
+          <NavigationProperty Name="Clientes1" Relationship="NVModel.FK_Clientes_Clientes" FromRole="Cliente" ToRole="Cliente1" />
+          <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_Clientes_Clientes" FromRole="Cliente1" ToRole="Cliente" />
+          <NavigationProperty Name="Clientes11" Relationship="NVModel.FK_Clientes_Clientes1" FromRole="Cliente" ToRole="Cliente1" />
+          <NavigationProperty Name="Cliente2" Relationship="NVModel.FK_Clientes_Clientes1" FromRole="Cliente1" ToRole="Cliente" />
+          <NavigationProperty Name="Clientes12" Relationship="NVModel.FK_Clientes_Clientes2" FromRole="Cliente" ToRole="Cliente1" />
+          <NavigationProperty Name="Cliente3" Relationship="NVModel.FK_Clientes_Clientes2" FromRole="Cliente1" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Clientes_Empresas" FromRole="Cliente" ToRole="Empresa" />
+          <NavigationProperty Name="EnviosAgencias" Relationship="NVModel.FK_EnviosAgencia_Clientes" FromRole="Cliente" ToRole="EnviosAgencia" />
+          <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_Clientes" FromRole="Cliente" ToRole="LinPedidoVta" />
+        </EntityType>
+        <Association Name="FK_CabPedidoVta_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.Cliente" Role="Cliente1" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="Cliente1">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="ContactoDefecto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_Clientes1">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.Cliente" Role="Cliente1" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="Cliente1">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="ContactoCobro" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_Clientes2">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.Cliente" Role="Cliente1" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="Cliente1">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="ContactoBonificacion" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Cliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosAgencia_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.EnviosAgencia" Role="EnviosAgencia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="EnviosAgencia">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="Producto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Grupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PVP" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="IVA_Soportado" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="IVA_Repercutido" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Estado" Type="Int16" />
+          <Property Name="CodBarras" Type="String" MaxLength="13" FixedLength="true" Unicode="false" />
+          <Property Name="Aplicar_Dto" Type="Boolean" Nullable="false" />
+          <Property Name="SubGrupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Tamaño" Type="Int16" />
+          <Property Name="UnidadMedida" Type="String" MaxLength="5" FixedLength="true" Unicode="false" />
+          <Property Name="Familia" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Foto" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="PrecioMedio" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="Ficticio" Type="Boolean" Nullable="false" />
+          <Property Name="FechaInicio" Type="DateTime" Precision="3" />
+          <Property Name="FechaFinal" Type="DateTime" Precision="3" />
+          <Property Name="NumeroSesiones" Type="Byte" />
+          <Property Name="MateriaPrima" Type="Boolean" Nullable="false" />
+          <Property Name="UnidadesPorEtiqueta" Type="Int16" Nullable="false" />
+          <Property Name="VariasOpciones" Type="Boolean" Nullable="false" />
+          <Property Name="Ubicar" Type="Boolean" Nullable="false" />
+          <Property Name="ProductoAnterior" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="GestionStockManual" Type="Boolean" Nullable="false" />
+          <Property Name="RoturaStockProveedor" Type="Boolean" Nullable="false" />
+          <Property Name="ProductosPorCaja" Type="Int32" Nullable="false" />
+          <Property Name="CantidadMinimaPedido" Type="Int32" Nullable="false" />
+          <Property Name="Revisado" Type="Boolean" Nullable="false" />
+          <Property Name="ComentariosFactura" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="NecesitaNumSerie" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Productos_Empresas" FromRole="Producto" ToRole="Empresa" />
+          <NavigationProperty Name="Productos1" Relationship="NVModel.FK_Productos_Productos" FromRole="Producto" ToRole="Producto1" />
+          <NavigationProperty Name="Producto1" Relationship="NVModel.FK_Productos_Productos" FromRole="Producto1" ToRole="Producto" />
+          <NavigationProperty Name="Familia1" Relationship="NVModel.FK_Productos_Familias" FromRole="Producto" ToRole="Familia" />
+          <NavigationProperty Name="SubGruposProducto" Relationship="NVModel.FK_Productos_SubGruposProducto" FromRole="Producto" ToRole="SubGruposProducto" />
+        </EntityType>
+        <Association Name="FK_Productos_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Producto">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="0..1" />
+          <End Type="NVModel.Producto" Role="Producto1" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Producto1">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="ProductoAnterior" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="Familia">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Descripción" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="TipoExclusiva" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="C_DtoMáximoComisión" Type="Decimal" Nullable="false" Precision="4" Scale="2" />
+          <Property Name="C_ComisiónFija" Type="Decimal" Nullable="false" Precision="4" Scale="2" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Familias_Empresas" FromRole="Familia" ToRole="Empresa" />
+          <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_Familias" FromRole="Familia" ToRole="LinPedidoVta" />
+          <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_Familias" FromRole="Familia" ToRole="Producto" />
+        </EntityType>
+        <EntityType Name="SubGruposProducto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Grupo" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Grupo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Descripción" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_SubGruposProducto" FromRole="SubGruposProducto" ToRole="LinPedidoVta" />
+          <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_SubGruposProducto" FromRole="SubGruposProducto" ToRole="Producto" />
+        </EntityType>
+        <Association Name="FK_Familias_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.Familia" Role="Familia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Familia">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_Familias">
+          <End Type="NVModel.Familia" Role="Familia" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Familia">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_Familias">
+          <End Type="NVModel.Familia" Role="Familia" Multiplicity="0..1" />
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Familia">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_SubGruposProducto">
+          <End Type="NVModel.SubGruposProducto" Role="SubGruposProducto" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="SubGruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="SubGrupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_SubGruposProducto">
+          <End Type="NVModel.SubGruposProducto" Role="SubGruposProducto" Multiplicity="0..1" />
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="SubGruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="SubGrupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+      </Schema>
+    </edmx:ConceptualModels>
+    <!-- C-S mapping content -->
+    <edmx:Mappings>
+      <Mapping Space="C-S" xmlns="http://schemas.microsoft.com/ado/2009/11/mapping/cs">
+        <EntityContainerMapping StorageEntityContainer="NVModelStoreContainer" CdmEntityContainer="NVEntities">
+          <EntitySetMapping Name="EnviosAgencias">
+            <EntityTypeMapping TypeName="NVModel.EnviosAgencia">
+              <MappingFragment StoreEntitySet="EnviosAgencia">
+                <ScalarProperty Name="Pais" ColumnName="Pais" />
+                <ScalarProperty Name="Numero" ColumnName="Numero" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Agencia" ColumnName="Agencia" />
+                <ScalarProperty Name="Cliente" ColumnName="Cliente" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Pedido" ColumnName="Pedido" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Servicio" ColumnName="Servicio" />
+                <ScalarProperty Name="Horario" ColumnName="Horario" />
+                <ScalarProperty Name="Bultos" ColumnName="Bultos" />
+                <ScalarProperty Name="Retorno" ColumnName="Retorno" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Direccion" ColumnName="Direccion" />
+                <ScalarProperty Name="CodPostal" ColumnName="CodPostal" />
+                <ScalarProperty Name="Poblacion" ColumnName="Poblacion" />
+                <ScalarProperty Name="Provincia" ColumnName="Provincia" />
+                <ScalarProperty Name="Telefono" ColumnName="Telefono" />
+                <ScalarProperty Name="Movil" ColumnName="Movil" />
+                <ScalarProperty Name="Email" ColumnName="Email" />
+                <ScalarProperty Name="Observaciones" ColumnName="Observaciones" />
+                <ScalarProperty Name="Atencion" ColumnName="Atencion" />
+                <ScalarProperty Name="Reembolso" ColumnName="Reembolso" />
+                <ScalarProperty Name="FechaPagoReembolso" ColumnName="FechaPagoReembolso" />
+                <ScalarProperty Name="CodigoBarras" ColumnName="CodigoBarras" />
+                <ScalarProperty Name="NombrePlaza" ColumnName="NombrePlaza" />
+                <ScalarProperty Name="Nemonico" ColumnName="Nemonico" />
+                <ScalarProperty Name="TelefonoPlaza" ColumnName="TelefonoPlaza" />
+                <ScalarProperty Name="EmailPlaza" ColumnName="EmailPlaza" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="FechaFactura" ColumnName="FechaFactura" />
+                <ScalarProperty Name="ImporteGasto" ColumnName="ImporteGasto" />
+                <ScalarProperty Name="FechaRetornoRecibido" ColumnName="FechaRetornoRecibido" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Empresas">
+            <EntityTypeMapping TypeName="NVModel.Empresa">
+              <MappingFragment StoreEntitySet="Empresas">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="RutaImpagado" ColumnName="RutaImpagado" />
+                <ScalarProperty Name="BloquearTraspasoRuta" ColumnName="BloquearTraspasoRuta" />
+                <ScalarProperty Name="FechaPicking" ColumnName="FechaPicking" />
+                <ScalarProperty Name="ctaTrabajosRealizados" ColumnName="ctaTrabajosRealizados" />
+                <ScalarProperty Name="EnviarCorreoProductoNuevo" ColumnName="EnviarCorreoProductoNuevo" />
+                <ScalarProperty Name="PorcentajeRentingServicios" ColumnName="PorcentajeRentingServicios" />
+                <ScalarProperty Name="PorcentajeRentingProductos" ColumnName="PorcentajeRentingProductos" />
+                <ScalarProperty Name="PorcentajeVR48" ColumnName="PorcentajeVR48" />
+                <ScalarProperty Name="PorcentajeVR36" ColumnName="PorcentajeVR36" />
+                <ScalarProperty Name="PreciosRentingImporte" ColumnName="PreciosRentingImporte" />
+                <ScalarProperty Name="PreciosRenting48" ColumnName="PreciosRenting48" />
+                <ScalarProperty Name="PreciosRenting36" ColumnName="PreciosRenting36" />
+                <ScalarProperty Name="VerFormaVentaCng" ColumnName="VerFormaVentaCng" />
+                <ScalarProperty Name="InformeFacturaConMembrete" ColumnName="InformeFacturaConMembrete" />
+                <ScalarProperty Name="MaxPickingPorListar" ColumnName="MaxPickingPorListar" />
+                <ScalarProperty Name="MaxPickingListado" ColumnName="MaxPickingListado" />
+                <ScalarProperty Name="MostrarOperador" ColumnName="MostrarOperador" />
+                <ScalarProperty Name="OcultarB" ColumnName="OcultarB" />
+                <ScalarProperty Name="ImpresoraPagare" ColumnName="ImpresoraPagare" />
+                <ScalarProperty Name="InformeCartaPagareManual" ColumnName="InformeCartaPagareManual" />
+                <ScalarProperty Name="InformeCartaPagare" ColumnName="InformeCartaPagare" />
+                <ScalarProperty Name="InformePedidoCmp" ColumnName="InformePedidoCmp" />
+                <ScalarProperty Name="InformeFactura" ColumnName="InformeFactura" />
+                <ScalarProperty Name="InformeAlbaran" ColumnName="InformeAlbaran" />
+                <ScalarProperty Name="EstadoProductoRegalo" ColumnName="EstadoProductoRegalo" />
+                <ScalarProperty Name="StockAntiguo" ColumnName="StockAntiguo" />
+                <ScalarProperty Name="TextoFactura" ColumnName="TextoFactura" />
+                <ScalarProperty Name="PorcentajeFacturadoNoEntregadoParaPedidoCmpAuto" ColumnName="PorcentajeFacturadoNoEntregadoParaPedidoCmpAuto" />
+                <ScalarProperty Name="ContactoProveedorIRPF" ColumnName="ContactoProveedorIRPF" />
+                <ScalarProperty Name="ProveedorIRPF" ColumnName="ProveedorIRPF" />
+                <ScalarProperty Name="UltAsientoContable" ColumnName="UltAsientoContable" />
+                <ScalarProperty Name="ctaDiferenciasEnCompras" ColumnName="ctaDiferenciasEnCompras" />
+                <ScalarProperty Name="ProveedorCostes" ColumnName="ProveedorCostes" />
+                <ScalarProperty Name="EstadoReembolsado" ColumnName="EstadoReembolsado" />
+                <ScalarProperty Name="EmpresaCurso" ColumnName="EmpresaCurso" />
+                <ScalarProperty Name="EmpresaDatafono" ColumnName="EmpresaDatafono" />
+                <ScalarProperty Name="Web" ColumnName="Web" />
+                <ScalarProperty Name="Email" ColumnName="Email" />
+                <ScalarProperty Name="ProductoReparacion" ColumnName="ProductoReparacion" />
+                <ScalarProperty Name="ProductoRegularizaciones" ColumnName="ProductoRegularizaciones" />
+                <ScalarProperty Name="TipoIvaDefectoSoportado" ColumnName="TipoIvaDefectoSoportado" />
+                <ScalarProperty Name="CtaACompensarIVA" ColumnName="CtaACompensarIVA" />
+                <ScalarProperty Name="CtaAPagarIVA" ColumnName="CtaAPagarIVA" />
+                <ScalarProperty Name="CtaDiferenciasNegativasEjerciciosAnteriores" ColumnName="CtaDiferenciasNegativasEjerciciosAnteriores" />
+                <ScalarProperty Name="CtaRemanente" ColumnName="CtaRemanente" />
+                <ScalarProperty Name="CtaRegularización" ColumnName="CtaRegularización" />
+                <ScalarProperty Name="VigenciaBonificación" ColumnName="VigenciaBonificación" />
+                <ScalarProperty Name="GeneraBonificaciónDefecto" ColumnName="GeneraBonificaciónDefecto" />
+                <ScalarProperty Name="TipoIvaDefecto" ColumnName="TipoIvaDefecto" />
+                <ScalarProperty Name="Logotipo" ColumnName="Logotipo" />
+                <ScalarProperty Name="Texto" ColumnName="Texto" />
+                <ScalarProperty Name="Provincia" ColumnName="Provincia" />
+                <ScalarProperty Name="Población" ColumnName="Población" />
+                <ScalarProperty Name="CodPostal" ColumnName="CodPostal" />
+                <ScalarProperty Name="Fax" ColumnName="Fax" />
+                <ScalarProperty Name="Teléfono" ColumnName="Teléfono" />
+                <ScalarProperty Name="Dirección2" ColumnName="Dirección2" />
+                <ScalarProperty Name="Dirección" ColumnName="Dirección" />
+                <ScalarProperty Name="VendedorVarios" ColumnName="VendedorVarios" />
+                <ScalarProperty Name="PlazosPagoDefecto" ColumnName="PlazosPagoDefecto" />
+                <ScalarProperty Name="FormaPagoPagaré" ColumnName="FormaPagoPagaré" />
+                <ScalarProperty Name="FormaPagoTarjeta" ColumnName="FormaPagoTarjeta" />
+                <ScalarProperty Name="FormaPagoEfectivo" ColumnName="FormaPagoEfectivo" />
+                <ScalarProperty Name="FormaPagoTalón" ColumnName="FormaPagoTalón" />
+                <ScalarProperty Name="LongitudCuenta" ColumnName="LongitudCuenta" />
+                <ScalarProperty Name="CtaDescuadre" ColumnName="CtaDescuadre" />
+                <ScalarProperty Name="CtaCaja" ColumnName="CtaCaja" />
+                <ScalarProperty Name="FormaVentaVarios" ColumnName="FormaVentaVarios" />
+                <ScalarProperty Name="DelegaciónVarios" ColumnName="DelegaciónVarios" />
+                <ScalarProperty Name="CtaDtoPPCmp" ColumnName="CtaDtoPPCmp" />
+                <ScalarProperty Name="CtaDescuentoCmp" ColumnName="CtaDescuentoCmp" />
+                <ScalarProperty Name="CtaDtoProveedor" ColumnName="CtaDtoProveedor" />
+                <ScalarProperty Name="CtaDtoPPVta" ColumnName="CtaDtoPPVta" />
+                <ScalarProperty Name="CtaDescuentoVta" ColumnName="CtaDescuentoVta" />
+                <ScalarProperty Name="CtaDtoCliente" ColumnName="CtaDtoCliente" />
+                <ScalarProperty Name="IVA_por_defecto" ColumnName="IVA por defecto" />
+                <ScalarProperty Name="MostrarMenú" ColumnName="MostrarMenú" />
+                <ScalarProperty Name="Sufijo" ColumnName="Sufijo" />
+                <ScalarProperty Name="NIF" ColumnName="NIF" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="CabPedidoVtas">
+            <EntityTypeMapping TypeName="NVModel.CabPedidoVta">
+              <MappingFragment StoreEntitySet="CabPedidoVta">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="ServirJunto" ColumnName="ServirJunto" />
+                <ScalarProperty Name="MantenerJunto" ColumnName="MantenerJunto" />
+                <ScalarProperty Name="FijarPrimerVto" ColumnName="FijarPrimerVto" />
+                <ScalarProperty Name="Operador" ColumnName="Operador" />
+                <ScalarProperty Name="vtoBuenoPlazosPago" ColumnName="vtoBuenoPlazosPago" />
+                <ScalarProperty Name="NotaEntrega" ColumnName="NotaEntrega" />
+                <ScalarProperty Name="NoComisiona" ColumnName="NoComisiona" />
+                <ScalarProperty Name="ContactoCobro" ColumnName="ContactoCobro" />
+                <ScalarProperty Name="MotivoDevolución" ColumnName="MotivoDevolución" />
+                <ScalarProperty Name="Agrupada" ColumnName="Agrupada" />
+                <ScalarProperty Name="Origen" ColumnName="Origen" />
+                <ScalarProperty Name="CCC" ColumnName="CCC" />
+                <ScalarProperty Name="Serie" ColumnName="Serie" />
+                <ScalarProperty Name="Ruta" ColumnName="Ruta" />
+                <ScalarProperty Name="Periodo_Facturacion" ColumnName="Periodo Facturacion" />
+                <ScalarProperty Name="ComentarioPicking" ColumnName="ComentarioPicking" />
+                <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="IVA" ColumnName="IVA" />
+                <ScalarProperty Name="Primer_Vencimiento" ColumnName="Primer Vencimiento" />
+                <ScalarProperty Name="PlazosPago" ColumnName="PlazosPago" />
+                <ScalarProperty Name="Forma_Pago" ColumnName="Forma Pago" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="LinPedidoVtas">
+            <EntityTypeMapping TypeName="NVModel.LinPedidoVta">
+              <MappingFragment StoreEntitySet="LinPedidoVta">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="NumSerie" ColumnName="NumSerie" />
+                <ScalarProperty Name="Departamento" ColumnName="Departamento" />
+                <ScalarProperty Name="CentroCoste" ColumnName="CentroCoste" />
+                <ScalarProperty Name="EstadoProducto" ColumnName="EstadoProducto" />
+                <ScalarProperty Name="LineaParcial" ColumnName="LineaParcial" />
+                <ScalarProperty Name="Recoger" ColumnName="Recoger" />
+                <ScalarProperty Name="PrecioTarifa" ColumnName="PrecioTarifa" />
+                <ScalarProperty Name="Reponer" ColumnName="Reponer" />
+                <ScalarProperty Name="BlancoParaBorrar" ColumnName="BlancoParaBorrar" />
+                <ScalarProperty Name="Coste" ColumnName="Coste" />
+                <ScalarProperty Name="VtoBueno" ColumnName="VtoBueno" />
+                <ScalarProperty Name="YaFacturado" ColumnName="YaFacturado" />
+                <ScalarProperty Name="TipoExclusiva" ColumnName="TipoExclusiva" />
+                <ScalarProperty Name="Familia" ColumnName="Familia" />
+                <ScalarProperty Name="GeneraBonificación" ColumnName="GeneraBonificación" />
+                <ScalarProperty Name="NºOferta" ColumnName="NºOferta" />
+                <ScalarProperty Name="SubGrupo" ColumnName="SubGrupo" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Picking" ColumnName="Picking" />
+                <ScalarProperty Name="Fecha_Factura" ColumnName="Fecha Factura" />
+                <ScalarProperty Name="Nº_Factura" ColumnName="Nº Factura" />
+                <ScalarProperty Name="Fecha_Albarán" ColumnName="Fecha Albarán" />
+                <ScalarProperty Name="Nº_Albarán" ColumnName="Nº Albarán" />
+                <ScalarProperty Name="Forma_Venta" ColumnName="Forma Venta" />
+                <ScalarProperty Name="Delegación" ColumnName="Delegación" />
+                <ScalarProperty Name="Aplicar_Dto" ColumnName="Aplicar Dto" />
+                <ScalarProperty Name="Total" ColumnName="Total" />
+                <ScalarProperty Name="ImporteRE" ColumnName="ImporteRE" />
+                <ScalarProperty Name="ImporteIVA" ColumnName="ImporteIVA" />
+                <ScalarProperty Name="Base_Imponible" ColumnName="Base Imponible" />
+                <ScalarProperty Name="ImporteDto" ColumnName="ImporteDto" />
+                <ScalarProperty Name="SumaDescuentos" ColumnName="SumaDescuentos" />
+                <ScalarProperty Name="DescuentoPP" ColumnName="DescuentoPP" />
+                <ScalarProperty Name="Descuento" ColumnName="Descuento" />
+                <ScalarProperty Name="DescuentoProducto" ColumnName="DescuentoProducto" />
+                <ScalarProperty Name="DescuentoCliente" ColumnName="DescuentoCliente" />
+                <ScalarProperty Name="Bruto" ColumnName="Bruto" />
+                <ScalarProperty Name="PorcentajeRE" ColumnName="PorcentajeRE" />
+                <ScalarProperty Name="PorcentajeIVA" ColumnName="PorcentajeIVA" />
+                <ScalarProperty Name="IVA" ColumnName="IVA" />
+                <ScalarProperty Name="Precio" ColumnName="Precio" />
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="Texto" ColumnName="Texto" />
+                <ScalarProperty Name="Fecha_Entrega" ColumnName="Fecha Entrega" />
+                <ScalarProperty Name="Almacén" ColumnName="Almacén" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
+                <ScalarProperty Name="TipoLinea" ColumnName="TipoLinea" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="Nº_Orden" ColumnName="Nº Orden" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Clientes">
+            <EntityTypeMapping TypeName="NVModel.Cliente">
+              <MappingFragment StoreEntitySet="Clientes">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="MantenerJunto" ColumnName="MantenerJunto" />
+                <ScalarProperty Name="ServirJunto" ColumnName="ServirJunto" />
+                <ScalarProperty Name="DiasEnServir" ColumnName="DiasEnServir" />
+                <ScalarProperty Name="Operador" ColumnName="Operador" />
+                <ScalarProperty Name="NoComisiona" ColumnName="NoComisiona" />
+                <ScalarProperty Name="Cadena" ColumnName="Cadena" />
+                <ScalarProperty Name="AlbaranValorado" ColumnName="AlbaranValorado" />
+                <ScalarProperty Name="ContactoBonificacion" ColumnName="ContactoBonificacion" />
+                <ScalarProperty Name="ContactoCobro" ColumnName="ContactoCobro" />
+                <ScalarProperty Name="ContactoDefecto" ColumnName="ContactoDefecto" />
+                <ScalarProperty Name="AvisarAntesCobro" ColumnName="AvisarAntesCobro" />
+                <ScalarProperty Name="BloquearPlazosPago" ColumnName="BloquearPlazosPago" />
+                <ScalarProperty Name="Web" ColumnName="Web" />
+                <ScalarProperty Name="RecargoPvp" ColumnName="RecargoPvp" />
+                <ScalarProperty Name="GeneraBonificación" ColumnName="GeneraBonificación" />
+                <ScalarProperty Name="ComentarioPicking" ColumnName="ComentarioPicking" />
+                <ScalarProperty Name="ComentarioRuta" ColumnName="ComentarioRuta" />
+                <ScalarProperty Name="NºCopiasFactura" ColumnName="NºCopiasFactura" />
+                <ScalarProperty Name="NºCopiasAlbarán" ColumnName="NºCopiasAlbarán" />
+                <ScalarProperty Name="Ruta" ColumnName="Ruta" />
+                <ScalarProperty Name="CCC" ColumnName="CCC" />
+                <ScalarProperty Name="PeriodoFacturación" ColumnName="PeriodoFacturación" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="IVA" ColumnName="IVA" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Provincia" ColumnName="Provincia" />
+                <ScalarProperty Name="CIF_NIF" ColumnName="CIF/NIF" />
+                <ScalarProperty Name="CodPostal" ColumnName="CodPostal" />
+                <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="Fax" ColumnName="Fax" />
+                <ScalarProperty Name="Teléfono" ColumnName="Teléfono" />
+                <ScalarProperty Name="Población" ColumnName="Población" />
+                <ScalarProperty Name="Dirección" ColumnName="Dirección" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="ClientePrincipal" ColumnName="ClientePrincipal" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Productos">
+            <EntityTypeMapping TypeName="NVModel.Producto">
+              <MappingFragment StoreEntitySet="Productos">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="NecesitaNumSerie" ColumnName="NecesitaNumSerie" />
+                <ScalarProperty Name="ComentariosFactura" ColumnName="ComentariosFactura" />
+                <ScalarProperty Name="Revisado" ColumnName="Revisado" />
+                <ScalarProperty Name="CantidadMinimaPedido" ColumnName="CantidadMinimaPedido" />
+                <ScalarProperty Name="ProductosPorCaja" ColumnName="ProductosPorCaja" />
+                <ScalarProperty Name="RoturaStockProveedor" ColumnName="RoturaStockProveedor" />
+                <ScalarProperty Name="GestionStockManual" ColumnName="GestionStockManual" />
+                <ScalarProperty Name="ProductoAnterior" ColumnName="ProductoAnterior" />
+                <ScalarProperty Name="Ubicar" ColumnName="Ubicar" />
+                <ScalarProperty Name="VariasOpciones" ColumnName="VariasOpciones" />
+                <ScalarProperty Name="UnidadesPorEtiqueta" ColumnName="UnidadesPorEtiqueta" />
+                <ScalarProperty Name="MateriaPrima" ColumnName="MateriaPrima" />
+                <ScalarProperty Name="NumeroSesiones" ColumnName="NumeroSesiones" />
+                <ScalarProperty Name="FechaFinal" ColumnName="FechaFinal" />
+                <ScalarProperty Name="FechaInicio" ColumnName="FechaInicio" />
+                <ScalarProperty Name="Ficticio" ColumnName="Ficticio" />
+                <ScalarProperty Name="PrecioMedio" ColumnName="PrecioMedio" />
+                <ScalarProperty Name="Foto" ColumnName="Foto" />
+                <ScalarProperty Name="Familia" ColumnName="Familia" />
+                <ScalarProperty Name="UnidadMedida" ColumnName="UnidadMedida" />
+                <ScalarProperty Name="Tamaño" ColumnName="Tamaño" />
+                <ScalarProperty Name="SubGrupo" ColumnName="SubGrupo" />
+                <ScalarProperty Name="Aplicar_Dto" ColumnName="Aplicar Dto" />
+                <ScalarProperty Name="CodBarras" ColumnName="CodBarras" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
+                <ScalarProperty Name="IVA_Repercutido" ColumnName="IVA Repercutido" />
+                <ScalarProperty Name="IVA_Soportado" ColumnName="IVA Soportado" />
+                <ScalarProperty Name="PVP" ColumnName="PVP" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Familias">
+            <EntityTypeMapping TypeName="NVModel.Familia">
+              <MappingFragment StoreEntitySet="Familias">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="C_ComisiónFija" ColumnName="%ComisiónFija" />
+                <ScalarProperty Name="C_DtoMáximoComisión" ColumnName="%DtoMáximoComisión" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="TipoExclusiva" ColumnName="TipoExclusiva" />
+                <ScalarProperty Name="Descripción" ColumnName="Descripción" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="SubGruposProductoes">
+            <EntityTypeMapping TypeName="NVModel.SubGruposProducto">
+              <MappingFragment StoreEntitySet="SubGruposProducto">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Descripción" ColumnName="Descripción" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+        </EntityContainerMapping>
+      </Mapping>
+    </edmx:Mappings>
+  </edmx:Runtime>
+  <!-- EF Designer content (DO NOT EDIT MANUALLY BELOW HERE) -->
+  <Designer xmlns="http://schemas.microsoft.com/ado/2009/11/edmx">
+    <Connection>
+      <DesignerInfoPropertySet>
+        <DesignerProperty Name="MetadataArtifactProcessing" Value="EmbedInOutputAssembly" />
+      </DesignerInfoPropertySet>
+    </Connection>
+    <Options>
+      <DesignerInfoPropertySet>
+        <DesignerProperty Name="ValidateOnBuild" Value="true" />
+        <DesignerProperty Name="EnablePluralization" Value="true" />
+        <DesignerProperty Name="IncludeForeignKeysInModel" Value="true" />
+        <DesignerProperty Name="UseLegacyProvider" Value="false" />
+        <DesignerProperty Name="CodeGenerationStrategy" Value="Ninguno" />
+      </DesignerInfoPropertySet>
+    </Options>
+    <!-- Diagram content (shape and connector positions) -->
+    <Diagrams></Diagrams>
+  </Designer>
+</edmx:Edmx>

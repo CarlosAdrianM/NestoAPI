@@ -1,0 +1,68 @@
+﻿@{
+    ViewBag.Title = "Envíos";
+}
+
+@{
+    var envioId = Request.QueryString["id"];
+    var envioCliente = Request.QueryString["cliente"];
+}
+
+<div id="bodyContainer" ng-app="EnviosApp">
+    <section id="content">
+        <div class="container-fluid">
+            <div class="row">
+                <div class="col-md-12 ng-hide" ng-controller="EnviosCtrl" ng-init="cargarDatos(@envioId, @envioCliente)" ng-show="@envioId">
+                    <div class="panel panel-primary">
+                        <div class="alert alert-info" role="alert" ng-show="working">Cargando...</div>
+
+                        <div class="panel-heading">
+                            <h3 class="panel-title">Datos del pedido</h3>
+                        </div>
+                        <div class="panel-body">
+                            <p ng-hide="dobleCiclo()">Hoy ha salido de nuestras instalaciones un pedido que le será entregado durante el trascurso del próximo día laboral, en la siguiente dirección:</p>
+                            <p ng-show="dobleCiclo()">Acaba de salir de nuestras instalaciones un pedido que le será entregado esta misma tarde antes de las 21.30h, en la siguiente dirección:</p>
+                            <address>
+                                <p><strong>{{envio.Nombre}}</strong></p>
+                                <p>{{envio.Direccion}}</p>
+                                <p>{{envio.CodPostal}} {{envio.Poblacion}}</p>
+                                <p>{{envio.Provincia}}</p>
+                            </address>
+                            <p ng-if="envio.Reembolso">Reembolso: {{(envio.Reembolso | number:2) + " €"}}. Recuerde que la agencia no acepta billetes de más de 50 €.</p>
+                            <p ng-if="envio.Bultos>1">Compruebe que le entreguen {{envio.Bultos}} bultos, por favor.</p>
+                            <p ng-if="envio.Retorno">Le recordamos que debe entregar un paquete de vuelta al repartidor.</p>
+                        </div>
+
+                        <div class="panel-heading">
+                            <h3 class="panel-title">Datos de la agencia</h3>
+                        </div>
+                        <div class="panel-body">
+                            <ul>
+                                <li>Nombre: {{envio.NombrePlaza}}</li>
+                                <li>Teléfono: {{envio.TelefonoPlaza}}</li>
+                                <li>Correo-e: {{envio.EmailPlaza}}</li>
+                            </ul>
+                        </div>
+                        <p></p>
+                        <div class="panel-heading">
+                            <h3 class="panel-title">¿Desea hacernos algún comentario?</h3>
+                        </div>
+                        <div class="panel-body">
+                            <textarea ng-model="envio.Observaciones" class="form-control" rows="3"></textarea>
+                            <br />
+                            <button class="btn btn-default" ng-click="enviarComentarios(envio.Observaciones)">Enviar</button>
+                        </div>
+                    </div>
+                </div>
+                <div ng-hide="@envioId">
+                    <h2 class="has-warning">Debe especificar cliente y envío en la URL</h2>
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+
+@section scripts {
+    @Scripts.Render("~/Scripts/angular.js")
+    @Scripts.Render("~/Scripts/angular-route.js")
+    @Scripts.Render("~/Scripts/app/envios-controller.js")
+}

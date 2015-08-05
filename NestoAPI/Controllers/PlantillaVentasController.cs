@@ -1,0 +1,173 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
+using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Threading.Tasks;
+using System.Web.Http;
+using System.Web.Http.Description;
+using NestoAPI.Models;
+
+namespace NestoAPI.Controllers
+{
+    public class PlantillaVentasController : ApiController
+    {
+        private NVEntities db = new NVEntities();
+                // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
+        public PlantillaVentasController()
+        {
+            db.Configuration.LazyLoadingEnabled = false;
+        }
+
+        // GET: api/PlantillaVentas
+        //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
+        public IQueryable<LineaPlantillaVenta> GetPlantillaVentas(string empresa, string cliente)
+        {
+            Empresa empresaBuscada = db.Empresas.Where(e => e.Número == empresa).SingleOrDefault();
+            if (empresaBuscada.IVA_por_defecto == null)
+            {
+                throw new Exception("Empresa no válida");
+            }
+            
+            List<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
+                .Join(db.Productos.Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { empresa = l.Empresa, producto = l.Producto }, p => new { empresa = p.Empresa, producto = p.Número }, (l, p) => new { l.Empresa, l.Nº_Cliente, l.TipoLinea, l.Producto, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán }) // ojo, paso el estado del producto, no el de la línea
+                .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && l.Estado >= 0) // ojo, es el estado del producto
+                .GroupBy(g => new { g.Producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo })
+                .Select(x => new LineaPlantillaVenta
+                {
+                    producto = x.Key.Producto.Trim(),
+                    texto = x.Key.Nombre.Trim(),
+                    tamanno = x.Key.Tamaño,
+                    unidadMedida = x.Key.UnidadMedida,
+                    familia = x.Key.nombreFamilia.Trim(),
+                    estado = x.Key.Estado,
+                    subGrupo = x.Key.nombreSubGrupo.Trim(),
+                    cantidadVendida = x.Where(c => c.Cantidad>0).Sum(c => c.Cantidad) ?? 0,
+                    cantidadAbonada = -x.Where(c => c.Cantidad < 0).Sum(c => c.Cantidad) ?? 0,
+                    fechaUltimaVenta = x.Max(f => f.Fecha_Albarán)
+                })
+                .ToList();
+
+            
+            return lineasPlantilla.AsQueryable();
+        }
+
+        /*
+        // GET: api/PlantillaVentas/5
+        [ResponseType(typeof(LinPedidoVta))]
+        public async Task<IHttpActionResult> GetLinPedidoVta(string id)
+        {
+            LinPedidoVta linPedidoVta = await db.LinPedidoVtas.FindAsync(id);
+            if (linPedidoVta == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(linPedidoVta);
+        }
+
+        // PUT: api/PlantillaVentas/5
+        [ResponseType(typeof(void))]
+        public async Task<IHttpActionResult> PutLinPedidoVta(string id, LinPedidoVta linPedidoVta)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            if (id != linPedidoVta.Empresa)
+            {
+                return BadRequest();
+            }
+
+            db.Entry(linPedidoVta).State = EntityState.Modified;
+
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!LinPedidoVtaExists(id))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        // POST: api/PlantillaVentas
+        [ResponseType(typeof(LinPedidoVta))]
+        public async Task<IHttpActionResult> PostLinPedidoVta(LinPedidoVta linPedidoVta)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            db.LinPedidoVtas.Add(linPedidoVta);
+
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                if (LinPedidoVtaExists(linPedidoVta.Empresa))
+                {
+                    return Conflict();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return CreatedAtRoute("DefaultApi", new { id = linPedidoVta.Empresa }, linPedidoVta);
+        }
+
+        // DELETE: api/PlantillaVentas/5
+        [ResponseType(typeof(LinPedidoVta))]
+        public async Task<IHttpActionResult> DeleteLinPedidoVta(string id)
+        {
+            LinPedidoVta linPedidoVta = await db.LinPedidoVtas.FindAsync(id);
+            if (linPedidoVta == null)
+            {
+                return NotFound();
+            }
+
+            db.LinPedidoVtas.Remove(linPedidoVta);
+            await db.SaveChangesAsync();
+
+            return Ok(linPedidoVta);
+        }
+        */
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                db.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+
+        private bool LinPedidoVtaExists(int id)
+        {
+            return db.LinPedidoVtas.Count(e => e.Nº_Orden == id) > 0;
+        }
+
+        private void insertaLineaVta(LineaPlantillaVenta linea)
+        {
+
+        }
+    }
+}
