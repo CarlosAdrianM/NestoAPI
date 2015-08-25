@@ -55,6 +55,47 @@ namespace NestoAPI.Controllers
             return lineasPlantilla.AsQueryable();
         }
 
+
+        // GET: api/PlantillaVentasBuscarProducto
+        //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
+        // cliente es únicamente para rellenar el campo Cliente de LineaPlantillaVenta, no filtra por ese campo ni nada
+        [HttpGet]
+        public IQueryable<LineaPlantillaVenta> GetBuscarProducto(string empresa, string filtroProducto)
+        {
+            if (filtroProducto.Length<4)
+            {
+                throw new Exception("El filtro de productos debe tener al menos 4 caracteres de largo");
+            }
+
+            List<LineaPlantillaVenta> lineasPlantilla = db.Productos
+                .Include(f => f.Familia)
+                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0 })
+                .Where(p => p.Empresa == empresa && p.Estado >= 0 && (
+                    p.Número.Contains(filtroProducto) ||
+                    p.Nombre.Contains(filtroProducto) ||
+                    p.nombreFamilia.Contains(filtroProducto) ||
+                    p.nombreSubGrupo.Contains(filtroProducto)
+                ))
+                .GroupBy(g => new { g.Número, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo})
+                .Select(x => new LineaPlantillaVenta
+                {
+                    producto = x.Key.Número.Trim(),
+                    texto = x.Key.Nombre.Trim(),
+                    tamanno = x.Key.Tamaño,
+                    unidadMedida = x.Key.UnidadMedida,
+                    familia = x.Key.nombreFamilia.Trim(),
+                    estado = x.Key.Estado,
+                    subGrupo = x.Key.nombreSubGrupo.Trim(),
+                    cantidadVendida = 0,
+                    cantidadAbonada = 0,
+                    fechaUltimaVenta = DateTime.MinValue
+                })
+                .ToList();
+
+
+            return lineasPlantilla.AsQueryable();
+        }
+
         /*
         // GET: api/PlantillaVentas/5
         [ResponseType(typeof(LinPedidoVta))]

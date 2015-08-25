@@ -68,6 +68,11 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string empresa, string vendedor, string filtro)
         {
+            if (filtro.Length < 4)
+            {
+                throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
+            }
+
             List<ClienteDTO> clientes = db.Clientes
                 .Where(c => (c.Empresa == empresa && c.Vendedor == vendedor && c.Estado >= 0 && 
                 ( 
@@ -115,10 +120,15 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/Clientes
-        public IQueryable<ClienteDTO> GetClientes(string vendedor, string filtro)
+        public IQueryable<ClienteDTO> GetClientes(string empresa, string filtro)
         {
+            if (filtro.Length < 4)
+            {
+                throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
+            }
+
             List<ClienteDTO> clientes = db.Clientes
-                .Where(c => (c.Vendedor == vendedor && c.Estado >= 0 &&
+                .Where(c => (c.Empresa == empresa && c.Estado >= 0 &&
                 (
                     c.Nombre.Contains(filtro) ||
                     c.Dirección.Contains(filtro) ||
@@ -167,6 +177,11 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string filtro)
         {
+
+            if (filtro.Length<4) {
+                throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
+            }
+
             List<ClienteDTO> clientes = db.Clientes
                 .Where(c => (c.Estado >= 0 &&
                 (
