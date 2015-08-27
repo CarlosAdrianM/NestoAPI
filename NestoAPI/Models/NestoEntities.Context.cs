@@ -12,6 +12,8 @@ namespace NestoAPI.Models
     using System;
     using System.Data.Entity;
     using System.Data.Entity.Infrastructure;
+    using System.Data.Entity.Core.Objects;
+    using System.Linq;
     
     public partial class NVEntities : DbContext
     {
@@ -33,5 +35,30 @@ namespace NestoAPI.Models
         public virtual DbSet<Producto> Productos { get; set; }
         public virtual DbSet<Familia> Familias { get; set; }
         public virtual DbSet<SubGruposProducto> SubGruposProductoes { get; set; }
+        public virtual DbSet<CondPagoCliente> CondPagoClientes { get; set; }
+        public virtual DbSet<DescuentosCliente> DescuentosClientes { get; set; }
+        public virtual DbSet<DescuentosProducto> DescuentosProductoes { get; set; }
+        public virtual DbSet<DíasPagoClientes> DíasPagoClientes { get; set; }
+    
+        public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
+        {
+            var empresaParameter = empresa != null ?
+                new ObjectParameter("Empresa", empresa) :
+                new ObjectParameter("Empresa", typeof(string));
+    
+            var clienteParameter = cliente != null ?
+                new ObjectParameter("Cliente", cliente) :
+                new ObjectParameter("Cliente", typeof(string));
+    
+            var contactoParameter = contacto != null ?
+                new ObjectParameter("Contacto", contacto) :
+                new ObjectParameter("Contacto", typeof(string));
+    
+            var fechaInParameter = fechaIn.HasValue ?
+                new ObjectParameter("FechaIn", fechaIn) :
+                new ObjectParameter("FechaIn", typeof(System.DateTime));
+    
+            return ((IObjectContextAdapter)this).ObjectContext.ExecuteFunction("prdAjustarDíasPagoCliente", empresaParameter, clienteParameter, contactoParameter, fechaInParameter, fechaOut);
+        }
     }
 }

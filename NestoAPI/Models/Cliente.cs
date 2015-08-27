@@ -22,6 +22,10 @@ namespace NestoAPI.Models
             this.Clientes12 = new HashSet<Cliente>();
             this.EnviosAgencias = new HashSet<EnviosAgencia>();
             this.LinPedidoVtas = new HashSet<LinPedidoVta>();
+            this.CondPagoClientes = new HashSet<CondPagoCliente>();
+            this.DescuentosClientes = new HashSet<DescuentosCliente>();
+            this.DescuentosProductoes = new HashSet<DescuentosProducto>();
+            this.DíasPagoClientes = new HashSet<DíasPagoClientes>();
         }
     
         public string Empresa { get; set; }
@@ -76,5 +80,9 @@ namespace NestoAPI.Models
         public virtual Empresa Empresa1 { get; set; }
         public virtual ICollection<EnviosAgencia> EnviosAgencias { get; set; }
         public virtual ICollection<LinPedidoVta> LinPedidoVtas { get; set; }
+        public virtual ICollection<CondPagoCliente> CondPagoClientes { get; set; }
+        public virtual ICollection<DescuentosCliente> DescuentosClientes { get; set; }
+        public virtual ICollection<DescuentosProducto> DescuentosProductoes { get; set; }
+        public virtual ICollection<DíasPagoClientes> DíasPagoClientes { get; set; }
     }
 }

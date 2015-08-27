@@ -33,8 +33,8 @@ namespace NestoAPI.Controllers
             }
             
             List<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
-                .Join(db.Productos.Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { empresa = l.Empresa, producto = l.Producto }, p => new { empresa = p.Empresa, producto = p.Número }, (l, p) => new { l.Empresa, l.Nº_Cliente, l.TipoLinea, l.Producto, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán }) // ojo, paso el estado del producto, no el de la línea
-                .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && l.Estado >= 0) // ojo, es el estado del producto
+                .Join(db.Productos.Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { empresa = l.Empresa, producto = l.Producto }, p => new { empresa = p.Empresa, producto = p.Número }, (l, p) => new { l.Empresa, l.Nº_Cliente, l.TipoLinea, l.Producto, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio }) // ojo, paso el estado del producto, no el de la línea
+                .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0) // ojo, es el estado del producto
                 .GroupBy(g => new { g.Producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo })
                 .Select(x => new LineaPlantillaVenta
                 {
@@ -58,7 +58,7 @@ namespace NestoAPI.Controllers
 
         // GET: api/PlantillaVentasBuscarProducto
         //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
-        // cliente es únicamente para rellenar el campo Cliente de LineaPlantillaVenta, no filtra por ese campo ni nada
+        // Devuelve un listado de productos, filtrado por un concepto (para buscar productos que no ha comprado nunca)
         [HttpGet]
         public IQueryable<LineaPlantillaVenta> GetBuscarProducto(string empresa, string filtroProducto)
         {
@@ -69,8 +69,8 @@ namespace NestoAPI.Controllers
 
             List<LineaPlantillaVenta> lineasPlantilla = db.Productos
                 .Include(f => f.Familia)
-                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0 })
-                .Where(p => p.Empresa == empresa && p.Estado >= 0 && (
+                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio })
+                .Where(p => p.Empresa == empresa && p.Estado >= 0 && !p.ficticio && (
                     p.Número.Contains(filtroProducto) ||
                     p.Nombre.Contains(filtroProducto) ||
                     p.nombreFamilia.Contains(filtroProducto) ||
@@ -94,6 +94,34 @@ namespace NestoAPI.Controllers
 
 
             return lineasPlantilla.AsQueryable();
+        }
+
+        // Devuelve las posibles direcciones de entrega del pedido
+        [HttpGet]
+        public IQueryable<DireccionesEntregaClienteDTO> GetDireccionesEntrega(string empresa, string clienteDirecciones)
+        {
+            List<DireccionesEntregaClienteDTO> clientes = db.Clientes
+                .Where(c => (c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones))
+                .Select(clienteEncontrado => new DireccionesEntregaClienteDTO
+                {
+                    clientePrincipal = clienteEncontrado.ClientePrincipal,
+                    codigoPostal = clienteEncontrado.CodPostal.Trim(),
+                    comentarioPicking = clienteEncontrado.ComentarioPicking.Trim(),
+                    comentarioRuta = clienteEncontrado.ComentarioRuta.Trim(),
+                    comentarios = clienteEncontrado.Comentarios,
+                    contacto = clienteEncontrado.Contacto.Trim(),
+                    direccion = clienteEncontrado.Dirección.Trim(),
+                    estado = clienteEncontrado.Estado,
+                    iva = clienteEncontrado.IVA.Trim(),
+                    mantenerJunto = clienteEncontrado.MantenerJunto,
+                    noComisiona = clienteEncontrado.NoComisiona,
+                    nombre = clienteEncontrado.Nombre.Trim(),
+                    poblacion = clienteEncontrado.Población.Trim(),
+                    provincia = clienteEncontrado.Provincia.Trim(),
+                    servirJunto = clienteEncontrado.ServirJunto
+                }).ToList();
+
+            return clientes.AsQueryable();
         }
 
         /*

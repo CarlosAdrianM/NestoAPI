@@ -197,6 +197,18 @@
     <Compile Include="Models\Cliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\CondPagoCliente.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\DescuentosCliente.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\DescuentosProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\DíasPagoClientes.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\Empresa.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

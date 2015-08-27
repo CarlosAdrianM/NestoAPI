@@ -227,9 +227,7 @@ namespace NestoAPI.Controllers
 
             return clientes.AsQueryable();
         }
-
-
-
+        
         // GET: api/Clientes/5
         [ResponseType(typeof(ClienteDTO))]
         public async Task<IHttpActionResult> GetCliente(string empresa, string cliente, string contacto)

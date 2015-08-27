@@ -17,6 +17,7 @@ namespace NestoAPI.Models
         public Producto()
         {
             this.Productos1 = new HashSet<Producto>();
+            this.DescuentosProductoes = new HashSet<DescuentosProducto>();
         }
     
         public string Empresa { get; set; }
@@ -60,5 +61,6 @@ namespace NestoAPI.Models
         public virtual Producto Producto1 { get; set; }
         public virtual Familia Familia1 { get; set; }
         public virtual SubGruposProducto SubGruposProducto { get; set; }
+        public virtual ICollection<DescuentosProducto> DescuentosProductoes { get; set; }
     }
 }

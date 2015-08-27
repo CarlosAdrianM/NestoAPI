@@ -88,6 +88,69 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="CondPagoClientes">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº Cliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="FormaPago" />
+            <PropertyRef Name="PlazosPago" />
+            <PropertyRef Name="ImporteMínimo" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="FormaPago" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="PlazosPago" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="ImporteMínimo" Type="money" Nullable="false" />
+        </EntityType>
+        <EntityType Name="DescuentosCliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº Cliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="ImporteMínimo" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="ImporteMínimo" Type="money" Nullable="false" />
+          <Property Name="Descuento" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="DescuentosProducto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº Orden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nº Orden" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Nº Producto" Type="char" MaxLength="15" />
+          <Property Name="GrupoProducto" Type="char" MaxLength="3" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="NºProveedor" Type="char" MaxLength="10" />
+          <Property Name="ContactoProveedor" Type="char" MaxLength="3" />
+          <Property Name="CantidadMínima" Type="smallint" Nullable="false" />
+          <Property Name="Descuento" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="Precio" Type="money" />
+          <Property Name="Familia" Type="char" MaxLength="10" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="DíasPagoClientes">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Cliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Cliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="smallint" Nullable="false" />
+        </EntityType>
         <EntityType Name="Empresas">
           <Key>
             <PropertyRef Name="Número" />
@@ -194,7 +257,7 @@
           <Property Name="Retorno" Type="smallint" Nullable="false" />
           <Property Name="Nombre" Type="varchar" MaxLength="80" />
           <Property Name="Direccion" Type="varchar" MaxLength="80" />
-          <Property Name="CodPostal" Type="varchar" MaxLength="5" />
+          <Property Name="CodPostal" Type="nvarchar" MaxLength="20" />
           <Property Name="Poblacion" Type="varchar" MaxLength="80" />
           <Property Name="Provincia" Type="varchar" MaxLength="80" />
           <Property Name="Pais" Type="int" Nullable="false" />
@@ -424,6 +487,146 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_CondPagoClientes_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="CondPagoClientes" Type="Self.CondPagoClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CondPagoClientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CondPagoClientes_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="CondPagoClientes" Type="Self.CondPagoClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CondPagoClientes">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosCliente_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="DescuentosCliente" Type="Self.DescuentosCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DescuentosCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosCliente_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="DescuentosCliente" Type="Self.DescuentosCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosCliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="DescuentosProducto" Type="Self.DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="DescuentosProducto" Type="Self.DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Familias">
+          <End Role="Familias" Type="Self.Familias" Multiplicity="0..1" />
+          <End Role="DescuentosProducto" Type="Self.DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Familias">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="0..1" />
+          <End Role="DescuentosProducto" Type="Self.DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DíasPagoClientes_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="DíasPagoClientes" Type="Self.DíasPagoClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DíasPagoClientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DíasPagoClientes_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="DíasPagoClientes" Type="Self.DíasPagoClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DíasPagoClientes">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Empresas_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="0..1" />
           <End Role="Empresas1" Type="Self.Empresas" Multiplicity="*" />
@@ -604,9 +807,20 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Function Name="prdAjustarDíasPagoCliente" Aggregate="false" BuiltIn="false" NiladicFunction="false" IsComposable="false" ParameterTypeSemantics="AllowImplicitConversion" Schema="dbo">
+          <Parameter Name="Empresa" Type="char" Mode="In" />
+          <Parameter Name="Cliente" Type="char" Mode="In" />
+          <Parameter Name="Contacto" Type="char" Mode="In" />
+          <Parameter Name="FechaIn" Type="datetime" Mode="In" />
+          <Parameter Name="FechaOut" Type="datetime" Mode="InOut" />
+        </Function>
         <EntityContainer Name="NVModelStoreContainer">
           <EntitySet Name="CabPedidoVta" EntityType="Self.CabPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Clientes" EntityType="Self.Clientes" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="CondPagoClientes" EntityType="Self.CondPagoClientes" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="DescuentosCliente" EntityType="Self.DescuentosCliente" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="DescuentosProducto" EntityType="Self.DescuentosProducto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="DíasPagoClientes" EntityType="Self.DíasPagoClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Empresas" EntityType="Self.Empresas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EnviosAgencia" EntityType="Self.EnviosAgencia" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Familias" EntityType="Self.Familias" Schema="dbo" store:Type="Tables" />
@@ -632,6 +846,46 @@
           <AssociationSet Name="FK_Clientes_Empresas" Association="Self.FK_Clientes_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="Clientes" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CondPagoClientes_Clientes" Association="Self.FK_CondPagoClientes_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="CondPagoClientes" EntitySet="CondPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CondPagoClientes_Empresas" Association="Self.FK_CondPagoClientes_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="CondPagoClientes" EntitySet="CondPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosCliente_Clientes" Association="Self.FK_DescuentosCliente_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="DescuentosCliente" EntitySet="DescuentosCliente" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosCliente_Empresas" Association="Self.FK_DescuentosCliente_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="DescuentosCliente" EntitySet="DescuentosCliente" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Clientes" Association="Self.FK_DescuentosProducto_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Empresas" Association="Self.FK_DescuentosProducto_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Familias" Association="Self.FK_DescuentosProducto_Familias">
+            <End Role="Familias" EntitySet="Familias" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Productos" Association="Self.FK_DescuentosProducto_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DíasPagoClientes_Clientes" Association="Self.FK_DíasPagoClientes_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="DíasPagoClientes" EntitySet="DíasPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DíasPagoClientes_Empresas" Association="Self.FK_DíasPagoClientes_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="DíasPagoClientes" EntitySet="DíasPagoClientes" />
           </AssociationSet>
           <AssociationSet Name="FK_Empresas_Empresas" Association="Self.FK_Empresas_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -708,7 +962,7 @@
           <Property Name="Retorno" Type="Int16" Nullable="false" />
           <Property Name="Nombre" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
           <Property Name="Direccion" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
-          <Property Name="CodPostal" Type="String" MaxLength="5" FixedLength="false" Unicode="false" />
+          <Property Name="CodPostal" Type="String" MaxLength="20" FixedLength="false" Unicode="true" />
           <Property Name="Poblacion" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
           <Property Name="Provincia" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
           <Property Name="Telefono" Type="String" MaxLength="9" FixedLength="false" Unicode="false" />
@@ -814,6 +1068,57 @@
             <End Role="SubGruposProducto" EntitySet="SubGruposProductoes" />
             <End Role="Producto" EntitySet="Productos" />
           </AssociationSet>
+          <EntitySet Name="CondPagoClientes" EntityType="NVModel.CondPagoCliente" />
+          <EntitySet Name="DescuentosClientes" EntityType="NVModel.DescuentosCliente" />
+          <EntitySet Name="DescuentosProductoes" EntityType="NVModel.DescuentosProducto" />
+          <EntitySet Name="DíasPagoClientes" EntityType="NVModel.DíasPagoClientes" />
+          <AssociationSet Name="FK_CondPagoClientes_Clientes" Association="NVModel.FK_CondPagoClientes_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="CondPagoCliente" EntitySet="CondPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosCliente_Clientes" Association="NVModel.FK_DescuentosCliente_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="DescuentosCliente" EntitySet="DescuentosClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Clientes" Association="NVModel.FK_DescuentosProducto_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DíasPagoClientes_Clientes" Association="NVModel.FK_DíasPagoClientes_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="DíasPagoClientes" EntitySet="DíasPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CondPagoClientes_Empresas" Association="NVModel.FK_CondPagoClientes_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="CondPagoCliente" EntitySet="CondPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosCliente_Empresas" Association="NVModel.FK_DescuentosCliente_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="DescuentosCliente" EntitySet="DescuentosClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Empresas" Association="NVModel.FK_DescuentosProducto_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Familias" Association="NVModel.FK_DescuentosProducto_Familias">
+            <End Role="Familia" EntitySet="Familias" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Productos" Association="NVModel.FK_DescuentosProducto_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DíasPagoClientes_Empresas" Association="NVModel.FK_DíasPagoClientes_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="DíasPagoClientes" EntitySet="DíasPagoClientes" />
+          </AssociationSet>
+          <FunctionImport Name="prdAjustarDíasPagoCliente">
+            <Parameter Name="Empresa" Mode="In" Type="String" />
+            <Parameter Name="Cliente" Mode="In" Type="String" />
+            <Parameter Name="Contacto" Mode="In" Type="String" />
+            <Parameter Name="FechaIn" Mode="In" Type="DateTime" />
+            <Parameter Name="FechaOut" Mode="InOut" Type="DateTime" />
+          </FunctionImport>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -909,6 +1214,10 @@
           <NavigationProperty Name="Clientes" Relationship="NVModel.FK_Clientes_Empresas" FromRole="Empresa" ToRole="Cliente" />
           <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_Empresas" FromRole="Empresa" ToRole="Producto" />
           <NavigationProperty Name="Familias" Relationship="NVModel.FK_Familias_Empresas" FromRole="Empresa" ToRole="Familia" />
+          <NavigationProperty Name="CondPagoClientes" Relationship="NVModel.FK_CondPagoClientes_Empresas" FromRole="Empresa" ToRole="CondPagoCliente" />
+          <NavigationProperty Name="DescuentosClientes" Relationship="NVModel.FK_DescuentosCliente_Empresas" FromRole="Empresa" ToRole="DescuentosCliente" />
+          <NavigationProperty Name="DescuentosProductoes" Relationship="NVModel.FK_DescuentosProducto_Empresas" FromRole="Empresa" ToRole="DescuentosProducto" />
+          <NavigationProperty Name="DíasPagoClientes" Relationship="NVModel.FK_DíasPagoClientes_Empresas" FromRole="Empresa" ToRole="DíasPagoClientes" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -1121,6 +1430,10 @@
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Clientes_Empresas" FromRole="Cliente" ToRole="Empresa" />
           <NavigationProperty Name="EnviosAgencias" Relationship="NVModel.FK_EnviosAgencia_Clientes" FromRole="Cliente" ToRole="EnviosAgencia" />
           <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_Clientes" FromRole="Cliente" ToRole="LinPedidoVta" />
+          <NavigationProperty Name="CondPagoClientes" Relationship="NVModel.FK_CondPagoClientes_Clientes" FromRole="Cliente" ToRole="CondPagoCliente" />
+          <NavigationProperty Name="DescuentosClientes" Relationship="NVModel.FK_DescuentosCliente_Clientes" FromRole="Cliente" ToRole="DescuentosCliente" />
+          <NavigationProperty Name="DescuentosProductoes" Relationship="NVModel.FK_DescuentosProducto_Clientes" FromRole="Cliente" ToRole="DescuentosProducto" />
+          <NavigationProperty Name="DíasPagoClientes" Relationship="NVModel.FK_DíasPagoClientes_Clientes" FromRole="Cliente" ToRole="DíasPagoClientes" />
         </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -1275,6 +1588,7 @@
           <NavigationProperty Name="Producto1" Relationship="NVModel.FK_Productos_Productos" FromRole="Producto1" ToRole="Producto" />
           <NavigationProperty Name="Familia1" Relationship="NVModel.FK_Productos_Familias" FromRole="Producto" ToRole="Familia" />
           <NavigationProperty Name="SubGruposProducto" Relationship="NVModel.FK_Productos_SubGruposProducto" FromRole="Producto" ToRole="SubGruposProducto" />
+          <NavigationProperty Name="DescuentosProductoes" Relationship="NVModel.FK_DescuentosProducto_Productos" FromRole="Producto" ToRole="DescuentosProducto" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -1319,6 +1633,7 @@
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Familias_Empresas" FromRole="Familia" ToRole="Empresa" />
           <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_Familias" FromRole="Familia" ToRole="LinPedidoVta" />
           <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_Familias" FromRole="Familia" ToRole="Producto" />
+          <NavigationProperty Name="DescuentosProductoes" Relationship="NVModel.FK_DescuentosProducto_Familias" FromRole="Familia" ToRole="DescuentosProducto" />
         </EntityType>
         <EntityType Name="SubGruposProducto">
           <Key>
@@ -1404,6 +1719,219 @@
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Grupo" />
               <PropertyRef Name="SubGrupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="CondPagoCliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº_Cliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="FormaPago" />
+            <PropertyRef Name="PlazosPago" />
+            <PropertyRef Name="ImporteMínimo" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Cliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaPago" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PlazosPago" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ImporteMínimo" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_CondPagoClientes_Clientes" FromRole="CondPagoCliente" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CondPagoClientes_Empresas" FromRole="CondPagoCliente" ToRole="Empresa" />
+        </EntityType>
+        <EntityType Name="DescuentosCliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº_Cliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="ImporteMínimo" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Cliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ImporteMínimo" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Descuento" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_DescuentosCliente_Clientes" FromRole="DescuentosCliente" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_DescuentosCliente_Empresas" FromRole="DescuentosCliente" ToRole="Empresa" />
+        </EntityType>
+        <EntityType Name="DescuentosProducto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº_Orden" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Orden" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Nº_Producto" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="GrupoProducto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºProveedor" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoProveedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CantidadMínima" Type="Int16" Nullable="false" />
+          <Property Name="Descuento" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="Precio" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="Familia" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_DescuentosProducto_Clientes" FromRole="DescuentosProducto" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_DescuentosProducto_Empresas" FromRole="DescuentosProducto" ToRole="Empresa" />
+          <NavigationProperty Name="Familia1" Relationship="NVModel.FK_DescuentosProducto_Familias" FromRole="DescuentosProducto" ToRole="Familia" />
+          <NavigationProperty Name="Producto" Relationship="NVModel.FK_DescuentosProducto_Productos" FromRole="DescuentosProducto" ToRole="Producto" />
+        </EntityType>
+        <EntityType Name="DíasPagoClientes">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Cliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Cliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="Int16" Nullable="false" />
+          <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_DíasPagoClientes_Clientes" FromRole="DíasPagoClientes" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_DíasPagoClientes_Empresas" FromRole="DíasPagoClientes" ToRole="Empresa" />
+        </EntityType>
+        <Association Name="FK_CondPagoClientes_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.CondPagoCliente" Role="CondPagoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CondPagoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosCliente_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.DescuentosCliente" Role="DescuentosCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DescuentosCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.DescuentosProducto" Role="DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DíasPagoClientes_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.DíasPagoClientes" Role="DíasPagoClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DíasPagoClientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CondPagoClientes_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.CondPagoCliente" Role="CondPagoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CondPagoCliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosCliente_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.DescuentosCliente" Role="DescuentosCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosCliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.DescuentosProducto" Role="DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Familias">
+          <End Type="NVModel.Familia" Role="Familia" Multiplicity="0..1" />
+          <End Type="NVModel.DescuentosProducto" Role="DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Familia">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="0..1" />
+          <End Type="NVModel.DescuentosProducto" Role="DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DíasPagoClientes_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.DíasPagoClientes" Role="DíasPagoClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DíasPagoClientes">
+              <PropertyRef Name="Empresa" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -1755,6 +2283,62 @@
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
+          <EntitySetMapping Name="CondPagoClientes">
+            <EntityTypeMapping TypeName="NVModel.CondPagoCliente">
+              <MappingFragment StoreEntitySet="CondPagoClientes">
+                <ScalarProperty Name="ImporteMínimo" ColumnName="ImporteMínimo" />
+                <ScalarProperty Name="PlazosPago" ColumnName="PlazosPago" />
+                <ScalarProperty Name="FormaPago" ColumnName="FormaPago" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="DescuentosClientes">
+            <EntityTypeMapping TypeName="NVModel.DescuentosCliente">
+              <MappingFragment StoreEntitySet="DescuentosCliente">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Descuento" ColumnName="Descuento" />
+                <ScalarProperty Name="ImporteMínimo" ColumnName="ImporteMínimo" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="DescuentosProductoes">
+            <EntityTypeMapping TypeName="NVModel.DescuentosProducto">
+              <MappingFragment StoreEntitySet="DescuentosProducto">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Familia" ColumnName="Familia" />
+                <ScalarProperty Name="Precio" ColumnName="Precio" />
+                <ScalarProperty Name="Descuento" ColumnName="Descuento" />
+                <ScalarProperty Name="CantidadMínima" ColumnName="CantidadMínima" />
+                <ScalarProperty Name="ContactoProveedor" ColumnName="ContactoProveedor" />
+                <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="GrupoProducto" ColumnName="GrupoProducto" />
+                <ScalarProperty Name="Nº_Producto" ColumnName="Nº Producto" />
+                <ScalarProperty Name="Nº_Orden" ColumnName="Nº Orden" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="DíasPagoClientes">
+            <EntityTypeMapping TypeName="NVModel.DíasPagoClientes">
+              <MappingFragment StoreEntitySet="DíasPagoClientes">
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Cliente" ColumnName="Cliente" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <FunctionImportMapping FunctionImportName="prdAjustarDíasPagoCliente" FunctionName="NVModel.Store.prdAjustarDíasPagoCliente" />
         </EntityContainerMapping>
       </Mapping>
     </edmx:Mappings>

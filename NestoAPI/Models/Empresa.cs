@@ -22,6 +22,10 @@ namespace NestoAPI.Models
             this.Clientes = new HashSet<Cliente>();
             this.Productos = new HashSet<Producto>();
             this.Familias = new HashSet<Familia>();
+            this.CondPagoClientes = new HashSet<CondPagoCliente>();
+            this.DescuentosClientes = new HashSet<DescuentosCliente>();
+            this.DescuentosProductoes = new HashSet<DescuentosProducto>();
+            this.DíasPagoClientes = new HashSet<DíasPagoClientes>();
         }
     
         public string Número { get; set; }
@@ -115,5 +119,9 @@ namespace NestoAPI.Models
         public virtual ICollection<Cliente> Clientes { get; set; }
         public virtual ICollection<Producto> Productos { get; set; }
         public virtual ICollection<Familia> Familias { get; set; }
+        public virtual ICollection<CondPagoCliente> CondPagoClientes { get; set; }
+        public virtual ICollection<DescuentosCliente> DescuentosClientes { get; set; }
+        public virtual ICollection<DescuentosProducto> DescuentosProductoes { get; set; }
+        public virtual ICollection<DíasPagoClientes> DíasPagoClientes { get; set; }
     }
 }
