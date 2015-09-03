@@ -221,7 +221,7 @@
     <Compile Include="Models\LinPedidoVta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
-    <Compile Include="Models\NestoDto.cs" />
+    <Compile Include="Models\NestoDTO.cs" />
     <Compile Include="Models\NestoEntities.Context.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>

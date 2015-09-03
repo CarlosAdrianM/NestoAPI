@@ -100,6 +100,10 @@ namespace NestoAPI.Controllers
         [HttpGet]
         public IQueryable<DireccionesEntregaClienteDTO> GetDireccionesEntrega(string empresa, string clienteDirecciones)
         {
+            Cliente clienteDireccionPorDefecto = db.Clientes
+                .Where(c => (c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones && c.ClientePrincipal))
+                .SingleOrDefault();
+            
             List<DireccionesEntregaClienteDTO> clientes = db.Clientes
                 .Where(c => (c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones))
                 .Select(clienteEncontrado => new DireccionesEntregaClienteDTO
@@ -111,6 +115,7 @@ namespace NestoAPI.Controllers
                     comentarios = clienteEncontrado.Comentarios,
                     contacto = clienteEncontrado.Contacto.Trim(),
                     direccion = clienteEncontrado.Dirección.Trim(),
+                    esDireccionPorDefecto = clienteDireccionPorDefecto.Contacto == clienteEncontrado.Contacto,
                     estado = clienteEncontrado.Estado,
                     iva = clienteEncontrado.IVA.Trim(),
                     mantenerJunto = clienteEncontrado.MantenerJunto,
