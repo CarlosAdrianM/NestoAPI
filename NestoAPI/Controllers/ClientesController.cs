@@ -68,7 +68,7 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string empresa, string vendedor, string filtro)
         {
-            if (filtro.Length < 4)
+            if ((filtro.Length < 4) && (!filtro.All(c => char.IsDigit(c))))
             {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }
@@ -76,6 +76,7 @@ namespace NestoAPI.Controllers
             List<ClienteDTO> clientes = db.Clientes
                 .Where(c => (c.Empresa == empresa && c.Vendedor == vendedor && c.Estado >= 0 && 
                 ( 
+                    c.Nº_Cliente.Equals(filtro) ||
                     c.Nombre.Contains(filtro) ||
                     c.Dirección.Contains(filtro) ||
                     c.Teléfono.Contains(filtro) ||
@@ -122,7 +123,7 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string empresa, string filtro)
         {
-            if (filtro.Length < 4)
+            if (filtro.Length < 4 && !filtro.All(c => char.IsDigit(c)))
             {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }
@@ -130,6 +131,7 @@ namespace NestoAPI.Controllers
             List<ClienteDTO> clientes = db.Clientes
                 .Where(c => (c.Empresa == empresa && c.Estado >= 0 &&
                 (
+                    c.Nº_Cliente.Equals(filtro) ||
                     c.Nombre.Contains(filtro) ||
                     c.Dirección.Contains(filtro) ||
                     c.Teléfono.Contains(filtro) ||

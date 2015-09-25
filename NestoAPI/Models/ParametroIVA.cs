@@ -12,18 +12,20 @@ namespace NestoAPI.Models
     using System;
     using System.Collections.Generic;
     
-    public partial class CondPagoCliente
+    public partial class ParametroIVA
     {
         public string Empresa { get; set; }
-        public string Nº_Cliente { get; set; }
-        public string Contacto { get; set; }
-        public string FormaPago { get; set; }
-        public string PlazosPago { get; set; }
-        public decimal ImporteMínimo { get; set; }
+        public string IVA_Producto { get; set; }
+        public string IVA_Cliente_Prov { get; set; }
+        public Nullable<decimal> C__IVA { get; set; }
+        public Nullable<decimal> C__RE { get; set; }
+        public string CtaRepercutido { get; set; }
+        public string CtaSoportado { get; set; }
+        public string CtaRecargoRepercutido { get; set; }
+        public string CtaRecargoSoportado { get; set; }
+        public string Usuario { get; set; }
+        public System.DateTime Fecha_Modificación { get; set; }
     
-        public virtual Cliente Cliente { get; set; }
         public virtual Empresa Empresa1 { get; set; }
-        public virtual FormaPago FormasPago { get; set; }
-        public virtual PlazoPago PlazosPago1 { get; set; }
     }
 }

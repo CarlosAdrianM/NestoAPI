@@ -12,18 +12,15 @@ namespace NestoAPI.Models
     using System;
     using System.Collections.Generic;
     
-    public partial class CondPagoCliente
+    public partial class ParametroUsuario
     {
         public string Empresa { get; set; }
-        public string Nº_Cliente { get; set; }
-        public string Contacto { get; set; }
-        public string FormaPago { get; set; }
-        public string PlazosPago { get; set; }
-        public decimal ImporteMínimo { get; set; }
+        public string Clave { get; set; }
+        public string Usuario { get; set; }
+        public string Valor { get; set; }
+        public string Usuario2 { get; set; }
+        public System.DateTime Fecha_Modificación { get; set; }
     
-        public virtual Cliente Cliente { get; set; }
         public virtual Empresa Empresa1 { get; set; }
-        public virtual FormaPago FormasPago { get; set; }
-        public virtual PlazoPago PlazosPago1 { get; set; }
     }
 }

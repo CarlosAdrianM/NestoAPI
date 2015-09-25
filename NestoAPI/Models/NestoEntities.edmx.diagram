@@ -45,6 +45,21 @@
         <AssociationConnector Association="NVModel.FK_DescuentosProducto_Familias" />
         <AssociationConnector Association="NVModel.FK_DescuentosProducto_Productos" />
         <AssociationConnector Association="NVModel.FK_DíasPagoClientes_Empresas" />
+        <EntityTypeShape EntityType="NVModel.ContadorGlobal" Width="1.5" PointX="8.625" PointY="0.75" />
+        <EntityTypeShape EntityType="NVModel.FormaPago" Width="1.5" PointX="10.875" PointY="40.5" />
+        <EntityTypeShape EntityType="NVModel.PlazoPago" Width="1.5" PointX="0.75" PointY="39.875" />
+        <AssociationConnector Association="NVModel.FK_CondPagoClientes_FormasPago" />
+        <AssociationConnector Association="NVModel.FK_CondPagoClientes_PlazosPago" />
+        <AssociationConnector Association="NVModel.FK_Empresas_FormasPago" />
+        <AssociationConnector Association="NVModel.FK_Empresas_FormasPago1" />
+        <AssociationConnector Association="NVModel.FK_Empresas_FormasPago2" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlazosPago" />
+        <AssociationConnector Association="NVModel.FK_FormasPago_Empresas" />
+        <AssociationConnector Association="NVModel.FK_PlazosPago_Empresas" />
+        <EntityTypeShape EntityType="NVModel.ParametroIVA" Width="1.5" PointX="3" PointY="57.25" />
+        <AssociationConnector Association="NVModel.FK_ParámetrosIVA_Empresas" />
+        <EntityTypeShape EntityType="NVModel.ParametroUsuario" Width="1.5" PointX="3" PointY="21.875" />
+        <AssociationConnector Association="NVModel.FK_ParámetrosUsuario_Empresas" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

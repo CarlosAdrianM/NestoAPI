@@ -33,9 +33,9 @@ namespace NestoAPI.Controllers
             }
             
             List<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
-                .Join(db.Productos.Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { empresa = l.Empresa, producto = l.Producto }, p => new { empresa = p.Empresa, producto = p.Número }, (l, p) => new { l.Empresa, l.Nº_Cliente, l.TipoLinea, l.Producto, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio }) // ojo, paso el estado del producto, no el de la línea
+                .Join(db.Productos.Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { empresa = l.Empresa, producto = l.Producto }, p => new { empresa = p.Empresa, producto = p.Número }, (l, p) => new { l.Empresa, l.Nº_Cliente, l.TipoLinea, l.Producto, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP }) // ojo, paso el estado del producto, no el de la línea
                 .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0) // ojo, es el estado del producto
-                .GroupBy(g => new { g.Producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo })
+                .GroupBy(g => new { g.Producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.IVA_Repercutido, g.PVP })
                 .Select(x => new LineaPlantillaVenta
                 {
                     producto = x.Key.Producto.Trim(),
@@ -47,7 +47,9 @@ namespace NestoAPI.Controllers
                     subGrupo = x.Key.nombreSubGrupo.Trim(),
                     cantidadVendida = x.Where(c => c.Cantidad>0).Sum(c => c.Cantidad) ?? 0,
                     cantidadAbonada = -x.Where(c => c.Cantidad < 0).Sum(c => c.Cantidad) ?? 0,
-                    fechaUltimaVenta = x.Max(f => f.Fecha_Albarán)
+                    fechaUltimaVenta = x.Max(f => f.Fecha_Albarán),
+                    iva = x.Key.IVA_Repercutido,
+                    precio = (decimal)x.Key.PVP
                 })
                 .ToList();
 
@@ -62,9 +64,9 @@ namespace NestoAPI.Controllers
         [HttpGet]
         public IQueryable<LineaPlantillaVenta> GetBuscarProducto(string empresa, string filtroProducto)
         {
-            if (filtroProducto.Length<4)
+            if (filtroProducto.Length<3)
             {
-                throw new Exception("El filtro de productos debe tener al menos 4 caracteres de largo");
+                throw new Exception("El filtro de productos debe tener al menos 3 caracteres de largo");
             }
 
             List<LineaPlantillaVenta> lineasPlantilla = db.Productos
