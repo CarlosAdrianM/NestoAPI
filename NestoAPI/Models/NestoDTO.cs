@@ -58,6 +58,12 @@ namespace NestoAPI.Models
         public decimal noComisiona { get; set; }
         public bool servirJunto { get; set; }
         public bool mantenerJunto { get; set; }
+        public string vendedor { get; set; }
+        public string periodoFacturacion { get; set; }
+        public string ccc { get; set; }
+        public string ruta { get; set; }
+        public string formaPago { get; set; }
+        public string plazosPago { get; set; }
     }
 
     public class LineaPlantillaVenta
@@ -90,6 +96,7 @@ namespace NestoAPI.Models
         public System.DateTime fechaEntrega { get; set; }
         public string formaVenta { get; set; }
         public string iva { get; set; }
+        public int oferta { get; set; }
         public decimal precio { get; set; } // era Nullable<decimal> 
         public string producto { get; set; }
         public string texto { get; set; }
@@ -131,5 +138,13 @@ namespace NestoAPI.Models
 
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
     }
-    
+
+    public class UltimasVentasProductoClienteDTO
+    {
+        public DateTime fecha { get; set; }
+        public short cantidad { get; set; }
+        public decimal precioBruto { get; set; }
+        public decimal descuentos { get; set; }
+        public decimal precioNeto { get; set; }
+    }
 }

@@ -95,6 +95,14 @@ namespace NestoAPI.Controllers
                 contador.Pedidos = pedido.numero;
             }
 
+            // Carlos 28/09/15: ajustamos el primer vencimiento a los plazos de pago y a los días de pago
+            DateTime vencimientoPedido;
+            System.Data.Entity.Core.Objects.ObjectParameter primerVencimiento = new System.Data.Entity.Core.Objects.ObjectParameter("FechaOut", typeof(DateTime));
+            PlazoPago plazoPago = db.PlazosPago.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.plazosPago);
+            vencimientoPedido = pedido.fecha.Value.AddDays(plazoPago.DíasPrimerPlazo);
+            vencimientoPedido = vencimientoPedido.AddMonths(plazoPago.MesesPrimerPlazo);
+            db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
+
             CabPedidoVta cabecera = new CabPedidoVta {
                 Empresa = pedido.empresa,
                 Número = pedido.numero,
@@ -103,7 +111,7 @@ namespace NestoAPI.Controllers
                 Fecha = pedido.fecha,
                 Forma_Pago = pedido.formaPago,
                 PlazosPago = pedido.plazosPago,
-                Primer_Vencimiento = pedido.primerVencimiento,
+                Primer_Vencimiento = (DateTime)primerVencimiento.Value,
                 IVA = pedido.iva,
                 Vendedor = pedido.vendedor,
                 Periodo_Facturacion = pedido.periodoFacturacion,
@@ -125,23 +133,29 @@ namespace NestoAPI.Controllers
             ParametrosUsuarioController parametrosUsuarioCtrl = new ParametrosUsuarioController();
             DescuentosCliente dtoCliente = db.DescuentosClientes.OrderBy(d => d.ImporteMínimo).FirstOrDefault(d => d.Empresa == pedido.empresa && d.Nº_Cliente == pedido.cliente && d.Contacto == pedido.contacto);
             descuentoCliente = dtoCliente != null ?  dtoCliente.Descuento : 0;
-            PlazoPago plazoPago = db.PlazosPago.SingleOrDefault(f => f.Empresa == pedido.empresa && f.Número == pedido.plazosPago);
             descuentoPP = plazoPago.DtoProntoPago;
             
 
             // Declaramos las variables que se van a utilizar en el bucle de insertar líneas
             LinPedidoVta linPedido;
             string tipoExclusiva;
-            decimal baseImponible, bruto, importeDescuento, importeIVA, importeRE, descuentoProducto, sumaDescuentos, porcentajeRE;
+            decimal baseImponible, bruto, importeDescuento, importeIVA, importeRE, descuentoProducto, sumaDescuentos, porcentajeRE, precio;
             byte porcentajeIVA;
             Producto producto;
             ParametroIVA parametroIva;
+
+
             
             // Bucle de insertar líneas
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido) {
-                producto = db.Productos.Where(p => p.Empresa == pedido.empresa && p.Número == linea.producto).SingleOrDefault();
+                producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == linea.producto).SingleOrDefault();
+                descuentoProducto = 0;
+                precio = (decimal)producto.PVP;
+
                 bruto = linea.cantidad * linea.precio;
-                descuentoProducto = linea.aplicarDescuento ? calcularDescuentoProducto(producto, pedido.cliente, pedido.contacto) : 0;
+                if (linea.aplicarDescuento) {
+                    calcularDescuentoProducto(ref precio, ref descuentoProducto, producto, pedido.cliente, pedido.contacto, linea.cantidad);
+                }
                 sumaDescuentos = (1 - (1 - (descuentoCliente)) * (1 - (descuentoProducto)) * (1 - (linea.descuento)) * (1 - (descuentoPP)));
                 baseImponible = bruto * (1 - sumaDescuentos);
                 parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva && p.IVA_Producto == producto.IVA_Repercutido);
@@ -151,7 +165,7 @@ namespace NestoAPI.Controllers
                 importeRE = baseImponible * porcentajeRE;
                 importeDescuento = bruto * sumaDescuentos;
 
-                tipoExclusiva = "NIG"; // calcular
+                tipoExclusiva = producto.Familia1.TipoExclusiva; 
 
                 linPedido = new LinPedidoVta
                 {
@@ -198,7 +212,8 @@ namespace NestoAPI.Controllers
                 db.LinPedidoVtas.Add(linPedido);
             }
 
-            
+            // Carlos 07/10/15:
+            // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
 
 
             
@@ -253,9 +268,62 @@ namespace NestoAPI.Controllers
         }
 
         // Calcula el descuento que lleva un producto determinado para un cliente determinado
-        private short calcularDescuentoProducto(Producto producto, string cliente, string contacto)
+        private void calcularDescuentoProducto(ref decimal precioCalculado, ref decimal descuentoCalculado, Producto producto, string cliente, string contacto, short cantidad)
         {
-            return 0;
+            DescuentosProducto dtoProducto;
+
+            descuentoCalculado = 0;
+            precioCalculado = Decimal.MaxValue;
+
+            // AQUÍ CALCULA PRECIOS, NO DESCUENTOS
+            //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     ' and contacto='0  ' and [nº producto]= '29487' and empresa='1  ' AND CANTIDADMÍNIMA<=1
+            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Contacto == contacto && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad);
+            if (dtoProducto != null && dtoProducto.Precio < precioCalculado)
+            {
+                precioCalculado = (decimal)dtoProducto.Precio;
+            }
+            //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     '  and [nº producto]= '29487' and empresa='1  ' AND CantidadMínima<=1
+            //select recargopvp from clientes with (nolock) where empresa='1  ' and [nº cliente]='15191     ' and contacto='0  '
+            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     ' and contacto='0  ' order by cantidadminima desc
+            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     '  order by cantidadminima desc
+            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente] is null and [nºproveedor] is null order by cantidadminima desc
+
+            // CALCULA DESCUENTOS
+            //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente] is null and nºproveedor is null and familia is null
+            //select * from descuentosproducto where empresa='1  ' and grupoproducto='PEL' and [nº cliente] is null and  nºproveedor is null and familia is null
+            //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente]='15191     ' and nºproveedor is null and familia is null
+            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.Familia == null);
+            if (dtoProducto != null && dtoProducto.Descuento>descuentoCalculado)
+            {
+                descuentoCalculado = dtoProducto.Descuento;
+            }
+
+            //select * from descuentosproducto where empresa='1  ' and grupoproducto='PEL' and [nº cliente]='15191     ' and nºproveedor is null and familia is null
+
+            // AGAIN AND AGAIN AND AGAIN...
+            //select isnull(max(descuento),0) from descuentosproducto where [nº cliente]='15191     ' and empresa='1  ' and grupoproducto='PEL' and cantidadmínima<=1 and familia is null and nºproveedor is null
+            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Familia == null && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.GrupoProducto == producto.Grupo);
+            if (dtoProducto != null && dtoProducto.Descuento > descuentoCalculado)
+            {
+                descuentoCalculado = dtoProducto.Descuento;
+            }
+            //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and nºproveedor is null and grupoproducto is null
+            //select isnull(max(descuento),0) from descuentosproducto where [nº cliente]='15191     ' and empresa='1  ' and familia='Lisap     ' and cantidadmínima<=1 and nºproveedor is null  and grupoproducto is null
+            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Familia == producto.Familia && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.GrupoProducto == null);
+            if (dtoProducto != null && dtoProducto.Descuento > descuentoCalculado)
+            {
+                descuentoCalculado = dtoProducto.Descuento;
+            }
+            //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and grupoproducto='PEL' and nºproveedor is null
+
+            if (precioCalculado < producto.PVP * (1 - descuentoCalculado))
+            {
+                descuentoCalculado = 0;
+            } else
+            {
+                precioCalculado = (decimal)producto.PVP;
+            }
+            
         }
     }
 }

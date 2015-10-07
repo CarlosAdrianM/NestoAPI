@@ -16,7 +16,8 @@ namespace NestoAPI.Controllers
     public class PlantillaVentasController : ApiController
     {
         private NVEntities db = new NVEntities();
-                // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
+        
+        // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
         public PlantillaVentasController()
         {
             db.Configuration.LazyLoadingEnabled = false;
@@ -125,11 +126,47 @@ namespace NestoAPI.Controllers
                     nombre = clienteEncontrado.Nombre.Trim(),
                     poblacion = clienteEncontrado.Población.Trim(),
                     provincia = clienteEncontrado.Provincia.Trim(),
-                    servirJunto = clienteEncontrado.ServirJunto
+                    servirJunto = clienteEncontrado.ServirJunto,
+                    vendedor = clienteEncontrado.Vendedor.Trim(),
+                    periodoFacturacion = clienteEncontrado.PeriodoFacturación.Trim(),
+                    ccc = clienteEncontrado.CCC.Trim(),
+                    ruta = clienteEncontrado.Ruta.Trim(),
+                    formaPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).FormaPago,
+                    plazosPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).PlazosPago
                 }).ToList();
+
+            
 
             return clientes.AsQueryable();
         }
+
+        [HttpGet]
+        public IQueryable<UltimasVentasProductoClienteDTO> GetUltimasVentasProductoCliente(string empresa, string clienteUltimasVentas, string productoUltimasVentas)
+        {
+            Empresa empresaBuscada = db.Empresas.Where(e => e.Número == empresa).SingleOrDefault();
+            if (empresaBuscada.IVA_por_defecto == null)
+            {
+                throw new Exception("Empresa no válida");
+            }
+
+            List<UltimasVentasProductoClienteDTO> ventas = db.LinPedidoVtas
+                .Where(c => ((c.Empresa == empresa || c.Empresa == empresaBuscada.IVA_por_defecto) && c.Nº_Cliente == clienteUltimasVentas && c.Producto == productoUltimasVentas && c.Fecha_Albarán != null))
+                .Select(ventasEncontradas=> new UltimasVentasProductoClienteDTO
+                {
+                    fecha = (DateTime)ventasEncontradas.Fecha_Albarán,
+                    cantidad = (short)ventasEncontradas.Cantidad,
+                    precioBruto = (decimal)(ventasEncontradas.Bruto / ventasEncontradas.Cantidad),
+                    descuentos = ventasEncontradas.SumaDescuentos,
+                    precioNeto = (decimal)(ventasEncontradas.Base_Imponible / ventasEncontradas.Cantidad)
+
+                })
+                .OrderByDescending(f => f.fecha)
+                .Take(10)
+                .ToList();
+            
+            return ventas.AsQueryable();
+        }
+
 
         /*
         // GET: api/PlantillaVentas/5
