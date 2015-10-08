@@ -44,6 +44,7 @@ namespace NestoAPI.Models
         public virtual DbSet<PlazoPago> PlazosPago { get; set; }
         public virtual DbSet<ParametroIVA> ParametrosIVA { get; set; }
         public virtual DbSet<ParametroUsuario> ParametrosUsuario { get; set; }
+        public virtual DbSet<ExtractoProducto> ExtractosProducto { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

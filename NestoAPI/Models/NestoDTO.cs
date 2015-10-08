@@ -83,6 +83,9 @@ namespace NestoAPI.Models
         public Nullable<System.DateTime> fechaUltimaVenta { get; set; }
         public string iva { get; set; }
         public decimal precio { get; set; }
+        public bool aplicarDescuento { get; set; }
+        public short stock { get; set; }
+        public short cantidadDisponible { get; set; }
     }
 
     public class LineaPedidoVentaDTO
@@ -137,6 +140,12 @@ namespace NestoAPI.Models
         public string usuario { get; set; }
 
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
+    }
+
+    public class StockProductoDTO
+    {
+        public int stock { get; set; }
+        public int cantidadDisponible { get; set; }
     }
 
     public class UltimasVentasProductoClienteDTO

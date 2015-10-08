@@ -30,6 +30,7 @@ namespace NestoAPI.Models
             this.PlazosPagoes = new HashSet<PlazoPago>();
             this.ParámetrosIVA = new HashSet<ParametroIVA>();
             this.ParámetrosUsuario = new HashSet<ParametroUsuario>();
+            this.ExtractoProductoes = new HashSet<ExtractoProducto>();
         }
     
         public string Número { get; set; }
@@ -135,5 +136,6 @@ namespace NestoAPI.Models
         public virtual ICollection<PlazoPago> PlazosPagoes { get; set; }
         public virtual ICollection<ParametroIVA> ParámetrosIVA { get; set; }
         public virtual ICollection<ParametroUsuario> ParámetrosUsuario { get; set; }
+        public virtual ICollection<ExtractoProducto> ExtractoProductoes { get; set; }
     }
 }

@@ -26,6 +26,7 @@ namespace NestoAPI.Models
             this.DescuentosClientes = new HashSet<DescuentosCliente>();
             this.DescuentosProductoes = new HashSet<DescuentosProducto>();
             this.DíasPagoClientes = new HashSet<DíasPagoClientes>();
+            this.ExtractoProductoes = new HashSet<ExtractoProducto>();
         }
     
         public string Empresa { get; set; }
@@ -84,5 +85,6 @@ namespace NestoAPI.Models
         public virtual ICollection<DescuentosCliente> DescuentosClientes { get; set; }
         public virtual ICollection<DescuentosProducto> DescuentosProductoes { get; set; }
         public virtual ICollection<DíasPagoClientes> DíasPagoClientes { get; set; }
+        public virtual ICollection<ExtractoProducto> ExtractoProductoes { get; set; }
     }
 }

@@ -87,10 +87,13 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+
+
+
             // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales
+            ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
             if (pedido.numero == 0)
             {
-                ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
                 pedido.numero = contador.Pedidos + 1;
                 contador.Pedidos = pedido.numero;
             }
@@ -123,6 +126,8 @@ namespace NestoAPI.Controllers
                 NoComisiona = pedido.noComisiona,
                 MantenerJunto = pedido.mantenerJunto,
                 ServirJunto = pedido.servirJunto,
+                ComentarioPicking = pedido.comentarioPicking,
+                Comentarios = pedido.comentarios,
                 Usuario = pedido.usuario
             };
 
@@ -130,11 +135,16 @@ namespace NestoAPI.Controllers
 
             // Calculamos las variables que se pueden corresponden a la cabecera
             decimal descuentoCliente, descuentoPP;
-            ParametrosUsuarioController parametrosUsuarioCtrl = new ParametrosUsuarioController();
+            //ParametrosUsuarioController parametrosUsuarioCtrl = new ParametrosUsuarioController();
+            ParametroUsuario parametroUsuario;
             DescuentosCliente dtoCliente = db.DescuentosClientes.OrderBy(d => d.ImporteMínimo).FirstOrDefault(d => d.Empresa == pedido.empresa && d.Nº_Cliente == pedido.cliente && d.Contacto == pedido.contacto);
             descuentoCliente = dtoCliente != null ?  dtoCliente.Descuento : 0;
             descuentoPP = plazoPago.DtoProntoPago;
-            
+
+            // Guardamos el parámetro de pedido, para que al abrir la ventana el usuario vea el pedido
+            string usuarioParametro = pedido.usuario.Substring(pedido.usuario.IndexOf("\\")+1);
+            parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "UltNumPedidoVta");
+            parametroUsuario.Valor = pedido.numero.ToString();
 
             // Declaramos las variables que se van a utilizar en el bucle de insertar líneas
             LinPedidoVta linPedido;
@@ -143,6 +153,7 @@ namespace NestoAPI.Controllers
             byte porcentajeIVA;
             Producto producto;
             ParametroIVA parametroIva;
+            int maxNumeroOferta = 0;
 
 
             
@@ -150,12 +161,15 @@ namespace NestoAPI.Controllers
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido) {
                 producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == linea.producto).SingleOrDefault();
                 descuentoProducto = 0;
-                precio = (decimal)producto.PVP;
-
-                bruto = linea.cantidad * linea.precio;
-                if (linea.aplicarDescuento) {
-                    calcularDescuentoProducto(ref precio, ref descuentoProducto, producto, pedido.cliente, pedido.contacto, linea.cantidad);
+                
+                if (linea.oferta == 0)
+                {
+                    precio = linea.precio; //para poder pasar el precio por referencia
+                    calcularDescuentoProducto(ref precio, ref descuentoProducto, producto, pedido.cliente, pedido.contacto, linea.cantidad, linea.aplicarDescuento);
+                    linea.precio = precio; 
                 }
+                
+                bruto = linea.cantidad * linea.precio;
                 sumaDescuentos = (1 - (1 - (descuentoCliente)) * (1 - (descuentoProducto)) * (1 - (linea.descuento)) * (1 - (descuentoPP)));
                 baseImponible = bruto * (1 - sumaDescuentos);
                 parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva && p.IVA_Producto == producto.IVA_Repercutido);
@@ -166,6 +180,15 @@ namespace NestoAPI.Controllers
                 importeDescuento = bruto * sumaDescuentos;
 
                 tipoExclusiva = producto.Familia1.TipoExclusiva; 
+
+                if (linea.oferta != 0)
+                {
+                    if (linea.oferta > maxNumeroOferta)
+                    {
+                        maxNumeroOferta = linea.oferta;
+                    }
+                    linea.oferta += contador.Oferta;
+                }
 
                 linPedido = new LinPedidoVta
                 {
@@ -206,11 +229,15 @@ namespace NestoAPI.Controllers
                     SubGrupo = producto.SubGrupo,
                     Familia = producto.Familia,
                     TipoExclusiva = tipoExclusiva,
-                    Picking = 0
+                    Picking = 0,
+                    NºOferta = linea.oferta
                 };
 
                 db.LinPedidoVtas.Add(linPedido);
             }
+
+            // Actualizamos el contador de ofertas
+            contador.Oferta += maxNumeroOferta;
 
             // Carlos 07/10/15:
             // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
@@ -268,12 +295,12 @@ namespace NestoAPI.Controllers
         }
 
         // Calcula el descuento que lleva un producto determinado para un cliente determinado
-        private void calcularDescuentoProducto(ref decimal precioCalculado, ref decimal descuentoCalculado, Producto producto, string cliente, string contacto, short cantidad)
+        private void calcularDescuentoProducto(ref decimal precioCalculado, ref decimal descuentoCalculado, Producto producto, string cliente, string contacto, short cantidad, bool aplicarDescuento)
         {
             DescuentosProducto dtoProducto;
 
             descuentoCalculado = 0;
-            precioCalculado = Decimal.MaxValue;
+            precioCalculado = (decimal)producto.PVP;
 
             // AQUÍ CALCULA PRECIOS, NO DESCUENTOS
             //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     ' and contacto='0  ' and [nº producto]= '29487' and empresa='1  ' AND CANTIDADMÍNIMA<=1
@@ -287,6 +314,18 @@ namespace NestoAPI.Controllers
             //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     ' and contacto='0  ' order by cantidadminima desc
             //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     '  order by cantidadminima desc
             //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente] is null and [nºproveedor] is null order by cantidadminima desc
+            dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad && d.Cliente == null && d.NºProveedor == null);
+            if (dtoProducto != null && dtoProducto.Precio < precioCalculado)
+            {
+                precioCalculado = (decimal)dtoProducto.Precio;
+            }
+
+
+            // Si no tiene el aplicar descuento marcado, solo calcula precios especiales, pero no descuentos
+            if (!aplicarDescuento)
+            {
+                return;
+            }
 
             // CALCULA DESCUENTOS
             //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente] is null and nºproveedor is null and familia is null

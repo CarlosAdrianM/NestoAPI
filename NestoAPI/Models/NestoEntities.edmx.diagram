@@ -60,6 +60,10 @@
         <AssociationConnector Association="NVModel.FK_ParámetrosIVA_Empresas" />
         <EntityTypeShape EntityType="NVModel.ParametroUsuario" Width="1.5" PointX="3" PointY="21.875" />
         <AssociationConnector Association="NVModel.FK_ParámetrosUsuario_Empresas" />
+        <EntityTypeShape EntityType="NVModel.ExtractoProducto" Width="1.5" PointX="11.5" PointY="44.75" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProducto_Clientes" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProducto_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProducto_Productos" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

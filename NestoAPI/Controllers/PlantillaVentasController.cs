@@ -34,9 +34,9 @@ namespace NestoAPI.Controllers
             }
             
             List<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
-                .Join(db.Productos.Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { empresa = l.Empresa, producto = l.Producto }, p => new { empresa = p.Empresa, producto = p.Número }, (l, p) => new { l.Empresa, l.Nº_Cliente, l.TipoLinea, l.Producto, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP }) // ojo, paso el estado del producto, no el de la línea
+                .Join(db.Productos.Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { empresa = l.Empresa, producto = l.Producto }, p => new { empresa = p.Empresa, producto = p.Número }, (l, p) => new { l.Empresa, l.Nº_Cliente, l.TipoLinea, l.Producto, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = p.Aplicar_Dto }) // ojo, paso el estado del producto, no el de la línea
                 .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0) // ojo, es el estado del producto
-                .GroupBy(g => new { g.Producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.IVA_Repercutido, g.PVP })
+                .GroupBy(g => new { g.Producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.IVA_Repercutido, g.PVP, g.aplicarDescuento })
                 .Select(x => new LineaPlantillaVenta
                 {
                     producto = x.Key.Producto.Trim(),
@@ -50,7 +50,8 @@ namespace NestoAPI.Controllers
                     cantidadAbonada = -x.Where(c => c.Cantidad < 0).Sum(c => c.Cantidad) ?? 0,
                     fechaUltimaVenta = x.Max(f => f.Fecha_Albarán),
                     iva = x.Key.IVA_Repercutido,
-                    precio = (decimal)x.Key.PVP
+                    precio = (decimal)x.Key.PVP, 
+                    aplicarDescuento = x.Key.aplicarDescuento
                 })
                 .ToList();
 
@@ -72,14 +73,14 @@ namespace NestoAPI.Controllers
 
             List<LineaPlantillaVenta> lineasPlantilla = db.Productos
                 .Include(f => f.Familia)
-                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio })
+                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio, aplicarDescuento = p.Aplicar_Dto })
                 .Where(p => p.Empresa == empresa && p.Estado >= 0 && !p.ficticio && (
                     p.Número.Contains(filtroProducto) ||
                     p.Nombre.Contains(filtroProducto) ||
                     p.nombreFamilia.Contains(filtroProducto) ||
                     p.nombreSubGrupo.Contains(filtroProducto)
                 ))
-                .GroupBy(g => new { g.Número, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo})
+                .GroupBy(g => new { g.Número, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.aplicarDescuento })
                 .Select(x => new LineaPlantillaVenta
                 {
                     producto = x.Key.Número.Trim(),
@@ -91,7 +92,8 @@ namespace NestoAPI.Controllers
                     subGrupo = x.Key.nombreSubGrupo.Trim(),
                     cantidadVendida = 0,
                     cantidadAbonada = 0,
-                    fechaUltimaVenta = DateTime.MinValue
+                    fechaUltimaVenta = DateTime.MinValue,
+                    aplicarDescuento = x.Key.aplicarDescuento
                 })
                 .ToList();
 
@@ -165,6 +167,28 @@ namespace NestoAPI.Controllers
                 .ToList();
             
             return ventas.AsQueryable();
+        }
+
+
+
+
+        [HttpGet]
+        [ResponseType(typeof(StockProductoDTO))]
+        public async Task<IHttpActionResult> GetCargarStock(string empresa, string almacen, string productoStock)
+        {
+            Empresa empresaBuscada = db.Empresas.Where(e => e.Número == empresa).SingleOrDefault();
+            if (empresaBuscada.IVA_por_defecto == null)
+            {
+                throw new Exception("Empresa no válida");
+            }
+
+
+            StockProductoDTO datosStock = new StockProductoDTO();
+            datosStock.stock = db.ExtractosProducto.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Número == productoStock).Sum(e => e.Cantidad);
+            int? cantidadReservada =db.LinPedidoVtas.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Producto == productoStock && e.Estado == 1).Sum(e => e.Cantidad);
+            datosStock.cantidadDisponible = cantidadReservada == null ? datosStock.stock : datosStock.stock - (int)cantidadReservada;
+
+            return Ok(datosStock);
         }
 
 
