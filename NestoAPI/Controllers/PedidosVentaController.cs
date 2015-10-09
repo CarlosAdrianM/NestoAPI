@@ -161,25 +161,26 @@ namespace NestoAPI.Controllers
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido) {
                 producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == linea.producto).SingleOrDefault();
                 descuentoProducto = 0;
-                
-                if (linea.oferta == 0)
+
+                // Solo calculamos los descuentos si no lleva otra oferta o precio especial aplicado
+                if (linea.oferta == 0 && linea.precio >= producto.PVP && linea.descuento == 0)
                 {
                     precio = linea.precio; //para poder pasar el precio por referencia
                     calcularDescuentoProducto(ref precio, ref descuentoProducto, producto, pedido.cliente, pedido.contacto, linea.cantidad, linea.aplicarDescuento);
-                    linea.precio = precio; 
+                    linea.precio = precio;
                 }
                 
                 bruto = linea.cantidad * linea.precio;
                 sumaDescuentos = (1 - (1 - (descuentoCliente)) * (1 - (descuentoProducto)) * (1 - (linea.descuento)) * (1 - (descuentoPP)));
                 baseImponible = bruto * (1 - sumaDescuentos);
                 parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva && p.IVA_Producto == producto.IVA_Repercutido);
-                porcentajeIVA = (byte)parametroIva.C__IVA; 
+                porcentajeIVA = (byte)parametroIva.C__IVA;
                 porcentajeRE = (decimal)parametroIva.C__RE / 100;
                 importeIVA = baseImponible * porcentajeIVA / 100;
                 importeRE = baseImponible * porcentajeRE;
                 importeDescuento = bruto * sumaDescuentos;
 
-                tipoExclusiva = producto.Familia1.TipoExclusiva; 
+                tipoExclusiva = producto.Familia1.TipoExclusiva;
 
                 if (linea.oferta != 0)
                 {

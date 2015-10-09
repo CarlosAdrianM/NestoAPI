@@ -83,6 +83,7 @@ namespace NestoAPI.Models
         public Nullable<System.DateTime> fechaUltimaVenta { get; set; }
         public string iva { get; set; }
         public decimal precio { get; set; }
+        public decimal descuento { get; set; }
         public bool aplicarDescuento { get; set; }
         public short stock { get; set; }
         public short cantidadDisponible { get; set; }
