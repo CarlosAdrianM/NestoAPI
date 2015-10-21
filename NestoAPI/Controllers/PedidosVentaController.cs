@@ -87,17 +87,6 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-
-
-
-            // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales
-            ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
-            if (pedido.numero == 0)
-            {
-                pedido.numero = contador.Pedidos + 1;
-                contador.Pedidos = pedido.numero;
-            }
-
             // Carlos 28/09/15: ajustamos el primer vencimiento a los plazos de pago y a los días de pago
             DateTime vencimientoPedido;
             System.Data.Entity.Core.Objects.ObjectParameter primerVencimiento = new System.Data.Entity.Core.Objects.ObjectParameter("FechaOut", typeof(DateTime));
@@ -106,6 +95,16 @@ namespace NestoAPI.Controllers
             vencimientoPedido = vencimientoPedido.AddMonths(plazoPago.MesesPrimerPlazo);
             db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
 
+            //Aquí va el IF !esAmpliacion
+            
+            // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales
+            ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
+            if (pedido.numero == 0)
+            {
+                pedido.numero = contador.Pedidos + 1;
+                contador.Pedidos = pedido.numero;
+            }
+                        
             CabPedidoVta cabecera = new CabPedidoVta {
                 Empresa = pedido.empresa,
                 Número = pedido.numero,
@@ -257,7 +256,14 @@ namespace NestoAPI.Controllers
                 }
                 else
                 {
-                    throw e;
+                    string message = e.Message;
+                    Exception recorremosExcepcion = e;
+                    while (recorremosExcepcion.InnerException != null)
+                    {
+                        message = recorremosExcepcion.Message+ "\n" + recorremosExcepcion.InnerException.Message;
+                        recorremosExcepcion = recorremosExcepcion.InnerException;
+                    }
+                    throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
                 }
             }
 

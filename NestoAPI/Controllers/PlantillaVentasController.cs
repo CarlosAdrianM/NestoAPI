@@ -34,12 +34,12 @@ namespace NestoAPI.Controllers
             }
             
             List<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
-                .Join(db.Productos.Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { empresa = l.Empresa, producto = l.Producto }, p => new { empresa = p.Empresa, producto = p.Número }, (l, p) => new { l.Empresa, l.Nº_Cliente, l.TipoLinea, l.Producto, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = p.Aplicar_Dto }) // ojo, paso el estado del producto, no el de la línea
+                .Join(db.Productos.Where(p => p.Empresa == empresa).Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { producto = l.Producto }, p => new { producto = p.Número }, (l, p) => new { p.Empresa, l.Nº_Cliente, l.TipoLinea, producto = p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = p.Aplicar_Dto }) // ojo, paso el estado del producto, no el de la línea
                 .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0) // ojo, es el estado del producto
-                .GroupBy(g => new { g.Producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.IVA_Repercutido, g.PVP, g.aplicarDescuento })
+                .GroupBy(g => new { g.producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.IVA_Repercutido, g.PVP, g.aplicarDescuento })
                 .Select(x => new LineaPlantillaVenta
                 {
-                    producto = x.Key.Producto.Trim(),
+                    producto = x.Key.producto.Trim(),
                     texto = x.Key.Nombre.Trim(),
                     tamanno = x.Key.Tamaño,
                     unidadMedida = x.Key.UnidadMedida,

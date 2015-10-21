@@ -64,6 +64,12 @@
         <AssociationConnector Association="NVModel.FK_ExtractoProducto_Clientes" />
         <AssociationConnector Association="NVModel.FK_ExtractoProducto_Empresas" />
         <AssociationConnector Association="NVModel.FK_ExtractoProducto_Productos" />
+        <EntityTypeShape EntityType="NVModel.CabRemesaPago" Width="1.5" PointX="4.125" PointY="0.75" />
+        <EntityTypeShape EntityType="NVModel.ExtractoProveedor" Width="1.5" PointX="14.875" PointY="39.25" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProveedor_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProveedor_Empresas1" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProveedor_FormasPago" />
+        <EntityTypeShape EntityType="NVModel.Banco" Width="1.5" PointX="3.375" PointY="4.75" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
