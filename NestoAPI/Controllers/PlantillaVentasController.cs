@@ -73,14 +73,14 @@ namespace NestoAPI.Controllers
 
             List<LineaPlantillaVenta> lineasPlantilla = db.Productos
                 .Include(f => f.Familia)
-                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio, aplicarDescuento = p.Aplicar_Dto, precio = p.PVP })
+                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio, aplicarDescuento = p.Aplicar_Dto, precio = p.PVP, iva = p.IVA_Repercutido })
                 .Where(p => p.Empresa == empresa && p.Estado >= 0 && !p.ficticio && (
                     p.Número.Contains(filtroProducto) ||
                     p.Nombre.Contains(filtroProducto) ||
                     p.nombreFamilia.Contains(filtroProducto) ||
                     p.nombreSubGrupo.Contains(filtroProducto)
                 ))
-                .GroupBy(g => new { g.Número, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.aplicarDescuento, g.precio })
+                .GroupBy(g => new { g.Número, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.aplicarDescuento, g.precio, g.iva })
                 .Select(x => new LineaPlantillaVenta
                 {
                     producto = x.Key.Número.Trim(),
@@ -93,7 +93,8 @@ namespace NestoAPI.Controllers
                     cantidadVendida = 0,
                     cantidadAbonada = 0,
                     fechaUltimaVenta = DateTime.MinValue,
-                    aplicarDescuento = x.Key.aplicarDescuento, 
+                    aplicarDescuento = x.Key.aplicarDescuento,
+                    iva = x.Key.iva,
                     precio = (decimal)x.Key.precio
                 })
                 .ToList();

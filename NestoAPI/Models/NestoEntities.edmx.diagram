@@ -70,6 +70,23 @@
         <AssociationConnector Association="NVModel.FK_ExtractoProveedor_Empresas1" />
         <AssociationConnector Association="NVModel.FK_ExtractoProveedor_FormasPago" />
         <EntityTypeShape EntityType="NVModel.Banco" Width="1.5" PointX="3.375" PointY="4.75" />
+        <EntityTypeShape EntityType="NVModel.CCCProveedor" Width="1.5" PointX="5.375" PointY="4.75" />
+        <EntityTypeShape EntityType="NVModel.PersonaContactoProveedor" Width="1.5" PointX="11.75" PointY="35.375" />
+        <EntityTypeShape EntityType="NVModel.Proveedor" Width="1.5" PointX="8.5" PointY="25.5" />
+        <AssociationConnector Association="NVModel.FK_Proveedores_CCCProveedores" />
+        <AssociationConnector Association="NVModel.FK_DescuentosProducto_Proveedores" />
+        <AssociationConnector Association="NVModel.FK_Empresas_Proveedores" />
+        <AssociationConnector Association="NVModel.FK_PersonasContactoProveedor_Empresas" />
+        <AssociationConnector Association="NVModel.FK_Proveedores_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProducto_Proveedores" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProveedor_Proveedores" />
+        <AssociationConnector Association="NVModel.FK_PersonasContactoProveedor_Proveedores" />
+        <EntityTypeShape EntityType="NVModel.CabFacturaCmp" Width="1.5" PointX="15" PointY="33.125" />
+        <AssociationConnector Association="NVModel.FK_CabFacturaCmp_Empresas" />
+        <AssociationConnector Association="NVModel.FK_CabFacturaCmp_Empresas1" />
+        <AssociationConnector Association="NVModel.FK_CabFacturaCmp_FormasPago" />
+        <AssociationConnector Association="NVModel.FK_CabFacturaCmp_PlazosPago" />
+        <AssociationConnector Association="NVModel.FK_CabFacturaCmp_Proveedores" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

@@ -37,6 +37,28 @@
           <Property Name="CuentaGastosRecibo" Type="char" MaxLength="10" />
           <Property Name="ImporteComisiónMáxImpagado" Type="money" Nullable="false" />
         </EntityType>
+        <EntityType Name="CabFacturaCmp">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
+          <Property Name="NºProveedor" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="FormaPago" Type="char" MaxLength="3" />
+          <Property Name="PlazosPago" Type="char" MaxLength="10" />
+          <Property Name="IVA" Type="char" MaxLength="3" />
+          <Property Name="Espejo" Type="bit" />
+          <Property Name="PrimerVencimiento" Type="datetime" />
+          <Property Name="NºDocumentoProv" Type="char" MaxLength="20" />
+          <Property Name="Origen" Type="char" MaxLength="3" />
+          <Property Name="% IRPF" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="FechaProveedor" Type="datetime" />
+          <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="CabPedidoVta">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -84,6 +106,25 @@
           <Property Name="Banco" Type="char" MaxLength="3" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="CCCProveedores">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NºProveedor" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NºProveedor" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Entidad" Type="char" MaxLength="4" Nullable="false" />
+          <Property Name="Oficina" Type="char" MaxLength="4" Nullable="false" />
+          <Property Name="DC" Type="char" MaxLength="2" Nullable="false" />
+          <Property Name="Nº Cuenta" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
         <EntityType Name="Clientes">
           <Key>
@@ -528,6 +569,29 @@
           <Property Name="Usuario2" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="PersonasContactoProveedor">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NºProveedor" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NºProveedor" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nombre" Type="char" MaxLength="50" />
+          <Property Name="Cargo" Type="smallint" Nullable="false" />
+          <Property Name="Comentarios" Type="text" />
+          <Property Name="Fax" Type="char" MaxLength="29" />
+          <Property Name="Teléfono" Type="char" MaxLength="29" />
+          <Property Name="CorreoElectrónico" Type="char" MaxLength="50" />
+          <Property Name="EnviarBoletin" Type="bit" Nullable="false" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="Saludo" Type="char" MaxLength="15" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="PlazosPago">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -588,6 +652,39 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="Proveedores">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="Contacto" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="ProveedorPrincipal" Type="bit" Nullable="false" />
+          <Property Name="Nombre" Type="char" MaxLength="50" />
+          <Property Name="Dirección" Type="char" MaxLength="50" />
+          <Property Name="Población" Type="char" MaxLength="50" />
+          <Property Name="Teléfono" Type="char" MaxLength="29" />
+          <Property Name="Fax" Type="char" MaxLength="29" />
+          <Property Name="Comentarios" Type="text" />
+          <Property Name="CodPostal" Type="char" MaxLength="5" />
+          <Property Name="CIF/NIF" Type="char" MaxLength="9" />
+          <Property Name="Provincia" Type="char" MaxLength="50" />
+          <Property Name="Estado" Type="smallint" />
+          <Property Name="IVA" Type="char" MaxLength="3" />
+          <Property Name="Grupo" Type="char" MaxLength="3" />
+          <Property Name="PeriodoFacturación" Type="char" MaxLength="3" />
+          <Property Name="CCC" Type="char" MaxLength="3" />
+          <Property Name="Web" Type="char" MaxLength="50" />
+          <Property Name="DíasEnServir" Type="tinyint" Nullable="false" />
+          <Property Name="PedidoValorado" Type="bit" Nullable="false" />
+          <Property Name="% IRPF" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="ImporteMínimoPedido" Type="money" Nullable="false" />
+          <Property Name="ControlPendientes" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="SubGruposProducto">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -601,6 +698,74 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <Association Name="FK_CabFacturaCmp_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="CabFacturaCmp" Type="Self.CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaCmp_Empresas1">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="0..1" />
+          <End Role="CabFacturaCmp" Type="Self.CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Origen" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaCmp_FormasPago">
+          <End Role="FormasPago" Type="Self.FormasPago" Multiplicity="0..1" />
+          <End Role="CabFacturaCmp" Type="Self.CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaCmp_PlazosPago">
+          <End Role="PlazosPago" Type="Self.PlazosPago" Multiplicity="0..1" />
+          <End Role="CabFacturaCmp" Type="Self.CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlazosPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="PlazosPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaCmp_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="0..1" />
+          <End Role="CabFacturaCmp" Type="Self.CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
           <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="*" />
@@ -817,6 +982,22 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_DescuentosProducto_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="0..1" />
+          <End Role="DescuentosProducto" Type="Self.DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="ContactoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_DíasPagoClientes_Clientes">
           <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
           <End Role="DíasPagoClientes" Type="Self.DíasPagoClientes" Multiplicity="*" />
@@ -913,6 +1094,22 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Empresas_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="ProveedorIRPF" />
+              <PropertyRef Name="ContactoProveedorIRPF" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_EnviosAgencia_Clientes">
           <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
           <End Role="EnviosAgencia" Type="Self.EnviosAgencia" Multiplicity="*" />
@@ -983,6 +1180,22 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_ExtractoProducto_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="0..1" />
+          <End Role="ExtractoProducto" Type="Self.ExtractoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="ExtractoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="ContactoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_ExtractoProveedor_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="ExtractoProveedor" Type="Self.ExtractoProveedor" Multiplicity="*" />
@@ -1018,6 +1231,22 @@
             <Dependent Role="ExtractoProveedor">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="FormaPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoProveedor_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="1" />
+          <End Role="ExtractoProveedor" Type="Self.ExtractoProveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="ExtractoProveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -1141,6 +1370,34 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_PersonasContactoProveedor_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="PersonasContactoProveedor" Type="Self.PersonasContactoProveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PersonasContactoProveedor">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PersonasContactoProveedor_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="1" />
+          <End Role="PersonasContactoProveedor" Type="Self.PersonasContactoProveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PersonasContactoProveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_PlazosPago_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="PlazosPago" Type="Self.PlazosPago" Multiplicity="*" />
@@ -1209,6 +1466,36 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Proveedores_CCCProveedores">
+          <End Role="CCCProveedores" Type="Self.CCCProveedores" Multiplicity="0..1" />
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CCCProveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="CCC" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Proveedores_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Function Name="prdAjustarDíasPagoCliente" Aggregate="false" BuiltIn="false" NiladicFunction="false" IsComposable="false" ParameterTypeSemantics="AllowImplicitConversion" Schema="dbo">
           <Parameter Name="Empresa" Type="char" Mode="In" />
           <Parameter Name="Cliente" Type="char" Mode="In" />
@@ -1218,8 +1505,10 @@
         </Function>
         <EntityContainer Name="NVModelStoreContainer">
           <EntitySet Name="Bancos" EntityType="Self.Bancos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoVta" EntityType="Self.CabPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabRemesaPagos" EntityType="Self.CabRemesaPagos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="CCCProveedores" EntityType="Self.CCCProveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Clientes" EntityType="Self.Clientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CondPagoClientes" EntityType="Self.CondPagoClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ContadoresGlobales" EntityType="Self.ContadoresGlobales" Schema="dbo" store:Type="Tables" />
@@ -1235,9 +1524,31 @@
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="PersonasContactoProveedor" EntityType="Self.PersonasContactoProveedor" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlazosPago" EntityType="Self.PlazosPago" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Productos" EntityType="Self.Productos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Proveedores" EntityType="Self.Proveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="SubGruposProducto" EntityType="Self.SubGruposProducto" Schema="dbo" store:Type="Tables" />
+          <AssociationSet Name="FK_CabFacturaCmp_Empresas" Association="Self.FK_CabFacturaCmp_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaCmp_Empresas1" Association="Self.FK_CabFacturaCmp_Empresas1">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaCmp_FormasPago" Association="Self.FK_CabFacturaCmp_FormasPago">
+            <End Role="FormasPago" EntitySet="FormasPago" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaCmp_PlazosPago" Association="Self.FK_CabFacturaCmp_PlazosPago">
+            <End Role="PlazosPago" EntitySet="PlazosPago" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaCmp_Proveedores" Association="Self.FK_CabFacturaCmp_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
+          </AssociationSet>
           <AssociationSet Name="FK_CabPedidoVta_Clientes" Association="Self.FK_CabPedidoVta_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
             <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
@@ -1298,6 +1609,10 @@
             <End Role="Productos" EntitySet="Productos" />
             <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
           </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Proveedores" Association="Self.FK_DescuentosProducto_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_DíasPagoClientes_Clientes" Association="Self.FK_DíasPagoClientes_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
             <End Role="DíasPagoClientes" EntitySet="DíasPagoClientes" />
@@ -1326,6 +1641,10 @@
             <End Role="PlazosPago" EntitySet="PlazosPago" />
             <End Role="Empresas" EntitySet="Empresas" />
           </AssociationSet>
+          <AssociationSet Name="FK_Empresas_Proveedores" Association="Self.FK_Empresas_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
           <AssociationSet Name="FK_EnviosAgencia_Clientes" Association="Self.FK_EnviosAgencia_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
             <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
@@ -1346,6 +1665,10 @@
             <End Role="Productos" EntitySet="Productos" />
             <End Role="ExtractoProducto" EntitySet="ExtractoProducto" />
           </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProducto_Proveedores" Association="Self.FK_ExtractoProducto_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="ExtractoProducto" EntitySet="ExtractoProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_ExtractoProveedor_Empresas" Association="Self.FK_ExtractoProveedor_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="ExtractoProveedor" EntitySet="ExtractoProveedor" />
@@ -1356,6 +1679,10 @@
           </AssociationSet>
           <AssociationSet Name="FK_ExtractoProveedor_FormasPago" Association="Self.FK_ExtractoProveedor_FormasPago">
             <End Role="FormasPago" EntitySet="FormasPago" />
+            <End Role="ExtractoProveedor" EntitySet="ExtractoProveedor" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProveedor_Proveedores" Association="Self.FK_ExtractoProveedor_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="ExtractoProveedor" EntitySet="ExtractoProveedor" />
           </AssociationSet>
           <AssociationSet Name="FK_Familias_Empresas" Association="Self.FK_Familias_Empresas">
@@ -1394,6 +1721,14 @@
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="ParámetrosUsuario" EntitySet="ParámetrosUsuario" />
           </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoProveedor_Empresas" Association="Self.FK_PersonasContactoProveedor_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="PersonasContactoProveedor" EntitySet="PersonasContactoProveedor" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoProveedor_Proveedores" Association="Self.FK_PersonasContactoProveedor_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="PersonasContactoProveedor" EntitySet="PersonasContactoProveedor" />
+          </AssociationSet>
           <AssociationSet Name="FK_PlazosPago_Empresas" Association="Self.FK_PlazosPago_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="PlazosPago" EntitySet="PlazosPago" />
@@ -1413,6 +1748,14 @@
           <AssociationSet Name="FK_Productos_SubGruposProducto" Association="Self.FK_Productos_SubGruposProducto">
             <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
             <End Role="Productos" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Proveedores_CCCProveedores" Association="Self.FK_Proveedores_CCCProveedores">
+            <End Role="CCCProveedores" EntitySet="CCCProveedores" />
+            <End Role="Proveedores" EntitySet="Proveedores" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Proveedores_Empresas" Association="Self.FK_Proveedores_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Proveedores" EntitySet="Proveedores" />
           </AssociationSet>
         </EntityContainer>
       </Schema></edmx:StorageModels>
@@ -1667,6 +2010,62 @@
             <End Role="ExtractoProveedor" EntitySet="ExtractosProveedor" />
           </AssociationSet>
           <EntitySet Name="Bancos" EntityType="NVModel.Banco" />
+          <EntitySet Name="CCCProveedores" EntityType="NVModel.CCCProveedor" />
+          <EntitySet Name="PersonasContactoProveedores" EntityType="NVModel.PersonaContactoProveedor" />
+          <EntitySet Name="Proveedores" EntityType="NVModel.Proveedor" />
+          <AssociationSet Name="FK_Proveedores_CCCProveedores" Association="NVModel.FK_Proveedores_CCCProveedores">
+            <End Role="CCCProveedor" EntitySet="CCCProveedores" />
+            <End Role="Proveedore" EntitySet="Proveedores" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_Proveedores" Association="NVModel.FK_DescuentosProducto_Proveedores">
+            <End Role="Proveedore" EntitySet="Proveedores" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_Proveedores" Association="NVModel.FK_Empresas_Proveedores">
+            <End Role="Proveedore" EntitySet="Proveedores" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoProveedor_Empresas" Association="NVModel.FK_PersonasContactoProveedor_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="PersonasContactoProveedor" EntitySet="PersonasContactoProveedores" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Proveedores_Empresas" Association="NVModel.FK_Proveedores_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Proveedore" EntitySet="Proveedores" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProducto_Proveedores" Association="NVModel.FK_ExtractoProducto_Proveedores">
+            <End Role="Proveedore" EntitySet="Proveedores" />
+            <End Role="ExtractoProducto" EntitySet="ExtractosProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProveedor_Proveedores" Association="NVModel.FK_ExtractoProveedor_Proveedores">
+            <End Role="Proveedore" EntitySet="Proveedores" />
+            <End Role="ExtractoProveedor" EntitySet="ExtractosProveedor" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoProveedor_Proveedores" Association="NVModel.FK_PersonasContactoProveedor_Proveedores">
+            <End Role="Proveedore" EntitySet="Proveedores" />
+            <End Role="PersonasContactoProveedor" EntitySet="PersonasContactoProveedores" />
+          </AssociationSet>
+          <EntitySet Name="CabFacturasCmp" EntityType="NVModel.CabFacturaCmp" />
+          <AssociationSet Name="FK_CabFacturaCmp_Empresas" Association="NVModel.FK_CabFacturaCmp_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturasCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaCmp_Empresas1" Association="NVModel.FK_CabFacturaCmp_Empresas1">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturasCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaCmp_FormasPago" Association="NVModel.FK_CabFacturaCmp_FormasPago">
+            <End Role="FormaPago" EntitySet="FormasPago" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturasCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaCmp_PlazosPago" Association="NVModel.FK_CabFacturaCmp_PlazosPago">
+            <End Role="PlazoPago" EntitySet="PlazosPago" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturasCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaCmp_Proveedores" Association="NVModel.FK_CabFacturaCmp_Proveedores">
+            <End Role="Proveedor" EntitySet="Proveedores" />
+            <End Role="CabFacturaCmp" EntitySet="CabFacturasCmp" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -1777,6 +2176,11 @@
           <NavigationProperty Name="ExtractoProductoes" Relationship="NVModel.FK_ExtractoProducto_Empresas" FromRole="Empresa" ToRole="ExtractoProducto" />
           <NavigationProperty Name="ExtractoProveedors" Relationship="NVModel.FK_ExtractoProveedor_Empresas" FromRole="Empresa" ToRole="ExtractoProveedor" />
           <NavigationProperty Name="ExtractoProveedors1" Relationship="NVModel.FK_ExtractoProveedor_Empresas1" FromRole="Empresa" ToRole="ExtractoProveedor" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_Empresas_Proveedores" FromRole="Empresa" ToRole="Proveedore" />
+          <NavigationProperty Name="PersonasContactoProveedors" Relationship="NVModel.FK_PersonasContactoProveedor_Empresas" FromRole="Empresa" ToRole="PersonasContactoProveedor" />
+          <NavigationProperty Name="Proveedores" Relationship="NVModel.FK_Proveedores_Empresas" FromRole="Empresa" ToRole="Proveedore" />
+          <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_Empresas" FromRole="Empresa" ToRole="CabFacturaCmp" />
+          <NavigationProperty Name="CabFacturaCmps1" Relationship="NVModel.FK_CabFacturaCmp_Empresas1" FromRole="Empresa" ToRole="CabFacturaCmp" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -2343,6 +2747,7 @@
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_DescuentosProducto_Empresas" FromRole="DescuentosProducto" ToRole="Empresa" />
           <NavigationProperty Name="Familia1" Relationship="NVModel.FK_DescuentosProducto_Familias" FromRole="DescuentosProducto" ToRole="Familia" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_DescuentosProducto_Productos" FromRole="DescuentosProducto" ToRole="Producto" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_DescuentosProducto_Proveedores" FromRole="DescuentosProducto" ToRole="Proveedore" />
         </EntityType>
         <EntityType Name="DíasPagoClientes">
           <Key>
@@ -2534,6 +2939,7 @@
           <NavigationProperty Name="Empresas2" Relationship="NVModel.FK_Empresas_FormasPago2" FromRole="FormasPago" ToRole="Empresa" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_FormasPago_Empresas" FromRole="FormasPago" ToRole="Empresa" />
           <NavigationProperty Name="ExtractoProveedors" Relationship="NVModel.FK_ExtractoProveedor_FormasPago" FromRole="FormaPago" ToRole="ExtractoProveedor" />
+          <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_FormasPago" FromRole="FormaPago" ToRole="CabFacturaCmp" />
         </EntityType>
         <EntityType Name="PlazoPago">
           <Key>
@@ -2556,6 +2962,7 @@
           <NavigationProperty Name="CondPagoClientes" Relationship="NVModel.FK_CondPagoClientes_PlazosPago" FromRole="PlazosPago" ToRole="CondPagoCliente" />
           <NavigationProperty Name="Empresas" Relationship="NVModel.FK_Empresas_PlazosPago" FromRole="PlazosPago" ToRole="Empresa" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_PlazosPago_Empresas" FromRole="PlazosPago" ToRole="Empresa" />
+          <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_PlazosPago" FromRole="PlazoPago" ToRole="CabFacturaCmp" />
         </EntityType>
         <Association Name="FK_CondPagoClientes_FormasPago">
           <End Type="NVModel.FormaPago" Role="FormasPago" Multiplicity="1" />
@@ -2758,6 +3165,7 @@
           <NavigationProperty Name="Cliente" Relationship="NVModel.FK_ExtractoProducto_Clientes" FromRole="ExtractoProducto" ToRole="Cliente" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_ExtractoProducto_Empresas" FromRole="ExtractoProducto" ToRole="Empresa" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_ExtractoProducto_Productos" FromRole="ExtractoProducto" ToRole="Producto" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_ExtractoProducto_Proveedores" FromRole="ExtractoProducto" ToRole="Proveedore" />
         </EntityType>
         <Association Name="FK_ExtractoProducto_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -2846,6 +3254,7 @@
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_ExtractoProveedor_Empresas" FromRole="ExtractoProveedor" ToRole="Empresa" />
           <NavigationProperty Name="Empresa2" Relationship="NVModel.FK_ExtractoProveedor_Empresas1" FromRole="ExtractoProveedor" ToRole="Empresa" />
           <NavigationProperty Name="FormasPago" Relationship="NVModel.FK_ExtractoProveedor_FormasPago" FromRole="ExtractoProveedor" ToRole="FormaPago" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_ExtractoProveedor_Proveedores" FromRole="ExtractoProveedor" ToRole="Proveedore" />
         </EntityType>
         <Association Name="FK_ExtractoProveedor_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -2917,6 +3326,309 @@
           <Property Name="CuentaGastosRecibo" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="ImporteComisiónMáxImpagado" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
         </EntityType>
+        <EntityType Name="CCCProveedor">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NºProveedor" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºProveedor" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Entidad" Type="String" Nullable="false" MaxLength="4" FixedLength="true" Unicode="false" />
+          <Property Name="Oficina" Type="String" Nullable="false" MaxLength="4" FixedLength="true" Unicode="false" />
+          <Property Name="DC" Type="String" Nullable="false" MaxLength="2" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Cuenta" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Proveedores" Relationship="NVModel.FK_Proveedores_CCCProveedores" FromRole="CCCProveedor" ToRole="Proveedore" />
+        </EntityType>
+        <EntityType Name="PersonaContactoProveedor">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NºProveedor" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºProveedor" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Cargo" Type="Int16" Nullable="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="CorreoElectrónico" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="EnviarBoletin" Type="Boolean" Nullable="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="Saludo" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_PersonasContactoProveedor_Empresas" FromRole="PersonasContactoProveedor" ToRole="Empresa" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_PersonasContactoProveedor_Proveedores" FromRole="PersonasContactoProveedor" ToRole="Proveedore" />
+        </EntityType>
+        <EntityType Name="Proveedor">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="Contacto" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ProveedorPrincipal" Type="Boolean" Nullable="false" />
+          <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Dirección" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Población" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="CodPostal" Type="String" MaxLength="5" FixedLength="true" Unicode="false" />
+          <Property Name="CIF_NIF" Type="String" MaxLength="9" FixedLength="true" Unicode="false" />
+          <Property Name="Provincia" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Estado" Type="Int16" />
+          <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Grupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PeriodoFacturación" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CCC" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Web" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="DíasEnServir" Type="Byte" Nullable="false" />
+          <Property Name="PedidoValorado" Type="Boolean" Nullable="false" />
+          <Property Name="C__IRPF" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="ImporteMínimoPedido" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="ControlPendientes" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="CCCProveedore" Relationship="NVModel.FK_Proveedores_CCCProveedores" FromRole="Proveedore" ToRole="CCCProveedor" />
+          <NavigationProperty Name="DescuentosProductoes" Relationship="NVModel.FK_DescuentosProducto_Proveedores" FromRole="Proveedore" ToRole="DescuentosProducto" />
+          <NavigationProperty Name="Empresas" Relationship="NVModel.FK_Empresas_Proveedores" FromRole="Proveedore" ToRole="Empresa" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Proveedores_Empresas" FromRole="Proveedore" ToRole="Empresa" />
+          <NavigationProperty Name="ExtractoProductoes" Relationship="NVModel.FK_ExtractoProducto_Proveedores" FromRole="Proveedore" ToRole="ExtractoProducto" />
+          <NavigationProperty Name="ExtractoProveedors" Relationship="NVModel.FK_ExtractoProveedor_Proveedores" FromRole="Proveedore" ToRole="ExtractoProveedor" />
+          <NavigationProperty Name="PersonasContactoProveedors" Relationship="NVModel.FK_PersonasContactoProveedor_Proveedores" FromRole="Proveedore" ToRole="PersonasContactoProveedor" />
+          <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_Proveedores" FromRole="Proveedor" ToRole="CabFacturaCmp" />
+        </EntityType>
+        <Association Name="FK_Proveedores_CCCProveedores">
+          <End Type="NVModel.CCCProveedor" Role="CCCProveedor" Multiplicity="0..1" />
+          <End Type="NVModel.Proveedor" Role="Proveedore" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CCCProveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Proveedore">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="CCC" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DescuentosProducto_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedore" Multiplicity="0..1" />
+          <End Type="NVModel.DescuentosProducto" Role="DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedore">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="ContactoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedore" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedore">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="ProveedorIRPF" />
+              <PropertyRef Name="ContactoProveedorIRPF" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PersonasContactoProveedor_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.PersonaContactoProveedor" Role="PersonasContactoProveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PersonasContactoProveedor">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Proveedores_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.Proveedor" Role="Proveedore" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Proveedore">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoProducto_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedore" Multiplicity="0..1" />
+          <End Type="NVModel.ExtractoProducto" Role="ExtractoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedore">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="ExtractoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="ContactoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoProveedor_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedore" Multiplicity="1" />
+          <End Type="NVModel.ExtractoProveedor" Role="ExtractoProveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedore">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="ExtractoProveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PersonasContactoProveedor_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedore" Multiplicity="1" />
+          <End Type="NVModel.PersonaContactoProveedor" Role="PersonasContactoProveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedore">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PersonasContactoProveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="CabFacturaCmp">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="NºProveedor" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaPago" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PlazosPago" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Espejo" Type="Boolean" />
+          <Property Name="PrimerVencimiento" Type="DateTime" Precision="3" />
+          <Property Name="NºDocumentoProv" Type="String" MaxLength="20" FixedLength="true" Unicode="false" />
+          <Property Name="Origen" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="C__IRPF" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="FechaProveedor" Type="DateTime" Precision="3" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CabFacturaCmp_Empresas" FromRole="CabFacturaCmp" ToRole="Empresa" />
+          <NavigationProperty Name="Empresa2" Relationship="NVModel.FK_CabFacturaCmp_Empresas1" FromRole="CabFacturaCmp" ToRole="Empresa" />
+          <NavigationProperty Name="FormasPago" Relationship="NVModel.FK_CabFacturaCmp_FormasPago" FromRole="CabFacturaCmp" ToRole="FormaPago" />
+          <NavigationProperty Name="PlazosPago1" Relationship="NVModel.FK_CabFacturaCmp_PlazosPago" FromRole="CabFacturaCmp" ToRole="PlazoPago" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_CabFacturaCmp_Proveedores" FromRole="CabFacturaCmp" ToRole="Proveedor" />
+        </EntityType>
+        <Association Name="FK_CabFacturaCmp_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.CabFacturaCmp" Role="CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaCmp_Empresas1">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
+          <End Type="NVModel.CabFacturaCmp" Role="CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Origen" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaCmp_FormasPago">
+          <End Type="NVModel.FormaPago" Role="FormaPago" Multiplicity="0..1" />
+          <End Type="NVModel.CabFacturaCmp" Role="CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormaPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaCmp_PlazosPago">
+          <End Type="NVModel.PlazoPago" Role="PlazoPago" Multiplicity="0..1" />
+          <End Type="NVModel.CabFacturaCmp" Role="CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlazoPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="PlazosPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaCmp_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedor" Multiplicity="0..1" />
+          <End Type="NVModel.CabFacturaCmp" Role="CabFacturaCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -3505,6 +4217,98 @@
                 <ScalarProperty Name="DC_IBAN" ColumnName="DC_IBAN" />
                 <ScalarProperty Name="Pais" ColumnName="Pais" />
                 <ScalarProperty Name="Descripción" ColumnName="Descripción" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="CCCProveedores">
+            <EntityTypeMapping TypeName="NVModel.CCCProveedor">
+              <MappingFragment StoreEntitySet="CCCProveedores">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Nº_Cuenta" ColumnName="Nº Cuenta" />
+                <ScalarProperty Name="DC" ColumnName="DC" />
+                <ScalarProperty Name="Oficina" ColumnName="Oficina" />
+                <ScalarProperty Name="Entidad" ColumnName="Entidad" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="PersonasContactoProveedores">
+            <EntityTypeMapping TypeName="NVModel.PersonaContactoProveedor">
+              <MappingFragment StoreEntitySet="PersonasContactoProveedor">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Saludo" ColumnName="Saludo" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="EnviarBoletin" ColumnName="EnviarBoletin" />
+                <ScalarProperty Name="CorreoElectrónico" ColumnName="CorreoElectrónico" />
+                <ScalarProperty Name="Teléfono" ColumnName="Teléfono" />
+                <ScalarProperty Name="Fax" ColumnName="Fax" />
+                <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
+                <ScalarProperty Name="Cargo" ColumnName="Cargo" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Proveedores">
+            <EntityTypeMapping TypeName="NVModel.Proveedor">
+              <MappingFragment StoreEntitySet="Proveedores">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="ControlPendientes" ColumnName="ControlPendientes" />
+                <ScalarProperty Name="ImporteMínimoPedido" ColumnName="ImporteMínimoPedido" />
+                <ScalarProperty Name="C__IRPF" ColumnName="% IRPF" />
+                <ScalarProperty Name="PedidoValorado" ColumnName="PedidoValorado" />
+                <ScalarProperty Name="DíasEnServir" ColumnName="DíasEnServir" />
+                <ScalarProperty Name="Web" ColumnName="Web" />
+                <ScalarProperty Name="CCC" ColumnName="CCC" />
+                <ScalarProperty Name="PeriodoFacturación" ColumnName="PeriodoFacturación" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="IVA" ColumnName="IVA" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Provincia" ColumnName="Provincia" />
+                <ScalarProperty Name="CIF_NIF" ColumnName="CIF/NIF" />
+                <ScalarProperty Name="CodPostal" ColumnName="CodPostal" />
+                <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
+                <ScalarProperty Name="Fax" ColumnName="Fax" />
+                <ScalarProperty Name="Teléfono" ColumnName="Teléfono" />
+                <ScalarProperty Name="Población" ColumnName="Población" />
+                <ScalarProperty Name="Dirección" ColumnName="Dirección" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="ProveedorPrincipal" ColumnName="ProveedorPrincipal" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="CabFacturasCmp">
+            <EntityTypeMapping TypeName="NVModel.CabFacturaCmp">
+              <MappingFragment StoreEntitySet="CabFacturaCmp">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaProveedor" ColumnName="FechaProveedor" />
+                <ScalarProperty Name="C__IRPF" ColumnName="% IRPF" />
+                <ScalarProperty Name="Origen" ColumnName="Origen" />
+                <ScalarProperty Name="NºDocumentoProv" ColumnName="NºDocumentoProv" />
+                <ScalarProperty Name="PrimerVencimiento" ColumnName="PrimerVencimiento" />
+                <ScalarProperty Name="Espejo" ColumnName="Espejo" />
+                <ScalarProperty Name="IVA" ColumnName="IVA" />
+                <ScalarProperty Name="PlazosPago" ColumnName="PlazosPago" />
+                <ScalarProperty Name="FormaPago" ColumnName="FormaPago" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>

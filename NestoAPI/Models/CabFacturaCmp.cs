@@ -12,27 +12,29 @@ namespace NestoAPI.Models
     using System;
     using System.Collections.Generic;
     
-    public partial class DescuentosProducto
+    public partial class CabFacturaCmp
     {
         public string Empresa { get; set; }
-        public int Nº_Orden { get; set; }
-        public string Nº_Producto { get; set; }
-        public string GrupoProducto { get; set; }
-        public string Nº_Cliente { get; set; }
-        public string Contacto { get; set; }
+        public string Número { get; set; }
+        public System.DateTime Fecha { get; set; }
         public string NºProveedor { get; set; }
-        public string ContactoProveedor { get; set; }
-        public short CantidadMínima { get; set; }
-        public decimal Descuento { get; set; }
-        public Nullable<decimal> Precio { get; set; }
-        public string Familia { get; set; }
+        public string Contacto { get; set; }
+        public string FormaPago { get; set; }
+        public string PlazosPago { get; set; }
+        public string IVA { get; set; }
+        public Nullable<bool> Espejo { get; set; }
+        public Nullable<System.DateTime> PrimerVencimiento { get; set; }
+        public string NºDocumentoProv { get; set; }
+        public string Origen { get; set; }
+        public decimal C__IRPF { get; set; }
+        public Nullable<System.DateTime> FechaProveedor { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
     
-        public virtual Cliente Cliente { get; set; }
         public virtual Empresa Empresa1 { get; set; }
-        public virtual Familia Familia1 { get; set; }
-        public virtual Producto Producto { get; set; }
+        public virtual Empresa Empresa2 { get; set; }
+        public virtual FormaPago FormasPago { get; set; }
+        public virtual PlazoPago PlazosPago1 { get; set; }
         public virtual Proveedor Proveedore { get; set; }
     }
 }

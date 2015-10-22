@@ -21,6 +21,7 @@ namespace NestoAPI.Models
             this.Empresas1 = new HashSet<Empresa>();
             this.Empresas2 = new HashSet<Empresa>();
             this.ExtractoProveedors = new HashSet<ExtractoProveedor>();
+            this.CabFacturaCmps = new HashSet<CabFacturaCmp>();
         }
     
         public string Empresa { get; set; }
@@ -36,5 +37,6 @@ namespace NestoAPI.Models
         public virtual ICollection<Empresa> Empresas2 { get; set; }
         public virtual Empresa Empresa1 { get; set; }
         public virtual ICollection<ExtractoProveedor> ExtractoProveedors { get; set; }
+        public virtual ICollection<CabFacturaCmp> CabFacturaCmps { get; set; }
     }
 }

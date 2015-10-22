@@ -142,8 +142,11 @@ namespace NestoAPI.Controllers
 
             // Guardamos el parámetro de pedido, para que al abrir la ventana el usuario vea el pedido
             string usuarioParametro = pedido.usuario.Substring(pedido.usuario.IndexOf("\\")+1);
-            parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "UltNumPedidoVta");
-            parametroUsuario.Valor = pedido.numero.ToString();
+            if (usuarioParametro != null && (usuarioParametro.Length<7 || usuarioParametro.Substring(0,7) != "Cliente"))
+            {
+                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "UltNumPedidoVta");
+                parametroUsuario.Valor = pedido.numero.ToString();
+            }
 
             // Declaramos las variables que se van a utilizar en el bucle de insertar líneas
             LinPedidoVta linPedido;
@@ -160,6 +163,13 @@ namespace NestoAPI.Controllers
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido) {
                 producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == linea.producto).SingleOrDefault();
                 descuentoProducto = 0;
+
+
+                // No permitimos poner descuento y además precio especial
+                if (linea.precio != producto.PVP || linea.descuento > 0) {
+                    linea.aplicarDescuento = false;
+                }
+
 
                 // Solo calculamos los descuentos si no lleva otra oferta o precio especial aplicado
                 if (linea.oferta == 0 && linea.precio >= producto.PVP && linea.descuento == 0)

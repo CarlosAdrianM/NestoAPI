@@ -38,7 +38,7 @@ namespace NestoAPI.Controllers
             ParametroUsuario parametroUsuario = db.ParametrosUsuario.FirstOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == clave);
             if (parametroUsuario != null)
             {
-                return Ok(parametroUsuario.Valor.Trim());
+                return Ok(parametroUsuario.Valor != null ? parametroUsuario.Valor.Trim() : "");
             }
 
             // Si el parámetro no existe, buscamos el del usuario por defecto y lo creamos

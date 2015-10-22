@@ -48,6 +48,10 @@ namespace NestoAPI.Models
         public virtual DbSet<CabRemesaPago> CabRemesasPago { get; set; }
         public virtual DbSet<ExtractoProveedor> ExtractosProveedor { get; set; }
         public virtual DbSet<Banco> Bancos { get; set; }
+        public virtual DbSet<CCCProveedor> CCCProveedores { get; set; }
+        public virtual DbSet<PersonaContactoProveedor> PersonasContactoProveedores { get; set; }
+        public virtual DbSet<Proveedor> Proveedores { get; set; }
+        public virtual DbSet<CabFacturaCmp> CabFacturasCmp { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

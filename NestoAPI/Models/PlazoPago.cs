@@ -18,6 +18,7 @@ namespace NestoAPI.Models
         {
             this.CondPagoClientes = new HashSet<CondPagoCliente>();
             this.Empresas = new HashSet<Empresa>();
+            this.CabFacturaCmps = new HashSet<CabFacturaCmp>();
         }
     
         public string Empresa { get; set; }
@@ -37,5 +38,6 @@ namespace NestoAPI.Models
         public virtual ICollection<CondPagoCliente> CondPagoClientes { get; set; }
         public virtual ICollection<Empresa> Empresas { get; set; }
         public virtual Empresa Empresa1 { get; set; }
+        public virtual ICollection<CabFacturaCmp> CabFacturaCmps { get; set; }
     }
 }
