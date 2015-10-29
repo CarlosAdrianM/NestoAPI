@@ -147,6 +147,7 @@ namespace NestoAPI.Models
     {
         public int stock { get; set; }
         public int cantidadDisponible { get; set; }
+        public string urlImagen { get; set; }
     }
 
     public class UltimasVentasProductoClienteDTO

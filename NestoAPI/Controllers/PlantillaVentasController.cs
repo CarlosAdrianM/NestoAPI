@@ -186,11 +186,25 @@ namespace NestoAPI.Controllers
 
 
             StockProductoDTO datosStock = new StockProductoDTO();
-            datosStock.stock = db.ExtractosProducto.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Número == productoStock).Sum(e => e.Cantidad);
-            int? cantidadReservada =db.LinPedidoVtas.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Producto == productoStock && e.Estado == 1).Sum(e => e.Cantidad);
+            datosStock.stock = await db.ExtractosProducto.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Número == productoStock).SumAsync(e => e.Cantidad);
+            int? cantidadReservada =  await db.LinPedidoVtas.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Producto == productoStock && e.Estado == 1).SumAsync(e => e.Cantidad);
             datosStock.cantidadDisponible = cantidadReservada == null ? datosStock.stock : datosStock.stock - (int)cantidadReservada;
 
-            return Ok(datosStock);
+            // Cargamos la imagen del producto
+            using (var client = new HttpClient())
+            {
+                client.BaseAddress = new Uri("http://www.productosdeesteticaypeluqueriaprofesional.com/imagenesPorReferencia.php");
+                client.DefaultRequestHeaders.Accept.Clear();
+                //client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                HttpResponseMessage response = await client.GetAsync("?producto="+productoStock);
+                if (response.IsSuccessStatusCode)
+                {
+                    datosStock.urlImagen = await response.Content.ReadAsStringAsync();
+                    datosStock.urlImagen = "http://" + datosStock.urlImagen;
+                }
+            }
+
+                return Ok(datosStock);
         }
 
 
