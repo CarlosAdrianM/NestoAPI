@@ -100,7 +100,7 @@ namespace NestoAPI.Models
         public System.DateTime fechaEntrega { get; set; }
         public string formaVenta { get; set; }
         public string iva { get; set; }
-        public int oferta { get; set; }
+        public Nullable<int> oferta { get; set; }
         public decimal precio { get; set; } // era Nullable<decimal> 
         public string producto { get; set; }
         public string texto { get; set; }

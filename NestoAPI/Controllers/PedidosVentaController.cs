@@ -101,8 +101,8 @@ namespace NestoAPI.Controllers
             ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
             if (pedido.numero == 0)
             {
-                pedido.numero = contador.Pedidos + 1;
-                contador.Pedidos = pedido.numero;
+                contador.Pedidos++;
+                pedido.numero = contador.Pedidos;
             }
                         
             CabPedidoVta cabecera = new CabPedidoVta {
@@ -155,7 +155,7 @@ namespace NestoAPI.Controllers
             byte porcentajeIVA;
             Producto producto;
             ParametroIVA parametroIva;
-            int maxNumeroOferta = 0;
+            int? maxNumeroOferta = 0;
 
 
             
@@ -172,7 +172,7 @@ namespace NestoAPI.Controllers
 
 
                 // Solo calculamos los descuentos si no lleva otra oferta o precio especial aplicado
-                if (linea.oferta == 0 && linea.precio >= producto.PVP && linea.descuento == 0)
+                if ((linea.oferta != null || linea.oferta == 0) && linea.precio >= producto.PVP && linea.descuento == 0)
                 {
                     precio = linea.precio; //para poder pasar el precio por referencia
                     calcularDescuentoProducto(ref precio, ref descuentoProducto, producto, pedido.cliente, pedido.contacto, linea.cantidad, linea.aplicarDescuento);
@@ -191,7 +191,7 @@ namespace NestoAPI.Controllers
 
                 tipoExclusiva = producto.Familia1.TipoExclusiva;
 
-                if (linea.oferta != 0)
+                if (linea.oferta != null && linea.oferta != 0)
                 {
                     if (linea.oferta > maxNumeroOferta)
                     {
@@ -247,7 +247,10 @@ namespace NestoAPI.Controllers
             }
 
             // Actualizamos el contador de ofertas
-            contador.Oferta += maxNumeroOferta;
+            if ((int)maxNumeroOferta!=0) {
+                contador.Oferta += (int)maxNumeroOferta;
+            }
+            
 
             // Carlos 07/10/15:
             // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
@@ -278,7 +281,7 @@ namespace NestoAPI.Controllers
             }
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
-            return CreatedAtRoute("DefaultApi", new { id = cabecera.Número }, cabecera);
+            return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);
         }
 
         // DELETE: api/PedidosVenta/5
