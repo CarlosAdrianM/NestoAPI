@@ -186,6 +186,7 @@
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
+    <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\ParametrosUsuarioController.cs" />
     <Compile Include="Controllers\PedidosVentaController.cs" />
@@ -243,6 +244,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\FormaPago.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\FormaVenta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\LinPedidoVta.cs">

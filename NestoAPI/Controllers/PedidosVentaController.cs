@@ -104,7 +104,7 @@ namespace NestoAPI.Controllers
                 contador.Pedidos++;
                 pedido.numero = contador.Pedidos;
             }
-                        
+
             CabPedidoVta cabecera = new CabPedidoVta {
                 Empresa = pedido.empresa,
                 Número = pedido.numero,
@@ -172,7 +172,7 @@ namespace NestoAPI.Controllers
 
 
                 // Solo calculamos los descuentos si no lleva otra oferta o precio especial aplicado
-                if ((linea.oferta != null || linea.oferta == 0) && linea.precio >= producto.PVP && linea.descuento == 0)
+                if ((linea.oferta == null || linea.oferta == 0) && linea.precio >= producto.PVP && linea.descuento == 0)
                 {
                     precio = linea.precio; //para poder pasar el precio por referencia
                     calcularDescuentoProducto(ref precio, ref descuentoProducto, producto, pedido.cliente, pedido.contacto, linea.cantidad, linea.aplicarDescuento);
@@ -240,7 +240,8 @@ namespace NestoAPI.Controllers
                     Familia = producto.Familia,
                     TipoExclusiva = tipoExclusiva,
                     Picking = 0,
-                    NºOferta = linea.oferta
+                    NºOferta = linea.oferta,
+                    BlancoParaBorrar = "NestoAPI"
                 };
 
                 db.LinPedidoVtas.Add(linPedido);

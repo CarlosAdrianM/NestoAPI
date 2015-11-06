@@ -87,6 +87,12 @@
         <AssociationConnector Association="NVModel.FK_CabFacturaCmp_FormasPago" />
         <AssociationConnector Association="NVModel.FK_CabFacturaCmp_PlazosPago" />
         <AssociationConnector Association="NVModel.FK_CabFacturaCmp_Proveedores" />
+        <EntityTypeShape EntityType="NVModel.FormaVenta" Width="1.5" PointX="3" PointY="61.5" />
+        <AssociationConnector Association="NVModel.FK_Empresas_FormasVenta" />
+        <AssociationConnector Association="NVModel.FK_FormasVenta_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProducto_FormasVenta" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProveedor_FormasVenta" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoVta_FormasVenta" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

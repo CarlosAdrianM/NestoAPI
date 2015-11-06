@@ -37,6 +37,7 @@ namespace NestoAPI.Models
             this.Proveedores = new HashSet<Proveedor>();
             this.CabFacturaCmps = new HashSet<CabFacturaCmp>();
             this.CabFacturaCmps1 = new HashSet<CabFacturaCmp>();
+            this.FormasVentas = new HashSet<FormaVenta>();
         }
     
         public string Número { get; set; }
@@ -150,5 +151,7 @@ namespace NestoAPI.Models
         public virtual ICollection<Proveedor> Proveedores { get; set; }
         public virtual ICollection<CabFacturaCmp> CabFacturaCmps { get; set; }
         public virtual ICollection<CabFacturaCmp> CabFacturaCmps1 { get; set; }
+        public virtual FormaVenta FormasVenta { get; set; }
+        public virtual ICollection<FormaVenta> FormasVentas { get; set; }
     }
 }

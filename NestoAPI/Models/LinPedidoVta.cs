@@ -75,5 +75,6 @@ namespace NestoAPI.Models
         public virtual Cliente Cliente { get; set; }
         public virtual Familia Familia1 { get; set; }
         public virtual SubGruposProducto SubGruposProducto { get; set; }
+        public virtual FormaVenta FormasVenta { get; set; }
     }
 }

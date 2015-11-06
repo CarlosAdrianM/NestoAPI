@@ -476,6 +476,18 @@
           <Property Name="Informe" Type="bit" Nullable="false" />
           <Property Name="CCCObligatorio" Type="bit" Nullable="false" />
         </EntityType>
+        <EntityType Name="FormasVenta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Descripción" Type="char" MaxLength="50" />
+          <Property Name="VisiblePorComerciales" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="LinPedidoVta">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -1080,6 +1092,20 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Empresas_FormasVenta">
+          <End Role="FormasVenta" Type="Self.FormasVenta" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="FormaVentaVarios" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Empresas_PlazosPago">
           <End Role="PlazosPago" Type="Self.PlazosPago" Multiplicity="0..1" />
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
@@ -1166,6 +1192,20 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_ExtractoProducto_FormasVenta">
+          <End Role="FormasVenta" Type="Self.FormasVenta" Multiplicity="1" />
+          <End Role="ExtractoProducto" Type="Self.ExtractoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Forma Venta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_ExtractoProducto_Productos">
           <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
           <End Role="ExtractoProducto" Type="Self.ExtractoProducto" Multiplicity="*" />
@@ -1234,6 +1274,20 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_ExtractoProveedor_FormasVenta">
+          <End Role="FormasVenta" Type="Self.FormasVenta" Multiplicity="1" />
+          <End Role="ExtractoProveedor" Type="Self.ExtractoProveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoProveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaVenta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_ExtractoProveedor_Proveedores">
           <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="1" />
           <End Role="ExtractoProveedor" Type="Self.ExtractoProveedor" Multiplicity="*" />
@@ -1270,6 +1324,18 @@
               <PropertyRef Name="Número" />
             </Principal>
             <Dependent Role="FormasPago">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_FormasVenta_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="FormasVenta" Type="Self.FormasVenta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="FormasVenta">
               <PropertyRef Name="Empresa" />
             </Dependent>
           </ReferentialConstraint>
@@ -1327,6 +1393,20 @@
             <Dependent Role="LinPedidoVta">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_FormasVenta">
+          <End Role="FormasVenta" Type="Self.FormasVenta" Multiplicity="1" />
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Forma Venta" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -1521,6 +1601,7 @@
           <EntitySet Name="ExtractoProveedor" EntityType="Self.ExtractoProveedor" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Familias" EntityType="Self.Familias" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="FormasVenta" EntityType="Self.FormasVenta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
@@ -1637,6 +1718,10 @@
             <End Role="FormasPago" EntitySet="FormasPago" />
             <End Role="Empresas" EntitySet="Empresas" />
           </AssociationSet>
+          <AssociationSet Name="FK_Empresas_FormasVenta" Association="Self.FK_Empresas_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
           <AssociationSet Name="FK_Empresas_PlazosPago" Association="Self.FK_Empresas_PlazosPago">
             <End Role="PlazosPago" EntitySet="PlazosPago" />
             <End Role="Empresas" EntitySet="Empresas" />
@@ -1661,6 +1746,10 @@
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="ExtractoProducto" EntitySet="ExtractoProducto" />
           </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProducto_FormasVenta" Association="Self.FK_ExtractoProducto_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="ExtractoProducto" EntitySet="ExtractoProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_ExtractoProducto_Productos" Association="Self.FK_ExtractoProducto_Productos">
             <End Role="Productos" EntitySet="Productos" />
             <End Role="ExtractoProducto" EntitySet="ExtractoProducto" />
@@ -1681,6 +1770,10 @@
             <End Role="FormasPago" EntitySet="FormasPago" />
             <End Role="ExtractoProveedor" EntitySet="ExtractoProveedor" />
           </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProveedor_FormasVenta" Association="Self.FK_ExtractoProveedor_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="ExtractoProveedor" EntitySet="ExtractoProveedor" />
+          </AssociationSet>
           <AssociationSet Name="FK_ExtractoProveedor_Proveedores" Association="Self.FK_ExtractoProveedor_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="ExtractoProveedor" EntitySet="ExtractoProveedor" />
@@ -1692,6 +1785,10 @@
           <AssociationSet Name="FK_FormasPago_Empresas" Association="Self.FK_FormasPago_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="FormasPago" EntitySet="FormasPago" />
+          </AssociationSet>
+          <AssociationSet Name="FK_FormasVenta_Empresas" Association="Self.FK_FormasVenta_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
           </AssociationSet>
           <AssociationSet Name="FK_LinPedidoVta_CabPedidoVta" Association="Self.FK_LinPedidoVta_CabPedidoVta">
             <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
@@ -1707,6 +1804,10 @@
           </AssociationSet>
           <AssociationSet Name="FK_LinPedidoVta_Familias" Association="Self.FK_LinPedidoVta_Familias">
             <End Role="Familias" EntitySet="Familias" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_FormasVenta" Association="Self.FK_LinPedidoVta_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
             <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
           </AssociationSet>
           <AssociationSet Name="FK_LinPedidoVta_SubGruposProducto" Association="Self.FK_LinPedidoVta_SubGruposProducto">
@@ -2066,6 +2167,27 @@
             <End Role="Proveedor" EntitySet="Proveedores" />
             <End Role="CabFacturaCmp" EntitySet="CabFacturasCmp" />
           </AssociationSet>
+          <EntitySet Name="FormasVenta" EntityType="NVModel.FormaVenta" />
+          <AssociationSet Name="FK_Empresas_FormasVenta" Association="NVModel.FK_Empresas_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_FormasVenta_Empresas" Association="NVModel.FK_FormasVenta_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProducto_FormasVenta" Association="NVModel.FK_ExtractoProducto_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="ExtractoProducto" EntitySet="ExtractosProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProveedor_FormasVenta" Association="NVModel.FK_ExtractoProveedor_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="ExtractoProveedor" EntitySet="ExtractosProveedor" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_FormasVenta" Association="NVModel.FK_LinPedidoVta_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -2181,6 +2303,8 @@
           <NavigationProperty Name="Proveedores" Relationship="NVModel.FK_Proveedores_Empresas" FromRole="Empresa" ToRole="Proveedore" />
           <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_Empresas" FromRole="Empresa" ToRole="CabFacturaCmp" />
           <NavigationProperty Name="CabFacturaCmps1" Relationship="NVModel.FK_CabFacturaCmp_Empresas1" FromRole="Empresa" ToRole="CabFacturaCmp" />
+          <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_Empresas_FormasVenta" FromRole="Empresa" ToRole="FormasVenta" />
+          <NavigationProperty Name="FormasVentas" Relationship="NVModel.FK_FormasVenta_Empresas" FromRole="Empresa" ToRole="FormasVenta" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -2309,6 +2433,7 @@
           <NavigationProperty Name="Cliente" Relationship="NVModel.FK_LinPedidoVta_Clientes" FromRole="LinPedidoVta" ToRole="Cliente" />
           <NavigationProperty Name="Familia1" Relationship="NVModel.FK_LinPedidoVta_Familias" FromRole="LinPedidoVta" ToRole="Familia" />
           <NavigationProperty Name="SubGruposProducto" Relationship="NVModel.FK_LinPedidoVta_SubGruposProducto" FromRole="LinPedidoVta" ToRole="SubGruposProducto" />
+          <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_LinPedidoVta_FormasVenta" FromRole="LinPedidoVta" ToRole="FormasVenta" />
         </EntityType>
         <Association Name="FK_LinPedidoVta_CabPedidoVta">
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1" />
@@ -3166,6 +3291,7 @@
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_ExtractoProducto_Empresas" FromRole="ExtractoProducto" ToRole="Empresa" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_ExtractoProducto_Productos" FromRole="ExtractoProducto" ToRole="Producto" />
           <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_ExtractoProducto_Proveedores" FromRole="ExtractoProducto" ToRole="Proveedore" />
+          <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_ExtractoProducto_FormasVenta" FromRole="ExtractoProducto" ToRole="FormasVenta" />
         </EntityType>
         <Association Name="FK_ExtractoProducto_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -3255,6 +3381,7 @@
           <NavigationProperty Name="Empresa2" Relationship="NVModel.FK_ExtractoProveedor_Empresas1" FromRole="ExtractoProveedor" ToRole="Empresa" />
           <NavigationProperty Name="FormasPago" Relationship="NVModel.FK_ExtractoProveedor_FormasPago" FromRole="ExtractoProveedor" ToRole="FormaPago" />
           <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_ExtractoProveedor_Proveedores" FromRole="ExtractoProveedor" ToRole="Proveedore" />
+          <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_ExtractoProveedor_FormasVenta" FromRole="ExtractoProveedor" ToRole="FormasVenta" />
         </EntityType>
         <Association Name="FK_ExtractoProveedor_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -3626,6 +3753,91 @@
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="NºProveedor" />
               <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="FormaVenta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Descripción" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="VisiblePorComerciales" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresas" Relationship="NVModel.FK_Empresas_FormasVenta" FromRole="FormasVenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_FormasVenta_Empresas" FromRole="FormasVenta" ToRole="Empresa" />
+          <NavigationProperty Name="ExtractoProductoes" Relationship="NVModel.FK_ExtractoProducto_FormasVenta" FromRole="FormasVenta" ToRole="ExtractoProducto" />
+          <NavigationProperty Name="ExtractoProveedors" Relationship="NVModel.FK_ExtractoProveedor_FormasVenta" FromRole="FormasVenta" ToRole="ExtractoProveedor" />
+          <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_FormasVenta" FromRole="FormasVenta" ToRole="LinPedidoVta" />
+        </EntityType>
+        <Association Name="FK_Empresas_FormasVenta">
+          <End Type="NVModel.FormaVenta" Role="FormasVenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="FormaVentaVarios" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_FormasVenta_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.FormaVenta" Role="FormasVenta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoProducto_FormasVenta">
+          <End Type="NVModel.FormaVenta" Role="FormasVenta" Multiplicity="1" />
+          <End Type="NVModel.ExtractoProducto" Role="ExtractoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Forma_Venta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoProveedor_FormasVenta">
+          <End Type="NVModel.FormaVenta" Role="FormasVenta" Multiplicity="1" />
+          <End Type="NVModel.ExtractoProveedor" Role="ExtractoProveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoProveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaVenta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_FormasVenta">
+          <End Type="NVModel.FormaVenta" Role="FormasVenta" Multiplicity="1" />
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Forma_Venta" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -4309,6 +4521,18 @@
                 <ScalarProperty Name="Contacto" ColumnName="Contacto" />
                 <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
                 <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="FormasVenta">
+            <EntityTypeMapping TypeName="NVModel.FormaVenta">
+              <MappingFragment StoreEntitySet="FormasVenta">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="VisiblePorComerciales" ColumnName="VisiblePorComerciales" />
+                <ScalarProperty Name="Descripción" ColumnName="Descripción" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>

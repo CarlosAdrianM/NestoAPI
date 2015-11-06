@@ -53,6 +53,7 @@ namespace NestoAPI.Controllers
                     precio = (decimal)x.Key.PVP, 
                     aplicarDescuento = x.Key.aplicarDescuento
                 })
+                .OrderByDescending(g => g.fechaUltimaVenta)
                 .ToList();
 
             
@@ -186,8 +187,8 @@ namespace NestoAPI.Controllers
 
 
             StockProductoDTO datosStock = new StockProductoDTO();
-            datosStock.stock = await db.ExtractosProducto.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Número == productoStock).SumAsync(e => e.Cantidad);
-            int? cantidadReservada =  await db.LinPedidoVtas.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Producto == productoStock && e.Estado == 1).SumAsync(e => e.Cantidad);
+            datosStock.stock = await db.ExtractosProducto.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Número == productoStock).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync();
+            int? cantidadReservada =  await db.LinPedidoVtas.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Producto == productoStock && e.Estado == 1).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync();
             datosStock.cantidadDisponible = cantidadReservada == null ? datosStock.stock : datosStock.stock - (int)cantidadReservada;
 
             // Cargamos la imagen del producto
