@@ -6,6 +6,7 @@ using System.Web.Http.OData.Builder;
 using System.Web.Http.OData.Extensions;
 using NestoAPI.Models;
 
+
 namespace NestoAPI
 {
     public static class WebApiConfig
@@ -27,7 +28,7 @@ namespace NestoAPI
             //Evito las referencias circulares al trabajar con Entity FrameWork         
             config.Formatters.JsonFormatter.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Serialize;
             config.Formatters.JsonFormatter.SerializerSettings.PreserveReferencesHandling = Newtonsoft.Json.PreserveReferencesHandling.Objects;
-
+                    
             //Elimino que el sistema devuelva en XML, sólo trabajaremos con JSON
             config.Formatters.Remove(GlobalConfiguration.Configuration.Formatters.XmlFormatter);
 

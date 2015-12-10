@@ -19,6 +19,8 @@ namespace NestoAPI.Models
             this.Productos1 = new HashSet<Producto>();
             this.DescuentosProductoes = new HashSet<DescuentosProducto>();
             this.ExtractoProductoes = new HashSet<ExtractoProducto>();
+            this.InventariosCuadres = new HashSet<InventarioCuadre>();
+            this.Inventarios = new HashSet<Inventario>();
         }
     
         public string Empresa { get; set; }
@@ -64,5 +66,7 @@ namespace NestoAPI.Models
         public virtual SubGruposProducto SubGruposProducto { get; set; }
         public virtual ICollection<DescuentosProducto> DescuentosProductoes { get; set; }
         public virtual ICollection<ExtractoProducto> ExtractoProductoes { get; set; }
+        public virtual ICollection<InventarioCuadre> InventariosCuadres { get; set; }
+        public virtual ICollection<Inventario> Inventarios { get; set; }
     }
 }

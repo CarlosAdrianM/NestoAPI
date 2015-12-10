@@ -107,6 +107,9 @@ namespace NestoAPI.Models
         public Nullable<byte> tipoLinea { get; set; }
         public string usuario { get; set; }
         public bool vistoBueno { get; set; }
+        public decimal baseImponible { get; set; }
+        public decimal importeIva { get; set; }
+        public decimal total { get; set; }
     }
 
     public class PedidoVentaDTO

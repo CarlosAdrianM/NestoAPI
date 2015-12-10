@@ -186,11 +186,15 @@
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
+    <Compile Include="Controllers\FormasPagoController.cs" />
     <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
+    <Compile Include="Controllers\InventarioCuadresController.cs" />
+    <Compile Include="Controllers\InventariosController.cs" />
     <Compile Include="Controllers\ParametrosUsuarioController.cs" />
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
+    <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\ValuesController.cs" />
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
@@ -247,6 +251,12 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\FormaVenta.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Inventario.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\InventarioCuadre.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\LinPedidoVta.cs">

@@ -19,6 +19,7 @@ namespace NestoAPI.Models
             this.LinPedidoVtas = new HashSet<LinPedidoVta>();
             this.Productos = new HashSet<Producto>();
             this.DescuentosProductoes = new HashSet<DescuentosProducto>();
+            this.Inventarios = new HashSet<Inventario>();
         }
     
         public string Empresa { get; set; }
@@ -35,5 +36,6 @@ namespace NestoAPI.Models
         public virtual ICollection<LinPedidoVta> LinPedidoVtas { get; set; }
         public virtual ICollection<Producto> Productos { get; set; }
         public virtual ICollection<DescuentosProducto> DescuentosProductoes { get; set; }
+        public virtual ICollection<Inventario> Inventarios { get; set; }
     }
 }

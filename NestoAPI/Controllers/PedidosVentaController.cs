@@ -28,20 +28,50 @@ namespace NestoAPI.Controllers
         {
             return db.CabPedidoVtas;
         }
+        */
 
         // GET: api/PedidosVenta/5
-        [ResponseType(typeof(CabPedidoVta))]
-        public async Task<IHttpActionResult> GetCabPedidoVta(string id)
+        [ResponseType(typeof(PedidoVentaDTO))]
+        public async Task<IHttpActionResult> GetCabPedidoVta(string empresa, int numero)
         {
-            CabPedidoVta cabPedidoVta = await db.CabPedidoVtas.FindAsync(id);
+            CabPedidoVta cabPedidoVta = await db.CabPedidoVtas.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == numero);
             if (cabPedidoVta == null)
             {
                 return NotFound();
             }
 
-            return Ok(cabPedidoVta);
+            PedidoVentaDTO pedido = new PedidoVentaDTO
+            {
+                empresa = cabPedidoVta.Empresa,
+                numero = cabPedidoVta.Número,
+                cliente = cabPedidoVta.Nº_Cliente,
+                contacto = cabPedidoVta.Contacto,
+                fecha = cabPedidoVta.Fecha,
+                formaPago = cabPedidoVta.Forma_Pago,
+                plazosPago = cabPedidoVta.Forma_Pago,
+                primerVencimiento = cabPedidoVta.Primer_Vencimiento,
+                iva = cabPedidoVta.IVA,
+                vendedor = cabPedidoVta.Vendedor,
+                comentarios = cabPedidoVta.Comentarios,
+                comentarioPicking = cabPedidoVta.ComentarioPicking,
+                periodoFacturacion = cabPedidoVta.Periodo_Facturacion,
+                ruta = cabPedidoVta.Ruta,
+                serie = cabPedidoVta.Serie,
+                ccc = cabPedidoVta.CCC,
+                origen = cabPedidoVta.Origen,
+                contactoCobro = cabPedidoVta.ContactoCobro,
+                noComisiona = cabPedidoVta.NoComisiona,
+                vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
+                mantenerJunto = cabPedidoVta.MantenerJunto,
+                servirJunto = cabPedidoVta.ServirJunto
+
+                //public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
+            };
+            
+            return Ok(pedido);
         }
 
+        /*
         // PUT: api/PedidosVenta/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutCabPedidoVta(string id, CabPedidoVta cabPedidoVta)

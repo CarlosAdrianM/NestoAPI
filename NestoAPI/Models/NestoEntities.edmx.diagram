@@ -93,6 +93,14 @@
         <AssociationConnector Association="NVModel.FK_ExtractoProducto_FormasVenta" />
         <AssociationConnector Association="NVModel.FK_ExtractoProveedor_FormasVenta" />
         <AssociationConnector Association="NVModel.FK_LinPedidoVta_FormasVenta" />
+        <EntityTypeShape EntityType="NVModel.InventarioCuadre" Width="1.5" PointX="8.25" PointY="48.875" />
+        <AssociationConnector Association="NVModel.FK_InventariosCuadre_Empresas" />
+        <AssociationConnector Association="NVModel.FK_InventariosCuadre_Productos" />
+        <EntityTypeShape EntityType="NVModel.Inventario" Width="1.5" PointX="14.875" PointY="46.625" />
+        <AssociationConnector Association="NVModel.FK_Inventario_Empresas" />
+        <AssociationConnector Association="NVModel.FK_Inventarios_Familias" />
+        <AssociationConnector Association="NVModel.FK_Inventario_Productos" />
+        <AssociationConnector Association="NVModel.FK_Inventarios_SubGruposProducto" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
