@@ -40,6 +40,8 @@ namespace NestoAPI.Models
             this.FormasVentas = new HashSet<FormaVenta>();
             this.InventariosCuadres = new HashSet<InventarioCuadre>();
             this.Inventarios = new HashSet<Inventario>();
+            this.ExtractoClientes = new HashSet<ExtractoCliente>();
+            this.ExtractoClientes1 = new HashSet<ExtractoCliente>();
         }
     
         public string Número { get; set; }
@@ -157,5 +159,7 @@ namespace NestoAPI.Models
         public virtual ICollection<FormaVenta> FormasVentas { get; set; }
         public virtual ICollection<InventarioCuadre> InventariosCuadres { get; set; }
         public virtual ICollection<Inventario> Inventarios { get; set; }
+        public virtual ICollection<ExtractoCliente> ExtractoClientes { get; set; }
+        public virtual ICollection<ExtractoCliente> ExtractoClientes1 { get; set; }
     }
 }

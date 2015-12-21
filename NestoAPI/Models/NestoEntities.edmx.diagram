@@ -101,6 +101,12 @@
         <AssociationConnector Association="NVModel.FK_Inventarios_Familias" />
         <AssociationConnector Association="NVModel.FK_Inventario_Productos" />
         <AssociationConnector Association="NVModel.FK_Inventarios_SubGruposProducto" />
+        <EntityTypeShape EntityType="NVModel.ExtractoCliente" Width="1.5" PointX="17.125" PointY="44.75" />
+        <AssociationConnector Association="NVModel.FK_ExtractoCliente_Clientes" />
+        <AssociationConnector Association="NVModel.FK_ExtractoCliente_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoCliente_Empresas1" />
+        <AssociationConnector Association="NVModel.FK_ExtractoCliente_FormasPago" />
+        <AssociationConnector Association="NVModel.FK_ExtractoCliente_FormasVenta" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

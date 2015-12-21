@@ -238,6 +238,9 @@
     <Compile Include="Models\EnviosAgencia.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\ExtractoCliente.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\ExtractoProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

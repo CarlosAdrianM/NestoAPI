@@ -32,13 +32,38 @@ namespace NestoAPI.Controllers
 
         // GET: api/PedidosVenta/5
         [ResponseType(typeof(PedidoVentaDTO))]
-        public async Task<IHttpActionResult> GetCabPedidoVta(string empresa, int numero)
+        public async Task<IHttpActionResult> GetPedidoVenta(string empresa, int numero)
         {
             CabPedidoVta cabPedidoVta = await db.CabPedidoVtas.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == numero);
             if (cabPedidoVta == null)
             {
                 return NotFound();
             }
+
+            List<LineaPedidoVentaDTO> lineasPedido = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == numero && l.Estado > -99)
+                .Select(l => new LineaPedidoVentaDTO
+                {
+                    almacen = l.Almacén,
+                    aplicarDescuento = l.Aplicar_Dto,
+                    cantidad = (l.Cantidad != null ? (short)l.Cantidad : (short)0), 
+                    delegacion = l.Delegación, 
+                    descuento = l.Descuento,
+                    estado = l.Estado,
+                    fechaEntrega = l.Fecha_Entrega,
+                    formaVenta = l.Forma_Venta,
+                    iva = l.IVA,
+                    oferta = l.NºOferta,
+                    precio = (l.Precio != null ? (decimal)l.Precio : 0),
+                    producto = l.Producto.Trim(),
+                    texto = l.Texto.Trim(),
+                    tipoLinea = l.TipoLinea,
+                    usuario = l.Usuario,
+                    vistoBueno = l.VtoBueno,
+                    baseImponible = l.Base_Imponible,
+                    importeIva = l.ImporteIVA,
+                    total = l.Total
+                })
+                .ToList();
 
             PedidoVentaDTO pedido = new PedidoVentaDTO
             {
@@ -63,9 +88,8 @@ namespace NestoAPI.Controllers
                 noComisiona = cabPedidoVta.NoComisiona,
                 vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
                 mantenerJunto = cabPedidoVta.MantenerJunto,
-                servirJunto = cabPedidoVta.ServirJunto
-
-                //public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
+                servirJunto = cabPedidoVta.ServirJunto,
+                LineasPedido = lineasPedido
             };
             
             return Ok(pedido);
