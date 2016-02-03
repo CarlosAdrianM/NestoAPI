@@ -74,7 +74,7 @@ namespace NestoAPI.Controllers
             {
                 await db.SaveChangesAsync();
             }
-            catch (DbUpdateConcurrencyException ex)
+            catch (DbUpdateConcurrencyException)
             {
                 if (!InventarioExists(id))
                 {

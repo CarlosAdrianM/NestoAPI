@@ -235,7 +235,7 @@ namespace NestoAPI.Controllers
                 
                 bruto = linea.cantidad * linea.precio;
                 sumaDescuentos = (1 - (1 - (descuentoCliente)) * (1 - (descuentoProducto)) * (1 - (linea.descuento)) * (1 - (descuentoPP)));
-                baseImponible = bruto * (1 - sumaDescuentos);
+                baseImponible = Math.Round(bruto * (1 - sumaDescuentos), 2);
                 parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva && p.IVA_Producto == producto.IVA_Repercutido);
                 porcentajeIVA = (byte)parametroIva.C__IVA;
                 porcentajeRE = (decimal)parametroIva.C__RE / 100;

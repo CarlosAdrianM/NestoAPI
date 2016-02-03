@@ -2485,26 +2485,26 @@
             <End Role="SubGruposProducto" EntitySet="SubGruposProductoes" />
             <End Role="Inventario" EntitySet="Inventarios" />
           </AssociationSet>
-          <EntitySet Name="ExtractoClientes" EntityType="NVModel.ExtractoCliente" />
+          <EntitySet Name="ExtractosCliente" EntityType="NVModel.ExtractoCliente" />
           <AssociationSet Name="FK_ExtractoCliente_Clientes" Association="NVModel.FK_ExtractoCliente_Clientes">
             <End Role="Cliente" EntitySet="Clientes" />
-            <End Role="ExtractoCliente" EntitySet="ExtractoClientes" />
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
           </AssociationSet>
           <AssociationSet Name="FK_ExtractoCliente_Empresas" Association="NVModel.FK_ExtractoCliente_Empresas">
             <End Role="Empresa" EntitySet="Empresas" />
-            <End Role="ExtractoCliente" EntitySet="ExtractoClientes" />
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
           </AssociationSet>
           <AssociationSet Name="FK_ExtractoCliente_Empresas1" Association="NVModel.FK_ExtractoCliente_Empresas1">
             <End Role="Empresa" EntitySet="Empresas" />
-            <End Role="ExtractoCliente" EntitySet="ExtractoClientes" />
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
           </AssociationSet>
           <AssociationSet Name="FK_ExtractoCliente_FormasPago" Association="NVModel.FK_ExtractoCliente_FormasPago">
             <End Role="FormaPago" EntitySet="FormasPago" />
-            <End Role="ExtractoCliente" EntitySet="ExtractoClientes" />
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
           </AssociationSet>
           <AssociationSet Name="FK_ExtractoCliente_FormasVenta" Association="NVModel.FK_ExtractoCliente_FormasVenta">
             <End Role="FormaVenta" EntitySet="FormasVenta" />
-            <End Role="ExtractoCliente" EntitySet="ExtractoClientes" />
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
           </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
@@ -5142,7 +5142,7 @@
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
-          <EntitySetMapping Name="ExtractoClientes">
+          <EntitySetMapping Name="ExtractosCliente">
             <EntityTypeMapping TypeName="NVModel.ExtractoCliente">
               <MappingFragment StoreEntitySet="ExtractoCliente">
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />

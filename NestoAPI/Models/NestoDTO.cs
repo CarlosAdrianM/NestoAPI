@@ -6,6 +6,9 @@ using System.Threading.Tasks;
 
 namespace NestoAPI.Models
 {
+
+
+
     public class ClienteDTO
     {
         public string empresa { get; set; }
@@ -64,6 +67,27 @@ namespace NestoAPI.Models
         public string ruta { get; set; }
         public string formaPago { get; set; }
         public string plazosPago { get; set; }
+    }
+
+    public class ExtractoClienteDTO
+    {
+        public int id { get; set; }
+        public string empresa { get; set; }
+        public int asiento { get; set; }
+        public string cliente { get; set; }
+        public string contacto { get; set; }
+        public System.DateTime fecha { get; set; }
+        public string tipo { get; set; }
+        public string documento { get; set; }
+        public string efecto { get; set; }
+        public string concepto { get; set; }
+        public decimal importe { get; set; }
+        public decimal importePendiente { get; set; }
+        public string vendedor { get; set; }
+        public Nullable<System.DateTime> vencimiento { get; set; }
+        public string ccc { get; set; }
+        public string ruta { get; set; }
+        public string estado { get; set; }
     }
 
     public class LineaPlantillaVenta
@@ -151,6 +175,22 @@ namespace NestoAPI.Models
         public int stock { get; set; }
         public int cantidadDisponible { get; set; }
         public string urlImagen { get; set; }
+    }
+
+    public class Mod347DTO
+    {
+        public Mod347DTO()
+        {
+            this.MovimientosMayor = new HashSet<ExtractoClienteDTO>();
+        }
+
+        public decimal[] trimestre { get; set; }
+        public decimal total { get { return trimestre[0] + trimestre[1] + trimestre[2] + trimestre[3]; } }
+        public string nombre { get; set; }
+        public string direccion { get; set; }
+        public string codigoPostal { get; set; }
+
+        public virtual ICollection<ExtractoClienteDTO> MovimientosMayor { get; set; }
     }
 
     public class UltimasVentasProductoClienteDTO
