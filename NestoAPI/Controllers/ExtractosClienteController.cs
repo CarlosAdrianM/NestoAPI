@@ -58,7 +58,7 @@ namespace NestoAPI.Controllers
             Mod347DTO modelo = new Mod347DTO();
 
             Cliente clienteComprobacion = await db.Clientes.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true);
-            if (clienteComprobacion.CIF_NIF != NIF)
+            if (clienteComprobacion.CIF_NIF != null  && clienteComprobacion.CIF_NIF.Trim() != NIF.Trim())
             {
                 throw new Exception("El NIF no es correcto");
             }
