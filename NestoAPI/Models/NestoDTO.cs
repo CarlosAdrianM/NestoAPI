@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.ComponentModel.DataAnnotations;
 
 namespace NestoAPI.Models
 {
@@ -149,6 +150,7 @@ namespace NestoAPI.Models
         public string contacto { get; set; }
         public Nullable<System.DateTime> fecha { get; set; }
         public string formaPago { get; set; }
+        [Required]
         public string plazosPago { get; set; }
         public Nullable<System.DateTime> primerVencimiento { get; set; }
         public string iva { get; set; }

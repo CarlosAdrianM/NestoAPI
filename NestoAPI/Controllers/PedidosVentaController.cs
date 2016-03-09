@@ -261,7 +261,7 @@ namespace NestoAPI.Controllers
                     Producto = linea.producto,
                     Texto = linea.texto,
                     Cantidad = linea.cantidad,
-                    Fecha_Entrega = linea.fechaEntrega,
+                    Fecha_Entrega = linea.fechaEntrega.Date,
                     Precio = linea.precio,
                     PrecioTarifa = producto.PVP,
                     Coste = (decimal)producto.PrecioMedio,
