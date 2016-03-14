@@ -123,7 +123,7 @@ namespace NestoAPI.Controllers
                     comentarios = clienteEncontrado.Comentarios,
                     contacto = clienteEncontrado.Contacto.Trim(),
                     direccion = clienteEncontrado.Dirección.Trim(),
-                    esDireccionPorDefecto = clienteDireccionPorDefecto.Contacto == clienteEncontrado.Contacto,
+                    esDireccionPorDefecto = clienteDireccionPorDefecto.ContactoDefecto == clienteEncontrado.Contacto,
                     estado = clienteEncontrado.Estado,
                     iva = clienteEncontrado.IVA.Trim(),
                     mantenerJunto = clienteEncontrado.MantenerJunto,
