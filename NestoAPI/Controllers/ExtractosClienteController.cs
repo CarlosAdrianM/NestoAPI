@@ -52,6 +52,7 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/ExtractosCliente
+        [Authorize]
         [ResponseType(typeof(Mod347DTO))]
         public async Task<IHttpActionResult> GetModelo347(string empresa, string cliente, string NIF)
         {
