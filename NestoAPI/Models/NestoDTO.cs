@@ -172,6 +172,12 @@ namespace NestoAPI.Models
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
     }
 
+    public class PrecioProductoDTO
+    {
+        public decimal precio { get; set; }
+        public decimal descuento { get; set; }
+    }
+
     public class StockProductoDTO
     {
         public int stock { get; set; }

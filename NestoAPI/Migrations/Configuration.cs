@@ -31,18 +31,34 @@ namespace NestoAPI.Migrations
             //
             var manager = new UserManager<ApplicationUser>(new UserStore<ApplicationUser>(new ApplicationDbContext()));
 
+            var roleManager = new RoleManager<IdentityRole>(new RoleStore<IdentityRole>(new ApplicationDbContext()));
+
             var user = new ApplicationUser()
             {
-                UserName = "Carlos",
-                Email = "carlosadrian@nuevavision.es",
+                UserName = "Laura",
+                Email = "laura@nuevavision.es",
                 EmailConfirmed = true,
-                FirstName = "Carlos",
-                LastName = "Adrián",
+                FirstName = "Laura",
+                LastName = "Villacieros",
                 Level = 1,
-                JoinDate = DateTime.Now.AddYears(-3)
+                JoinDate = DateTime.Now
             };
 
-            manager.Create(user, "78368255A");
+            manager.Create(user, "Madrid2010");
+
+            
+            if (roleManager.Roles.Count() == 0)
+            {
+                roleManager.Create(new IdentityRole { Name = "SuperAdmin" });
+                roleManager.Create(new IdentityRole { Name = "Admin" });
+                roleManager.Create(new IdentityRole { Name = "Vendedor" });
+                roleManager.Create(new IdentityRole { Name = "Cliente" });
+                roleManager.Create(new IdentityRole { Name = "VendedorTelefono" });
+            }
+
+            var adminUser = manager.FindByName("Laura");
+
+            manager.AddToRoles(adminUser.Id, new string[] { "Vendedor"});
         }
     }
 }

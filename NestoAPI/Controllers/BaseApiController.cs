@@ -26,6 +26,16 @@ namespace NestoAPI.Controllers
             }
         }
 
+        private ApplicationRoleManager _AppRoleManager = null;
+
+        protected ApplicationRoleManager AppRoleManager
+        {
+            get
+            {
+                return _AppRoleManager ?? Request.GetOwinContext().GetUserManager<ApplicationRoleManager>();
+            }
+        }
+
         public BaseApiController()
         {
         }

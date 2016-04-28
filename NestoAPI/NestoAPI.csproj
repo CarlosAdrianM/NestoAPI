@@ -255,11 +255,13 @@
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
+    <Compile Include="Controllers\RolesController.cs" />
     <Compile Include="Controllers\ValuesController.cs" />
     <Compile Include="Global.asax.cs">
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Infraestructure\ApplicationDbContext.cs" />
+    <Compile Include="Infraestructure\ApplicationRoleManager.cs" />
     <Compile Include="Infraestructure\ApplicationUser.cs" />
     <Compile Include="Infraestructure\ApplicationUserManager.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.cs" />
@@ -369,6 +371,7 @@
     <Compile Include="Models\Proveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\RoleBindingModels.cs" />
     <Compile Include="Models\SubGruposProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
