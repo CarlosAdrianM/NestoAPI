@@ -135,6 +135,7 @@ namespace NestoAPI.Models
         public decimal baseImponible { get; set; }
         public decimal importeIva { get; set; }
         public decimal total { get; set; }
+        public decimal descuentoProducto { get; set; }
     }
 
     public class PedidoVentaDTO

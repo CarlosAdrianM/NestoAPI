@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
+using NestoAPI.Infraestructure;
 
 namespace NestoAPI.Controllers
 {
@@ -226,11 +227,22 @@ namespace NestoAPI.Controllers
                 throw new Exception("Producto nulo");
             }
 
-            decimal precio = datosPrecio.precio;
-            decimal descuento = datosPrecio.descuento;
-            calcularDescuentoProducto(ref precio, ref descuento, producto, cliente, contacto, cantidad, aplicarDescuento);
-            datosPrecio.precio = precio;
-            datosPrecio.descuento = descuento;
+            //decimal precio = datosPrecio.precio;
+            //decimal descuento = datosPrecio.descuento;
+            PrecioDescuentoProducto precio = new PrecioDescuentoProducto
+            {
+                precioCalculado = datosPrecio.precio,
+                descuentoCalculado = datosPrecio.descuento,
+                producto = producto,
+                cliente = cliente,
+                contacto = contacto,
+                cantidad = cantidad,
+                aplicarDescuento = aplicarDescuento
+            };
+            
+            GestorPrecios.calcularDescuentoProducto(precio);
+            datosPrecio.precio = precio.precioCalculado;
+            datosPrecio.descuento = precio.descuentoCalculado;
 
             return Ok(datosPrecio);
         }
@@ -330,7 +342,7 @@ namespace NestoAPI.Controllers
             return Ok(linPedidoVta);
         }
         */
-
+        /*
         private void calcularDescuentoProducto(ref decimal precioCalculado, ref decimal descuentoCalculado, Producto producto, string cliente, string contacto, short cantidad, bool aplicarDescuento)
         {
             DescuentosProducto dtoProducto;
@@ -406,6 +418,7 @@ namespace NestoAPI.Controllers
             }
 
         }
+        */
 
 
         protected override void Dispose(bool disposing)
