@@ -23,11 +23,22 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
         }
 
-        
+
         // GET: api/FormasPago
-        public IQueryable<FormaPago> GetFormasPago(string empresa)
+        [ResponseType(typeof(FormaPagoDTO))]
+        public async Task<IHttpActionResult> GetFormasPago(string empresa)
+        //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {
-            return db.FormasPago.Where(l => l.Empresa == empresa);
+            List<FormaPagoDTO> formasPago = db.FormasPago.Where(l => l.Empresa == empresa && !l.BloquearPagos && l.Número != "TAL").
+                Select(f => new FormaPagoDTO
+                {
+                    formaPago = f.Número.Trim(),
+                    descripcion = f.Descripción.Trim(),
+                    bloquearPagos = f.BloquearPagos,
+                    cccObligatorio = f.CCCObligatorio
+                }).ToList();
+
+            return Ok(formasPago);
         }
         
 

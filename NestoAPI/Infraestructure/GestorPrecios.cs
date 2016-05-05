@@ -9,12 +9,41 @@ namespace NestoAPI.Infraestructure
 {
     public class GestorPrecios
     {
+        public static bool calcularAplicarDescuento(Producto producto)
+        {
+            return calcularAplicarDescuento(producto.Aplicar_Dto, producto.Familia, producto.SubGrupo);
+        }
+        
+        public static bool calcularAplicarDescuento(bool aplicarDescuento, string familia, string subGrupo)
+        {
+            // Esto podríamos sacarlo a otra clase que sea más fácil de mantener
+            if (!aplicarDescuento || familia == "Ramason" || subGrupo == "ACP")
+            {
+                return false;
+            } else
+            {
+                return true;
+            }
+
+        }
+
         public static void calcularDescuentoProducto(PrecioDescuentoProducto datos)
         {
+
             DescuentosProducto dtoProducto;
 
             datos.descuentoCalculado = 0;
             datos.precioCalculado = (decimal)datos.producto.PVP;
+
+            datos.aplicarDescuento = calcularAplicarDescuento(datos.producto);
+
+            // En Nesto Viejo, si no tiene el aplicar descuento marcado, solo calcula precios especiales, pero no descuentos
+            // Ahora hacemos que no calcule nada, por eso lo pongo aquí arriba.
+            if (!datos.aplicarDescuento)
+            {
+                return;
+            }
+
 
             using (NVEntities db = new NVEntities()) {
                 // AQUÍ CALCULA PRECIOS, NO DESCUENTOS
@@ -39,13 +68,6 @@ namespace NestoAPI.Infraestructure
                 if (dtoProducto != null && dtoProducto.Precio < datos.precioCalculado)
                 {
                     datos.precioCalculado = (decimal)dtoProducto.Precio;
-                }
-
-
-                // Si no tiene el aplicar descuento marcado, solo calcula precios especiales, pero no descuentos
-                if (!datos.aplicarDescuento)
-                {
-                    return;
                 }
 
                 // CALCULA DESCUENTOS

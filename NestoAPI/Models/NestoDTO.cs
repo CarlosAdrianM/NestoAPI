@@ -91,6 +91,14 @@ namespace NestoAPI.Models
         public string estado { get; set; }
     }
 
+    public class FormaPagoDTO
+    {
+        public string formaPago { get; set; }
+        public string descripcion { get; set; }
+        public bool bloquearPagos { get; set; }
+        public bool cccObligatorio { get; set; }
+    }
+
     public class LineaPlantillaVenta
     {
         public string producto { get; set; }
@@ -177,6 +185,7 @@ namespace NestoAPI.Models
     {
         public decimal precio { get; set; }
         public decimal descuento { get; set; }
+        public bool aplicarDescuento { get; set; }
     }
 
     public class StockProductoDTO
