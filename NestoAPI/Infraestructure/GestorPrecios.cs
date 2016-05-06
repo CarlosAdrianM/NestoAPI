@@ -35,7 +35,7 @@ namespace NestoAPI.Infraestructure
             datos.descuentoCalculado = 0;
             datos.precioCalculado = (decimal)datos.producto.PVP;
 
-            datos.aplicarDescuento = calcularAplicarDescuento(datos.producto);
+            datos.aplicarDescuento = calcularAplicarDescuento(datos.aplicarDescuento, datos.producto.Familia, datos.producto.SubGrupo);
 
             // En Nesto Viejo, si no tiene el aplicar descuento marcado, solo calcula precios especiales, pero no descuentos
             // Ahora hacemos que no calcule nada, por eso lo pongo aquí arriba.
