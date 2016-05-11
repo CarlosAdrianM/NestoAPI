@@ -106,8 +106,40 @@ namespace NestoAPI.Infraestructure
                 {
                     datos.precioCalculado = (decimal)datos.producto.PVP;
                 }
+
+                comprobarCondiciones(datos);
             }
         }
+
+        private static void cargarListaCondiciones()
+        {
+            // Rellenamos la lista estática de las condiciones que queremos comprobar.
+            // Se implenta de esta forma para que sea sencillo en el futuro poner o 
+            // o quitar condiciones, ya que se implementa como clases individuales que
+            // implementan el interfaz ICondicionPrecioDescuento
+            listaCondiciones.Add(new OtrosAparatosNoPuedeLlevarDescuento());
+            listaCondiciones.Add(new DuNoPuedeLlevarCualquierDescuento());
+            listaCondiciones.Add(new RamasonNoPuedeLlevarNingunDescuento());
+        }
+
+        public static bool comprobarCondiciones(PrecioDescuentoProducto datos) {
+            // Recorre listaCondiciones y mira una a una si "datos" cumplen todas las condiciones
+            // Devuelve true si cumple todas y false si alguna no se cumple
+            // Las que no se cumplen son corregidas durante la comprobación
+
+            if (listaCondiciones == null || listaCondiciones.Count == 0)
+            {
+                cargarListaCondiciones();
+            }
+
+            bool cumpleTodasLasCondiciones = true;
+            foreach (ICondicionPrecioDescuento condicion in listaCondiciones) {
+                cumpleTodasLasCondiciones = condicion.precioAceptado(datos) && cumpleTodasLasCondiciones;
+            };
+            return cumpleTodasLasCondiciones;
+        }
+
+        public static List<ICondicionPrecioDescuento> listaCondiciones = new List<ICondicionPrecioDescuento>();
     }
 
     public class PrecioDescuentoProducto
@@ -118,6 +150,84 @@ namespace NestoAPI.Infraestructure
         public string cliente;
         public string contacto;
         public short cantidad;
+        public short cantidadOferta;
         public bool aplicarDescuento;
+        public string motivo; // cadena para mostrar en la interfaz de usuario
+        public decimal? descuentoReal {
+            get
+            {
+                decimal dividendo = (precioCalculado * (1 -descuentoCalculado)  * cantidad);
+                decimal divisor = ((decimal)producto.PVP * (cantidad + cantidadOferta));
+                return 1 - ( dividendo / divisor );
+            }
+        }
     }
+
+    public interface ICondicionPrecioDescuento 
+    {
+        // Pasamos datos del producto para ver qué precio mínimo se le puede dejar.
+        // En caso de ser correctos todos los datos que hemos pasado, el procedimiento
+        // devolverá true sin modificar "precio", y en caso de no poder ser esas condiciones
+        // devolverá false y se modificarán los campos de "precio" que sea necesario para
+        // que se pueda producir la venta cumpliendo nuestras condiciones.
+        bool precioAceptado(PrecioDescuentoProducto precio);
+    }
+
+    #region Condiciones
+    public class DuNoPuedeLlevarCualquierDescuento : ICondicionPrecioDescuento
+    {
+        public bool precioAceptado(PrecioDescuentoProducto precio)
+        {
+            // Los productos de la familia Du no pueden tener más de un 15% de descuento
+
+            if (precio.producto.Familia.Trim() == "Du" && precio.descuentoReal > (decimal).15)
+            {
+                precio.precioCalculado = (decimal)precio.producto.PVP;
+                precio.descuentoCalculado = (decimal).15;
+                precio.motivo = "No se puede hacer un descuento superior al 15% en Du";
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+    }
+    public class OtrosAparatosNoPuedeLlevarDescuento : ICondicionPrecioDescuento
+    {
+        public bool precioAceptado(PrecioDescuentoProducto precio)
+        {
+            // Los productos del grupo Otros aparatos no pueden tener ningún tipo de descuento
+
+            if (precio.aplicarDescuento && precio.producto.SubGrupo == "ACP")
+            {
+                precio.aplicarDescuento = false;
+                precio.motivo = "El grupo Otros Aparatos no puede llevar ningún precio especial ni descuento";
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+    }
+    public class RamasonNoPuedeLlevarNingunDescuento : ICondicionPrecioDescuento
+    {
+        public bool precioAceptado(PrecioDescuentoProducto precio)
+        {
+            // Los productos de la familia Ramason no aceptan ningún tipo de descuento
+
+            if (precio.aplicarDescuento && precio.producto.Familia == "Ramason")
+            {
+                precio.aplicarDescuento = false;
+                precio.motivo = "No se puede hacer ningún precio especal ni descuento en productos de Ramasón";
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+    }
+    #endregion
 }

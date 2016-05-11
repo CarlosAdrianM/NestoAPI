@@ -181,11 +181,25 @@ namespace NestoAPI.Models
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
     }
 
+    public class PlazoPagoDTO
+    {
+        public string plazoPago { get; set; }
+        public string descripcion { get; set; }
+        public short numeroPlazos { get; set; }
+        public short diasPrimerPlazo { get; set; }
+        public short diasEntrePlazos { get; set; }
+        public short mesesPrimerPlazo { get; set; }
+        public short mesesEntrePlazos { get; set; }
+        public decimal descuentoPP { get; set; }
+        public decimal? financiacion { get; set; }
+    }
+
     public class PrecioProductoDTO
     {
         public decimal precio { get; set; }
         public decimal descuento { get; set; }
         public bool aplicarDescuento { get; set; }
+        public string motivo { get; set; }
     }
 
     public class StockProductoDTO

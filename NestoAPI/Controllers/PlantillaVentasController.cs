@@ -138,7 +138,7 @@ namespace NestoAPI.Controllers
                     ccc = clienteEncontrado.CCC.Trim(),
                     ruta = clienteEncontrado.Ruta.Trim(),
                     formaPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).FormaPago,
-                    plazosPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).PlazosPago
+                    plazosPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).PlazosPago.Trim()
                 }).ToList();
 
             
@@ -244,6 +244,47 @@ namespace NestoAPI.Controllers
             datosPrecio.precio = precio.precioCalculado;
             datosPrecio.descuento = precio.descuentoCalculado;
             datosPrecio.aplicarDescuento = precio.aplicarDescuento;
+
+            return Ok(datosPrecio);
+        }
+
+        [HttpGet]
+        [ResponseType(typeof(PrecioProductoDTO))]
+        public async Task<IHttpActionResult> GetComprobarCondiciones(string empresa, string producto, bool aplicarDescuento, decimal precio, decimal descuento, short cantidad, short cantidadOferta)
+        {
+            Empresa empresaBuscada = db.Empresas.Where(e => e.Número == empresa).SingleOrDefault();
+            if (empresaBuscada.IVA_por_defecto == null)
+            {
+                throw new Exception("Empresa no válida");
+            }
+
+            Producto productoEncontrado = await db.Productos.Where(p => p.Empresa == empresa && p.Número == producto).SingleOrDefaultAsync();
+            if (productoEncontrado.Estado < 0)
+            {
+                throw new Exception("Producto nulo");
+            }
+
+            //decimal precio = datosPrecio.precio;
+            //decimal descuento = datosPrecio.descuento;
+            PrecioDescuentoProducto datos = new PrecioDescuentoProducto
+            {
+                precioCalculado = precio,
+                descuentoCalculado = descuento,
+                producto = productoEncontrado,
+                cantidad = cantidad,
+                cantidadOferta = cantidadOferta,
+                aplicarDescuento = aplicarDescuento
+            };
+
+            bool condicionesAprobadas = GestorPrecios.comprobarCondiciones(datos);
+
+            PrecioProductoDTO datosPrecio = new PrecioProductoDTO
+            {
+                aplicarDescuento = datos.aplicarDescuento,
+                precio = datos.precioCalculado,
+                descuento = datos.descuentoCalculado,
+                motivo = datos.motivo
+            };
 
             return Ok(datosPrecio);
         }

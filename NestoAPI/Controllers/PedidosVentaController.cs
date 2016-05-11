@@ -150,6 +150,7 @@ namespace NestoAPI.Controllers
             DateTime vencimientoPedido;
             System.Data.Entity.Core.Objects.ObjectParameter primerVencimiento = new System.Data.Entity.Core.Objects.ObjectParameter("FechaOut", typeof(DateTime));
             PlazoPago plazoPago = db.PlazosPago.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.plazosPago);
+            Empresa empresa = db.Empresas.SingleOrDefault(e => e.Número == pedido.empresa);
             vencimientoPedido = pedido.fecha.Value.AddDays(plazoPago.DíasPrimerPlazo);
             vencimientoPedido = vencimientoPedido.AddMonths(plazoPago.MesesPrimerPlazo);
             db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
@@ -170,15 +171,15 @@ namespace NestoAPI.Controllers
                 Nº_Cliente = pedido.cliente,
                 Contacto = pedido.contacto,
                 Fecha = pedido.fecha,
-                Forma_Pago = pedido.formaPago,
-                PlazosPago = pedido.plazosPago,
+                Forma_Pago = pedido.iva != null ? pedido.formaPago : empresa.FormaPagoEfectivo,
+                PlazosPago = pedido.iva != null ? pedido.plazosPago : empresa.PlazosPagoDefecto,
                 Primer_Vencimiento = (DateTime)primerVencimiento.Value,
                 IVA = pedido.iva,
                 Vendedor = pedido.vendedor,
                 Periodo_Facturacion = pedido.periodoFacturacion,
                 Ruta = pedido.ruta,
                 Serie = pedido.serie,
-                CCC = pedido.ccc,
+                CCC = pedido.iva != null ? pedido.ccc : null,
                 Origen = pedido.origen,
                 ContactoCobro = pedido.contactoCobro,
                 NoComisiona = pedido.noComisiona,
@@ -247,11 +248,20 @@ namespace NestoAPI.Controllers
                     sumaDescuentos = linea.descuento;
                 }
                 baseImponible = Math.Round(bruto * (1 - sumaDescuentos), 2);
-                parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva && p.IVA_Producto == producto.IVA_Repercutido);
-                porcentajeIVA = (byte)parametroIva.C__IVA;
-                porcentajeRE = (decimal)parametroIva.C__RE / 100;
-                importeIVA = baseImponible * porcentajeIVA / 100;
-                importeRE = baseImponible * porcentajeRE;
+                if (pedido.iva != null)
+                {
+                    parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva && p.IVA_Producto == producto.IVA_Repercutido);
+                    porcentajeIVA = (byte)parametroIva.C__IVA;
+                    porcentajeRE = (decimal)parametroIva.C__RE / 100;
+                    importeIVA = baseImponible * porcentajeIVA / 100;
+                    importeRE = baseImponible * porcentajeRE;
+                } else
+                {
+                    porcentajeIVA = 0;
+                    porcentajeRE = 0;
+                    importeIVA = 0;
+                    importeRE = 0;
+                }
                 importeDescuento = bruto * sumaDescuentos;
 
                 tipoExclusiva = producto.Familia1.TipoExclusiva;

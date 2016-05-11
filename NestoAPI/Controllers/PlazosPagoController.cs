@@ -24,9 +24,30 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/PlazosPago
-        public IQueryable<PlazoPago> GetPlazosPago(string empresa)
+        //public IQueryable<PlazoPago> GetPlazosPago(string empresa)
+        //{
+        //    return db.PlazosPago.Where(p => p.Empresa == empresa);
+        //}
+
+        [ResponseType(typeof(PlazoPagoDTO))]
+        public async Task<IHttpActionResult> GetPlazosPago(string empresa)
+        //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {
-            return db.PlazosPago.Where(p => p.Empresa == empresa);
+            List<PlazoPagoDTO> plazosPago = await db.PlazosPago.Where(l => l.Empresa == empresa).
+                Select(p => new PlazoPagoDTO
+                {
+                    plazoPago = p.Número.Trim(),
+                    descripcion = p.Descripción.Trim(),
+                    numeroPlazos = p.Nº_Plazos,
+                    diasPrimerPlazo = p.DíasPrimerPlazo,
+                    diasEntrePlazos = p.DíasEntrePlazos,
+                    mesesPrimerPlazo = p.MesesPrimerPlazo,
+                    mesesEntrePlazos = p.MesesEntrePlazos,
+                    descuentoPP = p.DtoProntoPago,
+                    financiacion = p.Financiacion
+                }).ToListAsync();
+
+            return Ok(plazosPago);
         }
 
         /*

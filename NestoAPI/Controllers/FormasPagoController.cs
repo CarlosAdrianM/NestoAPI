@@ -29,14 +29,14 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetFormasPago(string empresa)
         //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {
-            List<FormaPagoDTO> formasPago = db.FormasPago.Where(l => l.Empresa == empresa && !l.BloquearPagos && l.Número != "TAL").
+            List<FormaPagoDTO> formasPago = await db.FormasPago.Where(l => l.Empresa == empresa && !l.BloquearPagos && l.Número != "TAL").
                 Select(f => new FormaPagoDTO
                 {
                     formaPago = f.Número.Trim(),
                     descripcion = f.Descripción.Trim(),
                     bloquearPagos = f.BloquearPagos,
                     cccObligatorio = f.CCCObligatorio
-                }).ToList();
+                }).ToListAsync();
 
             return Ok(formasPago);
         }
