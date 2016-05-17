@@ -17,7 +17,8 @@ namespace NestoAPI.Infraestructure
         public static bool calcularAplicarDescuento(bool aplicarDescuento, string familia, string subGrupo)
         {
             // Esto podríamos sacarlo a otra clase que sea más fácil de mantener
-            if (!aplicarDescuento || familia == "Ramason" || subGrupo == "ACP")
+            // if (!aplicarDescuento || familia == "Ramason" || subGrupo == "ACP")
+            if (!aplicarDescuento)
             {
                 return false;
             } else
@@ -122,6 +123,7 @@ namespace NestoAPI.Infraestructure
             listaCondiciones.Add(new DuNoPuedeLlevarCualquierDescuento());
             listaCondiciones.Add(new RamasonNoPuedeLlevarNingunDescuento());
             listaCondiciones.Add(new CerasConPrecioMinimo());
+            listaCondiciones.Add(new ThuyaNoPuedeLlevarCualquierDescuento());
         }
 
         public static bool comprobarCondiciones(PrecioDescuentoProducto datos) {
@@ -463,9 +465,12 @@ namespace NestoAPI.Infraestructure
             if (precio.aplicarDescuento && precio.producto.SubGrupo == "ACP")
             {
                 precio.aplicarDescuento = false;
-                precio.precioCalculado = (decimal)precio.producto.PVP;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "El grupo Otros Aparatos no puede llevar ningún precio especial ni descuento";
+                if (precio.descuentoReal > 0)
+                {
+                    precio.precioCalculado = (decimal)precio.producto.PVP;
+                    precio.descuentoCalculado = 0;
+                    precio.motivo = "El grupo Otros Aparatos no puede llevar ningún precio especial ni descuento";
+                }
                 return false;
             }
             else
@@ -483,9 +488,30 @@ namespace NestoAPI.Infraestructure
             if (precio.aplicarDescuento && precio.producto.Familia == "Ramason")
             {
                 precio.aplicarDescuento = false;
+                if (precio.descuentoReal > 0)
+                {
+                    precio.precioCalculado = (decimal)precio.producto.PVP;
+                    precio.descuentoCalculado = 0;
+                    precio.motivo = "No se puede hacer ningún precio especal ni descuento en productos de Ramasón";
+                }
+                return false;
+            }
+            else
+            {
+                return true;
+            }
+        }
+    }
+    public class ThuyaNoPuedeLlevarCualquierDescuento : ICondicionPrecioDescuento
+    {
+        public bool precioAceptado(PrecioDescuentoProducto precio)
+        {
+            // Los productos de la familia Du no pueden tener más de un 15% de descuento
+            if (precio.producto.Familia.Trim() == "Thuya" && precio.descuentoReal > (decimal).15)
+            {
                 precio.precioCalculado = (decimal)precio.producto.PVP;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "No se puede hacer ningún precio especal ni descuento en productos de Ramasón";
+                precio.descuentoCalculado = (decimal).15;
+                precio.motivo = "No se puede hacer un descuento superior al 15% en Thuya";
                 return false;
             }
             else
