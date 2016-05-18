@@ -199,7 +199,7 @@ namespace NestoAPI.Infraestructure
             // Clean & Easy
             if (precio.producto.Grupo == "COS" 
                 && precio.producto.SubGrupo == "304" 
-                && precio.producto.Familia.Trim() == "Clean&easy"
+                && precio.producto.Familia.ToLower().Trim() == "clean&easy"
                 && (precio.precioCalculado < precio.producto.PVP || precio.descuentoReal > 0))
             {
                 precio.aplicarDescuento = false;
@@ -212,7 +212,7 @@ namespace NestoAPI.Infraestructure
             // Tessiline
             if (precio.producto.Grupo == "COS"
                 && precio.producto.SubGrupo == "304"
-                && precio.producto.Familia.Trim() == "Tessiline"
+                && precio.producto.Familia.ToLower().Trim() == "tessiline"
                 && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal).79))
             {
                 precio.precioCalculado = (decimal).79;
@@ -443,7 +443,7 @@ namespace NestoAPI.Infraestructure
         public bool precioAceptado(PrecioDescuentoProducto precio)
         {
             // Los productos de la familia Du no pueden tener más de un 15% de descuento
-            if (precio.producto.Familia.Trim() == "Du" && precio.descuentoReal > (decimal).15)
+            if (precio.producto.Familia.ToLower().Trim() == "du" && precio.descuentoReal > (decimal).15)
             {
                 precio.precioCalculado = (decimal)precio.producto.PVP;
                 precio.descuentoCalculado = (decimal).15;
@@ -519,7 +519,7 @@ namespace NestoAPI.Infraestructure
         public bool precioAceptado(PrecioDescuentoProducto precio)
         {
             // Los productos de la familia Du no pueden tener más de un 15% de descuento
-            if (precio.producto.Familia.Trim() == "Thuya" && precio.descuentoReal > (decimal).15)
+            if (precio.producto.Familia.ToLower().Trim() == "thuya" && precio.descuentoReal > (decimal).15)
             {
                 precio.precioCalculado = (decimal)precio.producto.PVP;
                 precio.descuentoCalculado = (decimal).15;

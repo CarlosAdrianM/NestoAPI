@@ -42,6 +42,7 @@ namespace NestoAPI.Models
             this.Inventarios = new HashSet<Inventario>();
             this.ExtractoClientes = new HashSet<ExtractoCliente>();
             this.ExtractoClientes1 = new HashSet<ExtractoCliente>();
+            this.CCCs = new HashSet<CCC>();
         }
     
         public string Número { get; set; }
@@ -161,5 +162,6 @@ namespace NestoAPI.Models
         public virtual ICollection<Inventario> Inventarios { get; set; }
         public virtual ICollection<ExtractoCliente> ExtractoClientes { get; set; }
         public virtual ICollection<ExtractoCliente> ExtractoClientes1 { get; set; }
+        public virtual ICollection<CCC> CCCs { get; set; }
     }
 }

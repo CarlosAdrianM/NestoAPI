@@ -107,6 +107,31 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="CCC">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Cliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Cliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Pais" Type="char" MaxLength="2" />
+          <Property Name="DC_IBAN" Type="char" MaxLength="2" />
+          <Property Name="Entidad" Type="char" MaxLength="4" Nullable="false" />
+          <Property Name="Oficina" Type="char" MaxLength="4" Nullable="false" />
+          <Property Name="DC" Type="char" MaxLength="2" Nullable="false" />
+          <Property Name="Nº Cuenta" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="BIC" Type="char" MaxLength="11" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="TipoMandato" Type="smallint" />
+          <Property Name="FechaMandato" Type="date" />
+          <Property Name="Secuencia" Type="varchar" MaxLength="4" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="CCCProveedores">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -868,6 +893,52 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_CCC_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="CCC" Type="Self.CCC" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CCC">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CCC_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="CCC" Type="Self.CCC" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CCC">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_CCC1">
+          <End Role="CCC" Type="Self.CCC" Multiplicity="0..1" />
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CCC">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="CCC" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Clientes_Clientes">
           <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
           <End Role="Clientes1" Type="Self.Clientes" Multiplicity="*" />
@@ -1235,6 +1306,24 @@
             </Principal>
             <Dependent Role="EnviosAgencia">
               <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoCliente_CCC">
+          <End Role="CCC" Type="Self.CCC" Multiplicity="0..1" />
+          <End Role="ExtractoCliente" Type="Self.ExtractoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CCC">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="CCC" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -1812,6 +1901,7 @@
           <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoVta" EntityType="Self.CabPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabRemesaPagos" EntityType="Self.CabRemesaPagos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="CCC" EntityType="Self.CCC" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CCCProveedores" EntityType="Self.CCCProveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Clientes" EntityType="Self.Clientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CondPagoClientes" EntityType="Self.CondPagoClientes" Schema="dbo" store:Type="Tables" />
@@ -1860,6 +1950,18 @@
           <AssociationSet Name="FK_CabPedidoVta_Clientes" Association="Self.FK_CabPedidoVta_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
             <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CCC_Clientes" Association="Self.FK_CCC_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="CCC" EntitySet="CCC" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CCC_Empresas" Association="Self.FK_CCC_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="CCC" EntitySet="CCC" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_CCC1" Association="Self.FK_Clientes_CCC1">
+            <End Role="CCC" EntitySet="CCC" />
+            <End Role="Clientes" EntitySet="Clientes" />
           </AssociationSet>
           <AssociationSet Name="FK_Clientes_Clientes" Association="Self.FK_Clientes_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -1964,6 +2066,10 @@
           <AssociationSet Name="FK_EnviosAgencia_Empresas" Association="Self.FK_EnviosAgencia_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoCliente_CCC" Association="Self.FK_ExtractoCliente_CCC">
+            <End Role="CCC" EntitySet="CCC" />
+            <End Role="ExtractoCliente" EntitySet="ExtractoCliente" />
           </AssociationSet>
           <AssociationSet Name="FK_ExtractoCliente_Clientes" Association="Self.FK_ExtractoCliente_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -2506,6 +2612,23 @@
             <End Role="FormaVenta" EntitySet="FormasVenta" />
             <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
           </AssociationSet>
+          <EntitySet Name="CCCs" EntityType="NVModel.CCC" />
+          <AssociationSet Name="FK_CCC_Clientes" Association="NVModel.FK_CCC_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="CCC" EntitySet="CCCs" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CCC_Empresas" Association="NVModel.FK_CCC_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="CCC" EntitySet="CCCs" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Clientes_CCC1" Association="NVModel.FK_Clientes_CCC1">
+            <End Role="CCC" EntitySet="CCCs" />
+            <End Role="Cliente" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoCliente_CCC" Association="NVModel.FK_ExtractoCliente_CCC">
+            <End Role="CCC" EntitySet="CCCs" />
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -2627,6 +2750,7 @@
           <NavigationProperty Name="Inventarios" Relationship="NVModel.FK_Inventario_Empresas" FromRole="Empresa" ToRole="Inventario" />
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_Empresas" FromRole="Empresa" ToRole="ExtractoCliente" />
           <NavigationProperty Name="ExtractoClientes1" Relationship="NVModel.FK_ExtractoCliente_Empresas1" FromRole="Empresa" ToRole="ExtractoCliente" />
+          <NavigationProperty Name="CCCs" Relationship="NVModel.FK_CCC_Empresas" FromRole="Empresa" ToRole="CCC" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -2846,6 +2970,8 @@
           <NavigationProperty Name="DíasPagoClientes" Relationship="NVModel.FK_DíasPagoClientes_Clientes" FromRole="Cliente" ToRole="DíasPagoClientes" />
           <NavigationProperty Name="ExtractoProductoes" Relationship="NVModel.FK_ExtractoProducto_Clientes" FromRole="Cliente" ToRole="ExtractoProducto" />
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_Clientes" FromRole="Cliente" ToRole="ExtractoCliente" />
+          <NavigationProperty Name="CCCs" Relationship="NVModel.FK_CCC_Clientes" FromRole="Cliente" ToRole="CCC" />
+          <NavigationProperty Name="CCC1" Relationship="NVModel.FK_Clientes_CCC1" FromRole="Cliente" ToRole="CCC" />
         </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -4336,6 +4462,7 @@
           <NavigationProperty Name="Empresa2" Relationship="NVModel.FK_ExtractoCliente_Empresas1" FromRole="ExtractoCliente" ToRole="Empresa" />
           <NavigationProperty Name="FormasPago" Relationship="NVModel.FK_ExtractoCliente_FormasPago" FromRole="ExtractoCliente" ToRole="FormaPago" />
           <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_ExtractoCliente_FormasVenta" FromRole="ExtractoCliente" ToRole="FormaVenta" />
+          <NavigationProperty Name="CCC1" Relationship="NVModel.FK_ExtractoCliente_CCC" FromRole="ExtractoCliente" ToRole="CCC" />
         </EntityType>
         <Association Name="FK_ExtractoCliente_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
@@ -4402,6 +4529,99 @@
             <Dependent Role="ExtractoCliente">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="FormaVenta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="CCC">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Cliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Cliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Pais" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
+          <Property Name="DC_IBAN" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
+          <Property Name="Entidad" Type="String" Nullable="false" MaxLength="4" FixedLength="true" Unicode="false" />
+          <Property Name="Oficina" Type="String" Nullable="false" MaxLength="4" FixedLength="true" Unicode="false" />
+          <Property Name="DC" Type="String" Nullable="false" MaxLength="2" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Cuenta" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="BIC" Type="String" MaxLength="11" FixedLength="true" Unicode="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="TipoMandato" Type="Int16" />
+          <Property Name="FechaMandato" Type="DateTime" Precision="0" />
+          <Property Name="Secuencia" Type="String" Nullable="false" MaxLength="4" FixedLength="false" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_CCC_Clientes" FromRole="CCC" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CCC_Empresas" FromRole="CCC" ToRole="Empresa" />
+          <NavigationProperty Name="Clientes" Relationship="NVModel.FK_Clientes_CCC1" FromRole="CCC" ToRole="Cliente" />
+          <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_CCC" FromRole="CCC" ToRole="ExtractoCliente" />
+        </EntityType>
+        <Association Name="FK_CCC_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.CCC" Role="CCC" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CCC">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CCC_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.CCC" Role="CCC" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CCC">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Clientes_CCC1">
+          <End Type="NVModel.CCC" Role="CCC" Multiplicity="0..1" />
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CCC">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="CCC" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoCliente_CCC">
+          <End Type="NVModel.CCC" Role="CCC" Multiplicity="0..1" />
+          <End Type="NVModel.ExtractoCliente" Role="ExtractoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CCC">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="CCC" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -5170,6 +5390,29 @@
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Asiento" ColumnName="Asiento" />
                 <ScalarProperty Name="Nº_Orden" ColumnName="Nº Orden" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="CCCs">
+            <EntityTypeMapping TypeName="NVModel.CCC">
+              <MappingFragment StoreEntitySet="CCC">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Secuencia" ColumnName="Secuencia" />
+                <ScalarProperty Name="FechaMandato" ColumnName="FechaMandato" />
+                <ScalarProperty Name="TipoMandato" ColumnName="TipoMandato" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="BIC" ColumnName="BIC" />
+                <ScalarProperty Name="Nº_Cuenta" ColumnName="Nº Cuenta" />
+                <ScalarProperty Name="DC" ColumnName="DC" />
+                <ScalarProperty Name="Oficina" ColumnName="Oficina" />
+                <ScalarProperty Name="Entidad" ColumnName="Entidad" />
+                <ScalarProperty Name="DC_IBAN" ColumnName="DC_IBAN" />
+                <ScalarProperty Name="Pais" ColumnName="Pais" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Cliente" ColumnName="Cliente" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>

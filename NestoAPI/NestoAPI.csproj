@@ -283,6 +283,9 @@
     <Compile Include="Models\CabRemesaPago.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\CCC.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\CCCProveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

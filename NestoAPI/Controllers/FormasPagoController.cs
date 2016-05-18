@@ -40,7 +40,38 @@ namespace NestoAPI.Controllers
 
             return Ok(formasPago);
         }
-        
+
+        // GET: api/FormasPago
+        [ResponseType(typeof(FormaPagoDTO))]
+        public async Task<IHttpActionResult> GetFormasPago(string empresa, string cliente)
+        //public IQueryable<FormaPago> GetFormasPago(string empresa)
+        {
+            Cliente clienteBuscado = db.Clientes.Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true).SingleOrDefault();
+
+            // Cargamos todas las formas de pago estándar
+            List<FormaPago> formasPago;
+            formasPago = await db.FormasPago.Where(l => l.Empresa == empresa && !l.BloquearPagos && l.Número != "TAL").ToListAsync();
+            
+            // Convertimos las formas de pago en DTO
+            List<FormaPagoDTO> formasPagoDTO;
+            formasPagoDTO = formasPago.Select(f => new FormaPagoDTO
+                {
+                    formaPago = f.Número.Trim(),
+                    descripcion = f.Descripción.Trim(),
+                    bloquearPagos = f.BloquearPagos,
+                    cccObligatorio = f.CCCObligatorio
+                }).ToList();
+            
+            // Si el cliente no tiene ningún CCC quitamos las formas de pago que requieran CCC
+            CCC ccc = db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Estado >= 0).FirstOrDefault();
+            if (ccc == null)
+            {
+                formasPagoDTO = formasPagoDTO.Where(f => f.cccObligatorio == false).ToList();
+            }
+
+            return Ok(formasPagoDTO);
+        }
+
 
         /*
         // GET: api/FormasPago/5
