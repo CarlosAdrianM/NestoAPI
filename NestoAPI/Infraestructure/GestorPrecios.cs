@@ -461,16 +461,22 @@ namespace NestoAPI.Infraestructure
         public bool precioAceptado(PrecioDescuentoProducto precio)
         {
             // Los productos del grupo Otros aparatos no pueden tener ningún tipo de descuento
-
-            if (precio.aplicarDescuento && precio.producto.SubGrupo == "ACP")
+            if (precio.descuentoReal > 0 && precio.producto.SubGrupo.ToLower() == "acp")
             {
-                precio.aplicarDescuento = false;
-                if (precio.descuentoReal > 0)
+                if (precio.aplicarDescuento)
+                {
+                    precio.aplicarDescuento = false;
+                }
+                if (precio.precioCalculado != (decimal)precio.producto.PVP)
                 {
                     precio.precioCalculado = (decimal)precio.producto.PVP;
-                    precio.descuentoCalculado = 0;
-                    precio.motivo = "El grupo Otros Aparatos no puede llevar ningún precio especial ni descuento";
                 }
+                if (precio.descuentoCalculado != 0)
+                {
+                    precio.descuentoCalculado = 0;
+                }
+                precio.motivo = "El grupo Otros Aparatos no puede llevar ningún precio especial ni descuento";
+
                 return false;
             }
             else
@@ -484,16 +490,22 @@ namespace NestoAPI.Infraestructure
         public bool precioAceptado(PrecioDescuentoProducto precio)
         {
             // Los productos de la familia Ramason no aceptan ningún tipo de descuento
-
-            if (precio.aplicarDescuento && precio.producto.Familia == "Ramason")
+            if (precio.descuentoReal > 0 && precio.producto.Familia.ToLower().Trim() == "ramason")
             {
-                precio.aplicarDescuento = false;
-                if (precio.descuentoReal > 0)
+                if (precio.aplicarDescuento)
+                {
+                    precio.aplicarDescuento = false;
+                }
+                if (precio.precioCalculado != (decimal)precio.producto.PVP)
                 {
                     precio.precioCalculado = (decimal)precio.producto.PVP;
-                    precio.descuentoCalculado = 0;
-                    precio.motivo = "No se puede hacer ningún precio especal ni descuento en productos de Ramasón";
                 }
+                if (precio.descuentoCalculado != 0)
+                {
+                    precio.descuentoCalculado = 0;
+                }
+                precio.motivo = "No se puede hacer ningún precio especal ni descuento en productos de Ramasón";
+
                 return false;
             }
             else
