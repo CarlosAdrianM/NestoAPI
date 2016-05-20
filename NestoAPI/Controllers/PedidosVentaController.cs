@@ -78,7 +78,7 @@ namespace NestoAPI.Controllers
                 contacto = cabPedidoVta.Contacto,
                 fecha = cabPedidoVta.Fecha,
                 formaPago = cabPedidoVta.Forma_Pago,
-                plazosPago = cabPedidoVta.Forma_Pago,
+                plazosPago = cabPedidoVta.PlazosPago,
                 primerVencimiento = cabPedidoVta.Primer_Vencimiento,
                 iva = cabPedidoVta.IVA,
                 vendedor = cabPedidoVta.Vendedor,
