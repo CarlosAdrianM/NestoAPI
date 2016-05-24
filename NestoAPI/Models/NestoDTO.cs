@@ -8,8 +8,6 @@ using System.ComponentModel.DataAnnotations;
 namespace NestoAPI.Models
 {
 
-
-
     public class ClienteDTO
     {
         public string empresa { get; set; }
@@ -200,6 +198,27 @@ namespace NestoAPI.Models
         public decimal descuento { get; set; }
         public bool aplicarDescuento { get; set; }
         public string motivo { get; set; }
+    }
+
+    public class ResumenPedidoVentaDTO
+    {
+        public string empresa { get; set; }
+        public int numero { get; set; }
+        public string cliente { get; set; }
+        public string contacto { get; set; }
+        public string nombre { get; set; }
+        public string direccion { get; set; }
+        public string codPostal { get; set; }
+        public string poblacion { get; set; }
+        public string provincia { get; set; }
+        public Nullable<System.DateTime> fecha { get; set; }
+        public bool tieneProductos { get; set; }
+        public bool tienePendientes { get; set; }
+        public bool tienePicking { get; set; }
+        public bool tieneFechasFuturas { get; set; }
+        public decimal baseImponible { get; set; }
+        public decimal total { get; set; }
+        public string vendedor { get; set; }
     }
 
     public class StockProductoDTO

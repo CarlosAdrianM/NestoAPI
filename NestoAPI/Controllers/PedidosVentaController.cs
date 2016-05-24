@@ -24,16 +24,43 @@ namespace NestoAPI.Controllers
 
         
         // GET: api/PedidosVenta
-        /*
-        public IQueryable<CabPedidoVta> GetPedidosVenta()
+        
+        public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor)
         {
-            if (User.IsInRole("Vendedor"))
+            List<ResumenPedidoVentaDTO> cabeceraPedidos = db.CabPedidoVtas
+                .Join(db.LinPedidoVtas, c => new {empresa = c.Empresa, numero = c.Número}, l => new {empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total })
+                .Where(c => c.Estado >= -1 && c.Estado <= 1)
+                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor})
+                .Select(x => new ResumenPedidoVentaDTO
+                {
+                    empresa = x.Key.Empresa.Trim(),
+                    numero = x.Key.Número,
+                    cliente = x.Key.Nº_Cliente.Trim(),
+                    nombre = x.Key.Nombre.Trim(),
+                    direccion = x.Key.Dirección.Trim(),
+                    codPostal = x.Key.CodPostal.Trim(),
+                    poblacion = x.Key.Población.Trim(),
+                    provincia = x.Key.Provincia.Trim(),
+                    fecha = x.Min(c => c.Fecha_Entrega),
+                    tieneProductos = x.FirstOrDefault(c => c.TipoLinea == 1) != null,
+                    tieneFechasFuturas = x.FirstOrDefault(c => c.Fecha_Entrega > DateTime.Now) != null,
+                    tienePendientes = x.FirstOrDefault(c => c.Estado < 0) != null,
+                    tienePicking = x.FirstOrDefault(c => c.Picking != 0) != null,
+                    baseImponible = x.Sum(c => c.Base_Imponible),
+                    total = x.Sum(c => c.Total),
+                    vendedor = x.Key.Vendedor.Trim()
+                })
+                .OrderByDescending(c => c.numero)
+                .ToList();
+
+            if (vendedor != null && vendedor.Trim() != "")
             {
-                string carlos = "Hola";
+                cabeceraPedidos = cabeceraPedidos.Where(c => c.vendedor == vendedor).ToList();
             }
-            return db.CabPedidoVtas;
+
+            return cabeceraPedidos.AsQueryable();
         }
-        */
+        
 
         // GET: api/PedidosVenta/5
         [ResponseType(typeof(PedidoVentaDTO))]
@@ -360,6 +387,7 @@ namespace NestoAPI.Controllers
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);
         }
 
+        /*
         // DELETE: api/PedidosVenta/5
         [ResponseType(typeof(CabPedidoVta))]
         public async Task<IHttpActionResult> DeleteCabPedidoVta(string id)
@@ -375,6 +403,7 @@ namespace NestoAPI.Controllers
 
             return Ok(cabPedidoVta);
         }
+        */
 
         protected override void Dispose(bool disposing)
         {
