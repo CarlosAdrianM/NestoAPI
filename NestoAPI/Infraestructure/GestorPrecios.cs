@@ -176,6 +176,17 @@ namespace NestoAPI.Infraestructure
                 return 1 - ( dividendo / divisor );
             }
         }
+        public decimal precioCalculadoDeFicha
+        {
+            get
+            {
+                decimal? precioProducto = producto.PVP;
+                decimal? descuentoFinal = 1 - descuentoReal;
+                double baseRedondear = (double)(precioProducto * descuentoFinal);
+                return (decimal)Math.Round(baseRedondear, 2);
+            }
+
+        }
     }
 
     public interface ICondicionPrecioDescuento 
@@ -195,7 +206,7 @@ namespace NestoAPI.Infraestructure
         {
             // Ponemos el trim aquí para evitar tener que ponerlo en todas las comparaciones
             precio.producto.Número = precio.producto.Número.Trim();
-            
+
             // Clean & Easy
             if (precio.producto.Grupo == "COS" 
                 && precio.producto.SubGrupo == "304" 
@@ -213,7 +224,7 @@ namespace NestoAPI.Infraestructure
             if (precio.producto.Grupo == "COS"
                 && precio.producto.SubGrupo == "304"
                 && precio.producto.Familia.ToLower().Trim() == "tessiline"
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal).79))
+                && (precio.precioCalculadoDeFicha < (decimal).79))
             {
                 precio.precioCalculado = (decimal).79;
                 precio.descuentoCalculado = 0;
@@ -223,7 +234,7 @@ namespace NestoAPI.Infraestructure
 
             // Uso Profesional
             if ((precio.producto.Número == "27092" || precio.producto.Número == "27093")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)1.19))
+                && (precio.precioCalculadoDeFicha < (decimal)1.19))
             {
                 precio.precioCalculado = (decimal)1.19;
                 precio.descuentoCalculado = 0;
@@ -231,7 +242,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "33728")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)7.95))
+                && (precio.precioCalculadoDeFicha < (decimal)7.95))
             {
                 precio.precioCalculado = (decimal)7.95;
                 precio.descuentoCalculado = 0;
@@ -241,7 +252,7 @@ namespace NestoAPI.Infraestructure
 
             // Fama
             if ((precio.producto.Número == "32254" || precio.producto.Número == "34411" || precio.producto.Número == "22501")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)1.65))
+                && (precio.precioCalculadoDeFicha < (decimal)1.65))
             {
                 precio.precioCalculado = (decimal)1.65;
                 precio.descuentoCalculado = 0;
@@ -265,7 +276,7 @@ namespace NestoAPI.Infraestructure
                 || precio.producto.Número == "33068"
                 || precio.producto.Número == "21075"
                 || precio.producto.Número == "23727")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal).99))
+                && (precio.precioCalculadoDeFicha < (decimal).99))
             {
                 precio.precioCalculado = (decimal).99;
                 precio.descuentoCalculado = 0;
@@ -273,7 +284,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "12640" || precio.producto.Número == "22624")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)4.45))
+                && (precio.precioCalculadoDeFicha < (decimal)4.45))
             {
                 precio.precioCalculado = (decimal)4.45;
                 precio.descuentoCalculado = 0;
@@ -281,7 +292,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "19205" || precio.producto.Número == "32371")
-            && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)6.45))
+            && (precio.precioCalculadoDeFicha < (decimal)6.45))
             {
                 precio.precioCalculado = (decimal)6.45;
                 precio.descuentoCalculado = 0;
@@ -300,7 +311,7 @@ namespace NestoAPI.Infraestructure
                 || precio.producto.Número == "12645"
                 || precio.producto.Número == "22982"
                 || precio.producto.Número == "32745")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)6.95))
+                && (precio.precioCalculadoDeFicha < (decimal)6.95))
             {
                 precio.precioCalculado = (decimal)6.95;
                 precio.descuentoCalculado = 0;
@@ -314,7 +325,7 @@ namespace NestoAPI.Infraestructure
                 || precio.producto.Número == "20706"
                 || precio.producto.Número == "20705"
                 || precio.producto.Número == "24807")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal).99))
+                && (precio.precioCalculadoDeFicha < (decimal).99))
             {
                 precio.precioCalculado = (decimal).99;
                 precio.descuentoCalculado = 0;
@@ -322,7 +333,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "26692")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)5.95))
+                && (precio.precioCalculadoDeFicha < (decimal)5.95))
             {
                 precio.precioCalculado = (decimal)5.95;
                 precio.descuentoCalculado = 0;
@@ -330,7 +341,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "20258" || precio.producto.Número == "25391")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)5.45))
+                && (precio.precioCalculadoDeFicha < (decimal)5.45))
             {
                 precio.precioCalculado = (decimal)5.45;
                 precio.descuentoCalculado = 0;
@@ -338,7 +349,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "16631" || precio.producto.Número == "25392")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)7.75))
+                && (precio.precioCalculadoDeFicha < (decimal)7.75))
             {
                 precio.precioCalculado = (decimal)7.75;
                 precio.descuentoCalculado = 0;
@@ -346,7 +357,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "20459" || precio.producto.Número == "21492")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)6.40))
+                && (precio.precioCalculadoDeFicha < (decimal)6.40))
             {
                 precio.precioCalculado = (decimal)6.40;
                 precio.descuentoCalculado = 0;
@@ -356,7 +367,7 @@ namespace NestoAPI.Infraestructure
 
             // Depil OK
             if ((precio.producto.Número == "18624" || precio.producto.Número == "18705")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal).89))
+                && (precio.precioCalculadoDeFicha < (decimal).89))
             {
                 precio.precioCalculado = (decimal).89;
                 precio.descuentoCalculado = 0;
@@ -368,7 +379,7 @@ namespace NestoAPI.Infraestructure
                 || precio.producto.Número == "17770"
                 || precio.producto.Número == "17859"
                 || precio.producto.Número == "19388")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)1.05))
+                && (precio.precioCalculadoDeFicha < (decimal)1.05))
             {
                 precio.precioCalculado = (decimal)1.05;
                 precio.descuentoCalculado = 0;
@@ -382,7 +393,7 @@ namespace NestoAPI.Infraestructure
                 || precio.producto.Número == "24077"
                 || precio.producto.Número == "21176"
                 || precio.producto.Número == "35667")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)1.10))
+                && (precio.precioCalculadoDeFicha < (decimal)1.10))
             {
                 precio.precioCalculado = (decimal)1.10;
                 precio.descuentoCalculado = 0;
@@ -390,7 +401,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "19989")
-                            && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)5.95))
+                            && (precio.precioCalculadoDeFicha < (decimal)5.95))
             {
                 precio.precioCalculado = (decimal)5.95;
                 precio.descuentoCalculado = 0;
@@ -398,7 +409,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "32317")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)9.45))
+                && (precio.precioCalculadoDeFicha < (decimal)9.45))
             {
                 precio.precioCalculado = (decimal)9.45;
                 precio.descuentoCalculado = 0;
@@ -406,7 +417,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "19730")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)8.95))
+                && (precio.precioCalculadoDeFicha < (decimal)8.95))
             {
                 precio.precioCalculado = (decimal)8.95;
                 precio.descuentoCalculado = 0;
@@ -414,7 +425,7 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
             if ((precio.producto.Número == "21664")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)7.25))
+                && (precio.precioCalculadoDeFicha < (decimal)7.25))
             {
                 precio.precioCalculado = (decimal)7.25;
                 precio.descuentoCalculado = 0;
@@ -426,7 +437,7 @@ namespace NestoAPI.Infraestructure
                 || precio.producto.Número == "21774"
                 || precio.producto.Número == "19643"
                 || precio.producto.Número == "20188")
-                && (precio.producto.PVP * (1 - precio.descuentoReal) < (decimal)6.95))
+                && (precio.precioCalculadoDeFicha < (decimal)6.95))
             {
                 precio.precioCalculado = (decimal)6.95;
                 precio.descuentoCalculado = 0;
