@@ -99,13 +99,13 @@ namespace NestoAPI.Controllers
 
             PedidoVentaDTO pedido = new PedidoVentaDTO
             {
-                empresa = cabPedidoVta.Empresa,
+                empresa = cabPedidoVta.Empresa.Trim(),
                 numero = cabPedidoVta.Número,
-                cliente = cabPedidoVta.Nº_Cliente,
-                contacto = cabPedidoVta.Contacto,
+                cliente = cabPedidoVta.Nº_Cliente.Trim(),
+                contacto = cabPedidoVta.Contacto.Trim(),
                 fecha = cabPedidoVta.Fecha,
                 formaPago = cabPedidoVta.Forma_Pago,
-                plazosPago = cabPedidoVta.PlazosPago,
+                plazosPago = cabPedidoVta.PlazosPago.Trim(),
                 primerVencimiento = cabPedidoVta.Primer_Vencimiento,
                 iva = cabPedidoVta.IVA,
                 vendedor = cabPedidoVta.Vendedor,
