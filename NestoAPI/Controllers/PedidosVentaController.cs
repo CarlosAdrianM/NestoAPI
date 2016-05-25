@@ -121,7 +121,8 @@ namespace NestoAPI.Controllers
                 vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
                 mantenerJunto = cabPedidoVta.MantenerJunto,
                 servirJunto = cabPedidoVta.ServirJunto,
-                LineasPedido = lineasPedido
+                usuario = cabPedidoVta.Usuario,
+                LineasPedido = lineasPedido,
             };
             
             return Ok(pedido);
