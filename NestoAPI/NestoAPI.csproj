@@ -375,6 +375,9 @@
     <Compile Include="Models\Proveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\ProveedoresProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\RoleBindingModels.cs" />
     <Compile Include="Models\SubGruposProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

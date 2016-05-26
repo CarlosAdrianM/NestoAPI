@@ -112,6 +112,10 @@
         <AssociationConnector Association="NVModel.FK_CCC_Empresas" />
         <AssociationConnector Association="NVModel.FK_Clientes_CCC1" />
         <AssociationConnector Association="NVModel.FK_ExtractoCliente_CCC" />
+        <EntityTypeShape EntityType="NVModel.ProveedoresProducto" Width="1.5" PointX="17.75" PointY="39.875" />
+        <AssociationConnector Association="NVModel.FK_ProveedoresProducto_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ProveedoresProducto_Productos2" />
+        <AssociationConnector Association="NVModel.FK_ProveedoresProducto_Proveedores" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

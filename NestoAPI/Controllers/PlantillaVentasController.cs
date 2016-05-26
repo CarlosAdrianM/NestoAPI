@@ -76,11 +76,13 @@ namespace NestoAPI.Controllers
             List<LineaPlantillaVenta> lineasPlantilla = db.Productos
                 .Include(f => f.Familia)
                 .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio, aplicarDescuento = p.Aplicar_Dto, precio = p.PVP, iva = p.IVA_Repercutido })
+                .Join(db.ProveedoresProductoes, p => new { empresa = p.Empresa, producto = p.Número }, r => new { empresa = r.Empresa, producto = r.Nº_Producto }, (p, r) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, p.nombreFamilia, p.nombreSubGrupo , cantidad = 0, p.ficticio, p.aplicarDescuento , p.precio, p.iva , r.ReferenciaProv })
                 .Where(p => p.Empresa == empresa && p.Estado >= 0 && !p.ficticio && (
                     p.Número.Contains(filtroProducto) ||
                     p.Nombre.Contains(filtroProducto) ||
                     p.nombreFamilia.Contains(filtroProducto) ||
-                    p.nombreSubGrupo.Contains(filtroProducto)
+                    p.nombreSubGrupo.Contains(filtroProducto) ||
+                    p.ReferenciaProv.Contains(filtroProducto)
                 ))
                 .GroupBy(g => new { g.Número, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.aplicarDescuento, g.precio, g.iva })
                 .Select(x => new LineaPlantillaVenta
