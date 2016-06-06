@@ -71,9 +71,10 @@ namespace NestoAPI.Controllers
             DateTime hoy = System.DateTime.Today;
             DateTime fechaDesde = new DateTime(hoy.AddYears(-1).Year, 1, 1);
             DateTime fechaHasta = new DateTime(hoy.Year, 1, 1);
-            
 
-            List<ExtractoClienteDTO> extracto = await db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.TipoApunte == "1" && e.Fecha >= fechaDesde && e.Fecha < fechaHasta)
+            const string ESTADO_DEUDA_VENCIDA = "DVD";
+
+            List<ExtractoClienteDTO> extracto = await db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.TipoApunte == "1" && e.Fecha >= fechaDesde && e.Fecha < fechaHasta && e.Estado != ESTADO_DEUDA_VENCIDA)
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,
