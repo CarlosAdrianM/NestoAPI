@@ -173,7 +173,7 @@ namespace NestoAPI.Infraestructure
             {
                 decimal dividendo = (precioCalculado * (1 -descuentoCalculado)  * cantidad);
                 decimal divisor = ((decimal)producto.PVP * (cantidad + cantidadOferta));
-                return 1 - ( dividendo / divisor );
+                return divisor != 0 ? 1 - ( dividendo / divisor ) : 0;
             }
         }
         public decimal precioCalculadoDeFicha

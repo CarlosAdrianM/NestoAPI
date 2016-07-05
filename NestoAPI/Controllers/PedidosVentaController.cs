@@ -15,6 +15,9 @@ namespace NestoAPI.Controllers
 {
     public class PedidosVentaController : ApiController
     {
+        private const int ESTADO_LINEA_EN_CURSO = 1;
+        private const int ESTADO_LINEA_PENDIENTE = -1;
+
         private NVEntities db = new NVEntities();
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
@@ -128,20 +131,53 @@ namespace NestoAPI.Controllers
             return Ok(pedido);
         }
 
-        /*
+        
         // PUT: api/PedidosVenta/5
         [ResponseType(typeof(void))]
-        public async Task<IHttpActionResult> PutCabPedidoVta(string id, CabPedidoVta cabPedidoVta)
+        public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
         {
+            CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
+
+
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            if (id != cabPedidoVta.Empresa)
+            if (pedido.empresa != cabPedidoVta.Empresa.Trim() || pedido.numero != cabPedidoVta.Número)
             {
                 return BadRequest();
             }
+
+            // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
+            bool tienePendientes = db.LinPedidoVtas.Where(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO).SingleOrDefault() != null;
+            if (!tienePendientes) {
+                throw new Exception ("No se puede modificar un pedido ya facturado");
+            }
+
+            cabPedidoVta.Nº_Cliente = pedido.cliente;
+            cabPedidoVta.Contacto = pedido.contacto;
+            cabPedidoVta.Fecha = pedido.fecha;
+            cabPedidoVta.Forma_Pago = pedido.formaPago;
+            cabPedidoVta.PlazosPago = pedido.plazosPago;
+            cabPedidoVta.Primer_Vencimiento = pedido.primerVencimiento;
+            cabPedidoVta.IVA = pedido.iva;
+            cabPedidoVta.Vendedor = pedido.vendedor;
+            cabPedidoVta.Comentarios = pedido.comentarios;
+            cabPedidoVta.ComentarioPicking = pedido.comentarioPicking;
+            cabPedidoVta.Periodo_Facturacion = pedido.periodoFacturacion;
+            cabPedidoVta.Ruta = pedido.ruta;
+            cabPedidoVta.Serie = pedido.serie;
+            cabPedidoVta.CCC = pedido.ccc;
+            cabPedidoVta.Origen = pedido.origen;
+            cabPedidoVta.ContactoCobro = pedido.contactoCobro;
+            cabPedidoVta.NoComisiona = pedido.noComisiona;
+            cabPedidoVta.vtoBuenoPlazosPago = pedido.vistoBuenoPlazosPago;
+            cabPedidoVta.MantenerJunto = pedido.mantenerJunto;
+            cabPedidoVta.ServirJunto = pedido.servirJunto;
+            cabPedidoVta.Usuario = pedido.usuario;
+            cabPedidoVta.Fecha_Modificación = DateTime.Now;
+
 
             db.Entry(cabPedidoVta).State = EntityState.Modified;
 
@@ -151,7 +187,7 @@ namespace NestoAPI.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!CabPedidoVtaExists(id))
+                if (!CabPedidoVtaExists(pedido.empresa, pedido.numero))
                 {
                     return NotFound();
                 }
@@ -163,7 +199,7 @@ namespace NestoAPI.Controllers
 
             return StatusCode(HttpStatusCode.NoContent);
         }
-        */
+        
 
         // POST: api/PedidosVenta
         [ResponseType(typeof(PedidoVentaDTO))]
@@ -183,8 +219,6 @@ namespace NestoAPI.Controllers
             vencimientoPedido = vencimientoPedido.AddMonths(plazoPago.MesesPrimerPlazo);
             db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
 
-            //Aquí va el IF !esAmpliacion
-            
             // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales
             ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
             if (pedido.numero == 0)
