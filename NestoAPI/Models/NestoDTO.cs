@@ -122,6 +122,7 @@ namespace NestoAPI.Models
 
     public class LineaPedidoVentaDTO
     {
+        public int id { get; set; }
         public string almacen { get; set; }
         public bool aplicarDescuento { get; set; }
         public short cantidad { get; set; } // era Nullable<short> 

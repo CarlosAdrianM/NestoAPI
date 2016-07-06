@@ -78,6 +78,7 @@ namespace NestoAPI.Controllers
             List<LineaPedidoVentaDTO> lineasPedido = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == numero && l.Estado > -99)
                 .Select(l => new LineaPedidoVentaDTO
                 {
+                    id = l.Nº_Orden,
                     almacen = l.Almacén,
                     aplicarDescuento = l.Aplicar_Dto,
                     cantidad = (l.Cantidad != null ? (short)l.Cantidad : (short)0), 
@@ -150,35 +151,82 @@ namespace NestoAPI.Controllers
             }
 
             // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
-            bool tienePendientes = db.LinPedidoVtas.Where(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO).SingleOrDefault() != null;
+            bool tienePendientes = db.LinPedidoVtas.Where(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO).FirstOrDefault() != null;
             if (!tienePendientes) {
                 throw new Exception ("No se puede modificar un pedido ya facturado");
             }
 
-            cabPedidoVta.Nº_Cliente = pedido.cliente;
-            cabPedidoVta.Contacto = pedido.contacto;
+            // Son diferentes, porque el del pedido está con trim
+            // Comprobar si en SQL los da por iguales y no hace update si solo cambia esto
+            // Si hace update aunque no cambien, hay que poner un IF delante para comprobar
+            // que cabPedidoVta.Nº_Cliente.Trim() != pedido.cliente.Trim()
+            bool cambiarClienteEnLineas = false;
+            if (cabPedidoVta.Nº_Cliente.Trim() != pedido.cliente.Trim())
+            {
+                cabPedidoVta.Nº_Cliente = pedido.cliente;
+                cambiarClienteEnLineas = true;
+            }
+
+            bool cambiarContactoEnLineas = false;
+            if (cabPedidoVta.Contacto.Trim() != pedido.contacto.Trim())
+            {
+                cabPedidoVta.Contacto = pedido.contacto;
+                // hay cambiar el contacto a todas las líneas
+                // ojo con la PK, que igual no puede haber diferentes contactos en un mismo pedido
+                // comprobarlo con algunas facturas de FDM
+                cambiarContactoEnLineas = true;
+            }
+            
             cabPedidoVta.Fecha = pedido.fecha;
+            // La forma de pago influye en el importe del reembolso de la agencia. Si se modifica la forma de pago
+            // hay que modificar el importe del reembolso
             cabPedidoVta.Forma_Pago = pedido.formaPago;
+            // Ojo, que el CCC va en función de la forma de pago.
+            // Mirad cómo lo hace la plantilla e intentar traer aquí la lógica (y la plantilla llame aquí)
+            cabPedidoVta.CCC = pedido.ccc;
+            // Comprobar si los plazos de pago son válidos
             cabPedidoVta.PlazosPago = pedido.plazosPago;
+            cabPedidoVta.vtoBuenoPlazosPago = pedido.vistoBuenoPlazosPago;
             cabPedidoVta.Primer_Vencimiento = pedido.primerVencimiento;
-            cabPedidoVta.IVA = pedido.iva;
+            // Mirad en la plantilla cómo juega el contacto cobro
+            cabPedidoVta.ContactoCobro = pedido.contactoCobro;
+
+            bool cambiarIvaEnLineas = false;
+            if (cabPedidoVta.IVA.Trim() != pedido.iva.Trim())
+            {
+                cabPedidoVta.IVA = pedido.iva;
+                // hay que cambiarlo en todas las líneas pendientes
+                // y recalcular el total
+                // traer aquí la lógica de las líneas y que la plantilla llame aquí
+                cambiarIvaEnLineas = true;
+            }
+
             cabPedidoVta.Vendedor = pedido.vendedor;
             cabPedidoVta.Comentarios = pedido.comentarios;
             cabPedidoVta.ComentarioPicking = pedido.comentarioPicking;
             cabPedidoVta.Periodo_Facturacion = pedido.periodoFacturacion;
             cabPedidoVta.Ruta = pedido.ruta;
             cabPedidoVta.Serie = pedido.serie;
-            cabPedidoVta.CCC = pedido.ccc;
             cabPedidoVta.Origen = pedido.origen;
-            cabPedidoVta.ContactoCobro = pedido.contactoCobro;
             cabPedidoVta.NoComisiona = pedido.noComisiona;
-            cabPedidoVta.vtoBuenoPlazosPago = pedido.vistoBuenoPlazosPago;
+
+
+            if (cabPedidoVta.MantenerJunto != pedido.mantenerJunto ||
+            cabPedidoVta.ServirJunto != pedido.servirJunto)
+            {
+                // comprobar si alguna línea tiene picking
+                bool tienePicking = db.LinPedidoVtas.Where(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0).FirstOrDefault() != null;
+                if (tienePicking)
+                {
+                    throw new Exception("No se pueden modificar las formas de servir ni de facturar una vez el pedido tiene picking");
+                }
+            }
             cabPedidoVta.MantenerJunto = pedido.mantenerJunto;
             cabPedidoVta.ServirJunto = pedido.servirJunto;
+            
             cabPedidoVta.Usuario = pedido.usuario;
             cabPedidoVta.Fecha_Modificación = DateTime.Now;
-
-
+            
             db.Entry(cabPedidoVta).State = EntityState.Modified;
 
             try
