@@ -17,6 +17,7 @@ namespace NestoAPI.Controllers
     {
         private const int ESTADO_LINEA_EN_CURSO = 1;
         private const int ESTADO_LINEA_PENDIENTE = -1;
+        private const int ESTADO_ENVIO_EN_CURSO = 0;
 
         private NVEntities db = new NVEntities();
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
@@ -151,9 +152,25 @@ namespace NestoAPI.Controllers
             }
 
             // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
-            bool tienePendientes = db.LinPedidoVtas.Where(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO).FirstOrDefault() != null;
+            bool tienePendientes = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) != null;
             if (!tienePendientes) {
                 throw new Exception ("No se puede modificar un pedido ya facturado");
+            }
+
+            // En una primera fase no permitimos modificar si ya está impresa la etiqueta de la agencia
+            // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún con la etiqueta impresa
+            bool estaImpresaLaEtiqueta = db.EnviosAgencias.FirstOrDefault(e => e.Pedido == pedido.numero && e.Estado == ESTADO_ENVIO_EN_CURSO) != null;
+            if (estaImpresaLaEtiqueta)
+            {
+                throw new Exception("No se puede modificar el pedido porque ya está preparado");
+            }
+
+            // En una primera fase no permitimos modificar si alguna línea de las pendientes tiene picking
+            // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún teniendo picking
+            bool algunaLineaTienePicking = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
+            if (algunaLineaTienePicking)
+            {
+                throw new Exception("No se puede modificar el pedido porque ya tiene picking");
             }
 
             // Son diferentes, porque el del pedido está con trim
@@ -192,7 +209,10 @@ namespace NestoAPI.Controllers
             cabPedidoVta.ContactoCobro = pedido.contactoCobro;
 
             bool cambiarIvaEnLineas = false;
-            if (cabPedidoVta.IVA.Trim() != pedido.iva.Trim())
+            if ((cabPedidoVta.IVA == null && pedido.iva!=null) ||
+                (cabPedidoVta.IVA != null && pedido.iva == null) ||
+                ((cabPedidoVta.IVA != null && pedido.iva != null) &&
+                cabPedidoVta.IVA.Trim() != pedido.iva.Trim()))
             {
                 cabPedidoVta.IVA = pedido.iva;
                 // hay que cambiarlo en todas las líneas pendientes
@@ -201,26 +221,16 @@ namespace NestoAPI.Controllers
                 cambiarIvaEnLineas = true;
             }
 
+            // Si cambia el periodo de facturación cambia el reembolso de la etiqueta
+            cabPedidoVta.Periodo_Facturacion = pedido.periodoFacturacion;
+
             cabPedidoVta.Vendedor = pedido.vendedor;
             cabPedidoVta.Comentarios = pedido.comentarios;
             cabPedidoVta.ComentarioPicking = pedido.comentarioPicking;
-            cabPedidoVta.Periodo_Facturacion = pedido.periodoFacturacion;
             cabPedidoVta.Ruta = pedido.ruta;
             cabPedidoVta.Serie = pedido.serie;
             cabPedidoVta.Origen = pedido.origen;
             cabPedidoVta.NoComisiona = pedido.noComisiona;
-
-
-            if (cabPedidoVta.MantenerJunto != pedido.mantenerJunto ||
-            cabPedidoVta.ServirJunto != pedido.servirJunto)
-            {
-                // comprobar si alguna línea tiene picking
-                bool tienePicking = db.LinPedidoVtas.Where(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0).FirstOrDefault() != null;
-                if (tienePicking)
-                {
-                    throw new Exception("No se pueden modificar las formas de servir ni de facturar una vez el pedido tiene picking");
-                }
-            }
             cabPedidoVta.MantenerJunto = pedido.mantenerJunto;
             cabPedidoVta.ServirJunto = pedido.servirJunto;
             
@@ -229,6 +239,42 @@ namespace NestoAPI.Controllers
             
             db.Entry(cabPedidoVta).State = EntityState.Modified;
 
+            // Modificamos las líneas
+            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas) { 
+                foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
+                {
+                    LinPedidoVta lineaPedido = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.id);
+                    if (lineaPedido == null || lineaPedido.Número != pedido.numero)
+                    {
+                        throw new Exception("Alguien modificó o eliminó la línea mientras se actualizaba el pedido");
+                    }
+                    if (cambiarClienteEnLineas)
+                    {
+                        lineaPedido.Nº_Cliente = pedido.cliente;
+                    }
+                    if (cambiarContactoEnLineas)
+                    {
+                        lineaPedido.Contacto = pedido.contacto;
+                    }
+                    if (cambiarIvaEnLineas)
+                    {
+                        if (pedido.iva == null)
+                        {
+                            // lineaPedido.IVA = pedido.iva;
+                            lineaPedido.ImporteIVA = 0;
+                            lineaPedido.ImporteRE = 0;
+                            lineaPedido.Total = lineaPedido.Base_Imponible;
+                        }
+                        else
+                        {
+                            throw new NotImplementedException("No se puede poner ese IVA al pedido");
+                        }
+                    }
+
+                    db.Entry(lineaPedido).State = EntityState.Modified;
+                }
+            }
+            
             try
             {
                 await db.SaveChangesAsync();
