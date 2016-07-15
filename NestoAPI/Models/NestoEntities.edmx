@@ -649,6 +649,17 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
+        <EntityType Name="Modificaciones">
+          <Key>
+            <PropertyRef Name="id" />
+          </Key>
+          <Property Name="id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Tabla" Type="nvarchar" MaxLength="50" />
+          <Property Name="Anterior" Type="nvarchar(max)" />
+          <Property Name="Nuevo" Type="nvarchar(max)" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+        </EntityType>
         <EntityType Name="ParámetrosIVA">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -1978,6 +1989,7 @@
           <EntitySet Name="Inventarios" EntityType="Self.Inventarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="InventariosCuadre" EntityType="Self.InventariosCuadre" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PersonasContactoProveedor" EntityType="Self.PersonasContactoProveedor" Schema="dbo" store:Type="Tables" />
@@ -2713,6 +2725,7 @@
             <End Role="Proveedor" EntitySet="Proveedores" />
             <End Role="ProveedoresProducto" EntitySet="ProveedoresProductoes" />
           </AssociationSet>
+          <EntitySet Name="Modificaciones" EntityType="NVModel.Modificacion" />
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -4773,6 +4786,17 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="Modificacion">
+          <Key>
+            <PropertyRef Name="id" />
+          </Key>
+          <Property Name="id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Tabla" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="Anterior" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Nuevo" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+        </EntityType>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -5576,6 +5600,18 @@
                 <ScalarProperty Name="ContactoProveedor" ColumnName="ContactoProveedor" />
                 <ScalarProperty Name="Nº_Proveedor" ColumnName="Nº Proveedor" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Modificaciones">
+            <EntityTypeMapping TypeName="NVModel.Modificacion">
+              <MappingFragment StoreEntitySet="Modificaciones">
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Nuevo" ColumnName="Nuevo" />
+                <ScalarProperty Name="Anterior" ColumnName="Anterior" />
+                <ScalarProperty Name="Tabla" ColumnName="Tabla" />
+                <ScalarProperty Name="id" ColumnName="id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

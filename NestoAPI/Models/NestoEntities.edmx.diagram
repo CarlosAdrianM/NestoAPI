@@ -116,6 +116,7 @@
         <AssociationConnector Association="NVModel.FK_ProveedoresProducto_Empresas" />
         <AssociationConnector Association="NVModel.FK_ProveedoresProducto_Productos2" />
         <AssociationConnector Association="NVModel.FK_ProveedoresProducto_Proveedores" />
+        <EntityTypeShape EntityType="NVModel.Modificacion" Width="1.5" PointX="7.375" PointY="5.75" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

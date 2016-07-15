@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
+using Newtonsoft.Json;
 
 namespace NestoAPI.Controllers
 {
@@ -140,6 +141,15 @@ namespace NestoAPI.Controllers
         {
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
+            // Guardamos registro de los cambios
+            Modificacion modificacion = new Modificacion
+            {
+                Tabla = "Pedidos",
+                Anterior = JsonConvert.SerializeObject(cabPedidoVta),
+                Nuevo = JsonConvert.SerializeObject(pedido),
+                Usuario = pedido.usuario
+            };
+            db.Modificaciones.Add(modificacion);
 
             if (!ModelState.IsValid)
             {
