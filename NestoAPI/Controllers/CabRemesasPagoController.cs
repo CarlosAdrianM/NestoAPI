@@ -127,7 +127,7 @@ namespace NestoAPI.Controllers
                     lineaFichero += strLen(efecto.CIF_NIF, 12);                     // NIF del proveedor o ref. interna: D
                     lineaFichero += "010";                                          // Número o tipo de dato: E
                     lineaFichero += intLen(-efecto.Importe, 12);                    // Importe con 2 decimales: F1
-                    lineaFichero += strLen(proveedor.CCCProveedore.Entidad, 4);    // Número de entidad de crédito receptora: F2
+                    lineaFichero += strLen(proveedor.CCCProveedore.Entidad, 4);     // Número de entidad de crédito receptora: F2
                     lineaFichero += strLen(proveedor.CCCProveedore.Oficina, 4);     // Número de sucursal de crédito receptora: F3
                     lineaFichero += strLen(proveedor.CCCProveedore.Nº_Cuenta, 10);  // Número de la cuenta abono: F4
                     lineaFichero += "1";                                            // Gastos por cuenta del ordenante: F5
@@ -223,7 +223,7 @@ namespace NestoAPI.Controllers
             insertarLinea(ref lineaFichero, ref sb);
 
             // Guardamos el fichero
-            string nombreFichero = String.Format("F:\\BANCO\\Confirming\\E{0}R{1}.txt", remesa.Empresa.Trim(), remesa.Numero.ToString().Trim());
+            string nombreFichero = String.Format("\\\\sbs2k8\\datos\\Banco\\Confirming\\E{0}R{1}.txt", remesa.Empresa.Trim(), remesa.Numero.ToString().Trim());
             using (StreamWriter outfile = new StreamWriter(nombreFichero))
             {
                 outfile.Write(sb.ToString());
