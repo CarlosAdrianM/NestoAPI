@@ -223,13 +223,15 @@ namespace NestoAPI.Controllers
             insertarLinea(ref lineaFichero, ref sb);
 
             // Guardamos el fichero
+            /*
             string nombreFichero = String.Format("\\\\sbs2k8\\datos\\Banco\\Confirming\\E{0}R{1}.txt", remesa.Empresa.Trim(), remesa.Numero.ToString().Trim());
             using (StreamWriter outfile = new StreamWriter(nombreFichero))
             {
                 outfile.Write(sb.ToString());
             }
+            */
 
-            return Ok(nombreFichero);
+            return Ok(sb.ToString());
         }
 
         private void insertarLinea(ref string linea, ref StringBuilder sb)
