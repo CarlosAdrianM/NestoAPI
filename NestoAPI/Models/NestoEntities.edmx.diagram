@@ -117,6 +117,29 @@
         <AssociationConnector Association="NVModel.FK_ProveedoresProducto_Productos2" />
         <AssociationConnector Association="NVModel.FK_ProveedoresProducto_Proveedores" />
         <EntityTypeShape EntityType="NVModel.Modificacion" Width="1.5" PointX="7.375" PointY="5.75" />
+        <EntityTypeShape EntityType="NVModel.Ruta" Width="1.5" PointX="3.875" PointY="66" />
+        <AssociationConnector Association="NVModel.FK_Rutas_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoCliente_Rutas" />
+        <EntityTypeShape EntityType="NVModel.Ubicacion" Width="1.5" PointX="3.5" PointY="14.875" />
+        <AssociationConnector Association="NVModel.FK_Ubicaciones_Empresas" />
+        <EntityTypeShape EntityType="NVModel.Inmovilizado" Width="1.5" PointX="3" PointY="77.625" />
+        <EntityTypeShape EntityType="NVModel.PlanCuenta" Width="1.5" PointX="3" PointY="71" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas1" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas2" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas3" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas4" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas5" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas6" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas7" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas8" />
+        <AssociationConnector Association="NVModel.FK_Empresas_PlanCuentas9" />
+        <AssociationConnector Association="NVModel.FK_Inmovilizados_Empresas" />
+        <AssociationConnector Association="NVModel.FK_PlanCuentas_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ParámetrosIVA_PlanCuentas" />
+        <AssociationConnector Association="NVModel.FK_ParámetrosIVA_PlanCuentas1" />
+        <AssociationConnector Association="NVModel.FK_ParámetrosIVA_PlanCuentas2" />
+        <AssociationConnector Association="NVModel.FK_ParámetrosIVA_PlanCuentas3" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

@@ -20,6 +20,12 @@ namespace NestoAPI.Controllers
         private const int ESTADO_LINEA_PENDIENTE = -1;
         private const int ESTADO_ENVIO_EN_CURSO = 0;
 
+        public const int TIPO_LINEA_TEXTO = 0;
+        public const int TIPO_LINEA_PRODUCTO = 1;
+        public const int TIPO_LINEA_CUENTA_CONTABLE = 2;
+        public const int TIPO_LINEA_INMOVILIZADO = 3;
+
+
         private NVEntities db = new NVEntities();
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
@@ -34,7 +40,7 @@ namespace NestoAPI.Controllers
         {
             List<ResumenPedidoVentaDTO> cabeceraPedidos = db.CabPedidoVtas
                 .Join(db.LinPedidoVtas, c => new {empresa = c.Empresa, numero = c.Número}, l => new {empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total })
-                .Where(c => c.Estado >= -1 && c.Estado <= 1)
+                .Where(c => c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
                 .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor})
                 .Select(x => new ResumenPedidoVentaDTO
                 {
@@ -358,13 +364,9 @@ namespace NestoAPI.Controllers
 
             db.CabPedidoVtas.Add(cabecera);
 
-            // Calculamos las variables que se pueden corresponden a la cabecera
-            decimal descuentoCliente, descuentoPP;
+            
             //ParametrosUsuarioController parametrosUsuarioCtrl = new ParametrosUsuarioController();
             ParametroUsuario parametroUsuario;
-            DescuentosCliente dtoCliente = db.DescuentosClientes.OrderBy(d => d.ImporteMínimo).FirstOrDefault(d => d.Empresa == pedido.empresa && d.Nº_Cliente == pedido.cliente && d.Contacto == pedido.contacto);
-            descuentoCliente = dtoCliente != null ?  dtoCliente.Descuento : 0;
-            descuentoPP = plazoPago.DtoProntoPago;
 
             // Guardamos el parámetro de pedido, para que al abrir la ventana el usuario vea el pedido
             string usuarioParametro = pedido.usuario.Substring(pedido.usuario.IndexOf("\\")+1);
@@ -376,62 +378,10 @@ namespace NestoAPI.Controllers
 
             // Declaramos las variables que se van a utilizar en el bucle de insertar líneas
             LinPedidoVta linPedido;
-            string tipoExclusiva;
-            decimal baseImponible, bruto, importeDescuento, importeIVA, importeRE, sumaDescuentos, porcentajeRE;
-            byte porcentajeIVA;
-            Producto producto;
-            ParametroIVA parametroIva;
             int? maxNumeroOferta = 0;
-
-
             
             // Bucle de insertar líneas
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido) {
-                producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == linea.producto).SingleOrDefault();
-
-                //descuentoProducto = linea.descuentoProducto; // si queremos separar descuento producto de descuento de linea, hay que crear el campo linea.descuentoProducto
-
-                /*                
-                // No permitimos poner descuento y además precio especial
-                if (linea.precio != producto.PVP || linea.descuento > 0) {
-                    linea.aplicarDescuento = false;
-                }
-                
-                // Solo calculamos los descuentos si no lleva otra oferta o precio especial aplicado
-                if ((linea.oferta == null || linea.oferta == 0) && linea.precio >= producto.PVP && linea.descuento == 0)
-                {
-                    precio = linea.precio; //para poder pasar el precio por referencia
-                    calcularDescuentoProducto(ref precio, ref descuentoProducto, producto, pedido.cliente, pedido.contacto, linea.cantidad, linea.aplicarDescuento);
-                    linea.precio = precio;
-                }
-                */
-
-                bruto = linea.cantidad * linea.precio;
-                if (linea.aplicarDescuento) {
-                    sumaDescuentos = (1 - (1 - (descuentoCliente)) * (1 - (linea.descuentoProducto)) * (1 - (linea.descuento)) * (1 - (descuentoPP))); 
-                } else {
-                    linea.descuentoProducto = 0;
-                    sumaDescuentos = linea.descuento;
-                }
-                baseImponible = Math.Round(bruto * (1 - sumaDescuentos), 2);
-                if (pedido.iva != null)
-                {
-                    parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva && p.IVA_Producto == producto.IVA_Repercutido);
-                    porcentajeIVA = (byte)parametroIva.C__IVA;
-                    porcentajeRE = (decimal)parametroIva.C__RE / 100;
-                    importeIVA = baseImponible * porcentajeIVA / 100;
-                    importeRE = baseImponible * porcentajeRE;
-                } else
-                {
-                    porcentajeIVA = 0;
-                    porcentajeRE = 0;
-                    importeIVA = 0;
-                    importeRE = 0;
-                }
-                importeDescuento = bruto * sumaDescuentos;
-
-                tipoExclusiva = producto.Familia1.TipoExclusiva;
-
                 if (linea.oferta != null && linea.oferta != 0)
                 {
                     if (linea.oferta > maxNumeroOferta)
@@ -440,51 +390,7 @@ namespace NestoAPI.Controllers
                     }
                     linea.oferta += contador.Oferta;
                 }
-
-                linPedido = new LinPedidoVta
-                {
-                    Estado = linea.estado,
-                    TipoLinea = linea.tipoLinea,
-                    Producto = linea.producto,
-                    Texto = linea.texto,
-                    Cantidad = linea.cantidad,
-                    Fecha_Entrega = linea.fechaEntrega.Date,
-                    Precio = linea.precio,
-                    PrecioTarifa = producto.PVP,
-                    Coste = (decimal)producto.PrecioMedio,
-                    Bruto = bruto,
-                    Descuento = linea.descuento,
-                    DescuentoProducto = linea.descuentoProducto, 
-                    Base_Imponible = baseImponible,
-                    Aplicar_Dto = linea.aplicarDescuento,
-                    VtoBueno = linea.vistoBueno,
-                    Usuario = linea.usuario,
-                    Almacén = linea.almacen,
-                    IVA = linea.iva,
-                    Total = baseImponible + importeIVA + importeRE,
-                    Grupo = producto.Grupo,
-                    Empresa = pedido.empresa,
-                    Número = pedido.numero,
-                    Nº_Cliente = pedido.cliente,
-                    Contacto = pedido.contacto,
-                    PorcentajeIVA = porcentajeIVA,
-                    PorcentajeRE = porcentajeRE,
-                    DescuentoCliente = descuentoCliente,
-                    DescuentoPP = descuentoPP,
-                    SumaDescuentos = sumaDescuentos,
-                    ImporteDto = importeDescuento,
-                    ImporteIVA = importeIVA,
-                    ImporteRE = importeRE,
-                    Delegación = linea.delegacion,
-                    Forma_Venta = linea.formaVenta,
-                    SubGrupo = producto.SubGrupo,
-                    Familia = producto.Familia,
-                    TipoExclusiva = tipoExclusiva,
-                    Picking = 0,
-                    NºOferta = linea.oferta,
-                    BlancoParaBorrar = "NestoAPI"
-                };
-
+                linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto);
                 db.LinPedidoVtas.Add(linPedido);
             }
 
@@ -558,77 +464,298 @@ namespace NestoAPI.Controllers
             return db.CabPedidoVtas.Count(e => e.Empresa == empresa && e.Número == id) > 0;
         }
 
-        /*
-        // Calcula el descuento que lleva un producto determinado para un cliente determinado
-        private void calcularDescuentoProducto(ref decimal precioCalculado, ref decimal descuentoCalculado, Producto producto, string cliente, string contacto, short cantidad, bool aplicarDescuento)
+        public LinPedidoVta crearLineaVta(string empresa, int numeroPedido, byte tipoLinea, string producto, short cantidad, decimal precio, string usuario)
         {
-            DescuentosProducto dtoProducto;
+            string delegacion = calcularDelegacion(usuario, empresa, numeroPedido);
+            string almacen = calcularAlmacen(usuario, empresa, numeroPedido);
+            string formaVenta = calcularFormaVenta(usuario, empresa, numeroPedido);
 
-            descuentoCalculado = 0;
-            precioCalculado = (decimal)producto.PVP;
-
-            // AQUÍ CALCULA PRECIOS, NO DESCUENTOS
-            //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     ' and contacto='0  ' and [nº producto]= '29487' and empresa='1  ' AND CANTIDADMÍNIMA<=1
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Contacto == contacto && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad);
-            if (dtoProducto != null && dtoProducto.Precio < precioCalculado)
+            string texto;
+            switch (tipoLinea)
             {
-                precioCalculado = (decimal)dtoProducto.Precio;
-            }
-            //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     '  and [nº producto]= '29487' and empresa='1  ' AND CantidadMínima<=1
-            //select recargopvp from clientes with (nolock) where empresa='1  ' and [nº cliente]='15191     ' and contacto='0  '
-            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     ' and contacto='0  ' order by cantidadminima desc
-            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     '  order by cantidadminima desc
-            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente] is null and [nºproveedor] is null order by cantidadminima desc
-            dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad && d.Nº_Cliente == null && d.NºProveedor == null);
-            if (dtoProducto != null && dtoProducto.Precio < precioCalculado)
-            {
-                precioCalculado = (decimal)dtoProducto.Precio;
-            }
-
-
-            // Si no tiene el aplicar descuento marcado, solo calcula precios especiales, pero no descuentos
-            if (!aplicarDescuento)
-            {
-                return;
+                case Constantes.TiposLineaVenta.CUENTA_CONTABLE:
+                    texto = db.PlanCuentas.SingleOrDefault(p => p.Empresa == empresa && p.Nº_Cuenta == producto).Concepto;
+                    texto = texto.Substring(0, 50);
+                    break;
+                case Constantes.TiposLineaVenta.PRODUCTO:
+                    texto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == producto).Nombre;
+                    break;
+                case Constantes.TiposLineaVenta.INMOVILIZADO:
+                    texto = db.Inmovilizados.Single(p => p.Empresa == empresa && p.Número == producto).Descripción;
+                    break;
+                default:
+                    texto = "";
+                    break;
             }
 
-            // CALCULA DESCUENTOS
-            //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente] is null and nºproveedor is null and familia is null
-            //select * from descuentosproducto where empresa='1  ' and grupoproducto='PEL' and [nº cliente] is null and  nºproveedor is null and familia is null
-            //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente]='15191     ' and nºproveedor is null and familia is null
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.Familia == null);
-            if (dtoProducto != null && dtoProducto.Descuento>descuentoCalculado)
+            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
-                descuentoCalculado = dtoProducto.Descuento;
-            }
+                tipoLinea = tipoLinea,
+                estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                producto = producto,
+                texto = texto,
+                cantidad = cantidad,
+                precio = precio,
+                delegacion = delegacion,
+                formaVenta = formaVenta,
+                almacen = almacen,
+                usuario = usuario == "" ? System.Environment.UserDomainName + "\\" + System.Environment.UserName : System.Environment.UserDomainName + "\\" + usuario
+            };
+            return crearLineaVta(linea, empresa, numeroPedido);
+        }
 
-            //select * from descuentosproducto where empresa='1  ' and grupoproducto='PEL' and [nº cliente]='15191     ' and nºproveedor is null and familia is null
+        public LinPedidoVta crearLineaVta(LineaPedidoVentaDTO linea, string empresa, int numeroPedido)
+        {
+            // Si hubiese en dos empresas el mismo pedido, va a dar error
+            CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroPedido);
+            PlazoPago plazo = db.PlazosPago.SingleOrDefault(p => p.Empresa == pedido.Empresa && p.Número == pedido.PlazosPago);
+            return crearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto);
+        }
 
-            // AGAIN AND AGAIN AND AGAIN...
-            //select isnull(max(descuento),0) from descuentosproducto where [nº cliente]='15191     ' and empresa='1  ' and grupoproducto='PEL' and cantidadmínima<=1 and familia is null and nºproveedor is null
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Familia == null && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.GrupoProducto == producto.Grupo);
-            if (dtoProducto != null && dtoProducto.Descuento > descuentoCalculado)
-            {
-                descuentoCalculado = dtoProducto.Descuento;
-            }
-            //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and nºproveedor is null and grupoproducto is null
-            //select isnull(max(descuento),0) from descuentosproducto where [nº cliente]='15191     ' and empresa='1  ' and familia='Lisap     ' and cantidadmínima<=1 and nºproveedor is null  and grupoproducto is null
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Familia == producto.Familia && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.GrupoProducto == null);
-            if (dtoProducto != null && dtoProducto.Descuento > descuentoCalculado)
-            {
-                descuentoCalculado = dtoProducto.Descuento;
-            }
-            //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and grupoproducto='PEL' and nºproveedor is null
+        public LinPedidoVta crearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto)
+        {
+            string tipoExclusiva, grupo, subGrupo, familia, ivaRepercutido;
+            decimal coste, precioTarifa;
 
-            if (precioCalculado < producto.PVP * (1 - descuentoCalculado))
+            // Calculamos las variables que se pueden corresponden a la cabecera
+            decimal descuentoCliente, descuentoPP;
+            DescuentosCliente dtoCliente = db.DescuentosClientes.OrderBy(d => d.ImporteMínimo).FirstOrDefault(d => d.Empresa == empresa && d.Nº_Cliente == cliente && d.Contacto == contacto);
+            descuentoCliente = dtoCliente != null ? dtoCliente.Descuento : 0;
+            descuentoPP = plazoPago.DtoProntoPago;
+
+            switch (linea.tipoLinea)
             {
-                descuentoCalculado = 0;
-            } else
-            {
-                precioCalculado = (decimal)producto.PVP;
+                
+                case Constantes.TiposLineaVenta.PRODUCTO:
+                    Producto producto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == linea.producto);
+                    precioTarifa = (decimal)producto.PVP;
+                    coste = (decimal)producto.PrecioMedio;
+                    grupo = producto.Grupo;
+                    subGrupo = producto.SubGrupo;
+                    familia = producto.Familia;
+                    ivaRepercutido = producto.IVA_Repercutido;
+                    break;
+                
+                default:
+                    precioTarifa = 0;
+                    coste = 0;
+                    grupo = null;
+                    subGrupo = null;
+                    familia = null;
+                    ivaRepercutido = db.Empresas.SingleOrDefault(e => e.Número == empresa).TipoIvaDefecto;
+                    break;
             }
             
+            if (linea.tipoLinea == PedidosVentaController.TIPO_LINEA_PRODUCTO)
+            {
+                Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == empresa && p.Número == linea.producto).SingleOrDefault();
+                tipoExclusiva = producto.Familia1.TipoExclusiva;
+            } else
+            {
+                tipoExclusiva = null;
+            }
+            
+            LinPedidoVta lineaNueva = new LinPedidoVta
+            {
+                Estado = linea.estado,
+                TipoLinea = linea.tipoLinea,
+                Producto = linea.producto,
+                Texto = linea.texto,
+                Cantidad = linea.cantidad,
+                Fecha_Entrega = this.fechaEntregaAjustada(linea.fechaEntrega.Date),
+                Precio = linea.precio,
+                PrecioTarifa = precioTarifa,
+                Coste = coste,
+                Descuento = linea.descuento,
+                DescuentoProducto = linea.descuentoProducto,
+                Aplicar_Dto = linea.aplicarDescuento,
+                VtoBueno = linea.vistoBueno,
+                Usuario = linea.usuario,
+                Almacén = linea.almacen,
+                IVA = linea.iva,
+                Grupo = grupo,
+                Empresa = empresa,
+                Número = numeroPedido,
+                Nº_Cliente = cliente,
+                Contacto = contacto,
+                DescuentoCliente = descuentoCliente,
+                DescuentoPP = descuentoPP,
+                Delegación = linea.delegacion,
+                Forma_Venta = linea.formaVenta,
+                SubGrupo = subGrupo,
+                Familia = familia,
+                TipoExclusiva = tipoExclusiva,
+                Picking = 0,
+                NºOferta = linea.oferta,
+                BlancoParaBorrar = "NestoAPI",
+                LineaParcial = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? !esSobrePedido(linea.producto, linea.cantidad) : true
+            };
+
+            calcularImportesLinea(lineaNueva, iva);
+
+            return lineaNueva;
+
         }
-        */
+
+        public void calcularImportesLinea(LinPedidoVta linea)
+        {
+            string iva = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == linea.Empresa && c.Número == linea.Número).IVA;
+            calcularImportesLinea(linea, iva);
+        }
+
+        public void calcularImportesLinea(LinPedidoVta linea, string iva)
+        {
+            decimal baseImponible, bruto, importeDescuento, importeIVA, importeRE, sumaDescuentos, porcentajeRE;
+            byte porcentajeIVA;
+            ParametroIVA parametroIva;
+            
+            bruto = (decimal)(linea.Cantidad * linea.Precio);
+            if (linea.Aplicar_Dto)
+            {
+                sumaDescuentos = (1 - (1 - (linea.DescuentoCliente)) * (1 - (linea.DescuentoProducto)) * (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
+            }
+            else
+            {
+                linea.DescuentoProducto = 0;
+                sumaDescuentos = linea.Descuento;
+            }
+            baseImponible = Math.Round(bruto * (1 - sumaDescuentos), 2);
+            if (iva != null && iva.Trim() != "")
+            {
+                parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == linea.Empresa && p.IVA_Cliente_Prov == iva && p.IVA_Producto == linea.IVA);
+                porcentajeIVA = parametroIva != null ? (byte)parametroIva.C__IVA : (byte)0;
+                porcentajeRE = parametroIva != null ? (decimal)parametroIva.C__RE / 100 : (decimal)0;
+                importeIVA = baseImponible * porcentajeIVA / 100;
+                importeRE = baseImponible * porcentajeRE;
+            }
+            else
+            {
+                porcentajeIVA = 0;
+                porcentajeRE = 0;
+                importeIVA = 0;
+                importeRE = 0;
+            }
+            importeDescuento = bruto * sumaDescuentos;
+
+            // Ponemos los valores en la línea
+            linea.Bruto = bruto;
+            linea.Base_Imponible = baseImponible;
+            linea.Total = baseImponible + importeIVA + importeRE;
+            linea.PorcentajeIVA = porcentajeIVA;
+            linea.PorcentajeRE = porcentajeRE;
+            linea.SumaDescuentos = sumaDescuentos;
+            linea.ImporteDto = importeDescuento;
+            linea.ImporteIVA = importeIVA;
+            linea.ImporteRE = importeRE;
+            
+        }
+
+        private string calcularAlmacen(string usuario, string empresa, int numeroPedido)
+        {
+            string almacen = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Almacén;
+            if (almacen != "")
+            {
+                return almacen;
+            }
+            ParametroUsuario parametroUsuario;
+
+            if (usuario != null)
+            {
+                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == "AlmacénPedidoVta");
+                if (parametroUsuario != null && parametroUsuario.Valor.Trim() != "")
+                {
+                    return parametroUsuario.Valor.Trim();
+                }
+            }
+
+            return Constantes.Productos.ALMACEN_POR_DEFECTO;
+        }
+
+        private string calcularDelegacion(string usuario, string empresa, int numeroPedido)
+        {
+            string delegacion = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Delegación;
+            if (delegacion != "")
+            {
+                return delegacion;
+            }
+            ParametroUsuario parametroUsuario;
+
+            if (usuario != null)
+            {
+                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == "DelegaciónDefecto");
+                if (parametroUsuario != null && parametroUsuario.Valor.Trim() != "")
+                {
+                    return parametroUsuario.Valor.Trim();
+                }
+            }
+
+            return Constantes.Empresas.DELEGACION_POR_DEFECTO;
+        }
+
+        private string calcularFormaVenta(string usuario, string empresa, int numeroPedido)
+        {
+            string formaVenta = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Forma_Venta;
+            if (formaVenta != "")
+            {
+                return formaVenta;
+            }
+            ParametroUsuario parametroUsuario;
+
+            if (usuario != null)
+            {
+                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == "FormaVentaDefecto");
+                if (parametroUsuario != null && parametroUsuario.Valor.Trim() != "")
+                {
+                    return parametroUsuario.Valor.Trim();
+                }
+            }
+
+            return Constantes.Empresas.FORMA_VENTA_POR_DEFECTO;
+        }
+
+        public LinPedidoVta dividirLinea(LinPedidoVta lineaActual, short cantidad)
+        {
+            return this.dividirLinea(db, lineaActual, cantidad);
+        }
+
+        public LinPedidoVta dividirLinea(NVEntities db, LinPedidoVta linea, short cantidad)
+        {
+            if (linea.Cantidad <= cantidad)
+            {
+                return null; // no podemos dejar una cantidad mayor de la que ya hay
+            }
+
+            LinPedidoVta lineaNueva = (LinPedidoVta)db.Entry(linea).CurrentValues.ToObject();
+            lineaNueva.Cantidad -= cantidad;
+            this.calcularImportesLinea(lineaNueva);
+            db.LinPedidoVtas.Add(lineaNueva); 
+
+            linea.Cantidad = cantidad;
+            this.calcularImportesLinea(linea);
+
+            return lineaNueva;
+        }
+
+
+        private bool esSobrePedido(string producto, short cantidad)
+        {
+            Producto productoBuscado = db.Productos.SingleOrDefault(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto);
+            if (productoBuscado.Estado == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
+            {
+                return false;
+            }
+
+            ProductoDTO productoNuevo = new ProductoDTO(producto, db);
+
+            return productoNuevo.CantidadDisponible() < cantidad;
+        }
+
+        // A las 11h de la mañana se cierra la ruta y los pedidos que se metan son ya para el día siguiente
+        private DateTime fechaEntregaAjustada(DateTime fecha)
+        {
+            DateTime fechaMinima = DateTime.Now.Hour < 11 ? DateTime.Today : DateTime.Today.AddDays(1);
+
+            return fechaMinima < fecha ? fecha : fechaMinima;
+        }
     }
 }

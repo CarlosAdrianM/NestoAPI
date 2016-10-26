@@ -163,9 +163,9 @@ namespace NestoAPI.Controllers
                 {
                     fecha = (DateTime)ventasEncontradas.Fecha_Albarán,
                     cantidad = (short)ventasEncontradas.Cantidad,
-                    precioBruto = (decimal)(ventasEncontradas.Bruto / ventasEncontradas.Cantidad),
+                    precioBruto = ventasEncontradas.Cantidad != 0 ? (decimal)(ventasEncontradas.Bruto / ventasEncontradas.Cantidad) : 0,
                     descuentos = ventasEncontradas.SumaDescuentos,
-                    precioNeto = (decimal)(ventasEncontradas.Base_Imponible / ventasEncontradas.Cantidad)
+                    precioNeto = ventasEncontradas.Cantidad != 0 ? (decimal)(ventasEncontradas.Base_Imponible / ventasEncontradas.Cantidad) : 0
 
                 })
                 .OrderByDescending(f => f.fecha)
@@ -182,17 +182,18 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(StockProductoDTO))]
         public async Task<IHttpActionResult> GetCargarStock(string empresa, string almacen, string productoStock)
         {
+            /*
             Empresa empresaBuscada = db.Empresas.Where(e => e.Número == empresa).SingleOrDefault();
             if (empresaBuscada.IVA_por_defecto == null)
             {
                 throw new Exception("Empresa no válida");
             }
-
+            */
 
             StockProductoDTO datosStock = new StockProductoDTO();
-            datosStock.stock = await db.ExtractosProducto.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Número == productoStock).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync();
-            int? cantidadReservada =  await db.LinPedidoVtas.Where(e => (e.Empresa == empresa || e.Empresa == empresaBuscada.IVA_por_defecto) && e.Almacén == almacen && e.Producto == productoStock && (e.Estado == 1 || e.Estado == -1)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync();
-            datosStock.cantidadDisponible = cantidadReservada == null ? datosStock.stock : datosStock.stock - (int)cantidadReservada;
+            ProductoDTO productoNuevo = new ProductoDTO(productoStock, db);
+            datosStock.stock = productoNuevo.Stock();
+            datosStock.cantidadDisponible = productoNuevo.CantidadDisponible();
 
             // Cargamos la imagen del producto
             using (var client = new HttpClient())
@@ -477,11 +478,6 @@ namespace NestoAPI.Controllers
         private bool LinPedidoVtaExists(int id)
         {
             return db.LinPedidoVtas.Count(e => e.Nº_Orden == id) > 0;
-        }
-
-        private void insertaLineaVta(LineaPlantillaVenta linea)
-        {
-
         }
     }
 }

@@ -545,6 +545,23 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="Inmovilizados">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Descripción" Type="char" MaxLength="50" />
+          <Property Name="Grupo" Type="char" MaxLength="3" />
+          <Property Name="Delegación" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="CentroCoste" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Amortizable" Type="bit" Nullable="false" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="FechaModificación" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaCreación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="Inventarios">
           <Key>
             <PropertyRef Name="NºOrden" />
@@ -714,6 +731,22 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="PlanCuentas">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº Cuenta" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nº Cuenta" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Concepto" Type="char" MaxLength="75" />
+          <Property Name="IVA" Type="char" MaxLength="3" />
+          <Property Name="DebeHaber" Type="tinyint" Nullable="false" />
+          <Property Name="SóloAuto" Type="bit" Nullable="false" />
+          <Property Name="Bloqueada" Type="bit" Nullable="false" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="PlazosPago">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -823,6 +856,22 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="Rutas">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Descripción" Type="char" MaxLength="20" />
+          <Property Name="Activa" Type="bit" Nullable="false" />
+          <Property Name="DiaReposicion" Type="int" Nullable="false" />
+          <Property Name="Traspasar" Type="char" MaxLength="3" />
+          <Property Name="ImporteMinimo" Type="money" Nullable="false" />
+          <Property Name="Copias" Type="char" MaxLength="1" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="SubGruposProducto">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -835,6 +884,35 @@
           <Property Name="Descripción" Type="char" MaxLength="50" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="Ubicaciones">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" />
+          <Property Name="NºOrden" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="EmpresaAlbaranVta" Type="char" MaxLength="3" />
+          <Property Name="EmpresaAlbaranCmp" Type="char" MaxLength="3" />
+          <Property Name="Almacén" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Cantidad" Type="int" Nullable="false" />
+          <Property Name="Pasillo" Type="char" MaxLength="3" />
+          <Property Name="Fila" Type="char" MaxLength="3" />
+          <Property Name="Columna" Type="char" MaxLength="3" />
+          <Property Name="PedidoVta" Type="int" />
+          <Property Name="AlbaránVta" Type="int" />
+          <Property Name="Estado" Type="int" />
+          <Property Name="NºOrdenVta" Type="int" />
+          <Property Name="PedidoCmp" Type="int" />
+          <Property Name="AlbaránCmp" Type="int" />
+          <Property Name="NºOrdenCmp" Type="int" />
+          <Property Name="NºTraspasoInv" Type="int" />
+          <Property Name="NºOrdenRepo" Type="int" />
+          <Property Name="NºTraspasoRepo" Type="int" />
+          <Property Name="NºTraspaso" Type="int" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificación" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
+          <Property Name="FechaCreación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <Association Name="FK_CabFacturaCmp_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
@@ -1278,6 +1356,146 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Empresas_PlanCuentas">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDescuentoVta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas1">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDtoPPVta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas2">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDtoCliente" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas3">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDtoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas4">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaCaja" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas5">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDescuadre" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas6">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDescuentoCmp" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas7">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDtoPPCmp" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas8">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaRegularización" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas9">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaRemanente" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Empresas_PlazosPago">
           <End Role="PlazosPago" Type="Self.PlazosPago" Multiplicity="0..1" />
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
@@ -1419,6 +1637,20 @@
             <Dependent Role="ExtractoCliente">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="FormaVenta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoCliente_Rutas">
+          <End Role="Rutas" Type="Self.Rutas" Multiplicity="0..1" />
+          <End Role="ExtractoCliente" Type="Self.ExtractoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Rutas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Ruta" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -1594,6 +1826,18 @@
               <PropertyRef Name="Número" />
             </Principal>
             <Dependent Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Inmovilizados_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="Inmovilizados" Type="Self.Inmovilizados" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Inmovilizados">
               <PropertyRef Name="Empresa" />
             </Dependent>
           </ReferentialConstraint>
@@ -1778,6 +2022,62 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_ParámetrosIVA_PlanCuentas">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="ParámetrosIVA" Type="Self.ParámetrosIVA" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="ParámetrosIVA">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaRepercutido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ParámetrosIVA_PlanCuentas1">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="ParámetrosIVA" Type="Self.ParámetrosIVA" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="ParámetrosIVA">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaSoportado" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ParámetrosIVA_PlanCuentas2">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="ParámetrosIVA" Type="Self.ParámetrosIVA" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="ParámetrosIVA">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaRecargoRepercutido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ParámetrosIVA_PlanCuentas3">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="ParámetrosIVA" Type="Self.ParámetrosIVA" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="ParámetrosIVA">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaRecargoSoportado" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_ParámetrosUsuario_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="ParámetrosUsuario" Type="Self.ParámetrosUsuario" Multiplicity="*" />
@@ -1815,6 +2115,18 @@
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="NºProveedor" />
               <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PlanCuentas_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -1958,6 +2270,30 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Rutas_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="Rutas" Type="Self.Rutas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Rutas">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Ubicaciones_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="0..1" />
+          <End Role="Ubicaciones" Type="Self.Ubicaciones" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Ubicaciones">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Function Name="prdAjustarDíasPagoCliente" Aggregate="false" BuiltIn="false" NiladicFunction="false" IsComposable="false" ParameterTypeSemantics="AllowImplicitConversion" Schema="dbo">
           <Parameter Name="Empresa" Type="char" Mode="In" />
           <Parameter Name="Cliente" Type="char" Mode="In" />
@@ -1986,6 +2322,7 @@
           <EntitySet Name="Familias" EntityType="Self.Familias" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasVenta" EntityType="Self.FormasVenta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Inmovilizados" EntityType="Self.Inmovilizados" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Inventarios" EntityType="Self.Inventarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="InventariosCuadre" EntityType="Self.InventariosCuadre" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
@@ -1993,11 +2330,14 @@
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PersonasContactoProveedor" EntityType="Self.PersonasContactoProveedor" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="PlanCuentas" EntityType="Self.PlanCuentas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlazosPago" EntityType="Self.PlazosPago" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Productos" EntityType="Self.Productos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Proveedores" EntityType="Self.Proveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ProveedoresProducto" EntityType="Self.ProveedoresProducto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Rutas" EntityType="Self.Rutas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="SubGruposProducto" EntityType="Self.SubGruposProducto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Ubicaciones" EntityType="Self.Ubicaciones" Schema="dbo" store:Type="Tables" />
           <AssociationSet Name="FK_CabFacturaCmp_Empresas" Association="Self.FK_CabFacturaCmp_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
@@ -2122,6 +2462,46 @@
             <End Role="FormasVenta" EntitySet="FormasVenta" />
             <End Role="Empresas" EntitySet="Empresas" />
           </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas" Association="Self.FK_Empresas_PlanCuentas">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas1" Association="Self.FK_Empresas_PlanCuentas1">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas2" Association="Self.FK_Empresas_PlanCuentas2">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas3" Association="Self.FK_Empresas_PlanCuentas3">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas4" Association="Self.FK_Empresas_PlanCuentas4">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas5" Association="Self.FK_Empresas_PlanCuentas5">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas6" Association="Self.FK_Empresas_PlanCuentas6">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas7" Association="Self.FK_Empresas_PlanCuentas7">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas8" Association="Self.FK_Empresas_PlanCuentas8">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas9" Association="Self.FK_Empresas_PlanCuentas9">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
           <AssociationSet Name="FK_Empresas_PlazosPago" Association="Self.FK_Empresas_PlazosPago">
             <End Role="PlazosPago" EntitySet="PlazosPago" />
             <End Role="Empresas" EntitySet="Empresas" />
@@ -2160,6 +2540,10 @@
           </AssociationSet>
           <AssociationSet Name="FK_ExtractoCliente_FormasVenta" Association="Self.FK_ExtractoCliente_FormasVenta">
             <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="ExtractoCliente" EntitySet="ExtractoCliente" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoCliente_Rutas" Association="Self.FK_ExtractoCliente_Rutas">
+            <End Role="Rutas" EntitySet="Rutas" />
             <End Role="ExtractoCliente" EntitySet="ExtractoCliente" />
           </AssociationSet>
           <AssociationSet Name="FK_ExtractoProducto_Clientes" Association="Self.FK_ExtractoProducto_Clientes">
@@ -2214,6 +2598,10 @@
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="FormasVenta" EntitySet="FormasVenta" />
           </AssociationSet>
+          <AssociationSet Name="FK_Inmovilizados_Empresas" Association="Self.FK_Inmovilizados_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Inmovilizados" EntitySet="Inmovilizados" />
+          </AssociationSet>
           <AssociationSet Name="FK_Inventario_Empresas" Association="Self.FK_Inventario_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="Inventarios" EntitySet="Inventarios" />
@@ -2266,6 +2654,22 @@
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="ParámetrosIVA" EntitySet="ParámetrosIVA" />
           </AssociationSet>
+          <AssociationSet Name="FK_ParámetrosIVA_PlanCuentas" Association="Self.FK_ParámetrosIVA_PlanCuentas">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="ParámetrosIVA" EntitySet="ParámetrosIVA" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ParámetrosIVA_PlanCuentas1" Association="Self.FK_ParámetrosIVA_PlanCuentas1">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="ParámetrosIVA" EntitySet="ParámetrosIVA" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ParámetrosIVA_PlanCuentas2" Association="Self.FK_ParámetrosIVA_PlanCuentas2">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="ParámetrosIVA" EntitySet="ParámetrosIVA" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ParámetrosIVA_PlanCuentas3" Association="Self.FK_ParámetrosIVA_PlanCuentas3">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="ParámetrosIVA" EntitySet="ParámetrosIVA" />
+          </AssociationSet>
           <AssociationSet Name="FK_ParámetrosUsuario_Empresas" Association="Self.FK_ParámetrosUsuario_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="ParámetrosUsuario" EntitySet="ParámetrosUsuario" />
@@ -2277,6 +2681,10 @@
           <AssociationSet Name="FK_PersonasContactoProveedor_Proveedores" Association="Self.FK_PersonasContactoProveedor_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="PersonasContactoProveedor" EntitySet="PersonasContactoProveedor" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PlanCuentas_Empresas" Association="Self.FK_PlanCuentas_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
           </AssociationSet>
           <AssociationSet Name="FK_PlazosPago_Empresas" Association="Self.FK_PlazosPago_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -2317,6 +2725,14 @@
           <AssociationSet Name="FK_ProveedoresProducto_Proveedores" Association="Self.FK_ProveedoresProducto_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="ProveedoresProducto" EntitySet="ProveedoresProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Rutas_Empresas" Association="Self.FK_Rutas_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Rutas" EntitySet="Rutas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Ubicaciones_Empresas" Association="Self.FK_Ubicaciones_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Ubicaciones" EntitySet="Ubicaciones" />
           </AssociationSet>
         </EntityContainer>
       </Schema></edmx:StorageModels>
@@ -2726,6 +3142,86 @@
             <End Role="ProveedoresProducto" EntitySet="ProveedoresProductoes" />
           </AssociationSet>
           <EntitySet Name="Modificaciones" EntityType="NVModel.Modificacion" />
+          <EntitySet Name="Rutas" EntityType="NVModel.Ruta" />
+          <AssociationSet Name="FK_Rutas_Empresas" Association="NVModel.FK_Rutas_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Ruta" EntitySet="Rutas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoCliente_Rutas" Association="NVModel.FK_ExtractoCliente_Rutas">
+            <End Role="Ruta" EntitySet="Rutas" />
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
+          </AssociationSet>
+          <EntitySet Name="Ubicaciones" EntityType="NVModel.Ubicacion" />
+          <AssociationSet Name="FK_Ubicaciones_Empresas" Association="NVModel.FK_Ubicaciones_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Ubicacione" EntitySet="Ubicaciones" />
+          </AssociationSet>
+          <EntitySet Name="Inmovilizados" EntityType="NVModel.Inmovilizado" />
+          <EntitySet Name="PlanCuentas" EntityType="NVModel.PlanCuenta" />
+          <AssociationSet Name="FK_Empresas_PlanCuentas" Association="NVModel.FK_Empresas_PlanCuentas">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas1" Association="NVModel.FK_Empresas_PlanCuentas1">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas2" Association="NVModel.FK_Empresas_PlanCuentas2">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas3" Association="NVModel.FK_Empresas_PlanCuentas3">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas4" Association="NVModel.FK_Empresas_PlanCuentas4">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas5" Association="NVModel.FK_Empresas_PlanCuentas5">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas6" Association="NVModel.FK_Empresas_PlanCuentas6">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas7" Association="NVModel.FK_Empresas_PlanCuentas7">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas8" Association="NVModel.FK_Empresas_PlanCuentas8">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_PlanCuentas9" Association="NVModel.FK_Empresas_PlanCuentas9">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Inmovilizados_Empresas" Association="NVModel.FK_Inmovilizados_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Inmovilizado" EntitySet="Inmovilizados" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PlanCuentas_Empresas" Association="NVModel.FK_PlanCuentas_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ParámetrosIVA_PlanCuentas" Association="NVModel.FK_ParámetrosIVA_PlanCuentas">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="ParametroIVA" EntitySet="ParametrosIVA" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ParámetrosIVA_PlanCuentas1" Association="NVModel.FK_ParámetrosIVA_PlanCuentas1">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="ParametroIVA" EntitySet="ParametrosIVA" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ParámetrosIVA_PlanCuentas2" Association="NVModel.FK_ParámetrosIVA_PlanCuentas2">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="ParametroIVA" EntitySet="ParametrosIVA" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ParámetrosIVA_PlanCuentas3" Association="NVModel.FK_ParámetrosIVA_PlanCuentas3">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="ParametroIVA" EntitySet="ParametrosIVA" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -2849,6 +3345,20 @@
           <NavigationProperty Name="ExtractoClientes1" Relationship="NVModel.FK_ExtractoCliente_Empresas1" FromRole="Empresa" ToRole="ExtractoCliente" />
           <NavigationProperty Name="CCCs" Relationship="NVModel.FK_CCC_Empresas" FromRole="Empresa" ToRole="CCC" />
           <NavigationProperty Name="ProveedoresProductoes" Relationship="NVModel.FK_ProveedoresProducto_Empresas" FromRole="Empresa" ToRole="ProveedoresProducto" />
+          <NavigationProperty Name="Rutas" Relationship="NVModel.FK_Rutas_Empresas" FromRole="Empresa" ToRole="Ruta" />
+          <NavigationProperty Name="Ubicaciones" Relationship="NVModel.FK_Ubicaciones_Empresas" FromRole="Empresa" ToRole="Ubicacione" />
+          <NavigationProperty Name="PlanCuenta" Relationship="NVModel.FK_Empresas_PlanCuentas" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta1" Relationship="NVModel.FK_Empresas_PlanCuentas1" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta2" Relationship="NVModel.FK_Empresas_PlanCuentas2" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta3" Relationship="NVModel.FK_Empresas_PlanCuentas3" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta4" Relationship="NVModel.FK_Empresas_PlanCuentas4" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta5" Relationship="NVModel.FK_Empresas_PlanCuentas5" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta6" Relationship="NVModel.FK_Empresas_PlanCuentas6" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta7" Relationship="NVModel.FK_Empresas_PlanCuentas7" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta8" Relationship="NVModel.FK_Empresas_PlanCuentas8" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta9" Relationship="NVModel.FK_Empresas_PlanCuentas9" FromRole="Empresa" ToRole="PlanCuenta" />
+          <NavigationProperty Name="Inmovilizados" Relationship="NVModel.FK_Inmovilizados_Empresas" FromRole="Empresa" ToRole="Inmovilizado" />
+          <NavigationProperty Name="PlanCuentas" Relationship="NVModel.FK_PlanCuentas_Empresas" FromRole="Empresa" ToRole="PlanCuenta" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -3768,6 +4278,10 @@
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_ParámetrosIVA_Empresas" FromRole="ParámetrosIVA" ToRole="Empresa" />
+          <NavigationProperty Name="PlanCuenta" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas" FromRole="ParametroIVA" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta1" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas1" FromRole="ParametroIVA" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta2" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas2" FromRole="ParametroIVA" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta3" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas3" FromRole="ParametroIVA" ToRole="PlanCuenta" />
         </EntityType>
         <Association Name="FK_ParámetrosIVA_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -4563,6 +5077,7 @@
           <NavigationProperty Name="FormasPago" Relationship="NVModel.FK_ExtractoCliente_FormasPago" FromRole="ExtractoCliente" ToRole="FormaPago" />
           <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_ExtractoCliente_FormasVenta" FromRole="ExtractoCliente" ToRole="FormaVenta" />
           <NavigationProperty Name="CCC1" Relationship="NVModel.FK_ExtractoCliente_CCC" FromRole="ExtractoCliente" ToRole="CCC" />
+          <NavigationProperty Name="Ruta1" Relationship="NVModel.FK_ExtractoCliente_Rutas" FromRole="ExtractoCliente" ToRole="Ruta" />
         </EntityType>
         <Association Name="FK_ExtractoCliente_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
@@ -4797,6 +5312,361 @@
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" annotation:StoreGeneratedPattern="Computed" />
           <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
         </EntityType>
+        <EntityType Name="Ruta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Descripción" Type="String" MaxLength="20" FixedLength="true" Unicode="false" />
+          <Property Name="Activa" Type="Boolean" Nullable="false" />
+          <Property Name="DiaReposicion" Type="Int32" Nullable="false" />
+          <Property Name="Traspasar" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ImporteMinimo" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Copias" Type="String" Nullable="false" MaxLength="1" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Rutas_Empresas" FromRole="Ruta" ToRole="Empresa" />
+          <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_Rutas" FromRole="Ruta" ToRole="ExtractoCliente" />
+        </EntityType>
+        <Association Name="FK_Rutas_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.Ruta" Role="Ruta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Ruta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoCliente_Rutas">
+          <End Type="NVModel.Ruta" Role="Ruta" Multiplicity="0..1" />
+          <End Type="NVModel.ExtractoCliente" Role="ExtractoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Ruta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Ruta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="Ubicacion">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºOrden" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="EmpresaAlbaranVta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="EmpresaAlbaranCmp" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Almacén" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Cantidad" Type="Int32" Nullable="false" />
+          <Property Name="Pasillo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Fila" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Columna" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PedidoVta" Type="Int32" />
+          <Property Name="AlbaránVta" Type="Int32" />
+          <Property Name="Estado" Type="Int32" />
+          <Property Name="NºOrdenVta" Type="Int32" />
+          <Property Name="PedidoCmp" Type="Int32" />
+          <Property Name="AlbaránCmp" Type="Int32" />
+          <Property Name="NºOrdenCmp" Type="Int32" />
+          <Property Name="NºTraspasoInv" Type="Int32" />
+          <Property Name="NºOrdenRepo" Type="Int32" />
+          <Property Name="NºTraspasoRepo" Type="Int32" />
+          <Property Name="NºTraspaso" Type="Int32" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificación" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="FechaCreación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Ubicaciones_Empresas" FromRole="Ubicacione" ToRole="Empresa" />
+        </EntityType>
+        <Association Name="FK_Ubicaciones_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
+          <End Type="NVModel.Ubicacion" Role="Ubicacione" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Ubicacione">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="Inmovilizado">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Descripción" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Grupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Delegación" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CentroCoste" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Amortizable" Type="Boolean" Nullable="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="FechaModificación" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaCreación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Inmovilizados_Empresas" FromRole="Inmovilizado" ToRole="Empresa" />
+        </EntityType>
+        <EntityType Name="PlanCuenta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº_Cuenta" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Cuenta" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Concepto" Type="String" MaxLength="75" FixedLength="true" Unicode="false" />
+          <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="DebeHaber" Type="Byte" Nullable="false" />
+          <Property Name="SóloAuto" Type="Boolean" Nullable="false" />
+          <Property Name="Bloqueada" Type="Boolean" Nullable="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresas" Relationship="NVModel.FK_Empresas_PlanCuentas" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas1" Relationship="NVModel.FK_Empresas_PlanCuentas1" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas2" Relationship="NVModel.FK_Empresas_PlanCuentas2" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas3" Relationship="NVModel.FK_Empresas_PlanCuentas3" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas4" Relationship="NVModel.FK_Empresas_PlanCuentas4" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas5" Relationship="NVModel.FK_Empresas_PlanCuentas5" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas6" Relationship="NVModel.FK_Empresas_PlanCuentas6" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas7" Relationship="NVModel.FK_Empresas_PlanCuentas7" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas8" Relationship="NVModel.FK_Empresas_PlanCuentas8" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas9" Relationship="NVModel.FK_Empresas_PlanCuentas9" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_PlanCuentas_Empresas" FromRole="PlanCuenta" ToRole="Empresa" />
+          <NavigationProperty Name="ParámetrosIVA" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas" FromRole="PlanCuenta" ToRole="ParametroIVA" />
+          <NavigationProperty Name="ParámetrosIVA1" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas1" FromRole="PlanCuenta" ToRole="ParametroIVA" />
+          <NavigationProperty Name="ParámetrosIVA2" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas2" FromRole="PlanCuenta" ToRole="ParametroIVA" />
+          <NavigationProperty Name="ParámetrosIVA3" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas3" FromRole="PlanCuenta" ToRole="ParametroIVA" />
+        </EntityType>
+        <Association Name="FK_Empresas_PlanCuentas">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDescuentoVta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas1">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDtoPPVta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas2">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDtoCliente" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas3">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDtoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas4">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaCaja" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas5">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDescuadre" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas6">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDescuentoCmp" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas7">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaDtoPPCmp" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas8">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaRegularización" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_PlanCuentas9">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CtaRemanente" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Inmovilizados_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.Inmovilizado" Role="Inmovilizado" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Inmovilizado">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PlanCuentas_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ParámetrosIVA_PlanCuentas">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.ParametroIVA" Role="ParametroIVA" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="ParametroIVA">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaRepercutido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ParámetrosIVA_PlanCuentas1">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.ParametroIVA" Role="ParametroIVA" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="ParametroIVA">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaSoportado" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ParámetrosIVA_PlanCuentas2">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.ParametroIVA" Role="ParametroIVA" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="ParametroIVA">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaRecargoRepercutido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ParámetrosIVA_PlanCuentas3">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.ParametroIVA" Role="ParametroIVA" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="ParametroIVA">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaRecargoSoportado" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -5612,6 +6482,85 @@
                 <ScalarProperty Name="Anterior" ColumnName="Anterior" />
                 <ScalarProperty Name="Tabla" ColumnName="Tabla" />
                 <ScalarProperty Name="id" ColumnName="id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Rutas">
+            <EntityTypeMapping TypeName="NVModel.Ruta">
+              <MappingFragment StoreEntitySet="Rutas">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Copias" ColumnName="Copias" />
+                <ScalarProperty Name="ImporteMinimo" ColumnName="ImporteMinimo" />
+                <ScalarProperty Name="Traspasar" ColumnName="Traspasar" />
+                <ScalarProperty Name="DiaReposicion" ColumnName="DiaReposicion" />
+                <ScalarProperty Name="Activa" ColumnName="Activa" />
+                <ScalarProperty Name="Descripción" ColumnName="Descripción" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Ubicaciones">
+            <EntityTypeMapping TypeName="NVModel.Ubicacion">
+              <MappingFragment StoreEntitySet="Ubicaciones">
+                <ScalarProperty Name="FechaCreación" ColumnName="FechaCreación" />
+                <ScalarProperty Name="FechaModificación" ColumnName="FechaModificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="NºTraspaso" ColumnName="NºTraspaso" />
+                <ScalarProperty Name="NºTraspasoRepo" ColumnName="NºTraspasoRepo" />
+                <ScalarProperty Name="NºOrdenRepo" ColumnName="NºOrdenRepo" />
+                <ScalarProperty Name="NºTraspasoInv" ColumnName="NºTraspasoInv" />
+                <ScalarProperty Name="NºOrdenCmp" ColumnName="NºOrdenCmp" />
+                <ScalarProperty Name="AlbaránCmp" ColumnName="AlbaránCmp" />
+                <ScalarProperty Name="PedidoCmp" ColumnName="PedidoCmp" />
+                <ScalarProperty Name="NºOrdenVta" ColumnName="NºOrdenVta" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="AlbaránVta" ColumnName="AlbaránVta" />
+                <ScalarProperty Name="PedidoVta" ColumnName="PedidoVta" />
+                <ScalarProperty Name="Columna" ColumnName="Columna" />
+                <ScalarProperty Name="Fila" ColumnName="Fila" />
+                <ScalarProperty Name="Pasillo" ColumnName="Pasillo" />
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Almacén" ColumnName="Almacén" />
+                <ScalarProperty Name="EmpresaAlbaranCmp" ColumnName="EmpresaAlbaranCmp" />
+                <ScalarProperty Name="EmpresaAlbaranVta" ColumnName="EmpresaAlbaranVta" />
+                <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Inmovilizados">
+            <EntityTypeMapping TypeName="NVModel.Inmovilizado">
+              <MappingFragment StoreEntitySet="Inmovilizados">
+                <ScalarProperty Name="FechaCreación" ColumnName="FechaCreación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaModificación" ColumnName="FechaModificación" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Amortizable" ColumnName="Amortizable" />
+                <ScalarProperty Name="CentroCoste" ColumnName="CentroCoste" />
+                <ScalarProperty Name="Delegación" ColumnName="Delegación" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="Descripción" ColumnName="Descripción" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="PlanCuentas">
+            <EntityTypeMapping TypeName="NVModel.PlanCuenta">
+              <MappingFragment StoreEntitySet="PlanCuentas">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Bloqueada" ColumnName="Bloqueada" />
+                <ScalarProperty Name="SóloAuto" ColumnName="SóloAuto" />
+                <ScalarProperty Name="DebeHaber" ColumnName="DebeHaber" />
+                <ScalarProperty Name="IVA" ColumnName="IVA" />
+                <ScalarProperty Name="Concepto" ColumnName="Concepto" />
+                <ScalarProperty Name="Nº_Cuenta" ColumnName="Nº Cuenta" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

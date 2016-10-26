@@ -201,6 +201,29 @@ namespace NestoAPI.Models
         public string motivo { get; set; }
     }
 
+    public class ProductoDTO
+    {
+        private NVEntities db;
+        public ProductoDTO(string producto, NVEntities db)
+        {
+            this.producto = producto;
+            this.db = db;
+        }
+        public string producto { get; set; }
+        public int Stock()
+        {
+            return db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+        }
+        public int CantidadReservada()
+        {
+            return db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+        }
+        public int CantidadDisponible()
+        {
+            return Stock() - CantidadReservada();
+        }
+    }
+
     public class ResumenPedidoVentaDTO
     {
         public string empresa { get; set; }

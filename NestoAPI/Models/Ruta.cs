@@ -12,24 +12,25 @@ namespace NestoAPI.Models
     using System;
     using System.Collections.Generic;
     
-    public partial class ParametroIVA
+    public partial class Ruta
     {
+        public Ruta()
+        {
+            this.ExtractoClientes = new HashSet<ExtractoCliente>();
+        }
+    
         public string Empresa { get; set; }
-        public string IVA_Producto { get; set; }
-        public string IVA_Cliente_Prov { get; set; }
-        public Nullable<decimal> C__IVA { get; set; }
-        public Nullable<decimal> C__RE { get; set; }
-        public string CtaRepercutido { get; set; }
-        public string CtaSoportado { get; set; }
-        public string CtaRecargoRepercutido { get; set; }
-        public string CtaRecargoSoportado { get; set; }
+        public string Número { get; set; }
+        public string Descripción { get; set; }
+        public bool Activa { get; set; }
+        public int DiaReposicion { get; set; }
+        public string Traspasar { get; set; }
+        public decimal ImporteMinimo { get; set; }
+        public string Copias { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
     
         public virtual Empresa Empresa1 { get; set; }
-        public virtual PlanCuenta PlanCuenta { get; set; }
-        public virtual PlanCuenta PlanCuenta1 { get; set; }
-        public virtual PlanCuenta PlanCuenta2 { get; set; }
-        public virtual PlanCuenta PlanCuenta3 { get; set; }
+        public virtual ICollection<ExtractoCliente> ExtractoClientes { get; set; }
     }
 }

@@ -44,6 +44,10 @@ namespace NestoAPI.Models
             this.ExtractoClientes1 = new HashSet<ExtractoCliente>();
             this.CCCs = new HashSet<CCC>();
             this.ProveedoresProductoes = new HashSet<ProveedoresProducto>();
+            this.Rutas = new HashSet<Ruta>();
+            this.Ubicaciones = new HashSet<Ubicacion>();
+            this.Inmovilizados = new HashSet<Inmovilizado>();
+            this.PlanCuentas = new HashSet<PlanCuenta>();
         }
     
         public string Número { get; set; }
@@ -165,5 +169,19 @@ namespace NestoAPI.Models
         public virtual ICollection<ExtractoCliente> ExtractoClientes1 { get; set; }
         public virtual ICollection<CCC> CCCs { get; set; }
         public virtual ICollection<ProveedoresProducto> ProveedoresProductoes { get; set; }
+        public virtual ICollection<Ruta> Rutas { get; set; }
+        public virtual ICollection<Ubicacion> Ubicaciones { get; set; }
+        public virtual PlanCuenta PlanCuenta { get; set; }
+        public virtual PlanCuenta PlanCuenta1 { get; set; }
+        public virtual PlanCuenta PlanCuenta2 { get; set; }
+        public virtual PlanCuenta PlanCuenta3 { get; set; }
+        public virtual PlanCuenta PlanCuenta4 { get; set; }
+        public virtual PlanCuenta PlanCuenta5 { get; set; }
+        public virtual PlanCuenta PlanCuenta6 { get; set; }
+        public virtual PlanCuenta PlanCuenta7 { get; set; }
+        public virtual PlanCuenta PlanCuenta8 { get; set; }
+        public virtual PlanCuenta PlanCuenta9 { get; set; }
+        public virtual ICollection<Inmovilizado> Inmovilizados { get; set; }
+        public virtual ICollection<PlanCuenta> PlanCuentas { get; set; }
     }
 }

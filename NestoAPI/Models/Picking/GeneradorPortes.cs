@@ -1,0 +1,52 @@
+﻿using NestoAPI.Controllers;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Web;
+
+namespace NestoAPI.Models.Picking
+{
+    public class GeneradorPortes
+    {
+        //No podemos hacer test, porque escribe en base de datos
+
+        private NVEntities db;
+        private PedidoPicking pedido;
+
+        public GeneradorPortes(NVEntities db, PedidoPicking pedido)
+        {
+            this.db = db;
+            this.pedido = pedido;
+        }
+
+        public void Ejecutar()
+        {
+            String cuenta;
+            decimal portes;
+
+            if (pedido.CodigoPostal.StartsWith("28") || pedido.CodigoPostal.StartsWith("19") || pedido.CodigoPostal == "45223" || pedido.CodigoPostal == "45224")
+            {
+                cuenta = "62400002";
+                portes = 3;
+            } else
+            {
+                cuenta = "62400003";
+                portes = 6;
+            }
+            
+            PedidosVentaController pedidoCtrl = new PedidosVentaController();
+            LinPedidoVta lineaVta = pedidoCtrl.crearLineaVta(pedido.Empresa, pedido.Id, PedidosVentaController.TIPO_LINEA_CUENTA_CONTABLE, cuenta, 1, portes, "");
+            db.LinPedidoVtas.Add(lineaVta);
+            pedido.Lineas.Add(new LineaPedidoPicking
+            {
+                Id = 0, // para luego poder dar picking a la línea recién insertada en db.LinPedidoVtas
+                Cantidad = 1,
+                CantidadReservada = 1,
+                BaseImponible = portes,
+                TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto =  cuenta,
+                FechaEntrega = DateTime.Today
+            });
+        }
+    }
+}

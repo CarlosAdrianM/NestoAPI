@@ -253,6 +253,7 @@
     <Compile Include="Controllers\InventariosController.cs" />
     <Compile Include="Controllers\ParametrosUsuarioController.cs" />
     <Compile Include="Controllers\PedidosVentaController.cs" />
+    <Compile Include="Controllers\PickingController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\RolesController.cs" />
@@ -295,6 +296,7 @@
     <Compile Include="Models\CondPagoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Constantes.cs" />
     <Compile Include="Models\ContadorGlobal.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -329,6 +331,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\FormaVenta.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Inmovilizado.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Inventario.cs">
@@ -369,6 +374,30 @@
     <Compile Include="Models\PersonaContactoProveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Picking\AsignadorPicking.cs" />
+    <Compile Include="Models\Picking\FinalizadorPicking.cs" />
+    <Compile Include="Models\Picking\GeneradorPendientes.cs" />
+    <Compile Include="Models\Picking\GeneradorPortes.cs" />
+    <Compile Include="Models\Picking\GestorImportesMinimos.cs" />
+    <Compile Include="Models\Picking\GestorPicking.cs" />
+    <Compile Include="Models\Picking\GestorReservasStock.cs" />
+    <Compile Include="Models\Picking\GestorStocks.cs" />
+    <Compile Include="Models\Picking\GestorUbicaciones.cs" />
+    <Compile Include="Models\Picking\IFinalizadorPicking.cs" />
+    <Compile Include="Models\Picking\IRellenadorPickingService.cs" />
+    <Compile Include="Models\Picking\IRellenadorStocksService.cs" />
+    <Compile Include="Models\Picking\IRellenadorUbicacionesService.cs" />
+    <Compile Include="Models\Picking\LineaPedidoPicking.cs" />
+    <Compile Include="Models\Picking\ModulosPicking.cs" />
+    <Compile Include="Models\Picking\PedidoPicking.cs" />
+    <Compile Include="Models\Picking\RellenadorPickingService.cs" />
+    <Compile Include="Models\Picking\RellenadorStocksService.cs" />
+    <Compile Include="Models\Picking\RellenadorUbicacionesService.cs" />
+    <Compile Include="Models\Picking\StockProducto.cs" />
+    <Compile Include="Models\Picking\UbicacionPicking.cs" />
+    <Compile Include="Models\PlanCuenta.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\PlazoPago.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -382,7 +411,13 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\RoleBindingModels.cs" />
+    <Compile Include="Models\Ruta.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\SubGruposProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Ubicacion.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
