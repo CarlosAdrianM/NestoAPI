@@ -312,6 +312,7 @@ namespace NestoAPI.Controllers
         
 
         // POST: api/PedidosVenta
+        [HttpPost]
         [ResponseType(typeof(PedidoVentaDTO))]
         public async Task<IHttpActionResult> PostPedidoVenta(PedidoVentaDTO pedido)
         {
@@ -597,7 +598,8 @@ namespace NestoAPI.Controllers
 
         }
 
-        public void calcularImportesLinea(LinPedidoVta linea)
+        // Si pongo public, lo confunde con el método POST, porque solo llevan un parámetro
+        void calcularImportesLinea(LinPedidoVta linea)
         {
             string iva = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == linea.Empresa && c.Número == linea.Número).IVA;
             calcularImportesLinea(linea, iva);

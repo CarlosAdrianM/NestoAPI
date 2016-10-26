@@ -40,6 +40,11 @@ namespace NestoAPI.Models.Picking
 
         private void Ejecutar()
         {
+            // ¡¡¡ OJO !!! ESTO HAY QUE BORRARLO, ES SOLO PARA HACER PRUEBAS
+            candidatos = candidatos.Where(c => c.Id != 636999).ToList();
+            candidatos = candidatos.Where(c => c.Id != 637014).ToList();
+            
+
 
             List<StockProducto> stocks;
             List<LineaPedidoPicking> todasLasLineas;
