@@ -12,7 +12,7 @@ namespace NestoAPI.Models.Picking
             // throw new NotImplementedException("No se puede finalizar aún");
             try
             {
-                //db.SaveChanges();
+                db.SaveChanges();
             } catch (Exception ex)
             {
                 throw new Exception(ex.InnerException != null ? ex.Message + "\n" + ex.InnerException.Message : ex.Message);
