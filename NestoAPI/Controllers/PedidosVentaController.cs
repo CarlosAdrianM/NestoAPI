@@ -33,9 +33,13 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
         }
 
-        
+
         // GET: api/PedidosVenta
-        
+        public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta()
+        {
+            return GetPedidosVenta("");
+        }
+
         public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor)
         {
             List<ResumenPedidoVentaDTO> cabeceraPedidos = db.CabPedidoVtas
