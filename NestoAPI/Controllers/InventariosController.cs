@@ -164,6 +164,14 @@ namespace NestoAPI.Controllers
             {
                 productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.CodBarras == producto);
             }
+            if (productoEncontrado == null)
+            {
+                productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.Estado >= 0 && p.CodBarras.Contains(producto));
+            }
+            if (productoEncontrado == null)
+            {
+                productoEncontrado = db.Productos.FirstOrDefault(p => p.Empresa == empresa && p.CodBarras.Contains(producto));
+            }
 
             return productoEncontrado;
         }

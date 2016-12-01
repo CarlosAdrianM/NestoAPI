@@ -204,22 +204,39 @@ namespace NestoAPI.Models
     public class ProductoDTO
     {
         private NVEntities db;
+        public ProductoDTO() { }
+
         public ProductoDTO(string producto, NVEntities db)
         {
             this.producto = producto;
             this.db = db;
         }
         public string producto { get; set; }
+        public string nombre { get; set; }
+        public decimal precio { get; set; }
+
         public int Stock()
         {
+            if (db == null)
+            {
+                return 0;
+            }
             return db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
         public int CantidadReservada()
         {
+            if (db == null)
+            {
+                return 0;
+            }
             return db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
         public int CantidadDisponible()
         {
+            if (db == null)
+            {
+                return 0;
+            }
             return Stock() - CantidadReservada();
         }
     }

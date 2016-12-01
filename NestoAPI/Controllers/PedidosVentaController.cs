@@ -519,6 +519,8 @@ namespace NestoAPI.Controllers
 
         public LinPedidoVta crearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto)
         {
+            // CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroPedido);
+
             string tipoExclusiva, grupo, subGrupo, familia, ivaRepercutido;
             decimal coste, precioTarifa;
 
@@ -553,6 +555,7 @@ namespace NestoAPI.Controllers
             
             if (linea.tipoLinea == PedidosVentaController.TIPO_LINEA_PRODUCTO)
             {
+                // la cláusula include es case sensitive, por lo que la familia "pure" es distinta a "Pure" y no la encuentra (es lo que da error)
                 Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == empresa && p.Número == linea.producto).SingleOrDefault();
                 tipoExclusiva = producto.Familia1.TipoExclusiva;
             } else

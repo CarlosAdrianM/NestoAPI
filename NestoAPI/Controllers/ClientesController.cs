@@ -23,47 +23,7 @@ namespace NestoAPI.Controllers
         }
 
         private NVEntities db = new NVEntities();
-
-        //// GET: api/Clientes
-        //public IQueryable<ClienteDTO> GetClientes(string empresa, string vendedor)
-        //{
-        //    List<ClienteDTO> clientes = db.Clientes
-        //        .Where(c => (c.Empresa == empresa && c.Vendedor == vendedor && c.Estado >= 0))
-        //        .Select(clienteEncontrado => new ClienteDTO
-        //        {
-        //            albaranValorado = clienteEncontrado.AlbaranValorado,
-        //            cadena = clienteEncontrado.Cadena.Trim(),
-        //            ccc = clienteEncontrado.CCC.Trim(),
-        //            cifNif = clienteEncontrado.CIF_NIF.Trim(),
-        //            cliente = clienteEncontrado.Nº_Cliente.Trim(),
-        //            clientePrincipal = clienteEncontrado.ClientePrincipal,
-        //            codigoPostal = clienteEncontrado.CodPostal.Trim(),
-        //            comentarioPicking = clienteEncontrado.ComentarioPicking.Trim(),
-        //            comentarioRuta = clienteEncontrado.ComentarioRuta.Trim(),
-        //            comentarios = clienteEncontrado.Comentarios,
-        //            contacto = clienteEncontrado.Contacto.Trim(),
-        //            copiasAlbaran = clienteEncontrado.NºCopiasAlbarán,
-        //            copiasFactura = clienteEncontrado.NºCopiasFactura,
-        //            direccion = clienteEncontrado.Dirección.Trim(),
-        //            empresa = clienteEncontrado.Empresa.Trim(),
-        //            estado = clienteEncontrado.Estado,
-        //            grupo = clienteEncontrado.Grupo.Trim(),
-        //            iva = clienteEncontrado.IVA.Trim(),
-        //            mantenerJunto = clienteEncontrado.MantenerJunto,
-        //            noComisiona = clienteEncontrado.NoComisiona,
-        //            nombre = clienteEncontrado.Nombre.Trim(),
-        //            periodoFacturacion = clienteEncontrado.PeriodoFacturación.Trim(),
-        //            poblacion = clienteEncontrado.Población.Trim(),
-        //            provincia = clienteEncontrado.Provincia.Trim(),
-        //            ruta = clienteEncontrado.Ruta.Trim(),
-        //            servirJunto = clienteEncontrado.ServirJunto,
-        //            telefono = clienteEncontrado.Teléfono.Trim(),
-        //            vendedor = clienteEncontrado.Vendedor.Trim(),
-        //            web = clienteEncontrado.Web.Trim()
-        //        }).ToList();
-                    
-        //    return clientes.AsQueryable();
-        //}
+        
 
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string empresa, string vendedor, string filtro)
