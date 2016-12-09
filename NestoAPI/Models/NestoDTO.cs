@@ -214,6 +214,7 @@ namespace NestoAPI.Models
         public string producto { get; set; }
         public string nombre { get; set; }
         public decimal precio { get; set; }
+        public bool aplicarDescuento { get; set; }
 
         public int Stock()
         {

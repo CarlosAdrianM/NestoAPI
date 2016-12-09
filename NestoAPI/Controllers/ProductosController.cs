@@ -39,7 +39,8 @@ namespace NestoAPI.Controllers
             {
                 producto = producto.Número,
                 nombre = producto.Nombre,
-                precio = (decimal)producto.PVP
+                precio = (decimal)producto.PVP,
+                aplicarDescuento = producto.Aplicar_Dto
             };
 
             return Ok(productoDTO);
