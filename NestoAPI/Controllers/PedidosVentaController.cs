@@ -101,6 +101,7 @@ namespace NestoAPI.Controllers
                     formaVenta = l.Forma_Venta,
                     iva = l.IVA,
                     oferta = l.NºOferta,
+                    picking = (l.Picking != null ? (int)l.Picking : 0),
                     precio = (l.Precio != null ? (decimal)l.Precio : 0),
                     producto = l.Producto.Trim(),
                     texto = l.Texto.Trim(),
@@ -149,6 +150,13 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
         {
+            /*
+             * Actualmente podemos añadir líneas o cambiar la cabecera, pero falta:
+             * - Suprimir líneas
+             * - Modificar líneas (cantidad, precio...)
+             * */
+
+
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
             // Guardamos registro de los cambios
@@ -259,39 +267,67 @@ namespace NestoAPI.Controllers
             
             db.Entry(cabPedidoVta).State = EntityState.Modified;
 
+            // Si alguno de los tres se cumple, no hace falta comprobarlo
+            bool hayLineasNuevas = false;
+            if (!cambiarClienteEnLineas && !cambiarContactoEnLineas && !cambiarIvaEnLineas)
+            {
+                hayLineasNuevas = pedido.LineasPedido.Where(l => l.id == 0).FirstOrDefault() != null;
+            }
+
+            // Sacar diferencias entre el pedido original y el que hemos pasado:
+            // - las líneas que la cantidad, o la base imponible sean diferentes hay que actualizarlas enteras
+            // - las líneas que directamente no estén, hay que borrarlas
+            
+            
+                        
             // Modificamos las líneas
-            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas) { 
+            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas) { 
                 foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
                 {
-                    LinPedidoVta lineaPedido = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.id);
-                    if (lineaPedido == null || lineaPedido.Número != pedido.numero)
+                    LinPedidoVta lineaPedido;
+
+                    if (linea.id == 0)
                     {
-                        throw new Exception("Alguien modificó o eliminó la línea mientras se actualizaba el pedido");
-                    }
-                    if (cambiarClienteEnLineas)
-                    {
-                        lineaPedido.Nº_Cliente = pedido.cliente;
-                    }
-                    if (cambiarContactoEnLineas)
-                    {
-                        lineaPedido.Contacto = pedido.contacto;
-                    }
-                    if (cambiarIvaEnLineas)
-                    {
-                        if (pedido.iva == null)
-                        {
-                            // lineaPedido.IVA = pedido.iva;
-                            lineaPedido.ImporteIVA = 0;
-                            lineaPedido.ImporteRE = 0;
-                            lineaPedido.Total = lineaPedido.Base_Imponible;
-                        }
-                        else
-                        {
-                            throw new NotImplementedException("No se puede poner ese IVA al pedido");
-                        }
+                        //lineaPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto);
+                        lineaPedido = crearLineaVta(linea, pedido.empresa, pedido.numero);
+                        db.LinPedidoVtas.Add(lineaPedido);
+                        break;
                     }
 
-                    db.Entry(lineaPedido).State = EntityState.Modified;
+                    if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas)
+                    {
+
+                        lineaPedido = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.id);
+
+                        if (lineaPedido == null || lineaPedido.Número != pedido.numero)
+                        {
+                            throw new Exception("Alguien modificó o eliminó la línea mientras se actualizaba el pedido");
+                        }
+                        if (cambiarClienteEnLineas)
+                        {
+                            lineaPedido.Nº_Cliente = pedido.cliente;
+                        }
+                        if (cambiarContactoEnLineas)
+                        {
+                            lineaPedido.Contacto = pedido.contacto;
+                        }
+                        if (cambiarIvaEnLineas)
+                        {
+                            if (pedido.iva == null)
+                            {
+                                // lineaPedido.IVA = pedido.iva;
+                                lineaPedido.ImporteIVA = 0;
+                                lineaPedido.ImporteRE = 0;
+                                lineaPedido.Total = lineaPedido.Base_Imponible;
+                            }
+                            else
+                            {
+                                throw new NotImplementedException("No se puede poner ese IVA al pedido");
+                            }
+                        }
+
+                        db.Entry(lineaPedido).State = EntityState.Modified;
+                    }
                 }
             }
             
@@ -514,6 +550,11 @@ namespace NestoAPI.Controllers
             // Si hubiese en dos empresas el mismo pedido, va a dar error
             CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroPedido);
             PlazoPago plazo = db.PlazosPago.SingleOrDefault(p => p.Empresa == pedido.Empresa && p.Número == pedido.PlazosPago);
+            if (pedido.IVA != null && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+            {
+                Producto producto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == linea.producto);
+                linea.iva = producto.IVA_Repercutido;
+            }
             return crearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto);
         }
 
@@ -523,6 +564,7 @@ namespace NestoAPI.Controllers
 
             string tipoExclusiva, grupo, subGrupo, familia, ivaRepercutido;
             decimal coste, precioTarifa;
+            short estadoProducto;
 
             // Calculamos las variables que se pueden corresponden a la cabecera
             decimal descuentoCliente, descuentoPP;
@@ -540,7 +582,8 @@ namespace NestoAPI.Controllers
                     grupo = producto.Grupo;
                     subGrupo = producto.SubGrupo;
                     familia = producto.Familia;
-                    ivaRepercutido = producto.IVA_Repercutido;
+                    ivaRepercutido = producto.IVA_Repercutido; // ¿Se usa? Ojo, que puede venir el IVA nulo y estar bien
+                    estadoProducto = (short)producto.Estado;
                     break;
                 
                 default:
@@ -550,9 +593,12 @@ namespace NestoAPI.Controllers
                     subGrupo = null;
                     familia = null;
                     ivaRepercutido = db.Empresas.SingleOrDefault(e => e.Número == empresa).TipoIvaDefecto;
+                    estadoProducto = 0;
                     break;
             }
-            
+
+
+            // Posiblemente este if se pueda refactorizar con el switch de arriba, pero hay que comprobarlo bien primero
             if (linea.tipoLinea == PedidosVentaController.TIPO_LINEA_PRODUCTO)
             {
                 // la cláusula include es case sensitive, por lo que la familia "pure" es distinta a "Pure" y no la encuentra (es lo que da error)
@@ -562,7 +608,24 @@ namespace NestoAPI.Controllers
             {
                 tipoExclusiva = null;
             }
-            
+
+            // Calculamos los valores que nos falten
+            if (linea.almacen==null)
+            {
+                linea.almacen = calcularAlmacen(linea.usuario, empresa, numeroPedido);
+            }
+
+            if (linea.formaVenta == null)
+            {
+                linea.formaVenta = calcularFormaVenta(linea.usuario, empresa, numeroPedido);
+            }
+
+            if (linea.delegacion == null)
+            {
+                linea.delegacion = calcularDelegacion(linea.usuario, empresa, numeroPedido);
+            }
+
+
             LinPedidoVta lineaNueva = new LinPedidoVta
             {
                 Estado = linea.estado,
@@ -596,9 +659,16 @@ namespace NestoAPI.Controllers
                 Picking = 0,
                 NºOferta = linea.oferta,
                 BlancoParaBorrar = "NestoAPI",
-                LineaParcial = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? !esSobrePedido(linea.producto, linea.cantidad) : true
+                LineaParcial = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? !esSobrePedido(linea.producto, linea.cantidad) : true,
+                EstadoProducto = estadoProducto
             };
-
+            /*
+            Nota sobre LineaParcial: aunque siga llamándos el campo línea parcial, por retrocompatibidad, en realidad
+            ya nada tiene que ver con que se quede una parte de la línea sin entregar, sino que ahora indica si tiene
+            que salir aunque no llegue al mínimo. De este modo, todo lo que sea estado 0, por ejemplo, sale siempre, por 
+            lo que la línea parcial siempre será cero (no es sobre pedido).
+            */          
+            
             calcularImportesLinea(lineaNueva, iva);
 
             return lineaNueva;
@@ -744,8 +814,7 @@ namespace NestoAPI.Controllers
 
             return lineaNueva;
         }
-
-
+        
         private bool esSobrePedido(string producto, short cantidad)
         {
             Producto productoBuscado = db.Productos.SingleOrDefault(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto);

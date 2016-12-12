@@ -133,6 +133,7 @@ namespace NestoAPI.Models
         public string formaVenta { get; set; }
         public string iva { get; set; }
         public Nullable<int> oferta { get; set; }
+        public int picking { get; set; }
         public decimal precio { get; set; } // era Nullable<decimal> 
         public string producto { get; set; }
         public string texto { get; set; }
