@@ -96,6 +96,7 @@ namespace NestoAPI.Controllers
                     cantidad = (l.Cantidad != null ? (short)l.Cantidad : (short)0), 
                     delegacion = l.Delegación, 
                     descuento = l.Descuento,
+                    descuentoProducto = l.DescuentoProducto,
                     estado = l.Estado,
                     fechaEntrega = l.Fecha_Entrega,
                     formaVenta = l.Forma_Venta,
