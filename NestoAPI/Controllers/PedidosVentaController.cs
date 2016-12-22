@@ -292,7 +292,7 @@ namespace NestoAPI.Controllers
                         //lineaPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto);
                         lineaPedido = crearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
-                        break;
+                        continue;
                     }
 
                     if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas)
