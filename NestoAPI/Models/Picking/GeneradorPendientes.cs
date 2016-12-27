@@ -26,10 +26,16 @@ namespace NestoAPI.Models.Picking
                 {
                     LineaPedidoPicking linea = lineas[i];
                     LineaPedidoPicking lineaNueva = pasarAPendiente(linea);
-                    linea.Borrar = true; // para que no salga en el picking, porque la dejamos pendiente
+                    /*
+                    lineaNueva.Borrar = true; // para que no salga en el picking, porque la dejamos pendiente
                     if (lineaNueva != null)
                     {
                         pedido.Lineas.Add(lineaNueva);
+                    }
+                    */
+                    if(linea.CantidadReservada == 0)
+                    {
+                        linea.Borrar = true;
                     }
                 }
                 pedido.Lineas.RemoveAll(l => l.Borrar);
@@ -56,6 +62,7 @@ namespace NestoAPI.Models.Picking
                 LinPedidoVta lineaNueva;
                 lineaActual.Estado = Constantes.EstadosLineaVenta.PENDIENTE;
                 lineaNueva = pedidosCtrl.dividirLinea(db, lineaActual, (short)(linea.CantidadReservada));
+                linea.Cantidad = linea.CantidadReservada;
                 lineaActual.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
 
                 if (lineaNueva != null)

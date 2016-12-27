@@ -127,7 +127,7 @@ namespace NestoAPI.Models.Picking
                         nuevaUbicacion.Columna = ubicacionOriginal.Columna;
                     };
                     db.Ubicaciones.Add(nuevaUbicacion);
-                } else if (ubicacion.Cantidad != ubicacion.CantidadNueva)
+                } else
                 {
                     ubicacionOriginal = db.Ubicaciones.SingleOrDefault(u => u.NºOrden == ubicacion.Id);
                     LinPedidoVta lineaVenta = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == ubicacion.LineaPedidoVentaId);
@@ -137,7 +137,10 @@ namespace NestoAPI.Models.Picking
                         ubicacionOriginal.NºOrdenVta = ubicacion.LineaPedidoVentaId;
                     }
                     ubicacionOriginal.Estado = ubicacion.EstadoNuevo;
-                    ubicacionOriginal.Cantidad = ubicacion.CantidadNueva;
+                    if (ubicacion.Cantidad != ubicacion.CantidadNueva)
+                    {
+                        ubicacionOriginal.Cantidad = ubicacion.CantidadNueva;
+                    }
                 }
             }
 

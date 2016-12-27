@@ -146,7 +146,6 @@ namespace NestoAPI.Controllers
             return Ok(pedido);
         }
 
-        
         // PUT: api/PedidosVenta/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
@@ -180,8 +179,12 @@ namespace NestoAPI.Controllers
                 return BadRequest();
             }
 
+            // Cargamos las líneas
+            //db.Entry(cabPedidoVta).Reference(l => l.LinPedidoVtas).Load();
+            cabPedidoVta = db.CabPedidoVtas.Include(l => l.LinPedidoVtas).SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
+
             // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
-            bool tienePendientes = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) != null;
+            bool tienePendientes = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) != null;
             if (!tienePendientes) {
                 throw new Exception ("No se puede modificar un pedido ya facturado");
             }
@@ -196,7 +199,7 @@ namespace NestoAPI.Controllers
 
             // En una primera fase no permitimos modificar si alguna línea de las pendientes tiene picking
             // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún teniendo picking
-            bool algunaLineaTienePicking = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == cabPedidoVta.Empresa && l.Número == cabPedidoVta.Número && l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
+            bool algunaLineaTienePicking = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
             if (algunaLineaTienePicking)
             {
                 throw new Exception("No se puede modificar el pedido porque ya tiene picking");
@@ -277,10 +280,61 @@ namespace NestoAPI.Controllers
 
             // Sacar diferencias entre el pedido original y el que hemos pasado:
             // - las líneas que la cantidad, o la base imponible sean diferentes hay que actualizarlas enteras
+
             // - las líneas que directamente no estén, hay que borrarlas
+            foreach(LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.Where(l => (l.Estado == -1 || l.Estado == 1) && l.Picking == 0).ToList())
+            {
+                LineaPedidoVentaDTO lineaEncontrada = pedido.LineasPedido.SingleOrDefault(l => l.id == linea.Nº_Orden);
+                if (lineaEncontrada == null)
+                {
+                    //db.Entry(linea).State = EntityState.Deleted;
+                    db.LinPedidoVtas.Remove(linea);
+                } else 
+                {
+                    bool modificado = false;
+                    if (linea.Producto.Trim() != lineaEncontrada.producto.Trim())
+                    {
+                        linea.Producto = lineaEncontrada.producto;
+                        modificado = true;
+                    }
+                    if(linea.Texto.Trim() != lineaEncontrada.texto.Trim())
+                    {
+                        linea.Texto = lineaEncontrada.texto;
+                        modificado = true;
+                    }
+                    if(linea.Precio != lineaEncontrada.precio)
+                    {
+                        linea.Precio = lineaEncontrada.precio;
+                        modificado = true;
+                    }
+                    if (linea.Cantidad != lineaEncontrada.cantidad)
+                    {
+                        linea.Cantidad = lineaEncontrada.cantidad;
+                        modificado = true;
+                    }
+                    if (linea.DescuentoProducto != lineaEncontrada.descuentoProducto)
+                    {
+                        linea.DescuentoProducto = lineaEncontrada.descuentoProducto;
+                        modificado = true;
+                    }
+                    if (linea.Descuento != lineaEncontrada.descuento)
+                    {
+                        linea.Descuento = lineaEncontrada.descuento;
+                        modificado = true;
+                    }
+                    if (linea.Aplicar_Dto != lineaEncontrada.aplicarDescuento)
+                    {
+                        linea.Aplicar_Dto = lineaEncontrada.aplicarDescuento;
+                        modificado = true;
+                    }
+
+                    if (modificado)
+                    {
+                        calcularImportesLinea(linea);
+                    }
+                }
+            }
             
-            
-                        
             // Modificamos las líneas
             if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas) { 
                 foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
@@ -289,7 +343,6 @@ namespace NestoAPI.Controllers
 
                     if (linea.id == 0)
                     {
-                        //lineaPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto);
                         lineaPedido = crearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
                         continue;
