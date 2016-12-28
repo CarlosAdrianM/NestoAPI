@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
+using NestoAPI.Infraestructure;
 
 namespace NestoAPI.Controllers
 {
@@ -42,6 +43,43 @@ namespace NestoAPI.Controllers
                 precio = (decimal)producto.PVP,
                 aplicarDescuento = producto.Aplicar_Dto
             };
+
+            return Ok(productoDTO);
+        }
+
+        // GET: api/Productos/5
+        [ResponseType(typeof(ProductoDTO))]
+        public async Task<IHttpActionResult> GetProducto(string empresa, string id, string cliente, string contacto, short cantidad)
+        {
+            Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id);
+            if (producto == null)
+            {
+                return NotFound();
+            }
+
+            ProductoDTO productoDTO = new ProductoDTO()
+            {
+                producto = producto.Número,
+                nombre = producto.Nombre,
+                precio = (decimal)producto.PVP,
+                aplicarDescuento = producto.Aplicar_Dto
+            };
+
+            PrecioDescuentoProducto precio = new PrecioDescuentoProducto
+            {
+                precioCalculado = 0, //lo recalcula el gestor de precios
+                descuentoCalculado = 0, //lo recalcula el gestor de precios
+                producto = producto,
+                cliente = cliente,
+                contacto = contacto,
+                cantidad = cantidad,
+                aplicarDescuento = producto.Aplicar_Dto
+            };
+
+            GestorPrecios.calcularDescuentoProducto(precio);
+            productoDTO.precio = precio.precioCalculado;
+            productoDTO.aplicarDescuento = precio.aplicarDescuento;
+            productoDTO.descuento = precio.descuentoCalculado;
 
             return Ok(productoDTO);
         }
