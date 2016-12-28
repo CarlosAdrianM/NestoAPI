@@ -85,6 +85,7 @@ namespace NestoAPI.Models.Picking
                 ImporteOriginalSobrePedido = p.LinPedidoVtas.Where(l => l.EstadoProducto != Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && !l.LineaParcial).Sum(l => l.Base_Imponible),
                 ImporteOriginalNoSobrePedido = p.LinPedidoVtas.Where(l => l.EstadoProducto == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO || l.LineaParcial).Sum(l => l.Base_Imponible),
                 CodigoPostal = p.Cliente.CodPostal,
+                Ruta = p.Ruta,
                 Lineas = p.LinPedidoVtas.Where(l => l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && l.Empresa == p.Empresa && l.Número == p.Número && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && (l.Picking == null || l.Picking == 0))
                 .Select(l => new LineaPedidoPicking
                 {

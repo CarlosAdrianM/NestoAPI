@@ -9,6 +9,9 @@ namespace NestoAPI.Tests.Models.Picking
     [TestClass]
     public class PedidoPickingTest
     {
+        public const string RUTA_CON_PORTES = "FW";
+        public const string RUTA_SIN_PORTES = "AM";
+
         [TestMethod]
         public void PedidoPicking_Constructor_CrearUnObjeto()
         {
@@ -52,8 +55,7 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsFalse(pedido.saleEnPicking());
 
         }
-
-
+        
         [TestMethod]
         public void PedidoPicking_hayQueSumarPortes_siHayProductosQueNoSonSobrePedidoYElOriginalNoLlegabaAlMinimoSeSumanPortes()
         {
@@ -71,6 +73,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Id = 1,
                 ServirJunto = false,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO - 1,
+                Ruta = RUTA_CON_PORTES,
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -84,6 +87,7 @@ namespace NestoAPI.Tests.Models.Picking
             LineaPedidoPicking linea = new LineaPedidoPicking
             {
                 Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
                 Producto = "A",
                 Cantidad = 6,
                 CantidadReservada = 6,
@@ -107,6 +111,7 @@ namespace NestoAPI.Tests.Models.Picking
             LineaPedidoPicking linea = new LineaPedidoPicking
             {
                 Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
                 Producto = "A",
                 Cantidad = 6,
                 CantidadReservada = 6,
@@ -142,6 +147,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Id = 1,
                 ServirJunto = false,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_SIN_PORTES - 1,
+                Ruta = RUTA_CON_PORTES,
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -167,6 +173,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Id = 1,
                 ServirJunto = false,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_SIN_PORTES + 1,
+                Ruta = RUTA_CON_PORTES,
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -205,6 +212,7 @@ namespace NestoAPI.Tests.Models.Picking
             LineaPedidoPicking linea = new LineaPedidoPicking
             {
                 Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
                 Producto = "A",
                 Cantidad = 6,
                 CantidadReservada = 0,
@@ -221,6 +229,32 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsFalse(pedido.hayQueSumarPortes());
         }
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siNoLlegaAlMinimoPeroSuRutaNoEsDePortesNoSeSumanPortes()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 6,
+                CantidadReservada = 6,
+                EsSobrePedido = false
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO - 1,
+                Ruta = RUTA_SIN_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            Assert.IsFalse(pedido.hayQueSumarPortes());
+        }
+
 
     }
 }

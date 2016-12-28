@@ -17,6 +17,7 @@ namespace NestoAPI.Models.Picking
         public decimal ImporteOriginalSobrePedido { get; set; }
         public decimal ImporteOriginalNoSobrePedido { get; set; }
         public string CodigoPostal { get; set; }
+        public string Ruta { get; set; }
         public bool Borrar { get; set; } = false;
         public decimal ImporteOriginalTotal()
         {
