@@ -11,6 +11,7 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
 using Newtonsoft.Json;
+using NestoAPI.Models.Picking;
 
 namespace NestoAPI.Controllers
 {
@@ -485,7 +486,7 @@ namespace NestoAPI.Controllers
                     }
                     linea.oferta += contador.Oferta;
                 }
-                linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto);
+                linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
                 db.LinPedidoVtas.Add(linPedido);
             }
 
@@ -609,13 +610,17 @@ namespace NestoAPI.Controllers
                 Producto producto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == linea.producto);
                 linea.iva = producto.IVA_Repercutido;
             }
-            return crearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto);
+            return crearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta);
         }
 
         public LinPedidoVta crearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto)
         {
-            // CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroPedido);
+            CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroPedido);
+            return crearLineaVta(linea, numeroPedido, empresa, iva, plazoPago, cliente, contacto, pedido.Ruta);
+        }
 
+        public LinPedidoVta crearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto, string ruta)
+        {
             string tipoExclusiva, grupo, subGrupo, familia, ivaRepercutido;
             decimal coste, precioTarifa;
             short estadoProducto;
@@ -664,6 +669,7 @@ namespace NestoAPI.Controllers
             }
 
             // Calculamos los valores que nos falten
+            // esto habría que refactorizarlo para que solo lo lea una vez por pedido
             if (linea.almacen==null)
             {
                 linea.almacen = calcularAlmacen(linea.usuario, empresa, numeroPedido);
@@ -687,7 +693,7 @@ namespace NestoAPI.Controllers
                 Producto = linea.producto,
                 Texto = linea.texto,
                 Cantidad = linea.cantidad,
-                Fecha_Entrega = this.fechaEntregaAjustada(linea.fechaEntrega.Date),
+                Fecha_Entrega = this.fechaEntregaAjustada(linea.fechaEntrega.Date, ruta),
                 Precio = linea.precio,
                 PrecioTarifa = precioTarifa,
                 Coste = coste,
@@ -883,10 +889,17 @@ namespace NestoAPI.Controllers
         }
 
         // A las 11h de la mañana se cierra la ruta y los pedidos que se metan son ya para el día siguiente
-        private DateTime fechaEntregaAjustada(DateTime fecha)
+        private DateTime fechaEntregaAjustada(DateTime fecha, string ruta)
         {
-            DateTime fechaMinima = DateTime.Now.Hour < 11 ? DateTime.Today : DateTime.Today.AddDays(1);
-
+            DateTime fechaMinima;
+            if (GestorImportesMinimos.esRutaConPortes(ruta))
+            {
+                fechaMinima = DateTime.Now.Hour < 11 ? DateTime.Today : DateTime.Today.AddDays(1);
+            } else
+            {
+                fechaMinima = DateTime.Today;
+            }
+            
             return fechaMinima < fecha ? fecha : fechaMinima;
         }
     }

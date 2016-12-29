@@ -17,7 +17,7 @@ namespace NestoAPI.Models.Picking
         public GestorImportesMinimos(PedidoPicking pedido)
         {
             this.pedido = pedido;
-            if (this.esRutaConPortes())
+            if (GestorImportesMinimos.esRutaConPortes(pedido.Ruta))
             {
                 this.importeMinimo = pedido.EsTiendaOnline ? IMPORTE_MINIMO_TIENDA_ONLINE : IMPORTE_MINIMO;
             } else
@@ -48,9 +48,9 @@ namespace NestoAPI.Models.Picking
             return pedido.ImporteOriginalNoSobrePedido >= importeMinimo;
         }
 
-        public bool esRutaConPortes()
+        public static bool esRutaConPortes(string ruta)
         {
-            return (pedido.Ruta == "FW" || pedido.Ruta == "00" || pedido.Ruta == "16" || pedido.Ruta == "AT" || pedido.Ruta == "OT");
+            return (ruta == "FW" || ruta == "00" || ruta == "16" || ruta == "AT" || ruta == "OT");
         }
     }
 }
