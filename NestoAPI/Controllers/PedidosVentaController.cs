@@ -187,7 +187,7 @@ namespace NestoAPI.Controllers
             // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
             bool tienePendientes = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) != null;
             if (!tienePendientes) {
-                throw new Exception ("No se puede modificar un pedido ya facturado");
+                errorPersonalizado("No se puede modificar un pedido ya facturado");
             }
 
             // En una primera fase no permitimos modificar si ya está impresa la etiqueta de la agencia
@@ -195,7 +195,7 @@ namespace NestoAPI.Controllers
             bool estaImpresaLaEtiqueta = db.EnviosAgencias.FirstOrDefault(e => e.Pedido == pedido.numero && e.Estado == ESTADO_ENVIO_EN_CURSO) != null;
             if (estaImpresaLaEtiqueta)
             {
-                throw new Exception("No se puede modificar el pedido porque ya está preparado");
+                errorPersonalizado("No se puede modificar el pedido porque ya está preparado");
             }
 
             // En una primera fase no permitimos modificar si alguna línea de las pendientes tiene picking
@@ -203,7 +203,7 @@ namespace NestoAPI.Controllers
             bool algunaLineaTienePicking = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
             if (algunaLineaTienePicking)
             {
-                throw new Exception("No se puede modificar el pedido porque ya tiene picking");
+                errorPersonalizado("No se puede modificar el pedido porque ya tiene picking");
             }
 
             // Son diferentes, porque el del pedido está con trim
@@ -356,7 +356,7 @@ namespace NestoAPI.Controllers
 
                         if (lineaPedido == null || lineaPedido.Número != pedido.numero)
                         {
-                            throw new Exception("Alguien modificó o eliminó la línea mientras se actualizaba el pedido");
+                            errorPersonalizado("Alguien modificó o eliminó la línea mientras se actualizaba el pedido");
                         }
                         if (cambiarClienteEnLineas)
                         {
@@ -377,7 +377,7 @@ namespace NestoAPI.Controllers
                             }
                             else
                             {
-                                throw new NotImplementedException("No se puede poner ese IVA al pedido");
+                                errorPersonalizado("No se puede poner ese IVA al pedido");
                             }
                         }
 
@@ -901,6 +901,15 @@ namespace NestoAPI.Controllers
             }
             
             return fechaMinima < fecha ? fecha : fechaMinima;
+        }
+
+        private void errorPersonalizado(string mensajePersonalizado)
+        {
+            var message = new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent(mensajePersonalizado)
+            };
+            throw new HttpResponseException(message);
         }
     }
 }

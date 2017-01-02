@@ -57,13 +57,20 @@ namespace NestoAPI.Models.Picking
             // antigüedad por fecha de modificación en lugar de por Nº Orden
             // (también hay que cambiarlo en la reposición).
             LinPedidoVta lineaActual = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.Id);
-            
-            if (lineaActual.Cantidad != linea.Cantidad - linea.CantidadReservada) {
+
+            if (lineaActual.Cantidad != linea.Cantidad - linea.CantidadReservada)
+            {
                 LinPedidoVta lineaNueva;
                 lineaActual.Estado = Constantes.EstadosLineaVenta.PENDIENTE;
                 lineaNueva = pedidosCtrl.dividirLinea(db, lineaActual, (short)(linea.CantidadReservada));
                 linea.Cantidad = linea.CantidadReservada;
-                lineaActual.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
+                // comprobar, pero creo que esto solo hay que hacerlo si la cantidad es distinta a la cantidadreservada
+                // porque al no crear línea nueva, lo que hacemos es volver a poner en estado 1.
+                // ¡¡¡ escribir test que falle antes de tocar nada!!!
+                if (linea.Cantidad == linea.CantidadReservada)
+                {
+                    lineaActual.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
+                }
 
                 if (lineaNueva != null)
                 {
@@ -78,6 +85,10 @@ namespace NestoAPI.Models.Picking
                         FechaEntrega = lineaNueva.Fecha_Entrega
                     };
                 }
+            }
+            else
+            {
+                lineaActual.Estado = Constantes.EstadosLineaVenta.PENDIENTE;
             }
 
             return null;
