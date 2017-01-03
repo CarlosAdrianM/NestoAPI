@@ -43,6 +43,11 @@ namespace NestoAPI.Models.Picking
                         //lineaActual = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == pedido.Empresa && l.Número == pedido.Id && l.TipoLinea == linea.TipoLinea && l.Producto == linea.Producto && l.Nº_Orden == 0);
                         lineaActual = db.LinPedidoVtas.Local.OrderBy(l => l.Nº_Orden).FirstOrDefault(l => l.Empresa == pedido.Empresa && l.Número == pedido.Id && l.TipoLinea == linea.TipoLinea && l.Producto == linea.Producto && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO);
                     }
+
+                    if (lineaActual.Estado == Constantes.EstadosLineaVenta.PENDIENTE)
+                    {
+                        lineaActual.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
+                    }
                     
                     lineaActual.Picking = numeroPicking;
 
