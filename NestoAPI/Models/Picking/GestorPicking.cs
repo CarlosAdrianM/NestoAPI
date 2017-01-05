@@ -42,7 +42,7 @@ namespace NestoAPI.Models.Picking
         {
             List<StockProducto> stocks;
             List<LineaPedidoPicking> todasLasLineas;
-            DateTime fechaPicking = DateTime.Today;
+            DateTime fechaPicking = this.calcularFechaPicking(DateTime.Now);
 
             stocks = modulos.rellenadorStocks.Rellenar(candidatos);
 
@@ -85,6 +85,28 @@ namespace NestoAPI.Models.Picking
             modulos.finalizador.Ejecutar(db);
 
         }
+
+        private DateTime calcularFechaPicking(DateTime fechaConHora)
+        {
+            DateTime fechaSinHora = new DateTime(fechaConHora.Year, fechaConHora.Month, fechaConHora.Day);
+
+            // Si es antes de las 11h devuelve la fecha de hoy (sin hora)
+            if (fechaConHora.Hour < 11)
+            {
+                return fechaSinHora;
+            }
+
+            // Si es después de las 11h devolvemos el siguiente día laboral
+            // Ahora mismo no tiene en cuenta los festivos, pero habrá que contemplarlos en el futuro
+            if (fechaConHora.DayOfWeek == DayOfWeek.Friday)
+            {
+                fechaSinHora.AddDays(3);
+            }
+
+            return fechaSinHora.AddDays(1);
+        }
         
     }
+
+    
 }

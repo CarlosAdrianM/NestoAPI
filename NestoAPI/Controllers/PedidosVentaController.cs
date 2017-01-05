@@ -151,12 +151,6 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
         {
-            /*
-             * Actualmente podemos añadir líneas o cambiar la cabecera, pero falta:
-             * - Suprimir líneas
-             * - Modificar líneas (cantidad, precio...)
-             * */
-
 
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
