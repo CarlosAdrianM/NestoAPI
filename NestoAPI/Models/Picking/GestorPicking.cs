@@ -33,6 +33,13 @@ namespace NestoAPI.Models.Picking
             Ejecutar();
         }
 
+        public void SacarPicking(string cliente)
+        {
+            candidatos = modulos.rellenadorPicking.Rellenar(cliente);
+            Ejecutar();
+        }
+
+
         public List<PedidoPicking> PedidosEnPicking()
         {
             return candidatos;

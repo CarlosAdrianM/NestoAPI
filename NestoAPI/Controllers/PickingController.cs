@@ -23,13 +23,24 @@ namespace NestoAPI.Controllers
             return Ok(gestorPicking.PedidosEnPicking());
         }
 
-        // GET: api/Picking/1/654321
+        // GET: api/Picking
         [HttpGet]
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> SacarPicking()
         {
             crearModulos();
             await Task.Run(() => gestorPicking.SacarPicking());
+
+            return Ok(gestorPicking.PedidosEnPicking());
+        }
+
+        // GET: api/Picking/15191
+        [HttpGet]
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> SacarPicking(string cliente)
+        {
+            crearModulos();
+            await Task.Run(() => gestorPicking.SacarPicking(cliente));
 
             return Ok(gestorPicking.PedidosEnPicking());
         }

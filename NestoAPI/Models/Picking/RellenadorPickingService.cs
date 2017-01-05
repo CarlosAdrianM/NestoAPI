@@ -14,16 +14,20 @@ namespace NestoAPI.Models.Picking
         private NVEntities db = new NVEntities();
         private List<CabPedidoVta> pedidos = new List<CabPedidoVta>();
 
-        
-        private void rellenarConParametroRuta(List<Ruta> rutas)
+        private void rellenarSinParametros()
         {
             // Ordenamos por fecha modificación para que se asignen antes los más viejos
-            IQueryable<LinPedidoVta> numerosPedidos = db.LinPedidoVtas.Where(l => 
-                (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE || l.Estado == Constantes.EstadosLineaVenta.EN_CURSO) && 
-                l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && 
+            IQueryable<LinPedidoVta> numerosPedidos = db.LinPedidoVtas.Where(l =>
+                (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE || l.Estado == Constantes.EstadosLineaVenta.EN_CURSO) &&
+                l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO &&
                 (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO)
             ).OrderBy(l => l.Fecha_Modificación).ThenBy(l => l.Nº_Orden);
             pedidos = db.CabPedidoVtas.Where(c => numerosPedidos.Any(n => n.Número == c.Número)).ToList();
+        }
+
+        private void rellenarConParametroRuta(List<Ruta> rutas)
+        {
+            this.rellenarSinParametros();
             pedidos = pedidos.Where(p => rutas.Any(r => r.Número == p.Ruta)).ToList();
         }
         
@@ -45,6 +49,14 @@ namespace NestoAPI.Models.Picking
         {
             CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == empresa && p.Número == numeroPedido);
             pedidos.Add(pedido);
+            return Ejecutar();
+        }
+
+        public List<PedidoPicking> Rellenar(string cliente)
+        {
+            rellenarSinParametros();
+            pedidos = pedidos.Where(p => p.Nº_Cliente != null && p.Nº_Cliente.Trim() == cliente.Trim()).ToList();
+
             return Ejecutar();
         }
 

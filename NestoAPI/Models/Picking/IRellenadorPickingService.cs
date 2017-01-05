@@ -10,6 +10,7 @@ namespace NestoAPI.Models.Picking
     {
         List<PedidoPicking> Rellenar();
         List<PedidoPicking> Rellenar(List<Ruta> rutas);
+        List<PedidoPicking> Rellenar(string cliente);
         List<PedidoPicking> Rellenar(string empresa, int numeroPedido);
         List<LineaPedidoPicking> RellenarTodasLasLineas(List<PedidoPicking> candidatos);
     }
