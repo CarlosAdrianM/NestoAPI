@@ -33,7 +33,14 @@ namespace NestoAPI.Models.Picking
                 cuenta = "62400003";
                 portes = 6;
             }
-            
+
+            // Si ya tiene portes, no los volvemos a añadir
+            LinPedidoVta lineaPortes = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == pedido.Empresa && l.Número == pedido.Id && l.Producto != null && l.Producto.Trim() == cuenta && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO);
+            if (lineaPortes != null)
+            {
+                return;
+            }
+
             PedidosVentaController pedidoCtrl = new PedidosVentaController();
             LinPedidoVta lineaVta = pedidoCtrl.crearLineaVta(pedido.Empresa, pedido.Id, PedidosVentaController.TIPO_LINEA_CUENTA_CONTABLE, cuenta, 1, portes, "");
             db.LinPedidoVtas.Add(lineaVta);

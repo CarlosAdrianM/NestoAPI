@@ -97,6 +97,7 @@ namespace NestoAPI.Tests.Models.Picking
             {
                 Id = 1,
                 ServirJunto = false,
+                Ruta = RUTA_CON_PORTES,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO + 1,
                 Lineas = new List<LineaPedidoPicking>()
             };
@@ -122,6 +123,7 @@ namespace NestoAPI.Tests.Models.Picking
             {
                 Id = 1,
                 ServirJunto = false,
+                Ruta = RUTA_CON_PORTES,
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -222,6 +224,7 @@ namespace NestoAPI.Tests.Models.Picking
             {
                 Id = 1,
                 ServirJunto = false,
+                Ruta = RUTA_CON_PORTES,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_SIN_PORTES + 1,
                 Lineas = new List<LineaPedidoPicking>()
             };

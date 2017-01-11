@@ -132,6 +132,7 @@ namespace NestoAPI.Tests.Models.Picking
             {
                 Id = 1,
                 ServirJunto = false,
+                Ruta = RUTA_CON_PORTES,
                 EsTiendaOnline = true,
                 EsNotaEntrega = false,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE + 1,
@@ -163,6 +164,7 @@ namespace NestoAPI.Tests.Models.Picking
             {
                 Id = 1,
                 ServirJunto = false,
+                Ruta = RUTA_CON_PORTES,
                 EsTiendaOnline = true,
                 EsNotaEntrega = false,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE + 1,
@@ -207,8 +209,6 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsTrue(gestor.LosProductosNoSobrePedidoOriginalesLlegabanAlImporteMinimo());
         }
-
-
-
+        
     }
 }
