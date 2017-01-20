@@ -24,18 +24,36 @@ namespace NestoAPI.Models.Picking
                 stock.StockDisponible -= linea.CantidadReservada;
             }
 
-            foreach (LineaPedidoPicking linea in lineas.Where(l => l.Cantidad != 0 && l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)) 
+            // Si es cuenta contable o línea de texto que no sea pedido especial, asignamos toda la cantidad
+            foreach (LineaPedidoPicking linea in lineas.Where(l => l.Cantidad != 0 && (l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE || (l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && !l.EsPedidoEspecial))))
             {
                 linea.CantidadReservada = linea.Cantidad;
             }
-
         }
 
-        public static void BorrarLineasEntregaFutura(List<PedidoPicking> candidatos, DateTime fechaPicking)
+        public static void BorrarLineasQueNoDebenSalir(List<PedidoPicking> candidatos, DateTime fechaPicking)
+        {
+            BorrarLineasEntregaFutura(candidatos, fechaPicking);
+            BorrarLineasTextoSinOtroProducto(candidatos);
+        }
+
+        private static void BorrarLineasEntregaFutura(List<PedidoPicking> candidatos, DateTime fechaPicking)
         {
             foreach (PedidoPicking pedido in candidatos)
             {
                 pedido.Lineas.RemoveAll(l => l.FechaEntrega > fechaPicking);
+            }
+        }
+
+        private static void BorrarLineasTextoSinOtroProducto(List<PedidoPicking> candidatos)
+        {
+            foreach (PedidoPicking pedido in candidatos.Where(c => !c.EsNotaEntrega))
+            {
+                foreach (LineaPedidoPicking linea in pedido.Lineas.Where(l => l.TipoLinea == Constantes.TiposLineaVenta.TEXTO))
+                {
+                    linea.Borrar = pedido.Lineas.FirstOrDefault(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && l.CantidadReservada > 0) == null;
+                }
+                pedido.Lineas.RemoveAll(l => l.Borrar);
             }
         }
     }

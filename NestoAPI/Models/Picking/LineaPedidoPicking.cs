@@ -17,5 +17,6 @@ namespace NestoAPI.Models.Picking
         public bool EsSobrePedido { get; set; } = true;
         public bool Borrar { get; set; } = false;
         public DateTime FechaModificacion { get; set; }
+        public bool EsPedidoEspecial { get; set; }
     }
 }

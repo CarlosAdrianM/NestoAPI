@@ -140,6 +140,10 @@
         <AssociationConnector Association="NVModel.FK_ParámetrosIVA_PlanCuentas1" />
         <AssociationConnector Association="NVModel.FK_ParámetrosIVA_PlanCuentas2" />
         <AssociationConnector Association="NVModel.FK_ParámetrosIVA_PlanCuentas3" />
+        <EntityTypeShape EntityType="NVModel.PedidosEspeciale" Width="1.5" PointX="17.75" PointY="33.5" />
+        <AssociationConnector Association="NVModel.FK_PedidosEspeciales_Clientes" />
+        <AssociationConnector Association="NVModel.FK_PedidosEspeciales_LinPedidoVta" />
+        <AssociationConnector Association="NVModel.FK_PedidosEspeciales_Proveedores" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

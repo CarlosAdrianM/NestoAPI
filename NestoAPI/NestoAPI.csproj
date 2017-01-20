@@ -372,6 +372,9 @@
     <Compile Include="Models\ParametroUsuario.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PedidosEspeciale.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\PersonaContactoProveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

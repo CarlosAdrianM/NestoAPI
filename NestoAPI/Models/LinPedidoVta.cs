@@ -14,6 +14,11 @@ namespace NestoAPI.Models
     
     public partial class LinPedidoVta
     {
+        public LinPedidoVta()
+        {
+            this.PedidosEspeciales = new HashSet<PedidosEspeciale>();
+        }
+    
         public string Empresa { get; set; }
         public int Número { get; set; }
         public int Nº_Orden { get; set; }
@@ -76,5 +81,6 @@ namespace NestoAPI.Models
         public virtual Familia Familia1 { get; set; }
         public virtual SubGruposProducto SubGruposProducto { get; set; }
         public virtual FormaVenta FormasVenta { get; set; }
+        public virtual ICollection<PedidosEspeciale> PedidosEspeciales { get; set; }
     }
 }

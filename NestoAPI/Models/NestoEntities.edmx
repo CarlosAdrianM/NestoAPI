@@ -708,6 +708,32 @@
           <Property Name="Usuario2" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="PedidosEspeciales">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" />
+          <Property Name="NºOrden" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="EmpresaCmp" Type="char" MaxLength="3" />
+          <Property Name="NºPedidoVta" Type="int" />
+          <Property Name="NºOrdenVta" Type="int" />
+          <Property Name="NºOrdenCmp" Type="int" />
+          <Property Name="NºPedidoCmp" Type="int" />
+          <Property Name="NºCliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="ContactoCliente" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NºProveedor" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="ContactoProveedor" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="15" />
+          <Property Name="Cantidad" Type="int" Nullable="false" />
+          <Property Name="Reponer" Type="bit" Nullable="false" />
+          <Property Name="Delegacion" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NºTraspaso" Type="int" />
+          <Property Name="NºVecesPedido" Type="int" Nullable="false" />
+          <Property Name="Almacen" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
+          <Property Name="FechaModificacion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
+          <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="PersonasContactoProveedor">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -2090,6 +2116,54 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_PedidosEspeciales_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="PedidosEspeciales" Type="Self.PedidosEspeciales" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PedidosEspeciales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºCliente" />
+              <PropertyRef Name="ContactoCliente" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PedidosEspeciales_LinPedidoVta">
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="0..1" />
+          <End Role="PedidosEspeciales" Type="Self.PedidosEspeciales" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Nº Orden" />
+            </Principal>
+            <Dependent Role="PedidosEspeciales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºPedidoVta" />
+              <PropertyRef Name="NºOrdenVta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PedidosEspeciales_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="0..1" />
+          <End Role="PedidosEspeciales" Type="Self.PedidosEspeciales" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PedidosEspeciales">
+              <PropertyRef Name="EmpresaCmp" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="ContactoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_PersonasContactoProveedor_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="PersonasContactoProveedor" Type="Self.PersonasContactoProveedor" Multiplicity="*" />
@@ -2282,18 +2356,6 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
-        <Association Name="FK_Ubicaciones_Empresas">
-          <End Role="Empresas" Type="Self.Empresas" Multiplicity="0..1" />
-          <End Role="Ubicaciones" Type="Self.Ubicaciones" Multiplicity="*" />
-          <ReferentialConstraint>
-            <Principal Role="Empresas">
-              <PropertyRef Name="Número" />
-            </Principal>
-            <Dependent Role="Ubicaciones">
-              <PropertyRef Name="Empresa" />
-            </Dependent>
-          </ReferentialConstraint>
-        </Association>
         <Function Name="prdAjustarDíasPagoCliente" Aggregate="false" BuiltIn="false" NiladicFunction="false" IsComposable="false" ParameterTypeSemantics="AllowImplicitConversion" Schema="dbo">
           <Parameter Name="Empresa" Type="char" Mode="In" />
           <Parameter Name="Cliente" Type="char" Mode="In" />
@@ -2329,6 +2391,7 @@
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="PedidosEspeciales" EntityType="Self.PedidosEspeciales" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PersonasContactoProveedor" EntityType="Self.PersonasContactoProveedor" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlanCuentas" EntityType="Self.PlanCuentas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlazosPago" EntityType="Self.PlazosPago" Schema="dbo" store:Type="Tables" />
@@ -2674,6 +2737,18 @@
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="ParámetrosUsuario" EntitySet="ParámetrosUsuario" />
           </AssociationSet>
+          <AssociationSet Name="FK_PedidosEspeciales_Clientes" Association="Self.FK_PedidosEspeciales_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="PedidosEspeciales" EntitySet="PedidosEspeciales" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PedidosEspeciales_LinPedidoVta" Association="Self.FK_PedidosEspeciales_LinPedidoVta">
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+            <End Role="PedidosEspeciales" EntitySet="PedidosEspeciales" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PedidosEspeciales_Proveedores" Association="Self.FK_PedidosEspeciales_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="PedidosEspeciales" EntitySet="PedidosEspeciales" />
+          </AssociationSet>
           <AssociationSet Name="FK_PersonasContactoProveedor_Empresas" Association="Self.FK_PersonasContactoProveedor_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="PersonasContactoProveedor" EntitySet="PersonasContactoProveedor" />
@@ -2729,10 +2804,6 @@
           <AssociationSet Name="FK_Rutas_Empresas" Association="Self.FK_Rutas_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="Rutas" EntitySet="Rutas" />
-          </AssociationSet>
-          <AssociationSet Name="FK_Ubicaciones_Empresas" Association="Self.FK_Ubicaciones_Empresas">
-            <End Role="Empresas" EntitySet="Empresas" />
-            <End Role="Ubicaciones" EntitySet="Ubicaciones" />
           </AssociationSet>
         </EntityContainer>
       </Schema></edmx:StorageModels>
@@ -3222,6 +3293,19 @@
             <End Role="PlanCuenta" EntitySet="PlanCuentas" />
             <End Role="ParametroIVA" EntitySet="ParametrosIVA" />
           </AssociationSet>
+          <EntitySet Name="PedidosEspeciales" EntityType="NVModel.PedidosEspeciale" />
+          <AssociationSet Name="FK_PedidosEspeciales_Clientes" Association="NVModel.FK_PedidosEspeciales_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="PedidosEspeciale" EntitySet="PedidosEspeciales" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PedidosEspeciales_LinPedidoVta" Association="NVModel.FK_PedidosEspeciales_LinPedidoVta">
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+            <End Role="PedidosEspeciale" EntitySet="PedidosEspeciales" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PedidosEspeciales_Proveedores" Association="NVModel.FK_PedidosEspeciales_Proveedores">
+            <End Role="Proveedor" EntitySet="Proveedores" />
+            <End Role="PedidosEspeciale" EntitySet="PedidosEspeciales" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -3488,6 +3572,7 @@
           <NavigationProperty Name="Familia1" Relationship="NVModel.FK_LinPedidoVta_Familias" FromRole="LinPedidoVta" ToRole="Familia" />
           <NavigationProperty Name="SubGruposProducto" Relationship="NVModel.FK_LinPedidoVta_SubGruposProducto" FromRole="LinPedidoVta" ToRole="SubGruposProducto" />
           <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_LinPedidoVta_FormasVenta" FromRole="LinPedidoVta" ToRole="FormasVenta" />
+          <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_LinPedidoVta" FromRole="LinPedidoVta" ToRole="PedidosEspeciale" />
         </EntityType>
         <Association Name="FK_LinPedidoVta_CabPedidoVta">
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1" />
@@ -3580,6 +3665,7 @@
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_Clientes" FromRole="Cliente" ToRole="ExtractoCliente" />
           <NavigationProperty Name="CCCs" Relationship="NVModel.FK_CCC_Clientes" FromRole="Cliente" ToRole="CCC" />
           <NavigationProperty Name="CCC1" Relationship="NVModel.FK_Clientes_CCC1" FromRole="Cliente" ToRole="CCC" />
+          <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_Clientes" FromRole="Cliente" ToRole="PedidosEspeciale" />
         </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -4606,6 +4692,7 @@
           <NavigationProperty Name="PersonasContactoProveedors" Relationship="NVModel.FK_PersonasContactoProveedor_Proveedores" FromRole="Proveedore" ToRole="PersonasContactoProveedor" />
           <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_Proveedores" FromRole="Proveedor" ToRole="CabFacturaCmp" />
           <NavigationProperty Name="ProveedoresProductoes" Relationship="NVModel.FK_ProveedoresProducto_Proveedores" FromRole="Proveedor" ToRole="ProveedoresProducto" />
+          <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_Proveedores" FromRole="Proveedor" ToRole="PedidosEspeciale" />
         </EntityType>
         <Association Name="FK_Proveedores_CCCProveedores">
           <End Type="NVModel.CCCProveedor" Role="CCCProveedor" Multiplicity="0..1" />
@@ -5667,6 +5754,83 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="PedidosEspeciale">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºOrden" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="EmpresaCmp" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºPedidoVta" Type="Int32" />
+          <Property Name="NºOrdenVta" Type="Int32" />
+          <Property Name="NºOrdenCmp" Type="Int32" />
+          <Property Name="NºPedidoCmp" Type="Int32" />
+          <Property Name="NºCliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoCliente" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºProveedor" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoProveedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Cantidad" Type="Int32" Nullable="false" />
+          <Property Name="Reponer" Type="Boolean" Nullable="false" />
+          <Property Name="Delegacion" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºTraspaso" Type="Int32" />
+          <Property Name="NºVecesPedido" Type="Int32" Nullable="false" />
+          <Property Name="Almacen" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_PedidosEspeciales_Clientes" FromRole="PedidosEspeciale" ToRole="Cliente" />
+          <NavigationProperty Name="LinPedidoVta" Relationship="NVModel.FK_PedidosEspeciales_LinPedidoVta" FromRole="PedidosEspeciale" ToRole="LinPedidoVta" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_PedidosEspeciales_Proveedores" FromRole="PedidosEspeciale" ToRole="Proveedor" />
+        </EntityType>
+        <Association Name="FK_PedidosEspeciales_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.PedidosEspeciale" Role="PedidosEspeciale" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PedidosEspeciale">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºCliente" />
+              <PropertyRef Name="ContactoCliente" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PedidosEspeciales_LinPedidoVta">
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="0..1" />
+          <End Type="NVModel.PedidosEspeciale" Role="PedidosEspeciale" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Nº_Orden" />
+            </Principal>
+            <Dependent Role="PedidosEspeciale">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºPedidoVta" />
+              <PropertyRef Name="NºOrdenVta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PedidosEspeciales_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedor" Multiplicity="0..1" />
+          <End Type="NVModel.PedidosEspeciale" Role="PedidosEspeciale" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PedidosEspeciale">
+              <PropertyRef Name="EmpresaCmp" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="ContactoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -6560,6 +6724,33 @@
                 <ScalarProperty Name="IVA" ColumnName="IVA" />
                 <ScalarProperty Name="Concepto" ColumnName="Concepto" />
                 <ScalarProperty Name="Nº_Cuenta" ColumnName="Nº Cuenta" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="PedidosEspeciales">
+            <EntityTypeMapping TypeName="NVModel.PedidosEspeciale">
+              <MappingFragment StoreEntitySet="PedidosEspeciales">
+                <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Almacen" ColumnName="Almacen" />
+                <ScalarProperty Name="NºVecesPedido" ColumnName="NºVecesPedido" />
+                <ScalarProperty Name="NºTraspaso" ColumnName="NºTraspaso" />
+                <ScalarProperty Name="Delegacion" ColumnName="Delegacion" />
+                <ScalarProperty Name="Reponer" ColumnName="Reponer" />
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="ContactoProveedor" ColumnName="ContactoProveedor" />
+                <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
+                <ScalarProperty Name="ContactoCliente" ColumnName="ContactoCliente" />
+                <ScalarProperty Name="NºCliente" ColumnName="NºCliente" />
+                <ScalarProperty Name="NºPedidoCmp" ColumnName="NºPedidoCmp" />
+                <ScalarProperty Name="NºOrdenCmp" ColumnName="NºOrdenCmp" />
+                <ScalarProperty Name="NºOrdenVta" ColumnName="NºOrdenVta" />
+                <ScalarProperty Name="NºPedidoVta" ColumnName="NºPedidoVta" />
+                <ScalarProperty Name="EmpresaCmp" ColumnName="EmpresaCmp" />
+                <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>

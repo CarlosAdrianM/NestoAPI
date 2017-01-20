@@ -77,7 +77,8 @@ namespace NestoAPI.Models.Picking
                     CantidadReservada = 0,
                     FechaEntrega = l.Fecha_Entrega,
                     EsSobrePedido = l.EstadoProducto != Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && !l.LineaParcial,
-                    FechaModificacion = l.Fecha_Modificación
+                    FechaModificacion = l.Fecha_Modificación,
+                    EsPedidoEspecial = l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && db.PedidosEspeciales.FirstOrDefault(e => e.NºOrdenVta == l.Nº_Orden) != null
                 });
 
             lineasResultado = lineasResultado.Where(l => productos.Any(p => p.Key == l.Producto));
@@ -109,7 +110,8 @@ namespace NestoAPI.Models.Picking
                     CantidadReservada = 0,
                     FechaEntrega = l.Fecha_Entrega,
                     EsSobrePedido = l.EstadoProducto != Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && !l.LineaParcial,
-                    FechaModificacion = l.Fecha_Modificación
+                    FechaModificacion = l.Fecha_Modificación,
+                    EsPedidoEspecial = l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && db.PedidosEspeciales.FirstOrDefault(e => e.NºOrdenVta == l.Nº_Orden) != null
                 }).ToList()
             }).ToList();
         }

@@ -57,7 +57,7 @@ namespace NestoAPI.Models.Picking
 
             GestorReservasStock.Reservar(stocks, candidatos, todasLasLineas);
 
-            GestorReservasStock.BorrarLineasEntregaFutura(candidatos, fechaPicking);
+            GestorReservasStock.BorrarLineasQueNoDebenSalir(candidatos, fechaPicking);
 
             // Recorrer Candidatos (quitamos los que no tienen que salir)
             for (int i = 0; i < candidatos.Count(); i++)
