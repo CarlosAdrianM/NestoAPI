@@ -19,7 +19,7 @@ namespace NestoAPI.Models.Picking
         {
             if (pedidos.Count == 0)
             {
-                return; // no hay ningún pedido para sacar picking
+                throw new Exception("No hay stock suficiente para asignar picking a ninguna línea");
             }
 
             ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
