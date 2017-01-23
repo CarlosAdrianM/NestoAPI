@@ -98,6 +98,11 @@ namespace NestoAPI.Infraestructure
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
                 //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and grupoproducto='PEL' and nºproveedor is null
+                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo);
+                if (dtoProducto != null && dtoProducto.Descuento > datos.descuentoCalculado)
+                {
+                    datos.descuentoCalculado = dtoProducto.Descuento;
+                }
 
                 if (datos.precioCalculado < datos.producto.PVP * (1 - datos.descuentoCalculado))
                 {
