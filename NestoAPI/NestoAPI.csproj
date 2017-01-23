@@ -291,6 +291,9 @@
     <Compile Include="Models\CCCProveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\CentrosCoste.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\Cliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -422,6 +425,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Ubicacion.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\UsuarioVendedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />

@@ -625,6 +625,7 @@ namespace NestoAPI.Controllers
             string tipoExclusiva, grupo, subGrupo, familia, ivaRepercutido;
             decimal coste, precioTarifa;
             short estadoProducto;
+            CentrosCoste centroCoste = null;
 
             // Calculamos las variables que se pueden corresponden a la cabecera
             decimal descuentoCliente, descuentoPP;
@@ -645,7 +646,21 @@ namespace NestoAPI.Controllers
                     ivaRepercutido = producto.IVA_Repercutido; // ¿Se usa? Ojo, que puede venir el IVA nulo y estar bien
                     estadoProducto = (short)producto.Estado;
                     break;
-                
+
+                case Constantes.TiposLineaVenta.CUENTA_CONTABLE:
+                    precioTarifa = 0;
+                    coste = 0;
+                    grupo = null;
+                    subGrupo = null;
+                    familia = null;
+                    ivaRepercutido = db.Empresas.SingleOrDefault(e => e.Número == empresa).TipoIvaDefecto;
+                    estadoProducto = 0;
+                    if (linea.producto.Substring(0, 1) == "6" || linea.producto.Substring(0, 1) == "7")
+                    {
+                        centroCoste = calcularCentroCoste(empresa, numeroPedido);
+                    }
+                    break;
+
                 default:
                     precioTarifa = 0;
                     coste = 0;
@@ -721,7 +736,9 @@ namespace NestoAPI.Controllers
                 NºOferta = linea.oferta,
                 BlancoParaBorrar = "NestoAPI",
                 LineaParcial = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? !esSobrePedido(linea.producto, linea.cantidad) : true,
-                EstadoProducto = estadoProducto
+                EstadoProducto = estadoProducto,
+                CentroCoste = centroCoste != null ? centroCoste.Número : null,
+                Departamento = centroCoste != null ? centroCoste.Departamento : null
             };
             /*
             Nota sobre LineaParcial: aunque siga llamándos el campo línea parcial, por retrocompatibidad, en realidad
@@ -851,6 +868,34 @@ namespace NestoAPI.Controllers
             }
 
             return Constantes.Empresas.FORMA_VENTA_POR_DEFECTO;
+        }
+
+        
+        private CentrosCoste calcularCentroCoste(string empresa, int numeroPedido)
+        {
+            string vendedor = db.CabPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Vendedor;
+            if (vendedor == "")
+            {
+                throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque falta el vendedor");
+            }
+            ParametroUsuario parametroUsuario;
+            UsuarioVendedor usuarioVendedor = db.UsuarioVendedores.SingleOrDefault(u => u.Vendedor == vendedor);
+
+            string usuario = usuarioVendedor.Usuario;
+            string numeroCentroCoste = "";
+            if (usuario != null)
+            {
+                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == "CentroCosteDefecto");
+                if (parametroUsuario != null && parametroUsuario.Valor.Trim() != "")
+                {
+                    numeroCentroCoste = parametroUsuario.Valor.Trim();
+                }
+            } else
+            {
+                throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque el vendedor "+ vendedor +" no tiene un usuario asociado");
+            }
+
+            return db.CentrosCostes.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroCentroCoste);
         }
 
         public LinPedidoVta dividirLinea(LinPedidoVta lineaActual, short cantidad)

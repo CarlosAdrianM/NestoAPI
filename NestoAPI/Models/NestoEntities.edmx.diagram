@@ -144,6 +144,10 @@
         <AssociationConnector Association="NVModel.FK_PedidosEspeciales_Clientes" />
         <AssociationConnector Association="NVModel.FK_PedidosEspeciales_LinPedidoVta" />
         <AssociationConnector Association="NVModel.FK_PedidosEspeciales_Proveedores" />
+        <EntityTypeShape EntityType="NVModel.UsuarioVendedor" Width="1.5" PointX="7.375" PointY="8.75" />
+        <EntityTypeShape EntityType="NVModel.CentrosCoste" Width="1.5" PointX="0.75" PointY="61.375" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProducto_CentrosCoste" />
+        <AssociationConnector Association="NVModel.FK_Inmovilizados_CentrosCoste" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

@@ -12,21 +12,25 @@ namespace NestoAPI.Models
     using System;
     using System.Collections.Generic;
     
-    public partial class Inmovilizado
+    public partial class CentrosCoste
     {
+        public CentrosCoste()
+        {
+            this.ExtractoProductoes = new HashSet<ExtractoProducto>();
+            this.Inmovilizados = new HashSet<Inmovilizado>();
+        }
+    
         public string Empresa { get; set; }
         public string Número { get; set; }
         public string Descripción { get; set; }
-        public string Grupo { get; set; }
         public string Delegación { get; set; }
-        public string CentroCoste { get; set; }
-        public bool Amortizable { get; set; }
+        public string Departamento { get; set; }
+        public string Usuario { get; set; }
         public short Estado { get; set; }
         public byte[] FechaModificación { get; set; }
-        public string Usuario { get; set; }
         public System.DateTime FechaCreación { get; set; }
     
-        public virtual Empresa Empresa1 { get; set; }
-        public virtual CentrosCoste CentrosCoste { get; set; }
+        public virtual ICollection<ExtractoProducto> ExtractoProductoes { get; set; }
+        public virtual ICollection<Inmovilizado> Inmovilizados { get; set; }
     }
 }

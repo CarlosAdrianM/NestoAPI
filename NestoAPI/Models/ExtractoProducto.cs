@@ -48,5 +48,6 @@ namespace NestoAPI.Models
         public virtual Producto Producto { get; set; }
         public virtual Proveedor Proveedore { get; set; }
         public virtual FormaVenta FormasVenta { get; set; }
+        public virtual CentrosCoste CentrosCoste { get; set; }
     }
 }
