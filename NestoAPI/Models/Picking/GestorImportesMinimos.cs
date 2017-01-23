@@ -50,7 +50,7 @@ namespace NestoAPI.Models.Picking
 
         public static bool esRutaConPortes(string ruta)
         {
-            return (ruta.Trim() == "FW" || ruta.Trim() == "00" || ruta.Trim() == "16" || ruta.Trim() == "AT" || ruta.Trim() == "OT");
+            return (ruta == null || ruta.Trim() == "FW" || ruta.Trim() == "00" || ruta.Trim() == "16" || ruta.Trim() == "AT" || ruta.Trim() == "OT");
         }
     }
 }

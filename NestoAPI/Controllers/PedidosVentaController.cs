@@ -44,9 +44,9 @@ namespace NestoAPI.Controllers
         public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor)
         {
             List<ResumenPedidoVentaDTO> cabeceraPedidos = db.CabPedidoVtas
-                .Join(db.LinPedidoVtas, c => new {empresa = c.Empresa, numero = c.Número}, l => new {empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total })
+                .Join(db.LinPedidoVtas, c => new {empresa = c.Empresa, numero = c.Número}, l => new {empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
                 .Where(c => c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
-                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor})
+                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta})
                 .Select(x => new ResumenPedidoVentaDTO
                 {
                     empresa = x.Key.Empresa.Trim(),
@@ -59,12 +59,13 @@ namespace NestoAPI.Controllers
                     provincia = x.Key.Provincia.Trim(),
                     fecha = x.Min(c => c.Fecha_Entrega),
                     tieneProductos = x.FirstOrDefault(c => c.TipoLinea == 1) != null,
-                    tieneFechasFuturas = x.FirstOrDefault(c => c.Fecha_Entrega > DateTime.Now) != null,
+                    //tieneFechasFuturas = x.FirstOrDefault(c => c.Fecha_Entrega > fechaEntregaAjustada(DateTime.Now, c.Ruta)) != null,
                     tienePendientes = x.FirstOrDefault(c => c.Estado < 0) != null,
                     tienePicking = x.FirstOrDefault(c => c.Picking != 0) != null,
                     baseImponible = x.Sum(c => c.Base_Imponible),
                     total = x.Sum(c => c.Total),
-                    vendedor = x.Key.Vendedor.Trim()
+                    vendedor = x.Key.Vendedor.Trim(),
+                    ruta = x.Key.Ruta.Trim()
                 })
                 .OrderByDescending(c => c.numero)
                 .ToList();
@@ -72,6 +73,12 @@ namespace NestoAPI.Controllers
             if (vendedor != null && vendedor.Trim() != "")
             {
                 cabeceraPedidos = cabeceraPedidos.Where(c => c.vendedor == vendedor).ToList();
+            }
+
+            foreach (ResumenPedidoVentaDTO cab in cabeceraPedidos)
+            {
+                DateTime fechaEntregaFutura = fechaEntregaAjustada(DateTime.Now, cab.ruta);
+                cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado>= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
             }
 
             return cabeceraPedidos.AsQueryable();

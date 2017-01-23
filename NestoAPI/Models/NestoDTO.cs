@@ -263,6 +263,7 @@ namespace NestoAPI.Models
         public decimal baseImponible { get; set; }
         public decimal total { get; set; }
         public string vendedor { get; set; }
+        public string ruta { get; set; }
     }
 
     public class StockProductoDTO
