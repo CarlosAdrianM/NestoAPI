@@ -37,6 +37,33 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
+        public void GestorStock_HayStockDeAlgo_siHayUnaCuentaContableDevuelveTrue()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = "A",
+                Cantidad = 1,
+                BaseImponible = 0,
+                CantidadReservada = 1,
+                FechaEntrega = new DateTime()
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+            GestorStocks gestor = new GestorStocks(pedido);
+
+            Assert.IsTrue(gestor.HayStockDeAlgo());
+        }
+
+        [TestMethod]
         public void GestorStocks_HayDeTodo_siSoloTieneUnProductoYTieneStockDevuelveTrue()
         {
             LineaPedidoPicking linea = new LineaPedidoPicking

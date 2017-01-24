@@ -29,6 +29,14 @@ namespace NestoAPI.Models.Picking
             {
                 linea.CantidadReservada = linea.Cantidad;
             }
+
+            // Miramos las notas de entrega, para asignar las cuentas contables
+            List<LineaPedidoPicking> lineasContables = candidatos.Where(c => c.EsNotaEntrega).SelectMany(l => l.Lineas).OrderBy(l => l.FechaModificacion).ThenBy(l => l.Id).ToList();
+            // Si es cuenta contable o línea de texto que no sea pedido especial, asignamos toda la cantidad
+            foreach (LineaPedidoPicking lineaContable in lineasContables.Where(l => l.Cantidad != 0 && (l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE || (l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && !l.EsPedidoEspecial))))
+            {
+                lineaContable.CantidadReservada = lineaContable.Cantidad;
+            }
         }
 
         public static void BorrarLineasQueNoDebenSalir(List<PedidoPicking> candidatos, DateTime fechaPicking)

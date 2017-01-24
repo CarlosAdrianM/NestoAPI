@@ -204,7 +204,7 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
-        public void GestorReservasStock_Reservar_siHayUnPedidoQueEsNotaEntregaNoReservaNada()
+        public void GestorReservasStock_Reservar_siHayUnPedidoQueEsNotaEntregaNoReservaProductos()
         {
             LineaPedidoPicking linea = new LineaPedidoPicking
             {
@@ -269,6 +269,74 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.AreEqual(0, linea.CantidadReservada);
             Assert.AreEqual(7, linea2.CantidadReservada);
         }
+
+        [TestMethod]
+        public void GestorReservasStock_Reservar_siHayUnPedidoQueEsNotaEntregaSiReservaCuentasContables()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = "A",
+                Cantidad = 16,
+                BaseImponible = 0,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+
+            LineaPedidoPicking linea2 = new LineaPedidoPicking
+            {
+                Id = 2,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 7,
+                BaseImponible = 100,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = true,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            PedidoPicking pedido2 = new PedidoPicking
+            {
+                Id = 2,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido2.Lineas.Add(linea2);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorPickingService
+            List<PedidoPicking> candidatos = new List<PedidoPicking>();
+            candidatos.Add(pedido);
+            candidatos.Add(pedido2);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorStocksService
+            StockProducto stock = new StockProducto
+            {
+                Producto = "A",
+                StockDisponible = 20
+            };
+            List<StockProducto> stocks = new List<StockProducto>();
+            stocks.Add(stock);
+
+            List<LineaPedidoPicking> lineas = candidatos.Where(c => !c.EsNotaEntrega).SelectMany(l => l.Lineas).OrderBy(l => l.Id).ToList();
+
+            GestorReservasStock.Reservar(stocks, candidatos, lineas);
+
+            Assert.AreEqual(16, linea.CantidadReservada);
+            Assert.AreEqual(7, linea2.CantidadReservada);
+        }
+
 
         [TestMethod]
         public void GestorReservasStock_Reservar_siHayDosTieneQueCogerStockSiempreLaMasAntigua()
@@ -665,6 +733,51 @@ namespace NestoAPI.Tests.Models.Picking
             {
                 Id = 1,
                 ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = true,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(lineaTexto);
+            pedido.Lineas.Add(lineaProducto);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorPickingService
+            List<PedidoPicking> candidatos = new List<PedidoPicking>();
+            candidatos.Add(pedido);
+
+            GestorReservasStock.BorrarLineasQueNoDebenSalir(candidatos, new DateTime());
+
+            Assert.AreEqual(2, pedido.Lineas.Count); // la del producto y la de texto
+        }
+
+        [TestMethod]
+        public void GestorReservasStock_BorrarLineasTextoSinOtroProducto_despuesDeEjecutarloLasLineasDeTextoSinProductoPeroConCuentaContableQueSiSonNotaDeEntregaSiEstan()
+        {
+            LineaPedidoPicking lineaTexto = new LineaPedidoPicking
+            {
+                Id = 2,
+                TipoLinea = Constantes.TiposLineaVenta.TEXTO,
+                Producto = null,
+                Cantidad = 1,
+                BaseImponible = 0,
+                CantidadReservada = 1,
+                FechaEntrega = new DateTime()
+            };
+
+            LineaPedidoPicking lineaProducto = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = "HOLA123",
+                Cantidad = 1,
+                BaseImponible = 0,
+                CantidadReservada = 1,
+                FechaEntrega = new DateTime()
+            };
+
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = true,
                 EsTiendaOnline = false,
                 EsNotaEntrega = true,
                 Lineas = new List<LineaPedidoPicking>()

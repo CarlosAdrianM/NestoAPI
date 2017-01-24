@@ -26,7 +26,7 @@ namespace NestoAPI.Models.Picking
 
         public bool HayStockDeAlgo()
         {
-            LineaPedidoPicking linea = pedido.Lineas.FirstOrDefault(l => l.CantidadReservada > 0 && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO);
+            LineaPedidoPicking linea = pedido.Lineas.FirstOrDefault(l => l.CantidadReservada > 0);
             return linea != null;
         }
 
