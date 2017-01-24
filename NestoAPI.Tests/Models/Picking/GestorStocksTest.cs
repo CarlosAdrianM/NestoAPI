@@ -37,7 +37,7 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
-        public void GestorStock_HayStockDeAlgo_siHayUnaCuentaContableDevuelveTrue()
+        public void GestorStock_HayStockDeAlgo_siHayUnaCuentaContableEnUnaNotaDeEntregaDevuelveTrue()
         {
             LineaPedidoPicking linea = new LineaPedidoPicking
             {
@@ -54,7 +54,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Id = 1,
                 ServirJunto = false,
                 EsTiendaOnline = false,
-                EsNotaEntrega = false,
+                EsNotaEntrega = true,
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
