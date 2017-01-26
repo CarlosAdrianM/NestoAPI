@@ -140,10 +140,11 @@ namespace NestoAPI.Models.Picking
                         nuevaUbicacion.Columna = ubicacionOriginal.Columna;
                     };
 
-                    if (ubicacionOriginal.NºOrdenVta != null && ubicacionOriginal.NºOrdenVta != 0)
+                    LinPedidoVta lineaVenta = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == ubicacion.LineaPedidoVentaId);
+                    if (lineaVenta != null)
                     {
-                        nuevaUbicacion.PedidoVta = ubicacionOriginal.PedidoVta;
-                        nuevaUbicacion.NºOrdenVta = ubicacionOriginal.NºOrdenVta;
+                        nuevaUbicacion.PedidoVta = lineaVenta.Número;
+                        nuevaUbicacion.NºOrdenVta = ubicacion.LineaPedidoVentaId;
                     }
 
                     db.Ubicaciones.Add(nuevaUbicacion);
