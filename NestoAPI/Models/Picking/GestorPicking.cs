@@ -91,6 +91,13 @@ namespace NestoAPI.Models.Picking
             // Finalizar Picking
             modulos.finalizador.Ejecutar(db);
 
+            // Si no se ha asignado picking a nada, damos error
+            if (candidatos.Count == 0)
+            {
+                throw new Exception("No hay stock suficiente para asignar picking a ninguna línea");
+            }
+            
+
         }
 
         private DateTime calcularFechaPicking(DateTime fechaConHora)

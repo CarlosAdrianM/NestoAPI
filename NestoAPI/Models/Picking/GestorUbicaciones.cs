@@ -59,10 +59,20 @@ namespace NestoAPI.Models.Picking
                             EstadoNuevo = ubicacion.Estado
                         };
                         ubicaciones.Add(ubicacionNueva);
+                        // Error temporal para ver donde se descuadran
+                        if (ubicacionNueva.Estado == 3 && ubicacionNueva.LineaPedidoVentaId == 0)
+                        {
+                            throw new Exception("Descuadre en ubicación nueva. Id ubicación " + ubicacion.Id.ToString());
+                        }
+                    }
+
+                    // Error temporal para ver donde se descuadran
+                    if (ubicacion.Estado == 3 && ubicacion.LineaPedidoVentaId == 0)
+                    {
+                        throw new Exception("Descuadre en ubicación " + ubicacion.Id.ToString());
                     }
 
 
-                    
 
                     if (ubicacion.Id == 0 && ubicacion.CopiaId == 0)
                     {
@@ -122,13 +132,27 @@ namespace NestoAPI.Models.Picking
                         Estado = ubicacion.EstadoNuevo,
                         Número = ubicacion.Producto
                     };
+                    
                     if (ubicacion.EstadoNuevo != Constantes.Ubicaciones.PENDIENTE_UBICAR)
                     {
                         nuevaUbicacion.Pasillo = ubicacionOriginal.Pasillo;
                         nuevaUbicacion.Fila = ubicacionOriginal.Fila;
                         nuevaUbicacion.Columna = ubicacionOriginal.Columna;
                     };
+
+                    if (ubicacionOriginal.NºOrdenVta != null && ubicacionOriginal.NºOrdenVta != 0)
+                    {
+                        nuevaUbicacion.PedidoVta = ubicacionOriginal.PedidoVta;
+                        nuevaUbicacion.NºOrdenVta = ubicacionOriginal.NºOrdenVta;
+                    }
+
                     db.Ubicaciones.Add(nuevaUbicacion);
+
+                    // Error temporal para ver donde se descuadran
+                    if (nuevaUbicacion.Estado == 3 && (nuevaUbicacion.NºOrdenVta == 0 || nuevaUbicacion.NºOrdenVta == null))
+                    {
+                        throw new Exception("Descuadre en ubicación nueva. Id ubicación " + ubicacion.Id.ToString());
+                    }
                 } else
                 {
                     ubicacionOriginal = db.Ubicaciones.SingleOrDefault(u => u.NºOrden == ubicacion.Id);
@@ -143,9 +167,14 @@ namespace NestoAPI.Models.Picking
                     {
                         ubicacionOriginal.Cantidad = ubicacion.CantidadNueva;
                     }
+
+                    // Error temporal para ver donde se descuadran
+                    if (ubicacionOriginal.Estado == 3 && (ubicacionOriginal.NºOrdenVta == 0 || ubicacionOriginal.NºOrdenVta == null))
+                    {
+                        throw new Exception("Descuadre en ubicación nueva. Id ubicación " + ubicacion.Id.ToString());
+                    }
                 }
             }
-
         }
     }
 }
