@@ -83,6 +83,8 @@ namespace NestoAPI
         {
             config.MapHttpAttributeRoutes();
 
+            config.IncludeErrorDetailPolicy = IncludeErrorDetailPolicy.Always;
+            
             var jsonFormatter = config.Formatters.OfType<JsonMediaTypeFormatter>().First();
             jsonFormatter.SerializerSettings.ContractResolver = new CamelCasePropertyNamesContractResolver();
         }
