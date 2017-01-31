@@ -38,6 +38,8 @@ namespace NestoAPI
             headers: "*",
             methods: "*");
             config.EnableCors(cors);
+
+            GlobalConfiguration.Configuration.IncludeErrorDetailPolicy = IncludeErrorDetailPolicy.Always;
         }
     }
 }
