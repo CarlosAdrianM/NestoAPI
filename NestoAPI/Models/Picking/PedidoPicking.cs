@@ -14,6 +14,7 @@ namespace NestoAPI.Models.Picking
         public bool ServirJunto { get; set; }
         public bool EsTiendaOnline { get; set; }
         public bool EsNotaEntrega { get; set; }
+        public bool EsProductoYaFacturado { get; set; }
         public decimal ImporteOriginalSobrePedido { get; set; }
         public decimal ImporteOriginalNoSobrePedido { get; set; }
         public string CodigoPostal { get; set; }
@@ -36,7 +37,7 @@ namespace NestoAPI.Models.Picking
         {
             bool yaLlevaPortes = this.Lineas.FirstOrDefault(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && l.Producto.StartsWith(PREFIJO_PORTES)) != null;
 
-            if (yaLlevaPortes)
+            if (yaLlevaPortes || EsProductoYaFacturado)
             {
                 return false;
             }
