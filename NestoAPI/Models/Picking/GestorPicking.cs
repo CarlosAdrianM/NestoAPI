@@ -78,11 +78,11 @@ namespace NestoAPI.Models.Picking
                 }
             }
 
-            candidatos.RemoveAll(c => c.Borrar);
-
             // Actualizar Pendientes
             GeneradorPendientes generadorPendientes = new GeneradorPendientes(db, candidatos);
             generadorPendientes.Ejecutar();
+
+            candidatos.RemoveAll(c => c.Borrar);
 
             // Asignar Picking
             AsignadorPicking asignadorPicking = new AsignadorPicking(db, candidatos);

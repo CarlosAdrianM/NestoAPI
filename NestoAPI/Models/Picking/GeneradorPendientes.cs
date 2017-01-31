@@ -26,13 +26,7 @@ namespace NestoAPI.Models.Picking
                 {
                     LineaPedidoPicking linea = lineas[i];
                     LineaPedidoPicking lineaNueva = pasarAPendiente(linea);
-                    /*
-                    lineaNueva.Borrar = true; // para que no salga en el picking, porque la dejamos pendiente
-                    if (lineaNueva != null)
-                    {
-                        pedido.Lineas.Add(lineaNueva);
-                    }
-                    */
+                    
                     if(linea.CantidadReservada == 0)
                     {
                         linea.Borrar = true;
