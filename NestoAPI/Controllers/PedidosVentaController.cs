@@ -518,7 +518,7 @@ namespace NestoAPI.Controllers
                     Exception recorremosExcepcion = e;
                     while (recorremosExcepcion.InnerException != null)
                     {
-                        message = recorremosExcepcion.Message+ "\n" + recorremosExcepcion.InnerException.Message;
+                        message = recorremosExcepcion.Message+ ". " + recorremosExcepcion.InnerException.Message;
                         recorremosExcepcion = recorremosExcepcion.InnerException;
                     }
                     throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));

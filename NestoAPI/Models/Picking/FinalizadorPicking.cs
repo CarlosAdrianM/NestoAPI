@@ -15,7 +15,7 @@ namespace NestoAPI.Models.Picking
                 db.SaveChanges();
             } catch (Exception ex)
             {
-                throw new Exception(ex.InnerException != null ? ex.Message + "\n" + ex.InnerException.Message : ex.Message);
+                throw new Exception(ex.InnerException != null ? ex.Message + ". " + ex.InnerException.Message : ex.Message);
             }
             
         }
