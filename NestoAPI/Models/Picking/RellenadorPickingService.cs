@@ -66,7 +66,7 @@ namespace NestoAPI.Models.Picking
             IEnumerable<LineaPedidoPicking> lineas = candidatos.Where(c => !c.EsNotaEntrega).SelectMany(l => l.Lineas);
             var productos = lineas.Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO).GroupBy(g => g.Producto);
 
-            IEnumerable<LineaPedidoPicking> lineasResultado = db.LinPedidoVtas.Where(l => (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE || l.Estado == Constantes.EstadosLineaVenta.EN_CURSO) && l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) )
+            IEnumerable<LineaPedidoPicking> lineasResultado = db.LinPedidoVtas.Where(l => (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE || l.Estado == Constantes.EstadosLineaVenta.EN_CURSO) && (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) )
                 .Select(l => new LineaPedidoPicking
                 {
                     Id = l.Nº_Orden,
