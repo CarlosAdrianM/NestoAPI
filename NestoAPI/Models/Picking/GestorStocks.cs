@@ -29,7 +29,7 @@ namespace NestoAPI.Models.Picking
             LineaPedidoPicking linea;
             if (pedido.EsNotaEntrega)
             {
-                linea = pedido.Lineas.FirstOrDefault(l => l.CantidadReservada > 0);
+                linea = pedido.Lineas.FirstOrDefault(l => l.CantidadReservada > 0 || (l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && l.Cantidad == 0));
             } else
             {
                 linea = pedido.Lineas.FirstOrDefault(l => l.CantidadReservada > 0 && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO);
