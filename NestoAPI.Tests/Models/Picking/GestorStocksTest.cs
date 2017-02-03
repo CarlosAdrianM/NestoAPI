@@ -160,6 +160,33 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
+        public void GestorStocks_HayDeTodo_siEsPedidoEspecialNoTieneStock()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                Producto = "",
+                Cantidad = 1,
+                BaseImponible = 0,
+                CantidadReservada = 0,
+                EsPedidoEspecial = true,
+                FechaEntrega = new DateTime()
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = true,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+            GestorStocks gestor = new GestorStocks(pedido);
+
+            Assert.IsFalse(gestor.HayStockDeTodo());
+        }
+
+        [TestMethod]
         public void GestorStocks_TodoLoQueTieneStockEsSobrePedido_siHayUnProductoQueNoEsSobrePedidoConStockDevuelveFalse()
         {
             LineaPedidoPicking linea = new LineaPedidoPicking

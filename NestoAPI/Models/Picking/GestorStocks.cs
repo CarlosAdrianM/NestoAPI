@@ -20,7 +20,7 @@ namespace NestoAPI.Models.Picking
                 return true;
             }
 
-            LineaPedidoPicking linea = pedido.Lineas.FirstOrDefault(l => l.Cantidad > l.CantidadReservada && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO);
+            LineaPedidoPicking linea = pedido.Lineas.FirstOrDefault(l => (l.Cantidad > l.CantidadReservada && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO) || (l.EsPedidoEspecial && l.TipoLinea == Constantes.TiposLineaVenta.TEXTO));
             return linea == null;
         }
 
