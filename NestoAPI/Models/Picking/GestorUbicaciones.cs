@@ -99,7 +99,7 @@ namespace NestoAPI.Models.Picking
                     continuar = false;
                     */
                     throw new Exception("La ubicación está descuadrada o el stock está en otra empresa" +
-                        ". Producto: " + linea.Producto +
+                        ". Producto: " + linea.Producto.Trim() +
                         ". Nº Orden Línea de venta: " + linea.Id.ToString());
                 }
             }
