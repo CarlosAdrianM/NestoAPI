@@ -229,7 +229,7 @@ namespace NestoAPI.Tests.Models.Picking
 
 
         [TestMethod]
-        [ExpectedException(typeof(ArgumentException), "La ubicación está descuadrada")]
+        [ExpectedException(typeof(Exception), "La ubicación está descuadrada")]
         public void GestorUbicaciones_Ejecutar_siLaUbicacionEstaDescuadradaDebeDarError()
         {
             LineaPedidoPicking linea = new LineaPedidoPicking
