@@ -193,19 +193,13 @@ namespace NestoAPI.Controllers
 
             // En una primera fase no permitimos modificar si ya está impresa la etiqueta de la agencia
             // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún con la etiqueta impresa
-            bool estaImpresaLaEtiqueta = db.EnviosAgencias.FirstOrDefault(e => e.Pedido == pedido.numero && e.Estado == ESTADO_ENVIO_EN_CURSO) != null;
-            if (estaImpresaLaEtiqueta)
-            {
-                errorPersonalizado("No se puede modificar el pedido porque ya está preparado");
-            }
+            // bool estaImpresaLaEtiqueta = db.EnviosAgencias.FirstOrDefault(e => e.Pedido == pedido.numero && e.Estado == ESTADO_ENVIO_EN_CURSO) != null;
 
             // En una primera fase no permitimos modificar si alguna línea de las pendientes tiene picking
             // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún teniendo picking
+            //bool algunaLineaTienePicking = estaImpresaLaEtiqueta || cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
             bool algunaLineaTienePicking = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
-            if (algunaLineaTienePicking)
-            {
-                errorPersonalizado("No se puede modificar el pedido porque ya tiene picking");
-            }
+
 
             // Son diferentes, porque el del pedido está con trim
             // Comprobar si en SQL los da por iguales y no hace update si solo cambia esto
@@ -289,7 +283,10 @@ namespace NestoAPI.Controllers
                 LineaPedidoVentaDTO lineaEncontrada = pedido.LineasPedido.SingleOrDefault(l => l.id == linea.Nº_Orden);
                 if (lineaEncontrada == null)
                 {
-                    //db.Entry(linea).State = EntityState.Deleted;
+                    if (linea.Picking != 0 || (algunaLineaTienePicking && linea.Fecha_Entrega < fechaEntregaAjustada(DateTime.Now, pedido.ruta)))
+                    {
+                        errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking");
+                    }
                     db.LinPedidoVtas.Remove(linea);
                 } else 
                 {
@@ -332,6 +329,10 @@ namespace NestoAPI.Controllers
 
                     if (modificado)
                     {
+                        if (linea.Picking != 0 || (algunaLineaTienePicking && linea.Fecha_Entrega < fechaEntregaAjustada(DateTime.Now, pedido.ruta)))
+                        {
+                            errorPersonalizado("No se puede modificar la línea " + linea.Nº_Orden.ToString() + " porque ya tiene picking");
+                        }
                         calcularImportesLinea(linea);
                     }
                 }
@@ -345,6 +346,10 @@ namespace NestoAPI.Controllers
 
                     if (linea.id == 0)
                     {
+                        if (algunaLineaTienePicking && linea.fechaEntrega < fechaEntregaAjustada(DateTime.Now, pedido.ruta))
+                        {
+                            errorPersonalizado("No se pueden insertar líneas porque son las " + DateTime.Now.Hour.ToString() +"h");
+                        }
                         lineaPedido = crearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
                         continue;
