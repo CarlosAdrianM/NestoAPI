@@ -18,5 +18,18 @@ namespace NestoAPI.Models.Picking
         public bool Borrar { get; set; } = false;
         public DateTime FechaModificacion { get; set; }
         public bool EsPedidoEspecial { get; set; }
+        public decimal BaseImponibleEntrega { 
+            get
+            {
+                if (Cantidad != 0)
+                {
+                    return BaseImponible / Cantidad * CantidadReservada;
+                }
+                else
+                {
+                    return 0;
+                }
+            }
+        }
     }
 }

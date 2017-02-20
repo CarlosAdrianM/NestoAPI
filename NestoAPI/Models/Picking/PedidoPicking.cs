@@ -49,6 +49,11 @@ namespace NestoAPI.Models.Picking
                 return false;
             }
 
+            if (gestorImportesMinimos.LaEntregaLlegaAlImporteMinimo())
+            {
+                return false;
+            }
+
             if (!gestorStocks.TodoLoQueTieneStockEsSobrePedido() && !gestorImportesMinimos.LosProductosNoSobrePedidoOriginalesLlegabanAlImporteMinimo())
             {
                 return true;

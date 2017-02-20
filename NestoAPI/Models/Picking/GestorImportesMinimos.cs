@@ -52,5 +52,11 @@ namespace NestoAPI.Models.Picking
         {
             return (ruta == null || ruta.Trim() == "FW" || ruta.Trim() == "00" || ruta.Trim() == "16" || ruta.Trim() == "AT" || ruta.Trim() == "OT");
         }
+
+        public bool LaEntregaLlegaAlImporteMinimo()
+        {
+            decimal importeEntrega = pedido.Lineas.Sum(l => l.BaseImponibleEntrega);
+            return importeEntrega >= importeMinimo;
+        }
     }
 }

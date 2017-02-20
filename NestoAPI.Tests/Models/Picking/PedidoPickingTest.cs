@@ -80,7 +80,86 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsTrue(pedido.hayQueSumarPortes());
         }
-        
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siHayProductosSobrePedidoPeroLaEntregaSiLlegaAlMinimoNoSeSumanPortes()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 6,
+                CantidadReservada = 6,
+                BaseImponible = GestorImportesMinimos.IMPORTE_MINIMO - 1,
+                EsSobrePedido = false
+            };
+            LineaPedidoPicking linea2 = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "B",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                BaseImponible = 2,
+                EsSobrePedido = true
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = true,
+                ImporteOriginalSobrePedido = 2,
+                ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO - 1,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+
+            pedido.Lineas.Add(linea);
+            pedido.Lineas.Add(linea2);
+
+            Assert.IsFalse(pedido.hayQueSumarPortes());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siHayProductosSobrePedidoYLaEntregaNoLlegaAlMinimoSiSeSumanPortes()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 6,
+                CantidadReservada = 6,
+                BaseImponible = GestorImportesMinimos.IMPORTE_MINIMO - 10,
+                EsSobrePedido = false
+            };
+            LineaPedidoPicking linea2 = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "B",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                BaseImponible = 2,
+                EsSobrePedido = true
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = true,
+                ImporteOriginalSobrePedido = 2,
+                ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO - 10,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+
+            pedido.Lineas.Add(linea);
+            pedido.Lineas.Add(linea2);
+
+            Assert.IsTrue(pedido.hayQueSumarPortes());
+        }
+
+
         [TestMethod]
         public void PedidoPicking_hayQueSumarPortes_siHayProductosQueNoSonSobrePedidoYElOriginalLlegabaAlMinimoNoSeSumanPortes()
         {
