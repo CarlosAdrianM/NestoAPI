@@ -25,7 +25,7 @@ namespace NestoAPI.Models.Picking
             }
 
             // Si es cuenta contable o línea de texto que no sea pedido especial, asignamos toda la cantidad
-            foreach (LineaPedidoPicking linea in lineas.Where(l => l.Cantidad != 0 && (l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE || (l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && !l.EsPedidoEspecial))))
+            foreach (LineaPedidoPicking linea in lineas.Where(l => l.Cantidad != 0 && (l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE || (l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && !l.EsPedidoEspecial) || l.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO)))
             {
                 linea.CantidadReservada = linea.Cantidad;
             }

@@ -337,7 +337,6 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.AreEqual(7, linea2.CantidadReservada);
         }
 
-
         [TestMethod]
         public void GestorReservasStock_Reservar_siHayDosTieneQueCogerStockSiempreLaMasAntigua()
         {
@@ -601,6 +600,49 @@ namespace NestoAPI.Tests.Models.Picking
             GestorReservasStock.Reservar(stocks, candidatos, lineas);
 
             Assert.AreEqual(0, linea.CantidadReservada);
+        }
+
+        [TestMethod]
+        public void GestorReservasStock_Reservar_siEsInmovilizadoLaAsignaEntera()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.INMOVILIZADO,
+                Producto = "1234",
+                Cantidad = 1,
+                BaseImponible = 100,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorPickingService
+            List<PedidoPicking> candidatos = new List<PedidoPicking>();
+            candidatos.Add(pedido);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorStocksService
+            StockProducto stock = new StockProducto
+            {
+                Producto = "A",
+                StockDisponible = 1
+            };
+            List<StockProducto> stocks = new List<StockProducto>();
+            stocks.Add(stock);
+
+            List<LineaPedidoPicking> lineas = candidatos.Where(c => !c.EsNotaEntrega).SelectMany(l => l.Lineas).OrderBy(l => l.Id).ToList();
+
+            GestorReservasStock.Reservar(stocks, candidatos, lineas);
+
+            Assert.AreEqual(1, linea.CantidadReservada);
         }
 
         [TestMethod]
