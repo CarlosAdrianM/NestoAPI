@@ -39,7 +39,7 @@ namespace NestoAPI.Models.Picking
 
         public bool TodoLoQueTieneStockEsSobrePedido()
         {
-            LineaPedidoPicking linea = pedido.Lineas.FirstOrDefault(l => !l.EsSobrePedido && l.Cantidad == l.CantidadReservada);
+            LineaPedidoPicking linea = pedido.Lineas.FirstOrDefault(l => !l.EsSobrePedido && l.CantidadReservada > 0);
             return linea == null;
         }
 
