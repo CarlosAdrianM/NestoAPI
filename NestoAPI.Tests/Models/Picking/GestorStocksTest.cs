@@ -62,8 +62,7 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
-
-
+        
         [TestMethod]
         public void GestorStock_HayStockDeAlgo_siHayUnInmovilizadoDevuelveTrue()
         {
@@ -145,6 +144,34 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
 
+        [TestMethod]
+        public void GestorStock_HayStockDeAlgo_siHayUnProductoQueNoEsYaFacturadoEnUnaNotaDeEntregaDevuelveTrue()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "ABC",
+                Cantidad = 1,
+                BaseImponible = 10,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = true,
+                EsTiendaOnline = false,
+                EsNotaEntrega = true,
+                EsProductoYaFacturado = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+            GestorStocks gestor = new GestorStocks(pedido);
+
+            Assert.IsTrue(gestor.HayStockDeAlgo());
+        }
+        
         [TestMethod]
         public void GestorStocks_HayDeTodo_siSoloTieneUnProductoYTieneStockDevuelveTrue()
         {

@@ -27,7 +27,7 @@ namespace NestoAPI.Models.Picking
                     LineaPedidoPicking linea = lineas[i];
                     LineaPedidoPicking lineaNueva = pasarAPendiente(linea);
                     
-                    if(linea.CantidadReservada == 0)
+                    if(linea.CantidadReservada == 0 && !(pedido.EsNotaEntrega && !pedido.EsProductoYaFacturado))
                     {
                         linea.Borrar = true;
                     }
