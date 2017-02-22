@@ -13,7 +13,6 @@ namespace NestoAPI.Models
             public const string EMPRESA_ESPEJO_POR_DEFECTO = "3";
             public const string EMPRESA_POR_DEFECTO = "1";
             public const string FORMA_VENTA_POR_DEFECTO = "VAR";
-            
         }
 
         public class EstadosLineaVenta
@@ -44,6 +43,11 @@ namespace NestoAPI.Models
             public const int PENDIENTE_UBICAR = 2;
             public const int RESERVADO_PICKING = 3;
             public const int RESERVADO_REPOSICION = 3;
+        }
+
+        public class Picking
+        {
+            public const int HORA_MAXIMA_AMPLIAR_PEDIDOS = 11;
         }
     }
 }

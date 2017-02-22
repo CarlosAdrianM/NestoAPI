@@ -283,7 +283,7 @@ namespace NestoAPI.Controllers
                 LineaPedidoVentaDTO lineaEncontrada = pedido.LineasPedido.SingleOrDefault(l => l.id == linea.Nº_Orden);
                 if (lineaEncontrada == null)
                 {
-                    if (linea.Picking != 0 || (algunaLineaTienePicking && linea.Fecha_Entrega < fechaEntregaAjustada(DateTime.Now, pedido.ruta)))
+                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
                     {
                         errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking");
                     }
@@ -329,7 +329,7 @@ namespace NestoAPI.Controllers
 
                     if (modificado)
                     {
-                        if (linea.Picking != 0 || (algunaLineaTienePicking && linea.Fecha_Entrega < fechaEntregaAjustada(DateTime.Now, pedido.ruta)))
+                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
                         {
                             errorPersonalizado("No se puede modificar la línea " + linea.Nº_Orden.ToString() + " porque ya tiene picking");
                         }
@@ -346,7 +346,7 @@ namespace NestoAPI.Controllers
 
                     if (linea.id == 0)
                     {
-                        if (algunaLineaTienePicking && linea.fechaEntrega < fechaEntregaAjustada(DateTime.Now, pedido.ruta))
+                        if (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.fechaEntrega, pedido.ruta))
                         {
                             errorPersonalizado("No se pueden insertar líneas porque son las " + DateTime.Now.Hour.ToString() +"h");
                         }
@@ -943,9 +943,10 @@ namespace NestoAPI.Controllers
         private DateTime fechaEntregaAjustada(DateTime fecha, string ruta)
         {
             DateTime fechaMinima;
+            
             if (GestorImportesMinimos.esRutaConPortes(ruta))
             {
-                fechaMinima = DateTime.Now.Hour < 11 ? DateTime.Today : DateTime.Today.AddDays(1);
+                fechaMinima = DateTime.Now.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS ? DateTime.Today : DateTime.Today.AddDays(1);
             } else
             {
                 fechaMinima = DateTime.Today;

@@ -103,9 +103,9 @@ namespace NestoAPI.Models.Picking
         private DateTime calcularFechaPicking(DateTime fechaConHora)
         {
             DateTime fechaSinHora = new DateTime(fechaConHora.Year, fechaConHora.Month, fechaConHora.Day);
-
+            
             // Si es antes de las 11h devuelve la fecha de hoy (sin hora)
-            if (fechaConHora.Hour < 11)
+            if (fechaConHora.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
             {
                 return fechaSinHora;
             }
