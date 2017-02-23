@@ -346,9 +346,9 @@ namespace NestoAPI.Controllers
 
                     if (linea.id == 0)
                     {
-                        if (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.fechaEntrega, pedido.ruta))
+                        if (algunaLineaTienePicking && fechaEntregaAjustada(linea.fechaEntrega, pedido.ruta) <= DateTime.Today && DateTime.Now.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
                         {
-                            errorPersonalizado("No se pueden insertar líneas porque son las " + DateTime.Now.Hour.ToString() +"h");
+                            errorPersonalizado("No se pueden insertar líneas porque son más de las " + Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS.ToString() + "h. y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
                         }
                         lineaPedido = crearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
