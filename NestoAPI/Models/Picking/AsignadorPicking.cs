@@ -53,7 +53,7 @@ namespace NestoAPI.Models.Picking
 
                     // System.Diagnostics.Debug.WriteLine("Pedido: " + pedido.Id.ToString() + ", producto: " +  linea.Producto.ToString() + ", cantidad: " + linea.CantidadReservada.ToString());
 
-                    if (!pedido.EsNotaEntrega && linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                    if (!pedido.EsNotaEntrega && linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO && linea.CantidadReservada > 0)
                     {
                         gestor = new GestorUbicaciones(linea, ubicaciones);
                         gestor.Ejecutar();

@@ -32,7 +32,7 @@ namespace NestoAPI.Models.Picking
                 linea = pedido.Lineas.FirstOrDefault(l => l.CantidadReservada > 0 || !pedido.EsProductoYaFacturado || (l.TipoLinea == Constantes.TiposLineaVenta.TEXTO && l.Cantidad == 0));
             } else
             {
-                linea = pedido.Lineas.FirstOrDefault(l => l.CantidadReservada > 0 && (l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO || l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE || l.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO));
+                linea = pedido.Lineas.FirstOrDefault(l => (l.CantidadReservada > 0 || (l.CantidadRecogida > 0 && l.Cantidad == l.CantidadReservada)) && (l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO || l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE || l.TipoLinea == Constantes.TiposLineaVenta.INMOVILIZADO));
             }
             return linea != null;
         }

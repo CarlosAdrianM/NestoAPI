@@ -171,7 +171,65 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
-        
+
+        [TestMethod]
+        public void GestorStock_HayStockDeAlgo_siUnProductoEstaRecogidoDevuelveTrue()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 0,
+                CantidadRecogida = 5,
+                BaseImponible = 100,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+            GestorStocks gestor = new GestorStocks(pedido);
+
+            Assert.IsTrue(gestor.HayStockDeAlgo());
+        }
+
+        [TestMethod]
+        public void GestorStock_HayStockDeAlgo_siUnProductoEstaRecogidoParcialDevuelveTrueSiHayStockParaElResto()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 2,
+                CantidadRecogida = 5,
+                BaseImponible = 100,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+            GestorStocks gestor = new GestorStocks(pedido);
+
+            Assert.IsFalse(gestor.HayStockDeAlgo());
+        }
+
+
+
         [TestMethod]
         public void GestorStocks_HayDeTodo_siSoloTieneUnProductoYTieneStockDevuelveTrue()
         {

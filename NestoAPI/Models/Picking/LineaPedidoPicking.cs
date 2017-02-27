@@ -11,6 +11,7 @@ namespace NestoAPI.Models.Picking
         public byte TipoLinea { get; set; }
         public string Producto { get; set; }
         public int Cantidad { get; set; }
+        public int CantidadRecogida { get; set; }
         public decimal BaseImponible { get; set; }
         public int CantidadReservada { get; set; }
         public DateTime FechaEntrega { get; set; }
