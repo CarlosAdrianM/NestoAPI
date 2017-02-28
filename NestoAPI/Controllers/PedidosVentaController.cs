@@ -12,6 +12,7 @@ using System.Web.Http.Description;
 using NestoAPI.Models;
 using Newtonsoft.Json;
 using NestoAPI.Models.Picking;
+using NestoAPI.Infraestructure;
 
 namespace NestoAPI.Controllers
 {
@@ -465,8 +466,9 @@ namespace NestoAPI.Controllers
             };
 
             db.CabPedidoVtas.Add(cabecera);
+            GestorComisiones.CrearVendedorPedidoGrupoProducto(db, cabecera);
 
-            
+
             //ParametrosUsuarioController parametrosUsuarioCtrl = new ParametrosUsuarioController();
             ParametroUsuario parametroUsuario;
 

@@ -148,6 +148,10 @@
         <EntityTypeShape EntityType="NVModel.CentrosCoste" Width="1.5" PointX="0.75" PointY="61.375" />
         <AssociationConnector Association="NVModel.FK_ExtractoProducto_CentrosCoste" />
         <AssociationConnector Association="NVModel.FK_Inmovilizados_CentrosCoste" />
+        <EntityTypeShape EntityType="NVModel.VendedorClienteGrupoProducto" Width="1.5" PointX="5.25" PointY="21.625" />
+        <EntityTypeShape EntityType="NVModel.VendedorPedidoGrupoProducto" Width="1.5" PointX="5.875" PointY="25.625" />
+        <AssociationConnector Association="NVModel.FK_VendedoresPedidoGrupoProducto_CabPedidoVta" />
+        <AssociationConnector Association="NVModel.FK_VendedoresClienteGrupoProducto_Clientes" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

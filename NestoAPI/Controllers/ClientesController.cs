@@ -33,8 +33,37 @@ namespace NestoAPI.Controllers
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }
 
-            List<ClienteDTO> clientes = db.Clientes
-                .Where(c => (c.Empresa == empresa && c.Vendedor == vendedor && c.Estado >= 0 && 
+            /*
+            IQueryable<Cliente> clientesVendedor = from c in db.Clientes
+                                             join v in db.VendedoresClientesGruposProductos
+
+                                             //This is how you join by multiple values
+                                             on new { empresa = c.Empresa, cliente = c.Nº_Cliente, contacto = c.Contacto } equals new { empresa = v.Empresa, cliente = v.Cliente, contacto = v.Contacto }
+                                             into jointData
+
+                                             //This is how you actually turn the join into a left-join
+                                             from jointRecord in jointData.DefaultIfEmpty()
+
+                                             where c.Empresa == empresa
+                                             select c;
+                                             */
+
+            IQueryable<Cliente> clientesVendedor = from c in db.Clientes
+                                                   join v in db.VendedoresClientesGruposProductos
+                                                   
+                                                   //This is how you join by multiple values
+                                                   on new { empresa = c.Empresa, cliente = c.Nº_Cliente, contacto = c.Contacto } equals new { empresa = v.Empresa, cliente = v.Cliente, contacto = v.Contacto }
+                                                   into jointData
+
+                                                   //This is how you actually turn the join into a left-join
+                                                   from jointRecord in jointData.DefaultIfEmpty()
+
+                                                   where c.Empresa == empresa && (c.Vendedor == vendedor || jointRecord.Vendedor == vendedor)
+                                                   select c;
+
+            IQueryable<Cliente> clientesTabla = db.Clientes
+                .Where(c => 
+                (c.Empresa == empresa && c.Estado >= 0 && 
                 ( 
                     c.Nº_Cliente.Equals(filtro) ||
                     c.Nombre.Contains(filtro) ||
@@ -44,40 +73,44 @@ namespace NestoAPI.Controllers
                     c.Población.Contains(filtro) ||
                     c.Comentarios.Contains(filtro)
                 )))
-                .Select(clienteEncontrado => new ClienteDTO
-                {
-                    albaranValorado = clienteEncontrado.AlbaranValorado,
-                    cadena = clienteEncontrado.Cadena.Trim(),
-                    ccc = clienteEncontrado.CCC.Trim(),
-                    cifNif = clienteEncontrado.CIF_NIF.Trim(),
-                    cliente = clienteEncontrado.Nº_Cliente.Trim(),
-                    clientePrincipal = clienteEncontrado.ClientePrincipal,
-                    codigoPostal = clienteEncontrado.CodPostal.Trim(),
-                    comentarioPicking = clienteEncontrado.ComentarioPicking.Trim(),
-                    comentarioRuta = clienteEncontrado.ComentarioRuta.Trim(),
-                    comentarios = clienteEncontrado.Comentarios,
-                    contacto = clienteEncontrado.Contacto.Trim(),
-                    copiasAlbaran = clienteEncontrado.NºCopiasAlbarán,
-                    copiasFactura = clienteEncontrado.NºCopiasFactura,
-                    direccion = clienteEncontrado.Dirección.Trim(),
-                    empresa = clienteEncontrado.Empresa.Trim(),
-                    estado = clienteEncontrado.Estado,
-                    grupo = clienteEncontrado.Grupo.Trim(),
-                    iva = clienteEncontrado.IVA.Trim(),
-                    mantenerJunto = clienteEncontrado.MantenerJunto,
-                    noComisiona = clienteEncontrado.NoComisiona,
-                    nombre = clienteEncontrado.Nombre.Trim(),
-                    periodoFacturacion = clienteEncontrado.PeriodoFacturación.Trim(),
-                    poblacion = clienteEncontrado.Población.Trim(),
-                    provincia = clienteEncontrado.Provincia.Trim(),
-                    ruta = clienteEncontrado.Ruta.Trim(),
-                    servirJunto = clienteEncontrado.ServirJunto,
-                    telefono = clienteEncontrado.Teléfono.Trim(),
-                    vendedor = clienteEncontrado.Vendedor.Trim(),
-                    web = clienteEncontrado.Web.Trim()
-                }).ToList();
+                .Select(c => c);
 
-            return clientes.AsQueryable();
+            IQueryable<ClienteDTO> clientes = from c in clientesTabla
+                                  where c.Clientes11.Any(s => clientesVendedor.Contains(s))
+                                  select new ClienteDTO
+                                  {
+                                      albaranValorado = c.AlbaranValorado,
+                                      cadena = c.Cadena.Trim(),
+                                      ccc = c.CCC.Trim(),
+                                      cifNif = c.CIF_NIF.Trim(),
+                                      cliente = c.Nº_Cliente.Trim(),
+                                      clientePrincipal = c.ClientePrincipal,
+                                      codigoPostal = c.CodPostal.Trim(),
+                                      comentarioPicking = c.ComentarioPicking.Trim(),
+                                      comentarioRuta = c.ComentarioRuta.Trim(),
+                                      comentarios = c.Comentarios,
+                                      contacto = c.Contacto.Trim(),
+                                      copiasAlbaran = c.NºCopiasAlbarán,
+                                      copiasFactura = c.NºCopiasFactura,
+                                      direccion = c.Dirección.Trim(),
+                                      empresa = c.Empresa.Trim(),
+                                      estado = c.Estado,
+                                      grupo = c.Grupo.Trim(),
+                                      iva = c.IVA.Trim(),
+                                      mantenerJunto = c.MantenerJunto,
+                                      noComisiona = c.NoComisiona,
+                                      nombre = c.Nombre.Trim(),
+                                      periodoFacturacion = c.PeriodoFacturación.Trim(),
+                                      poblacion = c.Población.Trim(),
+                                      provincia = c.Provincia.Trim(),
+                                      ruta = c.Ruta.Trim(),
+                                      servirJunto = c.ServirJunto,
+                                      telefono = c.Teléfono.Trim(),
+                                      vendedor = c.Vendedor.Trim(),
+                                      web = c.Web.Trim()
+                                  };
+
+            return clientes;
         }
 
         // GET: api/Clientes

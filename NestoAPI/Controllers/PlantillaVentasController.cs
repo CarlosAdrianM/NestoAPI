@@ -29,9 +29,7 @@ namespace NestoAPI.Controllers
         // GET: api/PlantillaVentas
         //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
         public IQueryable<LineaPlantillaVenta> GetPlantillaVentas(string empresa, string cliente)
-        {
-            
-
+        {   
             Empresa empresaBuscada = db.Empresas.Where(e => e.Número == empresa).SingleOrDefault();
             if (empresaBuscada.IVA_por_defecto == null)
             {
@@ -60,12 +58,10 @@ namespace NestoAPI.Controllers
                 })
                 .OrderByDescending(g => g.fechaUltimaVenta)
                 .ToList();
-
-            
+                        
             return lineasPlantilla.AsQueryable();
         }
-
-
+        
         // GET: api/PlantillaVentasBuscarProducto
         //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
         // Devuelve un listado de productos, filtrado por un concepto (para buscar productos que no ha comprado nunca)
@@ -106,8 +102,7 @@ namespace NestoAPI.Controllers
                     precio = (decimal)x.Key.precio
                 })
                 .ToList();
-
-
+            
             return lineasPlantilla.AsQueryable();
         }
 
@@ -178,10 +173,7 @@ namespace NestoAPI.Controllers
             
             return ventas.AsQueryable();
         }
-
-
-
-
+        
         [HttpGet]
         [ResponseType(typeof(StockProductoDTO))]
         public async Task<IHttpActionResult> GetCargarStock(string empresa, string almacen, string productoStock)
@@ -391,85 +383,7 @@ namespace NestoAPI.Controllers
             return Ok(linPedidoVta);
         }
         */
-        /*
-        private void calcularDescuentoProducto(ref decimal precioCalculado, ref decimal descuentoCalculado, Producto producto, string cliente, string contacto, short cantidad, bool aplicarDescuento)
-        {
-            DescuentosProducto dtoProducto;
-
-            descuentoCalculado = 0;
-            precioCalculado = (decimal)producto.PVP;
-
-            // AQUÍ CALCULA PRECIOS, NO DESCUENTOS
-            //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     ' and contacto='0  ' and [nº producto]= '29487' and empresa='1  ' AND CANTIDADMÍNIMA<=1
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Contacto == contacto && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad);
-            if (dtoProducto != null && dtoProducto.Precio < precioCalculado)
-            {
-                precioCalculado = (decimal)dtoProducto.Precio;
-            }
-            //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     '  and [nº producto]= '29487' and empresa='1  ' AND CantidadMínima<=1
-            //select recargopvp from clientes with (nolock) where empresa='1  ' and [nº cliente]='15191     ' and contacto='0  '
-            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     ' and contacto='0  ' order by cantidadminima desc
-            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     '  order by cantidadminima desc
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad);
-            if (dtoProducto != null && dtoProducto.Precio < precioCalculado)
-            {
-                precioCalculado = (decimal)dtoProducto.Precio;
-            }
-            //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente] is null and [nºproveedor] is null order by cantidadminima desc
-            dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad && d.Nº_Cliente == null && d.NºProveedor == null);
-            if (dtoProducto != null && dtoProducto.Precio < precioCalculado)
-            {
-                precioCalculado = (decimal)dtoProducto.Precio;
-            }
-
-
-            // Si no tiene el aplicar descuento marcado, solo calcula precios especiales, pero no descuentos
-            if (!aplicarDescuento)
-            {
-                return;
-            }
-
-            // CALCULA DESCUENTOS
-            //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente] is null and nºproveedor is null and familia is null
-            //select * from descuentosproducto where empresa='1  ' and grupoproducto='PEL' and [nº cliente] is null and  nºproveedor is null and familia is null
-            //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente]='15191     ' and nºproveedor is null and familia is null
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Nº_Producto == producto.Número && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.Familia == null);
-            if (dtoProducto != null && dtoProducto.Descuento > descuentoCalculado)
-            {
-                descuentoCalculado = dtoProducto.Descuento;
-            }
-
-            //select * from descuentosproducto where empresa='1  ' and grupoproducto='PEL' and [nº cliente]='15191     ' and nºproveedor is null and familia is null
-
-            // AGAIN AND AGAIN AND AGAIN...
-            //select isnull(max(descuento),0) from descuentosproducto where [nº cliente]='15191     ' and empresa='1  ' and grupoproducto='PEL' and cantidadmínima<=1 and familia is null and nºproveedor is null
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Familia == null && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.GrupoProducto == producto.Grupo);
-            if (dtoProducto != null && dtoProducto.Descuento > descuentoCalculado)
-            {
-                descuentoCalculado = dtoProducto.Descuento;
-            }
-            //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and nºproveedor is null and grupoproducto is null
-            //select isnull(max(descuento),0) from descuentosproducto where [nº cliente]='15191     ' and empresa='1  ' and familia='Lisap     ' and cantidadmínima<=1 and nºproveedor is null  and grupoproducto is null
-            dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == producto.Empresa && d.Nº_Cliente == cliente && d.Familia == producto.Familia && d.CantidadMínima <= cantidad && d.NºProveedor == null && d.GrupoProducto == null);
-            if (dtoProducto != null && dtoProducto.Descuento > descuentoCalculado)
-            {
-                descuentoCalculado = dtoProducto.Descuento;
-            }
-            //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and grupoproducto='PEL' and nºproveedor is null
-
-            if (precioCalculado < producto.PVP * (1 - descuentoCalculado))
-            {
-                descuentoCalculado = 0;
-            }
-            else
-            {
-                precioCalculado = (decimal)producto.PVP;
-            }
-
-        }
-        */
-
-
+        
         protected override void Dispose(bool disposing)
         {
             if (disposing)
