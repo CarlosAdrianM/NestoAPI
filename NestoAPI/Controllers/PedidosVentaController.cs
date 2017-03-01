@@ -466,7 +466,7 @@ namespace NestoAPI.Controllers
             };
 
             db.CabPedidoVtas.Add(cabecera);
-            GestorComisiones.CrearVendedorPedidoGrupoProducto(db, cabecera);
+            GestorComisiones.CrearVendedorPedidoGrupoProducto(db, cabecera, pedido);
 
 
             //ParametrosUsuarioController parametrosUsuarioCtrl = new ParametrosUsuarioController();

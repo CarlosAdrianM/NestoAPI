@@ -8,7 +8,7 @@ namespace NestoAPI.Infraestructure
 {
     public class GestorComisiones
     {
-        public static void CrearVendedorPedidoGrupoProducto(NVEntities db,CabPedidoVta cabPedido)
+        public static void CrearVendedorPedidoGrupoProducto(NVEntities db,CabPedidoVta cabPedido, PedidoVentaDTO pedido)
         {
             if (cabPedido == null)
             {
@@ -29,7 +29,8 @@ namespace NestoAPI.Infraestructure
                     Empresa = cabPedido.Empresa,
                     Pedido = cabPedido.Número,
                     GrupoProducto = vendedorCliente.GrupoProducto,
-                    Vendedor = vendedorCliente.Vendedor
+                    Vendedor = vendedorCliente.Vendedor,
+                    Usuario = pedido.usuario
                 };
                 db.VendedoresPedidosGruposProductos.Add(vendedorPedido);
             }
