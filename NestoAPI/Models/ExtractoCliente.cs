@@ -48,5 +48,6 @@ namespace NestoAPI.Models
         public virtual FormaVenta FormasVenta { get; set; }
         public virtual CCC CCC1 { get; set; }
         public virtual Ruta Ruta1 { get; set; }
+        public virtual Vendedor Vendedore { get; set; }
     }
 }

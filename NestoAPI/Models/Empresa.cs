@@ -48,6 +48,7 @@ namespace NestoAPI.Models
             this.Ubicaciones = new HashSet<Ubicacion>();
             this.Inmovilizados = new HashSet<Inmovilizado>();
             this.PlanCuentas = new HashSet<PlanCuenta>();
+            this.Vendedores = new HashSet<Vendedor>();
         }
     
         public string Número { get; set; }
@@ -183,5 +184,7 @@ namespace NestoAPI.Models
         public virtual PlanCuenta PlanCuenta9 { get; set; }
         public virtual ICollection<Inmovilizado> Inmovilizados { get; set; }
         public virtual ICollection<PlanCuenta> PlanCuentas { get; set; }
+        public virtual Vendedor Vendedore { get; set; }
+        public virtual ICollection<Vendedor> Vendedores { get; set; }
     }
 }

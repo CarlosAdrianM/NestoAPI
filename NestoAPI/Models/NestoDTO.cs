@@ -179,6 +179,7 @@ namespace NestoAPI.Models
         public string usuario { get; set; }
 
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
+        public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
     }
 
     public class PlazoPagoDTO
@@ -296,5 +297,16 @@ namespace NestoAPI.Models
         public decimal precioBruto { get; set; }
         public decimal descuentos { get; set; }
         public decimal precioNeto { get; set; }
+    }
+
+    public class VendedorDTO
+    {
+        public string vendedor { get; set; }
+        public string nombre { get; set; }
+    }
+    public class VendedorGrupoProductoDTO
+    {
+        public string vendedor { get; set; }
+        public string grupoProducto { get; set; }
     }
 }

@@ -95,5 +95,6 @@ namespace NestoAPI.Models
         public virtual CCC CCC1 { get; set; }
         public virtual ICollection<PedidosEspeciale> PedidosEspeciales { get; set; }
         public virtual ICollection<VendedorClienteGrupoProducto> VendedoresClienteGrupoProductoes { get; set; }
+        public virtual Vendedor Vendedore { get; set; }
     }
 }

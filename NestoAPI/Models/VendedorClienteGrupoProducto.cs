@@ -24,5 +24,6 @@ namespace NestoAPI.Models
         public System.DateTime FechaModificacion { get; set; }
     
         public virtual Cliente Cliente1 { get; set; }
+        public virtual Vendedor Vendedore { get; set; }
     }
 }

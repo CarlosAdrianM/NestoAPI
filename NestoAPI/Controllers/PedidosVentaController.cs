@@ -124,6 +124,14 @@ namespace NestoAPI.Controllers
                 })
                 .ToList();
 
+            List<VendedorGrupoProductoDTO> vendedoresGrupoProductoPedido = db.VendedoresPedidosGruposProductos.Where(v => v.Empresa == empresa && v.Pedido == numero)
+                .Select(v => new VendedorGrupoProductoDTO
+                {
+                    vendedor = v.Vendedor,
+                    grupoProducto = v.GrupoProducto
+                })
+                .ToList();
+
             PedidoVentaDTO pedido = new PedidoVentaDTO
             {
                 empresa = cabPedidoVta.Empresa.Trim(),
@@ -150,6 +158,7 @@ namespace NestoAPI.Controllers
                 servirJunto = cabPedidoVta.ServirJunto,
                 usuario = cabPedidoVta.Usuario,
                 LineasPedido = lineasPedido,
+                VendedoresGrupoProducto = vendedoresGrupoProductoPedido
             };
             
             return Ok(pedido);

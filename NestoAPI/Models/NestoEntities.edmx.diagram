@@ -152,6 +152,16 @@
         <EntityTypeShape EntityType="NVModel.VendedorPedidoGrupoProducto" Width="1.5" PointX="5.875" PointY="25.625" />
         <AssociationConnector Association="NVModel.FK_VendedoresPedidoGrupoProducto_CabPedidoVta" />
         <AssociationConnector Association="NVModel.FK_VendedoresClienteGrupoProducto_Clientes" />
+        <EntityTypeShape EntityType="NVModel.Vendedor" Width="1.5" PointX="3" PointY="82.75" />
+        <AssociationConnector Association="NVModel.FK_Clientes_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_Empresas_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_Vendedores_Empresas" />
+        <AssociationConnector Association="NVModel.FK_EnviosAgencia_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_ExtractoCliente_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProducto_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_Vendedores_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_VendedoresClienteGrupoProducto_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_VendedoresPedidoGrupoProducto_Vendedores" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
