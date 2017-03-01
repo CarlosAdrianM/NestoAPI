@@ -145,7 +145,50 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsTrue(gestor.LosProductosSobrePedidoLleganAlImporteMinimo());
         }
-        
+
+        [TestMethod]
+        public void GestorImportesMinimos_LosProductosSobrePedidoLleganAlImporteMinimo_siUnaLineaTieneCantidadCeroNoLaSuma()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.TEXTO,
+                Cantidad = 0,
+                BaseImponible = 0,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime(),
+                EsSobrePedido = true
+            };
+            LineaPedidoPicking linea2 = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "B",
+                Cantidad = 7,
+                BaseImponible = GestorImportesMinimos.IMPORTE_MINIMO + 1,
+                CantidadReservada = 7,
+                FechaEntrega = new DateTime(),
+                EsSobrePedido = true
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                Ruta = RUTA_CON_PORTES,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO + 1,
+                ImporteOriginalSobrePedido = 0,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+            pedido.Lineas.Add(linea2);
+
+            GestorImportesMinimos gestor = new GestorImportesMinimos(pedido);
+
+            Assert.IsTrue(gestor.LosProductosSobrePedidoLleganAlImporteMinimo());
+        }
+
         [TestMethod]
         public void GestorImportesMinimos_LosProductosNoSobrePedidoOriginalesLlegabanAlImporteMinimo_siEsDeTiendaOnlineMiraOtroImporteMinimo()
         {

@@ -28,13 +28,13 @@ namespace NestoAPI.Models.Picking
 
         public bool LosProductosSobrePedidoLleganAlImporteMinimo()
         {
-            if (pedido.EsNotaEntrega || pedido.Lineas.Sum(c => c.Cantidad) == 0)
+            if (pedido.EsNotaEntrega)
             {
-                return true; // quitamos notas de entrega y evitamos división entre cero
+                return true; // quitamos notas de entrega
             }
 
             
-            return pedido.Lineas.Where(l => l.EsSobrePedido).Sum(l => l.BaseImponible / l.Cantidad * l.CantidadReservada) >= importeMinimo;
+            return pedido.Lineas.Where(l => l.EsSobrePedido && (l.Cantidad!=0 || l.BaseImponible!=0 || l.CantidadRecogida !=0)).Sum(l => l.BaseImponible / l.Cantidad * l.CantidadReservada) >= importeMinimo;
             
         }
 
