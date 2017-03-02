@@ -32,7 +32,8 @@ namespace NestoAPI.Controllers
                 {
                     vendedor = p.Número.Trim(),
                     nombre = p.Descripción.Trim()
-                }).ToListAsync();
+                }).OrderBy(l => l.nombre)
+                .ToListAsync();
 
             return Ok(vendedores);
         }

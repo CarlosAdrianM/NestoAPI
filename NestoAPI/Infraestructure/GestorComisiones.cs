@@ -8,6 +8,32 @@ namespace NestoAPI.Infraestructure
 {
     public class GestorComisiones
     {
+        public static void ActualizarVendedorPedidoGrupoProducto(NVEntities db, CabPedidoVta cabPedido, PedidoVentaDTO pedido)
+        {
+            ICollection<VendedorPedidoGrupoProducto> vendedoresActuales = db.VendedoresPedidosGruposProductos.Where(v => v.Empresa == cabPedido.Empresa && v.Pedido == cabPedido.Número).ToList();
+            if (vendedoresActuales == null)
+            {
+                return;
+            }
+
+            VendedorPedidoGrupoProducto vendedorPedidoGrupoActual = vendedoresActuales.FirstOrDefault();
+            VendedorGrupoProductoDTO vendedorPedidoGrupoNuevo = pedido.VendedoresGrupoProducto.FirstOrDefault();
+            if (vendedorPedidoGrupoActual != null)
+            {
+                vendedorPedidoGrupoActual.Vendedor = vendedorPedidoGrupoNuevo.vendedor;
+            } else if (vendedorPedidoGrupoNuevo != null)
+            {
+                vendedorPedidoGrupoActual = new VendedorPedidoGrupoProducto{
+                    Empresa = cabPedido.Empresa,
+                    Pedido = cabPedido.Número,
+                    GrupoProducto = vendedorPedidoGrupoNuevo.grupoProducto,
+                    Vendedor = vendedorPedidoGrupoNuevo.vendedor,
+                    Usuario = pedido.usuario
+                };
+                db.VendedoresPedidosGruposProductos.Add(vendedorPedidoGrupoActual);
+            }            
+        }
+
         public static void CrearVendedorPedidoGrupoProducto(NVEntities db,CabPedidoVta cabPedido, PedidoVentaDTO pedido)
         {
             if (cabPedido == null)

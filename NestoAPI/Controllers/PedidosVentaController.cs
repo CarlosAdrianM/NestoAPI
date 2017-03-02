@@ -277,6 +277,9 @@ namespace NestoAPI.Controllers
             
             db.Entry(cabPedidoVta).State = EntityState.Modified;
 
+            // Carlos 02/03/17: gestionamos el vendedor por grupo de producto
+            GestorComisiones.ActualizarVendedorPedidoGrupoProducto(db, cabPedidoVta, pedido);
+
             // Si alguno de los tres se cumple, no hace falta comprobarlo
             bool hayLineasNuevas = false;
             if (!cambiarClienteEnLineas && !cambiarContactoEnLineas && !cambiarIvaEnLineas)
