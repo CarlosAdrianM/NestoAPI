@@ -44,10 +44,23 @@ namespace NestoAPI.Controllers
 
         public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor)
         {
-            List<ResumenPedidoVentaDTO> cabeceraPedidos = db.CabPedidoVtas
-                .Join(db.LinPedidoVtas, c => new {empresa = c.Empresa, numero = c.Número}, l => new {empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
+            IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
+                                                   join v in db.VendedoresPedidosGruposProductos
+
+                                                   //This is how you join by multiple values
+                                                   on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
+                                                   into jointData
+
+                                                   //This is how you actually turn the join into a left-join
+                                                   from jointRecord in jointData.DefaultIfEmpty()
+
+                                                   where (c.Vendedor == vendedor || jointRecord.Vendedor == vendedor)
+                                                   select c;
+            
+            IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
+                .Join(db.LinPedidoVtas, c => new { empresa = c.Empresa, numero = c.Número }, l => new { empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
                 .Where(c => c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
-                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta})
+                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta })
                 .Select(x => new ResumenPedidoVentaDTO
                 {
                     empresa = x.Key.Empresa.Trim(),
@@ -68,13 +81,7 @@ namespace NestoAPI.Controllers
                     vendedor = x.Key.Vendedor.Trim(),
                     ruta = x.Key.Ruta.Trim()
                 })
-                .OrderByDescending(c => c.numero)
-                .ToList();
-
-            if (vendedor != null && vendedor.Trim() != "")
-            {
-                cabeceraPedidos = cabeceraPedidos.Where(c => c.vendedor == vendedor).ToList();
-            }
+                .OrderByDescending(c => c.numero);
 
             foreach (ResumenPedidoVentaDTO cab in cabeceraPedidos)
             {
@@ -82,7 +89,7 @@ namespace NestoAPI.Controllers
                 cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado>= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
             }
 
-            return cabeceraPedidos.AsQueryable();
+            return cabeceraPedidos;
         }
         
 
