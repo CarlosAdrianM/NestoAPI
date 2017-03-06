@@ -54,7 +54,7 @@ namespace NestoAPI.Controllers
                                                    //This is how you actually turn the join into a left-join
                                                    from jointRecord in jointData.DefaultIfEmpty()
 
-                                                   where (c.Vendedor == vendedor || jointRecord.Vendedor == vendedor)
+                                                   where (vendedor == "" || vendedor == null || c.Vendedor ==  vendedor || jointRecord.Vendedor == vendedor)
                                                    select c;
             
             IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor

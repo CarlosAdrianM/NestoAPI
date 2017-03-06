@@ -34,13 +34,13 @@ namespace NestoAPI.Models.Picking
             }
 
             
-            return pedido.Lineas.Where(l => l.EsSobrePedido && (l.Cantidad!=0 || l.BaseImponible!=0 || l.CantidadRecogida !=0)).Sum(l => l.BaseImponible / l.Cantidad * l.CantidadReservada) >= importeMinimo;
+            return pedido.Lineas.Where(l => l.EsSobrePedido && (l.Cantidad!=0)).Sum(l => l.BaseImponible / l.Cantidad * l.CantidadReservada) >= importeMinimo;
             
         }
 
-        public bool LosProductosSobrePedidoOriginalesLlegabanAlImporteSinPortes()
+        public bool LosProductosDelPedidoOriginalLlegabanAlImporteSinPortes()
         {
-            return pedido.ImporteOriginalSobrePedido >= IMPORTE_SIN_PORTES;
+            return pedido.ImporteOriginalTotal() >= IMPORTE_SIN_PORTES;
         }
 
         public bool LosProductosNoSobrePedidoOriginalesLlegabanAlImporteMinimo()

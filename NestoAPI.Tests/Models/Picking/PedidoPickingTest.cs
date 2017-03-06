@@ -259,7 +259,7 @@ namespace NestoAPI.Tests.Models.Picking
             };
             pedido.Lineas.Add(linea);
 
-            Assert.IsTrue(pedido.hayQueSumarPortes());
+            Assert.IsFalse(pedido.hayQueSumarPortes());
         }
 
         [TestMethod]
