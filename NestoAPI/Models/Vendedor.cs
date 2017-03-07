@@ -24,6 +24,7 @@ namespace NestoAPI.Models
             this.Vendedores1 = new HashSet<Vendedor>();
             this.VendedoresClienteGrupoProductoes = new HashSet<VendedorClienteGrupoProducto>();
             this.VendedoresPedidoGrupoProductoes = new HashSet<VendedorPedidoGrupoProducto>();
+            this.SeguimientoClientes = new HashSet<SeguimientoCliente>();
         }
     
         public string Empresa { get; set; }
@@ -46,5 +47,6 @@ namespace NestoAPI.Models
         public virtual Vendedor Vendedore1 { get; set; }
         public virtual ICollection<VendedorClienteGrupoProducto> VendedoresClienteGrupoProductoes { get; set; }
         public virtual ICollection<VendedorPedidoGrupoProducto> VendedoresPedidoGrupoProductoes { get; set; }
+        public virtual ICollection<SeguimientoCliente> SeguimientoClientes { get; set; }
     }
 }

@@ -62,5 +62,33 @@ namespace NestoAPI.Infraestructure
             }
 
         }
+
+        internal static void ActualizarVendedorClienteGrupoProducto(NVEntities db, Cliente clienteDB, ClienteDTO cliente)
+        {
+            ICollection<VendedorClienteGrupoProducto> vendedoresActuales = db.VendedoresClientesGruposProductos.Where(v => v.Empresa == clienteDB.Empresa && v.Cliente == clienteDB.Nº_Cliente && v.Contacto == clienteDB.Contacto).ToList();
+            if (vendedoresActuales == null)
+            {
+                return;
+            }
+
+            VendedorClienteGrupoProducto vendedorGrupoActual = vendedoresActuales.FirstOrDefault();
+            VendedorGrupoProductoDTO vendedorGrupoNuevo = cliente.VendedoresGrupoProducto.FirstOrDefault();
+            if (vendedorGrupoActual != null)
+            {
+                vendedorGrupoActual.Vendedor = vendedorGrupoNuevo.vendedor;
+            }
+            else if (vendedorGrupoNuevo != null)
+            {
+                vendedorGrupoActual = new VendedorClienteGrupoProducto
+                {
+                    Empresa = clienteDB.Empresa,
+                    Cliente = clienteDB.Nº_Cliente,
+                    GrupoProducto = vendedorGrupoNuevo.grupoProducto,
+                    Vendedor = vendedorGrupoNuevo.vendedor,
+                    Usuario = cliente.usuario
+                };
+                db.VendedoresClientesGruposProductos.Add(vendedorGrupoActual);
+            }
+        }
     }
 }

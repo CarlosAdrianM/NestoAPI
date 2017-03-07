@@ -913,6 +913,34 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="SeguimientoCliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NºOrden" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
+          <Property Name="Tipo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" />
+          <Property Name="Pedido" Type="bit" Nullable="false" />
+          <Property Name="ClienteNuevo" Type="bit" Nullable="false" />
+          <Property Name="Aviso" Type="bit" Nullable="false" />
+          <Property Name="Aparatos" Type="bit" Nullable="false" />
+          <Property Name="DatosBanco" Type="bit" Nullable="false" />
+          <Property Name="GestiónAparatos" Type="bit" Nullable="false" />
+          <Property Name="PrimeraVisita" Type="bit" Nullable="false" />
+          <Property Name="Comentarios" Type="text" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="NumOrdenExtracto" Type="int" />
+          <Property Name="Cosmetica" Type="bit" Nullable="false" />
+          <Property Name="PersonaQueDecide" Type="bit" Nullable="false" />
+          <Property Name="PosibleVenta" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="SubGruposProducto">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -2517,6 +2545,48 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_SeguimientoCliente_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="SeguimientoCliente" Type="Self.SeguimientoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="SeguimientoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_SeguimientoCliente_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="SeguimientoCliente" Type="Self.SeguimientoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="SeguimientoCliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_SeguimientoCliente_Vendedores">
+          <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="0..1" />
+          <End Role="SeguimientoCliente" Type="Self.SeguimientoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="SeguimientoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Vendedores_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="*" />
@@ -2649,6 +2719,7 @@
           <EntitySet Name="Proveedores" EntityType="Self.Proveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ProveedoresProducto" EntityType="Self.ProveedoresProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Rutas" EntityType="Self.Rutas" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="SeguimientoCliente" EntityType="Self.SeguimientoCliente" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="SubGruposProducto" EntityType="Self.SubGruposProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Ubicaciones" EntityType="Self.Ubicaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="UsuarioVendedor" EntityType="Self.UsuarioVendedor" Schema="dbo" store:Type="Tables" />
@@ -3086,6 +3157,18 @@
           <AssociationSet Name="FK_Rutas_Empresas" Association="Self.FK_Rutas_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="Rutas" EntitySet="Rutas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_SeguimientoCliente_Clientes" Association="Self.FK_SeguimientoCliente_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="SeguimientoCliente" EntitySet="SeguimientoCliente" />
+          </AssociationSet>
+          <AssociationSet Name="FK_SeguimientoCliente_Empresas" Association="Self.FK_SeguimientoCliente_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="SeguimientoCliente" EntitySet="SeguimientoCliente" />
+          </AssociationSet>
+          <AssociationSet Name="FK_SeguimientoCliente_Vendedores" Association="Self.FK_SeguimientoCliente_Vendedores">
+            <End Role="Vendedores" EntitySet="Vendedores" />
+            <End Role="SeguimientoCliente" EntitySet="SeguimientoCliente" />
           </AssociationSet>
           <AssociationSet Name="FK_Vendedores_Empresas" Association="Self.FK_Vendedores_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -3670,6 +3753,19 @@
             <End Role="Vendedore" EntitySet="Vendedores" />
             <End Role="VendedorPedidoGrupoProducto" EntitySet="VendedoresPedidosGruposProductos" />
           </AssociationSet>
+          <EntitySet Name="SeguimientosClientes" EntityType="NVModel.SeguimientoCliente" />
+          <AssociationSet Name="FK_SeguimientoCliente_Clientes" Association="NVModel.FK_SeguimientoCliente_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="SeguimientoCliente" EntitySet="SeguimientosClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_SeguimientoCliente_Empresas" Association="NVModel.FK_SeguimientoCliente_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="SeguimientoCliente" EntitySet="SeguimientosClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_SeguimientoCliente_Vendedores" Association="NVModel.FK_SeguimientoCliente_Vendedores">
+            <End Role="Vendedor" EntitySet="Vendedores" />
+            <End Role="SeguimientoCliente" EntitySet="SeguimientosClientes" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -3809,6 +3905,7 @@
           <NavigationProperty Name="PlanCuentas" Relationship="NVModel.FK_PlanCuentas_Empresas" FromRole="Empresa" ToRole="PlanCuenta" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_Empresas_Vendedores" FromRole="Empresa" ToRole="Vendedore" />
           <NavigationProperty Name="Vendedores" Relationship="NVModel.FK_Vendedores_Empresas" FromRole="Empresa" ToRole="Vendedore" />
+          <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Empresas" FromRole="Empresa" ToRole="SeguimientoCliente" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -4035,6 +4132,7 @@
           <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_Clientes" FromRole="Cliente" ToRole="PedidosEspeciale" />
           <NavigationProperty Name="VendedoresClienteGrupoProductoes" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Clientes" FromRole="Cliente" ToRole="VendedoresClienteGrupoProducto" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_Clientes_Vendedores" FromRole="Cliente" ToRole="Vendedore" />
+          <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Clientes" FromRole="Cliente" ToRole="SeguimientoCliente" />
         </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -6344,6 +6442,7 @@
           <NavigationProperty Name="Vendedore1" Relationship="NVModel.FK_Vendedores_Vendedores" FromRole="Vendedore1" ToRole="Vendedore" />
           <NavigationProperty Name="VendedoresClienteGrupoProductoes" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Vendedores" FromRole="Vendedore" ToRole="VendedorClienteGrupoProducto" />
           <NavigationProperty Name="VendedoresPedidoGrupoProductoes" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_Vendedores" FromRole="Vendedore" ToRole="VendedorPedidoGrupoProducto" />
+          <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Vendedores" FromRole="Vendedor" ToRole="SeguimientoCliente" />
         </EntityType>
         <Association Name="FK_Clientes_Vendedores">
           <End Type="NVModel.Vendedor" Role="Vendedore" Multiplicity="0..1" />
@@ -6464,6 +6563,79 @@
               <PropertyRef Name="Número" />
             </Principal>
             <Dependent Role="VendedorPedidoGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="SeguimientoCliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºOrden" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Número" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Tipo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Pedido" Type="Boolean" Nullable="false" />
+          <Property Name="ClienteNuevo" Type="Boolean" Nullable="false" />
+          <Property Name="Aviso" Type="Boolean" Nullable="false" />
+          <Property Name="Aparatos" Type="Boolean" Nullable="false" />
+          <Property Name="DatosBanco" Type="Boolean" Nullable="false" />
+          <Property Name="GestiónAparatos" Type="Boolean" Nullable="false" />
+          <Property Name="PrimeraVisita" Type="Boolean" Nullable="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="NumOrdenExtracto" Type="Int32" />
+          <Property Name="Cosmetica" Type="Boolean" Nullable="false" />
+          <Property Name="PersonaQueDecide" Type="Boolean" Nullable="false" />
+          <Property Name="PosibleVenta" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_SeguimientoCliente_Clientes" FromRole="SeguimientoCliente" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_SeguimientoCliente_Empresas" FromRole="SeguimientoCliente" ToRole="Empresa" />
+          <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_SeguimientoCliente_Vendedores" FromRole="SeguimientoCliente" ToRole="Vendedor" />
+        </EntityType>
+        <Association Name="FK_SeguimientoCliente_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.SeguimientoCliente" Role="SeguimientoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="SeguimientoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_SeguimientoCliente_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.SeguimientoCliente" Role="SeguimientoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="SeguimientoCliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_SeguimientoCliente_Vendedores">
+          <End Type="NVModel.Vendedor" Role="Vendedor" Multiplicity="0..1" />
+          <End Type="NVModel.SeguimientoCliente" Role="SeguimientoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="SeguimientoCliente">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Vendedor" />
             </Dependent>
@@ -7454,6 +7626,34 @@
                 <ScalarProperty Name="Estado" ColumnName="Estado" />
                 <ScalarProperty Name="Descripción" ColumnName="Descripción" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="SeguimientosClientes">
+            <EntityTypeMapping TypeName="NVModel.SeguimientoCliente">
+              <MappingFragment StoreEntitySet="SeguimientoCliente">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="PosibleVenta" ColumnName="PosibleVenta" />
+                <ScalarProperty Name="PersonaQueDecide" ColumnName="PersonaQueDecide" />
+                <ScalarProperty Name="Cosmetica" ColumnName="Cosmetica" />
+                <ScalarProperty Name="NumOrdenExtracto" ColumnName="NumOrdenExtracto" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
+                <ScalarProperty Name="PrimeraVisita" ColumnName="PrimeraVisita" />
+                <ScalarProperty Name="GestiónAparatos" ColumnName="GestiónAparatos" />
+                <ScalarProperty Name="DatosBanco" ColumnName="DatosBanco" />
+                <ScalarProperty Name="Aparatos" ColumnName="Aparatos" />
+                <ScalarProperty Name="Aviso" ColumnName="Aviso" />
+                <ScalarProperty Name="ClienteNuevo" ColumnName="ClienteNuevo" />
+                <ScalarProperty Name="Pedido" ColumnName="Pedido" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="Tipo" ColumnName="Tipo" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>

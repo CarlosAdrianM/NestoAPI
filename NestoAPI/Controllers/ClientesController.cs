@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
+using NestoAPI.Infraestructure;
 
 namespace NestoAPI.Controllers
 {
@@ -32,21 +33,6 @@ namespace NestoAPI.Controllers
             {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }
-
-            /*
-            IQueryable<Cliente> clientesVendedor = from c in db.Clientes
-                                             join v in db.VendedoresClientesGruposProductos
-
-                                             //This is how you join by multiple values
-                                             on new { empresa = c.Empresa, cliente = c.Nº_Cliente, contacto = c.Contacto } equals new { empresa = v.Empresa, cliente = v.Cliente, contacto = v.Contacto }
-                                             into jointData
-
-                                             //This is how you actually turn the join into a left-join
-                                             from jointRecord in jointData.DefaultIfEmpty()
-
-                                             where c.Empresa == empresa
-                                             select c;
-                                             */
 
             IQueryable<Cliente> clientesVendedor = from c in db.Clientes
                                                    join v in db.VendedoresClientesGruposProductos
@@ -234,6 +220,14 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
+            List<VendedorGrupoProductoDTO> vendedoresGrupoProducto = db.VendedoresClientesGruposProductos.Where(v => v.Empresa == empresa && v.Cliente == cliente && v.Contacto == contacto)
+                .Select(v => new VendedorGrupoProductoDTO
+                {
+                    vendedor = v.Vendedor,
+                    grupoProducto = v.GrupoProducto
+                })
+                .ToList();
+
             ClienteDTO clienteDTO = new ClienteDTO
             {
                 albaranValorado = clienteEncontrado.AlbaranValorado,
@@ -264,46 +258,59 @@ namespace NestoAPI.Controllers
                 servirJunto = clienteEncontrado.ServirJunto,
                 telefono = clienteEncontrado.Teléfono,
                 vendedor = clienteEncontrado.Vendedor,
-                web = clienteEncontrado.Web
+                web = clienteEncontrado.Web, 
+                VendedoresGrupoProducto = vendedoresGrupoProducto
             };
 
             return Ok(clienteDTO);
         }
 
-        //// PUT: api/Clientes/5
-        //[ResponseType(typeof(void))]
-        //public async Task<IHttpActionResult> PutCliente(string id, Cliente cliente)
-        //{
-        //    if (!ModelState.IsValid)
-        //    {
-        //        return BadRequest(ModelState);
-        //    }
+        // PUT: api/Clientes/5
+        [ResponseType(typeof(void))]
+        public async Task<IHttpActionResult> PutCliente(ClienteDTO cliente)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-        //    if (id != cliente.Empresa)
-        //    {
-        //        return BadRequest();
-        //    }
+            Cliente clienteDB = db.Clientes.SingleOrDefault(c => c.Empresa == cliente.empresa && c.Nº_Cliente == cliente.cliente && c.Contacto == cliente.contacto);
 
-        //    db.Entry(cliente).State = EntityState.Modified;
 
-        //    try
-        //    {
-        //        await db.SaveChangesAsync();
-        //    }
-        //    catch (DbUpdateConcurrencyException)
-        //    {
-        //        if (!ClienteExists(id))
-        //        {
-        //            return NotFound();
-        //        }
-        //        else
-        //        {
-        //            throw;
-        //        }
-        //    }
+            if (clienteDB == null)
+            {
+                return BadRequest();
+            }
 
-        //    return StatusCode(HttpStatusCode.NoContent);
-        //}
+            // Cambiamos los vendedores
+            if (clienteDB.Vendedor != null && cliente.vendedor != null && clienteDB.Vendedor.Trim() != cliente.vendedor.Trim())
+            {
+                clienteDB.Vendedor = cliente.vendedor;
+            }
+                        
+            db.Entry(clienteDB).State = EntityState.Modified;
+
+            // Carlos 02/03/17: gestionamos el vendedor por grupo de producto
+            GestorComisiones.ActualizarVendedorClienteGrupoProducto(db, clienteDB, cliente);
+
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!ClienteExists(cliente.empresa, cliente.cliente, cliente.contacto))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return StatusCode(HttpStatusCode.NoContent);
+        }
 
         //// POST: api/Clientes
         //[ResponseType(typeof(Cliente))]
@@ -360,10 +367,6 @@ namespace NestoAPI.Controllers
             base.Dispose(disposing);
         }
 
-        //private bool ClienteExists(string id)
-        //{
-        //    return db.Clientes.Count(e => e.Empresa == id) > 0;
-        //}
 
         private bool ClienteExists(string empresa, string numCliente, string contacto)
         {

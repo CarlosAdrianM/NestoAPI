@@ -258,6 +258,7 @@
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
     <Compile Include="Controllers\RolesController.cs" />
+    <Compile Include="Controllers\SeguimientosClientesController.cs" />
     <Compile Include="Controllers\ValuesController.cs" />
     <Compile Include="Controllers\VendedoresController.cs" />
     <Compile Include="Global.asax.cs">
@@ -421,6 +422,9 @@
     </Compile>
     <Compile Include="Models\RoleBindingModels.cs" />
     <Compile Include="Models\Ruta.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\SeguimientoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\SubGruposProducto.cs">

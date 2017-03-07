@@ -162,6 +162,10 @@
         <AssociationConnector Association="NVModel.FK_Vendedores_Vendedores" />
         <AssociationConnector Association="NVModel.FK_VendedoresClienteGrupoProducto_Vendedores" />
         <AssociationConnector Association="NVModel.FK_VendedoresPedidoGrupoProducto_Vendedores" />
+        <EntityTypeShape EntityType="NVModel.SeguimientoCliente" Width="1.5" PointX="6" PointY="56.75" />
+        <AssociationConnector Association="NVModel.FK_SeguimientoCliente_Clientes" />
+        <AssociationConnector Association="NVModel.FK_SeguimientoCliente_Empresas" />
+        <AssociationConnector Association="NVModel.FK_SeguimientoCliente_Vendedores" />
       </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

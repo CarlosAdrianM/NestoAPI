@@ -39,6 +39,9 @@ namespace NestoAPI.Models
         public decimal noComisiona { get; set; }
         public bool servirJunto { get; set; }
         public bool mantenerJunto { get; set; }
+        public string usuario { get; set; }
+
+        public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
 
     }
 
