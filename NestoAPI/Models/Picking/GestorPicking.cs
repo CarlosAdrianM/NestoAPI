@@ -114,7 +114,7 @@ namespace NestoAPI.Models.Picking
             // Ahora mismo no tiene en cuenta los festivos, pero habrá que contemplarlos en el futuro
             if (fechaConHora.DayOfWeek == DayOfWeek.Friday)
             {
-                fechaSinHora.AddDays(3);
+                return fechaSinHora.AddDays(3);
             }
 
             return fechaSinHora.AddDays(1);
