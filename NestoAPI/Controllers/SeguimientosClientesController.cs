@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
+using System.Data.Entity.Core.Objects;
 
 namespace NestoAPI.Controllers
 {
@@ -17,12 +18,66 @@ namespace NestoAPI.Controllers
     {
         private NVEntities db = new NVEntities();
 
-        // GET: api/SeguimientosClientes
-        public IQueryable<SeguimientoCliente> GetSeguimientosClientes()
+        // Carlos 13/03/17: lo pongo para desactivar el Lazy Loading
+        public SeguimientosClientesController()
         {
-            return db.SeguimientosClientes;
+            db.Configuration.LazyLoadingEnabled = false;
         }
 
+        // GET: api/SeguimientosClientes
+        public IQueryable<SeguimientoClienteDTO> GetSeguimientosClientes(string empresa, string cliente, string contacto)
+        {
+            DateTime fechaDesde = DateTime.Today.AddYears(-3);
+            return db.SeguimientosClientes
+                .Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto && s.Fecha >= fechaDesde)
+                .Select(s => new SeguimientoClienteDTO {
+                    Aparatos = s.Aparatos,
+                    Aviso = s.Aviso,
+                    Cliente = s.Número,
+                    ClienteNuevo = s.ClienteNuevo,
+                    Comentarios = s.Comentarios,
+                    Contacto = s.Contacto,
+                    Empresa = s.Empresa,
+                    Estado = (SeguimientoClienteDTO.EstadoSeguimientoDTO)s.Estado,
+                    Fecha = s.Fecha,
+                    GestionAparatos = s.GestiónAparatos,
+                    Id = s.NºOrden,
+                    Pedido = s.Pedido,
+                    PrimeraVisita = s.PrimeraVisita,
+                    Tipo = s.Tipo,
+                    Vendedor = s.Vendedor
+                })
+                .OrderByDescending(s=> s.Id);
+        }
+
+        // GET: api/SeguimientosClientes
+        public IQueryable<SeguimientoClienteDTO> GetSeguimientosClientes(string vendedor, DateTime fecha)
+        {
+            DateTime fechaDesde = new DateTime(fecha.Year, fecha.Month, fecha.Day);
+            DateTime fechaHasta = fechaDesde.AddDays(1);
+
+            return db.SeguimientosClientes
+                .Where(s => s.Vendedor == vendedor && s.Fecha >= fechaDesde && s.Fecha < fechaHasta)
+                .Select(s => new SeguimientoClienteDTO
+                {
+                    Aparatos = s.Aparatos,
+                    Aviso = s.Aviso,
+                    Cliente = s.Número,
+                    ClienteNuevo = s.ClienteNuevo,
+                    Comentarios = s.Comentarios,
+                    Contacto = s.Contacto,
+                    Estado = (SeguimientoClienteDTO.EstadoSeguimientoDTO)s.Estado,
+                    Fecha = s.Fecha,
+                    Id = s.NºOrden,
+                    Pedido = s.Pedido,
+                    PrimeraVisita = s.PrimeraVisita,
+                    Tipo = s.Tipo,
+                    Vendedor = s.Vendedor
+                })
+                .OrderBy(s => s.Id);
+        }
+
+        /*
         // GET: api/SeguimientosClientes/5
         [ResponseType(typeof(SeguimientoCliente))]
         public async Task<IHttpActionResult> GetSeguimientoCliente(string id)
@@ -35,7 +90,8 @@ namespace NestoAPI.Controllers
 
             return Ok(seguimientoCliente);
         }
-
+        */
+        /*
         // PUT: api/SeguimientosClientes/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutSeguimientoCliente(string id, SeguimientoCliente seguimientoCliente)
@@ -70,15 +126,35 @@ namespace NestoAPI.Controllers
 
             return StatusCode(HttpStatusCode.NoContent);
         }
+        */
 
         // POST: api/SeguimientosClientes
         [ResponseType(typeof(SeguimientoCliente))]
-        public async Task<IHttpActionResult> PostSeguimientoCliente(SeguimientoCliente seguimientoCliente)
+        public async Task<IHttpActionResult> PostSeguimientoCliente(SeguimientoClienteDTO seguimientoClienteDTO)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
+
+            SeguimientoCliente seguimientoCliente = new SeguimientoCliente
+            {
+                Aparatos = seguimientoClienteDTO.Aparatos,
+                Aviso = seguimientoClienteDTO.Aviso,
+                ClienteNuevo = seguimientoClienteDTO.ClienteNuevo,
+                Comentarios = seguimientoClienteDTO.Comentarios,
+                Contacto = seguimientoClienteDTO.Contacto,
+                Empresa = seguimientoClienteDTO.Empresa,
+                Estado = (short)seguimientoClienteDTO.Estado,
+                Fecha = seguimientoClienteDTO.Fecha,
+                GestiónAparatos = seguimientoClienteDTO.GestionAparatos,
+                Número = seguimientoClienteDTO.Cliente,
+                PrimeraVisita = seguimientoClienteDTO.PrimeraVisita,
+                Tipo = seguimientoClienteDTO.Tipo,
+                Vendedor = seguimientoClienteDTO.Vendedor
+            };
+
+
 
             db.SeguimientosClientes.Add(seguimientoCliente);
 
@@ -86,7 +162,7 @@ namespace NestoAPI.Controllers
             {
                 await db.SaveChangesAsync();
             }
-            catch (DbUpdateException)
+            catch (DbUpdateException ex)
             {
                 if (SeguimientoClienteExists(seguimientoCliente.Empresa))
                 {

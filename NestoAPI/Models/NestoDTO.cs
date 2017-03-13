@@ -248,6 +248,50 @@ namespace NestoAPI.Models
         }
     }
 
+    public class SeguimientoClienteDTO
+    {
+        public int Id { get; set; }
+        public string Empresa { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public DateTime Fecha { get; set; }
+        public string Tipo { get; set; }
+        public string Vendedor { get; set; }
+        public bool Pedido { get; set; }
+        public bool ClienteNuevo { get; set; }
+        public bool Aviso { get; set; }
+        public bool Aparatos { get; set; }
+        public bool GestionAparatos { get; set; }
+        public bool PrimeraVisita { get; set; }
+        public string Comentarios { get; set; }
+        public EstadoSeguimientoDTO Estado { get; set; }
+        public string Usuario { get; set; }
+        public TiposCentro TipoCentro { get; set; }
+
+        public enum TiposCentro
+        {
+            NoSeSabe,
+            SoloEstetica,
+            SoloPeluqueria,
+            EsteticaYPeluqueria
+        }
+        
+        public enum EstadoSeguimientoDTO
+        {
+            Nulo = -1,
+            Vigente,
+            No_Contactado,
+            Gestion_Administrativa
+        }
+
+        public class TipoSeguimientoDTO
+        {
+            public const string TELEFONO = "T";
+            public const string VISITA = "V";
+        }
+    }
+
+
     public class ResumenPedidoVentaDTO
     {
         public string empresa { get; set; }
