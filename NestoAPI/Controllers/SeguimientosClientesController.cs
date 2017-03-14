@@ -45,6 +45,7 @@ namespace NestoAPI.Controllers
                     Pedido = s.Pedido,
                     PrimeraVisita = s.PrimeraVisita,
                     Tipo = s.Tipo,
+                    Usuario = s.Usuario,
                     Vendedor = s.Vendedor
                 })
                 .OrderByDescending(s=> s.Id);
@@ -67,11 +68,13 @@ namespace NestoAPI.Controllers
                     Comentarios = s.Comentarios,
                     Contacto = s.Contacto,
                     Estado = (SeguimientoClienteDTO.EstadoSeguimientoDTO)s.Estado,
+                    Empresa = s.Empresa,
                     Fecha = s.Fecha,
                     Id = s.NºOrden,
                     Pedido = s.Pedido,
                     PrimeraVisita = s.PrimeraVisita,
                     Tipo = s.Tipo,
+                    Usuario = s.Usuario,
                     Vendedor = s.Vendedor
                 })
                 .OrderBy(s => s.Id);
@@ -151,6 +154,7 @@ namespace NestoAPI.Controllers
                 Número = seguimientoClienteDTO.Cliente,
                 PrimeraVisita = seguimientoClienteDTO.PrimeraVisita,
                 Tipo = seguimientoClienteDTO.Tipo,
+                Usuario = seguimientoClienteDTO.Usuario,
                 Vendedor = seguimientoClienteDTO.Vendedor
             };
 

@@ -213,14 +213,23 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ClienteDTO))]
         public async Task<IHttpActionResult> GetCliente(string empresa, string cliente, string contacto)
         {
-            Cliente clienteEncontrado = await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto select c).SingleOrDefaultAsync();
+            Cliente clienteEncontrado;
+
+            if (contacto != null && contacto.Trim() != "")
+            {
+                clienteEncontrado = await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto select c).SingleOrDefaultAsync();
+            } else
+            {
+                clienteEncontrado = await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal select c).SingleOrDefaultAsync();
+            }
+            
             
             if (clienteEncontrado == null)
             {
                 return NotFound();
             }
 
-            List<VendedorGrupoProductoDTO> vendedoresGrupoProducto = db.VendedoresClientesGruposProductos.Where(v => v.Empresa == empresa && v.Cliente == cliente && v.Contacto == contacto)
+            List<VendedorGrupoProductoDTO> vendedoresGrupoProducto = db.VendedoresClientesGruposProductos.Where(v => v.Empresa == clienteEncontrado.Empresa && v.Cliente == clienteEncontrado.Nº_Cliente && v.Contacto == clienteEncontrado.Contacto)
                 .Select(v => new VendedorGrupoProductoDTO
                 {
                     vendedor = v.Vendedor,
