@@ -29,7 +29,7 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string empresa, string vendedor, string filtro)
         {
-            if ((filtro.Length < 4) && (!filtro.All(c => char.IsDigit(c))))
+            if ((filtro == null) || ((filtro.Length < 4) && (!filtro.All(c => char.IsDigit(c)))))
             {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }

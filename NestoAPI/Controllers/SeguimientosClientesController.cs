@@ -29,6 +29,7 @@ namespace NestoAPI.Controllers
         {
             DateTime fechaDesde = DateTime.Today.AddYears(-3);
             return db.SeguimientosClientes
+                .Include(s => s.Cliente)
                 .Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto && s.Fecha >= fechaDesde)
                 .Select(s => new SeguimientoClienteDTO {
                     Aparatos = s.Aparatos,
@@ -37,11 +38,13 @@ namespace NestoAPI.Controllers
                     ClienteNuevo = s.ClienteNuevo,
                     Comentarios = s.Comentarios,
                     Contacto = s.Contacto,
+                    Direccion = s.Cliente.Dirección,
                     Empresa = s.Empresa,
                     Estado = (SeguimientoClienteDTO.EstadoSeguimientoDTO)s.Estado,
                     Fecha = s.Fecha,
                     GestionAparatos = s.GestiónAparatos,
                     Id = s.NºOrden,
+                    Nombre = s.Cliente.Nombre,
                     Pedido = s.Pedido,
                     PrimeraVisita = s.PrimeraVisita,
                     Tipo = s.Tipo,
@@ -58,6 +61,7 @@ namespace NestoAPI.Controllers
             DateTime fechaHasta = fechaDesde.AddDays(1);
 
             return db.SeguimientosClientes
+                .Include(s => s.Cliente)
                 .Where(s => s.Vendedor == vendedor && s.Fecha >= fechaDesde && s.Fecha < fechaHasta)
                 .Select(s => new SeguimientoClienteDTO
                 {
@@ -67,10 +71,13 @@ namespace NestoAPI.Controllers
                     ClienteNuevo = s.ClienteNuevo,
                     Comentarios = s.Comentarios,
                     Contacto = s.Contacto,
-                    Estado = (SeguimientoClienteDTO.EstadoSeguimientoDTO)s.Estado,
+                    Direccion = s.Cliente.Dirección,
                     Empresa = s.Empresa,
+                    Estado = (SeguimientoClienteDTO.EstadoSeguimientoDTO)s.Estado,
                     Fecha = s.Fecha,
+                    GestionAparatos = s.GestiónAparatos,
                     Id = s.NºOrden,
+                    Nombre = s.Cliente.Nombre,
                     Pedido = s.Pedido,
                     PrimeraVisita = s.PrimeraVisita,
                     Tipo = s.Tipo,
