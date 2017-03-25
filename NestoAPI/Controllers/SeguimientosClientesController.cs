@@ -47,7 +47,7 @@ namespace NestoAPI.Controllers
                     Nombre = s.Cliente.Nombre,
                     Pedido = s.Pedido,
                     PrimeraVisita = s.PrimeraVisita,
-                    Tipo = s.Tipo,
+                    Tipo = s.Tipo.Trim(),
                     Usuario = s.Usuario,
                     Vendedor = s.Vendedor
                 })
@@ -60,9 +60,27 @@ namespace NestoAPI.Controllers
             DateTime fechaDesde = new DateTime(fecha.Year, fecha.Month, fecha.Day);
             DateTime fechaHasta = fechaDesde.AddDays(1);
 
-            return db.SeguimientosClientes
+            IQueryable<SeguimientoCliente> seguimientos;
+
+            if (vendedor != null)
+            {
+                if (vendedor.Length <= 3)
+                {
+                    seguimientos = db.SeguimientosClientes.Where(s => s.Vendedor == vendedor);
+                }
+                else
+                {
+                    seguimientos = db.SeguimientosClientes.Where(s => s.Usuario == vendedor);
+                }
+            } else
+            {
+                seguimientos = db.SeguimientosClientes;
+            }
+            
+
+            return seguimientos
                 .Include(s => s.Cliente)
-                .Where(s => s.Vendedor == vendedor && s.Fecha >= fechaDesde && s.Fecha < fechaHasta)
+                .Where(s => s.Fecha >= fechaDesde && s.Fecha < fechaHasta)
                 .Select(s => new SeguimientoClienteDTO
                 {
                     Aparatos = s.Aparatos,
@@ -80,7 +98,7 @@ namespace NestoAPI.Controllers
                     Nombre = s.Cliente.Nombre,
                     Pedido = s.Pedido,
                     PrimeraVisita = s.PrimeraVisita,
-                    Tipo = s.Tipo,
+                    Tipo = s.Tipo.Trim(),
                     Usuario = s.Usuario,
                     Vendedor = s.Vendedor
                 })
@@ -101,20 +119,38 @@ namespace NestoAPI.Controllers
             return Ok(seguimientoCliente);
         }
         */
-        /*
+        
         // PUT: api/SeguimientosClientes/5
         [ResponseType(typeof(void))]
-        public async Task<IHttpActionResult> PutSeguimientoCliente(string id, SeguimientoCliente seguimientoCliente)
+        public async Task<IHttpActionResult> PutSeguimientoCliente(SeguimientoClienteDTO seguimientoClienteDTO)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
-            if (id != seguimientoCliente.Empresa)
+            SeguimientoCliente seguimientoCliente = db.SeguimientosClientes.SingleOrDefault(s => s.NºOrden == seguimientoClienteDTO.Id);
+
+            if (seguimientoCliente.Usuario.Trim() != seguimientoClienteDTO.Usuario.Trim())
             {
-                return BadRequest();
+                throw new Exception("No se pueden modificar los rapport de otro usuario");
             }
+
+            seguimientoCliente.Aparatos = seguimientoClienteDTO.Aparatos;
+            seguimientoCliente.Aviso = seguimientoClienteDTO.Aviso;
+            seguimientoCliente.ClienteNuevo = seguimientoClienteDTO.ClienteNuevo;
+            seguimientoCliente.Comentarios = seguimientoClienteDTO.Comentarios;
+            seguimientoCliente.Contacto = seguimientoClienteDTO.Contacto;
+            seguimientoCliente.Empresa = seguimientoClienteDTO.Empresa;
+            seguimientoCliente.Estado = (short)seguimientoClienteDTO.Estado;
+            seguimientoCliente.Fecha = seguimientoClienteDTO.Fecha;
+            seguimientoCliente.GestiónAparatos = seguimientoClienteDTO.GestionAparatos;
+            seguimientoCliente.Número = seguimientoClienteDTO.Cliente;
+            seguimientoCliente.Pedido = seguimientoClienteDTO.Pedido;
+            seguimientoCliente.PrimeraVisita = seguimientoClienteDTO.PrimeraVisita;
+            seguimientoCliente.Tipo = seguimientoClienteDTO.Tipo;
+            //seguimientoCliente.Vendedor = seguimientoClienteDTO.Vendedor;
+
 
             db.Entry(seguimientoCliente).State = EntityState.Modified;
 
@@ -124,7 +160,7 @@ namespace NestoAPI.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!SeguimientoClienteExists(id))
+                if (!SeguimientoClienteExists(seguimientoClienteDTO.Id))
                 {
                     return NotFound();
                 }
@@ -136,7 +172,7 @@ namespace NestoAPI.Controllers
 
             return StatusCode(HttpStatusCode.NoContent);
         }
-        */
+        
 
         // POST: api/SeguimientosClientes
         [ResponseType(typeof(SeguimientoCliente))]
@@ -146,6 +182,9 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
+
+            string vendedorFicha = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto).Vendedor;
+            string vendedorPeluqueria = db.VendedoresClientesGruposProductos.SingleOrDefault(v => v.Empresa == seguimientoClienteDTO.Empresa && v.Cliente == seguimientoClienteDTO.Cliente && v.Contacto == seguimientoClienteDTO.Contacto && v.GrupoProducto == "PEL")?.Vendedor;
 
             SeguimientoCliente seguimientoCliente = new SeguimientoCliente
             {
@@ -161,12 +200,43 @@ namespace NestoAPI.Controllers
                 Número = seguimientoClienteDTO.Cliente,
                 PrimeraVisita = seguimientoClienteDTO.PrimeraVisita,
                 Tipo = seguimientoClienteDTO.Tipo,
-                Usuario = seguimientoClienteDTO.Usuario,
-                Vendedor = seguimientoClienteDTO.Vendedor
+                Usuario = seguimientoClienteDTO.Usuario
             };
 
+            if (vendedorFicha != null && vendedorPeluqueria != null & vendedorFicha == vendedorPeluqueria)
+            {
+                seguimientoCliente.Vendedor = vendedorFicha;
+            } else if (vendedorFicha == null && vendedorPeluqueria != null)
+            {
+                seguimientoCliente.Vendedor = vendedorPeluqueria;
+            } else if (vendedorFicha != null && vendedorPeluqueria == null)
+            {
+                seguimientoCliente.Vendedor = vendedorFicha;
+            } else
+            {
+                seguimientoCliente.Vendedor = seguimientoClienteDTO.Vendedor;
+            }
 
+            if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloPeluqueria)
+            {
+                // poner vendedor general en ficha
+                Cliente cliente = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto);
+                if (cliente != null && cliente.Vendedor != null && cliente.Vendedor.Trim() != "NV")
+                {
+                    cliente.Vendedor = "NV";
+                }
+            }
 
+            if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloEstetica)
+            {
+                // poner vendedor general en peluquería
+                VendedorClienteGrupoProducto cliente = db.VendedoresClientesGruposProductos.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto && c.GrupoProducto == "PEL");
+                if (cliente != null && cliente.Vendedor !=null && cliente.Vendedor.Trim() != "NV")
+                {
+                    cliente.Vendedor = "NV";
+                }
+            }
+                        
             db.SeguimientosClientes.Add(seguimientoCliente);
 
             try
@@ -175,7 +245,7 @@ namespace NestoAPI.Controllers
             }
             catch (DbUpdateException ex)
             {
-                if (SeguimientoClienteExists(seguimientoCliente.Empresa))
+                if (SeguimientoClienteExists(seguimientoCliente.NºOrden))
                 {
                     return Conflict();
                 }
@@ -185,14 +255,14 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            return CreatedAtRoute("DefaultApi", new { id = seguimientoCliente.Empresa }, seguimientoCliente);
+            return CreatedAtRoute("DefaultApi", new { id = seguimientoCliente.NºOrden }, seguimientoCliente);
         }
-
+        /*
         // DELETE: api/SeguimientosClientes/5
         [ResponseType(typeof(SeguimientoCliente))]
-        public async Task<IHttpActionResult> DeleteSeguimientoCliente(string id)
+        public async Task<IHttpActionResult> DeleteSeguimientoCliente(int id)
         {
-            SeguimientoCliente seguimientoCliente = await db.SeguimientosClientes.FindAsync(id);
+            SeguimientoCliente seguimientoCliente = await db.SeguimientosClientes.SingleOrDefaultAsync(s=>s.NºOrden==id);
             if (seguimientoCliente == null)
             {
                 return NotFound();
@@ -203,7 +273,7 @@ namespace NestoAPI.Controllers
 
             return Ok(seguimientoCliente);
         }
-
+        */
         protected override void Dispose(bool disposing)
         {
             if (disposing)
@@ -213,9 +283,9 @@ namespace NestoAPI.Controllers
             base.Dispose(disposing);
         }
 
-        private bool SeguimientoClienteExists(string id)
+        private bool SeguimientoClienteExists(int id)
         {
-            return db.SeguimientosClientes.Count(e => e.Empresa == id) > 0;
+            return db.SeguimientosClientes.Count(e => e.NºOrden == id) > 0;
         }
     }
 }

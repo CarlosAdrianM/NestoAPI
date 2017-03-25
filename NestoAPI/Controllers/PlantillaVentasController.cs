@@ -114,7 +114,7 @@ namespace NestoAPI.Controllers
                 .Where(c => (c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones && c.ClientePrincipal))
                 .SingleOrDefault();
             
-            List<DireccionesEntregaClienteDTO> clientes = db.Clientes
+            IQueryable<DireccionesEntregaClienteDTO> clientes = db.Clientes
                 .Where(c => (c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones))
                 .Select(clienteEncontrado => new DireccionesEntregaClienteDTO
                 {
@@ -140,11 +140,11 @@ namespace NestoAPI.Controllers
                     ruta = clienteEncontrado.Ruta.Trim(),
                     formaPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).FormaPago,
                     plazosPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).PlazosPago.Trim()
-                }).ToList();
+                });
 
             
 
-            return clientes.AsQueryable();
+            return clientes;
         }
 
         [HttpGet]

@@ -938,7 +938,7 @@
           <Property Name="Cosmetica" Type="bit" Nullable="false" />
           <Property Name="PersonaQueDecide" Type="bit" Nullable="false" />
           <Property Name="PosibleVenta" Type="bit" Nullable="false" />
-          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="None" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="SubGruposProducto">
@@ -6593,7 +6593,7 @@
           <Property Name="Cosmetica" Type="Boolean" Nullable="false" />
           <Property Name="PersonaQueDecide" Type="Boolean" Nullable="false" />
           <Property Name="PosibleVenta" Type="Boolean" Nullable="false" />
-          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="None" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="Cliente" Relationship="NVModel.FK_SeguimientoCliente_Clientes" FromRole="SeguimientoCliente" ToRole="Cliente" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_SeguimientoCliente_Empresas" FromRole="SeguimientoCliente" ToRole="Empresa" />
