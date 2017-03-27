@@ -102,7 +102,7 @@ namespace NestoAPI.Controllers
                     Usuario = s.Usuario,
                     Vendedor = s.Vendedor
                 })
-                .OrderBy(s => s.Id);
+                .OrderByDescending(s => s.Id);
         }
 
         /*
