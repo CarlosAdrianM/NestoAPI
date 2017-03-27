@@ -203,18 +203,12 @@ namespace NestoAPI.Controllers
                 Usuario = seguimientoClienteDTO.Usuario
             };
 
-            if (vendedorFicha != null && vendedorPeluqueria != null & vendedorFicha == vendedorPeluqueria)
-            {
-                seguimientoCliente.Vendedor = vendedorFicha;
-            } else if (vendedorFicha == null && vendedorPeluqueria != null)
-            {
-                seguimientoCliente.Vendedor = vendedorPeluqueria;
-            } else if (vendedorFicha != null && vendedorPeluqueria == null)
-            {
-                seguimientoCliente.Vendedor = vendedorFicha;
-            } else
+            if (seguimientoClienteDTO.Vendedor == vendedorFicha || seguimientoClienteDTO.Vendedor == vendedorPeluqueria)
             {
                 seguimientoCliente.Vendedor = seguimientoClienteDTO.Vendedor;
+            } else
+            {
+                seguimientoCliente.Vendedor = null;
             }
 
             if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloPeluqueria)
