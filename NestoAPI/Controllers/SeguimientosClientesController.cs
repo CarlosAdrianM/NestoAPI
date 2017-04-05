@@ -183,8 +183,8 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            string vendedorFicha = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto).Vendedor;
-            string vendedorPeluqueria = db.VendedoresClientesGruposProductos.SingleOrDefault(v => v.Empresa == seguimientoClienteDTO.Empresa && v.Cliente == seguimientoClienteDTO.Cliente && v.Contacto == seguimientoClienteDTO.Contacto && v.GrupoProducto == "PEL")?.Vendedor;
+            string vendedorFicha = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto).Vendedor?.Trim();
+            string vendedorPeluqueria = db.VendedoresClientesGruposProductos.SingleOrDefault(v => v.Empresa == seguimientoClienteDTO.Empresa && v.Cliente == seguimientoClienteDTO.Cliente && v.Contacto == seguimientoClienteDTO.Contacto && v.GrupoProducto == "PEL")?.Vendedor?.Trim();
 
             SeguimientoCliente seguimientoCliente = new SeguimientoCliente
             {
