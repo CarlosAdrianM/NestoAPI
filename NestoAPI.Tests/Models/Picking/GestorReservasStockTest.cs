@@ -646,6 +646,146 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
+        public void GestorReservasStock_Reservar_siHayUnoDeTiendaConStockTieneQueTirarDeEseStock()
+        {
+            LineaPedidoPicking lineaMasNuevaCentral = new LineaPedidoPicking
+            {
+                Id = 2,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Almacen = Constantes.Productos.ALMACEN_POR_DEFECTO,
+                Producto = "A",
+                Cantidad = 1,
+                BaseImponible = 100,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+
+            LineaPedidoPicking lineaMasAntiguaTienda = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Almacen = Constantes.Productos.ALMACEN_TIENDA,
+                Producto = "A",
+                Cantidad = 1,
+                BaseImponible = 100,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(lineaMasNuevaCentral);
+
+            PedidoPicking pedido2 = new PedidoPicking
+            {
+                Id = 2,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido2.Lineas.Add(lineaMasAntiguaTienda);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorPickingService
+            List<PedidoPicking> candidatos = new List<PedidoPicking>();
+            candidatos.Add(pedido);
+            candidatos.Add(pedido2);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorStocksService
+            StockProducto stock = new StockProducto
+            {
+                Producto = "A",
+                StockDisponible = 1,
+                StockTienda = 1
+            };
+            List<StockProducto> stocks = new List<StockProducto>();
+            stocks.Add(stock);
+
+            List<LineaPedidoPicking> lineas = candidatos.Where(c => !c.EsNotaEntrega).SelectMany(l => l.Lineas).OrderBy(l => l.Id).ToList();
+
+            GestorReservasStock.Reservar(stocks, candidatos, lineas);
+
+            Assert.AreEqual(1, lineaMasAntiguaTienda.CantidadReservada);
+            Assert.AreEqual(1, lineaMasNuevaCentral.CantidadReservada);
+        }
+
+        [TestMethod]
+        public void GestorReservasStock_Reservar_siHayUnoDeTiendaPeroNoEsSuficienteTiraDeLosDosStocks()
+        {
+            LineaPedidoPicking lineaMasNuevaCentral = new LineaPedidoPicking
+            {
+                Id = 2,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Almacen = Constantes.Productos.ALMACEN_POR_DEFECTO,
+                Producto = "A",
+                Cantidad = 1,
+                BaseImponible = 100,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+
+            LineaPedidoPicking lineaMasAntiguaTienda = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Almacen = Constantes.Productos.ALMACEN_TIENDA,
+                Producto = "A",
+                Cantidad = 2,
+                BaseImponible = 100,
+                CantidadReservada = 0,
+                FechaEntrega = new DateTime()
+            };
+
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(lineaMasNuevaCentral);
+
+            PedidoPicking pedido2 = new PedidoPicking
+            {
+                Id = 2,
+                ServirJunto = false,
+                EsTiendaOnline = false,
+                EsNotaEntrega = false,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido2.Lineas.Add(lineaMasAntiguaTienda);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorPickingService
+            List<PedidoPicking> candidatos = new List<PedidoPicking>();
+            candidatos.Add(pedido);
+            candidatos.Add(pedido2);
+
+            // Esto lo rellenaría en ejecución el servicio RellenadorStocksService
+            StockProducto stock = new StockProducto
+            {
+                Producto = "A",
+                StockDisponible = 2,
+                StockTienda = 1
+            };
+            List<StockProducto> stocks = new List<StockProducto>();
+            stocks.Add(stock);
+
+            List<LineaPedidoPicking> lineas = candidatos.Where(c => !c.EsNotaEntrega).SelectMany(l => l.Lineas).OrderBy(l => l.Id).ToList();
+
+            GestorReservasStock.Reservar(stocks, candidatos, lineas);
+
+            Assert.AreEqual(2, lineaMasAntiguaTienda.CantidadReservada);
+            Assert.AreEqual(1, lineaMasNuevaCentral.CantidadReservada);
+        }
+
+        [TestMethod]
         public void GestorReservasStock_BorrarLineasEntregaFutura_despuesDeEjecutarloLasLineasFuturasNoEstan()
         {
             LineaPedidoPicking lineaParaEntregaInmediata = new LineaPedidoPicking

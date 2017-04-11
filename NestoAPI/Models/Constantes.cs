@@ -26,6 +26,7 @@ namespace NestoAPI.Models
         public class Productos
         {
             public const string ALMACEN_POR_DEFECTO = "ALG";
+            public const string ALMACEN_TIENDA = "REI";
             public const short ESTADO_NO_SOBRE_PEDIDO = 0;
         }
 

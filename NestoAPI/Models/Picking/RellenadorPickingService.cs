@@ -71,6 +71,7 @@ namespace NestoAPI.Models.Picking
                 {
                     Id = l.Nº_Orden,
                     TipoLinea = (byte)l.TipoLinea,
+                    Almacen = l.Almacén,
                     Producto = l.Producto,
                     Cantidad = (int)l.Cantidad - l.Recoger,
                     CantidadRecogida = l.Recoger,
@@ -106,6 +107,7 @@ namespace NestoAPI.Models.Picking
                 {
                     Id = l.Nº_Orden,
                     TipoLinea = (byte)l.TipoLinea,
+                    Almacen = l.Almacén,
                     Producto = l.Producto,
                     Cantidad = (int)l.Cantidad - l.Recoger,
                     CantidadRecogida = l.Recoger,

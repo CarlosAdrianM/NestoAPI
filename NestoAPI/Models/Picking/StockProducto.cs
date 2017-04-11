@@ -9,5 +9,6 @@ namespace NestoAPI.Models.Picking
     {
         public string Producto { get; set; }
         public int StockDisponible { get; set; }
+        public int StockTienda { get; set; }
     }
 }

@@ -15,13 +15,30 @@ namespace NestoAPI.Models.Picking
 
             foreach (LineaPedidoPicking linea in todasLasLineas.Where(l=> l.Cantidad != 0 && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)) // no pongo > 0 por las bonificaciones
             {
+                int cantidadReservadaTienda = 0;
                 StockProducto stock = stocks.Where(s => s.Producto == linea.Producto).SingleOrDefault();
-                linea.CantidadReservada = linea.Cantidad > stock.StockDisponible ? stock.StockDisponible : linea.Cantidad;
+                if (linea.Almacen == Constantes.Productos.ALMACEN_TIENDA && stock.StockTienda > 0)
+                {
+                    if (stock.StockTienda >= linea.Cantidad)
+                    {
+                        linea.CantidadReservada = linea.Cantidad;
+                    } else
+                    {
+                        linea.CantidadReservada = stock.StockTienda;
+                    }
+                    stock.StockTienda -= linea.CantidadReservada;
+                    cantidadReservadaTienda = linea.CantidadReservada;
+                } 
+                if (linea.CantidadReservada != linea.Cantidad)
+                {                    
+                    linea.CantidadReservada += linea.Cantidad - linea.CantidadReservada > stock.StockDisponible ? stock.StockDisponible : linea.Cantidad - linea.CantidadReservada;
+                    stock.StockDisponible -= linea.CantidadReservada - cantidadReservadaTienda;
+                }
+
                 if (lineas.SingleOrDefault(l => l.Id == linea.Id) != null)
                 {
                     lineas.SingleOrDefault(l => l.Id == linea.Id).CantidadReservada = linea.CantidadReservada;
                 }
-                stock.StockDisponible -= linea.CantidadReservada;
             }
 
             // Si es cuenta contable o línea de texto que no sea pedido especial, asignamos toda la cantidad
