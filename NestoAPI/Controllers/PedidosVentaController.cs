@@ -636,6 +636,10 @@ namespace NestoAPI.Controllers
             {
                 Producto producto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == linea.producto);
                 linea.iva = producto.IVA_Repercutido;
+            } else if (pedido.IVA != null && linea.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
+            {
+                PlanCuenta cuenta = db.PlanCuentas.SingleOrDefault(c => c.Empresa == empresa && c.Nº_Cuenta == linea.producto);
+                linea.iva = cuenta.IVA;
             }
             return crearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta);
         }
@@ -906,6 +910,11 @@ namespace NestoAPI.Controllers
             }
             ParametroUsuario parametroUsuario;
             UsuarioVendedor usuarioVendedor = db.UsuarioVendedores.SingleOrDefault(u => u.Vendedor == vendedor);
+
+            if (usuarioVendedor == null)
+            {
+                throw new Exception("El pedido " + numeroPedido.ToString() + " no tiene vendedor");
+            }
 
             string usuario = usuarioVendedor.Usuario;
             string numeroCentroCoste = "";

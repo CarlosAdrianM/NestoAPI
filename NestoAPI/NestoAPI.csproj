@@ -244,6 +244,7 @@
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
+    <Compile Include="Controllers\EmpresasController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
     <Compile Include="Controllers\FormasPagoController.cs" />

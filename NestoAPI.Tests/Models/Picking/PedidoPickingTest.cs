@@ -203,6 +203,8 @@ namespace NestoAPI.Tests.Models.Picking
                 Id = 1,
                 ServirJunto = false,
                 Ruta = RUTA_CON_PORTES,
+                ImporteOriginalSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO + 1,
+                ImporteOriginalNoSobrePedido = 0,
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -402,7 +404,7 @@ namespace NestoAPI.Tests.Models.Picking
         }
 
         [TestMethod]
-        public void PedidoPicking_hayQueSumarPortes_siLosProductoNoSobrePedidoOriginalesLlegabanAlMinimoNoSeSumanPortes()
+        public void PedidoPicking_hayQueSumarPortes_siLosProductoNoSobrePedidoOriginalesLlegabanAlMinimoYTieneAlgoNOSobrePedidoNoSeSumanPortes()
         {
             LineaPedidoPicking linea = new LineaPedidoPicking
             {
