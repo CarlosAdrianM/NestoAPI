@@ -129,6 +129,7 @@ namespace NestoAPI.Controllers
                     importeIva = l.ImporteIVA,
                     total = l.Total
                 })
+                .OrderBy(l => l.id)
                 .ToList();
 
             List<VendedorGrupoProductoDTO> vendedoresGrupoProductoPedido = db.VendedoresPedidosGruposProductos.Where(v => v.Empresa == empresa && v.Pedido == numero)
