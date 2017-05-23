@@ -198,6 +198,7 @@ namespace NestoAPI.Controllers
                 Fecha = seguimientoClienteDTO.Fecha,
                 GestiónAparatos = seguimientoClienteDTO.GestionAparatos,
                 Número = seguimientoClienteDTO.Cliente,
+                Pedido = seguimientoClienteDTO.Pedido,
                 PrimeraVisita = seguimientoClienteDTO.PrimeraVisita,
                 Tipo = seguimientoClienteDTO.Tipo,
                 Usuario = seguimientoClienteDTO.Usuario
