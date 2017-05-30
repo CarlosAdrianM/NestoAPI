@@ -99,7 +99,7 @@ namespace NestoAPI.Controllers
                     fechaUltimaVenta = DateTime.MinValue,
                     aplicarDescuento = x.Key.aplicarDescuento,
                     iva = x.Key.iva,
-                    precio = (decimal)x.Key.precio
+                    precio = (decimal?)x.Key.precio ?? 0
                 })
                 .ToList();
             
