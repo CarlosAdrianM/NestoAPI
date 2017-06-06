@@ -63,7 +63,15 @@ namespace NestoAPI.Models.Picking
         public bool LaEntregaLlegaAlImporteMinimo()
         {
             decimal importeEntrega = pedido.Lineas.Sum(l => l.BaseImponibleEntrega);
-            return importeEntrega >= importeMinimo;
+            if (importeEntrega >= importeMinimo) {
+                return true;
+            }
+            if (importeEntrega >= 59.40M && pedido.Lineas.Where(l => l.Producto != null && l.Producto.Trim() == "17404").Sum(l => l.Cantidad) == 12)
+            {
+                return true;
+            }
+
+            return false;
         }
     }
 }

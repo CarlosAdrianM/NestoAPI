@@ -492,5 +492,60 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsTrue(pedido.hayQueSumarPortes());
         }
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siTieneDoceRollosPapelCamillaNoSumaPortes()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "17404    ",
+                Cantidad = 12,
+                CantidadReservada = 12,
+                BaseImponible = 59.40M,
+                EsSobrePedido = false
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsPrecioPublicoFinal = false,
+                ImporteOriginalNoSobrePedido = 59.40M,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            Assert.IsFalse(pedido.hayQueSumarPortes());
+        }
+
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siNoTieneDoceRollosPapelCamillaSiSumaPortesAunqueSeaDe59con40euros()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 12,
+                CantidadReservada = 12,
+                BaseImponible = 59.40M,
+                EsSobrePedido = false
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsPrecioPublicoFinal = false,
+                ImporteOriginalNoSobrePedido = 59.40M,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            Assert.IsTrue(pedido.hayQueSumarPortes());
+        }
     }
 }
