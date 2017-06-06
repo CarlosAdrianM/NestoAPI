@@ -441,5 +441,56 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsFalse(pedido.hayQueSumarPortes());
         }
 
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siEsProductoPrecioPublicoFinalYLlegaAlMinimoNoSumaPortes()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 6,
+                CantidadReservada = 6,
+                EsSobrePedido = false
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsPrecioPublicoFinal = true,
+                ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL + 1,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            Assert.IsFalse(pedido.hayQueSumarPortes());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siEsProductoPrecioPublicoFinalYNoLlegaAlMinimoSiSumaPortes()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 6,
+                CantidadReservada = 6,
+                EsSobrePedido = false
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsPrecioPublicoFinal = true,
+                ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL - 1,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            Assert.IsTrue(pedido.hayQueSumarPortes());
+        }
     }
 }

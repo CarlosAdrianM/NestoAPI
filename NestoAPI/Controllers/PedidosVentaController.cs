@@ -574,6 +574,17 @@ namespace NestoAPI.Controllers
         }
         */
 
+        // GET: api/PonerDescuentoTodasLasLineas
+        [HttpGet]
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> PonerDescuentoTodasLasLineas(string empresa, int pedido, decimal descuento)
+        {
+            IQueryable<LinPedidoVta> lineas = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == pedido && l.Estado>= Constantes.EstadosLineaVenta .PENDIENTE && l.Estado < Constantes.EstadosLineaVenta.FACTURA);
+            await Task.Run(() => this.calcularDescuentoTodasLasLineas(lineas.ToList(), descuento));
+
+            return Ok(lineas);
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
@@ -984,6 +995,15 @@ namespace NestoAPI.Controllers
             }
             
             return fechaMinima < fecha ? fecha : fechaMinima;
+        }
+
+        private void calcularDescuentoTodasLasLineas(List<LinPedidoVta> lineas, decimal descuento)
+        {
+            foreach (LinPedidoVta linea in lineas)
+            {
+                linea.Descuento = descuento;
+                this.calcularImportesLinea(linea);
+            }
         }
 
         private void errorPersonalizado(string mensajePersonalizado)

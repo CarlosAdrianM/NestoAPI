@@ -13,6 +13,7 @@ namespace NestoAPI.Models.Picking
         public int Id { get; set; }
         public bool ServirJunto { get; set; }
         public bool EsTiendaOnline { get; set; }
+        public bool EsPrecioPublicoFinal { get; set; }
         public bool EsNotaEntrega { get; set; }
         public bool EsProductoYaFacturado { get; set; }
         public decimal ImporteOriginalSobrePedido { get; set; }

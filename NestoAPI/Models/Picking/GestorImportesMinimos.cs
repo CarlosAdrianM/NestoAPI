@@ -10,6 +10,7 @@ namespace NestoAPI.Models.Picking
         public const decimal IMPORTE_MINIMO = 60;
         public const decimal IMPORTE_SIN_PORTES = 150;
         public const decimal IMPORTE_MINIMO_TIENDA_ONLINE = 30;
+        public const decimal IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL = 10;
 
         private decimal importeMinimo;
 
@@ -19,7 +20,13 @@ namespace NestoAPI.Models.Picking
             this.pedido = pedido;
             if (GestorImportesMinimos.esRutaConPortes(pedido.Ruta))
             {
-                this.importeMinimo = pedido.EsTiendaOnline ? IMPORTE_MINIMO_TIENDA_ONLINE : IMPORTE_MINIMO;
+                if (pedido.EsPrecioPublicoFinal)
+                {
+                    this.importeMinimo = IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL;
+                } else
+                {
+                    this.importeMinimo = pedido.EsTiendaOnline ? IMPORTE_MINIMO_TIENDA_ONLINE : IMPORTE_MINIMO;
+                }                
             } else
             {
                 this.importeMinimo = 0;
