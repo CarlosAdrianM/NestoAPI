@@ -73,7 +73,7 @@ namespace NestoAPI.Controllers
                 cliente = cliente,
                 contacto = contacto,
                 cantidad = cantidad,
-                aplicarDescuento = producto.Aplicar_Dto
+                aplicarDescuento = producto.Aplicar_Dto || cliente == "15191"
             };
 
             GestorPrecios.calcularDescuentoProducto(precio);
