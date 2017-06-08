@@ -66,7 +66,7 @@ namespace NestoAPI.Models.Picking
             if (importeEntrega >= importeMinimo) {
                 return true;
             }
-            if (importeEntrega >= 59.40M && pedido.Lineas.Where(l => l.Producto != null && l.Producto.Trim() == "17404").Sum(l => l.Cantidad) == 12)
+            if (importeEntrega >= 59.40M && pedido.Lineas.Where(l => l.Producto != null && (l.Producto.Trim() == "17404" || l.Producto.Trim() == "17004" || l.Producto.Trim() == "22161" || l.Producto.Trim() == "24490" || l.Producto.Trim() == "24491" || l.Producto.Trim() == "35176")).Sum(l => l.Cantidad) == 12)
             {
                 return true;
             }
