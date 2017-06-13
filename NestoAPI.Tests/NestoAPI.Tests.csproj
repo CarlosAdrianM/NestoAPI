@@ -104,6 +104,11 @@
     <Compile Include="Models\Picking\GestorStocksTest.cs" />
     <Compile Include="Models\Picking\GestorImportesMinimosTest.cs" />
     <Compile Include="Models\Picking\GestorUbicacionesTest.cs" />
+    <Compile Include="Models\RecursosHumanos\GestorAccionesTest.cs" />
+    <Compile Include="Models\RecursosHumanos\ImportadorAccionesAlgeteTest.cs" />
+    <Compile Include="Models\RecursosHumanos\GestorEmpleadosTest.cs" />
+    <Compile Include="Models\RecursosHumanos\EmpleadoTest.cs" />
+    <Compile Include="Models\RecursosHumanos\AccionTest.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Controllers\HomeControllerTest.cs" />
     <Compile Include="Controllers\ValuesControllerTest.cs" />
@@ -120,6 +125,7 @@
       <Name>NestoAPI</Name>
     </ProjectReference>
   </ItemGroup>
+  <ItemGroup />
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it.
        Other similar extension points exist, see Microsoft.Common.targets.

@@ -258,6 +258,7 @@
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
+    <Compile Include="Controllers\RecursosHumanosController.cs" />
     <Compile Include="Controllers\RolesController.cs" />
     <Compile Include="Controllers\SeguimientosClientesController.cs" />
     <Compile Include="Controllers\ValuesController.cs" />
@@ -421,6 +422,16 @@
     <Compile Include="Models\ProveedoresProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\RecursosHumanos\Accion.cs" />
+    <Compile Include="Models\RecursosHumanos\Empleado.cs" />
+    <Compile Include="Models\RecursosHumanos\GestorAcciones.cs" />
+    <Compile Include="Models\RecursosHumanos\GestorEmpleados.cs" />
+    <Compile Include="Models\RecursosHumanos\GestorTiposAccion.cs" />
+    <Compile Include="Models\RecursosHumanos\IImportadorAccionesAdapter.cs" />
+    <Compile Include="Models\RecursosHumanos\ImportadorAccionesAlgete.cs" />
+    <Compile Include="Models\RecursosHumanos\ImportadorAccionesReina.cs" />
+    <Compile Include="Models\RecursosHumanos\TipoFestivo.cs" />
+    <Compile Include="Models\RecursosHumanos\TipoAccion.cs" />
     <Compile Include="Models\RoleBindingModels.cs" />
     <Compile Include="Models\Ruta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
