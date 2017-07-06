@@ -347,6 +347,11 @@ namespace NestoAPI.Controllers
                         linea.Aplicar_Dto = lineaEncontrada.aplicarDescuento;
                         modificado = true;
                     }
+                    if (linea.Fecha_Entrega != lineaEncontrada.fechaEntrega)
+                    {
+                        linea.Fecha_Entrega = lineaEncontrada.fechaEntrega;
+                        modificado = true;
+                    }
 
                     if (modificado)
                     {
