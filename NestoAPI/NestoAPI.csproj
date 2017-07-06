@@ -424,14 +424,22 @@
     </Compile>
     <Compile Include="Models\RecursosHumanos\Accion.cs" />
     <Compile Include="Models\RecursosHumanos\Empleado.cs" />
+    <Compile Include="Models\RecursosHumanos\Festivo.cs" />
     <Compile Include="Models\RecursosHumanos\GestorAcciones.cs" />
+    <Compile Include="Models\RecursosHumanos\GestorDiasNoLaborables.cs" />
     <Compile Include="Models\RecursosHumanos\GestorEmpleados.cs" />
+    <Compile Include="Models\RecursosHumanos\GestorFestivos.cs" />
     <Compile Include="Models\RecursosHumanos\GestorTiposAccion.cs" />
+    <Compile Include="Models\RecursosHumanos\IDiaNoLaborable.cs" />
+    <Compile Include="Models\RecursosHumanos\IGestorDiasNoLaborables.cs" />
     <Compile Include="Models\RecursosHumanos\IImportadorAccionesAdapter.cs" />
     <Compile Include="Models\RecursosHumanos\ImportadorAccionesAlgete.cs" />
     <Compile Include="Models\RecursosHumanos\ImportadorAccionesReina.cs" />
+    <Compile Include="Models\RecursosHumanos\Jornada.cs" />
+    <Compile Include="Models\RecursosHumanos\JornadasEspeciales.cs" />
     <Compile Include="Models\RecursosHumanos\TipoFestivo.cs" />
     <Compile Include="Models\RecursosHumanos\TipoAccion.cs" />
+    <Compile Include="Models\RecursosHumanos\Vacaciones.cs" />
     <Compile Include="Models\RoleBindingModels.cs" />
     <Compile Include="Models\Ruta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

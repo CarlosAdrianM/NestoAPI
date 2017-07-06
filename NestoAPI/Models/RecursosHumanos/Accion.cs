@@ -21,6 +21,8 @@ namespace NestoAPI.Models.RecursosHumanos
                 return HoraFin - HoraInicio;
             }
         }
+
+        public bool EsManual { get; set; } = false;
     }
     
 }

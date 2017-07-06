@@ -119,12 +119,14 @@ namespace NestoAPI.Controllers
 
                 try {
                     numeroRegistrosFactura++;
+                    string ibanNoResidente = proveedor.CCCProveedore.IbanNoResidente.Trim();
+                    string idProveedor = ibanNoResidente == "" ? efecto.CIF_NIF.Trim() : proveedor.Número.Trim();
 
                     // Tipo de registro 10: Obligatorio
                     lineaFichero += "06";                                           // Código de registro: A
                     lineaFichero += "56";                                           // Código de operación: B
                     lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
-                    lineaFichero += strLen(efecto.CIF_NIF, 12);                     // NIF del proveedor o ref. interna: D
+                    lineaFichero += strLen(idProveedor,12);                         // NIF del proveedor o ref. interna: D
                     lineaFichero += "010";                                          // Número o tipo de dato: E
                     lineaFichero += intLen(-efecto.Importe, 12);                    // Importe con 2 decimales: F1
                     lineaFichero += strLen(proveedor.CCCProveedore.Entidad, 4);     // Número de entidad de crédito receptora: F2
@@ -134,17 +136,47 @@ namespace NestoAPI.Controllers
                     lineaFichero += "9";                                            // Concepto de la orden: F9
                     lineaFichero += new String(' ', 2);                             // Libre: F7
                     lineaFichero += strLen(proveedor.CCCProveedore.DC, 2);          // Dígitos CCC de la cuenta de proveedor: F8
-                    lineaFichero += "N";                                            // Indicador de proveedor no residente: F9
+                    lineaFichero += ibanNoResidente == "" ? "N" : "S";              // Indicador de proveedor no residente: F9
                     lineaFichero += "C";                                            // Indicador de confirmación: F10
                     lineaFichero += "EUR";                                          // Moneda de la factura: F11
                     lineaFichero += new String(' ', 2);                             // Libre: F12
                     insertarLinea(ref lineaFichero, ref sb);
 
+                    // Tipo de registro 43: Obligatorio solo para internacional
+                    if (ibanNoResidente != "")
+                    {
+                        lineaFichero += "06";                                           // Código de registro: A
+                        lineaFichero += "56";                                           // Código de operación: B
+                        lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
+                        lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D (pongo el número porque en el registro 10 lo pide así)
+                        lineaFichero += "043";                                          // Número o tipo de dato: E
+                        lineaFichero += strLen(ibanNoResidente, 34);                    // Nombre del proveedor: F1
+                        lineaFichero += "7";                                            // Concepto de la orden: F2
+                        lineaFichero += new String(' ', 8);                             // Libre: F3
+                        insertarLinea(ref lineaFichero, ref sb);
+                    }
+
+                    // Tipo de registro 44: Obligatorio solo para internacional
+                    if (ibanNoResidente != "")
+                    {
+                        lineaFichero += "06";                                           // Código de registro: A
+                        lineaFichero += "56";                                           // Código de operación: B
+                        lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
+                        lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D (pongo el número porque en el registro 10 lo pide así)
+                        lineaFichero += "044";                                          // Número o tipo de dato: E
+                        lineaFichero += "1";                                            // Clave de gastos: F1
+                        lineaFichero += ibanNoResidente.Substring(0,2);                 // Código ISO país destino: F2
+                        lineaFichero += new String(' ', 6);                             // Libre: F3
+                        lineaFichero += strLen(proveedor.CCCProveedore.Swift, 12);      // Código SWIFT: F4
+                        lineaFichero += new String(' ', 22);                            // Libre: F5
+                        insertarLinea(ref lineaFichero, ref sb);
+                    }
+
                     // Tipo de registro 11: Obligatorio
                     lineaFichero += "06";                                           // Código de registro: A
                     lineaFichero += "56";                                           // Código de operación: B
                     lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
-                    lineaFichero += strLen(proveedor.CIF_NIF, 12);                  // NIF del proveedor: D
+                    lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D
                     lineaFichero += "011";                                          // Número o tipo de dato: E
                     lineaFichero += strLen(proveedor.Nombre, 36);                   // Nombre del proveedor: F1
                     lineaFichero += new String(' ', 7);                             // Libre: F2
@@ -154,7 +186,7 @@ namespace NestoAPI.Controllers
                     lineaFichero += "06";                                           // Código de registro: A
                     lineaFichero += "56";                                           // Código de operación: B
                     lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
-                    lineaFichero += strLen(proveedor.CIF_NIF, 12);                  // NIF del proveedor: D
+                    lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D
                     lineaFichero += "012";                                          // Número o tipo de dato: E
                     lineaFichero += strLen(proveedor.Dirección, 36);                // Domicilio del proveedor: F1
                     lineaFichero += new String(' ', 7);                             // Libre: F2
@@ -164,33 +196,65 @@ namespace NestoAPI.Controllers
                     lineaFichero += "06";                                           // Código de registro: A
                     lineaFichero += "56";                                           // Código de operación: B
                     lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
-                    lineaFichero += strLen(proveedor.CIF_NIF, 12);                  // NIF del proveedor: D
+                    lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D
                     lineaFichero += "014";                                          // Número o tipo de dato: E
                     lineaFichero += strLen(proveedor.CodPostal, 5);                 // Código postal del proveedor: F1
                     lineaFichero += strLen(proveedor.Población, 31);                // Plaza del proveedor: F1
                     lineaFichero += new String(' ', 7);                             // Libre: F3
                     insertarLinea(ref lineaFichero, ref sb);
 
+                    // Tipo de registro 15: Obligatorio solo para no residentes
+                    if (ibanNoResidente != "")
+                    {
+                        lineaFichero += "06";                                           // Código de registro: A
+                        lineaFichero += "56";                                           // Código de operación: B
+                        lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
+                        lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D (pongo el número porque en el registro 10 lo pide así)
+                        lineaFichero += "015";                                          // Número o tipo de dato: E
+                        lineaFichero += strLen(empresaRemesa.NIF, 15);                  // Código del proveedor que identifica al cliente: F1
+                        lineaFichero += new string(' ', 12);                            // NIF proveedor si la factura está endosada: F2 (no lo informamos)
+                        lineaFichero += new String(' ', 1);                             // Clasificación del proveedor: F3
+                        lineaFichero += ibanNoResidente.Substring(0, 2);                // Código ISO país destino: F4
+                        lineaFichero += ibanNoResidente.Substring(0, 9);                // País destino: F5
+                        lineaFichero += new String(' ', 4);                             // Libre: F6
+                        insertarLinea(ref lineaFichero, ref sb);
+                    }
+
                     // Tipo de registro 16: Obligatorio
                     lineaFichero += "06";                                           // Código de registro: A
                     lineaFichero += "56";                                           // Código de operación: B
                     lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
-                    lineaFichero += strLen(proveedor.CIF_NIF, 12);                  // NIF del proveedor: D
+                    lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D
                     lineaFichero += "016";                                          // Número o tipo de dato: E
                     lineaFichero += "T";                                            // Forma de pago. C=Cheque. T=Transferencia: F1
                     fechaFactura = (DateTime)factura.FechaProveedor;
                     lineaFichero += strLen(fechaFactura.ToString("ddMMyy"), 6);     // Fecha de la factura: F2
                     lineaFichero += strLen(efecto.NºDocumentoProv, 15);             // Número de la factura: F3
-                    lineaFichero += strLen(efecto.Fecha.ToString("ddMMyy"), 6); // Fecha de vencimiento de la factura: F4
+                    lineaFichero += strLen(efecto.Fecha.ToString("ddMMyy"), 6);     // Fecha de vencimiento de la factura: F4
                     lineaFichero += new String(' ', 8);                             // Libre: F5
                     lineaFichero += new String(' ', 7);                             // Libre: F6
                     insertarLinea(ref lineaFichero, ref sb);
+
+                    // Tipo de registro 18: Obligatorio solo para no residentes
+                    if (ibanNoResidente != "")
+                    {
+                        lineaFichero += "06";                                           // Código de registro: A
+                        lineaFichero += "56";                                           // Código de operación: B
+                        lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
+                        lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D (pongo el número porque en el registro 10 lo pide así)
+                        lineaFichero += "018";                                          // Número o tipo de dato: E
+                        lineaFichero += strLen(proveedor.Teléfono, 15);                 // Teléfono proveedor: F1
+                        lineaFichero += strLen(proveedor.Fax, 15);                      // Fax proveedor: F1
+                        lineaFichero += new String(' ', 6);                             // Libre: F3
+                        lineaFichero += new String(' ', 7);                             // Libre: F4
+                        insertarLinea(ref lineaFichero, ref sb);
+                    }
 
                     // Tipo de registro 19: Opcional
                     lineaFichero += "06";                                           // Código de registro: A
                     lineaFichero += "56";                                           // Código de operación: B
                     lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
-                    lineaFichero += strLen(proveedor.CIF_NIF, 12);                  // NIF del proveedor: D
+                    lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D
                     lineaFichero += "019";                                          // Número o tipo de dato: E
                     correo = proveedor.PersonasContactoProveedors.SingleOrDefault(p => p.Cargo == 15).CorreoElectrónico;
                     lineaFichero += correo.PadRight(36).Substring(0,36);            // Correo electrónico del proveedor: F1

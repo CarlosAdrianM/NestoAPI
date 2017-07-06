@@ -16,6 +16,7 @@ namespace NestoAPI.Models.RecursosHumanos
             lista.Add(new TipoAccion(4, "Asuntos Personales", false));
             lista.Add(new TipoAccion(5, "Gestiones Laborales", true));
             lista.Add(new TipoAccion(6, "Médico", true));
+
             return lista;
         }
     }

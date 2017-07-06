@@ -30,6 +30,8 @@ namespace NestoAPI.Models
         public short Estado { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
+        public string IbanNoResidente { get; set; }
+        public string Swift { get; set; }
     
         public virtual ICollection<Proveedor> Proveedores { get; set; }
     }

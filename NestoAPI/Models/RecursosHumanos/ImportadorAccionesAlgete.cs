@@ -8,6 +8,8 @@ namespace NestoAPI.Models.RecursosHumanos
 {
     public class ImportadorAccionesAlgete : IImportadorAccionesAdapter
     {
+        Dictionary<string, int> diccionarioAcciones;
+
         public void Ejecutar(GestorAcciones gestorAcciones, string datosEntrada)
         {
             const Char delimiter = ',';
@@ -18,7 +20,7 @@ namespace NestoAPI.Models.RecursosHumanos
             int tipoAnterior = int.MinValue;
             DateTime fechaAnterior = DateTime.MinValue;
             int empleadoAnterior = int.MinValue;
-            Dictionary<string, int> diccionarioAcciones = new Dictionary<string, int>();
+            diccionarioAcciones = new Dictionary<string, int>();
             cargarDiccionario(diccionarioAcciones);
             string tipoJornadaReloj = "I";
 
@@ -53,14 +55,28 @@ namespace NestoAPI.Models.RecursosHumanos
             // Ordenamos para recorrerlo
             accionesReloj = accionesReloj.OrderBy(a => a.Empleado).ThenBy(a => a.Fecha).ToList();
 
-            foreach(AccionReloj accionImportando in accionesReloj)
+            for(int i = 0; i < accionesReloj.Count; i++)
             {
+                AccionReloj accionImportando = accionesReloj[i];
                 DateTime fechaAccion = Convert.ToDateTime(accionImportando.Fecha);
                 int tipoAccion = diccionarioAcciones[accionImportando.TipoAccion];
                 int empleadoAccion = this.calculaEmpleadoId(accionImportando.Empleado);
-                
+
+                // Si la accion se anula inmediatamente no apuntamos ninguna de las dos
+                if (!accionImportando.Importar)
+                {
+                    continue;
+                }
+
                 if (!(tipoAccion == diccionarioAcciones[tipoJornadaReloj] && existeRegistro(gestorAcciones, empleadoAccion, fechaAccion.Date, diccionarioAcciones[tipoJornadaReloj])) && (fechaAnterior != fechaAccion.Date || tipoAnterior != tipoAccion || empleadoAnterior != empleadoAccion))
                 {
+                    if (seAnulaDeInmediato(accionesReloj, i, accionImportando))
+                    {
+                        // Precondicion: hay al menos un movimiento más porque en cc !seAnulaDeInmediadto
+                        accionesReloj[i + 1].Importar = false;
+                        continue;
+                    }
+                    
                     if (tipoAccion != diccionarioAcciones[tipoJornadaReloj])
                     {
                         if (!existeRegistro(gestorAcciones, empleadoAccion, fechaAccion.Date, diccionarioAcciones[tipoJornadaReloj]))
@@ -98,7 +114,40 @@ namespace NestoAPI.Models.RecursosHumanos
                 }
             }
         }
-        
+
+        private bool seAnulaDeInmediato(List<AccionReloj> accionesReloj, int i, AccionReloj accionImportando)
+        {
+            // Si es el último movimiento no puede anularlo otro
+            if (accionesReloj.Count <= i+1)
+            {
+                return false;
+            }
+            AccionReloj accionSiguiente = accionesReloj[i + 1];
+            if (accionSiguiente.TipoAccion != accionImportando.TipoAccion)
+            {
+                return false;
+            }
+            DateTime fechaRegistroActual = Convert.ToDateTime(accionImportando.Fecha);
+            DateTime fechaRegistroSiguiente = Convert.ToDateTime(accionSiguiente.Fecha);
+
+            // Si el siguiente movimiento es más de 30 segundos después, no es que haya marcado dos veces sin querer
+            if ((fechaRegistroSiguiente - fechaRegistroActual).TotalSeconds > 30) {
+                return false;
+            }
+            
+            // Si el numero de movimientos es impar, borramos uno de los dos que está seguido
+            // Si es par, borramos los dos
+            var accionesDelMismoTipo = accionesReloj.Where(a => a.Empleado == accionImportando.Empleado && Convert.ToDateTime(a.Fecha).Date == Convert.ToDateTime(accionImportando.Fecha).Date && a.TipoAccion == accionImportando.TipoAccion);
+            int numeroAccionesDelMismoTipo = accionesDelMismoTipo.Count();
+            if (numeroAccionesDelMismoTipo % 2 != 0 || accionImportando.TipoAccion == "I" || accionImportando.TipoAccion == "O")
+            {
+                accionSiguiente.Importar = false;
+                return false;
+            }
+
+            return true;
+        }
+
         private bool existeRegistro(GestorAcciones gestor, int empleadoId, DateTime fecha, int tipoJornada)
         {
             return gestor.Acciones.Where(a =>a.EmpleadoId == empleadoId && a.Fecha == fecha && a.TipoAccionId == tipoJornada).FirstOrDefault() != null;
@@ -138,21 +187,23 @@ namespace NestoAPI.Models.RecursosHumanos
         {
             Manuel = 1,
             Carlos,
-            Tres,
+            Santiago,
             Alfredo,
             Inaki,
             Andreii,
-            Siete,
+            LauraAlonso,
             LauraVillacieros,
             Carolina,
-            Diez,
+            Aida,
             Silvia,
             Maria,
             Trece,
             Antonio,
             Quince,
             Marta,
-            Carmen
+            Carmen,
+            Pedro,
+            Christian
         }
         private int calculaEmpleadoId(string empleadoReloj)
         {
@@ -168,6 +219,7 @@ namespace NestoAPI.Models.RecursosHumanos
             public string Fecha { get; set; }
             public string Grupo { get; set; }
             public string TipoAccion { get; set; }
+            public bool Importar { get; set; } = true;
         }
     }
 }

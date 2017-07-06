@@ -12,131 +12,214 @@ namespace NestoAPI.Controllers
     public class RecursosHumanosController : ApiController
     {
         private GestorAcciones gestorAcciones = new GestorAcciones();
+        private GestorFestivos gestorFestivos = new GestorFestivos();
         // GET: api/RecursosHumanos
         [HttpGet]
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> GetRecursosHumanos()
         {
-            GestorEmpleados gestorEmpleados = new GestorEmpleados(gestorAcciones);
-            /*
-             Manuel = 1,
-            Carlos,
-            Tres,
-            Alfredo,
-            Inaki,
-            Andreii,
-            Siete,
-            LauraVillacieros,
-            Carolina,
-            Diez,
-            Silvia,
-            Maria,
-            Trece,
-            Antonio,
-            Quince,
-            Marta,
-            Carmen
-             */
+            /* al rellenar el gestorFestivos, debemos hacerlo filtrando por fechas
+             * DateTime fechaInicial, DateTime fechaFinal
+            if (!fechasSonCorrectas(fechaInicial, fechaFinal))
+            {
+                throw new Exception("Debe sacarse el informe de semanas enteras (de lunes a domingo)");
+            }
+            */
+            gestorFestivos.Rellenar(DateTime.MinValue, DateTime.MaxValue);
+            GestorEmpleados gestorEmpleados = new GestorEmpleados(gestorAcciones, gestorFestivos);
+            
             await Task.Run(() => {
-                gestorAcciones.Importar(datosFicticios());
-                gestorEmpleados = new GestorEmpleados(gestorAcciones);
+                gestorAcciones.Importar(datosFicticios()); // habrá un GET que importe (sin contar las fechas) y otro con fechas que lea de la BD
+                gestorEmpleados = new GestorEmpleados(gestorAcciones, gestorFestivos);
                 Empleado manuel = new Empleado()
                 {
                     Id = 1,
                     Nombre = "Manuel",
-                    HorasSemana = 40
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Madrid
                 };
                 Empleado carlos = new Empleado()
                 {
                     Id = 2,
                     Nombre = "Carlos",
-                    HorasSemana = 40
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Algete
+                };
+                Empleado santiago = new Empleado()
+                {
+                    Id = 3,
+                    Nombre = "Santiago",
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Madrid
                 };
                 Empleado alfredo = new Empleado()
                 {
                     Id = 4,
                     Nombre = "Alfredo",
-                    HorasSemana = 40
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Algete
                 };
                 Empleado inaki = new Empleado()
                 {
                     Id = 5,
                     Nombre = "Iñaki",
-                    HorasSemana = 20
+                    HorasSemana = 20,
+                    FiestasLocales = TipoFestivo.Algete
                 };
                 Empleado andrei = new Empleado()
                 {
                     Id = 6,
                     Nombre = "Andreii",
-                    HorasSemana = 50
+                    HorasSemana = 50,
+                    FiestasLocales = TipoFestivo.Algete
+                };
+                Empleado lalonso = new Empleado()
+                {
+                    Id = 7,
+                    Nombre = "Laura Alonso",
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Madrid
                 };
                 Empleado laurav = new Empleado()
                 {
                     Id = 8,
                     Nombre = "Laura Villacieros",
-                    HorasSemana = 35
+                    HorasSemana = 35,
+                    FiestasLocales = TipoFestivo.Algete
                 };
                 Empleado carol = new Empleado()
                 {
                     Id = 9,
                     Nombre = "Carolina",
-                    HorasSemana = 40
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Algete
+                };
+                Empleado aida = new Empleado()
+                {
+                    Id = 10,
+                    Nombre = "Aida",
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Madrid
                 };
                 Empleado silvia = new Empleado()
                 {
                     Id = 11,
                     Nombre = "Silvia",
-                    HorasSemana = 35
+                    HorasSemana = 35,
+                    FiestasLocales = TipoFestivo.Algete
                 };
                 Empleado maria = new Empleado()
                 {
                     Id = 12,
                     Nombre = "María",
-                    HorasSemana = 35
+                    HorasSemana = 35,
+                    FiestasLocales = TipoFestivo.Madrid
                 };
                 Empleado antonio = new Empleado()
                 {
                     Id = 14,
                     Nombre = "Antonio",
-                    HorasSemana = 40
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Algete
                 };
                 Empleado marta = new Empleado()
                 {
                     Id = 16,
                     Nombre = "Marta",
-                    HorasSemana = 40
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Madrid
                 };
                 Empleado carmen = new Empleado()
                 {
                     Id = 17,
                     Nombre = "Carmen",
-                    HorasSemana = 40
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Madrid
                 };
+                Empleado pedro = new Empleado()
+                {
+                    Id = 18,
+                    Nombre = "Pedro",
+                    HorasSemana = 40,
+                    FiestasLocales = TipoFestivo.Madrid
+                };
+                Empleado christian = new Empleado()
+                {
+                    Id = 19,
+                    Nombre = "Christian",
+                    HorasSemana = 20,
+                    FiestasLocales = TipoFestivo.Algete
+                };
+
+                antonio.DiasNoLaborables.Add(new Vacaciones() { Fecha = new DateTime(2017, 5, 3) });
+                antonio.DiasNoLaborables.Add(new Vacaciones() { Fecha = new DateTime(2017, 5, 4) });
+                JornadasEspeciales faby = new JornadasEspeciales()
+                {
+                    Fecha = new DateTime(2017, 5, 8),
+                    Motivo = "Formación Faby en el Hotel",
+                    Duracion = new TimeSpan(8, 0, 0),
+                    SumaEnJornadaTrabajada = true
+                };
+                manuel.DiasNoLaborables.Add(faby);
+                carlos.DiasNoLaborables.Add(faby);
+                lalonso.DiasNoLaborables.Add(faby);
+                carol.DiasNoLaborables.Add(faby);
+                silvia.DiasNoLaborables.Add(faby);
+                marta.DiasNoLaborables.Add(faby);
+
+                JornadasEspeciales lisap = new JornadasEspeciales()
+                {
+                    Fecha = new DateTime(2017, 5, 28),
+                    Motivo = "Formación Lisap sin planes de ventaja",
+                    Duracion = new TimeSpan(5, 0, 0),
+                    SumaEnJornadaTrabajada = true
+                };
+                manuel.DiasNoLaborables.Add(lisap);
+                carlos.DiasNoLaborables.Add(lisap);
+
                 List<Empleado> lista = new List<Empleado>();
                 lista.Add(manuel);
                 lista.Add(carlos);
+                lista.Add(santiago);
                 lista.Add(alfredo);
                 lista.Add(inaki);
                 lista.Add(andrei);
+                lista.Add(lalonso);
                 lista.Add(laurav);
                 lista.Add(carol);
+                lista.Add(aida);
                 lista.Add(silvia);
                 lista.Add(maria);
                 lista.Add(antonio);
                 lista.Add(marta);
                 lista.Add(carmen);
-                
+                lista.Add(pedro);
+                lista.Add(christian);
+
                 gestorEmpleados.RellenarEmpleados(lista);
                 gestorEmpleados.Verificar();
+                gestorEmpleados.RellenarJornadas();
             });
 
             return Ok(gestorEmpleados.listaEmpleados);
         }
 
+        private bool fechasSonCorrectas(DateTime fechaInicial, DateTime fechaFinal)
+        {
+            return (fechaInicial.DayOfWeek == DayOfWeek.Monday && fechaFinal.DayOfWeek == DayOfWeek.Sunday);
+        }
+
+        private string datosFicticios2()
+        {
+            return @"5,2017-05-18 13:05:03,1,6
+                    5,2017-05-18 13:05:04,1,6
+                    5,2017-05-18 13:05:12,1,I";
+        }
+
         private string datosFicticios()
         {
-            /*
-            4,2017-05-03 07:43:24,1,I
+
+            return @"4,2017-05-03 07:43:24,1,I
 2,2017-05-03 07:43:29,1,I
 15,2017-05-03 07:43:35,1,I
 6,2017-05-03 07:43:39,1,I
@@ -381,8 +464,7 @@ namespace NestoAPI.Controllers
 16,2017-05-05 16:14:22,1,O
 18,2017-05-05 19:00:47,1,O
 3,2017-05-05 19:46:17,1,O
-*/
-            return @"4,2017-05-08 07:47:03,1,I
+4,2017-05-08 07:47:03,1,I
 15,2017-05-08 07:47:07,1,I
 6,2017-05-08 07:47:12,1,I
 17,2017-05-08 07:53:03,1,I

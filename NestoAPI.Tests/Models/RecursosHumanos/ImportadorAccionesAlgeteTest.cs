@@ -31,32 +31,34 @@ namespace NestoAPI.Tests.Models.RecursosHumanos
         public void ImportadorAccionesAlgete_Ejecutar_siLaEntradaTieneDosLineasDelMismoTipoYEsTipoJornadaLaListaDeAccionesTendraUnElemento()
         {
             GestorAcciones gestor = new GestorAcciones();
-            gestor.Importar("7,2017-04-05 16:57:42,1,I\n7, 2017-04-05 16:57:43, 1,  I");
+            gestor.Importar("7,2017-04-05 16:57:42,1,I\n7, 2017-04-05 16:58:43, 1,  I");
             Assert.AreEqual(1, gestor.Acciones.Count);
             Assert.AreEqual(new DateTime(2017, 04, 05, 16, 57, 42).TimeOfDay, gestor.Acciones[0].HoraInicio);
-            Assert.AreEqual(new DateTime(2017, 04, 05, 16, 57, 43).TimeOfDay, gestor.Acciones[0].HoraFin);
+            Assert.AreEqual(new DateTime(2017, 04, 05, 16, 58, 43).TimeOfDay, gestor.Acciones[0].HoraFin);
         }
 
         [TestMethod]
         public void ImportadorAccionesAlgete_Ejecutar_siLaEntradaTieneDosLineasDelMismoTipoYNoEsTipoJornadaLaListaDeAccionesTendraDosElementos()
         {
             GestorAcciones gestor = new GestorAcciones();
-            gestor.Importar("7,2017-04-05 16:57:42,1,0\n7, 2017-04-05 16:57:43, 1,  0");
+            gestor.Importar("7,2017-04-05 16:57:42,1,0\n7, 2017-04-05 16:58:43, 1,  0");
             Assert.AreEqual(2, gestor.Acciones.Count);
             Assert.AreEqual(new DateTime(2017, 04, 05, 16, 57, 42).TimeOfDay, gestor.Acciones[1].HoraInicio);
-            Assert.AreEqual(new DateTime(2017, 04, 05, 16, 57, 43).TimeOfDay, gestor.Acciones[1].HoraFin);
+            Assert.AreEqual(new DateTime(2017, 04, 05, 16, 58, 43).TimeOfDay, gestor.Acciones[1].HoraFin);
         }
 
         [TestMethod]
-        public void ImportadorAccionesAlgete_Ejecutar_siLaEntradaTieneTresLineasDelMismoTipoYNoEsTipoJornadaLaListaDeAccionesTendraTresElementos()
+        public void ImportadorAccionesAlgete_Ejecutar_siLaEntradaTieneTresLineasDelMismoTipoYNoEsTipoJornadaLaListaDeAccionesTendraUnElemento()
         {
             GestorAcciones gestor = new GestorAcciones();
-            gestor.Importar("7,2017-04-05 16:57:42,1,3\n7, 2017-04-05 16:57:43, 1,  3\n7, 2017-04-05 16:58:45, 1,  3");
-            Assert.AreEqual(3, gestor.Acciones.Count);
+            gestor.Importar("7,2017-04-05 16:57:42,1,3\n"+
+                            "7, 2017-04-05 16:57:43, 1,  3\n"+
+                            "7, 2017-04-05 16:58:45, 1,  3");
+            Assert.AreEqual(2, gestor.Acciones.Count); // porque crea el inicio de jornada automáticamente
             Assert.AreEqual(new DateTime(2017, 04, 05, 16, 57, 42).TimeOfDay, gestor.Acciones[1].HoraInicio);
-            Assert.AreEqual(new DateTime(2017, 04, 05, 16, 58, 45).TimeOfDay, gestor.Acciones[2].HoraInicio);
+            Assert.AreEqual(new DateTime(2017, 04, 05, 16, 58, 45).TimeOfDay, gestor.Acciones[1].HoraFin);
         }
-
+        
         [TestMethod]
         public void ImportadorAccionesAlgete_Ejecutar_siLaEntradaTieneTresLineasDelMismoTipoYSiEsTipoJornadaLaListaDeAccionesTendraUnElemento()
         {

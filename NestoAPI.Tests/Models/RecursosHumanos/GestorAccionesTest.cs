@@ -139,8 +139,7 @@ namespace NestoAPI.Tests.Models.RecursosHumanos
             Assert.AreEqual(new DateTime(2017, 05, 16, 14, 35, 53).TimeOfDay, gestor.Acciones[1].HoraInicio);
             Assert.AreEqual(new DateTime(2017, 05, 16, 15, 30, 35).TimeOfDay, gestor.Acciones[1].HoraFin);
         }
-
-
+        
         [TestMethod]
         public void GestorAcciones_Importar_siHayDiferentesUsuariosLosControlaSeparados()
         {
@@ -157,6 +156,16 @@ namespace NestoAPI.Tests.Models.RecursosHumanos
             Assert.AreEqual(new DateTime(2017, 05, 16, 14, 35, 53).TimeOfDay, gestor.Acciones[1].HoraInicio);
             Assert.AreEqual(new DateTime(2017, 05, 16, 17, 56, 34).TimeOfDay, gestor.Acciones[1].HoraFin);
         }
+
+        [TestMethod]
+        public void GestorAcciones_Importar_siHayDosMovimientosSeguidosQueSonDeTipoJornadaDejaSoloUno()
+        {
+            GestorAcciones gestor = new GestorAcciones();
+            gestor.Importar("1, 2017-05-16 07:55:33, 2, I\n" +
+                            "1, 2017-05-16 07:55:34, 2, I");
+            Assert.AreEqual(1, gestor.Acciones.Count);
+        }
+
 
 
     }

@@ -148,6 +148,8 @@
           <Property Name="DC" Type="char" MaxLength="2" Nullable="false" />
           <Property Name="Nº Cuenta" Type="char" MaxLength="10" Nullable="false" />
           <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="IbanNoResidente" Type="nvarchar" MaxLength="30" />
+          <Property Name="Swift" Type="nvarchar" MaxLength="11" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
@@ -938,7 +940,7 @@
           <Property Name="Cosmetica" Type="bit" Nullable="false" />
           <Property Name="PersonaQueDecide" Type="bit" Nullable="false" />
           <Property Name="PosibleVenta" Type="bit" Nullable="false" />
-          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="None" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="SubGruposProducto">
@@ -5094,6 +5096,8 @@
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
           <NavigationProperty Name="Proveedores" Relationship="NVModel.FK_Proveedores_CCCProveedores" FromRole="CCCProveedor" ToRole="Proveedore" />
+          <Property Name="IbanNoResidente" Type="String" MaxLength="30" FixedLength="false" Unicode="true" />
+          <Property Name="Swift" Type="String" MaxLength="11" FixedLength="false" Unicode="true" />
         </EntityType>
         <EntityType Name="PersonaContactoProveedor">
           <Key>
@@ -7237,6 +7241,8 @@
           <EntitySetMapping Name="CCCProveedores">
             <EntityTypeMapping TypeName="NVModel.CCCProveedor">
               <MappingFragment StoreEntitySet="CCCProveedores">
+                <ScalarProperty Name="Swift" ColumnName="Swift" />
+                <ScalarProperty Name="IbanNoResidente" ColumnName="IbanNoResidente" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Estado" ColumnName="Estado" />
