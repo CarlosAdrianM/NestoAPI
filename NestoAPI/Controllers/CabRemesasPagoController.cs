@@ -119,7 +119,7 @@ namespace NestoAPI.Controllers
 
                 try {
                     numeroRegistrosFactura++;
-                    string ibanNoResidente = proveedor.CCCProveedore.IbanNoResidente.Trim();
+                    string ibanNoResidente = proveedor.CCCProveedore.IbanNoResidente != null ? proveedor.CCCProveedore.IbanNoResidente.Trim() : "";
                     string idProveedor = ibanNoResidente == "" ? efecto.CIF_NIF.Trim() : proveedor.Número.Trim();
 
                     // Tipo de registro 10: Obligatorio
