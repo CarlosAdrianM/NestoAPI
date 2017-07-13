@@ -519,8 +519,7 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsFalse(pedido.hayQueSumarPortes());
         }
-
-
+        
         [TestMethod]
         public void PedidoPicking_hayQueSumarPortes_siNoTieneDoceRollosPapelCamillaSiSumaPortesAunqueSeaDe59con40euros()
         {
@@ -546,6 +545,33 @@ namespace NestoAPI.Tests.Models.Picking
             pedido.Lineas.Add(linea);
 
             Assert.IsTrue(pedido.hayQueSumarPortes());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siTieneDieciochoRollosEcoPapelCamillaNoSumaPortes()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "25401    ",
+                Cantidad = 18,
+                CantidadReservada = 18,
+                BaseImponible = 59.40M,
+                EsSobrePedido = false
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsPrecioPublicoFinal = false,
+                ImporteOriginalNoSobrePedido = 59.40M,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            Assert.IsFalse(pedido.hayQueSumarPortes());
         }
     }
 }

@@ -70,6 +70,10 @@ namespace NestoAPI.Models.Picking
             {
                 return true;
             }
+            if (importeEntrega >= 59.40M && pedido.Lineas.Where(l => l.Producto != null && l.Producto.Trim() == "25401").Sum(l => l.Cantidad) == 18)
+            {
+                return true;
+            }
 
             return false;
         }
