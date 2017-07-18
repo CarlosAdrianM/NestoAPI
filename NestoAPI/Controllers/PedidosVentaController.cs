@@ -314,7 +314,14 @@ namespace NestoAPI.Controllers
                     bool modificado = false;
                     if (linea.Producto.Trim() != lineaEncontrada.producto.Trim())
                     {
-                        linea.Producto = lineaEncontrada.producto;
+                        Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == lineaEncontrada.producto).SingleOrDefault();
+                        linea.Producto = producto.Número;
+                        linea.Grupo = producto.Grupo;
+                        linea.SubGrupo = producto.SubGrupo;
+                        linea.Familia = producto.Familia;
+                        linea.TipoExclusiva = producto.Familia1.TipoExclusiva;
+                        linea.PrecioTarifa = producto.PVP;
+                        linea.Coste = (decimal)producto.PrecioMedio;
                         modificado = true;
                     }
                     if(linea.Texto.Trim() != lineaEncontrada.texto.Trim())
@@ -799,7 +806,7 @@ namespace NestoAPI.Controllers
             return lineaNueva;
 
         }
-
+                
         // Si pongo public, lo confunde con el método POST, porque solo llevan un parámetro
         void calcularImportesLinea(LinPedidoVta linea)
         {
@@ -1009,6 +1016,10 @@ namespace NestoAPI.Controllers
                 linea.Descuento = descuento;
                 this.calcularImportesLinea(linea);
             }
+        }
+
+        private void copiarDatosProductoEnLinea(LinPedidoVta linea) {
+
         }
 
         private void errorPersonalizado(string mensajePersonalizado)
