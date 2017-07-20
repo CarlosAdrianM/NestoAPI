@@ -96,8 +96,12 @@ namespace NestoAPI.Models.Picking
             {
                 throw new Exception("No hay stock suficiente para asignar picking a ninguna línea");
             }
-            
 
+            // Mandamos el correo con los pedidos que van por debajo del margen
+            GestorMargenes gestor = new GestorMargenes();
+            gestor.Rellenar(asignadorPicking.numeroPicking);
+            gestor.enviarCorreo();
+            
         }
 
         private DateTime calcularFechaPicking(DateTime fechaConHora)

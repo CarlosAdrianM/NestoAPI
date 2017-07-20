@@ -15,6 +15,8 @@ namespace NestoAPI.Models.Picking
             this.pedidos = pedidos;
         }
 
+        public int numeroPicking { get; internal set; }
+
         public void Ejecutar()
         {
             if (pedidos.Count == 0)
@@ -23,7 +25,7 @@ namespace NestoAPI.Models.Picking
             }
 
             ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
-            int numeroPicking = ++contador.Picking;
+            numeroPicking = ++contador.Picking;
 
             RellenadorUbicacionesService rellenador = new RellenadorUbicacionesService();
             List<UbicacionPicking> ubicaciones = rellenador.Rellenar(pedidos);

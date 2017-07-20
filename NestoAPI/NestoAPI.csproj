@@ -391,6 +391,7 @@
     <Compile Include="Models\Picking\GeneradorPendientes.cs" />
     <Compile Include="Models\Picking\GeneradorPortes.cs" />
     <Compile Include="Models\Picking\GestorImportesMinimos.cs" />
+    <Compile Include="Models\Picking\GestorMargenes.cs" />
     <Compile Include="Models\Picking\GestorPicking.cs" />
     <Compile Include="Models\Picking\GestorReservasStock.cs" />
     <Compile Include="Models\Picking\GestorStocks.cs" />
