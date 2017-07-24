@@ -287,6 +287,19 @@ namespace NestoAPI.Controllers
 
             return Ok(datosPrecio);
         }
+        
+        // Devuelve los numeros de los pedidos que tiene pendientes este cliente
+        [HttpGet]
+        public List<int> GetPedidosPendientes(string empresa, string clientePendientes)
+        {
+            var pedidos = db.LinPedidoVtas
+                .Where(c => (c.Empresa == empresa && c.Estado >= -1 && c.Estado <= 1 && c.Nº_Cliente == clientePendientes))
+                .Select(l => l.Número)
+                .Distinct();
+
+            return pedidos.ToList();
+        }
+
 
         /*
         // GET: api/PlantillaVentas/5
@@ -383,7 +396,7 @@ namespace NestoAPI.Controllers
             return Ok(linPedidoVta);
         }
         */
-        
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
