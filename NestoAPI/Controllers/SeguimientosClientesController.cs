@@ -141,7 +141,10 @@ namespace NestoAPI.Controllers
             seguimientoCliente.ClienteNuevo = seguimientoClienteDTO.ClienteNuevo;
             seguimientoCliente.Comentarios = seguimientoClienteDTO.Comentarios;
             seguimientoCliente.Contacto = seguimientoClienteDTO.Contacto;
-            seguimientoCliente.Empresa = seguimientoClienteDTO.Empresa;
+            if (seguimientoCliente.Empresa?.Trim() != seguimientoClienteDTO.Empresa?.Trim())
+            {
+                seguimientoCliente.Empresa = seguimientoClienteDTO.Empresa;
+            }            
             seguimientoCliente.Estado = (short)seguimientoClienteDTO.Estado;
             seguimientoCliente.Fecha = seguimientoClienteDTO.Fecha;
             seguimientoCliente.GestiónAparatos = seguimientoClienteDTO.GestionAparatos;

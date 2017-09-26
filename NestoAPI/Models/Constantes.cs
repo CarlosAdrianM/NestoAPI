@@ -50,5 +50,11 @@ namespace NestoAPI.Models
         {
             public const int HORA_MAXIMA_AMPLIAR_PEDIDOS = 11;
         }
+
+        public class ClientesEspeciales
+        {
+            public const string EL_EDEN = "15191";
+        }
+
     }
 }

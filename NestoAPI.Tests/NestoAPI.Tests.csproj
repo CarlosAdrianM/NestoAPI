@@ -98,6 +98,7 @@
     <Reference Include="System.Net.Http.WebRequest" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
     <Compile Include="Models\Picking\LineaPedidoPickingTest.cs" />
     <Compile Include="Models\Picking\PedidoPickingTest.cs" />
     <Compile Include="Models\Picking\GestorReservasStockTest.cs" />
