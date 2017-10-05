@@ -158,7 +158,7 @@ namespace NestoAPI.Controllers
                 ruta = cabPedidoVta.Ruta,
                 serie = cabPedidoVta.Serie,
                 ccc = cabPedidoVta.CCC,
-                origen = cabPedidoVta.Origen,
+                origen = cabPedidoVta.Origen != null ? cabPedidoVta.Origen : cabPedidoVta.Empresa,
                 contactoCobro = cabPedidoVta.ContactoCobro,
                 noComisiona = cabPedidoVta.NoComisiona,
                 vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
@@ -761,7 +761,7 @@ namespace NestoAPI.Controllers
                 Estado = linea.estado,
                 TipoLinea = linea.tipoLinea,
                 Producto = linea.producto,
-                Texto = linea.texto,
+                Texto = linea.texto.Length > 50 ? linea.texto.Substring(0, 50) : linea.texto, // porque 50 es la longitud del campo
                 Cantidad = linea.cantidad,
                 Fecha_Entrega = this.fechaEntregaAjustada(linea.fechaEntrega.Date, ruta),
                 Precio = linea.precio,
