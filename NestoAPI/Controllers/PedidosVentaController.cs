@@ -158,7 +158,7 @@ namespace NestoAPI.Controllers
                 ruta = cabPedidoVta.Ruta,
                 serie = cabPedidoVta.Serie,
                 ccc = cabPedidoVta.CCC,
-                origen = cabPedidoVta.Origen != null ? cabPedidoVta.Origen : cabPedidoVta.Empresa,
+                origen = (cabPedidoVta.Origen != null || cabPedidoVta.Origen.Trim() == "") ? cabPedidoVta.Origen : cabPedidoVta.Empresa,
                 contactoCobro = cabPedidoVta.ContactoCobro,
                 noComisiona = cabPedidoVta.NoComisiona,
                 vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
