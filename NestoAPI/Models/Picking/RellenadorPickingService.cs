@@ -95,7 +95,7 @@ namespace NestoAPI.Models.Picking
                 Empresa = p.Empresa,
                 Id = p.Número,
                 ServirJunto = p.ServirJunto,
-                EsTiendaOnline = p.LinPedidoVtas.FirstOrDefault(l => l.Forma_Venta == "QRU" || l.Forma_Venta == "WEB" || l.Forma_Venta == "STK") != null,
+                EsTiendaOnline = p.LinPedidoVtas.FirstOrDefault(l => l.Forma_Venta == "QRU" || l.Forma_Venta == "WEB" || l.Forma_Venta == "BLT" || l.Forma_Venta == "STK") != null,
                 EsPrecioPublicoFinal = (p.LinPedidoVtas.FirstOrDefault(l => l.Forma_Venta == "QRU" || l.Forma_Venta == "WEB" || l.Forma_Venta == "STK") != null) && p.Cliente.Estado == 8 && p.Vendedor != null &&  p.Vendedor.Trim() == "NV",
                 EsProductoYaFacturado = p.LinPedidoVtas.FirstOrDefault(l => l.YaFacturado) != null,
                 EsNotaEntrega = p.NotaEntrega && p.LinPedidoVtas.FirstOrDefault(l => l.YaFacturado) == null,
