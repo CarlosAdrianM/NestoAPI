@@ -478,8 +478,8 @@ namespace NestoAPI.Controllers
                 Nº_Cliente = pedido.cliente,
                 Contacto = pedido.contacto,
                 Fecha = pedido.fecha,
-                Forma_Pago = pedido.iva != null ? pedido.formaPago : empresa.FormaPagoEfectivo,
-                PlazosPago = pedido.iva != null ? pedido.plazosPago : empresa.PlazosPagoDefecto,
+                Forma_Pago = pedido.iva != null && pedido.plazosPago != "PRE" ? pedido.formaPago : empresa.FormaPagoEfectivo,
+                PlazosPago = pedido.iva != null && pedido.plazosPago != "PRE" ? pedido.plazosPago : empresa.PlazosPagoDefecto,
                 Primer_Vencimiento = (DateTime)primerVencimiento.Value,
                 IVA = pedido.iva,
                 Vendedor = pedido.vendedor,
@@ -927,7 +927,12 @@ namespace NestoAPI.Controllers
         
         private CentrosCoste calcularCentroCoste(string empresa, int numeroPedido)
         {
-            string vendedor = db.CabPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Vendedor;
+            CabPedidoVta cabPedidoCoste = db.CabPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
+            if (cabPedidoCoste == null)
+            {
+                cabPedidoCoste = db.CabPedidoVtas.Local.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
+            }
+            string vendedor = cabPedidoCoste?.Vendedor;
             if (vendedor == "")
             {
                 throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque falta el vendedor");
