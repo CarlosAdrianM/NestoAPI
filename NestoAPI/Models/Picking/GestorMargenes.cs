@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using System.Net.Mail;
 using System.Text;
@@ -28,11 +29,14 @@ namespace NestoAPI.Models.Picking
 
             MailMessage mail = new MailMessage();
             SmtpClient client = new SmtpClient();
-            client.Port = 25;
+            client.Port = 587;
+            client.EnableSsl = true;
             client.DeliveryMethod = SmtpDeliveryMethod.Network;
             client.UseDefaultCredentials = false;
-            client.Host = "smtp.nuevavision.es";
-            mail.From = new MailAddress("direccion@nuevavision.es");
+            string contrasenna = ConfigurationManager.AppSettings["office365password"];
+            client.Credentials = new System.Net.NetworkCredential("carlosadrian@nuevavision.es", contrasenna);
+            client.Host = "smtp.office365.com";
+            mail.From = new MailAddress("carlosadrian@nuevavision.es");
             mail.To.Add(new MailAddress("direccion@nuevavision.es"));
             mail.To.Add(new MailAddress("alfredo@nuevavision.es"));
             mail.Subject = "Pedidos por Debajo del Margen Mínimo";
