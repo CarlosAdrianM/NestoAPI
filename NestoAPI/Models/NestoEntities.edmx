@@ -93,6 +93,7 @@
           <Property Name="ServirJunto" Type="bit" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
         </EntityType>
         <EntityType Name="CabRemesaPagos">
           <Key>
@@ -398,6 +399,7 @@
           <Property Name="Pedido" Type="int" />
           <Property Name="Estado" Type="smallint" Nullable="false" />
           <Property Name="Fecha" Type="date" Nullable="false" />
+          <Property Name="FechaEntrega" Type="date" />
           <Property Name="Servicio" Type="smallint" Nullable="false" />
           <Property Name="Horario" Type="smallint" Nullable="false" />
           <Property Name="Bultos" Type="smallint" Nullable="false" />
@@ -426,6 +428,7 @@
           <Property Name="FechaRetornoRecibido" Type="date" />
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+          <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
         </EntityType>
         <EntityType Name="ExtractoCliente">
           <Key>
@@ -682,6 +685,7 @@
           <Property Name="NumSerie" Type="char" MaxLength="30" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
         </EntityType>
         <EntityType Name="Modificaciones">
           <Key>
@@ -693,6 +697,22 @@
           <Property Name="Nuevo" Type="nvarchar(max)" />
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="Fecha" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+        </EntityType>
+        <EntityType Name="OfertasPermitidas">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NºOrden" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="15" />
+          <Property Name="Familia" Type="char" MaxLength="10" />
+          <Property Name="CantidadConPrecio" Type="smallint" Nullable="false" />
+          <Property Name="CantidadRegalo" Type="smallint" Nullable="false" />
+          <Property Name="Denegar" Type="bit" Nullable="false" />
+          <Property Name="Cliente" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="ParámetrosIVA">
           <Key>
@@ -2227,6 +2247,48 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_OfertasPermitidas_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="OfertasPermitidas" Type="Self.OfertasPermitidas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="OfertasPermitidas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasPermitidas_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="OfertasPermitidas" Type="Self.OfertasPermitidas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasPermitidas">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasPermitidas_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="0..1" />
+          <End Role="OfertasPermitidas" Type="Self.OfertasPermitidas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasPermitidas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_ParámetrosIVA_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="ParámetrosIVA" Type="Self.ParámetrosIVA" Multiplicity="*" />
@@ -2711,6 +2773,7 @@
           <EntitySet Name="InventariosCuadre" EntityType="Self.InventariosCuadre" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PedidosEspeciales" EntityType="Self.PedidosEspeciales" Schema="dbo" store:Type="Tables" />
@@ -3068,6 +3131,18 @@
             <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
             <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
           </AssociationSet>
+          <AssociationSet Name="FK_OfertasPermitidas_Clientes" Association="Self.FK_OfertasPermitidas_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="OfertasPermitidas" EntitySet="OfertasPermitidas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasPermitidas_Empresas" Association="Self.FK_OfertasPermitidas_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="OfertasPermitidas" EntitySet="OfertasPermitidas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasPermitidas_Productos" Association="Self.FK_OfertasPermitidas_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="OfertasPermitidas" EntitySet="OfertasPermitidas" />
+          </AssociationSet>
           <AssociationSet Name="FK_ParámetrosIVA_Empresas" Association="Self.FK_ParámetrosIVA_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="ParámetrosIVA" EntitySet="ParámetrosIVA" />
@@ -3244,6 +3319,8 @@
           <Property Name="Pais" Type="Int32" Nullable="false" />
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_EnviosAgencia_Clientes" FromRole="EnviosAgencia" ToRole="Cliente" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_EnviosAgencia_Vendedores" FromRole="EnviosAgencia" ToRole="Vendedore" />
+          <Property Name="FechaEntrega" Type="DateTime" Precision="0" />
+          <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityContainer Name="NVEntities" annotation:LazyLoadingEnabled="true">
           <EntitySet Name="EnviosAgencias" EntityType="Self.EnviosAgencia" />
@@ -3768,7 +3845,20 @@
             <End Role="Vendedor" EntitySet="Vendedores" />
             <End Role="SeguimientoCliente" EntitySet="SeguimientosClientes" />
           </AssociationSet>
-        </EntityContainer>
+          <EntitySet Name="OfertasPermitidas" EntityType="NVModel.OfertaPermitida" />
+          <AssociationSet Name="FK_OfertasPermitidas_Clientes" Association="NVModel.FK_OfertasPermitidas_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="OfertasPermitida" EntitySet="OfertasPermitidas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasPermitidas_Empresas" Association="NVModel.FK_OfertasPermitidas_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="OfertasPermitida" EntitySet="OfertasPermitidas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasPermitidas_Productos" Association="NVModel.FK_OfertasPermitidas_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="OfertasPermitida" EntitySet="OfertasPermitidas" />
+          </AssociationSet>
+          </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
             <PropertyRef Name="Número" />
@@ -3908,6 +3998,7 @@
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_Empresas_Vendedores" FromRole="Empresa" ToRole="Vendedore" />
           <NavigationProperty Name="Vendedores" Relationship="NVModel.FK_Vendedores_Empresas" FromRole="Empresa" ToRole="Vendedore" />
           <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Empresas" FromRole="Empresa" ToRole="SeguimientoCliente" />
+          <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Empresas" FromRole="Empresa" ToRole="OfertasPermitida" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -3970,6 +4061,7 @@
           <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_CabPedidoVta" FromRole="CabPedidoVta" ToRole="LinPedidoVta" />
           <NavigationProperty Name="Cliente" Relationship="NVModel.FK_CabPedidoVta_Clientes" FromRole="CabPedidoVta" ToRole="Cliente" />
           <NavigationProperty Name="VendedoresPedidoGrupoProductoes" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_CabPedidoVta" FromRole="CabPedidoVta" ToRole="VendedoresPedidoGrupoProducto" />
+          <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="LinPedidoVta">
           <Key>
@@ -4039,6 +4131,7 @@
           <NavigationProperty Name="SubGruposProducto" Relationship="NVModel.FK_LinPedidoVta_SubGruposProducto" FromRole="LinPedidoVta" ToRole="SubGruposProducto" />
           <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_LinPedidoVta_FormasVenta" FromRole="LinPedidoVta" ToRole="FormasVenta" />
           <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_LinPedidoVta" FromRole="LinPedidoVta" ToRole="PedidosEspeciale" />
+          <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
         </EntityType>
         <Association Name="FK_LinPedidoVta_CabPedidoVta">
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1" />
@@ -4135,6 +4228,7 @@
           <NavigationProperty Name="VendedoresClienteGrupoProductoes" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Clientes" FromRole="Cliente" ToRole="VendedoresClienteGrupoProducto" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_Clientes_Vendedores" FromRole="Cliente" ToRole="Vendedore" />
           <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Clientes" FromRole="Cliente" ToRole="SeguimientoCliente" />
+          <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Clientes" FromRole="Cliente" ToRole="OfertasPermitida" />
         </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -4294,6 +4388,7 @@
           <NavigationProperty Name="InventariosCuadres" Relationship="NVModel.FK_InventariosCuadre_Productos" FromRole="Producto" ToRole="InventariosCuadre" />
           <NavigationProperty Name="Inventarios" Relationship="NVModel.FK_Inventario_Productos" FromRole="Producto" ToRole="Inventario" />
           <NavigationProperty Name="ProveedoresProductoes" Relationship="NVModel.FK_ProveedoresProducto_Productos2" FromRole="Producto" ToRole="ProveedoresProducto" />
+          <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Productos" FromRole="Producto" ToRole="OfertasPermitida" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -6645,7 +6740,68 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
-      </Schema>
+        <EntityType Name="OfertaPermitida">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºOrden" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Número" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Familia" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CantidadConPrecio" Type="Int16" Nullable="false" />
+          <Property Name="CantidadRegalo" Type="Int16" Nullable="false" />
+          <Property Name="Denegar" Type="Boolean" Nullable="false" />
+          <Property Name="Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_OfertasPermitidas_Clientes" FromRole="OfertasPermitida" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasPermitidas_Empresas" FromRole="OfertasPermitida" ToRole="Empresa" />
+          <NavigationProperty Name="Producto" Relationship="NVModel.FK_OfertasPermitidas_Productos" FromRole="OfertasPermitida" ToRole="Producto" />
+        </EntityType>
+        <Association Name="FK_OfertasPermitidas_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.OfertaPermitida" Role="OfertasPermitida" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="OfertasPermitida">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasPermitidas_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.OfertaPermitida" Role="OfertasPermitida" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasPermitida">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasPermitidas_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="0..1" />
+          <End Type="NVModel.OfertaPermitida" Role="OfertasPermitida" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasPermitida">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
     <edmx:Mappings>
@@ -6654,6 +6810,8 @@
           <EntitySetMapping Name="EnviosAgencias">
             <EntityTypeMapping TypeName="NVModel.EnviosAgencia">
               <MappingFragment StoreEntitySet="EnviosAgencia">
+                <ScalarProperty Name="RowVersion" ColumnName="RowVersion" />
+                <ScalarProperty Name="FechaEntrega" ColumnName="FechaEntrega" />
                 <ScalarProperty Name="Pais" ColumnName="Pais" />
                 <ScalarProperty Name="Numero" ColumnName="Numero" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
@@ -6785,6 +6943,7 @@
           <EntitySetMapping Name="CabPedidoVtas">
             <EntityTypeMapping TypeName="NVModel.CabPedidoVta">
               <MappingFragment StoreEntitySet="CabPedidoVta">
+                <ScalarProperty Name="RowVersion" ColumnName="RowVersion" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="ServirJunto" ColumnName="ServirJunto" />
@@ -6820,6 +6979,7 @@
           <EntitySetMapping Name="LinPedidoVtas">
             <EntityTypeMapping TypeName="NVModel.LinPedidoVta">
               <MappingFragment StoreEntitySet="LinPedidoVta">
+                <ScalarProperty Name="RowVersion" ColumnName="RowVersion" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="NumSerie" ColumnName="NumSerie" />
@@ -7658,6 +7818,23 @@
                 <ScalarProperty Name="Tipo" ColumnName="Tipo" />
                 <ScalarProperty Name="Fecha" ColumnName="Fecha" />
                 <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="OfertasPermitidas">
+            <EntityTypeMapping TypeName="NVModel.OfertaPermitida">
+              <MappingFragment StoreEntitySet="OfertasPermitidas">
+                <ScalarProperty Name="FechaModificación" ColumnName="FechaModificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Cliente" ColumnName="Cliente" />
+                <ScalarProperty Name="Denegar" ColumnName="Denegar" />
+                <ScalarProperty Name="CantidadRegalo" ColumnName="CantidadRegalo" />
+                <ScalarProperty Name="CantidadConPrecio" ColumnName="CantidadConPrecio" />
+                <ScalarProperty Name="Familia" ColumnName="Familia" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />

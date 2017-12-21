@@ -70,6 +70,7 @@ namespace NestoAPI.Models
         public virtual DbSet<VendedorPedidoGrupoProducto> VendedoresPedidosGruposProductos { get; set; }
         public virtual DbSet<Vendedor> Vendedores { get; set; }
         public virtual DbSet<SeguimientoCliente> SeguimientosClientes { get; set; }
+        public virtual DbSet<OfertaPermitida> OfertasPermitidas { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

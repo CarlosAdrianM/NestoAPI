@@ -22,6 +22,7 @@ namespace NestoAPI.Models
             this.InventariosCuadres = new HashSet<InventarioCuadre>();
             this.Inventarios = new HashSet<Inventario>();
             this.ProveedoresProductoes = new HashSet<ProveedoresProducto>();
+            this.OfertasPermitidas = new HashSet<OfertaPermitida>();
         }
     
         public string Empresa { get; set; }
@@ -70,5 +71,6 @@ namespace NestoAPI.Models
         public virtual ICollection<InventarioCuadre> InventariosCuadres { get; set; }
         public virtual ICollection<Inventario> Inventarios { get; set; }
         public virtual ICollection<ProveedoresProducto> ProveedoresProductoes { get; set; }
+        public virtual ICollection<OfertaPermitida> OfertasPermitidas { get; set; }
     }
 }

@@ -74,6 +74,7 @@ namespace NestoAPI.Models
         public string NumSerie { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
+        public byte[] RowVersion { get; set; }
     
         public virtual CabPedidoVta CabPedidoVta { get; set; }
         public virtual Empresa Empresa1 { get; set; }

@@ -271,8 +271,16 @@
     <Compile Include="Infraestructure\ApplicationRoleManager.cs" />
     <Compile Include="Infraestructure\ApplicationUser.cs" />
     <Compile Include="Infraestructure\ApplicationUserManager.cs" />
+    <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
+    <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\GestorComisiones.cs" />
     <Compile Include="Infraestructure\GestorPrecios.cs" />
+    <Compile Include="Infraestructure\CondicionesPrecio\OtrosAparatosNoPuedeLlevarDescuento.cs" />
+    <Compile Include="Infraestructure\CondicionesPrecio\RamasonNoPuedeLlevarNingunDescuento.cs" />
+    <Compile Include="Infraestructure\CondicionesPrecio\ThuyaNoPuedeLlevarCualquierDescuento.cs" />
+    <Compile Include="Infraestructure\IServicioPrecios.cs" />
+    <Compile Include="Infraestructure\ServicioPrecios.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOtrosAparatosSiempreSinDescuento.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.Designer.cs">
       <DependentUpon>201603171731031_InitialCreate.cs</DependentUpon>
@@ -374,6 +382,9 @@
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
       <DependentUpon>NestoEntities.edmx</DependentUpon>
+    </Compile>
+    <Compile Include="Models\OfertaPermitida.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\ParametroIVA.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

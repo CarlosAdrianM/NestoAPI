@@ -50,6 +50,8 @@ namespace NestoAPI.Models
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
         public int Pais { get; set; }
+        public Nullable<System.DateTime> FechaEntrega { get; set; }
+        public byte[] RowVersion { get; set; }
     
         public virtual Empresa Empresa1 { get; set; }
         public virtual Cliente Cliente1 { get; set; }

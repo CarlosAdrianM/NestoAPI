@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.ValidadoresPedido;
+using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -118,6 +119,190 @@ namespace NestoAPI.Infraestructure
             }
         }
 
+        public static RespuestaValidacion EsOfertaPermitida(Producto producto, PedidoVentaDTO pedido)
+        {
+            /*
+             *  Validaciones a la hora de insertar una oferta permitida:
+             *  - No puede tener contacto si no tiene cliente (sí al revés)
+             *  - No puede tener familia y producto en blanco. Al menos hay que poner una.
+             *  - Hay que crear "Filtro nombre", para poder buscar productos que tengan
+             *    un texto ("Esmalte F ", por ejemplo)
+             *  - No tiene sentido un precio fijo para toda la familia (son productos diferentes)
+             */
+            
+            if (producto == null || pedido == null)
+            {
+                return new RespuestaValidacion {
+                    ValidacionSuperada = false,
+                    OfertaAutorizadaExpresamente = false,
+                    Motivo = "El producto o el pedido no existen"
+                };
+            }
+
+            PrecioDescuentoProducto oferta = MontarOfertaPedido(producto.Número, pedido);
+
+            // Si no tiene ninguna oferta ni descuento, está siempre permitido
+            if (oferta.cantidadOferta == 0 && oferta.descuentoReal == 0)
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = true,
+                    Motivo = "El producto " + producto.Número.Trim() + " no lleva oferta ni descuento",
+                    OfertaAutorizadaExpresamente = false
+                };
+            }
+
+            // Si oferta.cantidad es 0, comprobamos más abajo si se puede o no regalar el producto
+            if (oferta.cantidadOferta != 0 && oferta.precioCalculado < producto.PVP && oferta.cantidad > 0)
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    Motivo = "Oferta a precio inferior al de ficha en el producto " + producto.Número.Trim()
+                };
+            }
+
+            if (oferta.cantidadOferta != 0 && oferta.descuentoCalculado > 0) {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    Motivo = "Oferta no puede llevar descuento en el producto " + producto.Número.Trim()
+                };
+            }
+
+            // oferta.cantidad > 0 es por si solo es una línea de regalo, que entre por descuento
+            if (oferta.cantidadOferta > 0 && oferta.cantidad > 0)
+            {
+                List<OfertaPermitida> ofertas = servicio.BuscarOfertasPermitidas(producto.Número);
+                
+                // Hacemos el cast (double) para que no sea división entera y 11/5 no de 2
+                // Lo que mira es que sea múltiplo de la oferta y que sea mayor (no permite 3+1 
+                // si lo autorizado es 6+2, por ejemplo).
+                IEnumerable<OfertaPermitida> ofertasFiltradas = ofertas.Where(o =>
+                    (o.Cliente == null || o.Cliente == pedido.cliente) &&
+                    (o.Contacto == null || o.Cliente == pedido.cliente && o.Contacto == pedido.contacto)
+                );
+
+                // Si hay oferta específica para el producto, la cogemos
+                IEnumerable<OfertaPermitida> ofertasEspecificasProducto = ofertasFiltradas.Where(o => o.Número == producto.Número.Trim());
+                
+                if (ofertasEspecificasProducto != null && ofertasEspecificasProducto.Count() > 0)
+                {
+                    ofertasFiltradas = ofertasEspecificasProducto;
+                }
+
+                OfertaPermitida ofertaEncontrada = ofertasFiltradas.FirstOrDefault(o => 
+                    ((double)oferta.cantidad / o.CantidadConPrecio == (double)oferta.cantidadOferta / o.CantidadRegalo &&
+                    (double)oferta.cantidadOferta / o.CantidadRegalo >= 1)
+                    || // para que acepte el 3+1 si está aceptado el 2+1, por ejemplo
+                    ((double)oferta.cantidad / oferta.cantidadOferta / o.CantidadRegalo > (double)o.CantidadConPrecio / oferta.cantidadOferta / o.CantidadRegalo)
+                );
+
+
+                // también hay que controlar que denegar == false --> otro test
+                if (ofertaEncontrada != null)
+                {
+                    return new RespuestaValidacion
+                    {
+                        ValidacionSuperada = true,
+                        Motivo = "Existe una oferta autorizada expresa de " + oferta.cantidad.ToString() 
+                        + "+" + oferta.cantidadOferta.ToString()+ " del producto " + producto.Número.Trim(),
+                        OfertaAutorizadaExpresamente = true
+                    };
+                }
+
+                if (ofertasEspecificasProducto != null && ofertasEspecificasProducto.Count() > 0)
+                {
+                    OfertaPermitida ofertaEspecifica = ofertasEspecificasProducto.FirstOrDefault();
+                    return new RespuestaValidacion
+                    {
+                        ValidacionSuperada = false,
+                        Motivo = "La oferta máxima para el producto " + producto.Número.Trim() +
+                    " es el " + ofertaEspecifica.CantidadConPrecio.ToString() + "+" + ofertaEspecifica.CantidadRegalo.ToString()
+                    };
+                }
+                
+            } else
+            {
+                // mirar si está en Descuentos producto para ese cliente, familia o producto
+                IEnumerable<DescuentosProducto> descuentos = GestorPrecios.servicio.BuscarDescuentosPermitidos(oferta.producto.Número, pedido.cliente, pedido.contacto);
+
+                IEnumerable<DescuentosProducto> descuentosEspecificosProducto = descuentos.Where(d => d.Nº_Producto == oferta.producto.Número);
+                // Si hay un descuento específico para el producto, éste prevale sobre el de la familia o grupo
+                if (descuentosEspecificosProducto!=null && descuentosEspecificosProducto.Count() > 0)
+                {
+                    descuentos = descuentosEspecificosProducto;
+                }
+
+                DescuentosProducto descuentoAutorizado = descuentos.FirstOrDefault(d => 
+                    d.Descuento >= oferta.descuentoReal && oferta.cantidad >= d.CantidadMínima);
+                if (descuentoAutorizado != null)
+                {
+                    return new RespuestaValidacion
+                    {
+                        ValidacionSuperada = true,
+                        Motivo = "Hay un descuento autorizado del " + descuentoAutorizado.Descuento.ToString("P2")
+                    };
+                }
+
+                DescuentosProducto precioAutorizado = descuentos.FirstOrDefault(d => 
+                    d.Precio <= oferta.precioCalculado && oferta.cantidad > d.CantidadMínima);
+                if (precioAutorizado != null)
+                {
+                    return new RespuestaValidacion
+                    {
+                        ValidacionSuperada = true,
+                        Motivo = "Hay un precio autorizado de " + precioAutorizado.Precio.Value.ToString("C")
+                    };
+                }
+
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    Motivo = "No se encuentra autorizado el descuento del " + oferta.descuentoReal.Value.ToString("P2") 
+                        + " para el producto " + producto.Número.Trim()
+                };
+            }
+
+            return new RespuestaValidacion {
+                ValidacionSuperada = false,
+                Motivo = "No se encuentra autorización para la oferta del producto " + producto.Número.Trim(),
+                OfertaAutorizadaExpresamente = true
+            };
+        }
+
+        /*
+         * Dado un pedido y un producto determinados, nos devuelve la oferta de ese producto que 
+         * hay que ese pedido.
+         */
+        public static PrecioDescuentoProducto MontarOfertaPedido(String numeroProducto, PedidoVentaDTO pedido)
+        {
+            if (numeroProducto != null)
+            {
+                numeroProducto = numeroProducto.Trim();
+            }
+
+            IEnumerable<LineaPedidoVentaDTO> lineasProducto = pedido.LineasPedido.Where(p => p.producto == numeroProducto);
+            if (lineasProducto == null || lineasProducto.Count() == 0)
+            {
+                return null;
+            }
+
+            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.precio != 0);
+            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.precio == 0);
+
+            Producto producto = servicio.BuscarProducto(numeroProducto);
+
+
+            return new PrecioDescuentoProducto {
+                cantidadOferta = (short)lineasSinPrecio.Sum(l => l.cantidad),
+                cantidad = (short)lineasConPrecio.Sum(l => l.cantidad),
+                producto = producto,
+                precioCalculado = (decimal)lineasConPrecio.Select(l => l.precio).DefaultIfEmpty().Average(),
+                descuentoCalculado = lineasConPrecio.Select(l => l.descuento + l.descuentoProducto).DefaultIfEmpty().Average()
+            };
+        }
+
         private static void cargarListaCondiciones()
         {
             // Rellenamos la lista estática de las condiciones que queremos comprobar.
@@ -131,16 +316,30 @@ namespace NestoAPI.Infraestructure
             listaCondiciones.Add(new ThuyaNoPuedeLlevarCualquierDescuento());
         }
 
+        private static void CargarListaValidadoresPedido()
+        {
+            listaValidadores.Add(new ValidadorOtrosAparatosSiempreSinDescuento());
+        }
+
         public static bool comprobarCondiciones(PrecioDescuentoProducto datos) {
             // Primero miramos si ese precio está en las oferta (tiene metidos los precios generales para todos los clientes)
-            using (NVEntities db = new NVEntities())
+            if (!datos.descuentosRellenos)
             {
-                DescuentosProducto dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null);
+                using (NVEntities db = new NVEntities())
+                {
+                    // Lo hacemos así para que se pueda rellenar por fuera para los test
+                    datos.descuentosProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).Where(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null);
+                }
+            }
+            if (datos.descuentosProducto != null)
+            {
+                DescuentosProducto dtoProducto = datos.descuentosProducto.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.CantidadMínima <= datos.cantidad);
                 if (dtoProducto != null && dtoProducto.Precio * (1 - dtoProducto.Descuento) <= datos.producto.PVP * (1 - datos.descuentoReal))
                 {
                     return true;
                 }
             }
+
 
             // Recorre listaCondiciones y mira una a una si "datos" cumplen todas las condiciones
             // Devuelve true si cumple todas y false si alguna no se cumple
@@ -160,6 +359,36 @@ namespace NestoAPI.Infraestructure
         }
 
         public static List<ICondicionPrecioDescuento> listaCondiciones = new List<ICondicionPrecioDescuento>();
+
+        public static List<IValidadorPedido> listaValidadores = new List<IValidadorPedido>();
+
+        // Es para poder sobreescribirlo en los tests
+        public static IServicioPrecios servicio = new ServicioPrecios();
+
+        // Método para validar todas las ofertas de un pedido
+        public static RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido)
+        {
+            RespuestaValidacion respuesta = new RespuestaValidacion
+            {
+                ValidacionSuperada = true
+            };
+
+            if (listaValidadores == null || listaValidadores.Count == 0)
+            {
+                CargarListaValidadoresPedido();
+            }
+
+            foreach (IValidadorPedido validador in listaValidadores)
+            {
+                respuesta = validador.EsPedidoValido(pedido, servicio);
+                if (!respuesta.ValidacionSuperada)
+                {
+                    break;
+                }
+            };
+
+            return respuesta;
+        }
     }
 
     public class PrecioDescuentoProducto
@@ -192,6 +421,15 @@ namespace NestoAPI.Infraestructure
             }
 
         }
+        public bool descuentosRellenos;
+        public IQueryable<DescuentosProducto> descuentosProducto;
+    }
+
+    public class RespuestaValidacion
+    {
+        public bool ValidacionSuperada { get; set; }
+        public string Motivo { get; set; }
+        public bool OfertaAutorizadaExpresamente { get; set; }
     }
 
     public interface ICondicionPrecioDescuento 
@@ -204,349 +442,9 @@ namespace NestoAPI.Infraestructure
         bool precioAceptado(PrecioDescuentoProducto precio);
     }
 
-    #region Condiciones
-    public class CerasConPrecioMinimo : ICondicionPrecioDescuento
+    public interface IValidadorPedido
     {
-        public bool precioAceptado(PrecioDescuentoProducto precio)
-        {
-            // Ponemos el trim aquí para evitar tener que ponerlo en todas las comparaciones
-            precio.producto.Número = precio.producto.Número.Trim();
-
-            // Clean & Easy
-            if (precio.producto.Grupo == "COS" 
-                && precio.producto.SubGrupo == "304" 
-                && precio.producto.Familia.ToLower().Trim() == "clean&easy"
-                && (precio.precioCalculado < precio.producto.PVP || precio.descuentoReal > 0))
-            {
-                precio.aplicarDescuento = false;
-                precio.precioCalculado = (decimal)precio.producto.PVP;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "No se puede hacer ningún descuento en las ceras de Clean & Easy";
-                return false;
-            }
-
-            // Tessiline
-            if (precio.producto.Grupo == "COS"
-                && precio.producto.SubGrupo == "304"
-                && precio.producto.Familia.ToLower().Trim() == "tessiline"
-                && (precio.precioCalculadoDeFicha < (decimal).79))
-            {
-                precio.precioCalculado = (decimal).79;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "No se pueden dejar las ceras de Tessiline a menos de 0,79 €";
-                return false;
-            }
-
-            // Uso Profesional
-            if ((precio.producto.Número == "27092" || precio.producto.Número == "27093")
-                && (precio.precioCalculadoDeFicha < (decimal)1.19))
-            {
-                precio.precioCalculado = (decimal)1.19;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Esa cera de Uso Profesional no se puede dejar a menos de 1,19 €";
-                return false;
-            }
-            if ((precio.producto.Número == "33728")
-                && (precio.precioCalculadoDeFicha < (decimal)7.95))
-            {
-                precio.precioCalculado = (decimal)7.95;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "La cera malva de Uso Profesional no se puede dejar a menos de 7,95 €";
-                return false;
-            }
-
-            // Fama
-            if ((precio.producto.Número == "32254" || precio.producto.Número == "34411" || precio.producto.Número == "22501")
-                && (precio.precioCalculadoDeFicha < (decimal)1.65))
-            {
-                precio.precioCalculado = (decimal)1.65;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Los cartuchos de Fama Fabré no se pueden dejar por debajo de 1,65 €";
-                return false;
-            }
-
-            // Maystar
-            if ((precio.producto.Número == "23050"
-                || precio.producto.Número == "12627"
-                || precio.producto.Número == "25935"
-                || precio.producto.Número == "12633"
-                || precio.producto.Número == "21885"
-                || precio.producto.Número == "21376"
-                || precio.producto.Número == "21112"
-                || precio.producto.Número == "33138"
-                || precio.producto.Número == "31916"
-                || precio.producto.Número == "12634"
-                || precio.producto.Número == "15930"
-                || precio.producto.Número == "22450"
-                || precio.producto.Número == "33068"
-                || precio.producto.Número == "21075"
-                || precio.producto.Número == "23727")
-                && (precio.precioCalculadoDeFicha < (decimal).99))
-            {
-                precio.precioCalculado = (decimal).99;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Los cartuchos de Maystar no se pueden dejar por debajo de 0,99 €";
-                return false;
-            }
-            if ((precio.producto.Número == "12640" || precio.producto.Número == "22624")
-                && (precio.precioCalculadoDeFicha < (decimal)4.45))
-            {
-                precio.precioCalculado = (decimal)4.45;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Las latas de cera de 500ml de Maystar no se pueden dejar por debajo de 4,45 €";
-                return false;
-            }
-            if ((precio.producto.Número == "19205" || precio.producto.Número == "32371")
-            && (precio.precioCalculadoDeFicha < (decimal)6.45))
-            {
-                precio.precioCalculado = (decimal)6.45;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Las latas de cera de 800ml de Maystar no se pueden dejar por debajo de 6,45 €";
-                return false;
-            }
-            if ((precio.producto.Número == "17031"
-                || precio.producto.Número == "19828"
-                || precio.producto.Número == "21044"
-                || precio.producto.Número == "12637"
-                || precio.producto.Número == "15789"
-                || precio.producto.Número == "22535"
-                || precio.producto.Número == "24279"
-                || precio.producto.Número == "20084"
-                || precio.producto.Número == "21661"
-                || precio.producto.Número == "12645"
-                || precio.producto.Número == "22982"
-                || precio.producto.Número == "32745")
-                && (precio.precioCalculadoDeFicha < (decimal)6.95))
-            {
-                precio.precioCalculado = (decimal)6.95;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Esta cera de Maystar no se pueden dejar por debajo de 6,95 €";
-                return false;
-            }
-
-            // Eva Visnú
-            if ((precio.producto.Número == "12515"
-                || precio.producto.Número == "12537"
-                || precio.producto.Número == "20706"
-                || precio.producto.Número == "20705"
-                || precio.producto.Número == "24807")
-                && (precio.precioCalculadoDeFicha < (decimal).99))
-            {
-                precio.precioCalculado = (decimal).99;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Los cartuchos de Eva Visnú no se pueden dejar por debajo de 0,99 €";
-                return false;
-            }
-            if ((precio.producto.Número == "26692")
-                && (precio.precioCalculadoDeFicha < (decimal)5.95))
-            {
-                precio.precioCalculado = (decimal)5.95;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "La Cera Esmeralda de Eva Visnú no se puede dejar por debajo de 5,95 €";
-                return false;
-            }
-            if ((precio.producto.Número == "20258" || precio.producto.Número == "25391")
-                && (precio.precioCalculadoDeFicha < (decimal)5.45))
-            {
-                precio.precioCalculado = (decimal)5.45;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Las latas de 500ml de cera de Eva Visnú no se pueden dejar por debajo de 5,45 €";
-                return false;
-            }
-            if ((precio.producto.Número == "16631" || precio.producto.Número == "25392")
-                && (precio.precioCalculadoDeFicha < (decimal)7.75))
-            {
-                precio.precioCalculado = (decimal)7.75;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Las latas de 800ml de cera de Eva Visnú no se pueden dejar por debajo de 7,75 €";
-                return false;
-            }
-            if ((precio.producto.Número == "20459" || precio.producto.Número == "21492")
-                && (precio.precioCalculadoDeFicha < (decimal)6.40))
-            {
-                precio.precioCalculado = (decimal)6.40;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Este kilo de cera de Eva Visnú no se puede dejar por debajo de 6,40 €";
-                return false;
-            }
-
-            // Depil OK
-            if ((precio.producto.Número == "18624" || precio.producto.Número == "18705")
-                && (precio.precioCalculadoDeFicha < (decimal).89))
-            {
-                precio.precioCalculado = (decimal).89;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "El Botellín Estándar de Depil OK no se pueden dejar por debajo de 0,89 €";
-                return false;
-            }
-            if ((precio.producto.Número == "17954"
-                || precio.producto.Número == "18709"
-                || precio.producto.Número == "17770"
-                || precio.producto.Número == "17859"
-                || precio.producto.Número == "19388")
-                && (precio.precioCalculadoDeFicha < (decimal)1.05))
-            {
-                precio.precioCalculado = (decimal)1.05;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Este cartucho cerrado de Depil OK no se puede dejar por debajo de 1,05 €";
-                return false;
-            }
-            if ((precio.producto.Número == "35666"
-                || precio.producto.Número == "19455"
-                || precio.producto.Número == "24076"
-                || precio.producto.Número == "22665"
-                || precio.producto.Número == "24077"
-                || precio.producto.Número == "21176"
-                || precio.producto.Número == "35667")
-                && (precio.precioCalculadoDeFicha < (decimal)1.10))
-            {
-                precio.precioCalculado = (decimal)1.10;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Este cartucho cerrado de Depil OK no se puede dejar por debajo de 1,10 €";
-                return false;
-            }
-            if ((precio.producto.Número == "19989")
-                            && (precio.precioCalculadoDeFicha < (decimal)5.95))
-            {
-                precio.precioCalculado = (decimal)5.95;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "La Cera Azul de Depil OK no se puede dejar por debajo de 5,95 €";
-                return false;
-            }
-            if ((precio.producto.Número == "32317")
-                && (precio.precioCalculadoDeFicha < (decimal)9.45))
-            {
-                precio.precioCalculado = (decimal)9.45;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "La Cera Extrafina de Depil OK no se puede dejar por debajo de 9,45 €";
-                return false;
-            }
-            if ((precio.producto.Número == "19730")
-                && (precio.precioCalculadoDeFicha < (decimal)8.95))
-            {
-                precio.precioCalculado = (decimal)8.95;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "La Cera Fría Miel de Depil OK no se puede dejar por debajo de 8,95 €";
-                return false;
-            }
-            if ((precio.producto.Número == "21664")
-                && (precio.precioCalculadoDeFicha < (decimal)7.25))
-            {
-                precio.precioCalculado = (decimal)7.25;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "La Cera Violeta Lavanda de Depil OK no se puede dejar por debajo de 7,25 €";
-                return false;
-            }
-            if ((precio.producto.Número == "27496"
-                || precio.producto.Número == "20339"
-                || precio.producto.Número == "21774"
-                || precio.producto.Número == "19643"
-                || precio.producto.Número == "20188")
-                && (precio.precioCalculadoDeFicha < (decimal)6.95))
-            {
-                precio.precioCalculado = (decimal)6.95;
-                precio.descuentoCalculado = 0;
-                precio.motivo = "Este kilo de cera de Depil OK no se puede dejar por debajo de 6,95 €";
-                return false;
-            }
-            
-            // Si ninguna norma ha echado el precio para atrás, lo damos por bueno
-            return true;
-        }
+        RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio);
     }
-    public class DuNoPuedeLlevarCualquierDescuento : ICondicionPrecioDescuento
-    {
-        public bool precioAceptado(PrecioDescuentoProducto precio)
-        {
-            // Los productos de la familia Du no pueden tener más de un 15% de descuento
-            if (precio.producto.Familia.ToLower().Trim() == "du" && precio.descuentoReal > (decimal).15)
-            {
-                precio.precioCalculado = (decimal)precio.producto.PVP;
-                precio.descuentoCalculado = (decimal).15;
-                precio.motivo = "No se puede hacer un descuento superior al 15% en Du";
-                return false;
-            }
-            else
-            {
-                return true;
-            }
-        }
-    }
-    public class OtrosAparatosNoPuedeLlevarDescuento : ICondicionPrecioDescuento
-    {
-        public bool precioAceptado(PrecioDescuentoProducto precio)
-        {
-            // Los productos del grupo Otros aparatos no pueden tener ningún tipo de descuento
-            if (precio.descuentoReal > 0 && precio.producto.SubGrupo.ToLower() == "acp")
-            {
-                if (precio.aplicarDescuento)
-                {
-                    precio.aplicarDescuento = false;
-                }
-                if (precio.precioCalculado != (decimal)precio.producto.PVP)
-                {
-                    precio.precioCalculado = (decimal)precio.producto.PVP;
-                }
-                if (precio.descuentoCalculado != 0)
-                {
-                    precio.descuentoCalculado = 0;
-                }
-                precio.motivo = "El grupo Otros Aparatos no puede llevar ningún precio especial ni descuento";
 
-                return false;
-            }
-            else
-            {
-                return true;
-            }
-        }
-    }
-    public class RamasonNoPuedeLlevarNingunDescuento : ICondicionPrecioDescuento
-    {
-        public bool precioAceptado(PrecioDescuentoProducto precio)
-        {
-            // Los productos de la familia Ramason no aceptan ningún tipo de descuento
-            if (precio.descuentoReal > 0 && precio.producto.Familia.ToLower().Trim() == "ramason")
-            {
-                if (precio.aplicarDescuento)
-                {
-                    precio.aplicarDescuento = false;
-                }
-                if (precio.precioCalculado != (decimal)precio.producto.PVP)
-                {
-                    precio.precioCalculado = (decimal)precio.producto.PVP;
-                }
-                if (precio.descuentoCalculado != 0)
-                {
-                    precio.descuentoCalculado = 0;
-                }
-                precio.motivo = "No se puede hacer ningún precio especal ni descuento en productos de Ramasón";
-
-                return false;
-            }
-            else
-            {
-                return true;
-            }
-        }
-    }
-    public class ThuyaNoPuedeLlevarCualquierDescuento : ICondicionPrecioDescuento
-    {
-        public bool precioAceptado(PrecioDescuentoProducto precio)
-        {
-            // Los productos de la familia Du no pueden tener más de un 15% de descuento
-            if (precio.producto.Familia.ToLower().Trim() == "thuya" && precio.descuentoReal > (decimal).15)
-            {
-                precio.precioCalculado = (decimal)precio.producto.PVP;
-                precio.descuentoCalculado = (decimal).15;
-                precio.motivo = "No se puede hacer un descuento superior al 15% en Thuya";
-                return false;
-            }
-            else
-            {
-                return true;
-            }
-        }
-    }
-    #endregion
 }

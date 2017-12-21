@@ -140,34 +140,41 @@ namespace NestoAPI.Controllers
                 })
                 .ToList();
 
-            PedidoVentaDTO pedido = new PedidoVentaDTO
+            PedidoVentaDTO pedido;
+            try
             {
-                empresa = cabPedidoVta.Empresa.Trim(),
-                numero = cabPedidoVta.Número,
-                cliente = cabPedidoVta.Nº_Cliente.Trim(),
-                contacto = cabPedidoVta.Contacto.Trim(),
-                fecha = cabPedidoVta.Fecha,
-                formaPago = cabPedidoVta.Forma_Pago,
-                plazosPago = cabPedidoVta.PlazosPago.Trim(),
-                primerVencimiento = cabPedidoVta.Primer_Vencimiento,
-                iva = cabPedidoVta.IVA,
-                vendedor = cabPedidoVta.Vendedor,
-                comentarios = cabPedidoVta.Comentarios,
-                comentarioPicking = cabPedidoVta.ComentarioPicking,
-                periodoFacturacion = cabPedidoVta.Periodo_Facturacion,
-                ruta = cabPedidoVta.Ruta,
-                serie = cabPedidoVta.Serie,
-                ccc = cabPedidoVta.CCC,
-                origen = (cabPedidoVta.Origen != null && cabPedidoVta.Origen.Trim() != "") ? cabPedidoVta.Origen : cabPedidoVta.Empresa,
-                contactoCobro = cabPedidoVta.ContactoCobro,
-                noComisiona = cabPedidoVta.NoComisiona,
-                vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
-                mantenerJunto = cabPedidoVta.MantenerJunto,
-                servirJunto = cabPedidoVta.ServirJunto,
-                usuario = cabPedidoVta.Usuario,
-                LineasPedido = lineasPedido,
-                VendedoresGrupoProducto = vendedoresGrupoProductoPedido
-            };
+                pedido = new PedidoVentaDTO
+                {
+                    empresa = cabPedidoVta.Empresa.Trim(),
+                    numero = cabPedidoVta.Número,
+                    cliente = cabPedidoVta.Nº_Cliente.Trim(),
+                    contacto = cabPedidoVta.Contacto.Trim(),
+                    fecha = cabPedidoVta.Fecha,
+                    formaPago = cabPedidoVta.Forma_Pago,
+                    plazosPago = cabPedidoVta.PlazosPago.Trim(),
+                    primerVencimiento = cabPedidoVta.Primer_Vencimiento,
+                    iva = cabPedidoVta.IVA,
+                    vendedor = cabPedidoVta.Vendedor,
+                    comentarios = cabPedidoVta.Comentarios,
+                    comentarioPicking = cabPedidoVta.ComentarioPicking,
+                    periodoFacturacion = cabPedidoVta.Periodo_Facturacion,
+                    ruta = cabPedidoVta.Ruta,
+                    serie = cabPedidoVta.Serie,
+                    ccc = cabPedidoVta.CCC,
+                    origen = (cabPedidoVta.Origen != null && cabPedidoVta.Origen.Trim() != "") ? cabPedidoVta.Origen : cabPedidoVta.Empresa,
+                    contactoCobro = cabPedidoVta.ContactoCobro,
+                    noComisiona = cabPedidoVta.NoComisiona,
+                    vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
+                    mantenerJunto = cabPedidoVta.MantenerJunto,
+                    servirJunto = cabPedidoVta.ServirJunto,
+                    usuario = cabPedidoVta.Usuario,
+                    LineasPedido = lineasPedido,
+                    VendedoresGrupoProducto = vendedoresGrupoProductoPedido
+                };
+            } catch (Exception ex)
+            {
+                throw ex;
+            }
             
             return Ok(pedido);
         }

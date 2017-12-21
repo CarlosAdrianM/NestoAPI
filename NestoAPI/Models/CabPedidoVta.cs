@@ -49,6 +49,7 @@ namespace NestoAPI.Models
         public bool ServirJunto { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
+        public byte[] RowVersion { get; set; }
     
         public virtual ICollection<LinPedidoVta> LinPedidoVtas { get; set; }
         public virtual Cliente Cliente { get; set; }
