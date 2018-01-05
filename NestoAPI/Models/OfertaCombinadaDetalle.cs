@@ -12,23 +12,19 @@ namespace NestoAPI.Models
     using System;
     using System.Collections.Generic;
     
-    public partial class OfertaPermitida
+    public partial class OfertaCombinadaDetalle
     {
+        public int Id { get; set; }
         public string Empresa { get; set; }
-        public int NºOrden { get; set; }
-        public string Número { get; set; }
-        public string Familia { get; set; }
-        public short CantidadConPrecio { get; set; }
-        public short CantidadRegalo { get; set; }
-        public bool Denegar { get; set; }
-        public string Cliente { get; set; }
-        public string Contacto { get; set; }
+        public int OfertaId { get; set; }
+        public string Producto { get; set; }
+        public decimal Precio { get; set; }
         public string Usuario { get; set; }
-        public System.DateTime FechaModificación { get; set; }
-        public string FiltroProducto { get; set; }
+        public System.DateTime FechaModificacion { get; set; }
+        public short Cantidad { get; set; }
     
-        public virtual Cliente Cliente1 { get; set; }
         public virtual Empresa Empresa1 { get; set; }
-        public virtual Producto Producto { get; set; }
+        public virtual OfertaCombinada OfertasCombinada { get; set; }
+        public virtual Producto Producto1 { get; set; }
     }
 }

@@ -6,11 +6,14 @@ using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
 {
-    public class ValidadorOtrosAparatosSiempreSinDescuento : IValidadorPedido
+    public class ValidadorOtrosAparatosSiempreSinDescuento : IValidadorDenegacion
     {
         public RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
-            RespuestaValidacion respuesta = new RespuestaValidacion();
+            RespuestaValidacion respuesta = new RespuestaValidacion {
+                ValidacionSuperada = true,
+                Motivo = "El pedido " + pedido.numero + " no tiene ninguna línea de productos"
+            };
             bool esValidoDeMomento = true;
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido.Where(l => l.tipoLinea == 1)) //1=Producto
             {
@@ -21,7 +24,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     return new RespuestaValidacion
                     {
                         ValidacionSuperada = false,
-                        OfertaAutorizadaExpresamente = false,
+                        AutorizadaDenegadaExpresamente = false,
                         Motivo = "No existe el producto " + linea.producto + " en la línea " + linea.id.ToString()
                     };
                 }
@@ -35,18 +38,18 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     aplicarDescuento = linea.aplicarDescuento
                 };
 
-                respuesta = GestorPrecios.EsOfertaPermitida(producto, pedido);
-                esValidoDeMomento = respuesta.ValidacionSuperada;
-                // Si la oferta está autorizada expresamente, ni nos molestamos en comprobar
-                if (!respuesta.ValidacionSuperada && !respuesta.OfertaAutorizadaExpresamente)
-                {
-                    esValidoDeMomento = new OtrosAparatosNoPuedeLlevarDescuento().precioAceptado(datos);
-                }
+                esValidoDeMomento = new OtrosAparatosNoPuedeLlevarDescuento().precioAceptado(datos);
                 
                 // Una vez que una línea no es válida, todo el pedido deja de ser válido
                 if (!esValidoDeMomento) 
                 {
-                    break;
+                    return new RespuestaValidacion
+                    {
+                        ValidacionSuperada = false,
+                        Motivo = "El producto " + linea.producto + " no puede llevar ningún descuento ni oferta porque es Otros Aparatos" ,
+                        ProductoId = linea.producto,
+                        AutorizadaDenegadaExpresamente = true
+                    };
                 }
             }
             

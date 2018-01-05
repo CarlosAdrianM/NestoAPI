@@ -462,6 +462,13 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
+            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+            if (!respuesta.ValidacionSuperada)
+            {
+                throw new Exception(respuesta.Motivo);
+            }
+
             // Carlos 28/09/15: ajustamos el primer vencimiento a los plazos de pago y a los días de pago
             DateTime vencimientoPedido;
             System.Data.Entity.Core.Objects.ObjectParameter primerVencimiento = new System.Data.Entity.Core.Objects.ObjectParameter("FechaOut", typeof(DateTime));

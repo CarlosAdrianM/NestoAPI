@@ -28,6 +28,7 @@ namespace NestoAPI.Models
         public string Familia { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
+        public string FiltroProducto { get; set; }
     
         public virtual Cliente Cliente { get; set; }
         public virtual Empresa Empresa1 { get; set; }

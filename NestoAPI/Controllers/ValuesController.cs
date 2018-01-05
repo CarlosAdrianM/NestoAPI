@@ -70,7 +70,7 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            return Ok(listaRespuestas);
+            return Ok(listaRespuestas.Where(l=>!l.ValidacionSuperada));
         }
 
 

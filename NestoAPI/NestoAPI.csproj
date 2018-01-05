@@ -280,6 +280,9 @@
     <Compile Include="Infraestructure\CondicionesPrecio\ThuyaNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasYDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOtrosAparatosSiempreSinDescuento.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.Designer.cs">
@@ -382,6 +385,12 @@
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
       <DependentUpon>NestoEntities.edmx</DependentUpon>
+    </Compile>
+    <Compile Include="Models\OfertaCombinada.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\OfertaCombinadaDetalle.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\OfertaPermitida.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

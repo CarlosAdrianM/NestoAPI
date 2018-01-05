@@ -284,6 +284,7 @@
           <Property Name="Descuento" Type="decimal" Precision="5" Scale="4" Nullable="false" />
           <Property Name="Precio" Type="money" />
           <Property Name="Familia" Type="char" MaxLength="10" />
+          <Property Name="FiltroProducto" Type="nvarchar" MaxLength="50" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
@@ -698,6 +699,32 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="Fecha" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
+        <EntityType Name="OfertasCombinadas">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nombre" Type="nvarchar" MaxLength="100" />
+          <Property Name="ImporteMinimo" Type="money" Nullable="false" />
+          <Property Name="FechaDesde" Type="date" />
+          <Property Name="FechaHasta" Type="date" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+        </EntityType>
+        <EntityType Name="OfertasCombinadasDetalle">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="OfertaId" Type="int" Nullable="false" />
+          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Cantidad" Type="smallint" Nullable="false" />
+          <Property Name="Precio" Type="money" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+        </EntityType>
         <EntityType Name="OfertasPermitidas">
           <Key>
             <PropertyRef Name="NºOrden" />
@@ -711,6 +738,7 @@
           <Property Name="Denegar" Type="bit" Nullable="false" />
           <Property Name="Cliente" Type="char" MaxLength="10" />
           <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="FiltroProducto" Type="nvarchar" MaxLength="50" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="FechaModificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
@@ -2247,6 +2275,58 @@
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_OfertasCombinadas_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="OfertasCombinadas" Type="Self.OfertasCombinadas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasCombinadas">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasCombinadasDetalle_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="OfertasCombinadasDetalle" Type="Self.OfertasCombinadasDetalle" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasCombinadasDetalle">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasCombinadasDetalle_OfertasCombinadas">
+          <End Role="OfertasCombinadas" Type="Self.OfertasCombinadas" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Role="OfertasCombinadasDetalle" Type="Self.OfertasCombinadasDetalle" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="OfertasCombinadas">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="OfertasCombinadasDetalle">
+              <PropertyRef Name="OfertaId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasCombinadasDetalle_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="OfertasCombinadasDetalle" Type="Self.OfertasCombinadasDetalle" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasCombinadasDetalle">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_OfertasPermitidas_Clientes">
           <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
           <End Role="OfertasPermitidas" Type="Self.OfertasPermitidas" Multiplicity="*" />
@@ -2773,6 +2853,8 @@
           <EntitySet Name="InventariosCuadre" EntityType="Self.InventariosCuadre" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
@@ -3130,6 +3212,22 @@
           <AssociationSet Name="FK_LinPedidoVta_SubGruposProducto" Association="Self.FK_LinPedidoVta_SubGruposProducto">
             <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
             <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasCombinadas_Empresas" Association="Self.FK_OfertasCombinadas_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="OfertasCombinadas" EntitySet="OfertasCombinadas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasCombinadasDetalle_Empresas" Association="Self.FK_OfertasCombinadasDetalle_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="OfertasCombinadasDetalle" EntitySet="OfertasCombinadasDetalle" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasCombinadasDetalle_OfertasCombinadas" Association="Self.FK_OfertasCombinadasDetalle_OfertasCombinadas">
+            <End Role="OfertasCombinadas" EntitySet="OfertasCombinadas" />
+            <End Role="OfertasCombinadasDetalle" EntitySet="OfertasCombinadasDetalle" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasCombinadasDetalle_Productos" Association="Self.FK_OfertasCombinadasDetalle_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="OfertasCombinadasDetalle" EntitySet="OfertasCombinadasDetalle" />
           </AssociationSet>
           <AssociationSet Name="FK_OfertasPermitidas_Clientes" Association="Self.FK_OfertasPermitidas_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -3858,6 +3956,24 @@
             <End Role="Producto" EntitySet="Productos" />
             <End Role="OfertasPermitida" EntitySet="OfertasPermitidas" />
           </AssociationSet>
+          <EntitySet Name="OfertasCombinadas" EntityType="NVModel.OfertaCombinada" />
+          <EntitySet Name="OfertasCombinadasDetalles" EntityType="NVModel.OfertaCombinadaDetalle" />
+          <AssociationSet Name="FK_OfertasCombinadas_Empresas" Association="NVModel.FK_OfertasCombinadas_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="OfertasCombinada" EntitySet="OfertasCombinadas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasCombinadasDetalle_Empresas" Association="NVModel.FK_OfertasCombinadasDetalle_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="OfertasCombinadasDetalle" EntitySet="OfertasCombinadasDetalles" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasCombinadasDetalle_OfertasCombinadas" Association="NVModel.FK_OfertasCombinadasDetalle_OfertasCombinadas">
+            <End Role="OfertasCombinada" EntitySet="OfertasCombinadas" />
+            <End Role="OfertasCombinadasDetalle" EntitySet="OfertasCombinadasDetalles" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasCombinadasDetalle_Productos" Association="NVModel.FK_OfertasCombinadasDetalle_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="OfertasCombinadasDetalle" EntitySet="OfertasCombinadasDetalles" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -3999,6 +4115,8 @@
           <NavigationProperty Name="Vendedores" Relationship="NVModel.FK_Vendedores_Empresas" FromRole="Empresa" ToRole="Vendedore" />
           <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Empresas" FromRole="Empresa" ToRole="SeguimientoCliente" />
           <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Empresas" FromRole="Empresa" ToRole="OfertasPermitida" />
+          <NavigationProperty Name="OfertasCombinadas" Relationship="NVModel.FK_OfertasCombinadas_Empresas" FromRole="Empresa" ToRole="OfertasCombinada" />
+          <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_Empresas" FromRole="Empresa" ToRole="OfertasCombinadasDetalle" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -4389,6 +4507,7 @@
           <NavigationProperty Name="Inventarios" Relationship="NVModel.FK_Inventario_Productos" FromRole="Producto" ToRole="Inventario" />
           <NavigationProperty Name="ProveedoresProductoes" Relationship="NVModel.FK_ProveedoresProducto_Productos2" FromRole="Producto" ToRole="ProveedoresProducto" />
           <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Productos" FromRole="Producto" ToRole="OfertasPermitida" />
+          <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_Productos" FromRole="Producto" ToRole="OfertasCombinadasDetalle" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -4585,6 +4704,7 @@
           <NavigationProperty Name="Familia1" Relationship="NVModel.FK_DescuentosProducto_Familias" FromRole="DescuentosProducto" ToRole="Familia" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_DescuentosProducto_Productos" FromRole="DescuentosProducto" ToRole="Producto" />
           <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_DescuentosProducto_Proveedores" FromRole="DescuentosProducto" ToRole="Proveedore" />
+          <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
         </EntityType>
         <EntityType Name="DíasPagoClientes">
           <Key>
@@ -6758,6 +6878,7 @@
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_OfertasPermitidas_Clientes" FromRole="OfertasPermitida" ToRole="Cliente" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasPermitidas_Empresas" FromRole="OfertasPermitida" ToRole="Empresa" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_OfertasPermitidas_Productos" FromRole="OfertasPermitida" ToRole="Producto" />
+          <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
         </EntityType>
         <Association Name="FK_OfertasPermitidas_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -6798,6 +6919,89 @@
             <Dependent Role="OfertasPermitida">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="OfertaCombinada">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nombre" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="ImporteMinimo" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="FechaDesde" Type="DateTime" Precision="0" />
+          <Property Name="FechaHasta" Type="DateTime" Precision="0" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasCombinadas_Empresas" FromRole="OfertasCombinada" ToRole="Empresa" />
+          <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_OfertasCombinadas" FromRole="OfertasCombinada" ToRole="OfertasCombinadasDetalle" />
+        </EntityType>
+        <EntityType Name="OfertaCombinadaDetalle">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="OfertaId" Type="Int32" Nullable="false" />
+          <Property Name="Producto" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Precio" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasCombinadasDetalle_Empresas" FromRole="OfertasCombinadasDetalle" ToRole="Empresa" />
+          <NavigationProperty Name="OfertasCombinada" Relationship="NVModel.FK_OfertasCombinadasDetalle_OfertasCombinadas" FromRole="OfertasCombinadasDetalle" ToRole="OfertasCombinada" />
+          <NavigationProperty Name="Producto1" Relationship="NVModel.FK_OfertasCombinadasDetalle_Productos" FromRole="OfertasCombinadasDetalle" ToRole="Producto" />
+          <Property Name="Cantidad" Type="Int16" Nullable="false" />
+        </EntityType>
+        <Association Name="FK_OfertasCombinadas_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.OfertaCombinada" Role="OfertasCombinada" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasCombinada">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasCombinadasDetalle_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.OfertaCombinadaDetalle" Role="OfertasCombinadasDetalle" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasCombinadasDetalle">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasCombinadasDetalle_OfertasCombinadas">
+          <End Type="NVModel.OfertaCombinada" Role="OfertasCombinada" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Type="NVModel.OfertaCombinadaDetalle" Role="OfertasCombinadasDetalle" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="OfertasCombinada">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="OfertasCombinadasDetalle">
+              <PropertyRef Name="OfertaId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasCombinadasDetalle_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.OfertaCombinadaDetalle" Role="OfertasCombinadasDetalle" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasCombinadasDetalle">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -7181,6 +7385,7 @@
           <EntitySetMapping Name="DescuentosProductoes">
             <EntityTypeMapping TypeName="NVModel.DescuentosProducto">
               <MappingFragment StoreEntitySet="DescuentosProducto">
+                <ScalarProperty Name="FiltroProducto" ColumnName="FiltroProducto" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Familia" ColumnName="Familia" />
@@ -7827,6 +8032,7 @@
           <EntitySetMapping Name="OfertasPermitidas">
             <EntityTypeMapping TypeName="NVModel.OfertaPermitida">
               <MappingFragment StoreEntitySet="OfertasPermitidas">
+                <ScalarProperty Name="FiltroProducto" ColumnName="FiltroProducto" />
                 <ScalarProperty Name="FechaModificación" ColumnName="FechaModificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Contacto" ColumnName="Contacto" />
@@ -7838,6 +8044,34 @@
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="OfertasCombinadas">
+            <EntityTypeMapping TypeName="NVModel.OfertaCombinada">
+              <MappingFragment StoreEntitySet="OfertasCombinadas">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaHasta" ColumnName="FechaHasta" />
+                <ScalarProperty Name="FechaDesde" ColumnName="FechaDesde" />
+                <ScalarProperty Name="ImporteMinimo" ColumnName="ImporteMinimo" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="OfertasCombinadasDetalles">
+            <EntityTypeMapping TypeName="NVModel.OfertaCombinadaDetalle">
+              <MappingFragment StoreEntitySet="OfertasCombinadasDetalle">
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Precio" ColumnName="Precio" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
+                <ScalarProperty Name="OfertaId" ColumnName="OfertaId" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
