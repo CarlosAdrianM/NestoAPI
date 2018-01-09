@@ -205,14 +205,7 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest();
             }
-
-            // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
-            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
-            if (!respuesta.ValidacionSuperada)
-            {
-                throw new Exception(respuesta.Motivo);
-            }
-
+            
             // Cargamos las líneas
             //db.Entry(cabPedidoVta).Reference(l => l.LinPedidoVtas).Load();
             cabPedidoVta = db.CabPedidoVtas.Include(l => l.LinPedidoVtas).SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
@@ -382,6 +375,8 @@ namespace NestoAPI.Controllers
                         }
                         calcularImportesLinea(linea);
                     }
+                    lineaEncontrada.baseImponible = linea.Base_Imponible;
+                    lineaEncontrada.total = linea.Total;
                 }
             }
             
@@ -399,6 +394,8 @@ namespace NestoAPI.Controllers
                         }
                         lineaPedido = crearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
+                        linea.baseImponible = lineaPedido.Base_Imponible;
+                        linea.total = lineaPedido.Total;
                         continue;
                     }
 
@@ -434,11 +431,22 @@ namespace NestoAPI.Controllers
                             }
                         }
 
+                        linea.baseImponible = lineaPedido.Base_Imponible;
+                        linea.total = lineaPedido.Total;
+
                         db.Entry(lineaPedido).State = EntityState.Modified;
                     }
                 }
             }
             
+            // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
+            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+            if (!respuesta.ValidacionSuperada)
+            {
+                throw new Exception(respuesta.Motivo);
+            }
+
+
             try
             {
                 await db.SaveChangesAsync();
