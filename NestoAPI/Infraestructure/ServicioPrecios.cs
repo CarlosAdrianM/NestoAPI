@@ -75,8 +75,8 @@ namespace NestoAPI.Infraestructure
                 IQueryable<OfertaCombinada> listaOfertas = db.OfertasCombinadas.Include("OfertasCombinadasDetalles")
                     .Where(o => 
                         o.OfertasCombinadasDetalles.Any(d => d.Producto == numeroProducto) &&
-                        (o.FechaHasta == null || o.FechaHasta <= DateTime.Today) &&
-                        (o.FechaDesde == null || o.FechaDesde >= DateTime.Today)
+                        (o.FechaHasta == null || o.FechaHasta >= DateTime.Today) &&
+                        (o.FechaDesde == null || o.FechaDesde <= DateTime.Today)
                     );
 
                 return listaOfertas.ToList();

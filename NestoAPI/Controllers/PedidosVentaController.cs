@@ -200,10 +200,17 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-
+            
             if (pedido.empresa != cabPedidoVta.Empresa.Trim() || pedido.numero != cabPedidoVta.Número)
             {
                 return BadRequest();
+            }
+
+            // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
+            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+            if (!respuesta.ValidacionSuperada)
+            {
+                throw new Exception(respuesta.Motivo);
             }
 
             // Cargamos las líneas
@@ -451,7 +458,6 @@ namespace NestoAPI.Controllers
             return StatusCode(HttpStatusCode.NoContent);
         }
         
-
         // POST: api/PedidosVenta
         [HttpPost]
         [ResponseType(typeof(PedidoVentaDTO))]

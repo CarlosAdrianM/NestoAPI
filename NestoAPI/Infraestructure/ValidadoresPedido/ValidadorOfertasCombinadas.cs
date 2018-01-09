@@ -30,7 +30,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 IEnumerable<OfertaCombinada> ofertasConImporteMinimo = ofertasCombinadas.Where(o =>
                     o.OfertasCombinadasDetalles.All(d =>
-                        pedido.LineasPedido.Where(p => p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto).Contains(d.Producto)
+                        pedido.LineasPedido.Where(p => p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto.Trim()).Contains(d.Producto.Trim())
                         && o.ImporteMinimo>0
                     )
                 );
@@ -43,7 +43,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     if (ofertaConImporteMinimo != null)
                     {
                         IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.LineasPedido.Where(l =>
-                            ofertaConImporteMinimo.OfertasCombinadasDetalles.Select(d => d.Producto).Contains(l.producto)
+                            ofertaConImporteMinimo.OfertasCombinadasDetalles.Select(d => d.Producto.Trim()).Contains(l.producto.Trim())
                         );
                         var sumaImporte = lineasOfertaPedido.Sum(l => l.baseImponible);
                         if (sumaImporte >= ofertaConImporteMinimo.ImporteMinimo)

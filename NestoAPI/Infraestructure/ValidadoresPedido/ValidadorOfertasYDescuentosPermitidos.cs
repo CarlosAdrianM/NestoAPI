@@ -77,7 +77,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             PrecioDescuentoProducto oferta = MontarOfertaPedido(producto.Número, pedido);
 
             // Si no tiene ninguna oferta ni descuento, está siempre permitido
-            if (oferta.cantidadOferta == 0 && oferta.descuentoReal == 0)
+            if ((oferta.cantidadOferta == 0 && oferta.descuentoReal == 0) || oferta.descuentoReal < 0)
             {
                 return new RespuestaValidacion
                 {
@@ -108,37 +108,37 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             
-                List<OfertaPermitida> ofertas = GestorPrecios.servicio.BuscarOfertasPermitidas(producto.Número);
+            List<OfertaPermitida> ofertas = GestorPrecios.servicio.BuscarOfertasPermitidas(producto.Número);
 
-                // Hacemos el cast (double) para que no sea división entera y 11/5 no de 2
-                // Lo que mira es que sea múltiplo de la oferta y que sea mayor (no permite 3+1 
-                // si lo autorizado es 6+2, por ejemplo).
-                IEnumerable<OfertaPermitida> ofertasFiltradas = ofertas.Where(o =>
-                    (o.Cliente == null || o.Cliente == pedido.cliente) &&
-                    (o.Contacto == null || o.Cliente == pedido.cliente && o.Contacto == pedido.contacto)
-                );
+            // Hacemos el cast (double) para que no sea división entera y 11/5 no de 2
+            // Lo que mira es que sea múltiplo de la oferta y que sea mayor (no permite 3+1 
+            // si lo autorizado es 6+2, por ejemplo).
+            IEnumerable<OfertaPermitida> ofertasFiltradas = ofertas.Where(o =>
+                (o.Cliente == null || o.Cliente == pedido.cliente) &&
+                (o.Contacto == null || o.Cliente == pedido.cliente && o.Contacto == pedido.contacto)
+            );
 
-                // Si hay oferta específica para el producto, la cogemos
-                IEnumerable<OfertaPermitida> ofertasEspecificasProducto = ofertasFiltradas.Where(o => o.Número == producto.Número.Trim());
+            // Si hay oferta específica para el producto, la cogemos
+            IEnumerable<OfertaPermitida> ofertasEspecificasProducto = ofertasFiltradas.Where(o => o.Número == producto.Número.Trim());
 
-                if (ofertasEspecificasProducto != null && ofertasEspecificasProducto.Count() > 0)
-                {
-                    ofertasFiltradas = ofertasEspecificasProducto;
-                }
+            if (ofertasEspecificasProducto != null && ofertasEspecificasProducto.Count() > 0)
+            {
+                ofertasFiltradas = ofertasEspecificasProducto;
+            }
 
-                OfertaPermitida ofertaEncontrada = ofertasFiltradas.FirstOrDefault(o =>
-                    (
-                    ((double)oferta.cantidad / o.CantidadConPrecio == (double)oferta.cantidadOferta / o.CantidadRegalo &&
-                    (double)oferta.cantidadOferta / o.CantidadRegalo >= 1)
-                    || // para que acepte el 3+1 si está aceptado el 2+1, por ejemplo
-                    ((double)oferta.cantidad / oferta.cantidadOferta / o.CantidadRegalo > (double)o.CantidadConPrecio / oferta.cantidadOferta / o.CantidadRegalo)
-                    )
-                    && (o.FiltroProducto == null || o.FiltroProducto.Trim()=="" || producto.Nombre.StartsWith(o.FiltroProducto))
-                );
+            OfertaPermitida ofertaEncontrada = ofertasFiltradas.FirstOrDefault(o =>
+                (
+                ((double)oferta.cantidad / o.CantidadConPrecio == (double)oferta.cantidadOferta / o.CantidadRegalo &&
+                (double)oferta.cantidadOferta / o.CantidadRegalo >= 1)
+                || // para que acepte el 3+1 si está aceptado el 2+1, por ejemplo
+                ((double)oferta.cantidad / oferta.cantidadOferta / o.CantidadRegalo > (double)o.CantidadConPrecio / oferta.cantidadOferta / o.CantidadRegalo)
+                )
+                && (o.FiltroProducto == null || o.FiltroProducto.Trim()=="" || producto.Nombre.StartsWith(o.FiltroProducto))
+            );
 
-                OfertaPermitida ofertaCombinada = ofertasFiltradas.FirstOrDefault(o =>
-                    o.FiltroProducto != null && o.FiltroProducto.Trim() != "" && producto.Nombre.StartsWith(o.FiltroProducto)
-                );
+            OfertaPermitida ofertaCombinada = ofertasFiltradas.FirstOrDefault(o =>
+                o.FiltroProducto != null && o.FiltroProducto.Trim() != "" && producto.Nombre.StartsWith(o.FiltroProducto)
+            );
 
             // si solo es una línea de regalo, que entre por descuento
             if (oferta.cantidadOferta > 0 && (oferta.cantidad > 0 || ofertaCombinada != null))

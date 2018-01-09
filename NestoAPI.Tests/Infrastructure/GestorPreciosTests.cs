@@ -295,6 +295,7 @@ namespace NestoAPI.Tests.Infrastructure
             linea.aplicarDescuento = true;
             linea.cantidad = 2;
             linea.precio = 10;
+            linea.baseImponible = 20;
             pedido.LineasPedido.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
@@ -302,6 +303,28 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(respuesta.ValidacionSuperada);
             Assert.IsFalse(respuesta.AutorizadaDenegadaExpresamente);
             //asertar el motivo para que no haya errores
+        }
+
+        [TestMethod]
+        public void GestorPrecios_EsOfertaPermitida_SiLaOfertaEsANuestroFavorEsPermitidaPeroNoExpresa()
+        {
+            Producto producto = A.Fake<Producto>();
+            producto.Número = "AA11";
+            producto.PVP = 10;
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "AA11";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 2;
+            linea.precio = 11;
+            linea.baseImponible = 22;
+            pedido.LineasPedido.Add(linea);
+
+            RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            Assert.IsFalse(respuesta.AutorizadaDenegadaExpresamente);
+            Assert.AreEqual("El producto AA11 no lleva oferta ni descuento", respuesta.Motivo);
         }
 
         [TestMethod]
@@ -388,7 +411,8 @@ namespace NestoAPI.Tests.Infrastructure
             linea.producto = "FAMYPROD";
             linea.aplicarDescuento = true;
             linea.cantidad = 4;
-            linea.precio = 130;
+            linea.precio = 100;
+            linea.baseImponible = 400;
             pedido.LineasPedido.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
@@ -906,6 +930,88 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsFalse(respuesta.ValidacionSuperada);
             Assert.AreEqual("No se encuentra autorizado el descuento del 20,00 % para el producto SIN_FILTRO", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasYDescuentosPermitidos_SiElDescuentoTieneCantidadMinimaEsValidoCuandoLaSupera()
+        {
+            A.CallTo(() => GestorPrecios.servicio.BuscarProducto("27095")).Returns(new Producto
+            {
+                Número = "27095",
+                Nombre = "M2LASHES",
+                PVP = 100,
+                Grupo = "COS",
+                SubGrupo = "COS",
+                Familia = "DeMarca"
+            });
+            A.CallTo(() => GestorPrecios.servicio.BuscarDescuentosPermitidos("27095", "1", "0")).Returns(new List<DescuentosProducto>
+            {
+                new DescuentosProducto
+                {
+                    Nº_Producto = "27095",
+                    Precio = 80,
+                    CantidadMínima = 6
+                }
+            });
+            Producto producto = GestorPrecios.servicio.BuscarProducto("27095");
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "1";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.tipoLinea = 1;
+            linea.producto = "27095";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 7;
+            linea.precio = 80;
+            linea.baseImponible = 560M;
+            pedido.LineasPedido.Add(linea);
+            ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, GestorPrecios.servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            Assert.AreEqual("Hay un precio autorizado de 80,00 €", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasYDescuentosPermitidos_SiElDescuentoTieneCantidadMinimaNoEsValidoCuandoNoLaSupera()
+        {
+            A.CallTo(() => GestorPrecios.servicio.BuscarProducto("27095")).Returns(new Producto
+            {
+                Número = "27095",
+                Nombre = "M2LASHES",
+                PVP = 100,
+                Grupo = "COS",
+                SubGrupo = "COS",
+                Familia = "DeMarca"
+            });
+            A.CallTo(() => GestorPrecios.servicio.BuscarDescuentosPermitidos("27095", "1", "0")).Returns(new List<DescuentosProducto>
+            {
+                new DescuentosProducto
+                {
+                    Nº_Producto = "27095",
+                    Precio = 80,
+                    CantidadMínima = 6
+                }
+            });
+            Producto producto = GestorPrecios.servicio.BuscarProducto("27095");
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "1";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.tipoLinea = 1;
+            linea.producto = "27095";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 5;
+            linea.precio = 80;
+            linea.baseImponible = 400M;
+            pedido.LineasPedido.Add(linea);
+            ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, GestorPrecios.servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            Assert.AreEqual("No se encuentra autorizado el descuento del 20,00 % para el producto 27095", respuesta.Motivo);
         }
 
         [TestMethod]
