@@ -468,13 +468,6 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
-            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
-            if (!respuesta.ValidacionSuperada)
-            {
-                throw new Exception(respuesta.Motivo);
-            }
-
             // Carlos 28/09/15: ajustamos el primer vencimiento a los plazos de pago y a los días de pago
             DateTime vencimientoPedido;
             System.Data.Entity.Core.Objects.ObjectParameter primerVencimiento = new System.Data.Entity.Core.Objects.ObjectParameter("FechaOut", typeof(DateTime));
@@ -547,6 +540,8 @@ namespace NestoAPI.Controllers
                     linea.oferta += contador.Oferta;
                 }
                 linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
+                linea.baseImponible = linPedido.Base_Imponible;
+                linea.total = linPedido.Total;
                 db.LinPedidoVtas.Add(linPedido);
             }
 
@@ -554,13 +549,19 @@ namespace NestoAPI.Controllers
             if ((int)maxNumeroOferta!=0) {
                 contador.Oferta += (int)maxNumeroOferta;
             }
-            
+
 
             // Carlos 07/10/15:
             // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
 
+            // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
+            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+            if (!respuesta.ValidacionSuperada)
+            {
+                throw new Exception(respuesta.Motivo);
+            }
 
-            
+
             try
             {
                 await db.SaveChangesAsync();

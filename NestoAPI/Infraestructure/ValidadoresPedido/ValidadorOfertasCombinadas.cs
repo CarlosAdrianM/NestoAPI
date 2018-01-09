@@ -22,7 +22,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             OfertaCombinada ofertaCumplida = ofertasCombinadas.FirstOrDefault(o => 
                 o.OfertasCombinadasDetalles.All(d => 
-                    pedido.LineasPedido.Where(p=>p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto).Contains(d.Producto)
+                    pedido.LineasPedido.Where(p=>p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto.Trim()).Contains(d.Producto.Trim())
                 )
             );
 
