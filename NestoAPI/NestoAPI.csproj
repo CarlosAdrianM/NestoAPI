@@ -245,6 +245,7 @@
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
+    <Compile Include="Controllers\ComisionesController.cs" />
     <Compile Include="Controllers\EmpresasController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
@@ -314,6 +315,11 @@
     <Compile Include="Models\Cliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Comisiones\IServicioComisionesAnuales.cs" />
+    <Compile Include="Models\Comisiones\ResumenComisionesMes.cs" />
+    <Compile Include="Models\Comisiones\ServicioComisionesAnualesEstetica.cs" />
+    <Compile Include="Models\Comisiones\TramoComision.cs" />
+    <Compile Include="Models\Comisiones\VendedorComisionAnual.cs" />
     <Compile Include="Models\CondPagoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -485,6 +491,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\VendedorPedidoGrupoProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\vstLinPedidoVtaComisione.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
