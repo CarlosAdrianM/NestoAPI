@@ -13,16 +13,28 @@ namespace NestoAPI.Models.Comisiones
         private string vendedor;
         private int anno;
         private int mes;
+        private bool incluirAlbaranes;
         
         public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno)
+            : this(servicio, vendedor, anno, DateTime.Today.Month)
+        {
+        }
+
+        public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes)
+            :this(servicio, vendedor, anno, mes, false)
+        {
+        }
+
+        public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             this.servicio = servicio;
             this.vendedor = vendedor;
             this.anno = anno;
+            this.mes = mes;
+            this.incluirAlbaranes = incluirAlbaranes;
 
             Resumenes = servicio.LeerResumenAnno(vendedor, anno);
-            mes = DateTime.Today.Month;
-            ResumenMesActual = CrearResumenMesActual(true);
+            ResumenMesActual = CrearResumenMesActual(incluirAlbaranes);
         }
 
         public ICollection<ResumenComisionesMes> Resumenes { get; set; }
@@ -32,6 +44,9 @@ namespace NestoAPI.Models.Comisiones
         {
             ResumenComisionesMes resumen = new ResumenComisionesMes
             {
+                Vendedor = vendedor,
+                Anno = anno,
+                Mes = mes,
                 GeneralVenta = servicio.LeerGeneralVentaMes(vendedor, anno, mes, incluirAlbaranes),
                 UnionLaserVenta = servicio.LeerUnionLaserVentaMes(vendedor, anno, mes, incluirAlbaranes),
                 EvaVisnuVenta = servicio.LeerEvaVisnuVentaMes(vendedor, anno, mes, incluirAlbaranes),

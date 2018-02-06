@@ -14,16 +14,14 @@ namespace NestoAPI.Models.Comisiones
         {
             DateTime fechaDesde = FechaDesde(anno, mes);
             DateTime fechaHasta = FechaHasta(anno, mes);
-            decimal venta = db.vstLinPedidoVtaComisiones
+            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
-                    l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta &&
                     l.Familia == "Eva Visnu" && 
                     l.Grupo.ToLower() != "otros aparatos" &&
-                    l.Vendedor == vendedor &&
-                    (l.Estado == 2 || l.Estado == 4)
-                ).Select(l => l.Base_Imponible).DefaultIfEmpty().Sum();
+                    l.Vendedor == vendedor
+                );
 
-            return venta;
+            return CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta); ;
         }
 
         public decimal LeerGeneralVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
@@ -31,66 +29,29 @@ namespace NestoAPI.Models.Comisiones
 
             DateTime fechaDesde = FechaDesde(anno, mes);
             DateTime fechaHasta = FechaHasta(anno, mes);
-            decimal venta = db.vstLinPedidoVtaComisiones
+            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
-                    l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta &&
                     l.Vendedor == vendedor &&
-                    (
-                    l.Familia.ToLower() == "anubis" ||
-                    l.Familia.ToLower() == "ardell" ||
-                    l.Familia.ToLower() == "belclinic" ||
-                    l.Familia.ToLower() == "blancabarb" ||
-                    l.Familia.ToLower() == "cursos" ||
-                    l.Familia.ToLower() == "cv" ||
-                    l.Familia.ToLower() == "du" ||
-                    l.Familia.ToLower() == "estelca" ||
-                    l.Familia.ToLower() == "eva visnu" ||
-                    l.Familia.ToLower() == "faby" ||
-                    l.Familia.ToLower() == "fama" ||
-                    l.Familia.ToLower() == "gena" ||
-                    l.Familia.ToLower() == "genéricos" ||
-                    l.Familia.ToLower() == "ibd" ||
-                    l.Familia.ToLower() == "ibp uniuso" ||
-                    l.Familia.ToLower() == "irene ríos" ||
-                    l.Familia.ToLower() == "m2lashes" ||
-                    l.Familia.ToLower() == "masglo" ||
-                    l.Familia.ToLower() == "maystar" ||
-                    l.Familia.ToLower() == "nk" ||
-                    l.Familia.ToLower() == "paraiso" ||
-                    l.Familia.ToLower() == "pbserum" ||
-                    l.Familia.ToLower() == "pure" ||
-                    l.Familia.ToLower() == "tessiline" ||
-                    l.Familia.ToLower() == "tevian" ||
-                    l.Familia.ToLower() == "uso prof." ||
-                    l.Familia.ToLower() == "silverfox" ||
-                    l.Familia.ToLower() == "wear&tear" ||
-                    l.Familia.ToLower() == "agv" ||
-                    l.Familia.ToLower() == "dr. santé" ||
-                    l.Familia.ToLower() == "iberfilm" ||
-                    l.Familia.ToLower() == "k. cure" ||
-                    l.Familia.ToLower() == "jorgegarza" ||
-                    l.Familia.ToLower() == "lisap") &&
-                    l.Grupo.ToLower() != "otros aparatos" &&
-                    (l.Estado == 2 || l.Estado == 4)
-                ).Select(l => l.Base_Imponible).DefaultIfEmpty().Sum();
+                    l.EstadoFamilia == 0 &&
+                    l.Familia.ToLower() != "unionlaser" &&
+                    l.Grupo.ToLower() != "otros aparatos"
+                );
 
-            return venta;
+            return CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta); 
         }
 
         public decimal LeerOtrosAparatosVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             DateTime fechaDesde = FechaDesde(anno, mes);
             DateTime fechaHasta = FechaHasta(anno, mes);
-            
-            decimal venta = db.vstLinPedidoVtaComisiones
-                .Where(l =>
-                    l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta &&
-                    l.Vendedor == vendedor &&
-                    l.Grupo.ToLower() == "otros aparatos" &&
-                    (l.Estado == 2 || l.Estado == 4)
-                ).Select(l=>l.Base_Imponible).DefaultIfEmpty().Sum();
 
-            return venta;
+            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
+                .Where(l =>
+                    l.Vendedor == vendedor &&
+                    l.Grupo.ToLower() == "otros aparatos"
+                );
+
+            return CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
         }
 
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
@@ -100,7 +61,7 @@ namespace NestoAPI.Models.Comisiones
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
         {
-            Collection<TramoComision> tramos = new Collection<TramoComision>
+            Collection<TramoComision> tramosCalle = new Collection<TramoComision>
             {
                 new TramoComision
                 {
@@ -167,12 +128,88 @@ namespace NestoAPI.Models.Comisiones
                 }
             };
 
-            return tramos;
+            Collection<TramoComision> tramosTelefono = new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 94974.69M,
+                    Hasta = 100000M,
+                    Tipo = .012M,
+                    TipoExtra = .0M
+                },
+                new TramoComision
+                {
+                    Desde = 100000.01M,
+                    Hasta = 105500M,
+                    Tipo = .0145M,
+                    TipoExtra = .0M
+                },
+                new TramoComision
+                {
+                    Desde = 105500.01M,
+                    Hasta = 126500M,
+                    Tipo = .0195M,
+                    TipoExtra = .0M
+                },
+                new TramoComision
+                {
+                    Desde = 126500.01M,
+                    Hasta = 133000M,
+                    Tipo = .0306M,
+                    TipoExtra = .025M
+                },
+                new TramoComision
+                {
+                    Desde = 133000.01M,
+                    Hasta = 140500M,
+                    Tipo = .033M,
+                    TipoExtra = .004M
+                },
+                new TramoComision
+                {
+                    Desde = 140500.01M,
+                    Hasta = 153500M,
+                    Tipo = .0355M,
+                    TipoExtra = .055M
+                },
+                new TramoComision
+                {
+                    Desde = 153500.01M,
+                    Hasta = 162000M,
+                    Tipo = .0370M,
+                    TipoExtra = .007M
+                },
+                new TramoComision
+                {
+                    Desde = 162000.01M,
+                    Hasta = 169500M,
+                    Tipo = .0395M,
+                    TipoExtra = .0085M
+                },
+                new TramoComision
+                {
+                    Desde = 169500.01M,
+                    Hasta = Decimal.MaxValue,
+                    Tipo = .0462M,
+                    TipoExtra = .01M
+                }
+            };
+
+            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "JM")
+            {
+                return tramosCalle;
+            }
+            else if (vendedor == "CL" || vendedor == "LA" || vendedor == "MRM" || vendedor == "PA" || vendedor == "SH")
+            {
+                return tramosTelefono;
+            }
+
+            throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");
         }
 
         public ICollection<TramoComision> LeerTramosComisionMes(string vendedor)
         {
-            Collection <TramoComision> tramos = new Collection<TramoComision>
+            Collection <TramoComision> tramosCalle = new Collection<TramoComision>
             {
                 new TramoComision
                 {
@@ -189,7 +226,34 @@ namespace NestoAPI.Models.Comisiones
                     TipoExtra = 0
                 }
             };
-            return tramos;
+
+            Collection<TramoComision> tramosTelefono = new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0,
+                    Hasta = 6000,
+                    Tipo = 0,
+                    TipoExtra = 0
+                },
+                new TramoComision
+                {
+                    Desde = 6000.01M,
+                    Hasta = 7914.56M,
+                    Tipo = .067M,
+                    TipoExtra = 0
+                }
+            };
+            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "JM")
+            {
+                return tramosCalle;
+            } else if (vendedor == "CL" || vendedor == "LA" || vendedor == "MRM" || vendedor == "PA" || vendedor == "SH")
+            {
+                return tramosTelefono;
+            }
+
+            throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");
+            
         }
 
         public decimal LeerUnionLaserVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
@@ -198,14 +262,28 @@ namespace NestoAPI.Models.Comisiones
 
             DateTime fechaDesde = FechaDesde(anno, mes);
             DateTime fechaHasta = FechaHasta(anno, mes);
-            decimal venta = db.vstLinPedidoVtaComisiones
+            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
-                    l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta &&
+                    l.Vendedor == vendedor &&
                     l.Familia == "UnionLaser" &&
-                    l.Grupo.ToLower() != "otros aparatos" &&
-                    (l.Estado == 2 || l.Estado == 4)
-                ).Select(l => l.Base_Imponible).DefaultIfEmpty().Sum();
+                    l.Grupo.ToLower() != "otros aparatos"
+                );
+            decimal venta = CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
 
+            return venta;
+        }
+
+        private static decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta)
+        {
+            if (incluirAlbaranes)
+            {
+                consulta = consulta.Where(l => l.Estado == 2 || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4));
+            }
+            else
+            {
+                consulta = consulta.Where(l => l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4);
+            }
+            decimal venta = consulta.Select(l => l.Base_Imponible).DefaultIfEmpty().Sum();
             return venta;
         }
 

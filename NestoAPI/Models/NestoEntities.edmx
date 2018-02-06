@@ -1118,6 +1118,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisiones' no tiene d
           <Property Name="Nº Factura" Type="char" MaxLength="10" />
           <Property Name="Grupo" Type="char" MaxLength="50" />
           <Property Name="SubGrupo" Type="char" MaxLength="50" />
+          <Property Name="EstadoFamilia" Type="smallint" />
         </EntityType>
         <Association Name="FK_CabFacturaCmp_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
@@ -2937,7 +2938,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisiones' no tiene d
     [vstLinPedidoVtaComisiones].[Fecha Factura] AS [Fecha Factura], 
     [vstLinPedidoVtaComisiones].[Nº Factura] AS [Nº Factura], 
     [vstLinPedidoVtaComisiones].[Grupo] AS [Grupo], 
-    [vstLinPedidoVtaComisiones].[SubGrupo] AS [SubGrupo]
+    [vstLinPedidoVtaComisiones].[SubGrupo] AS [SubGrupo], 
+    [vstLinPedidoVtaComisiones].[EstadoFamilia] AS [EstadoFamilia]
     FROM [dbo].[vstLinPedidoVtaComisiones] AS [vstLinPedidoVtaComisiones]</DefiningQuery>
           </EntitySet>
           <AssociationSet Name="FK_CabFacturaCmp_Empresas" Association="Self.FK_CabFacturaCmp_Empresas">
@@ -7108,6 +7110,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisiones' no tiene d
           <Property Name="Nº_Factura" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="Grupo" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
           <Property Name="SubGrupo" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="EstadoFamilia" Type="Int16" />
         </EntityType>
         </Schema>
     </edmx:ConceptualModels>
@@ -8182,6 +8185,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisiones' no tiene d
           <EntitySetMapping Name="vstLinPedidoVtaComisiones">
             <EntityTypeMapping TypeName="NVModel.vstLinPedidoVtaComisione">
               <MappingFragment StoreEntitySet="vstLinPedidoVtaComisiones">
+                <ScalarProperty Name="EstadoFamilia" ColumnName="EstadoFamilia" />
                 <ScalarProperty Name="SubGrupo" ColumnName="SubGrupo" />
                 <ScalarProperty Name="Grupo" ColumnName="Grupo" />
                 <ScalarProperty Name="Nº_Factura" ColumnName="Nº Factura" />

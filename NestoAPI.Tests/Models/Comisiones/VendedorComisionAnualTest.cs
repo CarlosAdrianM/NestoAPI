@@ -15,7 +15,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             IServicioComisionesAnuales servicio = A.Fake<IServicioComisionesAnuales>();
             A.CallTo(() => servicio.LeerGeneralVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(1000);
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
             Assert.AreEqual(12000, vendedorComisionAnual.ResumenMesActual.GeneralProyeccion);
         }
@@ -33,7 +33,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             });
             A.CallTo(() => servicio.LeerGeneralVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(1000);
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
             Assert.AreEqual(9000, vendedorComisionAnual.ResumenMesActual.GeneralProyeccion);
         }
@@ -64,7 +64,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 }
             });
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
             Assert.AreEqual(.1M, vendedorComisionAnual.ResumenMesActual.GeneralTipo);
             Assert.AreEqual(.12M, vendedorComisionAnual.ResumenMesActual.UnionLaserTipo);
@@ -102,7 +102,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 }
             });
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
             Assert.AreEqual(.2M, vendedorComisionAnual.ResumenMesActual.GeneralTipo);
             Assert.AreEqual(.14M, vendedorComisionAnual.ResumenMesActual.UnionLaserTipo);
@@ -150,7 +150,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 }
             });
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018,DateTime.Today.Month, true);
 
             Assert.AreEqual(.03M, vendedorComisionAnual.ResumenMesActual.GeneralTipo);
             Assert.AreEqual(.101M, vendedorComisionAnual.ResumenMesActual.UnionLaserTipo);
@@ -205,7 +205,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 }
             });
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
             Assert.AreEqual(.072M, vendedorComisionAnual.ResumenMesActual.GeneralTipo);
             Assert.AreEqual(.108M, vendedorComisionAnual.ResumenMesActual.UnionLaserTipo);
@@ -216,7 +216,6 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(1.6M, vendedorComisionAnual.ResumenMesActual.EvaVisnuComision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.OtrosAparatosComision);
         }
-
 
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiHaCobradoComisionLosMesesAnterioresComisionaPorLaDiferencia()
@@ -270,7 +269,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 }
             });
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
             Assert.AreEqual(.2M, vendedorComisionAnual.ResumenMesActual.GeneralTipo);
             Assert.AreEqual(.108M, vendedorComisionAnual.ResumenMesActual.UnionLaserTipo);

@@ -39,5 +39,6 @@ namespace NestoAPI.Models
         public string Nº_Factura { get; set; }
         public string Grupo { get; set; }
         public string SubGrupo { get; set; }
+        public Nullable<short> EstadoFamilia { get; set; }
     }
 }
