@@ -34,7 +34,16 @@ namespace NestoAPI.Models.Comisiones
             this.incluirAlbaranes = incluirAlbaranes;
 
             Resumenes = servicio.LeerResumenAnno(vendedor, anno);
-            ResumenMesActual = CrearResumenMesActual(incluirAlbaranes);
+            ResumenMesActual = Resumenes.SingleOrDefault(r => r.Mes == mes);
+            if (ResumenMesActual == null)
+            {
+                ResumenMesActual = CrearResumenMesActual(incluirAlbaranes);
+            } else
+            {
+                decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.GeneralVenta);
+                int meses = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Count();
+                ResumenMesActual.GeneralProyeccion = ventaAcumulada * (12 / meses);
+            }
         }
 
         public ICollection<ResumenComisionesMes> Resumenes { get; set; }
@@ -47,10 +56,10 @@ namespace NestoAPI.Models.Comisiones
                 Vendedor = vendedor,
                 Anno = anno,
                 Mes = mes,
-                GeneralVenta = servicio.LeerGeneralVentaMes(vendedor, anno, mes, incluirAlbaranes),
-                UnionLaserVenta = servicio.LeerUnionLaserVentaMes(vendedor, anno, mes, incluirAlbaranes),
-                EvaVisnuVenta = servicio.LeerEvaVisnuVentaMes(vendedor, anno, mes, incluirAlbaranes),
-                OtrosAparatosVenta = servicio.LeerOtrosAparatosVentaMes(vendedor, anno, mes, incluirAlbaranes),
+                GeneralVenta = servicio.Etiquetas.Single(e => e.Nombre == "General").LeerVentaMes(vendedor, anno, mes, incluirAlbaranes),
+                UnionLaserVenta = servicio.Etiquetas.Single(e => e.Nombre == "Unión Láser").LeerVentaMes(vendedor, anno, mes, incluirAlbaranes),
+                EvaVisnuVenta = servicio.Etiquetas.Single(e => e.Nombre == "Eva Visnú").LeerVentaMes(vendedor, anno, mes, incluirAlbaranes),
+                OtrosAparatosVenta = servicio.Etiquetas.Single(e => e.Nombre == "Otros Aparatos").LeerVentaMes(vendedor, anno, mes, incluirAlbaranes),
             };
 
             resumen.OtrosAparatosTipo = TIPO_FIJO_OTROSAPARATOS;
@@ -69,6 +78,7 @@ namespace NestoAPI.Models.Comisiones
                 resumen.GeneralComision = Math.Round(resumen.GeneralVenta * tramo.Tipo);
                 resumen.UnionLaserTipo = TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
                 resumen.EvaVisnuTipo = tramo.TipoExtra;
+                resumen.GeneralFaltaParaSalto = tramo.Hasta - resumen.GeneralVenta;
             } else
             {
                 ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
@@ -79,7 +89,15 @@ namespace NestoAPI.Models.Comisiones
                     resumen.GeneralComision = Math.Round(ventaAcumulada * resumen.GeneralTipo - Resumenes.Sum(r => r.GeneralComision),2);
                     resumen.UnionLaserTipo = TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
                     resumen.EvaVisnuTipo = tramo.TipoExtra;
+                    resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ? 
+                        decimal.MaxValue : 
+                        Math.Round((tramo.Hasta/(12 / meses)) - ventaAcumulada,2);
                 }
+            }
+
+            if (resumen.GeneralComision < 0)
+            {
+                resumen.GeneralComision = 0;
             }
                         
             return resumen;
@@ -94,7 +112,6 @@ namespace NestoAPI.Models.Comisiones
                     return tramo;
                 }
             }
-
             return null;
         }
     }

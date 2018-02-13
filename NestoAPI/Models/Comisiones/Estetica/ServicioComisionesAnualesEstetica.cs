@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Models.Comisiones.Estetica;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -10,35 +11,18 @@ namespace NestoAPI.Models.Comisiones
     {
         private NVEntities db = new NVEntities();
 
-        public decimal LeerEvaVisnuVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
+        public ServicioComisionesAnualesEstetica()
         {
-            DateTime fechaDesde = FechaDesde(anno, mes);
-            DateTime fechaHasta = FechaHasta(anno, mes);
-            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
-                .Where(l =>
-                    l.Familia == "Eva Visnu" && 
-                    l.Grupo.ToLower() != "otros aparatos" &&
-                    l.Vendedor == vendedor
-                );
-
-            return CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta); ;
+            Etiquetas = new Collection<IEtiquetaComision>
+            {
+                new EtiquetaGeneral(),
+                new EtiquetaUnionLaser(),
+                new EtiquetaEvaVisnu(),
+                new EtiquetaOtrosAparatos()
+            };
         }
-
-        public decimal LeerGeneralVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
-        {
-
-            DateTime fechaDesde = FechaDesde(anno, mes);
-            DateTime fechaHasta = FechaHasta(anno, mes);
-            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
-                .Where(l =>
-                    l.Vendedor == vendedor &&
-                    l.EstadoFamilia == 0 &&
-                    l.Familia.ToLower() != "unionlaser" &&
-                    l.Grupo.ToLower() != "otros aparatos"
-                );
-
-            return CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta); 
-        }
+        
+        public ICollection<IEtiquetaComision> Etiquetas { get; set; }
 
         public decimal LeerOtrosAparatosVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
@@ -48,7 +32,8 @@ namespace NestoAPI.Models.Comisiones
             IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
                     l.Vendedor == vendedor &&
-                    l.Grupo.ToLower() == "otros aparatos"
+                    l.Grupo.ToLower() == "otros aparatos" &&
+                    l.EstadoFamilia == 0
                 );
 
             return CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
@@ -56,11 +41,66 @@ namespace NestoAPI.Models.Comisiones
 
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return new Collection<ResumenComisionesMes>();
+            var resumenDb = db.ComisionesAnualesResumenMes
+                .Where(c => c.Vendedor == vendedor && c.Anno == anno).OrderBy(r => r.Mes);
+
+            if (resumenDb == null || resumenDb.Count() == 0)
+            {
+                return new Collection<ResumenComisionesMes>();
+            }
+
+            byte mesAnterior = resumenDb.First().Mes;
+
+            ICollection<ResumenComisionesMes> resumenAnno = new Collection<ResumenComisionesMes>();
+            ResumenComisionesMes resumenMes = new ResumenComisionesMes {
+                Vendedor = vendedor,
+                Anno = anno,
+                Mes = mesAnterior
+            };
+            foreach (ComisionAnualResumenMes resumenMesDB in resumenDb)
+            {
+                if (mesAnterior != resumenMesDB.Mes)
+                {
+                    resumenAnno.Add(resumenMes);
+                    resumenMes = new ResumenComisionesMes
+                    {
+                        Vendedor = resumenMesDB.Vendedor,
+                        Anno = resumenMesDB.Anno,
+                        Mes = resumenMesDB.Mes
+                    };
+                }
+                switch (resumenMesDB.Etiqueta)
+                {
+                    case "General":
+                        resumenMes.GeneralVenta = resumenMesDB.Venta;
+                        resumenMes.GeneralTipo = resumenMesDB.Tipo;
+                        resumenMes.GeneralComision = resumenMesDB.Comision;
+                        break;
+                    case "Unión Láser":
+                        resumenMes.UnionLaserVenta = resumenMesDB.Venta;
+                        resumenMes.UnionLaserTipo = resumenMesDB.Tipo;
+                        break;
+                    case "Eva Visnú":
+                        resumenMes.EvaVisnuVenta = resumenMesDB.Venta;
+                        resumenMes.EvaVisnuTipo = resumenMesDB.Tipo;
+                        break;
+                    case "Otros Aparatos":
+                        resumenMes.OtrosAparatosVenta = resumenMesDB.Venta;
+                        resumenMes.OtrosAparatosTipo = resumenMesDB.Tipo;
+                        break;
+                    default:
+                        throw new Exception("Etiqueta no válida en la tabla de resúmenes de comisiones");
+                }
+
+            }
+            resumenAnno.Add(resumenMes);
+
+            return resumenAnno;
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
         {
+            vendedor = vendedor.ToUpper();
             Collection<TramoComision> tramosCalle = new Collection<TramoComision>
             {
                 new TramoComision
@@ -122,7 +162,7 @@ namespace NestoAPI.Models.Comisiones
                 new TramoComision
                 {
                     Desde = 339000.01M,
-                    Hasta = Decimal.MaxValue,
+                    Hasta = decimal.MaxValue,
                     Tipo = .0925M,
                     TipoExtra = .02M
                 }
@@ -156,7 +196,7 @@ namespace NestoAPI.Models.Comisiones
                     Desde = 126500.01M,
                     Hasta = 133000M,
                     Tipo = .0306M,
-                    TipoExtra = .025M
+                    TipoExtra = .0025M
                 },
                 new TramoComision
                 {
@@ -170,7 +210,7 @@ namespace NestoAPI.Models.Comisiones
                     Desde = 140500.01M,
                     Hasta = 153500M,
                     Tipo = .0355M,
-                    TipoExtra = .055M
+                    TipoExtra = .0055M
                 },
                 new TramoComision
                 {
@@ -189,7 +229,7 @@ namespace NestoAPI.Models.Comisiones
                 new TramoComision
                 {
                     Desde = 169500.01M,
-                    Hasta = Decimal.MaxValue,
+                    Hasta = decimal.MaxValue,
                     Tipo = .0462M,
                     TipoExtra = .01M
                 }
@@ -255,25 +295,8 @@ namespace NestoAPI.Models.Comisiones
             throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");
             
         }
-
-        public decimal LeerUnionLaserVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
-        {
-            // OJO AQUÍ FALTAN LOS RENTING
-
-            DateTime fechaDesde = FechaDesde(anno, mes);
-            DateTime fechaHasta = FechaHasta(anno, mes);
-            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
-                .Where(l =>
-                    l.Vendedor == vendedor &&
-                    l.Familia == "UnionLaser" &&
-                    l.Grupo.ToLower() != "otros aparatos"
-                );
-            decimal venta = CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
-
-            return venta;
-        }
-
-        private static decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta)
+        
+        public static decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta)
         {
             if (incluirAlbaranes)
             {
@@ -287,14 +310,15 @@ namespace NestoAPI.Models.Comisiones
             return venta;
         }
 
-        private DateTime FechaDesde(int anno, int mes)
+        public static DateTime FechaDesde(int anno, int mes)
         {
             return new DateTime(anno, mes, 1);
         }
 
-        private DateTime FechaHasta(int anno, int mes)
+        public static DateTime FechaHasta(int anno, int mes)
         {
             return (new DateTime(anno, mes+1, 1)).AddDays(-1);
         }
+
     }
 }

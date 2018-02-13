@@ -245,6 +245,7 @@
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
+    <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
     <Compile Include="Controllers\EmpresasController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
@@ -315,9 +316,20 @@
     <Compile Include="Models\Cliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\ComisionAnualDetalle.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\ComisionAnualResumenMes.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Comisiones\Estetica\EtiquetaEvaVisnu.cs" />
+    <Compile Include="Models\Comisiones\Estetica\EtiquetaGeneral.cs" />
+    <Compile Include="Models\Comisiones\Estetica\EtiquetaOtrosAparatos.cs" />
+    <Compile Include="Models\Comisiones\Estetica\EtiquetaUnionLaser.cs" />
+    <Compile Include="Models\Comisiones\IEtiquetaComision.cs" />
     <Compile Include="Models\Comisiones\IServicioComisionesAnuales.cs" />
     <Compile Include="Models\Comisiones\ResumenComisionesMes.cs" />
-    <Compile Include="Models\Comisiones\ServicioComisionesAnualesEstetica.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica.cs" />
     <Compile Include="Models\Comisiones\TramoComision.cs" />
     <Compile Include="Models\Comisiones\VendedorComisionAnual.cs" />
     <Compile Include="Models\CondPagoCliente.cs">
@@ -494,6 +506,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\vstLinPedidoVtaComisione.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\vstLinPedidoVtaComisionesDetalle.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
