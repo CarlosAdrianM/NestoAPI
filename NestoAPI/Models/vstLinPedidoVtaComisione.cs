@@ -40,5 +40,6 @@ namespace NestoAPI.Models
         public string Grupo { get; set; }
         public string SubGrupo { get; set; }
         public Nullable<short> EstadoFamilia { get; set; }
+        public Nullable<decimal> PrecioTarifa { get; set; }
     }
 }

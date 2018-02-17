@@ -440,6 +440,4 @@ namespace NestoAPI.Tests.Models.Comisiones
     }
 
     // si el mes es agosto, se pagan al tipo que lleve a ese momento
-
-    // si es posterior al 01/01/18 miramos si hay resumen: si lo hay lo cargamos, si no lo hay lo calculamos.
 }

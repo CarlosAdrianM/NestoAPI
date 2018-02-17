@@ -480,6 +480,9 @@
     <Compile Include="Models\RecursosHumanos\TipoFestivo.cs" />
     <Compile Include="Models\RecursosHumanos\TipoAccion.cs" />
     <Compile Include="Models\RecursosHumanos\Vacaciones.cs" />
+    <Compile Include="Models\RentingFactura.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\RoleBindingModels.cs" />
     <Compile Include="Models\Ruta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

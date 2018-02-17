@@ -31,7 +31,7 @@ namespace NestoAPI.Controllers
                         Anno = (short)anno,
                         Mes = (byte)mes,
                         Nombre = c.Nombre,
-                        Dirección = c.Dirección,
+                        Direccion = c.Dirección,
                         BaseImponible = c.Base_Imponible,
                         Fecha_Factura = c.Fecha_Factura,
                         Empresa = c.Empresa,

@@ -176,10 +176,11 @@
         <AssociationConnector Association="NVModel.FK_OfertasCombinadasDetalle_Empresas" />
         <AssociationConnector Association="NVModel.FK_OfertasCombinadasDetalle_OfertasCombinadas" />
         <AssociationConnector Association="NVModel.FK_OfertasCombinadasDetalle_Productos" />
-        <EntityTypeShape EntityType="NVModel.vstLinPedidoVtaComisione" Width="1.5" PointX="9.375" PointY="5.75" />
         <EntityTypeShape EntityType="NVModel.ComisionAnualDetalle" Width="1.5" PointX="0.75" PointY="10.75" />
         <EntityTypeShape EntityType="NVModel.ComisionAnualResumenMes" Width="1.5" PointX="11.75" PointY="0.75" />
-        <EntityTypeShape EntityType="NVModel.vstLinPedidoVtaComisionesDetalle" Width="1.5" PointX="3.375" PointY="11.75" />
+        <EntityTypeShape EntityType="NVModel.RentingFactura" Width="1.5" PointX="11.375" PointY="4.75" />
+        <EntityTypeShape EntityType="NVModel.vstLinPedidoVtaComisionesDetalle" Width="1.5" PointX="11.375" PointY="6.75" />
+        <EntityTypeShape EntityType="NVModel.vstLinPedidoVtaComisione" Width="1.5" PointX="9.375" PointY="10.75" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
