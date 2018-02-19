@@ -23,7 +23,7 @@ namespace NestoAPI.Controllers
             {
                 ServicioComisionesAnualesEstetica servicio = new ServicioComisionesAnualesEstetica();
                 var etiquetaServicio = servicio.Etiquetas.Single(s => s.Nombre == etiqueta);
-                var comisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta);
+                var comisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta).ToList();
                 return comisiones.Select(c=>
                     new vstLinPedidoVtaComisionesDetalle
                     {

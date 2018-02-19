@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Models.Comisiones
 {
@@ -6,6 +7,6 @@ namespace NestoAPI.Models.Comisiones
     {
         string Nombre { get; }
         decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes);
-        ICollection<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta);
+        IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta);
     }
 }

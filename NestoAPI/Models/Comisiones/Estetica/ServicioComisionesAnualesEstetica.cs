@@ -298,6 +298,17 @@ namespace NestoAPI.Models.Comisiones
         
         public static decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta)
         {
+            consulta = ServicioComisionesAnualesEstetica.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            decimal venta = consulta.Select(l => l.Base_Imponible).DefaultIfEmpty().Sum();
+            return venta;
+        }
+
+        public static IQueryable<vstLinPedidoVtaComisione> ConsultaVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta)
+        {
+            if (consulta == null)
+            {
+                return null;
+            }
             if (incluirAlbaranes)
             {
                 consulta = consulta.Where(l => l.Estado == 2 || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4));
@@ -306,8 +317,7 @@ namespace NestoAPI.Models.Comisiones
             {
                 consulta = consulta.Where(l => l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4);
             }
-            decimal venta = consulta.Select(l => l.Base_Imponible).DefaultIfEmpty().Sum();
-            return venta;
+            return consulta;
         }
 
         public static DateTime FechaDesde(int anno, int mes)

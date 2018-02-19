@@ -8,6 +8,8 @@ namespace NestoAPI.Models.Comisiones.Estetica
     {
         private NVEntities db = new NVEntities();
 
+        private IQueryable<vstLinPedidoVtaComisione> consulta;
+
         public string Nombre
         {
             get
@@ -20,19 +22,33 @@ namespace NestoAPI.Models.Comisiones.Estetica
         {
             DateTime fechaDesde = ServicioComisionesAnualesEstetica.FechaDesde(anno, mes);
             DateTime fechaHasta = ServicioComisionesAnualesEstetica.FechaHasta(anno, mes);
-            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
+            CrearConsulta(vendedor);
+
+            return ServicioComisionesAnualesEstetica.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+        }
+
+
+        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
+        {
+            DateTime fechaDesde = ServicioComisionesAnualesEstetica.FechaDesde(anno, mes);
+            DateTime fechaHasta = ServicioComisionesAnualesEstetica.FechaHasta(anno, mes);
+
+            if (consulta == null)
+            {
+                CrearConsulta(vendedor);
+            }
+
+            return ServicioComisionesAnualesEstetica.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+        }
+
+        private void CrearConsulta(string vendedor)
+        {
+            consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
                     l.Familia.ToLower() == "eva visnu" &&
                     l.Grupo.ToLower() != "otros aparatos" &&
                     l.Vendedor == vendedor
                 );
-
-            return ServicioComisionesAnualesEstetica.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
-        }
-
-        public ICollection<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
-        {
-            throw new NotImplementedException();
         }
     }
 }

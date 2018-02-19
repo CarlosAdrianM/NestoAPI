@@ -8,6 +8,9 @@ namespace NestoAPI.Models.Comisiones.Estetica
     {
         private NVEntities db = new NVEntities();
 
+        private IQueryable<vstLinPedidoVtaComisione> consulta;
+        private IQueryable<vstLinPedidoVtaComisione> consultaRenting;
+
         public string Nombre
         {
             get
@@ -21,37 +24,59 @@ namespace NestoAPI.Models.Comisiones.Estetica
             const decimal PORCENTAJE_BASE_IMPONIBLE_RENTING = .75M;
             DateTime fechaDesde = ServicioComisionesAnualesEstetica.FechaDesde(anno, mes);
             DateTime fechaHasta = ServicioComisionesAnualesEstetica.FechaHasta(anno, mes);
+                        
+            CrearConsultaRenting(vendedor, incluirAlbaranes, fechaDesde, fechaHasta);
+            decimal ventaRenting = consultaRenting.Select(l => (decimal)l.PrecioTarifa * PORCENTAJE_BASE_IMPONIBLE_RENTING).DefaultIfEmpty().Sum();
 
-            var facturasRenting = db.RentingFacturas.Select(r => r.Numero);
-            var comisionesRenting = db.vstLinPedidoVtaComisiones.Where(l => l.Vendedor == vendedor && facturasRenting.Contains(l.Nº_Factura));
+            CrearConsulta(vendedor);
+            decimal venta = ServicioComisionesAnualesEstetica.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            
+            return venta + ventaRenting;
 
-            IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
+        }
+
+        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
+        {
+            DateTime fechaDesde = ServicioComisionesAnualesEstetica.FechaDesde(anno, mes);
+            DateTime fechaHasta = ServicioComisionesAnualesEstetica.FechaHasta(anno, mes);
+            
+            if (consultaRenting == null)
+            {
+                CrearConsultaRenting(vendedor, incluirAlbaranes, fechaDesde, fechaHasta);
+            }
+
+            if (consulta == null)
+            {
+                CrearConsulta(vendedor);
+            }
+
+            return ServicioComisionesAnualesEstetica.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+        }
+
+        private void CrearConsulta (string vendedor)
+        {
+            consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
                     l.Vendedor == vendedor &&
                     l.Familia.ToLower() == "unionlaser" &&
                     l.Grupo.ToLower() != "otros aparatos"
                 )
-                .Except(comisionesRenting);
-            decimal venta = ServicioComisionesAnualesEstetica.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+                .Except(consultaRenting);
+        }
+
+        private void CrearConsultaRenting(string vendedor, bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            var facturasRenting = db.RentingFacturas.Select(r => r.Numero);
+            consultaRenting = db.vstLinPedidoVtaComisiones.Where(l => l.Vendedor == vendedor && facturasRenting.Contains(l.Nº_Factura));
 
             if (incluirAlbaranes)
             {
-                comisionesRenting = comisionesRenting.Where(l => l.Estado == 2 || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4));
+                consultaRenting = consultaRenting.Where(l => l.Estado == 2 || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4));
             }
             else
             {
-                comisionesRenting = comisionesRenting.Where(l => l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4);
+                consultaRenting = consultaRenting.Where(l => l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4);
             }
-
-            decimal ventaRenting = comisionesRenting.Select(l => (decimal)l.PrecioTarifa * PORCENTAJE_BASE_IMPONIBLE_RENTING).DefaultIfEmpty().Sum();
-
-            return venta + ventaRenting;
-
-        }
-
-        public ICollection<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
-        {
-            throw new NotImplementedException();
         }
     }
 }
