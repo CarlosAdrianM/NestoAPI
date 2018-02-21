@@ -75,7 +75,7 @@ namespace NestoAPI.Models.Comisiones
             if (tramo != null)
             {
                 resumen.GeneralTipo = tramo.Tipo;
-                resumen.GeneralComision = Math.Round(resumen.GeneralVenta * tramo.Tipo);
+                resumen.GeneralComision = Math.Round(resumen.GeneralVenta * tramo.Tipo, 2);
                 resumen.UnionLaserTipo = TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
                 resumen.EvaVisnuTipo = tramo.TipoExtra;
                 resumen.GeneralFaltaParaSalto = tramo.Hasta - resumen.GeneralVenta;
