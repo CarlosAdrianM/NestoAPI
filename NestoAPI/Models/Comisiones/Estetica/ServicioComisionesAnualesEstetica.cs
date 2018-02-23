@@ -105,6 +105,13 @@ namespace NestoAPI.Models.Comisiones
             {
                 new TramoComision
                 {
+                    Desde = 0M,
+                    Hasta = 189949.36M,
+                    Tipo = .02M,
+                    TipoExtra = .001M
+                },
+                new TramoComision
+                {
                     Desde = 189949.37M,
                     Hasta = 200000M,
                     Tipo = .03M,
@@ -171,6 +178,12 @@ namespace NestoAPI.Models.Comisiones
             Collection<TramoComision> tramosTelefono = new Collection<TramoComision>
             {
                 new TramoComision
+                {
+                    Desde = 0M,
+                    Hasta = 94974.68M,
+                    Tipo = .0067M,
+                    TipoExtra = .0M
+                },new TramoComision
                 {
                     Desde = 94974.69M,
                     Hasta = 100000M,
