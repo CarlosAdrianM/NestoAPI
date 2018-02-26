@@ -51,8 +51,17 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ResumenComisionesMes))]
         public async Task<IHttpActionResult> GetComisiones(string vendedor, int anno, int mes)
         {
-            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(servicio, vendedor, anno, mes);
-            return Ok(vendedorComision.ResumenMesActual);
+            // si pasamos el vendedor en blanco, sacamos todos
+            if (vendedor != null)
+            {
+                VendedorComisionAnual vendedorComision = new VendedorComisionAnual(servicio, vendedor, anno, mes);
+                return Ok(vendedorComision.ResumenMesActual);
+            } else
+            {
+                List<ResumenComisionesMes> comisiones = CalcularComisiones(anno, mes);
+                return Ok(comisiones);
+            }
+            
         }
 
         // GET: api/Comisiones
@@ -174,6 +183,13 @@ namespace NestoAPI.Controllers
 
         private List<ResumenComisionesMes> CalcularComisiones()
         {
+            int mes = DateTime.Today.Month; // ojo, que al cerrar el mes hay que coger el anterior
+            int anno = DateTime.Today.Year;
+            return CalcularComisiones(anno, mes);
+        }
+
+        private List<ResumenComisionesMes> CalcularComisiones(int anno, int mes)
+        {
             List<VendedorDTO> vendedores = new List<VendedorDTO> {
                 new VendedorDTO
                 {
@@ -212,8 +228,7 @@ namespace NestoAPI.Controllers
                     vendedor = "SH"
                 }
             };
-            int anno = DateTime.Today.Year;
-            int mes = DateTime.Today.Month; // ojo, que al cerrar el mes hay que coger el anterior
+                        
             List<ResumenComisionesMes> comisiones = new List<ResumenComisionesMes>();
 
             foreach (VendedorDTO vendedor in vendedores)
