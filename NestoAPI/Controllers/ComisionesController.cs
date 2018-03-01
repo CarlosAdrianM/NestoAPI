@@ -60,8 +60,7 @@ namespace NestoAPI.Controllers
             {
                 List<ResumenComisionesMes> comisiones = CalcularComisiones(anno, mes);
                 return Ok(comisiones);
-            }
-            
+            }            
         }
 
         // GET: api/Comisiones
@@ -80,7 +79,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<ResumenComisionesMes>))]
         public async Task<IHttpActionResult> PostComisiones(int anno, int mes)
         {
-            List<ResumenComisionesMes> comisiones = CalcularComisiones();
+            List<ResumenComisionesMes> comisiones = CalcularComisiones(anno, mes);
             DateTime fechaDesde = FechaDesde(anno, mes);
             if (fechaDesde < new DateTime(2018, 1, 1))
             {

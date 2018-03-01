@@ -68,6 +68,7 @@ namespace NestoAPI.Models.Comisiones
                         Anno = resumenMesDB.Anno,
                         Mes = resumenMesDB.Mes
                     };
+                    mesAnterior = resumenMesDB.Mes;
                 }
                 switch (resumenMesDB.Etiqueta)
                 {
