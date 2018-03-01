@@ -267,7 +267,7 @@ namespace NestoAPI.Models.Comisiones
             {
                 new TramoComision
                 {
-                    Desde = 0,
+                    Desde = decimal.MinValue,
                     Hasta = 12000,
                     Tipo = 0,
                     TipoExtra = 0
@@ -285,7 +285,7 @@ namespace NestoAPI.Models.Comisiones
             {
                 new TramoComision
                 {
-                    Desde = 0,
+                    Desde = decimal.MinValue,
                     Hasta = 6000,
                     Tipo = 0,
                     TipoExtra = 0
