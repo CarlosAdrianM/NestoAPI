@@ -224,7 +224,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 }
 
                 DescuentosProducto precioAutorizado = descuentos.FirstOrDefault(d =>
-                    d.Precio <= oferta.precioCalculado && oferta.cantidad > d.CantidadMínima);
+                    d.Precio <= oferta.precioCalculado && oferta.cantidad >= d.CantidadMínima);
                 if (precioAutorizado != null)
                 {
                     return new RespuestaValidacion
