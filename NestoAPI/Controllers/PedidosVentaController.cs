@@ -216,6 +216,12 @@ namespace NestoAPI.Controllers
                 errorPersonalizado("No se puede modificar un pedido ya facturado");
             }
 
+            // Carlos 15/03/18: no se puede ampliar una nota de entrega
+            if (cabPedidoVta.NotaEntrega)
+            {
+                errorPersonalizado("No se puede ampliar una nota de entrega");
+            }
+
             // En una primera fase no permitimos modificar si ya está impresa la etiqueta de la agencia
             // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún con la etiqueta impresa
             // bool estaImpresaLaEtiqueta = db.EnviosAgencias.FirstOrDefault(e => e.Pedido == pedido.numero && e.Estado == ESTADO_ENVIO_EN_CURSO) != null;
@@ -451,7 +457,7 @@ namespace NestoAPI.Controllers
             {
                 await db.SaveChangesAsync();
             }
-            catch (DbUpdateConcurrencyException)
+            catch (DbUpdateConcurrencyException ex)
             {
                 if (!CabPedidoVtaExists(pedido.empresa, pedido.numero))
                 {
