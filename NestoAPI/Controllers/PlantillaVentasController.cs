@@ -35,10 +35,10 @@ namespace NestoAPI.Controllers
             {
                 throw new Exception("Empresa no válida");
             }
-            
-            List<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
-                .Join(db.Productos.Where(p => p.Empresa == empresa).Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { producto = l.Producto }, p => new { producto = p.Número }, (l, p) => new { p.Empresa, l.Nº_Cliente, l.TipoLinea, producto = p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = p.Aplicar_Dto || l.Nº_Cliente == Constantes.ClientesEspeciales.EL_EDEN, estadoLinea = l.Estado}) // ojo, paso el estado del producto, no el de la línea
-                .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0 && l.estadoLinea == 4 && l.Fecha_Albarán >= DbFunctions.AddYears(DateTime.Today,-2)) // ojo, es el estado del producto
+
+            IQueryable<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
+                .Join(db.Productos.Where(p => p.Empresa == empresa).Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { producto = l.Producto }, p => new { producto = p.Número }, (l, p) => new { p.Empresa, l.Nº_Cliente, l.TipoLinea, producto = p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = p.Aplicar_Dto || l.Nº_Cliente == Constantes.ClientesEspeciales.EL_EDEN, estadoLinea = l.Estado }) // ojo, paso el estado del producto, no el de la línea
+                .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0 && l.estadoLinea == 4 && l.Fecha_Albarán >= DbFunctions.AddYears(DateTime.Today, -2)) // ojo, es el estado del producto
                 .GroupBy(g => new { g.producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.IVA_Repercutido, g.PVP, g.aplicarDescuento })
                 .Select(x => new LineaPlantillaVenta
                 {
@@ -49,17 +49,17 @@ namespace NestoAPI.Controllers
                     familia = x.Key.nombreFamilia.Trim(),
                     estado = x.Key.Estado,
                     subGrupo = x.Key.nombreSubGrupo.Trim(),
-                    cantidadVendida = x.Where(c => c.Cantidad>0).Sum(c => c.Cantidad) ?? 0,
+                    cantidadVendida = x.Where(c => c.Cantidad > 0).Sum(c => c.Cantidad) ?? 0,
                     cantidadAbonada = -x.Where(c => c.Cantidad < 0).Sum(c => c.Cantidad) ?? 0,
                     fechaUltimaVenta = x.Max(f => f.Fecha_Albarán),
                     iva = x.Key.IVA_Repercutido,
-                    precio = (decimal)x.Key.PVP, 
+                    precio = (decimal)x.Key.PVP,
                     aplicarDescuento = x.Key.aplicarDescuento
                 })
-                .OrderByDescending(g => g.fechaUltimaVenta)
-                .ToList();
+                .OrderBy(p => p.estado != 0)
+                .ThenByDescending(g => g.fechaUltimaVenta);
                         
-            return lineasPlantilla.AsQueryable();
+            return lineasPlantilla;
         }
         
         // GET: api/PlantillaVentasBuscarProducto
@@ -73,7 +73,7 @@ namespace NestoAPI.Controllers
                 throw new Exception("El filtro de productos debe tener al menos 3 caracteres de largo");
             }
 
-            List<LineaPlantillaVenta> lineasPlantilla = db.Productos
+            IQueryable<LineaPlantillaVenta> lineasPlantilla = db.Productos
                 .Include(f => f.Familia)
                 .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio, aplicarDescuento = p.Aplicar_Dto, precio = p.PVP, iva = p.IVA_Repercutido })
                 .Join(db.ProveedoresProductoes, p => new { empresa = p.Empresa, producto = p.Número }, r => new { empresa = r.Empresa, producto = r.Nº_Producto }, (p, r) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, p.nombreFamilia, p.nombreSubGrupo , cantidad = 0, p.ficticio, p.aplicarDescuento , p.precio, p.iva , r.ReferenciaProv })
@@ -101,9 +101,9 @@ namespace NestoAPI.Controllers
                     iva = x.Key.iva,
                     precio = (decimal?)x.Key.precio ?? 0
                 })
-                .ToList();
-            
-            return lineasPlantilla.AsQueryable();
+                .OrderBy(p => p.estado != 0);
+
+            return lineasPlantilla;
         }
 
         // Devuelve las posibles direcciones de entrega del pedido
