@@ -5,6 +5,10 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 {
     public class EtiquetaLisap : IEtiquetaComision
     {
+        private NVEntities db = new NVEntities();
+
+        private IQueryable<vstLinPedidoVtaComisione> consulta;
+
         public string Nombre
         {
             get
@@ -29,17 +33,38 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
-            throw new System.NotImplementedException();
+            DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
+            DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
+            CrearConsulta(vendedor);
+
+            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
         }
 
         public IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
         {
-            throw new System.NotImplementedException();
+            DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
+            DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
+
+            if (consulta == null)
+            {
+                CrearConsulta(vendedor);
+            }
+
+            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+        }
+
+        private void CrearConsulta(string vendedor)
+        {
+            consulta = db.vstLinPedidoVtaComisiones
+                .Where(l =>
+                    l.Familia.ToLower() == "lisap" &&
+                    l.Vendedor == vendedor
+                );
         }
 
         public decimal SetTipo(TramoComision tramo)
         {
-            throw new System.NotImplementedException();
+            return tramo.TipoExtra;
         }
     }
 }

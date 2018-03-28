@@ -329,8 +329,10 @@
     <Compile Include="Models\Comisiones\IEtiquetaComision.cs" />
     <Compile Include="Models\Comisiones\IServicioComisionesAnuales.cs" />
     <Compile Include="Models\Comisiones\Peluqueria\EtiquetaLisap.cs" />
+    <Compile Include="Models\Comisiones\Peluqueria\ServicioComisionesAnualesPeluqueria.cs" />
     <Compile Include="Models\Comisiones\ResumenComisionesMes.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica.cs" />
+    <Compile Include="Models\Comisiones\ServicioComisionesAnualesComun.cs" />
     <Compile Include="Models\Comisiones\TramoComision.cs" />
     <Compile Include="Models\Comisiones\VendedorComisionAnual.cs" />
     <Compile Include="Models\CondPagoCliente.cs">

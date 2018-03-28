@@ -37,7 +37,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
             CrearConsulta(vendedor);
 
-            return ServicioComisionesAnualesEstetica.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
         }
 
 
@@ -51,7 +51,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 CrearConsulta(vendedor);
             }
 
-            return ServicioComisionesAnualesEstetica.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
         }
 
         private void CrearConsulta(string vendedor)

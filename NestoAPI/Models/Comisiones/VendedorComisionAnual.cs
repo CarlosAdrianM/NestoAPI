@@ -38,7 +38,10 @@ namespace NestoAPI.Models.Comisiones
             if (Resumenes != null && Resumenes.Count>0)
             {
                 mesesAnno = 12 - Resumenes.Min(r => r.Mes) + 1;
-            }            
+            } else
+            {
+                mesesAnno = 12 - mes + 1;
+            }
             ResumenMesActual = Resumenes.SingleOrDefault(r => r.Mes == mes);
             if (ResumenMesActual == null)
             {

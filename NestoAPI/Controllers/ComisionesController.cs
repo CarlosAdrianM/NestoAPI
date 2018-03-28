@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.Comisiones;
+using NestoAPI.Models.Comisiones.Peluqueria;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity.Infrastructure;
@@ -232,6 +233,14 @@ namespace NestoAPI.Controllers
                 new VendedorDTO
                 {
                     vendedor = "SH"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "AH"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "IF"
                 }
             };
                         
@@ -239,7 +248,7 @@ namespace NestoAPI.Controllers
 
             foreach (VendedorDTO vendedor in vendedores)
             {
-                VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioVendedor(vendedor.nombre), vendedor.vendedor, anno, mes);
+                VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioVendedor(vendedor.vendedor), vendedor.vendedor, anno, mes);
                 comisiones.Add(vendedorComision.ResumenMesActual);
             }
 
@@ -258,7 +267,11 @@ namespace NestoAPI.Controllers
 
         private IServicioComisionesAnuales ServicioVendedor(string vendedor)
         {
-            // Aquí es donde si el vendedor es IF o AH devolverá otro servicio.
+            if (vendedor == "IF" || vendedor == "AH")
+            {
+                return new ServicioComisionesAnualesPeluqueria();
+            }
+
             return new ServicioComisionesAnualesEstetica();
         }
     }

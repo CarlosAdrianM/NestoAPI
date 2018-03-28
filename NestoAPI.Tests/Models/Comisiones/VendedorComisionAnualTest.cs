@@ -55,11 +55,21 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenEstaVacioLaProyeccionEsLaVentaPorDoce()
         {
-            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(1000);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 1, true)).Returns(1000);
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 1, true);
 
             Assert.AreEqual(12000, vendedorComisionAnual.ResumenMesActual.GeneralProyeccion);
+        }
+
+        [TestMethod]
+        public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenEstaVacioPeroNoEstamosEnEneroLaProyeccionEsLaVentaProporcional()
+        {
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 2, true)).Returns(1000);
+
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 2, true);
+
+            Assert.AreEqual(11000, vendedorComisionAnual.ResumenMesActual.GeneralProyeccion);
         }
 
         [TestMethod]
@@ -216,10 +226,10 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiLaVentaGeneralEsSuperiorAlMayorTramoDelMesComisionaATipoDeLosTramosAnuales()
         {
-            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(12001);
-            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single().LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(12000);
-            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single().LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(200);
-            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single().LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(50);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 1, true)).Returns(12001);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single().LeerVentaMes("NV", 2018, 1, true)).Returns(12000);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single().LeerVentaMes("NV", 2018, 1, true)).Returns(200);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single().LeerVentaMes("NV", 2018, 1, true)).Returns(50);
             A.CallTo(() => servicio.LeerTramosComisionMes("NV")).Returns(new Collection<TramoComision>
             {
                 new TramoComision
@@ -253,7 +263,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 tramoBueno
             });
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018,DateTime.Today.Month, true);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 1, true);
 
             A.CallTo(() => etiquetaEvaVisnu2.Comision).Returns(Math.Round(etiquetaEvaVisnu2.Venta * etiquetaEvaVisnu2.Tipo, 2));
             A.CallTo(() => etiquetaOtrosAparatos2.Comision).Returns(Math.Round(etiquetaOtrosAparatos2.Venta * etiquetaOtrosAparatos2.Tipo, 2));
@@ -272,10 +282,10 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiComisionaATipoDeLosTramosAnualesCogeElTipoDelTramoCorrecto()
         {
-            A.CallTo(() => etiquetaGeneral.LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(20000);
-            A.CallTo(() => etiquetaUnionLaser.LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(12000);
-            A.CallTo(() => etiquetaEvaVisnu.LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(200);
-            A.CallTo(() => etiquetaOtrosAparatos.LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(50);
+            A.CallTo(() => etiquetaGeneral.LeerVentaMes("NV", 2018, 1, true)).Returns(20000);
+            A.CallTo(() => etiquetaUnionLaser.LeerVentaMes("NV", 2018, 1, true)).Returns(12000);
+            A.CallTo(() => etiquetaEvaVisnu.LeerVentaMes("NV", 2018, 1, true)).Returns(200);
+            A.CallTo(() => etiquetaOtrosAparatos.LeerVentaMes("NV", 2018, 1, true)).Returns(50);
             A.CallTo(() => servicio.LeerTramosComisionMes("NV")).Returns(new Collection<TramoComision>
             {
                 new TramoComision
@@ -316,7 +326,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 tramoBueno
             });
             
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 1, true);
 
             A.CallTo(() => etiquetaEvaVisnu2.Comision).Returns(Math.Round(etiquetaEvaVisnu2.Venta * etiquetaEvaVisnu2.Tipo, 2));
             A.CallTo(() => etiquetaOtrosAparatos2.Comision).Returns(Math.Round(etiquetaOtrosAparatos2.Venta * etiquetaOtrosAparatos2.Tipo, 2));

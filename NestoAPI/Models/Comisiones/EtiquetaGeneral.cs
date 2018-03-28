@@ -35,7 +35,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     l.Vendedor == vendedor
                 );
 
-            return ServicioComisionesAnualesEstetica.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
         }
 
         public decimal SetTipo(TramoComision tramo)
@@ -63,7 +63,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     l.Vendedor == vendedor
                 );
                 
-            return ServicioComisionesAnualesEstetica.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
         }
     }
 }
