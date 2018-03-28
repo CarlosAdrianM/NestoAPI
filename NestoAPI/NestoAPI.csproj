@@ -323,11 +323,12 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Comisiones\Estetica\EtiquetaEvaVisnu.cs" />
-    <Compile Include="Models\Comisiones\Estetica\EtiquetaGeneral.cs" />
+    <Compile Include="Models\Comisiones\EtiquetaGeneral.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaOtrosAparatos.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaUnionLaser.cs" />
     <Compile Include="Models\Comisiones\IEtiquetaComision.cs" />
     <Compile Include="Models\Comisiones\IServicioComisionesAnuales.cs" />
+    <Compile Include="Models\Comisiones\Peluqueria\EtiquetaLisap.cs" />
     <Compile Include="Models\Comisiones\ResumenComisionesMes.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica.cs" />
     <Compile Include="Models\Comisiones\TramoComision.cs" />

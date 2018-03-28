@@ -6,6 +6,8 @@ namespace NestoAPI.Models.Comisiones.Estetica
 {
     public class EtiquetaUnionLaser : IEtiquetaComision
     {
+        private const decimal TIPO_FIJO_UNIONLASER = .1M;
+
         private NVEntities db = new NVEntities();
 
         private IQueryable<vstLinPedidoVtaComisione> consulta;
@@ -19,11 +21,25 @@ namespace NestoAPI.Models.Comisiones.Estetica
             }
         }
 
+        public decimal Venta { get; set; }
+        public decimal Tipo { get; set; }
+        public decimal Comision
+        {
+            get
+            {
+                return Math.Round(Venta * Tipo, 2);
+            }
+            set
+            {
+                throw new Exception("La comisión de Unión Láser no se puede fijar manualmente");
+            }
+        }
+
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             const decimal PORCENTAJE_BASE_IMPONIBLE_RENTING = .75M;
-            DateTime fechaDesde = ServicioComisionesAnualesEstetica.FechaDesde(anno, mes);
-            DateTime fechaHasta = ServicioComisionesAnualesEstetica.FechaHasta(anno, mes);
+            DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
+            DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
                         
             CrearConsultaRenting(vendedor, incluirAlbaranes, fechaDesde, fechaHasta);
             decimal ventaRenting = consultaRenting.Select(l => (decimal)l.PrecioTarifa * PORCENTAJE_BASE_IMPONIBLE_RENTING).DefaultIfEmpty().Sum();
@@ -37,8 +53,8 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
         {
-            DateTime fechaDesde = ServicioComisionesAnualesEstetica.FechaDesde(anno, mes);
-            DateTime fechaHasta = ServicioComisionesAnualesEstetica.FechaHasta(anno, mes);
+            DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
+            DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
             
             if (consultaRenting == null)
             {
@@ -77,6 +93,11 @@ namespace NestoAPI.Models.Comisiones.Estetica
             {
                 consultaRenting = consultaRenting.Where(l => l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4);
             }
+        }
+
+        public decimal SetTipo(TramoComision tramo)
+        {
+            return TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
         }
     }
 }

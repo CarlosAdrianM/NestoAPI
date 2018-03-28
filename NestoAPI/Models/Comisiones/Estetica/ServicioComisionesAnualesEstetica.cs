@@ -9,25 +9,29 @@ namespace NestoAPI.Models.Comisiones
 {
     public class ServicioComisionesAnualesEstetica : IServicioComisionesAnuales
     {
+        const string GENERAL = "General";
+        
         private NVEntities db = new NVEntities();
 
         public ServicioComisionesAnualesEstetica()
         {
-            Etiquetas = new Collection<IEtiquetaComision>
+            Etiquetas = NuevasEtiquetas;
+        }
+        
+        public ICollection<IEtiquetaComision> Etiquetas { get; set; }
+
+        public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
             {
                 new EtiquetaGeneral(),
                 new EtiquetaUnionLaser(),
                 new EtiquetaEvaVisnu(),
                 new EtiquetaOtrosAparatos()
             };
-        }
-        
-        public ICollection<IEtiquetaComision> Etiquetas { get; set; }
 
         public decimal LeerOtrosAparatosVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
-            DateTime fechaDesde = FechaDesde(anno, mes);
-            DateTime fechaHasta = FechaHasta(anno, mes);
+            DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
+            DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
 
             IQueryable<vstLinPedidoVtaComisione> consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
@@ -55,7 +59,8 @@ namespace NestoAPI.Models.Comisiones
             ResumenComisionesMes resumenMes = new ResumenComisionesMes {
                 Vendedor = vendedor,
                 Anno = anno,
-                Mes = mesAnterior
+                Mes = mesAnterior, 
+                Etiquetas = this.NuevasEtiquetas
             };
             foreach (ComisionAnualResumenMes resumenMesDB in resumenDb)
             {
@@ -66,31 +71,24 @@ namespace NestoAPI.Models.Comisiones
                     {
                         Vendedor = resumenMesDB.Vendedor,
                         Anno = resumenMesDB.Anno,
-                        Mes = resumenMesDB.Mes
+                        Mes = resumenMesDB.Mes, 
+                        Etiquetas = this.NuevasEtiquetas
                     };
                     mesAnterior = resumenMesDB.Mes;
                 }
-                switch (resumenMesDB.Etiqueta)
+
+                try
                 {
-                    case "General":
-                        resumenMes.GeneralVenta = resumenMesDB.Venta;
-                        resumenMes.GeneralTipo = resumenMesDB.Tipo;
-                        resumenMes.GeneralComision = resumenMesDB.Comision;
-                        break;
-                    case "Unión Láser":
-                        resumenMes.UnionLaserVenta = resumenMesDB.Venta;
-                        resumenMes.UnionLaserTipo = resumenMesDB.Tipo;
-                        break;
-                    case "Eva Visnú":
-                        resumenMes.EvaVisnuVenta = resumenMesDB.Venta;
-                        resumenMes.EvaVisnuTipo = resumenMesDB.Tipo;
-                        break;
-                    case "Otros Aparatos":
-                        resumenMes.OtrosAparatosVenta = resumenMesDB.Venta;
-                        resumenMes.OtrosAparatosTipo = resumenMesDB.Tipo;
-                        break;
-                    default:
-                        throw new Exception("Etiqueta no válida en la tabla de resúmenes de comisiones");
+                    // si pasamos resumenMesDB por parámetro a la etiqueta y hacemos las asignaciones desde ahí, nos evitamos usar GENERAL
+                    resumenMes.Etiquetas.Where(e => e.Nombre == resumenMesDB.Etiqueta).Single().Venta = resumenMesDB.Venta;
+                    resumenMes.Etiquetas.Where(e => e.Nombre == resumenMesDB.Etiqueta).Single().Tipo = resumenMesDB.Tipo;
+                    if (resumenMesDB.Etiqueta == GENERAL)
+                    {
+                        resumenMes.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = resumenMesDB.Comision;
+                    }
+                } catch
+                {
+                    throw new Exception("Etiqueta no válida en la tabla de resúmenes de comisiones");
                 }
 
             }
@@ -333,16 +331,5 @@ namespace NestoAPI.Models.Comisiones
             }
             return consulta;
         }
-
-        public static DateTime FechaDesde(int anno, int mes)
-        {
-            return new DateTime(anno, mes, 1);
-        }
-
-        public static DateTime FechaHasta(int anno, int mes)
-        {
-            return (new DateTime(anno, mes+1, 1)).AddDays(-1);
-        }
-
     }
 }

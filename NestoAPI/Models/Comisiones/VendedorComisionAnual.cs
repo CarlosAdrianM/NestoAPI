@@ -6,14 +6,15 @@ namespace NestoAPI.Models.Comisiones
 {
     public class VendedorComisionAnual
     {
-        private const decimal TIPO_FIJO_UNIONLASER = .1M;
-        private const decimal TIPO_FIJO_OTROSAPARATOS = .02M;
+        
+        const string GENERAL = "General";
 
         private IServicioComisionesAnuales servicio;
         private string vendedor;
         private int anno;
         private int mes;
         private bool incluirAlbaranes;
+        private int mesesAnno = 12;
         
         public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno)
             : this(servicio, vendedor, anno, DateTime.Today.Month)
@@ -34,15 +35,19 @@ namespace NestoAPI.Models.Comisiones
             this.incluirAlbaranes = incluirAlbaranes;
 
             Resumenes = servicio.LeerResumenAnno(vendedor, anno);
+            if (Resumenes != null && Resumenes.Count>0)
+            {
+                mesesAnno = 12 - Resumenes.Min(r => r.Mes) + 1;
+            }            
             ResumenMesActual = Resumenes.SingleOrDefault(r => r.Mes == mes);
             if (ResumenMesActual == null)
             {
                 ResumenMesActual = CrearResumenMesActual(incluirAlbaranes);
             } else
             {
-                decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.GeneralVenta);
+                decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
                 int meses = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Count();
-                ResumenMesActual.GeneralProyeccion = ventaAcumulada * (12 / meses);
+                ResumenMesActual.GeneralProyeccion = (ventaAcumulada / meses) * mesesAnno;
             }
         }
 
@@ -56,48 +61,52 @@ namespace NestoAPI.Models.Comisiones
                 Vendedor = vendedor,
                 Anno = anno,
                 Mes = mes,
-                GeneralVenta = servicio.Etiquetas.Single(e => e.Nombre == "General").LeerVentaMes(vendedor, anno, mes, incluirAlbaranes),
-                UnionLaserVenta = servicio.Etiquetas.Single(e => e.Nombre == "Unión Láser").LeerVentaMes(vendedor, anno, mes, incluirAlbaranes),
-                EvaVisnuVenta = servicio.Etiquetas.Single(e => e.Nombre == "Eva Visnú").LeerVentaMes(vendedor, anno, mes, incluirAlbaranes),
-                OtrosAparatosVenta = servicio.Etiquetas.Single(e => e.Nombre == "Otros Aparatos").LeerVentaMes(vendedor, anno, mes, incluirAlbaranes),
+                Etiquetas = servicio.NuevasEtiquetas
             };
-
-            resumen.OtrosAparatosTipo = TIPO_FIJO_OTROSAPARATOS;
+            
+            foreach (IEtiquetaComision etiqueta in resumen.Etiquetas)
+            {
+                etiqueta.Venta = servicio.Etiquetas.Single(e => e.Nombre == etiqueta.Nombre).LeerVentaMes(vendedor, anno, mes, incluirAlbaranes);
+            }
 
             int meses = Resumenes.Count + 1; //+1 por el mes actual
-            decimal ventaAcumulada = Resumenes.Sum(r => r.GeneralVenta) + resumen.GeneralVenta;
-            resumen.GeneralProyeccion = ventaAcumulada * (12/meses);
+            decimal ventaAcumulada = Resumenes.Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta) + resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta;
+            resumen.GeneralProyeccion = (ventaAcumulada / meses) * mesesAnno;
 
             ICollection<TramoComision> tramosMes = servicio.LeerTramosComisionMes(vendedor);
 
-            TramoComision tramo = BuscarTramoComision(tramosMes, resumen.GeneralVenta);
+            TramoComision tramo = BuscarTramoComision(tramosMes, resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
 
             if (tramo != null)
             {
-                resumen.GeneralTipo = tramo.Tipo;
-                resumen.GeneralComision = Math.Round(resumen.GeneralVenta * tramo.Tipo, 2);
-                resumen.UnionLaserTipo = TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
-                resumen.EvaVisnuTipo = tramo.TipoExtra;
-                resumen.GeneralFaltaParaSalto = tramo.Hasta - resumen.GeneralVenta;
+                foreach (IEtiquetaComision etiqueta in resumen.Etiquetas)
+                {
+                    etiqueta.Tipo = etiqueta.SetTipo(tramo);
+                }
+
+                resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = Math.Round(resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta * tramo.Tipo, 2);
+                resumen.GeneralFaltaParaSalto = tramo.Hasta - resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta;
             } else
             {
                 ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
                 tramo = BuscarTramoComision(tramosAnno, resumen.GeneralProyeccion);
                 if (tramo!=null)
                 {
-                    resumen.GeneralTipo = tramo.Tipo;
-                    resumen.GeneralComision = Math.Round(ventaAcumulada * resumen.GeneralTipo - Resumenes.Sum(r => r.GeneralComision),2);
-                    resumen.UnionLaserTipo = TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
-                    resumen.EvaVisnuTipo = tramo.TipoExtra;
+                    foreach (IEtiquetaComision etiqueta in resumen.Etiquetas)
+                    {
+                        etiqueta.Tipo = etiqueta.SetTipo(tramo);
+                    }
+
+                    resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = Math.Round(ventaAcumulada * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo - Resumenes.Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision), 2);
                     resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ? 
                         decimal.MaxValue : 
-                        Math.Round((tramo.Hasta/(12 / meses)) - ventaAcumulada,2);
+                        Math.Round((tramo.Hasta/(mesesAnno / meses)) - ventaAcumulada,2);
                 }
             }
 
-            if (resumen.GeneralComision < 0)
+            if (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision < 0)
             {
-                resumen.GeneralComision = 0;
+                resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 0;
             }
                         
             return resumen;
@@ -113,6 +122,16 @@ namespace NestoAPI.Models.Comisiones
                 }
             }
             return null;
+        }
+
+        public static DateTime FechaDesde(int anno, int mes)
+        {
+            return new DateTime(anno, mes, 1);
+        }
+
+        public static DateTime FechaHasta(int anno, int mes)
+        {
+            return (new DateTime(anno, mes + 1, 1)).AddDays(-1);
         }
     }
 }

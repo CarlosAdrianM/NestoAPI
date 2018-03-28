@@ -6,6 +6,8 @@ namespace NestoAPI.Models.Comisiones.Estetica
 {
     public class EtiquetaOtrosAparatos : IEtiquetaComision
     {
+        private const decimal TIPO_FIJO_OTROSAPARATOS = .02M;
+
         private NVEntities db = new NVEntities();
 
         IQueryable<vstLinPedidoVtaComisione> consulta;
@@ -18,10 +20,24 @@ namespace NestoAPI.Models.Comisiones.Estetica
             }
         }
 
+        public decimal Venta { get; set; }
+        public decimal Tipo { get; set; }
+        public decimal Comision
+        {
+            get
+            {
+                return Math.Round(Venta * Tipo, 2);
+            }
+            set
+            {
+                throw new Exception("La comisión de Otros Aparatos no se puede fijar manualmente");
+            }
+        }
+
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
-            DateTime fechaDesde = ServicioComisionesAnualesEstetica.FechaDesde(anno, mes);
-            DateTime fechaHasta = ServicioComisionesAnualesEstetica.FechaHasta(anno, mes);
+            DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
+            DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
 
             CrearConsulta(vendedor);
 
@@ -30,8 +46,8 @@ namespace NestoAPI.Models.Comisiones.Estetica
         
         IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
         {
-            DateTime fechaDesde = ServicioComisionesAnualesEstetica.FechaDesde(anno, mes);
-            DateTime fechaHasta = ServicioComisionesAnualesEstetica.FechaHasta(anno, mes);
+            DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
+            DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
 
             if (consulta == null)
             {
@@ -49,6 +65,11 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     l.Grupo.ToLower() == "otros aparatos" &&
                     l.EstadoFamilia == 0
                 );
+        }
+
+        public decimal SetTipo(TramoComision tramo)
+        {
+            return TIPO_FIJO_OTROSAPARATOS;
         }
     }
 }

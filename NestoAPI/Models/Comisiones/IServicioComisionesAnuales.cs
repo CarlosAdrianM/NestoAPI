@@ -8,5 +8,6 @@ namespace NestoAPI.Models.Comisiones
         ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno);
         ICollection<TramoComision> LeerTramosComisionMes(string vendedor);
         ICollection<TramoComision> LeerTramosComisionAnno(string vendedor);
+        ICollection<IEtiquetaComision> NuevasEtiquetas { get; }
     }
 }
