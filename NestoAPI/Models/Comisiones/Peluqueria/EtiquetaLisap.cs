@@ -35,6 +35,12 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
+
+            if (fechaDesde < new DateTime(2018, 4, 1))
+            {
+                throw new Exception("Las comisiones anuales de peluquería entraron en vigor el 01/04/18");
+            }
+
             CrearConsulta(vendedor);
 
             return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);

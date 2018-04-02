@@ -96,47 +96,54 @@ namespace NestoAPI.Controllers
 
             foreach (ResumenComisionesMes resumen in comisiones)
             {
-                db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
+                try
                 {
-                    Vendedor = resumen.Vendedor,
-                    Anno = (short)resumen.Anno,
-                    Mes = (byte)resumen.Mes,
-                    Etiqueta = GENERAL,
-                    Venta = resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta,
-                    Tipo = resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo,
-                    Comision = resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision
-                });
-                db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
+                    db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
+                    {
+                        Vendedor = resumen.Vendedor,
+                        Anno = (short)resumen.Anno,
+                        Mes = (byte)resumen.Mes,
+                        Etiqueta = GENERAL,
+                        Venta = resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta,
+                        Tipo = resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo,
+                        Comision = resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision
+                    });
+                    db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
+                    {
+                        Vendedor = resumen.Vendedor,
+                        Anno = (short)resumen.Anno,
+                        Mes = (byte)resumen.Mes,
+                        Etiqueta = UNION_LASER,
+                        Venta = resumen.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Venta,
+                        Tipo = resumen.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Tipo,
+                        Comision = resumen.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Comision
+                    });
+                    db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
+                    {
+                        Vendedor = resumen.Vendedor,
+                        Anno = (short)resumen.Anno,
+                        Mes = (byte)resumen.Mes,
+                        Etiqueta = EVA_VISNU,
+                        Venta = resumen.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Venta,
+                        Tipo = resumen.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Tipo,
+                        Comision = resumen.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision
+                    });
+
+                    db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
+                    {
+                        Vendedor = resumen.Vendedor,
+                        Anno = (short)resumen.Anno,
+                        Mes = (byte)resumen.Mes,
+                        Etiqueta = OTROS_APARATOS,
+                        Venta = resumen.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Venta,
+                        Tipo = resumen.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Tipo,
+                        Comision = resumen.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision
+                    });
+
+                } catch (Exception ex)
                 {
-                    Vendedor = resumen.Vendedor,
-                    Anno = (short)resumen.Anno,
-                    Mes = (byte)resumen.Mes,
-                    Etiqueta = UNION_LASER,
-                    Venta = resumen.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Venta,
-                    Tipo = resumen.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Tipo,
-                    Comision = resumen.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Comision
-                });
-                db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
-                {
-                    Vendedor = resumen.Vendedor,
-                    Anno = (short)resumen.Anno,
-                    Mes = (byte)resumen.Mes,
-                    Etiqueta = EVA_VISNU,
-                    Venta = resumen.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Venta,
-                    Tipo = resumen.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Tipo,
-                    Comision = resumen.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision
-                });
-                
-                db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
-                {
-                    Vendedor = resumen.Vendedor,
-                    Anno = (short)resumen.Anno,
-                    Mes = (byte)resumen.Mes,
-                    Etiqueta = OTROS_APARATOS,
-                    Venta = resumen.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Venta,
-                    Tipo = resumen.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Tipo,
-                    Comision = resumen.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision
-                });
+                    throw ex;
+                }
 
                 var lineas = db.vstLinPedidoVtaComisiones
                     .Where(l => l.Vendedor == resumen.Vendedor &&
@@ -144,35 +151,43 @@ namespace NestoAPI.Controllers
                     && l.Grupo != null && l.Familia != null);
 
                 foreach (vstLinPedidoVtaComisione linea in lineas)
-                {
+                {                  
+
                     string etiqueta;
 
-                    if (linea.Grupo!=null && linea.Grupo.ToLower().Trim() == "otros aparatos")
+                    try
                     {
-                        etiqueta = "Otros Aparatos";
+                        if (linea.Grupo != null && linea.Grupo.ToLower().Trim() == "otros aparatos")
+                        {
+                            etiqueta = "Otros Aparatos";
+                        }
+                        else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "uniónláser")
+                        {
+                            etiqueta = "Unión Láser";
+                        }
+                        else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "eva visnu")
+                        {
+                            etiqueta = "Eva Visnú";
+                        }
+                        else
+                        {
+                            etiqueta = "General";
+                        }
+                        db.ComisionesAnualesDetalles.Add(new ComisionAnualDetalle
+                        {
+                            Id = linea.Nº_Orden,
+                            EstadoFamilia = (short)linea.EstadoFamilia,
+                            Pedido = linea.Número,
+                            BaseImponible = linea.Base_Imponible,
+                            Vendedor = linea.Vendedor,
+                            Anno = (short)anno,
+                            Mes = (byte)mes,
+                            Etiqueta = etiqueta
+                        });
+                    } catch (Exception ex)
+                    {
+                        throw ex;
                     }
-                    else if (linea.Familia!=null && linea.Familia.ToLower().Trim() == "uniónláser")
-                    {
-                        etiqueta = "Unión Láser";
-                    }
-                    else if (linea.Familia!=null && linea.Familia.ToLower().Trim() == "eva visnu")
-                    {
-                        etiqueta = "Eva Visnú";
-                    } else
-                    {
-                        etiqueta = "General";
-                    }
-                    db.ComisionesAnualesDetalles.Add(new ComisionAnualDetalle
-                    {
-                        Id = linea.Nº_Orden,
-                        EstadoFamilia = (short)linea.EstadoFamilia,
-                        Pedido = linea.Número,
-                        BaseImponible = linea.Base_Imponible,
-                        Vendedor = linea.Vendedor,
-                        Anno = (short)anno,
-                        Mes = (byte)mes,
-                        Etiqueta = etiqueta
-                    });
                 }
             }
 
