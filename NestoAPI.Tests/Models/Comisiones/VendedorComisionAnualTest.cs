@@ -453,7 +453,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             ResumenComisionesMes resumen = new ResumenComisionesMes
             {
                 Vendedor = "NV",
-                Etiquetas = etiquetasResumen
+                Etiquetas = etiquetasResumen,
+                Mes = 1
             };
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 19500;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo = .2M;
@@ -606,6 +607,154 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(225, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(9, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
             Assert.AreEqual(234000, vendedorComisionAnual.ResumenMesActual.GeneralProyeccion);
+        }
+
+        [TestMethod]
+        public void VendedorComisionAnual_CrearResumenMesActual_LoQueFaltaParaSaltoEnEneroEsLaDiferenciaEntreDoce()
+        {
+            A.CallTo(() => etiquetaGeneral.LeerVentaMes("NV", 2018, 1, true)).Returns(20000);
+            TramoComision tramoBueno = new TramoComision
+            {
+                Desde = 230000.01M,
+                Hasta = 250000,
+                Tipo = .072M,
+                TipoExtra = .008M
+            };
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 144000,
+                    Hasta = 230000,
+                    Tipo = .03M,
+                    TipoExtra = .001M
+                },
+                tramoBueno,
+                new TramoComision
+                {
+                    Desde = 250000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .08M,
+                    TipoExtra = .011M
+                },
+            });
+
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 1, true);
+
+            Assert.AreEqual(Math.Round(10000M/12,2), vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
+        }
+
+        [TestMethod]
+        public void VendedorComisionAnual_CrearResumenMesActual_LoQueFaltaParaSaltoSiEmpiezaEnFebreroCalculaEnOnceMeses()
+        {
+            A.CallTo(() => etiquetaGeneral.LeerVentaMes("NV", 2018, 2, true)).Returns(21818.18M);
+            TramoComision tramoBueno = new TramoComision
+            {
+                Desde = 230000.01M,
+                Hasta = 250000,
+                Tipo = .072M,
+                TipoExtra = .008M
+            };
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 144000,
+                    Hasta = 230000,
+                    Tipo = .03M,
+                    TipoExtra = .001M
+                },
+                tramoBueno,
+                new TramoComision
+                {
+                    Desde = 250000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .08M,
+                    TipoExtra = .011M
+                },
+            });
+
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 2, true);
+
+            Assert.AreEqual(Math.Round(10000M/11,2), vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
+        }
+
+        [TestMethod]
+        public void VendedorComisionAnual_CrearResumenMesActual_LoQueFaltaParaSaltoSiHayDosMesesCalculaEntreSeis()
+        {
+            IEtiquetaComision etiqueta = A.Fake<IEtiquetaComision>();
+            A.CallTo(() => etiqueta.Nombre).Returns("General");
+            Collection<IEtiquetaComision> etiquetas = new Collection<IEtiquetaComision>()
+            {
+                etiqueta
+            };
+            ResumenComisionesMes resumenEne = new ResumenComisionesMes
+            {
+                Mes = 1,
+                Vendedor = "NV",
+                Etiquetas = etiquetas
+            };
+            //resumenEne.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 10000;
+            ResumenComisionesMes resumenFeb = new ResumenComisionesMes
+            {
+                Mes = 2,
+                Vendedor = "NV",
+                Etiquetas = etiquetas
+            };
+            ResumenComisionesMes resumenMar = new ResumenComisionesMes
+            {
+                Mes = 3,
+                Vendedor = "NV",
+                Etiquetas = etiquetas
+            };
+            ResumenComisionesMes resumenAbr = new ResumenComisionesMes
+            {
+                Mes = 4,
+                Vendedor = "NV",
+                Etiquetas = etiquetas
+            };
+            resumenEne.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 10000; //son las mismas para todos los meses: 40000
+            Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
+            {
+                resumenEne,
+                resumenFeb,
+                resumenMar,
+                resumenAbr
+            };
+            //A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 3, true)).Returns(34000);
+            A.CallTo(() => servicio.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
+
+            
+            A.CallTo(() => etiquetaGeneral.LeerVentaMes("NV", 2018, 5, true)).Returns(60000);
+            TramoComision tramoBueno = new TramoComision
+            {
+                Desde = 230000.01M,
+                Hasta = 250000,
+                Tipo = .072M,
+                TipoExtra = .008M
+            };
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 144000,
+                    Hasta = 230000,
+                    Tipo = .03M,
+                    TipoExtra = .001M
+                },
+                tramoBueno,
+                new TramoComision
+                {
+                    Desde = 250000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .08M,
+                    TipoExtra = .011M
+                },
+            });
+
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 5, true);
+
+            Assert.AreEqual(Math.Round(10000M / 12 * 5, 2), vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
         }
     }
 
