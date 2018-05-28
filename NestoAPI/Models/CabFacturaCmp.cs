@@ -14,6 +14,11 @@ namespace NestoAPI.Models
     
     public partial class CabFacturaCmp
     {
+        public CabFacturaCmp()
+        {
+            this.LinPedidoCmps = new HashSet<LinPedidoCmp>();
+        }
+    
         public string Empresa { get; set; }
         public string Número { get; set; }
         public System.DateTime Fecha { get; set; }
@@ -36,5 +41,6 @@ namespace NestoAPI.Models
         public virtual FormaPago FormasPago { get; set; }
         public virtual PlazoPago PlazosPago1 { get; set; }
         public virtual Proveedor Proveedore { get; set; }
+        public virtual ICollection<LinPedidoCmp> LinPedidoCmps { get; set; }
     }
 }

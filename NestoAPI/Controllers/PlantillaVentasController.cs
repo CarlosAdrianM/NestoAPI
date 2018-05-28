@@ -176,7 +176,7 @@ namespace NestoAPI.Controllers
         }
         
         [HttpGet]
-        [ResponseType(typeof(StockProductoDTO))]
+        [ResponseType(typeof(StockProductoPlantillaDTO))]
         public async Task<IHttpActionResult> GetCargarStock(string empresa, string almacen, string productoStock)
         {
             /*
@@ -187,8 +187,8 @@ namespace NestoAPI.Controllers
             }
             */
 
-            StockProductoDTO datosStock = new StockProductoDTO();
-            ProductoDTO productoNuevo = new ProductoDTO(productoStock, db);
+            StockProductoPlantillaDTO datosStock = new StockProductoPlantillaDTO();
+            ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(productoStock, db);
             datosStock.stock = productoNuevo.Stock();
             datosStock.cantidadDisponible = productoNuevo.CantidadDisponible();
 

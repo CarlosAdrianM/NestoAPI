@@ -655,6 +655,63 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
+        <EntityType Name="LinPedidoCmp">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="int" Nullable="false" />
+          <Property Name="NºOrden" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="NºProveedor" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="TipoLínea" Type="char" MaxLength="3" />
+          <Property Name="Producto" Type="char" MaxLength="15" />
+          <Property Name="Almacén" Type="char" MaxLength="3" />
+          <Property Name="FechaRecepción" Type="datetime" />
+          <Property Name="Texto" Type="char" MaxLength="50" />
+          <Property Name="Cantidad" Type="smallint" />
+          <Property Name="Precio" Type="money" Nullable="false" />
+          <Property Name="Bruto" Type="money" Nullable="false" />
+          <Property Name="IVA" Type="char" MaxLength="3" />
+          <Property Name="PorcentajeIVA" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="PorcentajeRE" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="DescuentoProveedor" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="DescuentoProducto" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="Descuento" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="DescuentoPP" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="SumaDescuentos" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="ImporteDto" Type="money" Nullable="false" />
+          <Property Name="BaseImponible" Type="money" Nullable="false" />
+          <Property Name="ImporteIVA" Type="money" Nullable="false" />
+          <Property Name="ImporteRE" Type="money" Nullable="false" />
+          <Property Name="Total" Type="money" Nullable="false" />
+          <Property Name="AplicarDto" Type="bit" Nullable="false" />
+          <Property Name="Delegación" Type="char" MaxLength="3" />
+          <Property Name="FormaVenta" Type="char" MaxLength="3" />
+          <Property Name="NºAlbarán" Type="int" />
+          <Property Name="FechaAlbarán" Type="datetime" />
+          <Property Name="NºFactura" Type="char" MaxLength="10" />
+          <Property Name="FechaFactura" Type="datetime" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="Grupo" Type="char" MaxLength="3" />
+          <Property Name="Subgrupo" Type="char" MaxLength="3" />
+          <Property Name="NºOferta" Type="tinyint" />
+          <Property Name="VistoBueno" Type="bit" Nullable="false" />
+          <Property Name="Enviado" Type="bit" Nullable="false" />
+          <Property Name="Coste" Type="money" Nullable="false" />
+          <Property Name="CentroCoste" Type="char" MaxLength="3" />
+          <Property Name="PrecioTarifa" Type="money" />
+          <Property Name="YaFacturado" Type="bit" Nullable="false" />
+          <Property Name="Reponer" Type="bit" Nullable="false" />
+          <Property Name="Departamento" Type="char" MaxLength="3" />
+          <Property Name="% IRPF" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="EstadoProducto" Type="int" />
+          <Property Name="NumSerie" Type="char" MaxLength="30" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="LinPedidoVta">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -885,6 +942,45 @@
           <Property Name="Señal" Type="bit" Nullable="false" />
           <Property Name="Financiacion" Type="decimal" Precision="7" Scale="4" />
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="PreExtrProducto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Diario" />
+            <PropertyRef Name="Nº Orden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Diario" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Nº Orden" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" />
+          <Property Name="ContactoCliente" Type="char" MaxLength="3" />
+          <Property Name="NºProveedor" Type="char" MaxLength="10" />
+          <Property Name="ContactoProveedor" Type="char" MaxLength="3" />
+          <Property Name="Albarán" Type="int" />
+          <Property Name="Factura" Type="int" />
+          <Property Name="Texto" Type="char" MaxLength="50" />
+          <Property Name="Almacén" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Grupo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Cantidad" Type="smallint" Nullable="false" />
+          <Property Name="Coste" Type="money" />
+          <Property Name="Importe" Type="money" />
+          <Property Name="Delegación" Type="char" MaxLength="3" />
+          <Property Name="Forma Venta" Type="char" MaxLength="3" />
+          <Property Name="Asiento Automático" Type="bit" Nullable="false" />
+          <Property Name="LinPedido" Type="int" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="NºTraspaso" Type="int" />
+          <Property Name="NºPedido" Type="int" />
+          <Property Name="Pasillo" Type="char" MaxLength="3" />
+          <Property Name="Fila" Type="char" MaxLength="3" />
+          <Property Name="Columna" Type="char" MaxLength="3" />
+          <Property Name="CentroCoste" Type="char" MaxLength="3" />
+          <Property Name="Departamento" Type="char" MaxLength="3" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
         <EntityType Name="Productos">
@@ -2289,6 +2385,76 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_LinPedidoCmp_CabFacturaCmp">
+          <End Role="CabFacturaCmp" Type="Self.CabFacturaCmp" Multiplicity="0..1" />
+          <End Role="LinPedidoCmp" Type="Self.LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºFactura" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoCmp_CentrosCoste">
+          <End Role="CentrosCoste" Type="Self.CentrosCoste" Multiplicity="0..1" />
+          <End Role="LinPedidoCmp" Type="Self.LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CentrosCoste">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CentroCoste" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoCmp_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="LinPedidoCmp" Type="Self.LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoCmp_FormasVenta">
+          <End Role="FormasVenta" Type="Self.FormasVenta" Multiplicity="0..1" />
+          <End Role="LinPedidoCmp" Type="Self.LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaVenta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoCmp_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="0..1" />
+          <End Role="LinPedidoCmp" Type="Self.LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_LinPedidoVta_CabPedidoVta">
           <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="1" />
           <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
@@ -2649,6 +2815,106 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_PreExtrProducto_CentrosCoste">
+          <End Role="CentrosCoste" Type="Self.CentrosCoste" Multiplicity="0..1" />
+          <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CentrosCoste">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CentroCoste" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="ContactoCliente" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_FormasVenta">
+          <End Role="FormasVenta" Type="Self.FormasVenta" Multiplicity="0..1" />
+          <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Forma Venta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="0..1" />
+          <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="ContactoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Vendedores">
+          <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="0..1" />
+          <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Productos_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="Productos" Type="Self.Productos" Multiplicity="*" />
@@ -2953,6 +3219,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="Inmovilizados" EntityType="Self.Inmovilizados" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Inventarios" EntityType="Self.Inventarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="InventariosCuadre" EntityType="Self.InventariosCuadre" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="LinPedidoCmp" EntityType="Self.LinPedidoCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
@@ -2964,6 +3231,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="PersonasContactoProveedor" EntityType="Self.PersonasContactoProveedor" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlanCuentas" EntityType="Self.PlanCuentas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlazosPago" EntityType="Self.PlazosPago" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="PreExtrProducto" EntityType="Self.PreExtrProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Productos" EntityType="Self.Productos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Proveedores" EntityType="Self.Proveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ProveedoresProducto" EntityType="Self.ProveedoresProducto" Schema="dbo" store:Type="Tables" />
@@ -3341,6 +3609,26 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="Productos" EntitySet="Productos" />
             <End Role="InventariosCuadre" EntitySet="InventariosCuadre" />
           </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_CabFacturaCmp" Association="Self.FK_LinPedidoCmp_CabFacturaCmp">
+            <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_CentrosCoste" Association="Self.FK_LinPedidoCmp_CentrosCoste">
+            <End Role="CentrosCoste" EntitySet="CentrosCoste" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_Empresas" Association="Self.FK_LinPedidoCmp_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_FormasVenta" Association="Self.FK_LinPedidoCmp_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_Proveedores" Association="Self.FK_LinPedidoCmp_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmp" />
+          </AssociationSet>
           <AssociationSet Name="FK_LinPedidoVta_CabPedidoVta" Association="Self.FK_LinPedidoVta_CabPedidoVta">
             <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
             <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
@@ -3444,6 +3732,34 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_PlazosPago_Empresas" Association="Self.FK_PlazosPago_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="PlazosPago" EntitySet="PlazosPago" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_CentrosCoste" Association="Self.FK_PreExtrProducto_CentrosCoste">
+            <End Role="CentrosCoste" EntitySet="CentrosCoste" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Clientes" Association="Self.FK_PreExtrProducto_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Empresas" Association="Self.FK_PreExtrProducto_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_FormasVenta" Association="Self.FK_PreExtrProducto_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Productos" Association="Self.FK_PreExtrProducto_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Proveedores" Association="Self.FK_PreExtrProducto_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Vendedores" Association="Self.FK_PreExtrProducto_Vendedores">
+            <End Role="Vendedores" EntitySet="Vendedores" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
           </AssociationSet>
           <AssociationSet Name="FK_Productos_Empresas" Association="Self.FK_Productos_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -4131,6 +4447,56 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="RentingFacturas" EntityType="NVModel.RentingFactura" />
           <EntitySet Name="vstLinPedidoVtaComisionesDetalles" EntityType="NVModel.vstLinPedidoVtaComisionesDetalle" />
           <EntitySet Name="vstLinPedidoVtaComisiones" EntityType="NVModel.vstLinPedidoVtaComisione" />
+          <EntitySet Name="LinPedidoCmps" EntityType="NVModel.LinPedidoCmp" />
+          <AssociationSet Name="FK_LinPedidoCmp_CabFacturaCmp" Association="NVModel.FK_LinPedidoCmp_CabFacturaCmp">
+            <End Role="CabFacturaCmp" EntitySet="CabFacturasCmp" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmps" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_CentrosCoste" Association="NVModel.FK_LinPedidoCmp_CentrosCoste">
+            <End Role="CentrosCoste" EntitySet="CentrosCostes" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmps" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_Empresas" Association="NVModel.FK_LinPedidoCmp_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmps" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_FormasVenta" Association="NVModel.FK_LinPedidoCmp_FormasVenta">
+            <End Role="FormaVenta" EntitySet="FormasVenta" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmps" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoCmp_Proveedores" Association="NVModel.FK_LinPedidoCmp_Proveedores">
+            <End Role="Proveedor" EntitySet="Proveedores" />
+            <End Role="LinPedidoCmp" EntitySet="LinPedidoCmps" />
+          </AssociationSet>
+          <EntitySet Name="PreExtrProductos" EntityType="NVModel.PreExtrProducto" />
+          <AssociationSet Name="FK_PreExtrProducto_CentrosCoste" Association="NVModel.FK_PreExtrProducto_CentrosCoste">
+            <End Role="CentrosCoste" EntitySet="CentrosCostes" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Clientes" Association="NVModel.FK_PreExtrProducto_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Empresas" Association="NVModel.FK_PreExtrProducto_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_FormasVenta" Association="NVModel.FK_PreExtrProducto_FormasVenta">
+            <End Role="FormaVenta" EntitySet="FormasVenta" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Productos" Association="NVModel.FK_PreExtrProducto_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Proveedores" Association="NVModel.FK_PreExtrProducto_Proveedores">
+            <End Role="Proveedor" EntitySet="Proveedores" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_Vendedores" Association="NVModel.FK_PreExtrProducto_Vendedores">
+            <End Role="Vendedor" EntitySet="Vendedores" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProductos" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -4274,6 +4640,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Empresas" FromRole="Empresa" ToRole="OfertasPermitida" />
           <NavigationProperty Name="OfertasCombinadas" Relationship="NVModel.FK_OfertasCombinadas_Empresas" FromRole="Empresa" ToRole="OfertasCombinada" />
           <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_Empresas" FromRole="Empresa" ToRole="OfertasCombinadasDetalle" />
+          <NavigationProperty Name="LinPedidoCmps" Relationship="NVModel.FK_LinPedidoCmp_Empresas" FromRole="Empresa" ToRole="LinPedidoCmp" />
+          <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Empresas" FromRole="Empresa" ToRole="PreExtrProducto" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -4504,6 +4872,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_Clientes_Vendedores" FromRole="Cliente" ToRole="Vendedore" />
           <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Clientes" FromRole="Cliente" ToRole="SeguimientoCliente" />
           <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Clientes" FromRole="Cliente" ToRole="OfertasPermitida" />
+          <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Clientes" FromRole="Cliente" ToRole="PreExtrProducto" />
         </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -4665,6 +5034,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="ProveedoresProductoes" Relationship="NVModel.FK_ProveedoresProducto_Productos2" FromRole="Producto" ToRole="ProveedoresProducto" />
           <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Productos" FromRole="Producto" ToRole="OfertasPermitida" />
           <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_Productos" FromRole="Producto" ToRole="OfertasCombinadasDetalle" />
+          <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Productos" FromRole="Producto" ToRole="PreExtrProducto" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -5538,6 +5908,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_Proveedores" FromRole="Proveedor" ToRole="CabFacturaCmp" />
           <NavigationProperty Name="ProveedoresProductoes" Relationship="NVModel.FK_ProveedoresProducto_Proveedores" FromRole="Proveedor" ToRole="ProveedoresProducto" />
           <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_Proveedores" FromRole="Proveedor" ToRole="PedidosEspeciale" />
+          <NavigationProperty Name="LinPedidoCmps" Relationship="NVModel.FK_LinPedidoCmp_Proveedores" FromRole="Proveedor" ToRole="LinPedidoCmp" />
+          <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Proveedores" FromRole="Proveedor" ToRole="PreExtrProducto" />
         </EntityType>
         <Association Name="FK_Proveedores_CCCProveedores">
           <End Type="NVModel.CCCProveedor" Role="CCCProveedor" Multiplicity="0..1" />
@@ -5687,6 +6059,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="FormasPago" Relationship="NVModel.FK_CabFacturaCmp_FormasPago" FromRole="CabFacturaCmp" ToRole="FormaPago" />
           <NavigationProperty Name="PlazosPago1" Relationship="NVModel.FK_CabFacturaCmp_PlazosPago" FromRole="CabFacturaCmp" ToRole="PlazoPago" />
           <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_CabFacturaCmp_Proveedores" FromRole="CabFacturaCmp" ToRole="Proveedor" />
+          <NavigationProperty Name="LinPedidoCmps" Relationship="NVModel.FK_LinPedidoCmp_CabFacturaCmp" FromRole="CabFacturaCmp" ToRole="LinPedidoCmp" />
         </EntityType>
         <Association Name="FK_CabFacturaCmp_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -5773,6 +6146,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="ExtractoProveedors" Relationship="NVModel.FK_ExtractoProveedor_FormasVenta" FromRole="FormasVenta" ToRole="ExtractoProveedor" />
           <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_FormasVenta" FromRole="FormasVenta" ToRole="LinPedidoVta" />
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_FormasVenta" FromRole="FormaVenta" ToRole="ExtractoCliente" />
+          <NavigationProperty Name="LinPedidoCmps" Relationship="NVModel.FK_LinPedidoCmp_FormasVenta" FromRole="FormaVenta" ToRole="LinPedidoCmp" />
+          <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_FormasVenta" FromRole="FormaVenta" ToRole="PreExtrProducto" />
         </EntityType>
         <Association Name="FK_Empresas_FormasVenta">
           <End Type="NVModel.FormaVenta" Role="FormasVenta" Multiplicity="0..1" />
@@ -6702,6 +7077,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="FechaCreación" Type="DateTime" Nullable="false" Precision="3" />
           <NavigationProperty Name="ExtractoProductoes" Relationship="NVModel.FK_ExtractoProducto_CentrosCoste" FromRole="CentrosCoste" ToRole="ExtractoProducto" />
           <NavigationProperty Name="Inmovilizados" Relationship="NVModel.FK_Inmovilizados_CentrosCoste" FromRole="CentrosCoste" ToRole="Inmovilizado" />
+          <NavigationProperty Name="LinPedidoCmps" Relationship="NVModel.FK_LinPedidoCmp_CentrosCoste" FromRole="CentrosCoste" ToRole="LinPedidoCmp" />
+          <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_CentrosCoste" FromRole="CentrosCoste" ToRole="PreExtrProducto" />
         </EntityType>
         <Association Name="FK_ExtractoProducto_CentrosCoste">
           <End Type="NVModel.CentrosCoste" Role="CentrosCoste" Multiplicity="0..1" />
@@ -6819,6 +7196,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="VendedoresClienteGrupoProductoes" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Vendedores" FromRole="Vendedore" ToRole="VendedorClienteGrupoProducto" />
           <NavigationProperty Name="VendedoresPedidoGrupoProductoes" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_Vendedores" FromRole="Vendedore" ToRole="VendedorPedidoGrupoProducto" />
           <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Vendedores" FromRole="Vendedor" ToRole="SeguimientoCliente" />
+          <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Vendedores" FromRole="Vendedor" ToRole="PreExtrProducto" />
         </EntityType>
         <Association Name="FK_Clientes_Vendedores">
           <End Type="NVModel.Vendedor" Role="Vendedore" Multiplicity="0..1" />
@@ -7256,6 +7634,284 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="EstadoFamilia" Type="Int16" />
           <Property Name="PrecioTarifa" Type="Decimal" Precision="19" Scale="4" />
         </EntityType>
+        <EntityType Name="LinPedidoCmp">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="NºOrden" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="Int32" Nullable="false" />
+          <Property Name="NºOrden" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="NºProveedor" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="TipoLínea" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Producto" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Almacén" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FechaRecepción" Type="DateTime" Precision="3" />
+          <Property Name="Texto" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Cantidad" Type="Int16" />
+          <Property Name="Precio" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Bruto" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PorcentajeIVA" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="PorcentajeRE" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="DescuentoProveedor" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="DescuentoProducto" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="Descuento" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="DescuentoPP" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="SumaDescuentos" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="ImporteDto" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="BaseImponible" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="ImporteIVA" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="ImporteRE" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Total" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="AplicarDto" Type="Boolean" Nullable="false" />
+          <Property Name="Delegación" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaVenta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºAlbarán" Type="Int32" />
+          <Property Name="FechaAlbarán" Type="DateTime" Precision="3" />
+          <Property Name="NºFactura" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="FechaFactura" Type="DateTime" Precision="3" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="Grupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Subgrupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºOferta" Type="Byte" />
+          <Property Name="VistoBueno" Type="Boolean" Nullable="false" />
+          <Property Name="Enviado" Type="Boolean" Nullable="false" />
+          <Property Name="Coste" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="CentroCoste" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PrecioTarifa" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="YaFacturado" Type="Boolean" Nullable="false" />
+          <Property Name="Reponer" Type="Boolean" Nullable="false" />
+          <Property Name="Departamento" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="C__IRPF" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="EstadoProducto" Type="Int32" />
+          <Property Name="NumSerie" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="CabFacturaCmp" Relationship="NVModel.FK_LinPedidoCmp_CabFacturaCmp" FromRole="LinPedidoCmp" ToRole="CabFacturaCmp" />
+          <NavigationProperty Name="CentrosCoste" Relationship="NVModel.FK_LinPedidoCmp_CentrosCoste" FromRole="LinPedidoCmp" ToRole="CentrosCoste" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_LinPedidoCmp_Empresas" FromRole="LinPedidoCmp" ToRole="Empresa" />
+          <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_LinPedidoCmp_FormasVenta" FromRole="LinPedidoCmp" ToRole="FormaVenta" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_LinPedidoCmp_Proveedores" FromRole="LinPedidoCmp" ToRole="Proveedor" />
+        </EntityType>
+        <Association Name="FK_LinPedidoCmp_CabFacturaCmp">
+          <End Type="NVModel.CabFacturaCmp" Role="CabFacturaCmp" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoCmp" Role="LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabFacturaCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºFactura" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoCmp_CentrosCoste">
+          <End Type="NVModel.CentrosCoste" Role="CentrosCoste" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoCmp" Role="LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CentrosCoste">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CentroCoste" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoCmp_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.LinPedidoCmp" Role="LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoCmp_FormasVenta">
+          <End Type="NVModel.FormaVenta" Role="FormaVenta" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoCmp" Role="LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormaVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaVenta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoCmp_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedor" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoCmp" Role="LinPedidoCmp" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="LinPedidoCmp">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="PreExtrProducto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Diario" />
+            <PropertyRef Name="Nº_Orden" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Diario" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Orden" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Nº_Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoCliente" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºProveedor" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoProveedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Albarán" Type="Int32" />
+          <Property Name="Factura" Type="Int32" />
+          <Property Name="Texto" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Almacén" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Grupo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Cantidad" Type="Int16" Nullable="false" />
+          <Property Name="Coste" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="Importe" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="Delegación" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Forma_Venta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Asiento_Automático" Type="Boolean" Nullable="false" />
+          <Property Name="LinPedido" Type="Int32" />
+          <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="NºTraspaso" Type="Int32" />
+          <Property Name="NºPedido" Type="Int32" />
+          <Property Name="Pasillo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Fila" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Columna" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CentroCoste" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Departamento" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="CentrosCoste" Relationship="NVModel.FK_PreExtrProducto_CentrosCoste" FromRole="PreExtrProducto" ToRole="CentrosCoste" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_PreExtrProducto_Clientes" FromRole="PreExtrProducto" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_PreExtrProducto_Empresas" FromRole="PreExtrProducto" ToRole="Empresa" />
+          <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_PreExtrProducto_FormasVenta" FromRole="PreExtrProducto" ToRole="FormaVenta" />
+          <NavigationProperty Name="Producto" Relationship="NVModel.FK_PreExtrProducto_Productos" FromRole="PreExtrProducto" ToRole="Producto" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_PreExtrProducto_Proveedores" FromRole="PreExtrProducto" ToRole="Proveedor" />
+          <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_PreExtrProducto_Vendedores" FromRole="PreExtrProducto" ToRole="Vendedor" />
+        </EntityType>
+        <Association Name="FK_PreExtrProducto_CentrosCoste">
+          <End Type="NVModel.CentrosCoste" Role="CentrosCoste" Multiplicity="0..1" />
+          <End Type="NVModel.PreExtrProducto" Role="PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CentrosCoste">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CentroCoste" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.PreExtrProducto" Role="PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="ContactoCliente" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.PreExtrProducto" Role="PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_FormasVenta">
+          <End Type="NVModel.FormaVenta" Role="FormaVenta" Multiplicity="0..1" />
+          <End Type="NVModel.PreExtrProducto" Role="PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormaVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Forma_Venta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.PreExtrProducto" Role="PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedor" Multiplicity="0..1" />
+          <End Type="NVModel.PreExtrProducto" Role="PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºProveedor" />
+              <PropertyRef Name="ContactoProveedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_Vendedores">
+          <End Type="NVModel.Vendedor" Role="Vendedor" Multiplicity="0..1" />
+          <End Type="NVModel.PreExtrProducto" Role="PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -8411,6 +9067,100 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Nº_Orden" ColumnName="Nº Orden" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="LinPedidoCmps">
+            <EntityTypeMapping TypeName="NVModel.LinPedidoCmp">
+              <MappingFragment StoreEntitySet="LinPedidoCmp">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="NumSerie" ColumnName="NumSerie" />
+                <ScalarProperty Name="EstadoProducto" ColumnName="EstadoProducto" />
+                <ScalarProperty Name="C__IRPF" ColumnName="% IRPF" />
+                <ScalarProperty Name="Departamento" ColumnName="Departamento" />
+                <ScalarProperty Name="Reponer" ColumnName="Reponer" />
+                <ScalarProperty Name="YaFacturado" ColumnName="YaFacturado" />
+                <ScalarProperty Name="PrecioTarifa" ColumnName="PrecioTarifa" />
+                <ScalarProperty Name="CentroCoste" ColumnName="CentroCoste" />
+                <ScalarProperty Name="Coste" ColumnName="Coste" />
+                <ScalarProperty Name="Enviado" ColumnName="Enviado" />
+                <ScalarProperty Name="VistoBueno" ColumnName="VistoBueno" />
+                <ScalarProperty Name="NºOferta" ColumnName="NºOferta" />
+                <ScalarProperty Name="Subgrupo" ColumnName="Subgrupo" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="FechaFactura" ColumnName="FechaFactura" />
+                <ScalarProperty Name="NºFactura" ColumnName="NºFactura" />
+                <ScalarProperty Name="FechaAlbarán" ColumnName="FechaAlbarán" />
+                <ScalarProperty Name="NºAlbarán" ColumnName="NºAlbarán" />
+                <ScalarProperty Name="FormaVenta" ColumnName="FormaVenta" />
+                <ScalarProperty Name="Delegación" ColumnName="Delegación" />
+                <ScalarProperty Name="AplicarDto" ColumnName="AplicarDto" />
+                <ScalarProperty Name="Total" ColumnName="Total" />
+                <ScalarProperty Name="ImporteRE" ColumnName="ImporteRE" />
+                <ScalarProperty Name="ImporteIVA" ColumnName="ImporteIVA" />
+                <ScalarProperty Name="BaseImponible" ColumnName="BaseImponible" />
+                <ScalarProperty Name="ImporteDto" ColumnName="ImporteDto" />
+                <ScalarProperty Name="SumaDescuentos" ColumnName="SumaDescuentos" />
+                <ScalarProperty Name="DescuentoPP" ColumnName="DescuentoPP" />
+                <ScalarProperty Name="Descuento" ColumnName="Descuento" />
+                <ScalarProperty Name="DescuentoProducto" ColumnName="DescuentoProducto" />
+                <ScalarProperty Name="DescuentoProveedor" ColumnName="DescuentoProveedor" />
+                <ScalarProperty Name="PorcentajeRE" ColumnName="PorcentajeRE" />
+                <ScalarProperty Name="PorcentajeIVA" ColumnName="PorcentajeIVA" />
+                <ScalarProperty Name="IVA" ColumnName="IVA" />
+                <ScalarProperty Name="Bruto" ColumnName="Bruto" />
+                <ScalarProperty Name="Precio" ColumnName="Precio" />
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="Texto" ColumnName="Texto" />
+                <ScalarProperty Name="FechaRecepción" ColumnName="FechaRecepción" />
+                <ScalarProperty Name="Almacén" ColumnName="Almacén" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
+                <ScalarProperty Name="TipoLínea" ColumnName="TipoLínea" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
+                <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="PreExtrProductos">
+            <EntityTypeMapping TypeName="NVModel.PreExtrProducto">
+              <MappingFragment StoreEntitySet="PreExtrProducto">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Departamento" ColumnName="Departamento" />
+                <ScalarProperty Name="CentroCoste" ColumnName="CentroCoste" />
+                <ScalarProperty Name="Columna" ColumnName="Columna" />
+                <ScalarProperty Name="Fila" ColumnName="Fila" />
+                <ScalarProperty Name="Pasillo" ColumnName="Pasillo" />
+                <ScalarProperty Name="NºPedido" ColumnName="NºPedido" />
+                <ScalarProperty Name="NºTraspaso" ColumnName="NºTraspaso" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="LinPedido" ColumnName="LinPedido" />
+                <ScalarProperty Name="Asiento_Automático" ColumnName="Asiento Automático" />
+                <ScalarProperty Name="Forma_Venta" ColumnName="Forma Venta" />
+                <ScalarProperty Name="Delegación" ColumnName="Delegación" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="Coste" ColumnName="Coste" />
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="Almacén" ColumnName="Almacén" />
+                <ScalarProperty Name="Texto" ColumnName="Texto" />
+                <ScalarProperty Name="Factura" ColumnName="Factura" />
+                <ScalarProperty Name="Albarán" ColumnName="Albarán" />
+                <ScalarProperty Name="ContactoProveedor" ColumnName="ContactoProveedor" />
+                <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
+                <ScalarProperty Name="ContactoCliente" ColumnName="ContactoCliente" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Nº_Orden" ColumnName="Nº Orden" />
+                <ScalarProperty Name="Diario" ColumnName="Diario" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

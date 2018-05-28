@@ -27,7 +27,7 @@ namespace NestoAPI.Controllers
         */
 
         // GET: api/Productos/5
-        [ResponseType(typeof(ProductoDTO))]
+        [ResponseType(typeof(ProductoPlantillaDTO))]
         public async Task<IHttpActionResult> GetProducto(string empresa, string id)
         {
             Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id);
@@ -36,7 +36,7 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            ProductoDTO productoDTO = new ProductoDTO()
+            ProductoPlantillaDTO productoDTO = new ProductoPlantillaDTO()
             {
                 producto = producto.Número,
                 nombre = producto.Nombre,
@@ -47,9 +47,10 @@ namespace NestoAPI.Controllers
             return Ok(productoDTO);
         }
 
+
         // GET: api/Productos/5
         [ResponseType(typeof(ProductoDTO))]
-        public async Task<IHttpActionResult> GetProducto(string empresa, string id, string cliente, string contacto, short cantidad)
+        public async Task<IHttpActionResult> GetProducto(string empresa, string id, bool fichaCompleta)
         {
             Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id);
             if (producto == null)
@@ -58,6 +59,51 @@ namespace NestoAPI.Controllers
             }
 
             ProductoDTO productoDTO = new ProductoDTO()
+            {
+                Producto = producto.Número?.Trim(),
+                Nombre = producto.Nombre?.Trim(),
+                Tamanno = producto.Tamaño,
+                UnidadMedida = producto.UnidadMedida?.Trim(),
+                Familia = producto.Familia1.Descripción?.Trim(),
+                PrecioProfesional = (decimal)producto.PVP,
+                Estado = (short)producto.Estado,
+                Grupo = producto.Grupo,
+                Subgrupo = producto.SubGruposProducto.Descripción?.Trim()
+            };
+            
+            // Lo dejo medio-hardcoded porque no quiero que los vendedores vean otros almacenes
+            productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
+            productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
+
+            return Ok(productoDTO);
+        }
+
+        private ProductoDTO.StockProducto CalcularStockProducto(string producto, string almacen)
+        {
+            ProductoDTO.StockProducto stockProducto = new ProductoDTO.StockProducto
+            {
+                Almacen = almacen,
+                Stock = db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
+                PendienteEntregar = db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
+                PendienteRecibir = db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
+                FechaEstimadaRecepcion = (DateTime)db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => e.FechaRecepción).DefaultIfEmpty(DateTime.MaxValue).Min(),
+                PendienteReposicion = db.PreExtrProductos.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum()
+            };
+
+            return stockProducto;
+        }
+
+        // GET: api/Productos/5
+        [ResponseType(typeof(ProductoPlantillaDTO))]
+        public async Task<IHttpActionResult> GetProducto(string empresa, string id, string cliente, string contacto, short cantidad)
+        {
+            Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id);
+            if (producto == null)
+            {
+                return NotFound();
+            }
+
+            ProductoPlantillaDTO productoDTO = new ProductoPlantillaDTO()
             {
                 producto = producto.Número,
                 nombre = producto.Nombre,

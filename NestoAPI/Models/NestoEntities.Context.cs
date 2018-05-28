@@ -78,6 +78,8 @@ namespace NestoAPI.Models
         public virtual DbSet<RentingFactura> RentingFacturas { get; set; }
         public virtual DbSet<vstLinPedidoVtaComisionesDetalle> vstLinPedidoVtaComisionesDetalles { get; set; }
         public virtual DbSet<vstLinPedidoVtaComisione> vstLinPedidoVtaComisiones { get; set; }
+        public virtual DbSet<LinPedidoCmp> LinPedidoCmps { get; set; }
+        public virtual DbSet<PreExtrProducto> PreExtrProductos { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

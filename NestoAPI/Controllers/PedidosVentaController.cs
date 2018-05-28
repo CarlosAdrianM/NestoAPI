@@ -1028,7 +1028,7 @@ namespace NestoAPI.Controllers
                 return false;
             }
 
-            ProductoDTO productoNuevo = new ProductoDTO(producto, db);
+            ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(producto, db);
 
             return productoNuevo.CantidadDisponible() < cantidad;
         }

@@ -181,6 +181,20 @@
         <EntityTypeShape EntityType="NVModel.RentingFactura" Width="1.5" PointX="11.375" PointY="4.75" />
         <EntityTypeShape EntityType="NVModel.vstLinPedidoVtaComisionesDetalle" Width="1.5" PointX="11.375" PointY="6.75" />
         <EntityTypeShape EntityType="NVModel.vstLinPedidoVtaComisione" Width="1.5" PointX="9.375" PointY="10.75" />
+        <EntityTypeShape EntityType="NVModel.LinPedidoCmp" Width="1.5" PointX="20.25" PointY="40.5" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoCmp_CabFacturaCmp" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoCmp_CentrosCoste" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoCmp_Empresas" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoCmp_FormasVenta" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoCmp_Proveedores" />
+        <EntityTypeShape EntityType="NVModel.PreExtrProducto" Width="1.5" PointX="14.75" PointY="57.375" />
+        <AssociationConnector Association="NVModel.FK_PreExtrProducto_CentrosCoste" />
+        <AssociationConnector Association="NVModel.FK_PreExtrProducto_Clientes" />
+        <AssociationConnector Association="NVModel.FK_PreExtrProducto_Empresas" />
+        <AssociationConnector Association="NVModel.FK_PreExtrProducto_FormasVenta" />
+        <AssociationConnector Association="NVModel.FK_PreExtrProducto_Productos" />
+        <AssociationConnector Association="NVModel.FK_PreExtrProducto_Proveedores" />
+        <AssociationConnector Association="NVModel.FK_PreExtrProducto_Vendedores" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

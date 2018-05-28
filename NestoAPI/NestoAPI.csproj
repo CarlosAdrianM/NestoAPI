@@ -384,6 +384,9 @@
     <Compile Include="Models\InventarioCuadre.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\LinPedidoCmp.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\LinPedidoVta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -456,9 +459,13 @@
     <Compile Include="Models\PlazoPago.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PreExtrProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\Producto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\ProductoDTO.cs" />
     <Compile Include="Models\Proveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

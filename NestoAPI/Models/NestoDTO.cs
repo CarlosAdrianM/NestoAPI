@@ -206,12 +206,12 @@ namespace NestoAPI.Models
         public string motivo { get; set; }
     }
 
-    public class ProductoDTO
+    public class ProductoPlantillaDTO
     {
         private NVEntities db;
-        public ProductoDTO() { }
+        public ProductoPlantillaDTO() { }
 
-        public ProductoDTO(string producto, NVEntities db)
+        public ProductoPlantillaDTO(string producto, NVEntities db)
         {
             this.producto = producto;
             this.db = db;
@@ -316,7 +316,7 @@ namespace NestoAPI.Models
         public string ruta { get; set; }
     }
 
-    public class StockProductoDTO
+    public class StockProductoPlantillaDTO
     {
         public int stock { get; set; }
         public int cantidadDisponible { get; set; }
