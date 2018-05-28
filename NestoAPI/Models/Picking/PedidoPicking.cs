@@ -36,7 +36,7 @@ namespace NestoAPI.Models.Picking
 
         public bool hayQueSumarPortes()
         {
-            bool yaLlevaPortes = this.Lineas.FirstOrDefault(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && l.Producto.StartsWith(PREFIJO_PORTES)) != null;
+            bool yaLlevaPortes = this.Lineas.FirstOrDefault(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && l.Producto != null && l.Producto.StartsWith(PREFIJO_PORTES)) != null;
 
             if (yaLlevaPortes || EsProductoYaFacturado)
             {
