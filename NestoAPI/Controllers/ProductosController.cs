@@ -16,7 +16,17 @@ namespace NestoAPI.Controllers
 {
     public class ProductosController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private NVEntities db;
+
+        public ProductosController()
+        {
+            db = new NVEntities();
+        }
+
+        public ProductosController(NVEntities db)
+        {
+            this.db = db;
+        }
 
         /*
         // GET: api/Productos
@@ -72,8 +82,11 @@ namespace NestoAPI.Controllers
             };
             
             // Lo dejo medio-hardcoded porque no quiero que los vendedores vean otros almacenes
-            productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
-            productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
+            if (!producto.Ficticio)
+            {
+                productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
+                productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
+            }            
 
             return Ok(productoDTO);
         }

@@ -28,10 +28,18 @@ namespace NestoAPI.Controllers
         public const int TIPO_LINEA_INMOVILIZADO = 3;
 
 
-        private NVEntities db = new NVEntities();
+        private NVEntities db;
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
         {
+            db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+        }
+
+        // Carlos 31/05/18: para poder hacer tests sobre el controlador
+        public PedidosVentaController(NVEntities db)
+        {
+            this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
         }
 
@@ -246,6 +254,12 @@ namespace NestoAPI.Controllers
             bool cambiarContactoEnLineas = false;
             if (cabPedidoVta.Contacto.Trim() != pedido.contacto.Trim())
             {
+                var etiqueta = db.EnviosAgencias.SingleOrDefault(e => e.Estado == Constantes.Agencias.ESTADO_EN_CURSO && e.Pedido == pedido.numero);
+                if (etiqueta != null)
+                {
+                    errorPersonalizado("No se puede cambiar el contacto " + pedido.numero + " porque ya tiene lo tiene la agencia");
+                }
+
                 cabPedidoVta.Contacto = pedido.contacto;
                 // hay cambiar el contacto a todas las líneas
                 // ojo con la PK, que igual no puede haber diferentes contactos en un mismo pedido
@@ -394,10 +408,7 @@ namespace NestoAPI.Controllers
 
                     if (linea.id == 0)
                     {
-                        if (algunaLineaTienePicking && fechaEntregaAjustada(linea.fechaEntrega, pedido.ruta) <= DateTime.Today && DateTime.Now.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
-                        {
-                            errorPersonalizado("No se pueden insertar líneas porque son más de las " + Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS.ToString() + "h. y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
-                        }
+                        ComprobarSiSePuedenInsertarLineas(pedido, algunaLineaTienePicking, linea); //da error si no se puede
                         lineaPedido = crearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
                         linea.baseImponible = lineaPedido.Base_Imponible;
@@ -471,7 +482,15 @@ namespace NestoAPI.Controllers
 
             return StatusCode(HttpStatusCode.NoContent);
         }
-        
+
+        public void ComprobarSiSePuedenInsertarLineas(PedidoVentaDTO pedido, bool algunaLineaTienePicking, LineaPedidoVentaDTO linea)
+        {
+            if (algunaLineaTienePicking && fechaEntregaAjustada(linea.fechaEntrega, pedido.ruta) <= DateTime.Today && DateTime.Now.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
+            {
+                errorPersonalizado("No se pueden insertar líneas porque son más de las " + Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS.ToString() + "h. y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
+            }
+        }
+
         // POST: api/PedidosVenta
         [HttpPost]
         [ResponseType(typeof(PedidoVentaDTO))]

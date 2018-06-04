@@ -102,6 +102,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
+    <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Models\Comisiones\VendedorComisionAnualTest.cs" />
     <Compile Include="Models\Picking\LineaPedidoPickingTest.cs" />

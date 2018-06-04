@@ -7,6 +7,10 @@ namespace NestoAPI.Models
 {
     public class Constantes
     {
+        public class Agencias
+        {
+            public const int ESTADO_EN_CURSO = 0;
+        }
         public class Empresas
         {
             public const string DELEGACION_POR_DEFECTO = "ALG";
