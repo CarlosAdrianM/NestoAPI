@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Threading.Tasks;
 using System.Web;
 
 namespace NestoAPI.Models
@@ -39,6 +41,24 @@ namespace NestoAPI.Models
             }
             public DateTime FechaEstimadaRecepcion { get; set; }
             public int PendienteReposicion { get; set; }
+        }
+
+        public static async Task<string> RutaImagen(string productoStock)
+        {
+            using (var client = new HttpClient())
+            {
+                client.BaseAddress = new Uri("http://www.productosdeesteticaypeluqueriaprofesional.com/imagenesPorReferencia.php");
+                client.DefaultRequestHeaders.Accept.Clear();
+                //client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                HttpResponseMessage response = await client.GetAsync("?producto=" + productoStock);
+                string rutaImagen = "";
+                if (response.IsSuccessStatusCode)
+                {
+                    rutaImagen = await response.Content.ReadAsStringAsync();
+                    rutaImagen = "http://" + rutaImagen;
+                }
+                return rutaImagen;
+            }
         }
     }
 

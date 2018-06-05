@@ -193,20 +193,9 @@ namespace NestoAPI.Controllers
             datosStock.cantidadDisponible = productoNuevo.CantidadDisponible();
 
             // Cargamos la imagen del producto
-            using (var client = new HttpClient())
-            {
-                client.BaseAddress = new Uri("http://www.productosdeesteticaypeluqueriaprofesional.com/imagenesPorReferencia.php");
-                client.DefaultRequestHeaders.Accept.Clear();
-                //client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                HttpResponseMessage response = await client.GetAsync("?producto="+productoStock);
-                if (response.IsSuccessStatusCode)
-                {
-                    datosStock.urlImagen = await response.Content.ReadAsStringAsync();
-                    datosStock.urlImagen = "http://" + datosStock.urlImagen;
-                }
-            }
+            datosStock.urlImagen = await ProductoDTO.RutaImagen(productoStock);
 
-                return Ok(datosStock);
+            return Ok(datosStock);
         }
 
 

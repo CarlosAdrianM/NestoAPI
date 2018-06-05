@@ -70,6 +70,7 @@ namespace NestoAPI.Controllers
 
             ProductoDTO productoDTO = new ProductoDTO()
             {
+                UrlFoto = await ProductoDTO.RutaImagen(id),
                 Producto = producto.Número?.Trim(),
                 Nombre = producto.Nombre?.Trim(),
                 Tamanno = producto.Tamaño,
@@ -78,7 +79,7 @@ namespace NestoAPI.Controllers
                 PrecioProfesional = (decimal)producto.PVP,
                 Estado = (short)producto.Estado,
                 Grupo = producto.Grupo,
-                Subgrupo = producto.SubGruposProducto.Descripción?.Trim()
+                Subgrupo = producto.SubGruposProducto.Descripción?.Trim()                
             };
             
             // Lo dejo medio-hardcoded porque no quiero que los vendedores vean otros almacenes
@@ -99,7 +100,7 @@ namespace NestoAPI.Controllers
                 Stock = db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
                 PendienteEntregar = db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
                 PendienteRecibir = db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && e.Enviado == true).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
-                FechaEstimadaRecepcion = (DateTime)db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => e.FechaRecepción).DefaultIfEmpty(DateTime.MaxValue).Min(),
+                FechaEstimadaRecepcion = (DateTime)db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE && e.Enviado == true)).Select(e => e.FechaRecepción).DefaultIfEmpty(DateTime.MaxValue).Min(),
                 PendienteReposicion = db.PreExtrProductos.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum()
             };
 
