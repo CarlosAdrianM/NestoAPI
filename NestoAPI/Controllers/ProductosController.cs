@@ -92,20 +92,37 @@ namespace NestoAPI.Controllers
             return Ok(productoDTO);
         }
 
-        private ProductoDTO.StockProducto CalcularStockProducto(string producto, string almacen)
+        // GET: api/Productos/5
+        public IQueryable<ProductoDTO> GetProducto(string empresa, string filtroNombre, string filtroFamilia, string filtroSubgrupo)
         {
-            ProductoDTO.StockProducto stockProducto = new ProductoDTO.StockProducto
+            IQueryable<Producto> productos = db.Productos.Where(p => p.Empresa == empresa && p.Estado >= Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO);
+            if (filtroNombre != null && filtroNombre.Trim() != "")
             {
-                Almacen = almacen,
-                Stock = db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
-                PendienteEntregar = db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
-                PendienteRecibir = db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && e.Enviado == true).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
-                FechaEstimadaRecepcion = (DateTime)db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE && e.Enviado == true)).Select(e => e.FechaRecepción).DefaultIfEmpty(DateTime.MaxValue).Min(),
-                PendienteReposicion = db.PreExtrProductos.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum()
-            };
+                productos = productos.Where(p => p.Nombre.Contains(filtroNombre));
+            }
+            if (filtroFamilia != null && filtroFamilia.Trim() != "")
+            {
+                productos = productos.Where(p => p.Familia1.Descripción.Contains(filtroFamilia));
+            }
+            if (filtroSubgrupo != null && filtroSubgrupo?.Trim() != "")
+            {
+                productos = productos.Where(p => p.SubGruposProducto.Descripción.Contains(filtroSubgrupo));
+            }
 
-            return stockProducto;
+            var productosDTO = productos.Select(x=>new ProductoDTO
+            {
+                Producto = x.Número.Trim(),
+                Nombre = x.Nombre.Trim(),
+                Familia = x.Familia1.Descripción.Trim(),
+                Subgrupo = x.SubGruposProducto.Descripción.Trim(),
+                PrecioProfesional = (decimal)x.PVP,
+                Estado = (short)x.Estado
+            });
+
+            return productosDTO;
         }
+
+            
 
         // GET: api/Productos/5
         [ResponseType(typeof(ProductoPlantillaDTO))]
@@ -225,6 +242,21 @@ namespace NestoAPI.Controllers
             return Ok(producto);
         }
         */
+
+        private ProductoDTO.StockProducto CalcularStockProducto(string producto, string almacen)
+        {
+            ProductoDTO.StockProducto stockProducto = new ProductoDTO.StockProducto
+            {
+                Almacen = almacen,
+                Stock = db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
+                PendienteEntregar = db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
+                PendienteRecibir = db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && e.Enviado == true).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
+                FechaEstimadaRecepcion = (DateTime)db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE && e.Enviado == true)).Select(e => e.FechaRecepción).DefaultIfEmpty(DateTime.MaxValue).Min(),
+                PendienteReposicion = db.PreExtrProductos.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum()
+            };
+
+            return stockProducto;
+        }
 
         protected override void Dispose(bool disposing)
         {
