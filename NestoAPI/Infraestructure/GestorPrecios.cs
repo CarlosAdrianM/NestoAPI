@@ -145,6 +145,7 @@ namespace NestoAPI.Infraestructure
 
             listaValidadoresAceptacion.Add(new ValidadorOfertasCombinadas());
             listaValidadoresAceptacion.Add(new ValidadorMuestrasYMaterialPromocional());
+            listaValidadoresAceptacion.Add(new ValidadorRegalosTiendaOnline());
         }
 
         public static bool comprobarCondiciones(PrecioDescuentoProducto datos) {
