@@ -96,7 +96,7 @@ namespace NestoAPI.Controllers
             return StatusCode(HttpStatusCode.NoContent);
         }
         
-        /*
+        
         // POST: api/EnviosAgencias
         [ResponseType(typeof(EnviosAgencia))]
         public async Task<IHttpActionResult> PostEnviosAgencia(EnviosAgencia enviosAgencia)
@@ -111,7 +111,8 @@ namespace NestoAPI.Controllers
 
             return CreatedAtRoute("DefaultApi", new { id = enviosAgencia.Numero }, enviosAgencia);
         }
-        */
+        
+        /*
         [HttpPost]
         public void PostEnviosAgencia(EnviosAgencia enviosAgencia) {
             // Command line argument must the the SMTP host.
@@ -139,6 +140,7 @@ namespace NestoAPI.Controllers
 
             client.Send(mm);
         }
+        */
 
 
         /*

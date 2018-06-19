@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
+﻿using System.Linq;
 using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
@@ -17,7 +14,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 ProductoId = numeroProducto
             };
 
-            if (!pedido.comentarios.Contains("TOTAL PEDIDO:"))
+            if (pedido.comentarios == null || !pedido.comentarios.Contains("TOTAL PEDIDO:"))
             {
                 return respuesta;
             }
