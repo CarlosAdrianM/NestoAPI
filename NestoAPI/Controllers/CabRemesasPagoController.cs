@@ -229,8 +229,8 @@ namespace NestoAPI.Controllers
                     lineaFichero += "T";                                            // Forma de pago. C=Cheque. T=Transferencia: F1
                     fechaFactura = (DateTime)factura.FechaProveedor;
                     lineaFichero += strLen(fechaFactura.ToString("ddMMyy"), 6);     // Fecha de la factura: F2
-                    lineaFichero += strLen(efecto.NºDocumentoProv, 15);             // Número de la factura: F3
-                    lineaFichero += strLen(efecto.Fecha.ToString("ddMMyy"), 6);     // Fecha de vencimiento de la factura: F4
+                    lineaFichero += strLen(efecto!=null ? efecto.NºDocumentoProv : "", 15);             // Número de la factura: F3
+                    lineaFichero += strLen(efecto != null ? efecto.Fecha.ToString("ddMMyy") : DateTime.Today.ToString("ddMMyy"), 6);     // Fecha de vencimiento de la factura: F4
                     lineaFichero += new String(' ', 8);                             // Libre: F5
                     lineaFichero += new String(' ', 7);                             // Libre: F6
                     insertarLinea(ref lineaFichero, ref sb);
@@ -311,6 +311,10 @@ namespace NestoAPI.Controllers
 
         private string strLen(string cadena, int longitud)
         {
+            if (cadena == null)
+            {
+                cadena = "";
+            }
             string textoNormalizado = cadena.Normalize(NormalizationForm.FormD);
             Regex reg = new Regex("[^a-zA-Z0-9 ]");
             string textoSinAcentos = reg.Replace(textoNormalizado, "");
