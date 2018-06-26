@@ -30,6 +30,7 @@ namespace NestoAPI.Models
         public class Pedidos
         {
             public const string PERIODO_FACTURACION_FIN_DE_MES = "FDM";
+            public const string PERIODO_FACTURACION_NORMAL = "NRM";
         }
 
         public class Productos
