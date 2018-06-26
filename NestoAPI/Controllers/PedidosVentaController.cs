@@ -295,7 +295,8 @@ namespace NestoAPI.Controllers
             }
 
             // Si cambia el periodo de facturación cambia el reembolso de la etiqueta
-            cabPedidoVta.Periodo_Facturacion = pedido.periodoFacturacion;
+            cabPedidoVta.Periodo_Facturacion = cambiarIvaEnLineas ? 
+                Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES : pedido.periodoFacturacion;
 
             cabPedidoVta.Vendedor = pedido.vendedor;
             cabPedidoVta.Comentarios = pedido.comentarios;

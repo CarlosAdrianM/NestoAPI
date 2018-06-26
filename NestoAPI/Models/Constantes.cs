@@ -27,6 +27,11 @@ namespace NestoAPI.Models
             public const int FACTURA = 4;
         }
 
+        public class Pedidos
+        {
+            public const string PERIODO_FACTURACION_FIN_DE_MES = "FDM";
+        }
+
         public class Productos
         {
             public const string ALMACEN_POR_DEFECTO = "ALG";
