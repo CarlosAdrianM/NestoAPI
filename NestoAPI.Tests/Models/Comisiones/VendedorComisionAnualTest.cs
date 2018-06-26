@@ -361,6 +361,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 etiquetaOtrosAparatosResumen
             };
             ResumenComisionesMes resumen = new ResumenComisionesMes {
+                Mes = 1,
                 Vendedor = "NV",
                 Etiquetas = etiquetasResumen
             };
@@ -756,6 +757,104 @@ namespace NestoAPI.Tests.Models.Comisiones
 
             Assert.AreEqual(Math.Round(10000M / 12 * 5, 2), vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
         }
+
+        [TestMethod]
+        public void VendedorComisionAnual_CrearResumenMesActual_SiEsAgostoComisionaAlTipoQueLleveDirectamente()
+        {
+            IEtiquetaComision etiquetaGeneralResumen = A.Fake<IEtiquetaComision>();
+            IEtiquetaComision etiquetaUnionLaserResumen = A.Fake<IEtiquetaComision>();
+            IEtiquetaComision etiquetaEvaVisnuResumen = A.Fake<IEtiquetaComision>();
+            IEtiquetaComision etiquetaOtrosAparatosResumen = A.Fake<IEtiquetaComision>();
+            A.CallTo(() => etiquetaGeneralResumen.Nombre).Returns("General");
+            A.CallTo(() => etiquetaUnionLaserResumen.Nombre).Returns("Unión Láser");
+            A.CallTo(() => etiquetaEvaVisnuResumen.Nombre).Returns("Eva Visnú");
+            A.CallTo(() => etiquetaOtrosAparatosResumen.Nombre).Returns("Otros Aparatos");
+            Collection<IEtiquetaComision> etiquetasResumen = new Collection<IEtiquetaComision>
+            {
+                etiquetaGeneralResumen,
+                etiquetaUnionLaserResumen,
+                etiquetaEvaVisnuResumen,
+                etiquetaOtrosAparatosResumen
+            };
+            ResumenComisionesMes resumen = new ResumenComisionesMes
+            {
+                Vendedor = "NV",
+                Mes = 7,
+                Etiquetas = etiquetasResumen
+            };
+            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 19000;
+            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo = .2M;
+            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 3800;
+            Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
+            {
+                resumen
+            };
+            A.CallTo(() => servicio.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 8, true)).Returns(1400);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single().LeerVentaMes("NV", 2018, 8, true)).Returns(12000);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single().LeerVentaMes("NV", 2018, 8, true)).Returns(200);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single().LeerVentaMes("NV", 2018, 8, true)).Returns(50);
+            TramoComision tramoBuenoMes = new TramoComision
+            {
+                Desde = 0,
+                Hasta = 1500,
+                Tipo = .005M,
+                TipoExtra = .02M
+            };
+            A.CallTo(() => servicio.LeerTramosComisionMes("NV")).Returns(new Collection<TramoComision>
+            {
+                tramoBuenoMes,
+                new TramoComision
+                {
+                    Desde = 1500.01M,
+                    Hasta = 10000,
+                    Tipo = .02M,
+                    TipoExtra = .04M
+                }
+            });
+            TramoComision tramoBuenoAnno = new TramoComision
+            {
+                Desde = 60000,
+                Hasta = 220000,
+                Tipo = .1M,
+                TipoExtra = .001M
+            };
+            A.CallTo(() => etiquetaGeneral2.SetTipo(tramoBuenoAnno)).Returns(.1M);
+            A.CallTo(() => etiquetaUnionLaser2.SetTipo(tramoBuenoAnno)).Returns(.101M);
+            A.CallTo(() => etiquetaEvaVisnu2.SetTipo(tramoBuenoAnno)).Returns(.001M);
+            A.CallTo(() => etiquetaOtrosAparatos2.SetTipo(tramoBuenoAnno)).Returns(.02M);
+            A.CallTo(() => etiquetaGeneral2.SetTipo(tramoBuenoMes)).Returns(.005M);
+            A.CallTo(() => etiquetaUnionLaser2.SetTipo(tramoBuenoMes)).Returns(.12M);
+            A.CallTo(() => etiquetaEvaVisnu2.SetTipo(tramoBuenoMes)).Returns(.02M);
+            A.CallTo(() => etiquetaOtrosAparatos2.SetTipo(tramoBuenoMes)).Returns(.02M);
+
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                tramoBuenoAnno,
+                new TramoComision
+                {
+                    Desde = 220000.01M,
+                    Hasta = int.MaxValue,
+                    Tipo = .2M,
+                    TipoExtra = .008M
+                }
+        });
+
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 8, true);
+
+            A.CallTo(() => etiquetaEvaVisnu2.Comision).Returns(Math.Round(etiquetaEvaVisnu2.Venta * etiquetaEvaVisnu2.Tipo, 2));
+            A.CallTo(() => etiquetaOtrosAparatos2.Comision).Returns(Math.Round(etiquetaOtrosAparatos2.Venta * etiquetaOtrosAparatos2.Tipo, 2));
+            A.CallTo(() => etiquetaUnionLaser2.Comision).Returns(Math.Round(etiquetaUnionLaser2.Venta * etiquetaUnionLaser2.Tipo, 2));
+            Assert.AreEqual(.1M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo);
+            Assert.AreEqual(.101M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Tipo);
+            Assert.AreEqual(.001M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Tipo);
+            Assert.AreEqual(.02M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Tipo);
+            Assert.AreEqual(140, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision);
+            Assert.AreEqual(1212, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Comision);
+            Assert.AreEqual(.2M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
+            Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
+        }
+
     }
 
     // si el mes es agosto, se pagan al tipo que lleve a ese momento
