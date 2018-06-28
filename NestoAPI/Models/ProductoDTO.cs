@@ -1,9 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
-using System.Web;
 
 namespace NestoAPI.Models
 {
@@ -47,17 +46,29 @@ namespace NestoAPI.Models
         {
             using (var client = new HttpClient())
             {
+                System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                 client.BaseAddress = new Uri("http://www.productosdeesteticaypeluqueriaprofesional.com/imagenesPorReferencia.php");
                 client.DefaultRequestHeaders.Accept.Clear();
                 //client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-                HttpResponseMessage response = await client.GetAsync("?producto=" + productoStock);
+                try
+                {
+                    string parametros = "?producto=" + productoStock;
+                    HttpResponseMessage response = await client.GetAsync(parametros);
+                
+                
                 string rutaImagen = "";
                 if (response.IsSuccessStatusCode)
                 {
                     rutaImagen = await response.Content.ReadAsStringAsync();
                     rutaImagen = "http://" + rutaImagen;
                 }
+
                 return rutaImagen;
+                }
+                catch (Exception ex)
+                {
+                    throw ex;
+                }
             }
         }
     }
