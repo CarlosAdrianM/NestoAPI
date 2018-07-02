@@ -207,15 +207,19 @@ namespace NestoAPI.Controllers
                 },
                 new VendedorDTO
                 {
+                    vendedor = "MRM"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "RFG"
+                },
+                new VendedorDTO
+                {
                     vendedor = "CL"
                 },
                 new VendedorDTO
                 {
                     vendedor = "LA"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "MRM"
                 },
                 new VendedorDTO
                 {

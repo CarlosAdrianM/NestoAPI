@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
-using System.Linq;
 
 namespace NestoAPI.Models.Comisiones
 {
@@ -197,6 +196,79 @@ namespace NestoAPI.Models.Comisiones
                 }
             };
 
+            Collection<TramoComision> tramosTelefonoSemestre = new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0M,
+                    Hasta = 47487.34M,
+                    Tipo = .0067M,
+                    TipoExtra = .0M
+                },new TramoComision
+                {
+                    Desde = 47487.35M,
+                    Hasta = 50000M,
+                    Tipo = .012M,
+                    TipoExtra = .0M
+                },
+                new TramoComision
+                {
+                    Desde = 50000.01M,
+                    Hasta = 52750M,
+                    Tipo = .0145M,
+                    TipoExtra = .0M
+                },
+                new TramoComision
+                {
+                    Desde = 52750.01M,
+                    Hasta = 63250M,
+                    Tipo = .0195M,
+                    TipoExtra = .0M
+                },
+                new TramoComision
+                {
+                    Desde = 63250.01M,
+                    Hasta = 66500M,
+                    Tipo = .0306M,
+                    TipoExtra = .0025M
+                },
+                new TramoComision
+                {
+                    Desde = 66500.01M,
+                    Hasta = 70250M,
+                    Tipo = .033M,
+                    TipoExtra = .004M
+                },
+                new TramoComision
+                {
+                    Desde = 70250.01M,
+                    Hasta = 76750M,
+                    Tipo = .0355M,
+                    TipoExtra = .0055M
+                },
+                new TramoComision
+                {
+                    Desde = 76750.01M,
+                    Hasta = 81000M,
+                    Tipo = .0370M,
+                    TipoExtra = .007M
+                },
+                new TramoComision
+                {
+                    Desde = 81000.01M,
+                    Hasta = 84750M,
+                    Tipo = .0395M,
+                    TipoExtra = .0085M
+                },
+                new TramoComision
+                {
+                    Desde = 84750.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .0462M,
+                    TipoExtra = .01M
+                }
+            };
+
             if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "JM")
             {
                 return tramosCalle;
@@ -205,12 +277,17 @@ namespace NestoAPI.Models.Comisiones
             {
                 return tramosTelefono;
             }
+            else if (vendedor == "RFG")
+            {
+                return tramosTelefonoSemestre;
+            }
 
             throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");
         }
 
         public ICollection<TramoComision> LeerTramosComisionMes(string vendedor)
         {
+            vendedor = vendedor.ToUpper();
             Collection <TramoComision> tramosCalle = new Collection<TramoComision>
             {
                 new TramoComision
@@ -249,7 +326,7 @@ namespace NestoAPI.Models.Comisiones
             if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "JM")
             {
                 return tramosCalle;
-            } else if (vendedor == "CL" || vendedor == "LA" || vendedor == "MRM" || vendedor == "PA" || vendedor == "SH")
+            } else if (vendedor == "CL" || vendedor == "LA" || vendedor == "MRM" || vendedor == "PA" || vendedor == "SH" || vendedor == "RFG")
             {
                 return tramosTelefono;
             }
