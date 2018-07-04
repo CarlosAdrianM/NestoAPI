@@ -21,10 +21,24 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             OfertaCombinada ofertaCumplida = ofertasCombinadas.FirstOrDefault(o => 
-                o.OfertasCombinadasDetalles.All(d => 
+                o.OfertasCombinadasDetalles.Where(d=> d.Cantidad > 0).All(d => 
                     pedido.LineasPedido.Where(p=>p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto.Trim()).Contains(d.Producto.Trim())
                 )
             );
+
+            if (ofertaCumplida != null)
+            {
+                bool tieneAlgunProducto = ofertasCombinadas.FirstOrDefault(o =>
+                        o.OfertasCombinadasDetalles.Where(d => d.Producto != numeroProducto).Any(d =>
+                            pedido.LineasPedido.Where(p => p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto.Trim()).Contains(d.Producto.Trim())
+                        )
+                    ) != null;
+
+                if (!tieneAlgunProducto)
+                {
+                    ofertaCumplida = null;
+                }
+            }
 
             if (ofertaCumplida == null || ofertaCumplida.ImporteMinimo > 0)
             {

@@ -504,8 +504,7 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(respuesta.ValidacionSuperada);
             Assert.AreEqual("Hay un precio autorizado de 28,00 €", respuesta.Motivo);
         }
-
-
+        
         [TestMethod]
         public void GestorPrecios_EsOfertaPermitida_SiHayUnPrecioFijoAutorizadoConSuficienteCantidadEsValido()
         {
@@ -1066,20 +1065,23 @@ namespace NestoAPI.Tests.Infrastructure
                             OfertaId = 123,
                             Empresa = "NV",
                             Producto = "AA11",
-                            Precio = 10
+                            Precio = 10,
+                            Cantidad = 1
                         },
                         new OfertaCombinadaDetalle
                         {
                             OfertaId = 123,
                             Empresa = "NV",
                             Producto = "AA62",
-                            Precio = 31
+                            Precio = 31,
+                            Cantidad = 1
                         },new OfertaCombinadaDetalle
                         {
                             OfertaId = 123,
                             Empresa = "NV",
                             Producto = "AA21",
-                            Precio = 0
+                            Precio = 0,
+                            Cantidad = 1
                         }
                     }
                 }
@@ -1223,14 +1225,16 @@ namespace NestoAPI.Tests.Infrastructure
                             OfertaId = 123,
                             Empresa = "NV",
                             Producto = "AA11",
-                            Precio = 9
+                            Precio = 9,
+                            Cantidad = 1
                         },
                         new OfertaCombinadaDetalle
                         {
                             OfertaId = 123,
                             Empresa = "NV",
                             Producto = "AA21",
-                            Precio = 0
+                            Precio = 0,
+                            Cantidad = 1
                         }
                     }
                 }
@@ -1561,6 +1565,132 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsTrue(respuesta.ValidacionSuperada);
             Assert.AreEqual("La oferta 125 permite poner el producto AA21 a ese precio", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_SiNoLlevaUnProductoDeCantidadCeroSiEsValido()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "AA11";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 1;
+            linea.precio = 10; // es el de ficha
+            pedido.LineasPedido.Add(linea);
+            LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
+            lineaRegalo.producto = "AA21";
+            lineaRegalo.aplicarDescuento = true;
+            lineaRegalo.cantidad = 1;
+            lineaRegalo.precio = 21; // es el de ficha
+            lineaRegalo.descuento = 1M; // de regalo, 100% dto
+            pedido.LineasPedido.Add(lineaRegalo);
+            Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 123,
+                    Empresa = "NV",
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle
+                        {
+                            OfertaId = 123,
+                            Empresa = "NV",
+                            Producto = "AA11",
+                            Precio = 10,
+                            Cantidad = 1
+                        },
+                        new OfertaCombinadaDetalle
+                        {
+                            OfertaId = 123,
+                            Empresa = "NV",
+                            Producto = "AA62",
+                            Precio = 31,
+                            Cantidad = 0
+                        },new OfertaCombinadaDetalle
+                        {
+                            OfertaId = 123,
+                            Empresa = "NV",
+                            Producto = "AA21",
+                            Precio = 0,
+                            Cantidad = 1
+                        }
+                    }
+                }
+            };
+            A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA21")).Returns(listaOfertas);
+
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA21", GestorPrecios.servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            Assert.AreEqual("La oferta 123 permite poner el producto AA21 a ese precio", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_SiNoLlevaNingunProductoDeLaOfertaNoEsValido()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            //LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            //linea.producto = "AA11";
+            //linea.aplicarDescuento = true;
+            //linea.cantidad = 1;
+            //linea.precio = 10; // es el de ficha
+            //pedido.LineasPedido.Add(linea);
+            LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
+            lineaRegalo.producto = "AA21";
+            lineaRegalo.aplicarDescuento = true;
+            lineaRegalo.cantidad = 1;
+            lineaRegalo.precio = 21; // es el de ficha
+            lineaRegalo.descuento = 1M; // de regalo, 100% dto
+            pedido.LineasPedido.Add(lineaRegalo);
+            Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 123,
+                    Empresa = "NV",
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle
+                        {
+                            OfertaId = 123,
+                            Empresa = "NV",
+                            Producto = "AA11",
+                            Precio = 10,
+                            Cantidad = 0
+                        },
+                        new OfertaCombinadaDetalle
+                        {
+                            OfertaId = 123,
+                            Empresa = "NV",
+                            Producto = "AA62",
+                            Precio = 31,
+                            Cantidad = 0
+                        },new OfertaCombinadaDetalle
+                        {
+                            OfertaId = 123,
+                            Empresa = "NV",
+                            Producto = "AA21",
+                            Precio = 0,
+                            Cantidad = 1
+                        }
+                    }
+                }
+            };
+            A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA21")).Returns(listaOfertas);
+
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA21", GestorPrecios.servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            Assert.AreEqual("No hay ninguna oferta combinada que autorice a vender el producto AA21 a ese precio", respuesta.Motivo);
         }
 
         [TestMethod]
