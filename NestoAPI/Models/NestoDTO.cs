@@ -179,6 +179,7 @@ namespace NestoAPI.Models
         public bool vistoBuenoPlazosPago { get; set; }
         public bool mantenerJunto { get; set; }
         public bool servirJunto { get; set; }
+        public bool EsPresupuesto { get; set; }
         public string usuario { get; set; }
 
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }

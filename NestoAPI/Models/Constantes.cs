@@ -21,6 +21,7 @@ namespace NestoAPI.Models
 
         public class EstadosLineaVenta
         {
+            public const int PRESUPUESTO = -3;
             public const int PENDIENTE = -1;
             public const int EN_CURSO = 1;
             public const int ALBARAN = 2;

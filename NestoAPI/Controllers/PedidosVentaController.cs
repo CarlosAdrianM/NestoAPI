@@ -573,6 +573,10 @@ namespace NestoAPI.Controllers
                     }
                     linea.oferta += contador.Oferta;
                 }
+                if (pedido.EsPresupuesto)
+                {
+                    linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
+                }
                 linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
                 linea.baseImponible = linPedido.Base_Imponible;
                 linea.total = linPedido.Total;
