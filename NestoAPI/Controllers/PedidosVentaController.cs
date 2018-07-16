@@ -931,7 +931,7 @@ namespace NestoAPI.Controllers
         private string calcularAlmacen(string usuario, string empresa, int numeroPedido)
         {
             string almacen = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Almacén;
-            if (almacen != "")
+            if (almacen != null && almacen != "")
             {
                 return almacen;
             }
@@ -952,7 +952,7 @@ namespace NestoAPI.Controllers
         private string calcularDelegacion(string usuario, string empresa, int numeroPedido)
         {
             string delegacion = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Delegación;
-            if (delegacion != "")
+            if (delegacion != null && delegacion != "")
             {
                 return delegacion;
             }
@@ -1000,7 +1000,7 @@ namespace NestoAPI.Controllers
                 cabPedidoCoste = db.CabPedidoVtas.Local.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
             }
             string vendedor = cabPedidoCoste?.Vendedor;
-            if (vendedor == "")
+            if (vendedor == null || vendedor == "")
             {
                 throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque falta el vendedor");
             }
