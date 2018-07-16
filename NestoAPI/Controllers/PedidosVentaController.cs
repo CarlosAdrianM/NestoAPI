@@ -480,6 +480,10 @@ namespace NestoAPI.Controllers
                     throw;
                 }
             }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
 
             return StatusCode(HttpStatusCode.NoContent);
         }
@@ -562,7 +566,8 @@ namespace NestoAPI.Controllers
             // Declaramos las variables que se van a utilizar en el bucle de insertar líneas
             LinPedidoVta linPedido;
             int? maxNumeroOferta = 0;
-            
+
+            List<LinPedidoVta> lineasPedidoInsertar = new List<LinPedidoVta>();
             // Bucle de insertar líneas
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido) {
                 if (linea.oferta != null && linea.oferta != 0)
@@ -580,9 +585,12 @@ namespace NestoAPI.Controllers
                 linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
                 linea.baseImponible = linPedido.Base_Imponible;
                 linea.total = linPedido.Total;
-                db.LinPedidoVtas.Add(linPedido);
+                //db.LinPedidoVtas.Add(linPedido);
+                lineasPedidoInsertar.Add(linPedido);
             }
 
+            db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
+            
             // Actualizamos el contador de ofertas
             if ((int)maxNumeroOferta!=0) {
                 contador.Oferta += (int)maxNumeroOferta;
@@ -965,7 +973,7 @@ namespace NestoAPI.Controllers
         private string calcularFormaVenta(string usuario, string empresa, int numeroPedido)
         {
             string formaVenta = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Forma_Venta;
-            if (formaVenta != "")
+            if (formaVenta != null && formaVenta != "")
             {
                 return formaVenta;
             }
