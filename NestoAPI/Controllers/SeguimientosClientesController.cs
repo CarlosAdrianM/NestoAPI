@@ -215,7 +215,7 @@ namespace NestoAPI.Controllers
                 seguimientoCliente.Vendedor = null;
             }
 
-            if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloPeluqueria)
+            if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloPeluqueria && vendedorFicha != vendedorPeluqueria)
             {
                 // poner vendedor general en ficha
                 Cliente cliente = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto);
@@ -225,13 +225,13 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloEstetica)
+            if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloEstetica && vendedorFicha != vendedorPeluqueria)
             {
                 // poner vendedor general en peluquería
-                VendedorClienteGrupoProducto cliente = db.VendedoresClientesGruposProductos.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto && c.GrupoProducto == "PEL");
-                if (cliente != null && cliente.Vendedor !=null && cliente.Vendedor.Trim() != "NV")
+                VendedorClienteGrupoProducto clienteGrupo = db.VendedoresClientesGruposProductos.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto && c.GrupoProducto == "PEL");
+                if (clienteGrupo != null && clienteGrupo.Vendedor !=null && clienteGrupo.Vendedor.Trim() != "NV")
                 {
-                    cliente.Vendedor = "NV";
+                    clienteGrupo.Vendedor = "NV";
                 }
             }
                         
