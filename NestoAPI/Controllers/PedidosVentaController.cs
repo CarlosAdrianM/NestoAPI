@@ -18,8 +18,8 @@ namespace NestoAPI.Controllers
 {
     public class PedidosVentaController : ApiController
     {
-        private const int ESTADO_LINEA_EN_CURSO = 1;
-        private const int ESTADO_LINEA_PENDIENTE = -1;
+        private const int ESTADO_LINEA_EN_CURSO = Constantes.EstadosLineaVenta.EN_CURSO;
+        private const int ESTADO_LINEA_PENDIENTE = Constantes.EstadosLineaVenta.PENDIENTE;
         private const int ESTADO_ENVIO_EN_CURSO = 0;
 
         public const int TIPO_LINEA_TEXTO = 0;
@@ -219,7 +219,7 @@ namespace NestoAPI.Controllers
             cabPedidoVta = db.CabPedidoVtas.Include(l => l.LinPedidoVtas).SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
             // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
-            bool tienePendientes = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) != null;
+            bool tienePendientes = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => (l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) || l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO) != null;
             if (!tienePendientes) {
                 errorPersonalizado("No se puede modificar un pedido ya facturado");
             }
