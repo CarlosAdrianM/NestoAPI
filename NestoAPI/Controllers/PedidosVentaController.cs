@@ -183,7 +183,7 @@ namespace NestoAPI.Controllers
             {
                 throw ex;
             }
-            
+
             return Ok(pedido);
         }
 
@@ -630,6 +630,9 @@ namespace NestoAPI.Controllers
                     throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
                 }
             }
+
+            GestorPresupuestos gestor = new GestorPresupuestos(pedido);
+            await gestor.EnviarCorreo();
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);
