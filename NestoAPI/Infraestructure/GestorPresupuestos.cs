@@ -52,11 +52,11 @@ namespace NestoAPI.Infraestructure
             string correoUsuario = null;
 
             // Miramos si ponemos copia al vendedor de la cabecera
+            Vendedor vendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == pedido.vendedor);
+            correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : CORREO_DIRECCION;
             bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL");
             if (tieneLineasNoPeluqueria)
-            {
-                Vendedor vendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == pedido.vendedor);
-                correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : CORREO_DIRECCION;
+            {               
                 mail.To.Add(new MailAddress(correoVendedor.ToLower()));
             }
 
