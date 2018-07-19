@@ -14,7 +14,9 @@ namespace NestoAPI.Infraestructure
         private PedidoVentaDTO pedido;
         private readonly string TEXTO_PEDIDO;
         private const string CORREO_DIRECCION = "direccion@nuevavision.es";
-        
+
+        string nombreVendedorCabecera = "";
+        string nombreVendedorPeluqueria = "";
 
         public GestorPresupuestos(PedidoVentaDTO pedido)
         {
@@ -56,8 +58,9 @@ namespace NestoAPI.Infraestructure
             correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : CORREO_DIRECCION;
             bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL");
             if (tieneLineasNoPeluqueria)
-            {               
+            {
                 mail.To.Add(new MailAddress(correoVendedor.ToLower()));
+                nombreVendedorCabecera = vendedor.Descripción?.Trim(); ;
             }
 
             // Miramos si ponemos copia al vendedor de peluquería
@@ -68,6 +71,7 @@ namespace NestoAPI.Infraestructure
                 Vendedor vendedorPeluqueria = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == numeroVendedorPeluqueria);
                 correoVendedorPeluqueria = (vendedorPeluqueria != null && vendedorPeluqueria.Mail != null) ? vendedorPeluqueria.Mail.Trim().ToLower() : correoVendedor;
                 mail.To.Add(new MailAddress(correoVendedorPeluqueria));
+                nombreVendedorPeluqueria = vendedorPeluqueria.Descripción?.Trim();
             }
 
             // Miramos si ponemos al usuario que metió el pedido
@@ -121,11 +125,18 @@ namespace NestoAPI.Infraestructure
             s.AppendLine("<table border=\"1\" style=\"width:100%\">");
             s.AppendLine("<tr>");
             s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">" +
-                "<b>"+TEXTO_PEDIDO+" "+pedido.numero.ToString()+"</b><br>" +
-                "Nº Cliente: " +pedido.cliente+ "<br>" +
-                "CIF/NIF: " + cliente.CIF_NIF + "<br>" +
-                "Vendedor: " + pedido.vendedor + "<br>" +
-                "Fecha: " + fechaPedido.ToString("D") + "<br>" +
+                "<b>" + TEXTO_PEDIDO + " " + pedido.numero.ToString() + "</b><br>" +
+                "Nº Cliente: " + pedido.cliente + "<br>" +
+                "CIF/NIF: " + cliente.CIF_NIF + "<br>");
+            if (nombreVendedorCabecera.Trim()!="")
+            {
+                s.AppendLine("Vendedor: " + nombreVendedorCabecera + "<br>");
+            }
+            if (nombreVendedorPeluqueria.Trim() != "")
+            {
+                s.AppendLine("Vendedor Peluquería: " + nombreVendedorPeluqueria + "<br>");
+            }
+            s.AppendLine("Fecha: " + fechaPedido.ToString("D") + "<br>" +
                 "Le Atendió: " + pedido.usuario + "<br>" +
                 "</td>");
             s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">"+
