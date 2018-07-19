@@ -57,7 +57,7 @@ namespace NestoAPI.Infraestructure
             {
                 Vendedor vendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == pedido.vendedor);
                 correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : CORREO_DIRECCION;
-                mail.To.Add(new MailAddress(correoVendedor));
+                mail.To.Add(new MailAddress(correoVendedor.ToLower()));
             }
 
             // Miramos si ponemos copia al vendedor de peluquería
@@ -66,7 +66,7 @@ namespace NestoAPI.Infraestructure
             {
                 string numeroVendedorPeluqueria = db.VendedoresPedidosGruposProductos.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Pedido == pedido.numero)?.Vendedor;
                 Vendedor vendedorPeluqueria = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == numeroVendedorPeluqueria);
-                correoVendedorPeluqueria = (vendedorPeluqueria != null && vendedorPeluqueria.Mail != null) ? vendedorPeluqueria.Mail.Trim() : correoVendedor;
+                correoVendedorPeluqueria = (vendedorPeluqueria != null && vendedorPeluqueria.Mail != null) ? vendedorPeluqueria.Mail.Trim().ToLower() : correoVendedor;
                 mail.To.Add(new MailAddress(correoVendedorPeluqueria));
             }
 
@@ -79,7 +79,7 @@ namespace NestoAPI.Infraestructure
                 correoUsuario = parametroUsuario != null ? parametroUsuario.Valor : CORREO_DIRECCION;
                 if (correoUsuario != null && correoUsuario.Trim()!="")
                 {
-                    correoUsuario = correoUsuario.Trim();
+                    correoUsuario = correoUsuario.Trim().ToLower();
                     mail.CC.Add(correoUsuario);
                 }
             }
