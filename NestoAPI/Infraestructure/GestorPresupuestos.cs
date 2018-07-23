@@ -69,9 +69,13 @@ namespace NestoAPI.Infraestructure
             {
                 string numeroVendedorPeluqueria = db.VendedoresPedidosGruposProductos.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Pedido == pedido.numero)?.Vendedor;
                 Vendedor vendedorPeluqueria = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == numeroVendedorPeluqueria);
+                if (vendedorPeluqueria == null)
+                {
+                    vendedorPeluqueria = vendedor;
+                }
                 correoVendedorPeluqueria = (vendedorPeluqueria != null && vendedorPeluqueria.Mail != null) ? vendedorPeluqueria.Mail.Trim().ToLower() : correoVendedor;
                 mail.To.Add(new MailAddress(correoVendedorPeluqueria));
-                nombreVendedorPeluqueria = vendedorPeluqueria.Descripción?.Trim();
+                nombreVendedorPeluqueria = vendedorPeluqueria?.Descripción?.Trim();
             }
 
             // Miramos si ponemos al usuario que metió el pedido
@@ -90,9 +94,13 @@ namespace NestoAPI.Infraestructure
             
             if (!pedido.EsPresupuesto && (
                 (correoVendedor == correoUsuario && correoVendedorPeluqueria == null) ||
-                (correoVendedorPeluqueria == correoUsuario && correoVendedor == null) ||
+                (correoVendedorPeluqueria == correoUsuario && !tieneLineasNoPeluqueria) ||
                 (correoUsuario == correoVendedor && correoUsuario == correoVendedorPeluqueria)
                ))
+            {
+                return;
+            }
+            if (pedido.cliente == "15191")
             {
                 return;
             }

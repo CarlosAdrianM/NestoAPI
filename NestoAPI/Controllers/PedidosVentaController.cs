@@ -184,10 +184,10 @@ namespace NestoAPI.Controllers
                 throw ex;
             }
 
-            /*
+            
             GestorPresupuestos gestor = new GestorPresupuestos(pedido);
             await gestor.EnviarCorreo();
-            */
+            
 
             return Ok(pedido);
         }
@@ -895,7 +895,8 @@ namespace NestoAPI.Controllers
             byte porcentajeIVA;
             ParametroIVA parametroIva;
             
-            bruto = (decimal)(linea.Cantidad * linea.Precio);
+            // Para que redondee a la baja
+            bruto = (decimal)(linea.Cantidad * (decimal.Truncate((decimal)linea.Precio * 10000) / 10000));
             if (linea.Aplicar_Dto)
             {
                 sumaDescuentos = (1 - (1 - (linea.DescuentoCliente)) * (1 - (linea.DescuentoProducto)) * (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
