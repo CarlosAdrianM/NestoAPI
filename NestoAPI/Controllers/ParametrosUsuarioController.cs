@@ -67,6 +67,20 @@ namespace NestoAPI.Controllers
             return tarea.Result.ToString();
         }
 
+        public static string LeerParametro(string empresa, string usuario, string clave)
+        {
+            NVEntities db = new NVEntities();
+            ParametroUsuario parametroUsuario;
+            string usuarioParametro = usuario.Substring(usuario.IndexOf("\\") + 1);
+            if (usuarioParametro != null)
+            {
+                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuarioParametro && p.Clave == clave);
+                return parametroUsuario?.Valor?.Trim();
+            };
+
+            return "";
+        }
+
         /*
         // PUT: api/ParametrosUsuario/5
         [ResponseType(typeof(void))]

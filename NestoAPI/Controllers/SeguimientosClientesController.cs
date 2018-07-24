@@ -188,6 +188,9 @@ namespace NestoAPI.Controllers
 
             string vendedorFicha = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto).Vendedor?.Trim();
             string vendedorPeluqueria = db.VendedoresClientesGruposProductos.SingleOrDefault(v => v.Empresa == seguimientoClienteDTO.Empresa && v.Cliente == seguimientoClienteDTO.Cliente && v.Contacto == seguimientoClienteDTO.Contacto && v.GrupoProducto == "PEL")?.Vendedor?.Trim();
+            string vendedorUsuario = ParametrosUsuarioController.LeerParametro(seguimientoClienteDTO.Empresa, seguimientoClienteDTO.Usuario, "Vendedor");
+
+            seguimientoClienteDTO.Vendedor = vendedorUsuario;
 
             SeguimientoCliente seguimientoCliente = new SeguimientoCliente
             {
