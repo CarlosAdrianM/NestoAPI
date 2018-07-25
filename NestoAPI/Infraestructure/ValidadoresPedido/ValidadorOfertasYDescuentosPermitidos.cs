@@ -119,7 +119,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             );
 
             // Si hay oferta específica para el producto, la cogemos
-            IEnumerable<OfertaPermitida> ofertasEspecificasProducto = ofertasFiltradas.Where(o => o.Número == producto.Número.Trim());
+            IEnumerable<OfertaPermitida> ofertasEspecificasProducto = ofertasFiltradas.Where(o => o.Número?.Trim() == producto.Número.Trim());
 
             if (ofertasEspecificasProducto != null && ofertasEspecificasProducto.Count() > 0)
             {
@@ -203,7 +203,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 // mirar si está en Descuentos producto para ese cliente, familia o producto
                 IEnumerable<DescuentosProducto> descuentos = GestorPrecios.servicio.BuscarDescuentosPermitidos(oferta.producto.Número, pedido.cliente, pedido.contacto);
 
-                IEnumerable<DescuentosProducto> descuentosEspecificosProducto = descuentos.Where(d => d.Nº_Producto == oferta.producto.Número);
+                IEnumerable<DescuentosProducto> descuentosEspecificosProducto = descuentos.Where(d => d.Nº_Producto?.Trim() == oferta.producto.Número.Trim());
                 // Si hay un descuento específico para el producto, éste prevale sobre el de la familia o grupo
                 if (descuentosEspecificosProducto != null && descuentosEspecificosProducto.Count() > 0)
                 {

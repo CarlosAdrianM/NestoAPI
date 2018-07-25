@@ -184,10 +184,10 @@ namespace NestoAPI.Controllers
                 throw ex;
             }
 
-            
+            /*
             GestorPresupuestos gestor = new GestorPresupuestos(pedido);
             await gestor.EnviarCorreo();
-            
+            */
 
             return Ok(pedido);
         }
@@ -489,6 +489,9 @@ namespace NestoAPI.Controllers
             {
                 throw ex;
             }
+
+            GestorPresupuestos gestor = new GestorPresupuestos(pedido);
+            await gestor.EnviarCorreo();
 
             return StatusCode(HttpStatusCode.NoContent);
         }

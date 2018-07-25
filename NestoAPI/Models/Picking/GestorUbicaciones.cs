@@ -130,7 +130,10 @@ namespace NestoAPI.Models.Picking
                         Cantidad = ubicacion.CantidadNueva,
                         Empresa = ubicacionOriginal.Empresa,
                         Estado = ubicacion.EstadoNuevo,
-                        Número = ubicacion.Producto
+                        Número = ubicacion.Producto,
+                        PedidoCmp = ubicacionOriginal.PedidoCmp,
+                        AlbaránCmp = ubicacionOriginal.AlbaránCmp,
+                        NºOrdenCmp = ubicacionOriginal.NºOrdenCmp
                     };
                     
                     if (ubicacion.EstadoNuevo != Constantes.Ubicaciones.PENDIENTE_UBICAR)
