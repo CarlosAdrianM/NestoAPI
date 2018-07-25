@@ -33,6 +33,11 @@ namespace NestoAPI.Infraestructure
 
         public async Task EnviarCorreo()
         {
+            await EnviarCorreo("Nuevo");
+        }
+
+        public async Task EnviarCorreo(string tipoCorreo)
+        {
             if (pedido.LineasPedido.Count == 0)
             {
                 return;
@@ -105,7 +110,7 @@ namespace NestoAPI.Infraestructure
                 return;
             }
             mail.CC.Add(CORREO_DIRECCION);
-            mail.Subject = "Nuevo "+TEXTO_PEDIDO+" c/ " + pedido.cliente.ToString();
+            mail.Subject = tipoCorreo + " "+TEXTO_PEDIDO+" c/ " + pedido.cliente.ToString();
             mail.Body = (await GenerarTablaHTML(pedido)).ToString();
             mail.IsBodyHtml = true;
             client.Send(mail);

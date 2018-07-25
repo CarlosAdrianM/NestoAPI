@@ -491,7 +491,7 @@ namespace NestoAPI.Controllers
             }
 
             GestorPresupuestos gestor = new GestorPresupuestos(pedido);
-            await gestor.EnviarCorreo();
+            await gestor.EnviarCorreo("Modificación");
 
             return StatusCode(HttpStatusCode.NoContent);
         }
