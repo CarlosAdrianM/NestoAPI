@@ -102,7 +102,7 @@ namespace NestoAPI.Models.Comisiones
 
                     resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 
                         mes == 8 ? 
-                        Math.Round(resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo) :
+                        Math.Round(resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo, 2) :
                         Math.Round(ventaAcumulada * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo - Resumenes.Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision), 2);
                     decimal mesesDecimales = (decimal) mesesAnno / meses;
                     resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ? 
