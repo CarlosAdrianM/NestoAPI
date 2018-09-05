@@ -311,6 +311,7 @@ namespace NestoAPI.Models
         public bool tienePendientes { get; set; }
         public bool tienePicking { get; set; }
         public bool tieneFechasFuturas { get; set; }
+        public bool tienePresupuesto { get; set; }
         public decimal baseImponible { get; set; }
         public decimal total { get; set; }
         public string vendedor { get; set; }

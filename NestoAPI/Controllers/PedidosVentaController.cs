@@ -27,6 +27,8 @@ namespace NestoAPI.Controllers
         public const int TIPO_LINEA_CUENTA_CONTABLE = 2;
         public const int TIPO_LINEA_INMOVILIZADO = 3;
 
+        public const int NUMERO_PRESUPUESTOS_MOSTRADOS = 50;
+
 
         private NVEntities db;
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
@@ -99,7 +101,56 @@ namespace NestoAPI.Controllers
 
             return cabeceraPedidos;
         }
-        
+
+        public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor, int estado)
+        {
+            IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
+                                                       join v in db.VendedoresPedidosGruposProductos
+
+                                                       //This is how you join by multiple values
+                                                       on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
+                                                       into jointData
+
+                                                       //This is how you actually turn the join into a left-join
+                                                       from jointRecord in jointData.DefaultIfEmpty()
+
+                                                       where (vendedor == "" || vendedor == null || c.Vendedor == vendedor || jointRecord.Vendedor == vendedor)
+                                                       select c;
+
+            IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
+                .Join(db.LinPedidoVtas, c => new { empresa = c.Empresa, numero = c.Número }, l => new { empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
+                .Where(c => c.Estado == estado)
+                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta })
+                .Select(x => new ResumenPedidoVentaDTO
+                {
+                    empresa = x.Key.Empresa.Trim(),
+                    numero = x.Key.Número,
+                    cliente = x.Key.Nº_Cliente.Trim(),
+                    nombre = x.Key.Nombre.Trim(),
+                    direccion = x.Key.Dirección.Trim(),
+                    codPostal = x.Key.CodPostal.Trim(),
+                    poblacion = x.Key.Población.Trim(),
+                    provincia = x.Key.Provincia.Trim(),
+                    fecha = x.Min(c => c.Fecha_Entrega),
+                    tieneProductos = x.FirstOrDefault(c => c.TipoLinea == 1) != null,
+                    //tienePendientes = x.FirstOrDefault(c => c.Estado == Constantes.EstadosLineaVenta.PENDIENTE) != null,
+                    tienePresupuesto = x.FirstOrDefault(c => c.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO) != null,
+                    tienePicking = x.FirstOrDefault(c => c.Picking != 0) != null,
+                    baseImponible = x.Sum(c => c.Base_Imponible),
+                    total = x.Sum(c => c.Total),
+                    vendedor = x.Key.Vendedor.Trim(),
+                    ruta = x.Key.Ruta.Trim()
+                })
+                .OrderByDescending(c => c.numero).Take(NUMERO_PRESUPUESTOS_MOSTRADOS);
+
+            foreach (ResumenPedidoVentaDTO cab in cabeceraPedidos)
+            {
+                DateTime fechaEntregaFutura = fechaEntregaAjustada(DateTime.Now, cab.ruta);
+                cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
+            }
+
+            return cabeceraPedidos;
+        }
 
         // GET: api/PedidosVenta/5
         [ResponseType(typeof(PedidoVentaDTO))]
@@ -177,7 +228,8 @@ namespace NestoAPI.Controllers
                     servirJunto = cabPedidoVta.ServirJunto,
                     usuario = cabPedidoVta.Usuario,
                     LineasPedido = lineasPedido,
-                    VendedoresGrupoProducto = vendedoresGrupoProductoPedido
+                    VendedoresGrupoProducto = vendedoresGrupoProductoPedido,
+                    EsPresupuesto = lineasPedido.FirstOrDefault(c => c.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) != null,
                 };
             } catch (Exception ex)
             {
@@ -271,6 +323,9 @@ namespace NestoAPI.Controllers
                 // comprobarlo con algunas facturas de FDM
                 cambiarContactoEnLineas = true;
             }
+
+            // Si todas las líneas están en -3 pero la cabecera dice que no es presupuesto, es porque queremos pasarlo a pedido
+            bool aceptarPresupuesto = pedido.LineasPedido.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.EsPresupuesto;
             
             cabPedidoVta.Fecha = pedido.fecha;
             // La forma de pago influye en el importe del reembolso de la agencia. Si se modifica la forma de pago
@@ -407,7 +462,7 @@ namespace NestoAPI.Controllers
             }
             
             // Modificamos las líneas
-            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas) { 
+            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas || aceptarPresupuesto) { 
                 foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
                 {
                     LinPedidoVta lineaPedido;
@@ -458,6 +513,11 @@ namespace NestoAPI.Controllers
                         linea.total = lineaPedido.Total;
 
                         db.Entry(lineaPedido).State = EntityState.Modified;
+                    }
+
+                    if (aceptarPresupuesto)
+                    {
+                        linea.estado = Constantes.EstadosLineaVenta.EN_CURSO;
                     }
                 }
             }
