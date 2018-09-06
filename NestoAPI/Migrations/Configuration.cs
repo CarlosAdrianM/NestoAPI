@@ -33,6 +33,7 @@ namespace NestoAPI.Migrations
 
             // Carlos 11/07/16: pasos para crear un vendedor
             // Poner los datos en var user = new ApplicationUser() ...
+            // Poner la contraseña en manager.Create(user,...)
             // Poner el usuario en var adminUser = manager.FindByName("...");
             // Comprobar que el grupo sea correcto en manager.AddToRoles(adminUser.Id, new string[] { "..."});
             // En la consola del administrador de paquetes ejecutar update-database
@@ -43,16 +44,16 @@ namespace NestoAPI.Migrations
 
             var user = new ApplicationUser()
             {
-                UserName = "MAlia",
-                Email = "martaalia@nuevavision.es",
+                UserName = "Javier",
+                Email = "javiergonzalez@nuevavision.es",
                 EmailConfirmed = true,
-                FirstName = "Marta",
-                LastName = "Alia",
+                FirstName = "Javier",
+                LastName = "González",
                 Level = 1,
                 JoinDate = DateTime.Now
             };
 
-            manager.Create(user, "Toledo2018");
+            manager.Create(user, "Perolio2018");
 
             
             if (roleManager.Roles.Count() == 0)
@@ -64,7 +65,7 @@ namespace NestoAPI.Migrations
                 roleManager.Create(new IdentityRole { Name = "VendedorTelefono" });
             }
 
-            var adminUser = manager.FindByName("MAlia");
+            var adminUser = manager.FindByName("Javier");
 
             manager.AddToRoles(adminUser.Id, new string[] { "Vendedor"});
         }

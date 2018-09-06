@@ -4,6 +4,7 @@ using System.Configuration;
 using System.Linq;
 using System.Net.Mail;
 using System.Text;
+using System.Threading.Tasks;
 using System.Web;
 
 namespace NestoAPI.Models.Picking
@@ -42,7 +43,16 @@ namespace NestoAPI.Models.Picking
             mail.Subject = "Pedidos por Debajo del Margen Mínimo";
             mail.Body = generarTablaHTML(lineasMargen).ToString();
             mail.IsBodyHtml = true;
-            client.Send(mail);
+            // si da error al conectarse al servidor, vuelve a intentarlo 2s después.
+            try
+            {
+                client.Send(mail);
+            } catch
+            {
+                Task.Delay(2000);
+                client.Send(mail);
+            }
+            
         }
         private StringBuilder generarTablaHTML(List<LineaMargen> lineas)
         {
