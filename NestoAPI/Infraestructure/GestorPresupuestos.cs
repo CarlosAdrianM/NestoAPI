@@ -113,7 +113,16 @@ namespace NestoAPI.Infraestructure
             mail.Subject = tipoCorreo + " "+TEXTO_PEDIDO+" c/ " + pedido.cliente.ToString();
             mail.Body = (await GenerarTablaHTML(pedido)).ToString();
             mail.IsBodyHtml = true;
-            client.Send(mail);
+
+            // A veces no conecta a la primera, por lo que reintentamos 2s después
+            try
+            {
+                client.Send(mail);
+            } catch
+            {
+                await Task.Delay(2000);
+                client.Send(mail);
+            }
         }
         private async Task<StringBuilder> GenerarTablaHTML(PedidoVentaDTO pedido)
         {
