@@ -83,6 +83,7 @@ namespace NestoAPI.Infraestructure
                 {
                     Empresa = clienteDB.Empresa,
                     Cliente = clienteDB.Nº_Cliente,
+                    Contacto = clienteDB.Contacto,
                     GrupoProducto = vendedorGrupoNuevo.grupoProducto,
                     Vendedor = vendedorGrupoNuevo.vendedor,
                     Usuario = cliente.usuario

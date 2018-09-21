@@ -20,6 +20,9 @@ namespace NestoAPI.Models.Comisiones
         public ICollection<IEtiquetaComision> Etiquetas { get; set; }
 
         public decimal GeneralFaltaParaSalto { get; set; }
+        public decimal GeneralInicioTramo { get; set; }
+        public decimal GeneralFinalTramo { get; set; }
+
         public decimal GeneralProyeccion { get; set; }
 
         public decimal TotalComisiones {

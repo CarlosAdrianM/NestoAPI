@@ -51,6 +51,8 @@ namespace NestoAPI.Models.Comisiones
                 decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
                 int meses = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Count();
                 ResumenMesActual.GeneralProyeccion = (ventaAcumulada / meses) * mesesAnno;
+                ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
+                CalcularLimitesTramo(ResumenMesActual, tramosAnno);
             }
         }
 
@@ -66,7 +68,7 @@ namespace NestoAPI.Models.Comisiones
                 Mes = mes,
                 Etiquetas = servicio.NuevasEtiquetas
             };
-            
+
             foreach (IEtiquetaComision etiqueta in resumen.Etiquetas)
             {
                 etiqueta.Venta = servicio.Etiquetas.Single(e => e.Nombre == etiqueta.Nombre).LeerVentaMes(vendedor, anno, mes, incluirAlbaranes);
@@ -79,6 +81,7 @@ namespace NestoAPI.Models.Comisiones
             ICollection<TramoComision> tramosMes = servicio.LeerTramosComisionMes(vendedor);
 
             TramoComision tramo = BuscarTramoComision(tramosMes, resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
+            ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
 
             if (tramo != null && mes != 8)
             {
@@ -89,34 +92,48 @@ namespace NestoAPI.Models.Comisiones
 
                 resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = Math.Round(resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta * tramo.Tipo, 2);
                 resumen.GeneralFaltaParaSalto = tramo.Hasta - resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta;
-            } else
+                //resumen.GeneralInicioTramo = tramo.Desde;
+                //resumen.GeneralFinalTramo = tramo.Hasta;
+            }
+            else
             {
-                ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
+
                 tramo = BuscarTramoComision(tramosAnno, resumen.GeneralProyeccion);
-                if (tramo!=null)
+                if (tramo != null)
                 {
                     foreach (IEtiquetaComision etiqueta in resumen.Etiquetas)
                     {
                         etiqueta.Tipo = etiqueta.SetTipo(tramo);
                     }
 
-                    resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 
-                        mes == 8 ? 
+                    resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision =
+                        mes == 8 ?
                         Math.Round(resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo, 2) :
                         Math.Round(ventaAcumulada * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo - Resumenes.Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision), 2);
-                    decimal mesesDecimales = (decimal) mesesAnno / meses;
-                    resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ? 
-                        decimal.MaxValue : 
-                        Math.Round((tramo.Hasta/mesesDecimales) - ventaAcumulada,2);
+                    decimal mesesDecimales = (decimal)mesesAnno / meses;
+                    resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ?
+                        decimal.MaxValue :
+                        Math.Round((tramo.Hasta / mesesDecimales) - ventaAcumulada, 2);
+                    //resumen.GeneralInicioTramo = tramo.Desde;
+                    //resumen.GeneralFinalTramo = tramo.Hasta;
                 }
             }
+
+            CalcularLimitesTramo(resumen, tramosAnno);
 
             if (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision < 0)
             {
                 resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 0;
             }
-                        
+
             return resumen;
+        }
+
+        private void CalcularLimitesTramo(ResumenComisionesMes resumen, ICollection<TramoComision> tramosAnno)
+        {
+            var tramoProyeccion = BuscarTramoComision(tramosAnno, resumen.GeneralProyeccion);
+            resumen.GeneralInicioTramo = tramoProyeccion.Desde;
+            resumen.GeneralFinalTramo = tramoProyeccion.Hasta;
         }
 
         private TramoComision BuscarTramoComision(ICollection<TramoComision> tramos, decimal importe)

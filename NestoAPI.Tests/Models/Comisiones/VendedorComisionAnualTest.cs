@@ -56,6 +56,30 @@ namespace NestoAPI.Tests.Models.Comisiones
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenEstaVacioLaProyeccionEsLaVentaPorDoce()
         {
             A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 1, true)).Returns(1000);
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0,
+                    Hasta = 229000.99M,
+                    Tipo = 0,
+                    TipoExtra = 0
+                },
+                new TramoComision
+                {
+                    Desde = 230000,
+                    Hasta = 240000,
+                    Tipo = .1M,
+                    TipoExtra = .001M
+                },
+                new TramoComision
+                {
+                    Desde = 240000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .2M,
+                    TipoExtra = .008M
+                }
+            });
 
             VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 1, true);
 
@@ -66,6 +90,30 @@ namespace NestoAPI.Tests.Models.Comisiones
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenEstaVacioPeroNoEstamosEnEneroLaProyeccionEsLaVentaProporcional()
         {
             A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 2, true)).Returns(1000);
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0,
+                    Hasta = 229000.99M,
+                    Tipo = 0,
+                    TipoExtra = 0
+                },
+                new TramoComision
+                {
+                    Desde = 230000,
+                    Hasta = 240000,
+                    Tipo = .1M,
+                    TipoExtra = .001M
+                },
+                new TramoComision
+                {
+                    Desde = 240000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .2M,
+                    TipoExtra = .008M
+                }
+            });
 
             VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 2, true);
 
@@ -94,6 +142,30 @@ namespace NestoAPI.Tests.Models.Comisiones
             };
             A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(1000);
             A.CallTo(() => servicio.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0,
+                    Hasta = 229000.99M,
+                    Tipo = 0,
+                    TipoExtra = 0
+                },
+                new TramoComision
+                {
+                    Desde = 230000,
+                    Hasta = 240000,
+                    Tipo = .1M,
+                    TipoExtra = .001M
+                },
+                new TramoComision
+                {
+                    Desde = 240000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .2M,
+                    TipoExtra = .008M
+                }
+            });
 
             VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
@@ -123,6 +195,30 @@ namespace NestoAPI.Tests.Models.Comisiones
             };
             A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(1000);
             A.CallTo(() => servicio.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0,
+                    Hasta = 229000.99M,
+                    Tipo = 0,
+                    TipoExtra = 0
+                },
+                new TramoComision
+                {
+                    Desde = 230000,
+                    Hasta = 240000,
+                    Tipo = .1M,
+                    TipoExtra = .001M
+                },
+                new TramoComision
+                {
+                    Desde = 240000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .2M,
+                    TipoExtra = .008M
+                }
+            });
 
             VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
@@ -159,6 +255,30 @@ namespace NestoAPI.Tests.Models.Comisiones
                     TipoExtra = .04M
                 }
             });
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0,
+                    Hasta = 229000.99M,
+                    Tipo = 0,
+                    TipoExtra = 0
+                },
+                new TramoComision
+                {
+                    Desde = 230000,
+                    Hasta = 240000,
+                    Tipo = .1M,
+                    TipoExtra = .001M
+                },
+                new TramoComision
+                {
+                    Desde = 240000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .2M,
+                    TipoExtra = .008M
+                }
+            });
 
             VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
@@ -174,6 +294,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(2, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(.2M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
             Assert.AreEqual(500, vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
+            Assert.AreEqual(0, vendedorComisionAnual.ResumenMesActual.GeneralInicioTramo);
+            Assert.AreEqual(229000.99M, vendedorComisionAnual.ResumenMesActual.GeneralFinalTramo);
         }
 
         [TestMethod]
@@ -206,6 +328,30 @@ namespace NestoAPI.Tests.Models.Comisiones
                 primerTramo,
                 segundoTramo
             });
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0,
+                    Hasta = 229000.99M,
+                    Tipo = 0,
+                    TipoExtra = 0
+                },
+                new TramoComision
+                {
+                    Desde = 230000,
+                    Hasta = 240000,
+                    Tipo = .1M,
+                    TipoExtra = .001M
+                },
+                new TramoComision
+                {
+                    Desde = 240000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .2M,
+                    TipoExtra = .008M
+                }
+            });
 
             VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
 
@@ -221,6 +367,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(8, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
             Assert.AreEqual(8000, vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
+            Assert.AreEqual(0, vendedorComisionAnual.ResumenMesActual.GeneralInicioTramo);
+            Assert.AreEqual(229000.99M, vendedorComisionAnual.ResumenMesActual.GeneralFinalTramo);
         }
 
         [TestMethod]
@@ -277,6 +425,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(.2M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
             Assert.AreEqual(decimal.MaxValue, vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
+            Assert.AreEqual(144000, vendedorComisionAnual.ResumenMesActual.GeneralInicioTramo);
+            Assert.AreEqual(decimal.MaxValue, vendedorComisionAnual.ResumenMesActual.GeneralFinalTramo);
         }
 
         [TestMethod]
@@ -340,6 +490,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(1.6M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
             Assert.AreEqual(decimal.MaxValue, vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
+            Assert.AreEqual(230000.01M, vendedorComisionAnual.ResumenMesActual.GeneralInicioTramo);
+            Assert.AreEqual(decimal.MaxValue, vendedorComisionAnual.ResumenMesActual.GeneralFinalTramo);            
         }
 
         [TestMethod]
@@ -397,7 +549,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             TramoComision tramoBueno = new TramoComision
             {
                 Desde = 230000.01M,
-                Hasta = int.MaxValue,
+                Hasta = decimal.MaxValue,
                 Tipo = .2M,
                 TipoExtra = .008M
             };
@@ -431,6 +583,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(1296, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Comision);
             Assert.AreEqual(1.6M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
+            Assert.AreEqual(230000.01M, vendedorComisionAnual.ResumenMesActual.GeneralInicioTramo);
+            Assert.AreEqual(decimal.MaxValue, vendedorComisionAnual.ResumenMesActual.GeneralFinalTramo);
         }
         
         [TestMethod]
@@ -525,6 +679,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(.2M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
             Assert.AreEqual(5833.33M, vendedorComisionAnual.ResumenMesActual.GeneralFaltaParaSalto);
+            Assert.AreEqual(144000, vendedorComisionAnual.ResumenMesActual.GeneralInicioTramo);
+            Assert.AreEqual(230000, vendedorComisionAnual.ResumenMesActual.GeneralFinalTramo);
         }
 
         [TestMethod]
@@ -580,6 +736,13 @@ namespace NestoAPI.Tests.Models.Comisiones
             {
                 new TramoComision
                 {
+                    Desde = 0,
+                    Hasta = 229000.99M,
+                    Tipo = 0,
+                    TipoExtra = 0
+                },
+                new TramoComision
+                {
                     Desde = 230000,
                     Hasta = 240000,
                     Tipo = .1M,
@@ -608,6 +771,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(225, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(9, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
             Assert.AreEqual(234000, vendedorComisionAnual.ResumenMesActual.GeneralProyeccion);
+            Assert.AreEqual(230000, vendedorComisionAnual.ResumenMesActual.GeneralInicioTramo);
+            Assert.AreEqual(240000, vendedorComisionAnual.ResumenMesActual.GeneralFinalTramo);
         }
 
         [TestMethod]
@@ -856,6 +1021,4 @@ namespace NestoAPI.Tests.Models.Comisiones
         }
 
     }
-
-    // si el mes es agosto, se pagan al tipo que lleve a ese momento
 }
