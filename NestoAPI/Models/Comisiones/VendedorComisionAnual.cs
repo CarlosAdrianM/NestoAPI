@@ -53,6 +53,7 @@ namespace NestoAPI.Models.Comisiones
                 ResumenMesActual.GeneralProyeccion = (ventaAcumulada / meses) * mesesAnno;
                 ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
                 CalcularLimitesTramo(ResumenMesActual, tramosAnno);
+                CalcularSiBajaDeSalto(ResumenMesActual, ventaAcumulada, meses, tramosAnno);
             }
         }
 
@@ -120,6 +121,7 @@ namespace NestoAPI.Models.Comisiones
             }
 
             CalcularLimitesTramo(resumen, tramosAnno);
+            CalcularSiBajaDeSalto(resumen, ventaAcumulada, meses, tramosAnno);
 
             if (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision < 0)
             {
@@ -134,6 +136,21 @@ namespace NestoAPI.Models.Comisiones
             var tramoProyeccion = BuscarTramoComision(tramosAnno, resumen.GeneralProyeccion);
             resumen.GeneralInicioTramo = tramoProyeccion.Desde;
             resumen.GeneralFinalTramo = tramoProyeccion.Hasta;
+        }
+
+        private void CalcularSiBajaDeSalto(ResumenComisionesMes resumen, decimal ventaAcumulada, int meses, ICollection<TramoComision> tramosAnno)
+        {
+            if (meses == 12)
+            {
+                resumen.GeneralBajaSaltoMesSiguiente = false;
+                return;
+            }
+            var tramosMes = servicio.LeerTramosComisionMes(vendedor);
+            var tramoMaximoMes = tramosMes.LastOrDefault() != null ? tramosMes.LastOrDefault().Hasta : 0;
+            var proyeccionMesSiguiente = ((ventaAcumulada + tramoMaximoMes) / (meses + 1)) * mesesAnno;
+            var tramoProyeccion = BuscarTramoComision(tramosAnno, resumen.GeneralProyeccion);
+            var tramoProyeccionMesSiguiente = BuscarTramoComision(tramosAnno, proyeccionMesSiguiente);
+            resumen.GeneralBajaSaltoMesSiguiente = (tramoProyeccion != tramoProyeccionMesSiguiente);
         }
 
         private TramoComision BuscarTramoComision(ICollection<TramoComision> tramos, decimal importe)

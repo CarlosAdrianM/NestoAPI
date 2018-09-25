@@ -22,6 +22,7 @@ namespace NestoAPI.Models.Comisiones
         public decimal GeneralFaltaParaSalto { get; set; }
         public decimal GeneralInicioTramo { get; set; }
         public decimal GeneralFinalTramo { get; set; }
+        public bool GeneralBajaSaltoMesSiguiente { get; set; }
 
         public decimal GeneralProyeccion { get; set; }
 
