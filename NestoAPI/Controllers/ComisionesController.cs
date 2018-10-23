@@ -236,6 +236,10 @@ namespace NestoAPI.Controllers
                 new VendedorDTO
                 {
                     vendedor = "IF"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "JGP"
                 }
             };
                         
@@ -262,7 +266,7 @@ namespace NestoAPI.Controllers
 
         private IServicioComisionesAnuales ServicioVendedor(string vendedor)
         {
-            if (vendedor == "IF" || vendedor == "AH")
+            if (vendedor == "IF" || vendedor == "AH" || vendedor == "JGP")
             {
                 return new ServicioComisionesAnualesPeluqueria();
             }

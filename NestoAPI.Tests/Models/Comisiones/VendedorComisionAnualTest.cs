@@ -353,7 +353,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 }
             });
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 9, true);
 
             A.CallTo(() => etiquetaEvaVisnu2.Comision).Returns(Math.Round(etiquetaEvaVisnu2.Venta * etiquetaEvaVisnu2.Tipo, 2));
             A.CallTo(() => etiquetaOtrosAparatos2.Comision).Returns(Math.Round(etiquetaOtrosAparatos2.Venta * etiquetaOtrosAparatos2.Tipo, 2));

@@ -98,11 +98,20 @@ namespace NestoAPI.Infraestructure
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
-                // Descuento por familia con filtro
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == datos.producto.Familia && datos.producto.Nombre.StartsWith(d.FiltroProducto) && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
+                // Descuento por familia con filtro y contacto
+                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == datos.contacto && d.Familia == datos.producto.Familia && datos.producto.Nombre.StartsWith(d.FiltroProducto) && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
                 if (dtoProducto != null && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
+                }
+                // Descuento por familia con filtro sin contacto
+                if (dtoProducto == null) // solo entramos si no ha encontrado el descuento con el contacto
+                {
+                    dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == null && d.Familia == datos.producto.Familia && datos.producto.Nombre.StartsWith(d.FiltroProducto) && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
+                    if (dtoProducto != null && dtoProducto.Descuento > datos.descuentoCalculado)
+                    {
+                        datos.descuentoCalculado = dtoProducto.Descuento;
+                    }
                 }
                 //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and grupoproducto='PEL' and nºproveedor is null
                 dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo);
