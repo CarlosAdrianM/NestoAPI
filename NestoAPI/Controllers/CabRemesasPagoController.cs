@@ -287,7 +287,7 @@ namespace NestoAPI.Controllers
             insertarLinea(ref lineaFichero, ref sb);
 
             // Guardamos el fichero
-            string nombreFichero = String.Format("\\\\diskstation\\datos\\Banco\\Confirming\\E{0}R{1}.txt", remesa.Empresa.Trim(), remesa.Numero.ToString().Trim());
+            string nombreFichero = String.Format("\\\\RDS2016\\Unidad_F\\Banco\\Confirming\\E{0}R{1}.txt", remesa.Empresa.Trim(), remesa.Numero.ToString().Trim());
             using (StreamWriter outfile = new StreamWriter(nombreFichero))
             {
                 outfile.Write(sb.ToString());

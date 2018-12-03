@@ -172,7 +172,13 @@ namespace NestoAPI.Models.Comisiones
 
         public static DateTime FechaHasta(int anno, int mes)
         {
-            return (new DateTime(anno, mes + 1, 1)).AddDays(-1);
+            if (mes != 12)
+            {
+                return (new DateTime(anno, mes + 1, 1)).AddDays(-1);
+            } else
+            {
+                return (new DateTime(anno + 1, 1, 1)).AddDays(-1);
+            }            
         }
     }
 }

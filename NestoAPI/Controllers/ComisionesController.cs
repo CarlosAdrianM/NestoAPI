@@ -87,12 +87,12 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostComisiones(int anno, int mes)
         {
             List<ResumenComisionesMes> comisiones = CalcularComisiones(anno, mes);
-            DateTime fechaDesde = FechaDesde(anno, mes);
+            DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             if (fechaDesde < new DateTime(2018, 1, 1))
             {
                 throw new Exception("Las comisiones anuales entraron en vigor el 01/01/18");
             }
-            DateTime fechaHasta = FechaHasta(anno, mes);
+            DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
 
             foreach (ResumenComisionesMes resumen in comisiones)
             {
@@ -254,15 +254,22 @@ namespace NestoAPI.Controllers
             return comisiones;
         }
 
-        private DateTime FechaDesde(int anno, int mes)
-        {
-            return new DateTime(anno, mes, 1);
-        }
+        //private DateTime FechaDesde(int anno, int mes)
+        //{
+        //    return new DateTime(anno, mes, 1);
+        //}
 
-        private DateTime FechaHasta(int anno, int mes)
-        {
-            return (new DateTime(anno, mes + 1, 1)).AddDays(-1);
-        }
+        //public static DateTime FechaHasta(int anno, int mes)
+        //{
+        //    if (mes != 12)
+        //    {
+        //        return (new DateTime(anno, mes + 1, 1)).AddDays(-1);
+        //    }
+        //    else
+        //    {
+        //        return (new DateTime(anno + 1, 1, 1)).AddDays(-1);
+        //    }
+        //}
 
         private IServicioComisionesAnuales ServicioVendedor(string vendedor)
         {
