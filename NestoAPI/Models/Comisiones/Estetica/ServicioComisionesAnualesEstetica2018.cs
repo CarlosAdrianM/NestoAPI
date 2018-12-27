@@ -5,13 +5,13 @@ using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ServicioComisionesAnualesEstetica : IServicioComisionesAnuales
+    public class ServicioComisionesAnualesEstetica2018 : IServicioComisionesAnuales
     {
         const string GENERAL = "General";
         
         private NVEntities db = new NVEntities();
 
-        public ServicioComisionesAnualesEstetica()
+        public ServicioComisionesAnualesEstetica2018()
         {
             Etiquetas = NuevasEtiquetas;
         }
@@ -25,6 +25,8 @@ namespace NestoAPI.Models.Comisiones
                 new EtiquetaEvaVisnu(),
                 new EtiquetaOtrosAparatos()
             };
+
+        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2018();
 
         //public decimal LeerOtrosAparatosVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         //{

@@ -11,7 +11,7 @@ namespace NestoAPI.Controllers
         private NVEntities db = new NVEntities();
 
 
-        ServicioComisionesAnualesEstetica servicio = new ServicioComisionesAnualesEstetica();
+        ServicioComisionesAnualesEstetica2018 servicio = new ServicioComisionesAnualesEstetica2018();
 
         // GET: api/ComisionAnualDetalles
         public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes,bool incluirAlbaranes, string etiqueta)
@@ -21,7 +21,7 @@ namespace NestoAPI.Controllers
 
             if (annoActual == anno && mesActual == mes)
             {
-                ServicioComisionesAnualesEstetica servicio = new ServicioComisionesAnualesEstetica();
+                ServicioComisionesAnualesEstetica2018 servicio = new ServicioComisionesAnualesEstetica2018();
                 var etiquetaServicio = servicio.Etiquetas.Single(s => s.Nombre == etiqueta);
                 var comisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta).ToList();
                 return comisiones.Select(c=>

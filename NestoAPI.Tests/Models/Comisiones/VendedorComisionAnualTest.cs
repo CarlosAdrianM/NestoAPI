@@ -50,6 +50,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 etiquetaEvaVisnu2,
                 etiquetaOtrosAparatos2
             });
+            A.CallTo(() => servicio.CalculadorProyecciones).Returns(new CalculadorProyecciones2018());
         }
 
         [TestMethod]

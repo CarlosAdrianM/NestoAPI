@@ -313,16 +313,18 @@
     <Compile Include="Models\ComisionAnualResumenMes.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaEvaVisnu.cs" />
     <Compile Include="Models\Comisiones\EtiquetaGeneral.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaOtrosAparatos.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaUnionLaser.cs" />
+    <Compile Include="Models\Comisiones\ICalculadorProyecciones.cs" />
     <Compile Include="Models\Comisiones\IEtiquetaComision.cs" />
     <Compile Include="Models\Comisiones\IServicioComisionesAnuales.cs" />
     <Compile Include="Models\Comisiones\Peluqueria\EtiquetaLisap.cs" />
-    <Compile Include="Models\Comisiones\Peluqueria\ServicioComisionesAnualesPeluqueria.cs" />
+    <Compile Include="Models\Comisiones\Peluqueria\ServicioComisionesAnualesPeluqueria2018.cs" />
     <Compile Include="Models\Comisiones\ResumenComisionesMes.cs" />
-    <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2018.cs" />
     <Compile Include="Models\Comisiones\ServicioComisionesAnualesComun.cs" />
     <Compile Include="Models\Comisiones\TramoComision.cs" />
     <Compile Include="Models\Comisiones\VendedorComisionAnual.cs" />

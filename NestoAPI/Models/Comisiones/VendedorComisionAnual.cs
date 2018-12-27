@@ -50,7 +50,7 @@ namespace NestoAPI.Models.Comisiones
             {
                 decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
                 int meses = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Count();
-                ResumenMesActual.GeneralProyeccion = (ventaAcumulada / meses) * mesesAnno;
+                ResumenMesActual.GeneralProyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(vendedor, anno, mes, ventaAcumulada, meses, mesesAnno);
                 ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
                 CalcularLimitesTramo(ResumenMesActual, tramosAnno);
                 CalcularSiBajaDeSalto(ResumenMesActual, ventaAcumulada, meses, tramosAnno);
@@ -77,7 +77,7 @@ namespace NestoAPI.Models.Comisiones
 
             int meses = Resumenes.Count + 1; //+1 por el mes actual
             decimal ventaAcumulada = Resumenes.Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta) + resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta;
-            resumen.GeneralProyeccion = (ventaAcumulada / meses) * mesesAnno;
+            resumen.GeneralProyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(vendedor, anno, mes, ventaAcumulada, meses, mesesAnno);
 
             ICollection<TramoComision> tramosMes = servicio.LeerTramosComisionMes(vendedor);
 
