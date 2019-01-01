@@ -8,6 +8,11 @@ namespace NestoAPI.Models.Comisiones
     {
         const string GENERAL = "General";
 
+        public decimal CalcularFaltaParaSalto(decimal ventaAcumulada, decimal tramoHasta, decimal mesesDecimales, decimal proyeccion)
+        {
+            return tramoHasta - proyeccion;
+        }
+
         public decimal CalcularProyeccion(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes, decimal ventaAcumulada, int meses, int mesesAnno)
         {
             ICollection<ResumenComisionesMes> annoActual;

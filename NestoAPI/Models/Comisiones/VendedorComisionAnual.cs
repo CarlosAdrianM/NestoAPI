@@ -114,7 +114,7 @@ namespace NestoAPI.Models.Comisiones
                     decimal mesesDecimales = (decimal)mesesAnno / meses;
                     resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ?
                         decimal.MaxValue :
-                        Math.Round((tramo.Hasta / mesesDecimales) - ventaAcumulada, 2);
+                        servicio.CalculadorProyecciones.CalcularFaltaParaSalto(ventaAcumulada, tramo.Hasta, mesesDecimales, resumen.GeneralProyeccion);
                     //resumen.GeneralInicioTramo = tramo.Desde;
                     //resumen.GeneralFinalTramo = tramo.Hasta;
                 }
