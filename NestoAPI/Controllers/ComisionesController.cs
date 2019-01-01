@@ -254,31 +254,29 @@ namespace NestoAPI.Controllers
             return comisiones;
         }
 
-        //private DateTime FechaDesde(int anno, int mes)
-        //{
-        //    return new DateTime(anno, mes, 1);
-        //}
-
-        //public static DateTime FechaHasta(int anno, int mes)
-        //{
-        //    if (mes != 12)
-        //    {
-        //        return (new DateTime(anno, mes + 1, 1)).AddDays(-1);
-        //    }
-        //    else
-        //    {
-        //        return (new DateTime(anno + 1, 1, 1)).AddDays(-1);
-        //    }
-        //}
-
         private IServicioComisionesAnuales ServicioVendedor(string vendedor, int anno)
         {
             if (vendedor == "IF" || vendedor == "AH" || vendedor == "JGP")
             {
-                return new ServicioComisionesAnualesPeluqueria2018();
+                if (anno == 2018)
+                {
+                    return new ServicioComisionesAnualesPeluqueria2018();
+                } else if (anno == 2019) {
+                    return new ServicioComisionesAnualesPeluqueria2019();
+                }
+
+                
             }
 
-            return new ServicioComisionesAnualesEstetica2018();
+            if (anno == 2018)
+            {
+                return new ServicioComisionesAnualesEstetica2018();
+            } else if (anno == 2019)
+            {
+                return new ServicioComisionesAnualesEstetica2019();
+            }
+
+            throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");
         }
     }
 }
