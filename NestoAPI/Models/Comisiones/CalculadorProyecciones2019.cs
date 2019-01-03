@@ -53,5 +53,28 @@ namespace NestoAPI.Models.Comisiones
 
             return Math.Round(ventaActual + ventaAnterior, 2);
         }
+
+        public bool CalcularSiBajaDeSalto(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes, int mesesAnno, ResumenComisionesMes resumen, decimal ventaAcumulada, int meses, ICollection<TramoComision> tramosAnno)
+        {
+            if (meses == 12)
+            {
+                return false;
+            }
+            var ventasAnnoAnterior = servicio.LeerResumenAnno(vendedor, anno - 1);
+            var resumenVentasMesSiguienteAnnoAnterior = ventasAnnoAnterior.Where(v => v.Mes == mes + 1).SingleOrDefault();
+            decimal ventasMesSiguienteAnnoAnterior;
+            if (resumenVentasMesSiguienteAnnoAnterior != null)
+            {
+                ventasMesSiguienteAnnoAnterior = resumenVentasMesSiguienteAnnoAnterior.Etiquetas.Where(e => e.Nombre == GENERAL).Sum(e => e.Venta);
+            } else
+            {
+                decimal media = ventaAcumulada / (mes + 1);
+                ventasMesSiguienteAnnoAnterior = ventaAcumulada + media;
+            }
+            var proyeccionMesSiguiente = resumen.GeneralProyeccion - ventasMesSiguienteAnnoAnterior;
+            var tramoProyeccion = VendedorComisionAnual.BuscarTramoComision(tramosAnno, resumen.GeneralProyeccion);
+            var tramoProyeccionMesSiguiente = VendedorComisionAnual.BuscarTramoComision(tramosAnno, proyeccionMesSiguiente);
+            return (tramoProyeccion != tramoProyeccionMesSiguiente);
+        }
     }
 }

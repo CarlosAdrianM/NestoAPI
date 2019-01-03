@@ -156,6 +156,112 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(84000, proyeccion); //14000 * 6
         }
 
+        [TestMethod]
+        public void CalculadorComisiones2019_CalcularProyeccion_SiLaVentaDelMesSiguienteEsMayorQueLoAcumuladoBajaDeSalto()
+        {
+            var servicio = A.Fake<IServicioComisionesAnuales>();
+            var calculador = new CalculadorProyecciones2019();
+            A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
+            A.CallTo(() => servicio.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => servicio.LeerResumenAnno("VD", 2018)).Returns(CrearVentasAnnoPasado());
+            var tramos = new List<TramoComision> {
+                new TramoComision
+                {
+                    Desde = 0M,
+                    Hasta = 136000M,
+                    Tipo = 0.1M,
+                    TipoExtra = 0M
+                },
+                new TramoComision
+                {
+                    Desde = 136000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = 0.2M,
+                    TipoExtra = 0.1M
+                }
+            };
+
+            var ventasMes = 17000M;
+            var resumen = CrearVentasAnnoActual().First();
+            resumen.GeneralProyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(servicio, "VD", 2019, 1, ventasMes, 0, 0);
+
+            bool baja = servicio.CalculadorProyecciones.CalcularSiBajaDeSalto(servicio, "VD", 2019, 1, 0, resumen, ventasMes, 0, tramos);
+
+
+            Assert.IsTrue(baja);
+        }
+
+        [TestMethod]
+        public void CalculadorComisiones2019_CalcularProyeccion_SiLaVentaDelMesSiguienteEsMenorQueLoAcumuladoNoBajaDeSalto()
+        {
+            var servicio = A.Fake<IServicioComisionesAnuales>();
+            var calculador = new CalculadorProyecciones2019();
+            A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
+            A.CallTo(() => servicio.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => servicio.LeerResumenAnno("VD", 2018)).Returns(CrearVentasAnnoPasado());
+            var tramos = new List<TramoComision> {
+                new TramoComision
+                {
+                    Desde = 0M,
+                    Hasta = 136000M,
+                    Tipo = 0.1M,
+                    TipoExtra = 0M
+                },
+                new TramoComision
+                {
+                    Desde = 136000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = 0.2M,
+                    TipoExtra = 0.1M
+                }
+            };
+
+            var ventasMes = 27000M;
+            var resumen = CrearVentasAnnoActual().First();
+            resumen.GeneralProyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(servicio, "VD", 2019, 1, ventasMes, 0, 0);
+
+            bool baja = servicio.CalculadorProyecciones.CalcularSiBajaDeSalto(servicio, "VD", 2019, 1, 0, resumen, ventasMes, 0, tramos);
+
+            Assert.IsFalse(baja);
+        }
+
+        [TestMethod]
+        public void CalculadorComisiones2019_CalcularProyeccion_SiLaVentaDelMesSiguienteNoEstaRegistradaCalculaLaMedia()
+        {
+            var servicio = A.Fake<IServicioComisionesAnuales>();
+            var calculador = new CalculadorProyecciones2019();
+            A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
+            A.CallTo(() => servicio.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
+            var ventasAnnoPasado = CrearVentasAnnoPasado();
+            var tramoFebrero = ventasAnnoPasado.Where(v => v.Mes == 2).Single();
+            ventasAnnoPasado.Remove(tramoFebrero);
+            A.CallTo(() => servicio.LeerResumenAnno("VD", 2018)).Returns(ventasAnnoPasado);
+            var tramos = new List<TramoComision> {
+                new TramoComision
+                {
+                    Desde = 0M,
+                    Hasta = 136000M,
+                    Tipo = 0.1M,
+                    TipoExtra = 0M
+                },
+                new TramoComision
+                {
+                    Desde = 136000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = 0.2M,
+                    TipoExtra = 0.1M
+                }
+            };
+
+            var ventasMes = 17000M;
+            var resumen = CrearVentasAnnoActual().First();
+            resumen.GeneralProyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(servicio, "VD", 2019, 1, ventasMes, 1, 0);
+
+            bool baja = servicio.CalculadorProyecciones.CalcularSiBajaDeSalto(servicio, "VD", 2019, 1, 0, resumen, ventasMes, 0, tramos);
+            
+            Assert.IsTrue(baja);
+        }
+
 
         // Datos Fake
         private ICollection<ResumenComisionesMes> CrearVentasAnnoActual()
