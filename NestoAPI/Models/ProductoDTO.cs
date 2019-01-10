@@ -65,9 +65,9 @@ namespace NestoAPI.Models
 
                 return rutaImagen;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    throw ex;
+                    return null;
                 }
             }
         }
