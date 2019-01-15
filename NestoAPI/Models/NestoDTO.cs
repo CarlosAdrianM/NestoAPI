@@ -231,6 +231,14 @@ namespace NestoAPI.Models
             }
             return db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
+        public int Stock(string almacen)
+        {
+            if (db == null)
+            {
+                return 0;
+            }
+            return db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+        }
         public int CantidadReservada()
         {
             if (db == null)
@@ -239,6 +247,14 @@ namespace NestoAPI.Models
             }
             return db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
+        public int CantidadReservada(string almacen)
+        {
+            if (db == null)
+            {
+                return 0;
+            }
+            return db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+        }
         public int CantidadDisponible()
         {
             if (db == null)
@@ -246,6 +262,14 @@ namespace NestoAPI.Models
                 return 0;
             }
             return Stock() - CantidadReservada();
+        }
+        public int CantidadDisponible(string almacen)
+        {
+            if (db == null)
+            {
+                return 0;
+            }
+            return Stock(almacen) - CantidadReservada(almacen);
         }
     }
 
