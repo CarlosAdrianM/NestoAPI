@@ -268,8 +268,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return null;
             }
 
-            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.precio != 0);
-            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.precio == 0);
+            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.baseImponible / l.cantidad != 0);
+            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.baseImponible / l.cantidad == 0);
 
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
 
