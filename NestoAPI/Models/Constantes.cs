@@ -1,16 +1,30 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
-
-namespace NestoAPI.Models
+﻿namespace NestoAPI.Models
 {
     public class Constantes
     {
         public class Agencias
         {
+            public const int AGENCIA_GLOVO = 7;
             public const int ESTADO_EN_CURSO = 0;
         }
+
+        public class Almacenes
+        {
+            public const string ALGETE = "ALG";
+            public const string REINA = "REI";
+        }
+
+        public class Correos
+        {
+            public const string CORREO_DIRECCION = "direccion@nuevavision.es";
+            public const string TIENDA_REINA = "tienda@nuevavision.es";
+        }
+
+        public class Cuentas
+        {
+            public const string CUENTA_PORTES_GLOVO = "62400017";
+        }
+
         public class Empresas
         {
             public const string DELEGACION_POR_DEFECTO = "ALG";
@@ -32,6 +46,7 @@ namespace NestoAPI.Models
         {
             public const string PERIODO_FACTURACION_FIN_DE_MES = "FDM";
             public const string PERIODO_FACTURACION_NORMAL = "NRM";
+            public const string RUTA_GLOVO = "GLV";
         }
 
         public class Productos

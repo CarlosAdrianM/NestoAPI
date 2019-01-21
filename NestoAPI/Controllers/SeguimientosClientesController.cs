@@ -244,7 +244,7 @@ namespace NestoAPI.Controllers
             {
                 await db.SaveChangesAsync();
             }
-            catch (DbUpdateException ex)
+            catch (DbUpdateException)
             {
                 if (SeguimientoClienteExists(seguimientoCliente.NºOrden))
                 {

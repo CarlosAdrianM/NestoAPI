@@ -56,5 +56,7 @@ namespace NestoAPI.Models
         public virtual Empresa Empresa1 { get; set; }
         public virtual Cliente Cliente1 { get; set; }
         public virtual Vendedor Vendedore { get; set; }
+        public virtual EnvioAgenciaCoordenada EnviosAgenciaCoordenada { get; set; }
+        public virtual CabPedidoVta CabPedidoVta { get; set; }
     }
 }

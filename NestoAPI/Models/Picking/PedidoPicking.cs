@@ -30,7 +30,7 @@ namespace NestoAPI.Models.Picking
 
         public bool saleEnPicking()
         {
-            GestorStocks gestorStocks = new GestorStocks(this);
+            GestorStocksPicking gestorStocks = new GestorStocksPicking(this);
             return (this.Lineas != null && this.Lineas.Count > 0 && (gestorStocks.HayStockDeTodo() || !this.ServirJunto));
         }
 
@@ -43,7 +43,7 @@ namespace NestoAPI.Models.Picking
                 return false;
             }
             
-            GestorStocks gestorStocks = new GestorStocks(this);
+            GestorStocksPicking gestorStocks = new GestorStocksPicking(this);
             GestorImportesMinimos gestorImportesMinimos = new GestorImportesMinimos(this);
             if (!gestorStocks.HayStockDeAlgo())
             {

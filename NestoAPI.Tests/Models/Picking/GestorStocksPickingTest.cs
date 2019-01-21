@@ -7,7 +7,7 @@ using NestoAPI.Models;
 namespace NestoAPI.Tests.Models.Picking
 {
     [TestClass]
-    public class GestorStocksTest
+    public class GestorStocksPickingTest
     {
         [TestMethod]
         public void GestorStock_HayStockDeAlgo_siUnProductoTieneStockDevuelveTrue()
@@ -31,7 +31,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
@@ -58,7 +58,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
@@ -85,7 +85,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
@@ -112,7 +112,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
@@ -139,7 +139,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
@@ -167,7 +167,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
@@ -195,7 +195,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeAlgo());
         }
@@ -223,7 +223,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsFalse(gestor.HayStockDeAlgo());
         }
@@ -251,7 +251,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeTodo());
         }
@@ -292,7 +292,7 @@ namespace NestoAPI.Tests.Models.Picking
             
             pedido.Lineas.Add(linea2);
 
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsFalse(gestor.HayStockDeTodo());
         }
@@ -321,7 +321,7 @@ namespace NestoAPI.Tests.Models.Picking
             };
             pedido.Lineas.Add(linea);
 
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.HayStockDeTodo());
         }
@@ -348,7 +348,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsFalse(gestor.HayStockDeTodo());
         }
@@ -376,7 +376,7 @@ namespace NestoAPI.Tests.Models.Picking
             };
             pedido.Lineas.Add(linea);
 
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsFalse(gestor.TodoLoQueTieneStockEsSobrePedido());
         }
@@ -404,7 +404,7 @@ namespace NestoAPI.Tests.Models.Picking
             };
             pedido.Lineas.Add(linea);
 
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsTrue(gestor.TodoLoQueTieneStockEsSobrePedido());
         }
@@ -432,7 +432,7 @@ namespace NestoAPI.Tests.Models.Picking
             };
             pedido.Lineas.Add(linea);
 
-            GestorStocks gestor = new GestorStocks(pedido);
+            GestorStocksPicking gestor = new GestorStocksPicking(pedido);
 
             Assert.IsFalse(gestor.TodoLoQueTieneStockEsSobrePedido());
         }

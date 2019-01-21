@@ -5,10 +5,10 @@ using System.Web;
 
 namespace NestoAPI.Models.Picking
 {
-    public class GestorStocks
+    public class GestorStocksPicking
     {
         private PedidoPicking pedido;
-        public GestorStocks(PedidoPicking pedido)
+        public GestorStocksPicking(PedidoPicking pedido)
         {
             this.pedido = pedido;
         }

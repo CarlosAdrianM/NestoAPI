@@ -534,7 +534,7 @@ namespace NestoAPI.Controllers
             {
                 await db.SaveChangesAsync();
             }
-            catch (DbUpdateConcurrencyException ex)
+            catch (DbUpdateConcurrencyException)
             {
                 if (!CabPedidoVtaExists(pedido.empresa, pedido.numero))
                 {
@@ -615,7 +615,7 @@ namespace NestoAPI.Controllers
                 Comentarios = pedido.comentarios,
                 Usuario = pedido.usuario
             };
-
+            
             db.CabPedidoVtas.Add(cabecera);
             GestorComisiones.CrearVendedorPedidoGrupoProducto(db, cabecera, pedido);
 
@@ -657,8 +657,76 @@ namespace NestoAPI.Controllers
                 lineasPedidoInsertar.Add(linPedido);
             }
 
+
+
+            // Carlos: 18/01/19: insertamos en la agencia si es necesario
+            if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
+            {
+                ServicioAgencias servicio = new ServicioAgencias();
+                RespuestaAgencia respuestaMaps = await servicio.LeerDireccionGoogleMaps(pedido);
+
+                if (pedido.LineasPedido.Sum(b => b.baseImponible) < GestorImportesMinimos.IMPORTE_MINIMO)
+                {
+                    LineaPedidoVentaDTO lineaPortes = new LineaPedidoVentaDTO
+                    {
+                        tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                        almacen = Constantes.Productos.ALMACEN_TIENDA,
+                        producto = Constantes.Cuentas.CUENTA_PORTES_GLOVO,
+                        cantidad = 1,
+                        delegacion = pedido.LineasPedido.FirstOrDefault().delegacion,
+                        formaVenta = pedido.LineasPedido.FirstOrDefault().formaVenta,
+                        estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        texto = "Portes Glovo",
+                        precio = respuestaMaps.Coste,
+                        iva = pedido.iva,
+                        usuario = pedido.LineasPedido.FirstOrDefault().usuario
+                    };
+                    linPedido = crearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
+                    lineaPortes.baseImponible = linPedido.Base_Imponible;
+                    lineaPortes.total = linPedido.Total;
+                    //pedido.LineasPedido.Add(lineaPortes);
+                    lineasPedidoInsertar.Add(linPedido);
+                }
+
+                Cliente cliente = db.Clientes.SingleOrDefault(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
+                EnviosAgencia envio = new EnviosAgencia
+                {
+                    Agencia = Constantes.Agencias.AGENCIA_GLOVO,
+                    Bultos = 1,
+                    Atencion = cliente.Nombre,
+                    Cliente = pedido.cliente,
+                    CodPostal = cliente.CodPostal,
+                    Contacto = pedido.contacto,
+                    Direccion = cliente.Dirección,
+                    Nombre = cliente.Nombre,
+                    Empresa = pedido.empresa,
+                    Estado = Constantes.Agencias.ESTADO_EN_CURSO,
+                    Fecha = (DateTime)pedido.fecha,
+                    FechaEntrega = pedido.fecha,
+                    Horario = 0,
+                    Pais = 34,
+                    Poblacion = cliente.Población,
+                    Provincia = cliente.Provincia,
+                    Observaciones = pedido.comentarios,
+                    Servicio = 0,
+                    Usuario = pedido.usuario,
+                    Vendedor = pedido.vendedor
+                };
+
+                EnvioAgenciaCoordenada coordenada = new EnvioAgenciaCoordenada
+                {
+                    DireccionFormateada = respuestaMaps.DireccionFormateada,
+                    Latitud = respuestaMaps.Latitud,
+                    Longitud = respuestaMaps.Longitud,
+                    Usuario = pedido.usuario
+                };
+
+                envio.EnviosAgenciaCoordenada = coordenada;
+                cabecera.EnviosAgencias.Add(envio);
+            }
+
             db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
-            
+
             // Actualizamos el contador de ofertas
             if ((int)maxNumeroOferta!=0) {
                 contador.Oferta += (int)maxNumeroOferta;
@@ -674,7 +742,6 @@ namespace NestoAPI.Controllers
             {
                 throw new Exception(respuesta.Motivo);
             }
-
 
             try
             {
@@ -1122,6 +1189,15 @@ namespace NestoAPI.Controllers
             this.calcularImportesLinea(linea);
 
             return lineaNueva;
+        }
+
+        [HttpPost]
+        [Route("api/PedidosVenta/SePuedeServirPorAgencia")]
+        public async Task<RespuestaAgencia> SePuedeServirPorAgencia(PedidoVentaDTO pedido)
+        {
+            IGestorAgencias gestor = new GestorAgenciasGlovo();
+            
+            return await gestor.SePuedeServirPedido(pedido, new ServicioAgencias(), new GestorStocks());
         }
         
         private bool esSobrePedido(string producto, short cantidad)

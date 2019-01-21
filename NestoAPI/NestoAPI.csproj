@@ -264,13 +264,22 @@
     <Compile Include="Infraestructure\ApplicationUserManager.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
+    <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GestorComisiones.cs" />
     <Compile Include="Infraestructure\GestorPrecios.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\OtrosAparatosNoPuedeLlevarDescuento.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\RamasonNoPuedeLlevarNingunDescuento.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\ThuyaNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\GestorPresupuestos.cs" />
+    <Compile Include="Infraestructure\GestorStocks.cs" />
+    <Compile Include="Infraestructure\IGestorAgencias.cs" />
+    <Compile Include="Infraestructure\IGestorStocks.cs" />
+    <Compile Include="Infraestructure\IServicioAgencias.cs" />
+    <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
+    <Compile Include="Infraestructure\RespuestaAgencia.cs" />
+    <Compile Include="Infraestructure\ServicioAgencias.cs" />
+    <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
@@ -348,6 +357,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Empresa.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\EnvioAgenciaCoordenada.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\EnviosAgencia.cs">
@@ -435,7 +447,7 @@
     <Compile Include="Models\Picking\GestorMargenes.cs" />
     <Compile Include="Models\Picking\GestorPicking.cs" />
     <Compile Include="Models\Picking\GestorReservasStock.cs" />
-    <Compile Include="Models\Picking\GestorStocks.cs" />
+    <Compile Include="Models\Picking\GestorStocksPicking.cs" />
     <Compile Include="Models\Picking\GestorUbicaciones.cs" />
     <Compile Include="Models\Picking\IFinalizadorPicking.cs" />
     <Compile Include="Models\Picking\IRellenadorPickingService.cs" />

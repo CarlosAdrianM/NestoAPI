@@ -63,7 +63,7 @@ namespace NestoAPI.Models.Picking
             for (int i = 0; i < candidatos.Count(); i++)
             {
                 PedidoPicking pedido = candidatos[i];
-                GestorStocks gestorStocks = new GestorStocks(pedido);
+                GestorStocksPicking gestorStocks = new GestorStocksPicking(pedido);
                 if (!pedido.saleEnPicking() || pedido.Lineas.Count == 0 || !gestorStocks.HayStockDeAlgo())
                 {
                     pedido.Borrar = true;

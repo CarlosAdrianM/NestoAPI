@@ -13,8 +13,7 @@ namespace NestoAPI.Infraestructure
         private NVEntities db = new NVEntities();
         private PedidoVentaDTO pedido;
         private readonly string TEXTO_PEDIDO;
-        private const string CORREO_DIRECCION = "direccion@nuevavision.es";
-
+        
         string nombreVendedorCabecera = "";
         string nombreVendedorPeluqueria = "";
 
@@ -60,7 +59,7 @@ namespace NestoAPI.Infraestructure
 
             // Miramos si ponemos copia al vendedor de la cabecera
             Vendedor vendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == pedido.vendedor);
-            correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : CORREO_DIRECCION;
+            correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : Constantes.Correos.CORREO_DIRECCION;
             bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL");
             if (tieneLineasNoPeluqueria)
             {
@@ -89,7 +88,7 @@ namespace NestoAPI.Infraestructure
             if (usuarioParametro != null)
             {
                 parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "CorreoDefecto");
-                correoUsuario = parametroUsuario != null ? parametroUsuario.Valor : CORREO_DIRECCION;
+                correoUsuario = parametroUsuario != null ? parametroUsuario.Valor : Constantes.Correos.CORREO_DIRECCION;
                 if (correoUsuario != null && correoUsuario.Trim()!="")
                 {
                     correoUsuario = correoUsuario.Trim().ToLower();
@@ -109,10 +108,18 @@ namespace NestoAPI.Infraestructure
             {
                 return;
             }
-            mail.CC.Add(CORREO_DIRECCION);
+            mail.CC.Add(Constantes.Correos.CORREO_DIRECCION);
             mail.Subject = tipoCorreo + " "+TEXTO_PEDIDO+" c/ " + pedido.cliente.ToString();
             mail.Body = (await GenerarTablaHTML(pedido)).ToString();
             mail.IsBodyHtml = true;
+            if (pedido.LineasPedido.FirstOrDefault().almacen == Constantes.Almacenes.REINA)
+            {
+                mail.CC.Add(Constantes.Correos.TIENDA_REINA);
+            }
+            if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
+            {
+                mail.Subject = "[GLOVO] " + mail.Subject;
+            }
 
             // A veces no conecta a la primera, por lo que reintentamos 2s después
             try
