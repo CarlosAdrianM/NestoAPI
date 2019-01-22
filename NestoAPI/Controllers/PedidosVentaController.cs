@@ -13,6 +13,7 @@ using NestoAPI.Models;
 using Newtonsoft.Json;
 using NestoAPI.Models.Picking;
 using NestoAPI.Infraestructure;
+using System.Web.Http.Cors;
 
 namespace NestoAPI.Controllers
 {
@@ -722,7 +723,7 @@ namespace NestoAPI.Controllers
                 };
 
                 envio.EnviosAgenciaCoordenada = coordenada;
-                cabecera.EnviosAgencias.Add(envio);
+                //cabecera.EnviosAgencias.Add(envio);
             }
 
             db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
@@ -1192,6 +1193,7 @@ namespace NestoAPI.Controllers
         }
 
         [HttpPost]
+        [EnableCors(origins: "*", headers: "*", methods: "POST")]
         [Route("api/PedidosVenta/SePuedeServirPorAgencia")]
         public async Task<RespuestaAgencia> SePuedeServirPorAgencia(PedidoVentaDTO pedido)
         {

@@ -90,12 +90,12 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorStocks_HayStockDisponibleDeTodo_SiDeUnProductoHayStockPeroEstaReservadoDevuelveFalso()
         {
-            A.CallTo(() => servicio.Stock("producto", "almacen")).Returns(1);
-            A.CallTo(() => servicio.UnidadesPendientesEntregarAlmacen("producto", "almacen")).Returns(1);
+            A.CallTo(() => servicio.Stock("producto", Constantes.Almacenes.REINA)).Returns(1);
+            A.CallTo(() => servicio.UnidadesPendientesEntregarAlmacen("producto", Constantes.Almacenes.REINA)).Returns(1);
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
                 producto = "producto",
-                almacen = "almacen",
+                almacen = Constantes.Almacenes.REINA,
                 cantidad = 1
             };
             pedido.LineasPedido.Add(linea);

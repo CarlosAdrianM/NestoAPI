@@ -20,7 +20,6 @@ namespace NestoAPI.Infraestructure
 
         public bool HayStockDisponibleDeTodo(PedidoVentaDTO pedido)
         {
-            const string ALMACEN_GLOVO = "REI";
             if (pedido.LineasPedido == null || pedido.LineasPedido.Count == 0)
             {
                 return true;
@@ -33,7 +32,7 @@ namespace NestoAPI.Infraestructure
                     return false;
                 }
 
-                if (stock - servicio.UnidadesPendientesEntregarAlmacen(linea.producto, ALMACEN_GLOVO) < linea.cantidad) {
+                if (stock - servicio.UnidadesPendientesEntregarAlmacen(linea.producto, Constantes.Almacenes.REINA) < linea.cantidad) {
                     return false;
                 }
 
