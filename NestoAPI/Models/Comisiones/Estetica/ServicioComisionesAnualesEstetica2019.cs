@@ -172,70 +172,70 @@ namespace NestoAPI.Models.Comisiones
                     Desde = 94974.69M,
                     Hasta = 100000M,
                     Tipo = .012M,
-                    TipoExtra = .0M
+                    TipoExtra = .001M
                 },
                 new TramoComision
                 {
                     Desde = 100000.01M,
                     Hasta = 105500M,
                     Tipo = .0145M,
-                    TipoExtra = .0M
+                    TipoExtra = .002M
                 },
                 new TramoComision
                 {
                     Desde = 105500.01M,
                     Hasta = 116000M,
                     Tipo = .0195M,
-                    TipoExtra = .0M
+                    TipoExtra = .003M
                 },
                 new TramoComision
                 {
                     Desde = 116000.01M,
                     Hasta = 126500M,
                     Tipo = .0225M,
-                    TipoExtra = .0015M
+                    TipoExtra = .004M
                 },
                 new TramoComision
                 {
                     Desde = 126500.01M,
                     Hasta = 133000M,
                     Tipo = .0306M,
-                    TipoExtra = .0025M
+                    TipoExtra = .005M
                 },
                 new TramoComision
                 {
                     Desde = 133000.01M,
                     Hasta = 140500M,
                     Tipo = .033M,
-                    TipoExtra = .004M
+                    TipoExtra = .008M
                 },
                 new TramoComision
                 {
                     Desde = 140500.01M,
                     Hasta = 153500M,
                     Tipo = .0355M,
-                    TipoExtra = .0055M
+                    TipoExtra = .011M
                 },
                 new TramoComision
                 {
                     Desde = 153500.01M,
                     Hasta = 162000M,
                     Tipo = .0370M,
-                    TipoExtra = .007M
+                    TipoExtra = .014M
                 },
                 new TramoComision
                 {
                     Desde = 162000.01M,
                     Hasta = 169500M,
                     Tipo = .0395M,
-                    TipoExtra = .0085M
+                    TipoExtra = .017M
                 },
                 new TramoComision
                 {
                     Desde = 169500.01M,
                     Hasta = decimal.MaxValue,
                     Tipo = .0462M,
-                    TipoExtra = .01M
+                    TipoExtra = .02M
                 }
             };
 
