@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Models;
 
@@ -28,6 +29,17 @@ namespace NestoAPI.Infraestructure
             //        return false;
             //    }
             //}
+
+            DateTime hora = servicio.HoraActual();
+            if (hora.Hour < 9 || hora.Hour > 18)
+            {
+                return null;
+            }
+            if (hora.DayOfWeek == DayOfWeek.Saturday || hora.DayOfWeek == DayOfWeek.Sunday)
+            {
+                return null;
+            }
+
 
             if (!gestorStocks.HayStockDisponibleDeTodo(pedido))
             {

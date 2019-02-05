@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using System;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure
@@ -7,5 +8,6 @@ namespace NestoAPI.Infraestructure
     {
         string LeerCodigoPostal(PedidoVentaDTO pedido);
         Task<RespuestaAgencia> LeerDireccionGoogleMaps(PedidoVentaDTO pedido);
+        DateTime HoraActual();
     }
 }

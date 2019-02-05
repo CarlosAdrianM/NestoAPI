@@ -194,7 +194,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             {
                 resumen
             };
-            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, DateTime.Today.Month, true)).Returns(1000);
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 3, true)).Returns(1000);
             A.CallTo(() => servicio.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
             A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
             {
@@ -221,7 +221,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 }
             });
 
-            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, DateTime.Today.Month, true);
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 3, true);
 
             Assert.AreEqual(8250, vendedorComisionAnual.ResumenMesActual.GeneralProyeccion);
         }

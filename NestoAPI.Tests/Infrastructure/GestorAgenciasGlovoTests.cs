@@ -2,6 +2,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Models;
+using System;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -25,6 +26,7 @@ namespace NestoAPI.Tests.Infrastructure
             gestorStocks = A.Fake<IGestorStocks>();
             
             A.CallTo(() => servicio.LeerCodigoPostal(pedido)).Returns("28004");
+            A.CallTo(() => servicio.HoraActual()).Returns(new DateTime(2019, 2, 5, 10, 0, 0));
             A.CallTo(() => gestorStocks.HayStockDisponibleDeTodo(pedido)).Returns(true);
         }
 
@@ -108,6 +110,36 @@ namespace NestoAPI.Tests.Infrastructure
             RespuestaAgencia resultado = gestor.SePuedeServirPedido(pedido, servicio, gestorStocks).Result;
 
             Assert.IsNotNull(resultado);
+        }
+
+        [TestMethod]
+        public void GestorAgenciasGlovo_SePuedeServirPedido_SiNoEsElHorarioPermitidoNoSePuedeServir()
+        {
+            A.CallTo(() => servicio.HoraActual()).Returns(new DateTime(2019, 2, 5, 22, 0, 0));
+
+            RespuestaAgencia resultado = gestor.SePuedeServirPedido(pedido, servicio, gestorStocks).Result;
+
+            Assert.IsNull(resultado);
+        }
+
+        [TestMethod]
+        public void GestorAgenciasGlovo_SePuedeServirPedido_SiElHorarioEsPermitidoSiSePuedeServir()
+        {
+            A.CallTo(() => servicio.HoraActual()).Returns(new DateTime(2019, 2, 5, 10, 0, 0));
+
+            RespuestaAgencia resultado = gestor.SePuedeServirPedido(pedido, servicio, gestorStocks).Result;
+
+            Assert.IsNotNull(resultado);
+        }
+
+        [TestMethod]
+        public void GestorAgenciasGlovo_SePuedeServirPedido_SiNoEsElDiaLaborableNoSePuedeServir()
+        {
+            A.CallTo(() => servicio.HoraActual()).Returns(new DateTime(2019, 2, 3, 10, 0, 0));
+
+            RespuestaAgencia resultado = gestor.SePuedeServirPedido(pedido, servicio, gestorStocks).Result;
+
+            Assert.IsNull(resultado);
         }
     }
 }
