@@ -167,7 +167,7 @@ namespace NestoAPI.Infraestructure
 
         public DateTime HoraActual()
         {
-            return new DateTime();
+            return DateTime.Now;
         }
     }
 
