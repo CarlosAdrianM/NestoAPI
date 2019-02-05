@@ -92,8 +92,8 @@ namespace NestoAPI.Infraestructure
                 {
                     System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                     string urlGlovo = "https://api.glovoapp.com/b2b/orders/estimate";
-                    string apiKey = "154911396777150";
-                    string apiSecret = "446241744d644ad8a06d84ce5e09fcd0";//ConfigurationManager.AppSettings["GoogleMapsApiKey"];
+                    string apiKey = ConfigurationManager.AppSettings["GlovoApiKey"];
+                    string apiSecret = ConfigurationManager.AppSettings["GlovoApiSecret"];
                     Address direccionOrigen = new Address
                     {
                         lat = 40.4204877,
