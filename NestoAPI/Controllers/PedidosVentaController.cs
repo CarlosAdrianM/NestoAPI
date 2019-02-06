@@ -1193,7 +1193,7 @@ namespace NestoAPI.Controllers
         }
 
         [HttpPost]
-        [EnableCors(origins: "*", headers: "*", methods: "POST")]
+        [EnableCors(origins: "*", headers: "*", methods: "*", SupportsCredentials = true)]
         [Route("api/PedidosVenta/SePuedeServirPorAgencia")]
         public async Task<RespuestaAgencia> SePuedeServirPorAgencia(PedidoVentaDTO pedido)
         {
