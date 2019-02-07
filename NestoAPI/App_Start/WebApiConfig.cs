@@ -33,11 +33,11 @@ namespace NestoAPI
             config.Formatters.Remove(GlobalConfiguration.Configuration.Formatters.XmlFormatter);
 
             // Carlos 24/07/15: activamos CORS para poder entrar desde cualquier dominio
-            var cors = new System.Web.Http.Cors.EnableCorsAttribute(
-            origins: "*",
-            headers: "*",
-            methods: "*");
-            config.EnableCors(cors);
+            //var cors = new System.Web.Http.Cors.EnableCorsAttribute(
+            //origins: "*",
+            //headers: "*",
+            //methods: "*");
+            //config.EnableCors(cors);
 
             GlobalConfiguration.Configuration.IncludeErrorDetailPolicy = IncludeErrorDetailPolicy.Always;
         }
