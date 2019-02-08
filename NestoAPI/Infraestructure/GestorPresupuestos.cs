@@ -60,7 +60,7 @@ namespace NestoAPI.Infraestructure
             // Miramos si ponemos copia al vendedor de la cabecera
             Vendedor vendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == pedido.vendedor);
             correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : Constantes.Correos.CORREO_DIRECCION;
-            bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL");
+            bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL" && l.Base_Imponible!=0);
             if (tieneLineasNoPeluqueria)
             {
                 mail.To.Add(new MailAddress(correoVendedor.ToLower()));
@@ -68,7 +68,7 @@ namespace NestoAPI.Infraestructure
             }
 
             // Miramos si ponemos copia al vendedor de peluquería
-            bool tieneLineasPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo == "PEL");
+            bool tieneLineasPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo == "PEL" && l.Base_Imponible!=0);
             if (tieneLineasPeluqueria)
             {
                 string numeroVendedorPeluqueria = db.VendedoresPedidosGruposProductos.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Pedido == pedido.numero)?.Vendedor;
