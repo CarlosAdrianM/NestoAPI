@@ -651,6 +651,11 @@ namespace NestoAPI.Controllers
                 {
                     linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
                 }
+                if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
+                {
+                    linea.vistoBueno = true;
+                    linea.fechaEntrega = DateTime.Today;
+                }
                 linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
                 linea.baseImponible = linPedido.Base_Imponible;
                 linea.total = linPedido.Total;
@@ -1220,7 +1225,7 @@ namespace NestoAPI.Controllers
         {
             DateTime fechaMinima;
             
-            if (GestorImportesMinimos.esRutaConPortes(ruta))
+            if (ruta != Constantes.Pedidos.RUTA_GLOVO && GestorImportesMinimos.esRutaConPortes(ruta))
             {
                 fechaMinima = DateTime.Now.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS ? DateTime.Today : DateTime.Today.AddDays(1);
             } else
