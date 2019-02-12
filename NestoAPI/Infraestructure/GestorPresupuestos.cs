@@ -120,6 +120,11 @@ namespace NestoAPI.Infraestructure
             {
                 mail.Subject = "[GLOVO] " + mail.Subject;
             }
+            // Si falta la foto ponemos copia a Quique
+            if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-"))
+            {
+                mail.CC.Add("kikeadrian82@gmail.com");
+            }
 
             // A veces no conecta a la primera, por lo que reintentamos 2s después
             try
@@ -193,8 +198,14 @@ namespace NestoAPI.Infraestructure
             s.AppendLine("<tbody align = \"right\">");
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
             {
-                string rutaImagen = await ProductoDTO.RutaImagen(linea.producto);
-                s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"><img src=\"" + rutaImagen + "\" style=\"max-height:100%; max-width:100%\"></td>");
+                if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    string rutaImagen = await ProductoDTO.RutaImagen(linea.producto);
+                    s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"><img src=\"" + rutaImagen + "\" style=\"max-height:100%; max-width:100%\"></td>");
+                } else
+                {
+                    s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"></td>");
+                }
                 s.Append("<td>" + linea.producto + "</td>");
                 s.Append("<td>" + linea.texto + "</td>");
                 s.Append("<td>" + linea.cantidad.ToString() + "</td>");
