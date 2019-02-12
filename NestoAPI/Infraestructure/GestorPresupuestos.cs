@@ -121,7 +121,7 @@ namespace NestoAPI.Infraestructure
                 mail.Subject = "[GLOVO] " + mail.Subject;
             }
             // Si falta la foto ponemos copia a Quique
-            if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-"))
+            if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") || mail.Body.Contains("-home_default/.jpg"))
             {
                 mail.CC.Add("kikeadrian82@gmail.com");
             }
