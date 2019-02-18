@@ -95,15 +95,7 @@ namespace NestoAPI.Infraestructure
                     mail.CC.Add(correoUsuario);
                 }
             }
-            
-            if (!pedido.EsPresupuesto && (
-                (correoVendedor == correoUsuario && correoVendedorPeluqueria == null) ||
-                (correoVendedorPeluqueria == correoUsuario && !tieneLineasNoPeluqueria) ||
-                (correoUsuario == correoVendedor && correoUsuario == correoVendedorPeluqueria)
-               ))
-            {
-                return;
-            }
+
             if (pedido.cliente == "15191")
             {
                 return;

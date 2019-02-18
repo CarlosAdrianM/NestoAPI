@@ -324,35 +324,35 @@ namespace NestoAPI.Controllers
             return StatusCode(HttpStatusCode.NoContent);
         }
 
-        //// POST: api/Clientes
-        //[ResponseType(typeof(Cliente))]
-        //public async Task<IHttpActionResult> PostCliente(Cliente cliente)
-        //{
-        //    if (!ModelState.IsValid)
-        //    {
-        //        return BadRequest(ModelState);
-        //    }
+        // POST: api/Clientes
+        [ResponseType(typeof(Cliente))]
+        public async Task<IHttpActionResult> PostCliente(Cliente cliente)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
 
-        //    db.Clientes.Add(cliente);
+            db.Clientes.Add(cliente);
 
-        //    try
-        //    {
-        //        await db.SaveChangesAsync();
-        //    }
-        //    catch (DbUpdateException)
-        //    {
-        //        if (ClienteExists(cliente.Empresa))
-        //        {
-        //            return Conflict();
-        //        }
-        //        else
-        //        {
-        //            throw;
-        //        }
-        //    }
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                if (ClienteExists(cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto))
+                {
+                    return Conflict();
+                }
+                else
+                {
+                    throw;
+                }
+            }
 
-        //    return CreatedAtRoute("DefaultApi", new { id = cliente.Empresa }, cliente);
-        //}
+            return CreatedAtRoute("DefaultApi", new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto }, cliente);
+        }
 
         //// DELETE: api/Clientes/5
         //[ResponseType(typeof(Cliente))]
