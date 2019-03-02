@@ -651,14 +651,10 @@ namespace NestoAPI.Controllers
                 {
                     linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
                 }
-                if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
+                if (linea.almacen == Constantes.Productos.ALMACEN_TIENDA)
                 {
                     linea.vistoBueno = true;
                     linea.fechaEntrega = DateTime.Today;
-                }
-                if (!linea.vistoBueno && linea.almacen == Constantes.Productos.ALMACEN_TIENDA)
-                {
-                    linea.vistoBueno = true;
                 }
                 linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
                 linea.baseImponible = linPedido.Base_Imponible;
