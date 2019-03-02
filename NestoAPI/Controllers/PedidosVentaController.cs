@@ -656,6 +656,10 @@ namespace NestoAPI.Controllers
                     linea.vistoBueno = true;
                     linea.fechaEntrega = DateTime.Today;
                 }
+                if (!linea.vistoBueno && linea.almacen == Constantes.Productos.ALMACEN_TIENDA)
+                {
+                    linea.vistoBueno = true;
+                }
                 linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
                 linea.baseImponible = linPedido.Base_Imponible;
                 linea.total = linPedido.Total;
@@ -685,6 +689,7 @@ namespace NestoAPI.Controllers
                         texto = "Portes Glovo",
                         precio = respuestaMaps.Coste,
                         iva = pedido.iva,
+                        vistoBueno = true,
                         usuario = pedido.LineasPedido.FirstOrDefault().usuario
                     };
                     linPedido = crearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
