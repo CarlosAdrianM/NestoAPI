@@ -388,9 +388,20 @@ namespace NestoAPI.Controllers
             // - las líneas que la cantidad, o la base imponible sean diferentes hay que actualizarlas enteras
 
             // - las líneas que directamente no estén, hay que borrarlas
-            foreach(LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.Where(l => (l.Estado == -1 || l.Estado == 1) && l.Picking == 0).ToList())
+            foreach(LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.ToList())
             {
                 LineaPedidoVentaDTO lineaEncontrada = pedido.LineasPedido.SingleOrDefault(l => l.id == linea.Nº_Orden);
+
+                if (linea.Picking != 0 || !(linea.Estado == -1 || linea.Estado == 1))
+                {
+                    if (lineaEncontrada != null)
+                    {
+                        lineaEncontrada.baseImponible = linea.Base_Imponible;
+                        lineaEncontrada.total = linea.Total;
+                    }
+                    continue;
+                }
+
                 if (lineaEncontrada == null)
                 {
                     if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
@@ -462,6 +473,7 @@ namespace NestoAPI.Controllers
                 }
             }
             
+
             // Modificamos las líneas
             if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas || aceptarPresupuesto) { 
                 foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
