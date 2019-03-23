@@ -9,7 +9,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     
     public class ValidadorMuestrasYMaterialPromocional : IValidadorAceptacion
     {
-        private const decimal PORCENTAJE_MAXIMO_MUESTRAS = 0.1M;
+        private const decimal PORCENTAJE_MAXIMO_MUESTRAS = 0.05M;
+        private const int UNIDADES_MAXIMO_MUESTRAS = 10;
 
         public RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
         {
@@ -26,9 +27,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             if (producto.SubGrupo == Constantes.Productos.SUBGRUPO_MUESTRAS && producto.Grupo == Constantes.Productos.GRUPO_COSMETICA)
             {
                 decimal baseImponiblePedido = pedido.LineasPedido.Sum(l => l.baseImponible);
+                int maximoUnidades = pedido.LineasPedido.Where(l => l.producto == producto.Número).Sum(l => l.cantidad);
                 
                 var importeMuestras = GestorPrecios.servicio.CalcularImporteGrupo(pedido, Constantes.Productos.GRUPO_COSMETICA, Constantes.Productos.SUBGRUPO_MUESTRAS);
-                if (importeMuestras <= baseImponiblePedido * PORCENTAJE_MAXIMO_MUESTRAS)
+                if (importeMuestras <= baseImponiblePedido * PORCENTAJE_MAXIMO_MUESTRAS && maximoUnidades <= UNIDADES_MAXIMO_MUESTRAS)
                 {
                     return new RespuestaValidacion
                     {

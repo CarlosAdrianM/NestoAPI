@@ -1944,7 +1944,38 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(respuesta.ValidacionSuperada);
             //Assert.AreEqual("El producto MUESTRA no puede ir a ese precio porque no es material promocional o se supera el importe autorizado", respuesta.Motivo);
         }
-        
+
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorMuestrasYMaterialPromocional_SiLlevaUnaMuestraConMasUnidesDeLasPermitidasNoEsValido()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "AA11";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 1;
+            linea.precio = 10; // es el de ficha
+            linea.baseImponible = 10;
+            pedido.LineasPedido.Add(linea);
+            LineaPedidoVentaDTO lineaMuestra = A.Fake<LineaPedidoVentaDTO>();
+            lineaMuestra.producto = "MUESTRA";
+            lineaMuestra.aplicarDescuento = true;
+            lineaMuestra.cantidad = 11;
+            lineaMuestra.precio = .1M; // es el de ficha
+            lineaMuestra.descuento = 1M; // de regalo, 100% dto
+            lineaMuestra.baseImponible = 0;
+            pedido.LineasPedido.Add(lineaMuestra);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA");
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+        }
+
+
+
+
         [TestMethod]
         public void GestorPrecios_EsPedidoValido_SiNoTieneNingunaLineaDeProductoEsValido()
         {
