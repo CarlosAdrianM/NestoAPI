@@ -23,6 +23,8 @@ namespace NestoAPI
 
         public void Configuration(IAppBuilder app)
         {
+            app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
+
             HttpConfiguration httpConfig = new HttpConfiguration();
 
             ConfigureOAuthTokenGeneration(app);
@@ -30,10 +32,7 @@ namespace NestoAPI
 
             ConfigureWebApi(httpConfig);
 
-            //app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
-
             app.UseWebApi(httpConfig);
-
         }
 
         private void ConfigureOAuthTokenGeneration(IAppBuilder app)
