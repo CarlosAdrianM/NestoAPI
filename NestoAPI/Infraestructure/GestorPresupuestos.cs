@@ -115,7 +115,7 @@ namespace NestoAPI.Infraestructure
             // Si falta la foto ponemos copia a Quique
             if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") || mail.Body.Contains("-home_default/.jpg"))
             {
-                mail.CC.Add("kikeadrian82@gmail.com");
+                mail.CC.Add(Constantes.Correos.TIENDA_ONLINE);
             }
 
             // A veces no conecta a la primera, por lo que reintentamos 2s después
