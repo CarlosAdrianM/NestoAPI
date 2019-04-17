@@ -92,11 +92,11 @@ namespace NestoAPI.Infraestructure
                 var importeGrupo = db.Productos.Where(p=>listaProductosPedido.Contains(p.Número))
                     .AsEnumerable()
                     .Join(pedido.LineasPedido,
-                        prod => prod.Número,
-                        lin => lin.producto,
+                        prod => prod.Número?.Trim(),
+                        lin => lin.producto?.Trim(),
                         (prod, lin) => new { Producto = prod, LineaPedidoVentaDTO = lin})
-                    .Where(r => r.Producto.Empresa == pedido.empresa
-                        && r.Producto.Número == r.LineaPedidoVentaDTO.producto
+                    .Where(r => r.Producto.Empresa?.Trim() == pedido.empresa
+                        && r.Producto.Número?.Trim() == r.LineaPedidoVentaDTO.producto
                         && r.Producto.Grupo == grupo
                         && r.Producto.SubGrupo == subGrupo
                     );
