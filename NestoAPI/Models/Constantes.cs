@@ -14,6 +14,15 @@
             public const string REINA = "REI";
         }
 
+        public class Clientes
+        {
+            public class Estados
+            {
+                public const int VISITA_PRESENCIAL = 0;
+                public const int PRIMERA_VISITA = 5;
+            }
+        }
+
         public class Correos
         {
             public const string CORREO_DIRECCION = "direccion@nuevavision.es";

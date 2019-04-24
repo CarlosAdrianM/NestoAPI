@@ -11,6 +11,7 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
 using NestoAPI.Infraestructure;
+using NestoAPI.Models.Clientes;
 
 namespace NestoAPI.Controllers
 {
@@ -272,6 +273,18 @@ namespace NestoAPI.Controllers
             };
 
             return Ok(clienteDTO);
+        }
+
+        [HttpGet]
+        [Route("api/Clientes/ComprobarNifNombre")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(RespuestaNifNombreCliente))]
+        public async Task<IHttpActionResult> GetCliente(string nif, string nombre)
+        {
+            GestorClientes gestor = new GestorClientes();
+            RespuestaNifNombreCliente respuesta = await gestor.ComprobarNifNombre(nif, nombre);
+
+            return Ok(respuesta);
         }
 
         // PUT: api/Clientes/5

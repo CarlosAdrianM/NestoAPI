@@ -98,6 +98,7 @@
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
+    <Compile Include="Infrastructure\GestorClientesTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Infrastructure\GestosStocksTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />

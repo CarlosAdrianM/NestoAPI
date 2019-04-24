@@ -261,6 +261,7 @@
     <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
+    <Compile Include="Infraestructure\GestorClientes.cs" />
     <Compile Include="Infraestructure\GestorComisiones.cs" />
     <Compile Include="Infraestructure\GestorPrecios.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\OtrosAparatosNoPuedeLlevarDescuento.cs" />
@@ -269,12 +270,15 @@
     <Compile Include="Infraestructure\GestorPresupuestos.cs" />
     <Compile Include="Infraestructure\GestorStocks.cs" />
     <Compile Include="Infraestructure\IGestorAgencias.cs" />
+    <Compile Include="Infraestructure\IGestorClientes.cs" />
     <Compile Include="Infraestructure\IGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioAgencias.cs" />
+    <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
+    <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
@@ -312,6 +316,7 @@
     <Compile Include="Models\Cliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Clientes\RespuestaNifNombreCliente.cs" />
     <Compile Include="Models\ComisionAnualDetalle.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -590,6 +595,7 @@
     <Content Include="Areas\HelpPage\Views\Help\DisplayTemplates\CollectionModelDescription.cshtml" />
     <Content Include="Areas\HelpPage\Views\Help\DisplayTemplates\ApiGroup.cshtml" />
     <Content Include="Areas\HelpPage\Views\Help\Api.cshtml" />
+    <Content Include="Infraestructure\Certificados\cert_cam_nv.pfx" />
     <None Include="Properties\PublishProfiles\RDS2016 - Web Deploy.pubxml" />
     <None Include="Properties\PublishProfiles\server1.pubxml" />
     <Content Include="Scripts\angular.min.js.map" />
