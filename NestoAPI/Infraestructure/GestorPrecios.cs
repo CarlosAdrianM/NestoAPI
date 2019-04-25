@@ -73,6 +73,11 @@ namespace NestoAPI.Infraestructure
                 }
 
                 // CALCULA DESCUENTOS
+                // Carlos 25/04/19: si es material promocional va con el 100% de descuento
+                if (datos.producto.SubGrupo == Constantes.Productos.SUBGRUPO_MUESTRAS)
+                {
+                    datos.descuentoCalculado = 1;
+                }
                 //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente] is null and nºproveedor is null and familia is null
                 //select * from descuentosproducto where empresa='1  ' and grupoproducto='PEL' and [nº cliente] is null and  nºproveedor is null and familia is null
                 //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente]='15191     ' and nºproveedor is null and familia is null

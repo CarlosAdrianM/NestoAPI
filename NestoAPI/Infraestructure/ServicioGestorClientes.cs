@@ -7,6 +7,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Security.Cryptography.X509Certificates;
+using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
 
@@ -35,6 +36,12 @@ namespace NestoAPI.Infraestructure
 
         public async Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre)
         {
+            byte[] bytesNif = Encoding.Default.GetBytes(nif?.ToUpper().Trim());
+            nif = Encoding.UTF8.GetString(bytesNif);
+
+            byte[] bytesNombre = Encoding.Default.GetBytes(nombre?.ToUpper().Trim());
+            nombre = Encoding.UTF8.GetString(bytesNombre);
+
             HttpWebRequest request = CreateWebRequest();
             XmlDocument soapEnvelopeXml = new XmlDocument();
             soapEnvelopeXml.LoadXml(@"<?xml version=""1.0"" encoding=""utf-8""?>
@@ -76,9 +83,9 @@ namespace NestoAPI.Infraestructure
                 }
             }
             return new RespuestaNifNombreCliente {
-                NifFormateado = nifDevuelto,
-                NombreFormateado = nombreDevuelto,
-                NifValidado = true
+                NifFormateado = nifDevuelto?.Trim(),
+                NombreFormateado = nombreDevuelto?.Trim(),
+                NifValidado = resultadoDevuelto?.ToUpper() == "IDENTIFICADO" || resultadoDevuelto?.ToUpper() == "NO IDENTIFICADO-SIMILAR"
             };
         }
 

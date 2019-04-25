@@ -67,7 +67,7 @@ namespace NestoAPI.Tests.Infrastructure
                 NifFormateado = "12345678A",
                 NifValidado = true
             };
-            A.CallTo(() => servicio.ComprobarNifNombre("12345678-A", "Cliente Nuevo")).Returns(respuestaAEAT);
+            A.CallTo(() => servicio.ComprobarNifNombre("12345678A", "Cliente Nuevo")).Returns(respuestaAEAT);
             GestorClientes gestor = new GestorClientes(servicio);
 
             RespuestaNifNombreCliente respuesta = gestor.ComprobarNifNombre("12345678-A", "Cliente Nuevo").Result;
