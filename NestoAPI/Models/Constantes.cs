@@ -65,6 +65,7 @@
             public const string ALMACEN_TIENDA = "REI";
             public const short ESTADO_NO_SOBRE_PEDIDO = 0;
             public const string GRUPO_COSMETICA = "COS";
+            public const string GRUPO_PELUQUERIA = "PEL";
             public const string SUBGRUPO_MUESTRAS = "MMP";
         }
 

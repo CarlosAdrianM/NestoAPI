@@ -102,5 +102,6 @@ namespace NestoAPI.Models
         public virtual ICollection<SeguimientoCliente> SeguimientoClientes { get; set; }
         public virtual ICollection<OfertaPermitida> OfertasPermitidas { get; set; }
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
+        public virtual CodigoPostal CódigosPostales { get; set; }
     }
 }

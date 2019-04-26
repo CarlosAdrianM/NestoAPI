@@ -116,15 +116,35 @@ namespace NestoAPI.Infraestructure
 
         public async Task<RespuestaDatosGeneralesClientes> CogerDatosCodigoPostal(string codigoPostal)
         {
-            // TODO Leer vendedores y leer los datos reales de la BBDD
-            var respuesta = new RespuestaDatosGeneralesClientes
+            using (NVEntities db = new NVEntities())
             {
-                CodigoPostal = codigoPostal,
-                Poblacion = "Madrid",
-                Provincia = "Madrid"
-            };
+                CodigoPostal cp = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Número == codigoPostal);
+                if (cp == null)
+                {
+                    // TO DO: leerlo de algún webservice de correos y crearlo
+                    throw new ArgumentException("No existe el código postal "+codigoPostal+" en la base de datos");
+                }
 
-            return respuesta;
+                var respuesta = new RespuestaDatosGeneralesClientes
+                {
+                    CodigoPostal = codigoPostal,
+                    Poblacion = cp.Descripción?.Trim(),
+                    Provincia = cp.Provincia?.Trim(),
+                    VendedorEstetica = cp.Vendedor
+                };
+
+                VendedorCodigoPostalGrupoProducto vendedorPeluqueria = await db.VendedoresCodigoPostalGruposProductos
+                    .SingleOrDefaultAsync(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                    && v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA && v.CodigoPostal == codigoPostal);
+
+                if (vendedorPeluqueria != null)
+                {
+                    respuesta.VendedorPeluqueria = vendedorPeluqueria.Vendedor?.Trim();
+                }
+
+                return respuesta;
+            }
+
         }
     }
 }

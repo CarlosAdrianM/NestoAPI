@@ -100,8 +100,14 @@ namespace NestoAPI.Infraestructure
             }
             var direccionFormateada = direccionGoogle.Substring(0, posicionCodigoPostal - 2); // porque quitamos coma y espacio
 
-            var posicionComaFormateada = direccionFormateada.LastIndexOf(", ");
+            var posicionComaFormateada = direccionFormateada.IndexOf(", ");
             var numeroCalleFormateada = direccionFormateada.Substring(posicionComaFormateada + 2);
+            var posicionComaEnNumero = numeroCalleFormateada.IndexOf(",");
+            if(posicionComaEnNumero != -1)
+            {
+                direccionFormateada = direccionFormateada.Substring(0, direccionFormateada.Length - numeroCalleFormateada.Length + posicionComaEnNumero);
+                numeroCalleFormateada = numeroCalleFormateada.Substring(0, posicionComaEnNumero);
+            }
             var posicionNumero = direccion.IndexOf(numeroCalleFormateada);
             //Si posicionNumero es -1, buscar el número anterior (porque tiene dos)
             if (posicionNumero == -1)
@@ -153,7 +159,18 @@ namespace NestoAPI.Infraestructure
             {
                 direccion = "Av. " + direccion.Substring(8);
             }
-
+            if (direccion.StartsWith("AV. DE LA "))
+            {
+                direccion = "Av. " + direccion.Substring(10);
+            }
+            if (direccion.StartsWith("AV. DE "))
+            {
+                direccion = "Av. " + direccion.Substring(7);
+            }
+            if (direccion.StartsWith("AV. "))
+            {
+                direccion = "Av. " + direccion.Substring(4);
+            }
             // Plaza
             if (direccion.StartsWith("PLAZA DE LA "))
             {

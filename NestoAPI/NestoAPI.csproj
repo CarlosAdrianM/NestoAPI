@@ -317,6 +317,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Clientes\RespuestasCliente.cs" />
+    <Compile Include="Models\CodigoPostal.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\ComisionAnualDetalle.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -522,6 +525,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\VendedorClienteGrupoProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\VendedorCodigoPostalGrupoProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\VendedorPedidoGrupoProducto.cs">

@@ -67,5 +67,6 @@ namespace NestoAPI.Models
         public virtual ICollection<PedidosEspeciale> PedidosEspeciales { get; set; }
         public virtual ICollection<LinPedidoCmp> LinPedidoCmps { get; set; }
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
+        public virtual CodigoPostal CódigosPostales { get; set; }
     }
 }

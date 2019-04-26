@@ -55,6 +55,7 @@ namespace NestoAPI.Models
             this.OfertasCombinadasDetalles = new HashSet<OfertaCombinadaDetalle>();
             this.LinPedidoCmps = new HashSet<LinPedidoCmp>();
             this.PreExtrProductoes = new HashSet<PreExtrProducto>();
+            this.CódigosPostales = new HashSet<CodigoPostal>();
         }
     
         public string Número { get; set; }
@@ -198,5 +199,7 @@ namespace NestoAPI.Models
         public virtual ICollection<OfertaCombinadaDetalle> OfertasCombinadasDetalles { get; set; }
         public virtual ICollection<LinPedidoCmp> LinPedidoCmps { get; set; }
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
+        public virtual ICollection<CodigoPostal> CódigosPostales { get; set; }
+        public virtual CodigoPostal CódigosPostales1 { get; set; }
     }
 }

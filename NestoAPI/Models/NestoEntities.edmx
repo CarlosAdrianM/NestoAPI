@@ -217,6 +217,18 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="CódigosPostales">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Descripción" Type="char" MaxLength="50" />
+          <Property Name="Provincia" Type="char" MaxLength="30" Nullable="false" />
+          <Property Name="Ruta" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
+        </EntityType>
         <EntityType Name="ComisionesAnualesDetalle">
           <Key>
             <PropertyRef Name="Id" />
@@ -1214,6 +1226,18 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
+        <EntityType Name="VendedoresCodigoPostalGrupoProducto">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="CodigoPostal" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="GrupoProducto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="VendedoresPedidoGrupoProducto">
           <Key>
             <PropertyRef Name="Id" />
@@ -1466,6 +1490,20 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Clientes_CódigosPostales">
+          <End Role="CódigosPostales" Type="Self.CódigosPostales" Multiplicity="0..1" />
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CodPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Clientes_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="Clientes" Type="Self.Clientes" Multiplicity="*" />
@@ -1489,6 +1527,18 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <Dependent Role="Clientes">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CódigosPostales_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="CódigosPostales" Type="Self.CódigosPostales" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -1673,6 +1723,20 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Principal>
             <Dependent Role="DíasPagoClientes">
               <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_CódigosPostales">
+          <End Role="CódigosPostales" Type="Self.CódigosPostales" Multiplicity="0..1" />
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Empresas">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CodPostal" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -1925,20 +1989,6 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <Dependent Role="Empresas">
               <PropertyRef Name="Número" />
               <PropertyRef Name="VendedorVarios" />
-            </Dependent>
-          </ReferentialConstraint>
-        </Association>
-        <Association Name="FK_EnviosAgencia_CabPedidoVta">
-          <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="0..1" />
-          <End Role="EnviosAgencia" Type="Self.EnviosAgencia" Multiplicity="*" />
-          <ReferentialConstraint>
-            <Principal Role="CabPedidoVta">
-              <PropertyRef Name="Empresa" />
-              <PropertyRef Name="Número" />
-            </Principal>
-            <Dependent Role="EnviosAgencia">
-              <PropertyRef Name="Empresa" />
-              <PropertyRef Name="Pedido" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -3028,6 +3078,20 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Proveedores_CódigosPostales">
+          <End Role="CódigosPostales" Type="Self.CódigosPostales" Multiplicity="0..1" />
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CodPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Proveedores_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="*" />
@@ -3194,6 +3258,34 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales">
+          <End Role="CódigosPostales" Type="Self.CódigosPostales" Multiplicity="1" />
+          <End Role="VendedoresCodigoPostalGrupoProducto" Type="Self.VendedoresCodigoPostalGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedoresCodigoPostalGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CodigoPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedoresCodigoPostalGrupoProducto_Vendedores">
+          <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="1" />
+          <End Role="VendedoresCodigoPostalGrupoProducto" Type="Self.VendedoresCodigoPostalGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedoresCodigoPostalGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_VendedoresPedidoGrupoProducto_CabPedidoVta">
           <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="1">
             <OnDelete Action="Cascade" />
@@ -3240,6 +3332,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="CCCProveedores" EntityType="Self.CCCProveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CentrosCoste" EntityType="Self.CentrosCoste" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Clientes" EntityType="Self.Clientes" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="CódigosPostales" EntityType="Self.CódigosPostales" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ComisionesAnualesDetalle" EntityType="Self.ComisionesAnualesDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ComisionesAnualesResumenMes" EntityType="Self.ComisionesAnualesResumenMes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CondPagoClientes" EntityType="Self.CondPagoClientes" Schema="dbo" store:Type="Tables" />
@@ -3282,6 +3375,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="UsuarioVendedor" EntityType="Self.UsuarioVendedor" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Vendedores" EntityType="Self.Vendedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VendedoresClienteGrupoProducto" EntityType="Self.VendedoresClienteGrupoProducto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="VendedoresCodigoPostalGrupoProducto" EntityType="Self.VendedoresCodigoPostalGrupoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VendedoresPedidoGrupoProducto" EntityType="Self.VendedoresPedidoGrupoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="RentingFacturas" EntityType="Self.RentingFacturas" store:Type="Tables" store:Schema="dbo">
             <DefiningQuery>SELECT 
@@ -3381,6 +3475,10 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="Clientes" EntitySet="Clientes" />
             <End Role="Clientes1" EntitySet="Clientes" />
           </AssociationSet>
+          <AssociationSet Name="FK_Clientes_CódigosPostales" Association="Self.FK_Clientes_CódigosPostales">
+            <End Role="CódigosPostales" EntitySet="CódigosPostales" />
+            <End Role="Clientes" EntitySet="Clientes" />
+          </AssociationSet>
           <AssociationSet Name="FK_Clientes_Empresas" Association="Self.FK_Clientes_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="Clientes" EntitySet="Clientes" />
@@ -3388,6 +3486,10 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_Clientes_Vendedores" Association="Self.FK_Clientes_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="Clientes" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CódigosPostales_Empresas" Association="Self.FK_CódigosPostales_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="CódigosPostales" EntitySet="CódigosPostales" />
           </AssociationSet>
           <AssociationSet Name="FK_CondPagoClientes_Clientes" Association="Self.FK_CondPagoClientes_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -3440,6 +3542,10 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_DíasPagoClientes_Empresas" Association="Self.FK_DíasPagoClientes_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="DíasPagoClientes" EntitySet="DíasPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_CódigosPostales" Association="Self.FK_Empresas_CódigosPostales">
+            <End Role="CódigosPostales" EntitySet="CódigosPostales" />
+            <End Role="Empresas" EntitySet="Empresas" />
           </AssociationSet>
           <AssociationSet Name="FK_Empresas_Empresas" Association="Self.FK_Empresas_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -3512,10 +3618,6 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_Empresas_Vendedores" Association="Self.FK_Empresas_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="Empresas" EntitySet="Empresas" />
-          </AssociationSet>
-          <AssociationSet Name="FK_EnviosAgencia_CabPedidoVta" Association="Self.FK_EnviosAgencia_CabPedidoVta">
-            <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
-            <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
           </AssociationSet>
           <AssociationSet Name="FK_EnviosAgencia_Clientes" Association="Self.FK_EnviosAgencia_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -3829,6 +3931,10 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="CCCProveedores" EntitySet="CCCProveedores" />
             <End Role="Proveedores" EntitySet="Proveedores" />
           </AssociationSet>
+          <AssociationSet Name="FK_Proveedores_CódigosPostales" Association="Self.FK_Proveedores_CódigosPostales">
+            <End Role="CódigosPostales" EntitySet="CódigosPostales" />
+            <End Role="Proveedores" EntitySet="Proveedores" />
+          </AssociationSet>
           <AssociationSet Name="FK_Proveedores_Empresas" Association="Self.FK_Proveedores_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="Proveedores" EntitySet="Proveedores" />
@@ -3876,6 +3982,14 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_VendedoresClienteGrupoProducto_Vendedores" Association="Self.FK_VendedoresClienteGrupoProducto_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="VendedoresClienteGrupoProducto" EntitySet="VendedoresClienteGrupoProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales" Association="Self.FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales">
+            <End Role="CódigosPostales" EntitySet="CódigosPostales" />
+            <End Role="VendedoresCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGrupoProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedoresCodigoPostalGrupoProducto_Vendedores" Association="Self.FK_VendedoresCodigoPostalGrupoProducto_Vendedores">
+            <End Role="Vendedores" EntitySet="Vendedores" />
+            <End Role="VendedoresCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGrupoProducto" />
           </AssociationSet>
           <AssociationSet Name="FK_VendedoresPedidoGrupoProducto_CabPedidoVta" Association="Self.FK_VendedoresPedidoGrupoProducto_CabPedidoVta">
             <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
@@ -4556,6 +4670,32 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="CabPedidoVta" EntitySet="CabPedidoVtas" />
             <End Role="EnviosAgencia" EntitySet="EnviosAgencias" />
           </AssociationSet>
+          <EntitySet Name="CodigosPostales" EntityType="NVModel.CodigoPostal" />
+          <AssociationSet Name="FK_Clientes_CódigosPostales" Association="NVModel.FK_Clientes_CódigosPostales">
+            <End Role="CódigosPostales" EntitySet="CodigosPostales" />
+            <End Role="Cliente" EntitySet="Clientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CódigosPostales_Empresas" Association="NVModel.FK_CódigosPostales_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="CódigosPostales" EntitySet="CodigosPostales" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Empresas_CódigosPostales" Association="NVModel.FK_Empresas_CódigosPostales">
+            <End Role="CódigosPostales" EntitySet="CodigosPostales" />
+            <End Role="Empresa" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Proveedores_CódigosPostales" Association="NVModel.FK_Proveedores_CódigosPostales">
+            <End Role="CódigosPostales" EntitySet="CodigosPostales" />
+            <End Role="Proveedor" EntitySet="Proveedores" />
+          </AssociationSet>
+          <EntitySet Name="VendedoresCodigoPostalGruposProductos" EntityType="NVModel.VendedorCodigoPostalGrupoProducto" />
+          <AssociationSet Name="FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales" Association="NVModel.FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales">
+            <End Role="CodigoPostal" EntitySet="CodigosPostales" />
+            <End Role="VendedoresCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGruposProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedoresCodigoPostalGrupoProducto_Vendedores" Association="NVModel.FK_VendedoresCodigoPostalGrupoProducto_Vendedores">
+            <End Role="Vendedor" EntitySet="Vendedores" />
+            <End Role="VendedoresCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGruposProductos" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -4701,7 +4841,9 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_Empresas" FromRole="Empresa" ToRole="OfertasCombinadasDetalle" />
           <NavigationProperty Name="LinPedidoCmps" Relationship="NVModel.FK_LinPedidoCmp_Empresas" FromRole="Empresa" ToRole="LinPedidoCmp" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Empresas" FromRole="Empresa" ToRole="PreExtrProducto" />
-        </EntityType>
+          <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_CódigosPostales_Empresas" FromRole="Empresa" ToRole="CódigosPostales" />
+          <NavigationProperty Name="CódigosPostales1" Relationship="NVModel.FK_Empresas_CódigosPostales" FromRole="Empresa" ToRole="CódigosPostales" />
+          </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
           <End Type="NVModel.Empresa" Role="Empresa1" Multiplicity="*" />
@@ -4933,6 +5075,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Clientes" FromRole="Cliente" ToRole="SeguimientoCliente" />
           <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Clientes" FromRole="Cliente" ToRole="OfertasPermitida" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Clientes" FromRole="Cliente" ToRole="PreExtrProducto" />
+          <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_Clientes_CódigosPostales" FromRole="Cliente" ToRole="CódigosPostales" />
         </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -5970,6 +6113,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_Proveedores" FromRole="Proveedor" ToRole="PedidosEspeciale" />
           <NavigationProperty Name="LinPedidoCmps" Relationship="NVModel.FK_LinPedidoCmp_Proveedores" FromRole="Proveedor" ToRole="LinPedidoCmp" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Proveedores" FromRole="Proveedor" ToRole="PreExtrProducto" />
+          <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_Proveedores_CódigosPostales" FromRole="Proveedor" ToRole="CódigosPostales" />
         </EntityType>
         <Association Name="FK_Proveedores_CCCProveedores">
           <End Type="NVModel.CCCProveedor" Role="CCCProveedor" Multiplicity="0..1" />
@@ -7257,6 +7401,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="VendedoresPedidoGrupoProductoes" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_Vendedores" FromRole="Vendedore" ToRole="VendedorPedidoGrupoProducto" />
           <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Vendedores" FromRole="Vendedor" ToRole="SeguimientoCliente" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Vendedores" FromRole="Vendedor" ToRole="PreExtrProducto" />
+          <NavigationProperty Name="VendedoresCodigoPostalGrupoProductoes" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_Vendedores" FromRole="Vendedor" ToRole="VendedoresCodigoPostalGrupoProducto" />
         </EntityType>
         <Association Name="FK_Clientes_Vendedores">
           <End Type="NVModel.Vendedor" Role="Vendedore" Multiplicity="0..1" />
@@ -8009,6 +8154,119 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <Dependent Role="EnviosAgencia">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Pedido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="CodigoPostal">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Descripción" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Provincia" Type="String" Nullable="false" MaxLength="30" FixedLength="true" Unicode="false" />
+          <Property Name="Ruta" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Vendedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <NavigationProperty Name="Clientes" Relationship="NVModel.FK_Clientes_CódigosPostales" FromRole="CódigosPostales" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CódigosPostales_Empresas" FromRole="CódigosPostales" ToRole="Empresa" />
+          <NavigationProperty Name="Empresas" Relationship="NVModel.FK_Empresas_CódigosPostales" FromRole="CódigosPostales" ToRole="Empresa" />
+          <NavigationProperty Name="Proveedores" Relationship="NVModel.FK_Proveedores_CódigosPostales" FromRole="CódigosPostales" ToRole="Proveedor" />
+          <NavigationProperty Name="VendedoresCodigoPostalGrupoProductoes" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales" FromRole="CodigoPostal" ToRole="VendedoresCodigoPostalGrupoProducto" />
+        </EntityType>
+        <Association Name="FK_Clientes_CódigosPostales">
+          <End Type="NVModel.CodigoPostal" Role="CódigosPostales" Multiplicity="0..1" />
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CodPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CódigosPostales_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.CodigoPostal" Role="CódigosPostales" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Empresas_CódigosPostales">
+          <End Type="NVModel.CodigoPostal" Role="CódigosPostales" Multiplicity="0..1" />
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Empresa">
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="CodPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Proveedores_CódigosPostales">
+          <End Type="NVModel.CodigoPostal" Role="CódigosPostales" Multiplicity="0..1" />
+          <End Type="NVModel.Proveedor" Role="Proveedor" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Proveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CodPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="VendedorCodigoPostalGrupoProducto">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CodigoPostal" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="GrupoProducto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Vendedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales" FromRole="VendedoresCodigoPostalGrupoProducto" ToRole="CodigoPostal" />
+          <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_Vendedores" FromRole="VendedoresCodigoPostalGrupoProducto" ToRole="Vendedor" />
+        </EntityType>
+        <Association Name="FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales">
+          <End Type="NVModel.CodigoPostal" Role="CodigoPostal" Multiplicity="1" />
+          <End Type="NVModel.VendedorCodigoPostalGrupoProducto" Role="VendedoresCodigoPostalGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CodigoPostal">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedoresCodigoPostalGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CodigoPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedoresCodigoPostalGrupoProducto_Vendedores">
+          <End Type="NVModel.Vendedor" Role="Vendedor" Multiplicity="1" />
+          <End Type="NVModel.VendedorCodigoPostalGrupoProducto" Role="VendedoresCodigoPostalGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedoresCodigoPostalGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -9273,6 +9531,31 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Latitud" ColumnName="Latitud" />
                 <ScalarProperty Name="Longitud" ColumnName="Longitud" />
                 <ScalarProperty Name="EnvioAgenciaId" ColumnName="EnvioAgenciaId" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="CodigosPostales">
+            <EntityTypeMapping TypeName="NVModel.CodigoPostal">
+              <MappingFragment StoreEntitySet="CódigosPostales">
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="Ruta" ColumnName="Ruta" />
+                <ScalarProperty Name="Provincia" ColumnName="Provincia" />
+                <ScalarProperty Name="Descripción" ColumnName="Descripción" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="VendedoresCodigoPostalGruposProductos">
+            <EntityTypeMapping TypeName="NVModel.VendedorCodigoPostalGrupoProducto">
+              <MappingFragment StoreEntitySet="VendedoresCodigoPostalGrupoProducto">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="GrupoProducto" ColumnName="GrupoProducto" />
+                <ScalarProperty Name="CodigoPostal" ColumnName="CodigoPostal" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
