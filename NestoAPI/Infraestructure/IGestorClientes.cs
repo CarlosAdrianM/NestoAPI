@@ -11,5 +11,6 @@ namespace NestoAPI.Infraestructure
     public interface IGestorClientes
     {
         Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre);
+        Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono);
     }
 }

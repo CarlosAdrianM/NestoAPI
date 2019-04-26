@@ -279,10 +279,22 @@ namespace NestoAPI.Controllers
         [Route("api/Clientes/ComprobarNifNombre")]
         // GET: api/Clientes/5
         [ResponseType(typeof(RespuestaNifNombreCliente))]
-        public async Task<IHttpActionResult> GetCliente(string nif, string nombre)
+        public async Task<IHttpActionResult> ComprobarNifNombre(string nif, string nombre)
         {
             GestorClientes gestor = new GestorClientes();
             RespuestaNifNombreCliente respuesta = await gestor.ComprobarNifNombre(nif, nombre);
+
+            return Ok(respuesta);
+        }
+
+        [HttpGet]
+        [Route("api/Clientes/ComprobarDatosGenerales")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(RespuestaDatosGeneralesClientes))]
+        public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono)
+        {
+            GestorClientes gestor = new GestorClientes();
+            RespuestaDatosGeneralesClientes respuesta = await gestor.ComprobarDatosGenerales(direccion, codigoPostal, telefono);
 
             return Ok(respuesta);
         }

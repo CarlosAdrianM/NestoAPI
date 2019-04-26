@@ -7,7 +7,8 @@ namespace NestoAPI.Infraestructure
     public interface IServicioAgencias
     {
         string LeerCodigoPostal(PedidoVentaDTO pedido);
-        Task<RespuestaAgencia> LeerDireccionGoogleMaps(PedidoVentaDTO pedido);
+        Task<RespuestaAgencia> LeerDireccionPedidoGoogleMaps(PedidoVentaDTO pedido);
+        Task<RespuestaAgencia> LeerDireccionGoogleMaps(string direccion);
         DateTime HoraActual();
     }
 }

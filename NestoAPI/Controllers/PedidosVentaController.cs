@@ -681,7 +681,7 @@ namespace NestoAPI.Controllers
             if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
             {
                 ServicioAgencias servicio = new ServicioAgencias();
-                RespuestaAgencia respuestaMaps = await servicio.LeerDireccionGoogleMaps(pedido);
+                RespuestaAgencia respuestaMaps = await servicio.LeerDireccionPedidoGoogleMaps(pedido);
 
                 if (pedido.LineasPedido.Sum(b => b.baseImponible) < GestorImportesMinimos.IMPORTE_MINIMO)
                 {

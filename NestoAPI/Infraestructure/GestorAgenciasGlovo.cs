@@ -49,7 +49,7 @@ namespace NestoAPI.Infraestructure
 
             // No  hay motivo por el que no pueda salir, así que calculamos todo
             // TO DO: implementar resultado
-            RespuestaAgencia respuesta = await servicio.LeerDireccionGoogleMaps(pedido);
+            RespuestaAgencia respuesta = await servicio.LeerDireccionPedidoGoogleMaps(pedido);
 
             return new RespuestaAgencia {
                 DireccionFormateada = respuesta.DireccionFormateada,

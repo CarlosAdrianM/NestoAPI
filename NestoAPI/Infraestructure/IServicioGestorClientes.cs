@@ -12,5 +12,6 @@ namespace NestoAPI.Infraestructure
     {
         Task<ClienteDTO> BuscarClientePorNif(string nif);
         Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre);
+        Task<RespuestaDatosGeneralesClientes> CogerDatosCodigoPostal(string codigoPostal);
     }
 }

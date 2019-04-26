@@ -27,48 +27,13 @@ namespace NestoAPI.Infraestructure
             return codigoPostal;
         }
 
-        public async Task<RespuestaAgencia> LeerDireccionGoogleMaps(PedidoVentaDTO pedido)
+        public async Task<RespuestaAgencia> LeerDireccionPedidoGoogleMaps(PedidoVentaDTO pedido)
         {
-            // Create a New HttpClient object and dispose it when done, so the app doesn't leak resources
-            using (HttpClient client = new HttpClient())
-            {
-                // Call asynchronous network methods in a try/catch block to handle exceptions
-                try
-                {
-                    NVEntities db = new NVEntities();
-                    var direccion = db.Clientes.Single(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
-                    string urlGoogleMaps = "https://maps.googleapis.com/maps/api/geocode/json?address=";
-                    urlGoogleMaps += ProcesarDireccion(direccion);
-                    string clave = ConfigurationManager.AppSettings["GoogleMapsApiKey"];
-                    urlGoogleMaps += "&key=" + clave;
-                    //HttpResponseMessage response = await client.GetAsync(urlGoogleMaps);
-                    //response.EnsureSuccessStatusCode();
-                    //string responseBody = await response.Content.ReadAsStringAsync();
-                    // Above three lines can be replaced with new helper method below
-                    string responseBody = await client.GetStringAsync(urlGoogleMaps);
-                    JObject respuestaJson = JsonConvert.DeserializeObject<JObject>(responseBody);
-                    string direccionFormateada = respuestaJson["results"][0]["formatted_address"].ToString();
-                    double longitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lng"].ToString());
-                    double latitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lat"].ToString());
+            NVEntities db = new NVEntities();
+            var clienteDireccion = db.Clientes.Single(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
+            string direccion = ProcesarDireccion(clienteDireccion);
 
-                    // Aquí hay que llamar a POST /b2b/orders/estimate para calcular los portes reales
-                    decimal portes = await CalcularPortes(longitud, latitud, direccionFormateada);
-
-                    RespuestaAgencia respuesta = new RespuestaAgencia
-                    {
-                        DireccionFormateada = direccionFormateada,
-                        Longitud = longitud,
-                        Latitud = latitud,
-                        Coste = portes
-                    };
-
-                    return respuesta;
-                }
-                catch (HttpRequestException)
-                {
-                    return null;
-                }
-            }
+            return await LeerDireccionGoogleMaps(direccion);
         }
 
         private string ProcesarDireccion(Cliente cliente)
@@ -168,6 +133,48 @@ namespace NestoAPI.Infraestructure
         public DateTime HoraActual()
         {
             return DateTime.Now;
+        }
+
+        public async Task<RespuestaAgencia> LeerDireccionGoogleMaps(string direccion)
+        {
+            // Create a New HttpClient object and dispose it when done, so the app doesn't leak resources
+            using (HttpClient client = new HttpClient())
+            {
+                // Call asynchronous network methods in a try/catch block to handle exceptions
+                try
+                {
+                    string urlGoogleMaps = "https://maps.googleapis.com/maps/api/geocode/json?address=";
+                    urlGoogleMaps += direccion;
+                    string clave = ConfigurationManager.AppSettings["GoogleMapsApiKey"];
+                    urlGoogleMaps += "&key=" + clave;
+                    //HttpResponseMessage response = await client.GetAsync(urlGoogleMaps);
+                    //response.EnsureSuccessStatusCode();
+                    //string responseBody = await response.Content.ReadAsStringAsync();
+                    // Above three lines can be replaced with new helper method below
+                    string responseBody = await client.GetStringAsync(urlGoogleMaps);
+                    JObject respuestaJson = JsonConvert.DeserializeObject<JObject>(responseBody);
+                    string direccionFormateada = respuestaJson["results"][0]["formatted_address"].ToString();
+                    double longitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lng"].ToString());
+                    double latitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lat"].ToString());
+
+                    // Aquí hay que llamar a POST /b2b/orders/estimate para calcular los portes reales
+                    decimal portes = await CalcularPortes(longitud, latitud, direccionFormateada);
+
+                    RespuestaAgencia respuesta = new RespuestaAgencia
+                    {
+                        DireccionFormateada = direccionFormateada,
+                        Longitud = longitud,
+                        Latitud = latitud,
+                        Coste = portes
+                    };
+
+                    return respuesta;
+                }
+                catch (HttpRequestException)
+                {
+                    return null;
+                }
+            }
         }
     }
 

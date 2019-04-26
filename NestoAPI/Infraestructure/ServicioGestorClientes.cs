@@ -113,5 +113,18 @@ namespace NestoAPI.Infraestructure
             webRequest.Method = "POST";
             return webRequest;
         }
+
+        public async Task<RespuestaDatosGeneralesClientes> CogerDatosCodigoPostal(string codigoPostal)
+        {
+            // TODO Leer vendedores y leer los datos reales de la BBDD
+            var respuesta = new RespuestaDatosGeneralesClientes
+            {
+                CodigoPostal = codigoPostal,
+                Poblacion = "Madrid",
+                Provincia = "Madrid"
+            };
+
+            return respuesta;
+        }
     }
 }

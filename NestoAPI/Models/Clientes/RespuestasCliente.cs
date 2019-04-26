@@ -13,4 +13,15 @@ namespace NestoAPI.Models.Clientes
         public bool ExisteElCliente { get; set; }
         public int EstadoCliente { get; set; }
     }
+
+    public class RespuestaDatosGeneralesClientes
+    {
+        public string CodigoPostal { get; set; }
+        public string DireccionFormateada { get; set; }
+        public string Poblacion { get; set; }
+        public string Provincia { get; set; }
+        public string TelefonoFormateado { get; set; }
+        public string VendedorEstetica { get; set; }
+        public string VendedorPeluqueria { get; set; }
+    }
 }
