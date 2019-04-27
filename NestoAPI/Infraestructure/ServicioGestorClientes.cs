@@ -82,12 +82,56 @@ namespace NestoAPI.Infraestructure
                     resultadoDevuelto = contribuyente.SelectSingleNode("VNifV2Sal:Resultado", nsmgr).InnerText;
                 }
             }
+
+            if (resultadoDevuelto.ToUpper()=="IDENTIFICADO-BAJA")
+            {
+                nombreDevuelto = "¡EMPRESA DE BAJA! " + nombreDevuelto;
+            }
+
             return new RespuestaNifNombreCliente {
                 NifFormateado = nifDevuelto?.Trim(),
                 NombreFormateado = nombreDevuelto?.Trim(),
-                NifValidado = resultadoDevuelto?.ToUpper() == "IDENTIFICADO" || resultadoDevuelto?.ToUpper() == "NO IDENTIFICADO-SIMILAR"
+                NifValidado = resultadoDevuelto?.ToUpper() == "IDENTIFICADO" || 
+                resultadoDevuelto?.ToUpper() == "NO IDENTIFICADO-SIMILAR" ||
+                resultadoDevuelto?.ToUpper() == "IDENTIFICADO-BAJA"
             };
         }
+
+        public async Task<RespuestaDatosGeneralesClientes> CogerDatosCodigoPostal(string codigoPostal)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                CodigoPostal cp = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Número == codigoPostal);
+                if (cp == null)
+                {
+                    // TO DO: leerlo de algún webservice de correos y crearlo
+                    throw new ArgumentException("No existe el código postal " + codigoPostal + " en la base de datos");
+                }
+
+                var respuesta = new RespuestaDatosGeneralesClientes
+                {
+                    CodigoPostal = codigoPostal,
+                    Poblacion = cp.Descripción?.Trim(),
+                    Provincia = cp.Provincia?.Trim(),
+                    VendedorEstetica = cp.Vendedor
+                };
+
+                VendedorCodigoPostalGrupoProducto vendedorPeluqueria = await db.VendedoresCodigoPostalGruposProductos
+                    .SingleOrDefaultAsync(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                    && v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA && v.CodigoPostal == codigoPostal);
+
+                if (vendedorPeluqueria != null)
+                {
+                    respuesta.VendedorPeluqueria = vendedorPeluqueria.Vendedor?.Trim();
+                }
+
+                return respuesta;
+            }
+
+        }
+
+
+
 
         private static HttpWebRequest CreateWebRequest()
         {
@@ -114,37 +158,6 @@ namespace NestoAPI.Infraestructure
             return webRequest;
         }
 
-        public async Task<RespuestaDatosGeneralesClientes> CogerDatosCodigoPostal(string codigoPostal)
-        {
-            using (NVEntities db = new NVEntities())
-            {
-                CodigoPostal cp = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Número == codigoPostal);
-                if (cp == null)
-                {
-                    // TO DO: leerlo de algún webservice de correos y crearlo
-                    throw new ArgumentException("No existe el código postal "+codigoPostal+" en la base de datos");
-                }
-
-                var respuesta = new RespuestaDatosGeneralesClientes
-                {
-                    CodigoPostal = codigoPostal,
-                    Poblacion = cp.Descripción?.Trim(),
-                    Provincia = cp.Provincia?.Trim(),
-                    VendedorEstetica = cp.Vendedor
-                };
-
-                VendedorCodigoPostalGrupoProducto vendedorPeluqueria = await db.VendedoresCodigoPostalGruposProductos
-                    .SingleOrDefaultAsync(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
-                    && v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA && v.CodigoPostal == codigoPostal);
-
-                if (vendedorPeluqueria != null)
-                {
-                    respuesta.VendedorPeluqueria = vendedorPeluqueria.Vendedor?.Trim();
-                }
-
-                return respuesta;
-            }
-
-        }
+        
     }
 }

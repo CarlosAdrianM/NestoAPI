@@ -24,4 +24,12 @@ namespace NestoAPI.Models.Clientes
         public string VendedorEstetica { get; set; }
         public string VendedorPeluqueria { get; set; }
     }
+
+    public class RespuestaDatosBancoCliente
+    {
+        public bool DatosPagoValidos { get; set; }
+        public bool IbanValido { get; set; }
+        public string Iban { get; set; }
+        public string IbanFormateado { get; set; }
+    }
 }

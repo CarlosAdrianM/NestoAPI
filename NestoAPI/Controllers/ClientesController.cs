@@ -299,6 +299,18 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        [HttpGet]
+        [Route("api/Clientes/ComprobarDatosBanco")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(RespuestaDatosBancoCliente))]
+        public IHttpActionResult ComprobarDatosBanco(string formaPago, string plazosPago, string iban)
+        {
+            GestorClientes gestor = new GestorClientes();
+            RespuestaDatosBancoCliente respuesta = gestor.ComprobarDatosBanco(formaPago, plazosPago, iban);
+
+            return Ok(respuesta);
+        }
+
         // PUT: api/Clientes/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutCliente(ClienteDTO cliente)

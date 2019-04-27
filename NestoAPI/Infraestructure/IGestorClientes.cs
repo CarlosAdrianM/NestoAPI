@@ -12,5 +12,6 @@ namespace NestoAPI.Infraestructure
     {
         Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre);
         Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono);
+        RespuestaDatosBancoCliente ComprobarDatosBanco(string formaPago, string plazosPago, string iban);
     }
 }

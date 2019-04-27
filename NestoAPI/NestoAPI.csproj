@@ -316,6 +316,7 @@
     <Compile Include="Models\Cliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Clientes\Iban.cs" />
     <Compile Include="Models\Clientes\RespuestasCliente.cs" />
     <Compile Include="Models\CodigoPostal.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

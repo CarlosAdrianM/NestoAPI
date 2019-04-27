@@ -237,5 +237,31 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual("C/ REINA, 5 - 1º2", respuesta.DireccionFormateada);
         }
+
+        [TestMethod]
+        public void GestorClientes_LimpiarDireccion_SiNoHayComaBuscamosElPrimerNumero()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarDireccion(
+                "alameda, 18 - 1º2", 
+                "Avenida de la alameda 18 local 8, 28140 Fuente el Saz de Jarama, Madrid, Spain",
+                "28140");
+
+            Assert.AreEqual("Av. ALAMEDA, 18 - 1º2", respuesta);
+        }
+
+        [TestMethod]
+        public void GestorClientes_LimpiarDireccion_SiHayEspacioDetrasDelSimboloDePrimeroLoQuitamos()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarDireccion(
+                "C/ DE LA FLORIDA, 18 - PORTAL C, 2º 1",
+                "C/ DE LA FLORIDA, 18, 28140",
+                "28140");
+
+            Assert.AreEqual("C/ FLORIDA, 18 - PORTAL C, 2º1", respuesta);
+        }
     }
 }

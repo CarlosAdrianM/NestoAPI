@@ -87,7 +87,7 @@ namespace NestoAPI.Infraestructure
             return resultado.Trim();
         }
 
-        private string LimpiarDireccion(string direccion, string direccionGoogle, string codigoPostal)
+        public string LimpiarDireccion(string direccion, string direccionGoogle, string codigoPostal)
         {
             direccion = direccion.ToUpper().Trim();
             direccionGoogle = direccionGoogle.ToUpper().Trim();
@@ -96,14 +96,30 @@ namespace NestoAPI.Infraestructure
             // Si es -1 el código postal es incorrecto
             if (posicionCodigoPostal == -1)
             {
-                throw new ArgumentException("El código postal " + codigoPostal + " es incorrecto.\n"+direccionGoogle);
+                throw new ArgumentException("El código postal " + codigoPostal + " es incorrecto.\n" + direccionGoogle);
             }
             var direccionFormateada = direccionGoogle.Substring(0, posicionCodigoPostal - 2); // porque quitamos coma y espacio
 
             var posicionComaFormateada = direccionFormateada.IndexOf(", ");
-            var numeroCalleFormateada = direccionFormateada.Substring(posicionComaFormateada + 2);
+            string numeroCalleFormateada;
+            // Si es -1 es porque no hay coma: buscamos el primer numero
+            if (posicionComaFormateada == -1)
+            {
+                string direccionHastaNumero = new string(direccionFormateada
+                    .TakeWhile(x => !Char.IsNumber(x)).ToArray());
+                numeroCalleFormateada = new string(
+                    direccionFormateada.Substring(direccionHastaNumero.Length)
+                    .TakeWhile(x => Char.IsNumber(x)).ToArray()
+                );
+                direccionFormateada = direccionHastaNumero.Substring(0, direccionHastaNumero.Length - 1) + 
+                    ", " + numeroCalleFormateada;
+            } else
+            {
+                numeroCalleFormateada = direccionFormateada.Substring(posicionComaFormateada + 2);
+            }
+
             var posicionComaEnNumero = numeroCalleFormateada.IndexOf(",");
-            if(posicionComaEnNumero != -1)
+            if (posicionComaEnNumero != -1)
             {
                 direccionFormateada = direccionFormateada.Substring(0, direccionFormateada.Length - numeroCalleFormateada.Length + posicionComaEnNumero);
                 numeroCalleFormateada = numeroCalleFormateada.Substring(0, posicionComaEnNumero);
@@ -113,7 +129,8 @@ namespace NestoAPI.Infraestructure
             if (posicionNumero == -1)
             {
                 posicionComaFormateada = direccionFormateada.Substring(0, posicionComaFormateada).LastIndexOf(", ");
-                if (posicionComaFormateada != -1) {
+                if (posicionComaFormateada != -1)
+                {
                     numeroCalleFormateada = direccionFormateada.Substring(posicionComaFormateada + 2, direccionFormateada.Length - numeroCalleFormateada.Length - posicionComaFormateada - 4);
                     posicionNumero = direccion.IndexOf(numeroCalleFormateada);
                 }
@@ -124,14 +141,20 @@ namespace NestoAPI.Infraestructure
             if (posicionNumero == -1)
             {
                 direccion = direccionFormateada + "-" + direccion;
-            } else
+            }
+            else
             {
                 direccion = direccionFormateada + finalDireccion;
             }
 
+            direccion = direccion.Replace("º ", "º");
+            direccion = PonerAbreviaturas(direccion);
 
+            return direccion;
+        }
 
-
+        private static string PonerAbreviaturas(string direccion)
+        {
             // CALLE
             if (direccion.StartsWith("CALLE DE LA "))
             {
@@ -144,6 +167,10 @@ namespace NestoAPI.Infraestructure
             if (direccion.StartsWith("CALLE "))
             {
                 direccion = "C/ " + direccion.Substring(6);
+            }
+            if (direccion.StartsWith("C/ DE LA "))
+            {
+                direccion = "C/ " + direccion.Substring(9);
             }
 
             // Avenida
@@ -206,20 +233,41 @@ namespace NestoAPI.Infraestructure
                 direccion = direccion.Substring(0, posicionNumero - 1) + ", " + direccion.Substring(posicionNumero);
             }
             */
-
             return direccion;
         }
 
         private string ProcesarDireccion(string direccion, RespuestaDatosGeneralesClientes respuesta )
         {
-            string direccionRespuesta = direccion + "+";
+            string direccionRespuesta = direccion.Replace("  ", " ") + "+";
             direccionRespuesta += respuesta.CodigoPostal + "+";
             direccionRespuesta += respuesta.Poblacion + "+";
-            direccionRespuesta += respuesta.Provincia + "+";
+            if (respuesta.Poblacion?.ToUpper().Trim() != respuesta.Provincia?.ToUpper().Trim())
+            {
+                direccionRespuesta += respuesta.Provincia + "+";
+            }
             direccionRespuesta += "España";
             direccionRespuesta = direccionRespuesta.Replace(" ", "+");
             return direccionRespuesta;
         }
 
+        public RespuestaDatosBancoCliente ComprobarDatosBanco(string formaPago, string plazosPago, string ibanComprobar)
+        {
+            Iban iban = new Iban(ibanComprobar);
+            RespuestaDatosBancoCliente respuesta = new RespuestaDatosBancoCliente
+            {
+                Iban = iban.Codigo,
+                IbanFormateado = iban.Formateado,
+                IbanValido = iban.EsValido
+            };
+            if (plazosPago == "CONTADO" || (formaPago == "RCB" && plazosPago == "1/30" && respuesta.IbanValido))
+            {
+                respuesta.DatosPagoValidos = true;
+            } else
+            {
+                respuesta.DatosPagoValidos = false;
+            }
+
+            return respuesta;
+        }
     }
 }
