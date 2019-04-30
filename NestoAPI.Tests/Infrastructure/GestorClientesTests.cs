@@ -263,5 +263,18 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual("C/ FLORIDA, 18 - PORTAL C, 2º1", respuesta);
         }
+        
+        [TestMethod]
+        public void GestorClientes_LimpiarDireccion_SiPoneSBarraNLoTratamosComoSinNumero()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarDireccion(
+                "PL. ARATOCA, S/N",
+                "Plaza Aratoca, 28033 Madrid, Spain",
+                "28033");
+
+            Assert.AreEqual("Pl. ARATOCA, S/N", respuesta);
+        }
     }
 }

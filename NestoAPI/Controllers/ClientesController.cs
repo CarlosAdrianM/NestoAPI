@@ -363,18 +363,32 @@ namespace NestoAPI.Controllers
 
         // POST: api/Clientes
         [ResponseType(typeof(Cliente))]
-        public async Task<IHttpActionResult> PostCliente(Cliente cliente)
+        public async Task<IHttpActionResult> PostCliente(ClienteCrear clienteCrear)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
 
+            ContadorGlobal contador;
+            if (!clienteCrear.EsContacto)
+            {
+                contador = db.ContadoresGlobales.SingleOrDefault();
+                clienteCrear.Cliente = contador.Clientes++.ToString();
+            }
+
+            IServicioGestorClientes servicio = new ServicioGestorClientes();
+            Cliente cliente = await servicio.PrepararCliente(clienteCrear);
             db.Clientes.Add(cliente);
 
             try
             {
                 await db.SaveChangesAsync();
+                if (cliente.CCCs.Count != 0 && cliente.CCC == null)
+                {
+                    cliente.CCC1 = cliente.CCCs.FirstOrDefault();
+                    await db.SaveChangesAsync();
+                }
             }
             catch (DbUpdateException)
             {
@@ -386,10 +400,43 @@ namespace NestoAPI.Controllers
                 {
                     throw;
                 }
+            } catch (Exception ex)
+            {
+                Console.Write(ex.ToString());
             }
 
             return CreatedAtRoute("DefaultApi", new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto }, cliente);
         }
+
+        //// POST: api/Clientes
+        //[ResponseType(typeof(Cliente))]
+        //public async Task<IHttpActionResult> PostCliente(Cliente cliente)
+        //{
+        //    if (!ModelState.IsValid)
+        //    {
+        //        return BadRequest(ModelState);
+        //    }
+
+        //    db.Clientes.Add(cliente);
+
+        //    try
+        //    {
+        //        await db.SaveChangesAsync();
+        //    }
+        //    catch (DbUpdateException)
+        //    {
+        //        if (ClienteExists(cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto))
+        //        {
+        //            return Conflict();
+        //        }
+        //        else
+        //        {
+        //            throw;
+        //        }
+        //    }
+
+        //    return CreatedAtRoute("DefaultApi", new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto }, cliente);
+        //}
 
         //// DELETE: api/Clientes/5
         //[ResponseType(typeof(Cliente))]

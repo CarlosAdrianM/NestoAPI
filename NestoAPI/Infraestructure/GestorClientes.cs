@@ -111,7 +111,12 @@ namespace NestoAPI.Infraestructure
                     direccionFormateada.Substring(direccionHastaNumero.Length)
                     .TakeWhile(x => Char.IsNumber(x)).ToArray()
                 );
-                direccionFormateada = direccionHastaNumero.Substring(0, direccionHastaNumero.Length - 1) + 
+                if (numeroCalleFormateada == "")
+                {
+                    numeroCalleFormateada = direccion.IndexOf("S/N") != -1 ? "S/N" : "";
+                }
+                direccionHastaNumero = direccionHastaNumero?.Trim();
+                direccionFormateada = direccionHastaNumero.Substring(0, direccionHastaNumero.Length) + 
                     ", " + numeroCalleFormateada;
             } else
             {
@@ -252,14 +257,26 @@ namespace NestoAPI.Infraestructure
 
         public RespuestaDatosBancoCliente ComprobarDatosBanco(string formaPago, string plazosPago, string ibanComprobar)
         {
-            Iban iban = new Iban(ibanComprobar);
-            RespuestaDatosBancoCliente respuesta = new RespuestaDatosBancoCliente
+            RespuestaDatosBancoCliente respuesta;
+            if (ibanComprobar != null)
             {
-                Iban = iban.Codigo,
-                IbanFormateado = iban.Formateado,
-                IbanValido = iban.EsValido
-            };
-            if (plazosPago == "CONTADO" || (formaPago == "RCB" && plazosPago == "1/30" && respuesta.IbanValido))
+                Iban iban = new Iban(ibanComprobar);
+                respuesta = new RespuestaDatosBancoCliente
+                {
+                    Iban = iban.Codigo,
+                    IbanFormateado = iban.Formateado,
+                    IbanValido = iban.EsValido
+                };
+            } else
+            {
+                respuesta = new RespuestaDatosBancoCliente
+                {
+                    Iban = "",
+                    IbanFormateado = "",
+                    IbanValido = true
+                };
+            }
+            if ((plazosPago == "CONTADO" && formaPago != "RCB") || (formaPago == "RCB" && respuesta.IbanValido && (plazosPago == "1/30" || plazosPago == "CONTADO")))
             {
                 respuesta.DatosPagoValidos = true;
             } else

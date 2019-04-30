@@ -34,6 +34,8 @@ namespace NestoAPI.Models
             this.SeguimientoClientes = new HashSet<SeguimientoCliente>();
             this.OfertasPermitidas = new HashSet<OfertaPermitida>();
             this.PreExtrProductoes = new HashSet<PreExtrProducto>();
+            this.PersonasContactoClientes = new HashSet<PersonaContactoCliente>();
+            this.PersonasContactoClientes1 = new HashSet<PersonaContactoCliente>();
         }
     
         public string Empresa { get; set; }
@@ -103,5 +105,7 @@ namespace NestoAPI.Models
         public virtual ICollection<OfertaPermitida> OfertasPermitidas { get; set; }
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
         public virtual CodigoPostal CódigosPostales { get; set; }
+        public virtual ICollection<PersonaContactoCliente> PersonasContactoClientes { get; set; }
+        public virtual ICollection<PersonaContactoCliente> PersonasContactoClientes1 { get; set; }
     }
 }

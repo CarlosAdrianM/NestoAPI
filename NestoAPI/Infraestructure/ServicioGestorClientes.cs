@@ -113,6 +113,7 @@ namespace NestoAPI.Infraestructure
                     CodigoPostal = codigoPostal,
                     Poblacion = cp.Descripción?.Trim(),
                     Provincia = cp.Provincia?.Trim(),
+                    Ruta = cp.Ruta,
                     VendedorEstetica = cp.Vendedor
                 };
 
@@ -158,6 +159,100 @@ namespace NestoAPI.Infraestructure
             return webRequest;
         }
 
-        
+        public async Task<Cliente> PrepararCliente(ClienteCrear clienteCrear)
+        {
+            if (clienteCrear.EsContacto)
+            {
+                throw new NotImplementedException("No se pueden crear contactos aún");
+            }
+
+            string contacto = "0"; //calcular
+            
+            Cliente cliente = new Cliente
+            {
+                Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Nº_Cliente = clienteCrear.Cliente,
+                Contacto = contacto,
+
+                CIF_NIF = clienteCrear.Nif,
+                ClientePrincipal = !clienteCrear.EsContacto,
+                CodPostal = clienteCrear.CodigoPostal,
+                ContactoBonificacion = contacto,
+                ContactoCobro = contacto,
+                ContactoDefecto = contacto,
+                DiasEnServir = Constantes.Clientes.DIAS_EN_SERVIR_POR_DEFECT0,
+                Dirección = clienteCrear.Direccion,
+                Estado = clienteCrear.Estado,
+                Grupo = Constantes.Clientes.GRUPO_POR_DEFECTO,
+                IVA = Constantes.Empresas.IVA_POR_DEFECTO,
+                Nombre = clienteCrear.Nombre,
+                PeriodoFacturación = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                Población = clienteCrear.Poblacion,
+                Provincia = clienteCrear.Provincia,
+                Ruta = clienteCrear.Ruta,
+                ServirJunto = true,
+                Teléfono = clienteCrear.Telefono,
+                Vendedor = clienteCrear.Estetica ? clienteCrear.VendedorEstetica : Constantes.Vendedores.VENDEDOR_GENERAL,
+                Usuario = clienteCrear.Usuario
+            };
+            
+            int i = 1;
+            foreach (PersonaContactoDTO personaCrear in clienteCrear.PersonasContacto)
+            {
+                PersonaContactoCliente persona = new PersonaContactoCliente
+                {
+                    Empresa = cliente.Empresa,
+                    Cliente = cliente,
+                    Número = i++.ToString(),
+                    Cargo = Constantes.Clientes.CARGO_POR_DEFECTO,
+                    Nombre = personaCrear.Nombre,
+                    CorreoElectrónico = personaCrear.CorreoElectronico,
+                    EnviarBoletin = true,
+                    Estado = 0,
+                    Usuario = clienteCrear.Usuario
+                };
+                cliente.PersonasContactoClientes.Add(persona);
+            }
+            
+            CondPagoCliente condicionesPago = new CondPagoCliente
+            {
+                Empresa = cliente.Empresa,
+                Cliente = cliente,
+                ImporteMínimo = 0,
+                FormaPago = clienteCrear.FormaPago,
+                PlazosPago = clienteCrear.PlazosPago
+            };
+            cliente.CondPagoClientes.Add(condicionesPago);
+
+            if (clienteCrear.Iban != null)
+            {
+                CCC ccc = new CCC
+                {
+                    Empresa = cliente.Empresa,
+                    Cliente1 = cliente,
+                    Número = "1",
+                    Pais = clienteCrear.Iban.Substring(0, 2),
+                    DC_IBAN = clienteCrear.Iban.Substring(2, 2),
+                    Entidad = clienteCrear.Iban.Substring(5, 4),
+                    Oficina = clienteCrear.Iban.Substring(10, 4),
+                    DC = clienteCrear.Iban.Substring(15, 2),
+                    Nº_Cuenta = clienteCrear.Iban.Substring(17, 2)
+                    + clienteCrear.Iban.Substring(20, 4)
+                    + clienteCrear.Iban.Substring(25, 4),
+                    Estado = Constantes.Clientes.EstadosMandatos.EN_PODER_DEL_CLIENTE,
+                    Secuencia = Constantes.Clientes.SECUENCIA_POR_DEFECTO,
+                    Usuario = clienteCrear.Usuario
+                };
+                cliente.CCCs.Add(ccc);
+            }
+            
+            return cliente;
+
+        }
+
+        public Task<CCC> PrepararCCC(ClienteCrear clienteCrear)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

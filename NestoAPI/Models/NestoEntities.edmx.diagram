@@ -4,7 +4,7 @@
   <edmx:Designer xmlns="http://schemas.microsoft.com/ado/2009/11/edmx">
     <!-- Diagram content (shape and connector positions) -->
     <edmx:Diagrams>
-      <Diagram DiagramId="b0f9c70bf1124b14bb8400d17c716cb1" Name="Diagram1" ZoomLevel="42">
+      <Diagram DiagramId="b0f9c70bf1124b14bb8400d17c716cb1" Name="Diagram1" ZoomLevel="60">
         <EntityTypeShape EntityType="NVModel.EnviosAgencia" Width="1.5" PointX="0.75" PointY="0.75" IsExpanded="true" />
         <EntityTypeShape EntityType="NVModel.Empresa" Width="1.5" PointX="0.75" PointY="31.75" />
         <AssociationConnector Association="NVModel.FK_Empresas_Empresas" />
@@ -21,7 +21,7 @@
         <AssociationConnector Association="NVModel.FK_Clientes_Empresas" />
         <AssociationConnector Association="NVModel.FK_EnviosAgencia_Clientes" />
         <AssociationConnector Association="NVModel.FK_LinPedidoVta_Clientes" />
-        <EntityTypeShape EntityType="NVModel.Producto" Width="1.5" PointX="3" PointY="47.625" />
+        <EntityTypeShape EntityType="NVModel.Producto" Width="1.5" PointX="4.625" PointY="47.75" />
         <AssociationConnector Association="NVModel.FK_Productos_Empresas" />
         <AssociationConnector Association="NVModel.FK_Productos_Productos" />
         <EntityTypeShape EntityType="NVModel.Familia" Width="1.5" PointX="0.75" PointY="47.625" />
@@ -206,6 +206,10 @@
         <EntityTypeShape EntityType="NVModel.VendedorCodigoPostalGrupoProducto" Width="1.5" PointX="7" PointY="87.875" />
         <AssociationConnector Association="NVModel.FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales" />
         <AssociationConnector Association="NVModel.FK_VendedoresCodigoPostalGrupoProducto_Vendedores" />
+        <EntityTypeShape EntityType="NVModel.PersonaContactoCliente" Width="1.5" PointX="17.625" PointY="53.75" />
+        <AssociationConnector Association="NVModel.FK_PersonasContactoCliente_Clientes" />
+        <AssociationConnector Association="NVModel.FK_PersonasContactoCliente_Clientes1" />
+        <AssociationConnector Association="NVModel.FK_PersonasContactoCliente_Empresas" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

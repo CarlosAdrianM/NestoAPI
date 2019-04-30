@@ -131,7 +131,7 @@
           <Property Name="FechaMandato" Type="date" />
           <Property Name="Secuencia" Type="varchar" MaxLength="4" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
-          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="CCCProveedores">
           <Key>
@@ -215,7 +215,7 @@
           <Property Name="ServirJunto" Type="bit" Nullable="false" />
           <Property Name="MantenerJunto" Type="bit" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
-          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="CódigosPostales">
           <Key>
@@ -293,6 +293,7 @@
           <Property Name="NotaEntrega" Type="int" Nullable="false" />
           <Property Name="Remesa" Type="int" Nullable="false" />
           <Property Name="Oferta" Type="int" Nullable="false" />
+          <Property Name="Clientes" Type="int" Nullable="false" />
         </EntityType>
         <EntityType Name="DescuentosCliente">
           <Key>
@@ -908,6 +909,29 @@
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaModificacion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="PersonasContactoCliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NºCliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NºCliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nombre" Type="char" MaxLength="50" />
+          <Property Name="Cargo" Type="smallint" Nullable="false" />
+          <Property Name="Comentarios" Type="text" />
+          <Property Name="Teléfono" Type="char" MaxLength="29" />
+          <Property Name="Fax" Type="char" MaxLength="29" />
+          <Property Name="CorreoElectrónico" Type="char" MaxLength="50" />
+          <Property Name="EnviarBoletin" Type="bit" Nullable="false" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="Saludo" Type="char" MaxLength="15" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="PersonasContactoProveedor">
           <Key>
@@ -2852,6 +2876,50 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_PersonasContactoCliente_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="PersonasContactoCliente" Type="Self.PersonasContactoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PersonasContactoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºCliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PersonasContactoCliente_Clientes1">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="PersonasContactoCliente" Type="Self.PersonasContactoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PersonasContactoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºCliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PersonasContactoCliente_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="PersonasContactoCliente" Type="Self.PersonasContactoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PersonasContactoCliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_PersonasContactoProveedor_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="PersonasContactoProveedor" Type="Self.PersonasContactoProveedor" Multiplicity="*" />
@@ -3361,6 +3429,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PedidosEspeciales" EntityType="Self.PedidosEspeciales" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="PersonasContactoCliente" EntityType="Self.PersonasContactoCliente" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PersonasContactoProveedor" EntityType="Self.PersonasContactoProveedor" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlanCuentas" EntityType="Self.PlanCuentas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlazosPago" EntityType="Self.PlazosPago" Schema="dbo" store:Type="Tables" />
@@ -3866,6 +3935,18 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_PedidosEspeciales_Proveedores" Association="Self.FK_PedidosEspeciales_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="PedidosEspeciales" EntitySet="PedidosEspeciales" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoCliente_Clientes" Association="Self.FK_PersonasContactoCliente_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="PersonasContactoCliente" EntitySet="PersonasContactoCliente" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoCliente_Clientes1" Association="Self.FK_PersonasContactoCliente_Clientes1">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="PersonasContactoCliente" EntitySet="PersonasContactoCliente" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoCliente_Empresas" Association="Self.FK_PersonasContactoCliente_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="PersonasContactoCliente" EntitySet="PersonasContactoCliente" />
           </AssociationSet>
           <AssociationSet Name="FK_PersonasContactoProveedor_Empresas" Association="Self.FK_PersonasContactoProveedor_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -4696,6 +4777,19 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="Vendedor" EntitySet="Vendedores" />
             <End Role="VendedoresCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGruposProductos" />
           </AssociationSet>
+          <EntitySet Name="PersonasContactoClientes" EntityType="NVModel.PersonaContactoCliente" />
+          <AssociationSet Name="FK_PersonasContactoCliente_Clientes" Association="NVModel.FK_PersonasContactoCliente_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="PersonasContactoCliente" EntitySet="PersonasContactoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoCliente_Clientes1" Association="NVModel.FK_PersonasContactoCliente_Clientes1">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="PersonasContactoCliente" EntitySet="PersonasContactoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PersonasContactoCliente_Empresas" Association="NVModel.FK_PersonasContactoCliente_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="PersonasContactoCliente" EntitySet="PersonasContactoClientes" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -4843,6 +4937,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Empresas" FromRole="Empresa" ToRole="PreExtrProducto" />
           <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_CódigosPostales_Empresas" FromRole="Empresa" ToRole="CódigosPostales" />
           <NavigationProperty Name="CódigosPostales1" Relationship="NVModel.FK_Empresas_CódigosPostales" FromRole="Empresa" ToRole="CódigosPostales" />
+          <NavigationProperty Name="PersonasContactoClientes" Relationship="NVModel.FK_PersonasContactoCliente_Empresas" FromRole="Empresa" ToRole="PersonasContactoCliente" />
           </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -5050,7 +5145,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="ServirJunto" Type="Boolean" Nullable="false" />
           <Property Name="MantenerJunto" Type="Boolean" Nullable="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
-          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="CabPedidoVtas" Relationship="NVModel.FK_CabPedidoVta_Clientes" FromRole="Cliente" ToRole="CabPedidoVta" />
           <NavigationProperty Name="Clientes1" Relationship="NVModel.FK_Clientes_Clientes" FromRole="Cliente" ToRole="Cliente1" />
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_Clientes_Clientes" FromRole="Cliente1" ToRole="Cliente" />
@@ -5076,7 +5171,9 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Clientes" FromRole="Cliente" ToRole="OfertasPermitida" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Clientes" FromRole="Cliente" ToRole="PreExtrProducto" />
           <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_Clientes_CódigosPostales" FromRole="Cliente" ToRole="CódigosPostales" />
-        </EntityType>
+          <NavigationProperty Name="PersonasContactoClientes" Relationship="NVModel.FK_PersonasContactoCliente_Clientes" FromRole="Cliente" ToRole="PersonasContactoCliente" />
+          <NavigationProperty Name="PersonasContactoClientes1" Relationship="NVModel.FK_PersonasContactoCliente_Clientes1" FromRole="Cliente" ToRole="PersonasContactoCliente" />
+          </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="*" />
@@ -5608,6 +5705,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="NotaEntrega" Type="Int32" Nullable="false" />
           <Property Name="Remesa" Type="Int32" Nullable="false" />
           <Property Name="Oferta" Type="Int32" Nullable="false" />
+          <Property Name="Clientes" Type="Int32" Nullable="false" />
         </EntityType>
         <EntityType Name="FormaPago">
           <Key>
@@ -6682,7 +6780,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="FechaMandato" Type="DateTime" Precision="0" />
           <Property Name="Secuencia" Type="String" Nullable="false" MaxLength="4" FixedLength="false" Unicode="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
-          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_CCC_Clientes" FromRole="CCC" ToRole="Cliente" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CCC_Empresas" FromRole="CCC" ToRole="Empresa" />
           <NavigationProperty Name="Clientes" Relationship="NVModel.FK_Clientes_CCC1" FromRole="CCC" ToRole="Cliente" />
@@ -8270,6 +8368,76 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="PersonaContactoCliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NºCliente" />
+            <PropertyRef Name="Contacto" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NºCliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Cargo" Type="Int16" Nullable="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
+          <Property Name="CorreoElectrónico" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="EnviarBoletin" Type="Boolean" Nullable="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="Saludo" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_PersonasContactoCliente_Clientes" FromRole="PersonasContactoCliente" ToRole="Cliente" />
+          <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_PersonasContactoCliente_Clientes1" FromRole="PersonasContactoCliente" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_PersonasContactoCliente_Empresas" FromRole="PersonasContactoCliente" ToRole="Empresa" />
+        </EntityType>
+        <Association Name="FK_PersonasContactoCliente_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.PersonaContactoCliente" Role="PersonasContactoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PersonasContactoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºCliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PersonasContactoCliente_Clientes1">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.PersonaContactoCliente" Role="PersonasContactoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="PersonasContactoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NºCliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PersonasContactoCliente_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.PersonaContactoCliente" Role="PersonasContactoCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PersonasContactoCliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -8682,6 +8850,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySetMapping Name="ContadoresGlobales">
             <EntityTypeMapping TypeName="NVModel.ContadorGlobal">
               <MappingFragment StoreEntitySet="ContadoresGlobales">
+                <ScalarProperty Name="Clientes" ColumnName="Clientes" />
                 <ScalarProperty Name="Oferta" ColumnName="Oferta" />
                 <ScalarProperty Name="Remesa" ColumnName="Remesa" />
                 <ScalarProperty Name="NotaEntrega" ColumnName="NotaEntrega" />
@@ -9556,6 +9725,27 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="CodigoPostal" ColumnName="CodigoPostal" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="PersonasContactoClientes">
+            <EntityTypeMapping TypeName="NVModel.PersonaContactoCliente">
+              <MappingFragment StoreEntitySet="PersonasContactoCliente">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Saludo" ColumnName="Saludo" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="EnviarBoletin" ColumnName="EnviarBoletin" />
+                <ScalarProperty Name="CorreoElectrónico" ColumnName="CorreoElectrónico" />
+                <ScalarProperty Name="Fax" ColumnName="Fax" />
+                <ScalarProperty Name="Teléfono" ColumnName="Teléfono" />
+                <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
+                <ScalarProperty Name="Cargo" ColumnName="Cargo" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="NºCliente" ColumnName="NºCliente" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

@@ -28,5 +28,6 @@ namespace NestoAPI.Models
         public int NotaEntrega { get; set; }
         public int Remesa { get; set; }
         public int Oferta { get; set; }
+        public int Clientes { get; set; }
     }
 }

@@ -65,7 +65,6 @@ namespace NestoAPI.Models.Clientes
 
             }
         }
-
         public string Formateado
         {
             get

@@ -11,6 +11,7 @@ namespace NestoAPI.Models.Clientes
         public string NifFormateado { get; set; }
         public string NombreFormateado { get; set; }
         public bool ExisteElCliente { get; set; }
+        public string NumeroCliente { get; set; }
         public int EstadoCliente { get; set; }
     }
 
@@ -20,6 +21,7 @@ namespace NestoAPI.Models.Clientes
         public string DireccionFormateada { get; set; }
         public string Poblacion { get; set; }
         public string Provincia { get; set; }
+        public string Ruta { get; set; }
         public string TelefonoFormateado { get; set; }
         public string VendedorEstetica { get; set; }
         public string VendedorPeluqueria { get; set; }
