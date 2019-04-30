@@ -224,7 +224,7 @@ namespace NestoAPI.Infraestructure
             };
             cliente.CondPagoClientes.Add(condicionesPago);
 
-            if (clienteCrear.Iban != null)
+            if (clienteCrear.Iban != null && clienteCrear.Iban!="")
             {
                 CCC ccc = new CCC
                 {
