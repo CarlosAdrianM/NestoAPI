@@ -203,7 +203,7 @@ namespace NestoAPI.Controllers
                 },
                 new VendedorDTO
                 {
-                    vendedor = "JM"
+                    vendedor = "TAR"
                 },
                 new VendedorDTO
                 {

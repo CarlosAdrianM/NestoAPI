@@ -239,7 +239,7 @@ namespace NestoAPI.Infraestructure
                 { "Avenida", "Av." },
                 { "Bajada", "Bda." },
                 { "Barrio", "Bº" },
-                { "Bloque", "Blo." },
+                { "Bloque", "Bloq." },
                 { "Callejón", "Cjón." },
                 { "Camino", "Cº" },
                 { "Carretera", "Ctra." },
