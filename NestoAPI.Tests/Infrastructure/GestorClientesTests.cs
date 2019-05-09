@@ -276,5 +276,31 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual("Pl. ARATOCA, S/N", respuesta);
         }
+
+        [TestMethod]
+        public void GestorClientes_LimpiarDireccion_SustituyeAbreviaturaEnMitad()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarDireccion(
+                "alameda, 18 - Urbanización Nuestra Señora del Pilar",
+                "Avenida de la alameda 18 local 8, 28140 Fuente el Saz de Jarama, Madrid, Spain",
+                "28140");
+
+            Assert.AreEqual("Av. ALAMEDA, 18 - Urb.Ntra.Sra.DEL PILAR", respuesta);
+        }
+
+        [TestMethod]
+        public void GestorClientes_LimpiarDireccion_SustituyeAbreviaturaAlFinal()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarDireccion(
+                "alameda, 18 - duplicado",
+                "Avenida de la alameda 18 local 8, 28140 Fuente el Saz de Jarama, Madrid, Spain",
+                "28140");
+
+            Assert.AreEqual("Av. ALAMEDA, 18 - dup.", respuesta);
+        }
     }
 }

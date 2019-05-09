@@ -216,29 +216,60 @@ namespace NestoAPI.Infraestructure
             {
                 direccion = "Pl. " + direccion.Substring(6);
             }
-            /*
-            if (direccion.StartsWith("C /"))
+            
+            Dictionary<string, string> abreviaturas = CargarAbreviaturas();
+            foreach (var abr in abreviaturas)
             {
-                direccion = "C/" + direccion.Substring(3);
+                string buscar = abr.Key.ToUpper();
+                direccion = direccion.Replace(buscar + " ", abr.Value);
+                if (direccion.EndsWith(buscar))
+                {
+                    direccion = direccion.Substring(0, direccion.Length - buscar.Length) + abr.Value;
+                }
             }
-            if (direccion.StartsWith("C/") && !direccion.StartsWith("C/ "))
-            {
-                direccion = "C/ " + direccion.Substring(2);
-            }
-
-            // NUMERO
-            var posicionComa = direccion.LastIndexOf(",");
-            if (posicionComa != -1 && direccion.Substring(posicionComa+1, 1) != " ")
-            {
-                direccion = direccion.Substring(0, posicionComa+1) + " " + direccion.Substring(posicionComa + 1);
-            }
-            var posicionNumero = direccion.IndexOfAny("0123456789".ToCharArray());
-            if (direccion.Substring(posicionNumero-1,1) == " " && direccion.Substring(posicionNumero - 2, 1) != ",")
-            {
-                direccion = direccion.Substring(0, posicionNumero - 1) + ", " + direccion.Substring(posicionNumero);
-            }
-            */
+            
             return direccion;
+        }
+
+        private static Dictionary<string, string> CargarAbreviaturas()
+        {
+            return new Dictionary<string, string>
+            {
+                { "Arroyo", "Arr." },
+                { "Avenida", "Av." },
+                { "Bajada", "Bda." },
+                { "Barrio", "Bº" },
+                { "Bloque", "Blo." },
+                { "Callejón", "Cjón." },
+                { "Camino", "Cº" },
+                { "Carretera", "Ctra." },
+                { "Centro Comercial", "C.Cial." },
+                { "Colonia", "Col." },
+                { "Costanilla", "Cost." },
+                { "Cuesta", "Cta." },
+                { "Doctor", "Dr." },
+                { "Duplicado", "dup." },
+                { "Escalinta", "Escta." },
+                { "Galería", "Gal." },
+                { "General", "Gral." },
+                { "Glorieta", "Gta." },
+                { "Nuestra", "Ntra." },
+                { "Pasadizo", "Pzo." },
+                { "Pasaje", "Pje." },
+                { "Paseo", "Pº" },
+                { "Plaza", "Pl." },
+                { "Poblado", "Pobl." },
+                { "Postigo", "Pgo." },
+                { "Provincia", "Pv." },
+                { "Ronda", "Rda." },
+                { "Santa", "Sta." },
+                { "Santo", "Sto." },
+                { "Senda", "Sa." },
+                { "Señora", "Sra." },
+                { "Subida", "Sda." },
+                { "Travesía", "Trv." },
+                { "Urbanización", "Urb." }
+            };
         }
 
         private string ProcesarDireccion(string direccion, RespuestaDatosGeneralesClientes respuesta )
