@@ -302,5 +302,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual("Av. ALAMEDA, 18 - dup.", respuesta);
         }
+
+        // Tel -> 925 337 754    618538006 -> 925337754/618538006
     }
 }

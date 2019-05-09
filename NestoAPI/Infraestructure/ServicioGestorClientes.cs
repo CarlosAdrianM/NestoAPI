@@ -131,9 +131,6 @@ namespace NestoAPI.Infraestructure
 
         }
 
-
-
-
         private static HttpWebRequest CreateWebRequest()
         {
             string pathApp = AppDomain.CurrentDomain.BaseDirectory;
@@ -195,6 +192,19 @@ namespace NestoAPI.Infraestructure
                 Vendedor = clienteCrear.Estetica ? clienteCrear.VendedorEstetica : Constantes.Vendedores.VENDEDOR_GENERAL,
                 Usuario = clienteCrear.Usuario
             };
+
+            if (clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != clienteCrear.VendedorEstetica)
+            {
+                cliente.VendedoresClienteGrupoProductoes.Add(new VendedorClienteGrupoProducto
+                {
+                    Empresa = clienteCrear.Empresa,
+                    Cliente = clienteCrear.Cliente,
+                    Contacto = contacto,
+                    Vendedor = clienteCrear.Peluqueria ? clienteCrear.VendedorPeluqueria : Constantes.Vendedores.VENDEDOR_GENERAL,
+                    GrupoProducto = Constantes.Productos.GRUPO_PELUQUERIA,
+                    Usuario = clienteCrear.Usuario
+                });
+            }
             
             int i = 1;
             foreach (PersonaContactoDTO personaCrear in clienteCrear.PersonasContacto)

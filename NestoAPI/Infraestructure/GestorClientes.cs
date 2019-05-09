@@ -48,8 +48,6 @@ namespace NestoAPI.Infraestructure
             return respuesta;
         }
 
-        
-
         public async Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre)
         {
             if (String.IsNullOrWhiteSpace(nombre))
