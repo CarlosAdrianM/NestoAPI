@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.ApplicationInsights;
 using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure
@@ -9,9 +10,10 @@ namespace NestoAPI.Infraestructure
     {
         public async Task<RespuestaAgencia> SePuedeServirPedido(PedidoVentaDTO pedido, IServicioAgencias servicio, IGestorStocks gestorStocks)
         {
-            string[] codigosPostalesPermitidos = { "28004", "28005", "28008", "28012", "28013", "28014", "28015" };
+            //string[] codigosPostalesPermitidos = { "28004", "28005", "28008", "28012", "28013", "28014", "28015" };
             string codigoPostal = servicio.LeerCodigoPostal(pedido);
-            if (!codigosPostalesPermitidos.Contains(codigoPostal))
+            //if (!codigosPostalesPermitidos.Contains(codigoPostal))
+            if (!codigoPostal.StartsWith("280"))
             {
                 return null;
             }
@@ -50,6 +52,10 @@ namespace NestoAPI.Infraestructure
             // No  hay motivo por el que no pueda salir, así que calculamos todo
             // TO DO: implementar resultado
             RespuestaAgencia respuesta = await servicio.LeerDireccionPedidoGoogleMaps(pedido);
+
+            TelemetryClient telemetry = new TelemetryClient();
+            telemetry.Context.User.Id = pedido.usuario;
+            telemetry.TrackEvent("OfrecidoGlovo");
 
             return new RespuestaAgencia {
                 DireccionFormateada = respuesta.DireccionFormateada,
