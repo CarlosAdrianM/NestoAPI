@@ -177,7 +177,7 @@ namespace NestoAPI.Infraestructure
                 ContactoBonificacion = contacto,
                 ContactoCobro = contacto,
                 ContactoDefecto = contacto,
-                DiasEnServir = Constantes.Clientes.DIAS_EN_SERVIR_POR_DEFECT0,
+                DiasEnServir = Constantes.Clientes.DIAS_EN_SERVIR_POR_DEFECTO,
                 Dirección = clienteCrear.Direccion,
                 Estado = clienteCrear.Estado,
                 Grupo = Constantes.Clientes.GRUPO_POR_DEFECTO,

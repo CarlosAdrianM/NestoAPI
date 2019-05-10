@@ -303,6 +303,14 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("Av. ALAMEDA, 18 - dup.", respuesta);
         }
 
-        // Tel -> 925 337 754    618538006 -> 925337754/618538006
+        [TestMethod]
+        public void GestorClientes_LimpiarTelefono_SeQuitanEspaciosEnBlanco()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarTelefono("925 337 754    618538006 AA+///12345-678. 9");
+
+            Assert.AreEqual("925337754/618538006/123456789", respuesta);
+        }
     }
 }

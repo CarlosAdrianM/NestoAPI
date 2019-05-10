@@ -43,7 +43,7 @@ namespace NestoAPI.Infraestructure
             RespuestaAgencia respuestaAgencia = await servicioAgencias.LeerDireccionGoogleMaps(direccionProcesar);
 
             respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
-            respuesta.TelefonoFormateado = telefono;
+            respuesta.TelefonoFormateado = LimpiarTelefono(telefono);
 
             return respuesta;
         }
@@ -314,6 +314,29 @@ namespace NestoAPI.Infraestructure
             }
 
             return respuesta;
+        }
+
+        public string LimpiarTelefono(string telefono)
+        {
+            string telefonoFormateado = "";
+            foreach(var ch in telefono)
+            {
+                if (Char.IsDigit(ch))
+                {
+                    telefonoFormateado += ch;
+                }
+            }
+
+            if (telefonoFormateado.Length > 9)
+            {
+                telefonoFormateado = telefonoFormateado.Substring(0, 9) + "/" + telefonoFormateado.Substring(9);
+            }
+            if (telefonoFormateado.Length > 19)
+            {
+                telefonoFormateado = telefonoFormateado.Substring(0, 19) + "/" + telefonoFormateado.Substring(19);
+            }
+
+            return telefonoFormateado;
         }
     }
 }

@@ -26,7 +26,7 @@
                 public const int EN_PODER_DEL_CLIENTE = 2;
             }
             public const short CARGO_POR_DEFECTO = 14;
-            public const string DIAS_EN_SERVIR_POR_DEFECT0 = "11111";
+            public const string DIAS_EN_SERVIR_POR_DEFECTO = "11111";
             public const string GRUPO_POR_DEFECTO = "0";
             public const string SECUENCIA_POR_DEFECTO = "FRST";
         }
