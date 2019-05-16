@@ -7,6 +7,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
 using NestoAPI.Models;
@@ -41,8 +42,8 @@ namespace NestoAPI.Infraestructure
             string respuesta = cliente.Dirección + "+";
             respuesta += cliente.CodPostal + "+";
             respuesta += cliente.Población + "+";
-            respuesta += cliente.Provincia + "+";
-            respuesta += "España";
+            respuesta += cliente.Provincia;
+            respuesta = Regex.Replace(respuesta, @"\s+", " ");
             respuesta = respuesta.Replace(" ", "+");
             return respuesta;
         }

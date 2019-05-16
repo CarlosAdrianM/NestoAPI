@@ -197,7 +197,7 @@ namespace NestoAPI.Infraestructure
             {
                 cliente.VendedoresClienteGrupoProductoes.Add(new VendedorClienteGrupoProducto
                 {
-                    Empresa = clienteCrear.Empresa,
+                    Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
                     Cliente = clienteCrear.Cliente,
                     Contacto = contacto,
                     Vendedor = clienteCrear.Peluqueria ? clienteCrear.VendedorPeluqueria : Constantes.Vendedores.VENDEDOR_GENERAL,

@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
 using NestoAPI.Models;
@@ -274,12 +275,12 @@ namespace NestoAPI.Infraestructure
         {
             string direccionRespuesta = direccion.Replace("  ", " ") + "+";
             direccionRespuesta += respuesta.CodigoPostal + "+";
-            direccionRespuesta += respuesta.Poblacion + "+";
+            direccionRespuesta += respuesta.Poblacion;
             if (respuesta.Poblacion?.ToUpper().Trim() != respuesta.Provincia?.ToUpper().Trim())
             {
-                direccionRespuesta += respuesta.Provincia + "+";
+                direccionRespuesta += "+" +respuesta.Provincia;
             }
-            direccionRespuesta += "España";
+            direccionRespuesta = Regex.Replace(direccionRespuesta, @"\s+", " ");
             direccionRespuesta = direccionRespuesta.Replace(" ", "+");
             return direccionRespuesta;
         }
