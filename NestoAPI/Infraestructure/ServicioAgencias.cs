@@ -10,6 +10,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
+using Microsoft.ApplicationInsights;
 using NestoAPI.Models;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -34,13 +35,13 @@ namespace NestoAPI.Infraestructure
             var clienteDireccion = db.Clientes.Single(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
             string direccion = ProcesarDireccion(clienteDireccion);
 
-            return await LeerDireccionGoogleMaps(direccion);
+            return await LeerDireccionGoogleMaps(direccion, clienteDireccion.CodPostal);
         }
 
         private string ProcesarDireccion(Cliente cliente)
         {
             string respuesta = cliente.Dirección + "+";
-            respuesta += cliente.CodPostal + "+";
+            //respuesta += cliente.CodPostal + "+";
             respuesta += cliente.Población + "+";
             respuesta += cliente.Provincia;
             respuesta = Regex.Replace(respuesta, @"\s+", " ");
@@ -136,7 +137,7 @@ namespace NestoAPI.Infraestructure
             return DateTime.Now;
         }
 
-        public async Task<RespuestaAgencia> LeerDireccionGoogleMaps(string direccion)
+        public async Task<RespuestaAgencia> LeerDireccionGoogleMaps(string direccion, string codigoPostal)
         {
             // Create a New HttpClient object and dispose it when done, so the app doesn't leak resources
             using (HttpClient client = new HttpClient())
@@ -144,8 +145,9 @@ namespace NestoAPI.Infraestructure
                 // Call asynchronous network methods in a try/catch block to handle exceptions
                 try
                 {
-                    string urlGoogleMaps = "https://maps.googleapis.com/maps/api/geocode/json?address=";
+                    string urlGoogleMaps = "https://maps.googleapis.com/maps/api/geocode/json?region=ES&language=es&address=";
                     urlGoogleMaps += direccion;
+                    urlGoogleMaps += "&components=country:ES|postal_code="+codigoPostal;
                     string clave = ConfigurationManager.AppSettings["GoogleMapsApiKey"];
                     urlGoogleMaps += "&key=" + clave;
                     //HttpResponseMessage response = await client.GetAsync(urlGoogleMaps);
@@ -154,6 +156,11 @@ namespace NestoAPI.Infraestructure
                     // Above three lines can be replaced with new helper method below
                     string responseBody = await client.GetStringAsync(urlGoogleMaps);
                     JObject respuestaJson = JsonConvert.DeserializeObject<JObject>(responseBody);
+                    if (respuestaJson["results"].Count()>1)
+                    {
+                        TelemetryClient telemetry = new TelemetryClient();
+                        telemetry.TrackEvent("VariosResultadosGoogleMaps");
+                    }
                     string direccionFormateada = respuestaJson["results"][0]["formatted_address"].ToString();
                     double longitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lng"].ToString());
                     double latitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lat"].ToString());

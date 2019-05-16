@@ -41,7 +41,7 @@ namespace NestoAPI.Infraestructure
             RespuestaDatosGeneralesClientes respuesta = await servicio.CogerDatosCodigoPostal(codigoPostal);
 
             string direccionProcesar = ProcesarDireccion(direccion, respuesta);
-            RespuestaAgencia respuestaAgencia = await servicioAgencias.LeerDireccionGoogleMaps(direccionProcesar);
+            RespuestaAgencia respuestaAgencia = await servicioAgencias.LeerDireccionGoogleMaps(direccionProcesar, codigoPostal);
 
             respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
             respuesta.TelefonoFormateado = LimpiarTelefono(telefono);
@@ -274,7 +274,7 @@ namespace NestoAPI.Infraestructure
         private string ProcesarDireccion(string direccion, RespuestaDatosGeneralesClientes respuesta )
         {
             string direccionRespuesta = direccion.Replace("  ", " ") + "+";
-            direccionRespuesta += respuesta.CodigoPostal + "+";
+            //direccionRespuesta += respuesta.CodigoPostal + "+";
             direccionRespuesta += respuesta.Poblacion;
             if (respuesta.Poblacion?.ToUpper().Trim() != respuesta.Provincia?.ToUpper().Trim())
             {
