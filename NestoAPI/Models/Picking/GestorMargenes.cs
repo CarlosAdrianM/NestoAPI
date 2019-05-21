@@ -17,6 +17,7 @@ namespace NestoAPI.Models.Picking
         }
 
         private const decimal MARGEN_MINIMO = .35M;
+        private const decimal MARGEN_MAXIMO = .8M;
 
         public List<LineaMargen> lineasMargen { get; set; }
         private NVEntities db = new NVEntities();
@@ -70,13 +71,18 @@ namespace NestoAPI.Models.Picking
             s.AppendLine("<tbody align = \"right\">");
             foreach (LineaMargen linea in lineas)
             {
-                if (linea.Margen > MARGEN_MINIMO)
-                {
-                    s.Append("<tr>");
-                } else
+                if (linea.Margen < MARGEN_MINIMO)
                 {
                     s.Append("<tr bgcolor=\"#FF5733\">");
+                } else if (linea.Margen > MARGEN_MAXIMO)
+                {
+                    s.Append("<tr bgcolor=\"#008000\">");
                 }
+                else 
+                {
+                    s.Append("<tr>");
+                }
+
                 s.Append("<td>" + linea.Empresa + "</td>");
                 s.Append("<td>" + linea.Pedido.ToString() + "</td>");
                 s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
