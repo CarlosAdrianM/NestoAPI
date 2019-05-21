@@ -182,7 +182,7 @@ namespace NestoAPI.Infraestructure
                 Estado = clienteCrear.Estado,
                 Grupo = Constantes.Clientes.GRUPO_POR_DEFECTO,
                 IVA = Constantes.Empresas.IVA_POR_DEFECTO,
-                Nombre = clienteCrear.Nombre,
+                Nombre = clienteCrear.Nombre?.ToUpper(),
                 PeriodoFacturación = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 Población = clienteCrear.Poblacion,
                 Provincia = clienteCrear.Provincia,
@@ -207,7 +207,7 @@ namespace NestoAPI.Infraestructure
             }
             
             int i = 1;
-            foreach (PersonaContactoDTO personaCrear in clienteCrear.PersonasContacto)
+            foreach (PersonaContactoDTO personaCrear in clienteCrear.PersonasContacto.Where(p=> !string.IsNullOrEmpty(p.Nombre) ||  !string.IsNullOrEmpty(p.CorreoElectronico))
             {
                 PersonaContactoCliente persona = new PersonaContactoCliente
                 {
