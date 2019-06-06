@@ -33,7 +33,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Número = "AA62",
                 PVP = 31,
                 Grupo = "COS",
-                SubGrupo = "001"
+                SubGrupo = "001",
+                Familia = "DeMarca"
             });
             A.CallTo(() => servicio.BuscarProducto("OF_CLI1")).Returns(new Producto
             {
@@ -640,6 +641,48 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsTrue(respuesta.ValidacionSuperada);
         }
+
+
+        [TestMethod]
+        public void GestorPrecios_EsOfertaPermitida_SiHayUnPrecioFijoAutorizadoNoAfectaAProductosDelMismoPrecio()
+        {
+            Producto producto = GestorPrecios.servicio.BuscarProducto("AA62");
+
+            A.CallTo(() => GestorPrecios.servicio.BuscarProducto("MISMO_PRECIO")).Returns(new Producto
+            {
+                Número = "MISMO_PRECIO",
+                PVP = 31,
+                Grupo = "APA",
+                SubGrupo = "APA",
+                Familia = "DeMarca"
+            });
+
+            Producto mismoPrecio = GestorPrecios.servicio.BuscarProducto("MISMO_PRECIO");
+
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "AA62";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 1;
+            linea.precio = 28;
+            linea.baseImponible = 28;
+            pedido.LineasPedido.Add(linea);
+
+            LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
+            linea2.producto = "MISMO_PRECIO";
+            linea2.aplicarDescuento = true;
+            linea2.cantidad = 1;
+            linea2.precio = 31;
+            linea2.baseImponible = 31;
+            pedido.LineasPedido.Add(linea2);
+
+            RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(mismoPrecio, pedido);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+        }
+
 
         [TestMethod]
         public void GestorPrecios_EsOfertaPermitida_SiTieneOfertaTieneQueIrAlPrecioDeFicha()

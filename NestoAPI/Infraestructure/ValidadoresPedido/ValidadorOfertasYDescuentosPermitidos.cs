@@ -273,6 +273,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
 
+            if (lineasSinPrecio.Count() == 0)
+            {
+                return new PrecioDescuentoProducto
+                {
+                    cantidadOferta = (short)lineasSinPrecio.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad),
+                    cantidad = (short)lineasConPrecio.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad),
+                    producto = producto,
+                    precioCalculado = (decimal)lineasConPrecio.Where(l=> l.producto == numeroProducto).Select(l => l.precio).DefaultIfEmpty().Average(),
+                    descuentoCalculado = lineasConPrecio.Where(l => l.producto == numeroProducto).Select(l => l.descuento + l.descuentoProducto).DefaultIfEmpty().Average()
+                };
+            }
 
             return new PrecioDescuentoProducto
             {
@@ -282,6 +293,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 precioCalculado = (decimal)lineasConPrecio.Select(l => l.precio).DefaultIfEmpty().Average(),
                 descuentoCalculado = lineasConPrecio.Select(l => l.descuento + l.descuentoProducto).DefaultIfEmpty().Average()
             };
+
         }
 
         private static List<string> ProductosMismoPrecio(string numeroProducto, PedidoVentaDTO pedido)
