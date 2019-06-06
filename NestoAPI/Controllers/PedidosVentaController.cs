@@ -530,7 +530,8 @@ namespace NestoAPI.Controllers
 
                     if (aceptarPresupuesto)
                     {
-                        linea.estado = Constantes.EstadosLineaVenta.EN_CURSO;
+                        lineaPedido = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.id);
+                        lineaPedido.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
                     }
                 }
             }

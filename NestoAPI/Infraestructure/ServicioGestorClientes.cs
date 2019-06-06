@@ -207,7 +207,7 @@ namespace NestoAPI.Infraestructure
             }
             
             int i = 1;
-            foreach (PersonaContactoDTO personaCrear in clienteCrear.PersonasContacto.Where(p=> !string.IsNullOrEmpty(p.Nombre) ||  !string.IsNullOrEmpty(p.CorreoElectronico))
+            foreach (PersonaContactoDTO personaCrear in clienteCrear.PersonasContacto.Where(p=> !string.IsNullOrEmpty(p.Nombre) ||  !string.IsNullOrEmpty(p.CorreoElectronico)))
             {
                 PersonaContactoCliente persona = new PersonaContactoCliente
                 {

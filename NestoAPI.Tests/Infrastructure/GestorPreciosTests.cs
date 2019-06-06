@@ -411,6 +411,89 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorPrecios_EsOfertaPermitida_SiHayOfertaParaLaFamiliaEsValidaParaProductosDelMismoPrecio()
+        {
+            Producto producto = GestorPrecios.servicio.BuscarProducto("OF_FAMILIA");
+
+            A.CallTo(() => GestorPrecios.servicio.BuscarProducto("MISMO_PRECIO")).Returns(new Producto
+            {
+                Número = "MISMO_PRECIO",
+                PVP = 130,
+                Grupo = "APA",
+                SubGrupo = "APA",
+                Familia = "DeMarca"
+            });
+            A.CallTo(() => GestorPrecios.servicio.BuscarOfertasPermitidas("MISMO_PRECIO")).Returns(new List<OfertaPermitida>
+            {
+                new OfertaPermitida
+                {
+                    CantidadConPrecio = 6,
+                    CantidadRegalo = 1,
+                    Familia = "DeMarca"
+                }
+            });
+            Producto mismoPrecio = GestorPrecios.servicio.BuscarProducto("MISMO_PRECIO");
+
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "OF_FAMILIA";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 6;
+            linea.precio = 130;
+            linea.baseImponible = 960;
+            pedido.LineasPedido.Add(linea);
+
+            LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
+            linea2.producto = "MISMO_PRECIO";
+            linea2.aplicarDescuento = true;
+            linea2.cantidad = 1;
+            linea2.precio = 0;
+            linea2.baseImponible = 0;
+            pedido.LineasPedido.Add(linea2);
+
+            RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(mismoPrecio, pedido);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_EsOfertaPermitida_SiHayOfertaParaLaFamiliaNoEsValidaParaProductosDeDistintoPrecio()
+        {
+            Producto producto = GestorPrecios.servicio.BuscarProducto("OF_FAMILIA");
+
+            A.CallTo(() => GestorPrecios.servicio.BuscarProducto("MISMO_PRECIO")).Returns(new Producto
+            {
+                Número = "MISMO_PRECIO",
+                PVP = 130,
+                Grupo = "APA",
+                SubGrupo = "APA",
+                Familia = "DeMarca"
+            });
+            Producto mismoPrecio = GestorPrecios.servicio.BuscarProducto("MISMO_PRECIO");
+
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "OF_FAMILIA";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 6;
+            linea.precio = 130.01M ;
+            linea.baseImponible = 960;
+            pedido.LineasPedido.Add(linea);
+
+            LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
+            linea2.producto = "MISMO_PRECIO";
+            linea2.aplicarDescuento = true;
+            linea2.cantidad = 1;
+            linea2.precio = 0;
+            linea2.baseImponible = 0;
+            pedido.LineasPedido.Add(linea2);
+
+            RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(mismoPrecio, pedido);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+        }
+
+        [TestMethod]
         public void GestorPrecios_EsOfertaPermitida_SiHayOfertaParaLaFamiliaYParaElProductoLaDelProductoPrevalece()
         {
             Producto producto = GestorPrecios.servicio.BuscarProducto("FAMYPROD");
@@ -787,7 +870,7 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Número = "AZUL",
                 Nombre = "ESMALTE DE MARCA MUY BUENA AZUL",
-                PVP = 2,
+                PVP = 2.1M,
                 Grupo = "COS",
                 SubGrupo = "COS",
                 Familia = "DeMarca"
@@ -845,12 +928,21 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Número = "AZUL",
                 Nombre = "ESMALTE DE MARCA MUY BUENA AZUL",
-                PVP = 2,
+                PVP = 1.9M,
                 Grupo = "COS",
                 SubGrupo = "COS",
                 Familia = "DeMarca"
             });
-            A.CallTo(() => GestorPrecios.servicio.BuscarOfertasPermitidas("AZUL")).Returns(new List<OfertaPermitida>
+            A.CallTo(() => GestorPrecios.servicio.BuscarOfertasPermitidas("ROJO")).Returns(new List<OfertaPermitida>
+            {
+                new OfertaPermitida
+                {
+                    Familia = "DeMarca",
+                    CantidadConPrecio = 2,
+                    CantidadRegalo = 1,
+                    FiltroProducto = "ESMALTE"
+                }
+            }); A.CallTo(() => GestorPrecios.servicio.BuscarOfertasPermitidas("AZUL")).Returns(new List<OfertaPermitida>
             {
                 new OfertaPermitida
                 {
@@ -860,6 +952,7 @@ namespace NestoAPI.Tests.Infrastructure
                     FiltroProducto = "ESMALTE"
                 }
             });
+
             Producto producto = GestorPrecios.servicio.BuscarProducto("AZUL");
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
@@ -903,7 +996,7 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Número = "AZUL",
                 Nombre = "ESMALTE DE MARCA MUY BUENA AZUL",
-                PVP = 2,
+                PVP = 1,
                 Grupo = "COS",
                 SubGrupo = "COS",
                 Familia = "DeMarca"
@@ -2392,5 +2485,32 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual(.1M, oferta.descuentoCalculado);
         }
+
+        [TestMethod]
+        public void GestorPrecios_MontarOfertaProducto_SiHayUnaLineaDelMismoPrecioLaPoneEnLaOferta()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "FAMYPROD";
+            linea.aplicarDescuento = false;
+            linea.cantidad = 2;
+            linea.precio = 10;
+            linea.baseImponible = 20;
+            pedido.LineasPedido.Add(linea);
+
+            LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
+            linea2.producto = "REGALO";
+            linea2.aplicarDescuento = false;
+            linea2.cantidad = 1;
+            linea2.precio = 0;
+            linea2.baseImponible = 0;
+            pedido.LineasPedido.Add(linea2);
+
+            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.producto, pedido);
+
+            Assert.AreEqual(1, precioDescuentoProducto.cantidadOferta);
+            Assert.AreEqual(2, precioDescuentoProducto.cantidad);
+        }
+
     }
 }

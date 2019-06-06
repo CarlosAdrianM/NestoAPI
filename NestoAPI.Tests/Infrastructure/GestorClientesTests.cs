@@ -22,7 +22,7 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 DireccionFormateada = "Calle de la Reina, 5, 28110, Madrid"
             };
-            A.CallTo(() => servicioAgencia.LeerDireccionGoogleMaps(A<string>.Ignored)).Returns(respuestaAgencia);
+            A.CallTo(() => servicioAgencia.LeerDireccionGoogleMaps(A<string>.Ignored, A<string>.Ignored)).Returns(respuestaAgencia);
         }
 
 

@@ -97,7 +97,7 @@ namespace NestoAPI.Controllers
                                       web = c.Web.Trim()
                                   };
 
-            return clientes;
+            return clientes.OrderByDescending(o => o.cliente.Equals(filtro));
         }
 
         // GET: api/Clientes
@@ -150,7 +150,9 @@ namespace NestoAPI.Controllers
                     telefono = clienteEncontrado.Teléfono.Trim(),
                     vendedor = clienteEncontrado.Vendedor.Trim(),
                     web = clienteEncontrado.Web.Trim()
-                }).ToList();
+                }).
+                OrderByDescending(o => o.cliente.Equals(filtro))
+                .ToList();
 
             return clientes.AsQueryable();
         }

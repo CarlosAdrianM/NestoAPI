@@ -261,8 +261,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 numeroProducto = numeroProducto.Trim();
             }
-
-            IEnumerable<LineaPedidoVentaDTO> lineasProducto = pedido.LineasPedido.Where(p => p.producto == numeroProducto);
+            List<string> productosMismoPrecio = ProductosMismoPrecio(numeroProducto, pedido);
+            IEnumerable<LineaPedidoVentaDTO> lineasProducto = pedido.LineasPedido.Where(p => productosMismoPrecio.Contains(p.producto));
             if (lineasProducto == null || lineasProducto.Count() == 0)
             {
                 return null;
@@ -284,6 +284,19 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             };
         }
 
-
+        private static List<string> ProductosMismoPrecio(string numeroProducto, PedidoVentaDTO pedido)
+        {
+            Producto productoBuscado = GestorPrecios.servicio.BuscarProducto(numeroProducto);
+            List<string> productosMismoPrecio = new List<string>();
+            foreach (string productoLinea in pedido.LineasPedido.Select(l=>l.producto).Distinct())
+            {
+                Producto productoEncontrado = GestorPrecios.servicio.BuscarProducto(productoLinea);
+                if (productoEncontrado.PVP == productoBuscado.PVP && productoEncontrado.Familia == productoBuscado.Familia)
+                {
+                    productosMismoPrecio.Add(productoLinea);
+                }
+            }
+            return productosMismoPrecio;
+        }
     }
 }
