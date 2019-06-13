@@ -69,6 +69,7 @@ namespace NestoAPI.Infraestructure
             if(clienteEncontrado != null && clienteEncontrado.cliente != null)
             {
                 respuesta.ExisteElCliente = true;
+                respuesta.NumeroCliente = clienteEncontrado.cliente;
                 respuesta.NombreFormateado = clienteEncontrado.nombre;
                 respuesta.NifFormateado = clienteEncontrado.cifNif;
                 respuesta.NifValidado = true;
