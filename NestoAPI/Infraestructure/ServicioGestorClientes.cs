@@ -23,10 +23,10 @@ namespace NestoAPI.Infraestructure
             {
                 ClienteDTO clienteDTO = new ClienteDTO
                 {
-                    empresa = cliente.Empresa,
-                    cliente = cliente.Nº_Cliente,
-                    contacto = cliente.Contacto,
-                    cifNif = cliente.CIF_NIF,
+                    empresa = cliente.Empresa?.Trim(),
+                    cliente = cliente.Nº_Cliente?.Trim(),
+                    contacto = cliente.Contacto?.Trim(),
+                    cifNif = cliente.CIF_NIF?.Trim(),
                     nombre = cliente.Nombre?.Trim()
                 };
                 return clienteDTO;
