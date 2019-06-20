@@ -177,6 +177,10 @@ namespace NestoAPI.Infraestructure
             {
                 direccion = "C/ " + direccion.Substring(9);
             }
+            if (direccion.StartsWith("C/ DEL "))
+            {
+                direccion = "C/ " + direccion.Substring(7);
+            }
 
             // Avenida
             if (direccion.StartsWith("AVENIDA DE LA "))

@@ -402,7 +402,7 @@ namespace NestoAPI.Controllers
                     continue;
                 }
 
-                if (lineaEncontrada == null)
+                if (lineaEncontrada == null || (lineaEncontrada.cantidad == 0 && linea.Cantidad != 0))
                 {
                     if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
                     {
@@ -916,6 +916,10 @@ namespace NestoAPI.Controllers
             {
                 
                 case Constantes.TiposLineaVenta.PRODUCTO:
+                    if (linea.cantidad == 0)
+                    {
+                        errorPersonalizado("No se pueden crear líneas de producto con cantidad 0");
+                    }
                     Producto producto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == linea.producto);
                     precioTarifa = (decimal)producto.PVP;
                     coste = (decimal)producto.PrecioMedio;

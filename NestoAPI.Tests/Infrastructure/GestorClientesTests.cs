@@ -304,6 +304,19 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorClientes_LimpiarDireccion_QuitaElDelAntesDeLaCalle()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarDireccion(
+                "capitan fco. sanchez 1",
+                "Calle del Capitán Francisco Sánchez, 1, 28100 Alcobendas, Madrid, España",
+                "28100");
+
+            Assert.AreEqual("C/ CAPITÁN FRANCISCO SÁNCHEZ, 1", respuesta);
+        }
+
+        [TestMethod]
         public void GestorClientes_LimpiarTelefono_SeQuitanEspaciosEnBlanco()
         {
             GestorClientes gestor = new GestorClientes();
