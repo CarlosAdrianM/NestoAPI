@@ -300,7 +300,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         {
             Producto productoBuscado = GestorPrecios.servicio.BuscarProducto(numeroProducto);
             List<string> productosMismoPrecio = new List<string>();
-            foreach (string productoLinea in pedido.LineasPedido.Select(l=>l.producto).Distinct())
+            foreach (string productoLinea in pedido.LineasPedido.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO).Select(l=>l.producto).Distinct())
             {
                 Producto productoEncontrado = GestorPrecios.servicio.BuscarProducto(productoLinea);
                 if (productoEncontrado.PVP == productoBuscado.PVP && productoEncontrado.Familia == productoBuscado.Familia)

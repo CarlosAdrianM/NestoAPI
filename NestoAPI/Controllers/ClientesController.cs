@@ -392,7 +392,7 @@ namespace NestoAPI.Controllers
                     await db.SaveChangesAsync();
                 }
             }
-            catch (DbUpdateException)
+            catch (DbUpdateException ex)
             {
                 if (ClienteExists(cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto))
                 {
@@ -400,7 +400,7 @@ namespace NestoAPI.Controllers
                 }
                 else
                 {
-                    throw;
+                    throw ex;
                 }
             } catch (Exception ex)
             {
