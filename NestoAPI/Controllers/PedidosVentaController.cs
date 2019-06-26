@@ -705,44 +705,9 @@ namespace NestoAPI.Controllers
                     lineaPortes.baseImponible = linPedido.Base_Imponible;
                     lineaPortes.total = linPedido.Total;
                     //pedido.LineasPedido.Add(lineaPortes);
+                    pedido.LineasPedido.Add(lineaPortes);
                     lineasPedidoInsertar.Add(linPedido);
                 }
-
-                Cliente cliente = db.Clientes.SingleOrDefault(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
-                EnviosAgencia envio = new EnviosAgencia
-                {
-                    Agencia = Constantes.Agencias.AGENCIA_GLOVO,
-                    Bultos = 1,
-                    Atencion = cliente.Nombre,
-                    Cliente = pedido.cliente,
-                    CodPostal = cliente.CodPostal,
-                    Contacto = pedido.contacto,
-                    Direccion = cliente.Dirección,
-                    Nombre = cliente.Nombre,
-                    Empresa = pedido.empresa,
-                    Estado = Constantes.Agencias.ESTADO_EN_CURSO,
-                    Fecha = (DateTime)pedido.fecha,
-                    FechaEntrega = pedido.fecha,
-                    Horario = 0,
-                    Pais = 34,
-                    Poblacion = cliente.Población,
-                    Provincia = cliente.Provincia,
-                    Observaciones = pedido.comentarios,
-                    Servicio = 0,
-                    Usuario = pedido.usuario,
-                    Vendedor = pedido.vendedor
-                };
-
-                EnvioAgenciaCoordenada coordenada = new EnvioAgenciaCoordenada
-                {
-                    DireccionFormateada = respuestaMaps.DireccionFormateada,
-                    Latitud = respuestaMaps.Latitud,
-                    Longitud = respuestaMaps.Longitud,
-                    Usuario = pedido.usuario
-                };
-
-                envio.EnviosAgenciaCoordenada = coordenada;
-                //cabecera.EnviosAgencias.Add(envio);
             }
 
             db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
