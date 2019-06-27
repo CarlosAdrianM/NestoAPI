@@ -158,12 +158,12 @@ namespace NestoAPI.Infraestructure
 
         public async Task<Cliente> PrepararCliente(ClienteCrear clienteCrear)
         {
-            if (clienteCrear.EsContacto)
+            if (clienteCrear.EsContacto && Environment.MachineName != "VSTUDIO")
             {
                 throw new NotImplementedException("No se pueden crear contactos aún");
             }
 
-            string contacto = "0"; //calcular
+            string contacto = CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
             
             Cliente cliente = new Cliente
             {
@@ -258,6 +258,21 @@ namespace NestoAPI.Infraestructure
             
             return cliente;
 
+        }
+
+        private string CalcularSiguienteContacto(string empresa, string cliente)
+        {
+            NVEntities db = new NVEntities();
+            bool existe = true;
+            int contador = -1;
+            const int MAXIMO_NUMERO_CONTACTOS = 100;
+            while (existe && contador < MAXIMO_NUMERO_CONTACTOS)
+            {
+                contador++;
+                existe = db.Clientes.SingleOrDefault(e => e.Empresa == empresa && e.Nº_Cliente == cliente && e.Contacto == contador.ToString()) != null;
+            }
+            
+            return contador.ToString();
         }
 
         public Task<CCC> PrepararCCC(ClienteCrear clienteCrear)

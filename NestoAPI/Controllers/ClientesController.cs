@@ -379,6 +379,11 @@ namespace NestoAPI.Controllers
                 clienteCrear.Cliente = contador.Clientes++.ToString();
             }
 
+            if (clienteCrear.Empresa == null)
+            {
+                clienteCrear.Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            }
+
             IServicioGestorClientes servicio = new ServicioGestorClientes();
             Cliente cliente = await servicio.PrepararCliente(clienteCrear);
             db.Clientes.Add(cliente);
