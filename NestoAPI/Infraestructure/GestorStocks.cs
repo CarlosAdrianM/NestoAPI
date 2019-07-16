@@ -26,7 +26,7 @@ namespace NestoAPI.Infraestructure
             }
             foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
             {
-                int stock = servicio.Stock(linea.producto, linea.almacen);
+                int stock = servicio.Stock(linea.producto, Constantes.Almacenes.REINA);
                 if (stock < linea.cantidad)
                 {
                     return false;
