@@ -200,7 +200,7 @@ namespace NestoAPI.Infraestructure
                 cliente.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
             }
 
-            if (clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != clienteCrear.VendedorEstetica)
+            if (clienteCrear.Peluqueria && clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != clienteCrear.VendedorEstetica)
             {
                 cliente.VendedoresClienteGrupoProductoes.Add(new VendedorClienteGrupoProducto
                 {
