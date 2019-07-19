@@ -189,9 +189,16 @@ namespace NestoAPI.Infraestructure
                 Ruta = clienteCrear.Ruta,
                 ServirJunto = true,
                 Teléfono = clienteCrear.Telefono,
-                Vendedor = clienteCrear.Estetica ? clienteCrear.VendedorEstetica : Constantes.Vendedores.VENDEDOR_GENERAL,
+                Vendedor = clienteCrear.VendedorEstetica,
                 Usuario = clienteCrear.Usuario
             };
+
+            if (clienteCrear.Peluqueria && !clienteCrear.Estetica)
+            {
+                clienteCrear.VendedorPeluqueria = cliente.Vendedor;
+                clienteCrear.VendedorEstetica = Constantes.Vendedores.VENDEDOR_GENERAL;
+                cliente.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
+            }
 
             if (clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != clienteCrear.VendedorEstetica)
             {
