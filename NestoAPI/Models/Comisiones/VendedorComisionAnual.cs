@@ -84,7 +84,8 @@ namespace NestoAPI.Models.Comisiones
             TramoComision tramo = BuscarTramoComision(tramosMes, resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
             ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
 
-            if (tramo != null && mes != 8)
+            //if (tramo != null && mes != 8)
+            if (tramo != null)
             {
                 foreach (IEtiquetaComision etiqueta in resumen.Etiquetas)
                 {
@@ -108,8 +109,8 @@ namespace NestoAPI.Models.Comisiones
                     }
 
                     resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision =
-                        mes == 8 ?
-                        Math.Round(resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo, 2) :
+                        //mes == 8 ?
+                        //Math.Round(resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo, 2) :
                         Math.Round(ventaAcumulada * resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo - Resumenes.Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision), 2);
                     decimal mesesDecimales = (decimal)mesesAnno / meses;
                     resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ?

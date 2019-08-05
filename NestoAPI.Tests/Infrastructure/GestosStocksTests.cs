@@ -56,11 +56,11 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorStocks_HayStockDisponibleDeTodo_SiDeUnProductoHayStockDevuelveVerdadero()
         {
-            A.CallTo(() => servicio.Stock("producto", "almacen")).Returns(1);
+            A.CallTo(() => servicio.Stock("producto", "REI")).Returns(1);
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
                 producto = "producto",
-                almacen = "almacen",
+                almacen = "REI",
                 cantidad = 1
             };
             pedido.LineasPedido.Add(linea);
