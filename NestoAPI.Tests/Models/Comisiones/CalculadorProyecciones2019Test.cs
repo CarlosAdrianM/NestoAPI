@@ -157,6 +157,37 @@ namespace NestoAPI.Tests.Models.Comisiones
         }
 
         [TestMethod]
+        public void CalculadorComisiones2019_CalcularProyeccion_SiSeHaceLaParteProporcionalAntesDeAgostoEsPor11AunqueElAnnoPasadoEmpieceDespuesDeAgosto()
+        {
+            var servicio = A.Fake<IServicioComisionesAnuales>();
+            var calculador = new CalculadorProyecciones2019();
+            A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
+            var ventasAnnoActual = CrearVentasAnnoActual();
+            // las ventas de enero a junio son 74600 (media de 12433.33)
+            A.CallTo(() => servicio.LeerResumenAnno("VD", 2019)).Returns(ventasAnnoActual);
+
+            var ventasAnnoPasado = CrearVentasAnnoPasado();
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
+            // quedan 10000 de venta de diciembre
+            A.CallTo(() => servicio.LeerResumenAnno("VD", 2018)).Returns(ventasAnnoPasado);
+
+            var proyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(servicio, "VD", 2019, 6, 0, 0, 0);
+
+            Assert.AreEqual(134333.33M, proyeccion); //74600 que lleva a junio + 12433.33 * 4 (de julio a noviembre sin agosto) = 49733.32 + 10000 de diciembre
+        }
+
+
+        [TestMethod]
         public void CalculadorComisiones2019_CalcularProyeccion_SiLaVentaDelMesSiguienteEsMayorQueLoAcumuladoBajaDeSalto()
         {
             var servicio = A.Fake<IServicioComisionesAnuales>();

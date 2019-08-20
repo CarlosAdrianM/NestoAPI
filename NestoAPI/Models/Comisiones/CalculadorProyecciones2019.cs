@@ -35,20 +35,14 @@ namespace NestoAPI.Models.Comisiones
 
             
             var numeroMesesAnterior = annoAnterior.Where(v => v.Mes > mes).Count();
-            int mesesProyeccion = mes < 8 ? 11 : 12;
+            bool hayAgostoAnterior = annoAnterior.Where(v => v.Mes == 8).SingleOrDefault() != null;
+            int mesesProyeccion = mes < 8 && !hayAgostoAnterior ? 11 : 12;
 
 
             if (numeroMesesAnterior != 12-mes)
             {    
                 decimal ventaMedia = ventaActual / numerosMesesActual;
-                if (numeroMesesAnterior > 0)
-                {
-                    ventaActual += ventaMedia * ((12 - mes) - numeroMesesAnterior);
-                } else
-                {
-                    ventaActual += ventaMedia * (mesesProyeccion - mes);
-                }
-                
+                ventaActual += ventaMedia * ((mesesProyeccion - mes) - numeroMesesAnterior);
             }
 
             return Math.Round(ventaActual + ventaAnterior, 2);
