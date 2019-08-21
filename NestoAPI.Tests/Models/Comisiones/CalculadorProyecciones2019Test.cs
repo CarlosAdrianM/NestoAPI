@@ -186,7 +186,6 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(134333.33M, proyeccion); //74600 que lleva a junio + 12433.33 * 4 (de julio a noviembre sin agosto) = 49733.32 + 10000 de diciembre
         }
 
-
         [TestMethod]
         public void CalculadorComisiones2019_CalcularProyeccion_SiLaVentaDelMesSiguienteEsMayorQueLoAcumuladoBajaDeSalto()
         {

@@ -174,6 +174,46 @@ namespace NestoAPI.Tests.Models.Comisiones
         }
 
         [TestMethod]
+        public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenNoEstaVacioPeroElMesEsAnteriorAlPrimeroDevuelveVacio()
+        {
+            //ESTO NO FUNCIONA, DEBERÍA FALLAR: PROBAR CON TAYSIR ENERO 2019, NO ESTABA Y DA COMISIONES
+            IEtiquetaComision etiqueta = A.Fake<IEtiquetaComision>();
+            A.CallTo(() => etiqueta.Nombre).Returns("General");
+            Collection<IEtiquetaComision> etiquetas = new Collection<IEtiquetaComision>()
+            {
+                etiqueta
+            };
+            ResumenComisionesMes resumen = new ResumenComisionesMes
+            {
+                Mes = 2,
+                Vendedor = "NV",
+                Etiquetas = etiquetas
+            };
+            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 50000;
+            Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
+            {
+                resumen
+            };
+            A.CallTo(() => servicio.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 3, true)).Returns(1000);
+            A.CallTo(() => servicio.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
+            A.CallTo(() => servicio.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .2M,
+                    TipoExtra = .008M
+                }
+            });
+
+            VendedorComisionAnual vendedorComisionAnual = new VendedorComisionAnual(servicio, "NV", 2018, 1, true);
+
+            Assert.AreEqual(0, vendedorComisionAnual.ResumenMesActual.GeneralProyeccion);
+        }
+
+
+        [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenTieneUnMesYNoEsEneroLaProyeccionEsLaParteProporcional()
         {
             IEtiquetaComision etiqueta = A.Fake<IEtiquetaComision>();

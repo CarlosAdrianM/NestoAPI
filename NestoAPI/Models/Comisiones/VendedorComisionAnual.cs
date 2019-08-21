@@ -43,6 +43,7 @@ namespace NestoAPI.Models.Comisiones
                 mesesAnno = 12 - mes + 1;
             }
             ResumenMesActual = Resumenes.SingleOrDefault(r => r.Mes == mes);
+
             if (ResumenMesActual == null)
             {
                 ResumenMesActual = CrearResumenMesActual(incluirAlbaranes);
@@ -76,7 +77,7 @@ namespace NestoAPI.Models.Comisiones
             }
 
             int meses = Resumenes.Count + 1; //+1 por el mes actual
-            decimal ventaAcumulada = Resumenes.Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta) + resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta;
+            decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta) + resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta;
             resumen.GeneralProyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(servicio, vendedor, anno, mes, ventaAcumulada, meses, mesesAnno);
 
             ICollection<TramoComision> tramosMes = servicio.LeerTramosComisionMes(vendedor);
@@ -94,8 +95,6 @@ namespace NestoAPI.Models.Comisiones
 
                 resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = Math.Round(resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta * tramo.Tipo, 2);
                 resumen.GeneralFaltaParaSalto = tramo.Hasta - resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta;
-                //resumen.GeneralInicioTramo = tramo.Desde;
-                //resumen.GeneralFinalTramo = tramo.Hasta;
             }
             else
             {
@@ -116,8 +115,6 @@ namespace NestoAPI.Models.Comisiones
                     resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ?
                         decimal.MaxValue :
                         servicio.CalculadorProyecciones.CalcularFaltaParaSalto(ventaAcumulada, tramo.Hasta, mesesDecimales, resumen.GeneralProyeccion);
-                    //resumen.GeneralInicioTramo = tramo.Desde;
-                    //resumen.GeneralFinalTramo = tramo.Hasta;
                 }
             }
 
