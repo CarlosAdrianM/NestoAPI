@@ -11,8 +11,8 @@ namespace NestoAPI.Models.Comisiones
         decimal Comision { get; set; }
 
         decimal SetTipo(TramoComision tramo);
-
         decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes);
-        IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta);
+        decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking);
+        IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking);
     }
 }

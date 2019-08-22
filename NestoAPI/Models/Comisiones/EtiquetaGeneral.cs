@@ -24,8 +24,11 @@ namespace NestoAPI.Models.Comisiones.Estetica
         public decimal Venta { get; set; }
         public decimal Tipo { get; set; }
         public decimal Comision { get; set; }
-
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
+        {
+            return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
+        }
+        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -35,7 +38,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     l.Vendedor == vendedor
                 );
 
-            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         public decimal SetTipo(TramoComision tramo)
@@ -53,7 +56,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 );
         }
 
-        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
+        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -63,7 +66,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     l.Vendedor == vendedor
                 );
                 
-            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
     }
 }

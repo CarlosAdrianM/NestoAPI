@@ -158,11 +158,6 @@ namespace NestoAPI.Infraestructure
 
         public async Task<Cliente> PrepararCliente(ClienteCrear clienteCrear)
         {
-            if (clienteCrear.EsContacto && Environment.MachineName != "VSTUDIO")
-            {
-                throw new NotImplementedException("No se pueden crear contactos aún");
-            }
-
             string contacto = CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
             
             Cliente cliente = new Cliente

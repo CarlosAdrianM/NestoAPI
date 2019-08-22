@@ -9,22 +9,30 @@ namespace NestoAPI.Models.Comisiones
     {
         const string GENERAL = "General";
 
-        public static decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta)
+        public static decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta, bool incluirPicking)
         {
-            consulta = ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta);
+            consulta = ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
             decimal venta = consulta.Select(l => l.Base_Imponible).DefaultIfEmpty().Sum();
             return venta;
         }
 
-        public static IQueryable<vstLinPedidoVtaComisione> ConsultaVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta)
+        public static IQueryable<vstLinPedidoVtaComisione> ConsultaVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta, bool incluirPicking)
         {
             if (consulta == null)
             {
                 return null;
             }
-            if (incluirAlbaranes)
+            if (incluirPicking && incluirAlbaranes)
+            {
+                consulta = consulta.Where(l => (l.Estado == 1 && l.Picking>0) || l.Estado == 2 || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4));
+            }
+            else if (incluirAlbaranes)
             {
                 consulta = consulta.Where(l => l.Estado == 2 || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4));
+            }
+            else if (incluirPicking)
+            {
+                consulta = consulta.Where(l => (l.Estado == 1 && l.Picking > 0) || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4));
             }
             else
             {

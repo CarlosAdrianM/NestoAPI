@@ -14,7 +14,11 @@ namespace NestoAPI.Controllers
         ServicioComisionesAnualesEstetica2018 servicio = new ServicioComisionesAnualesEstetica2018();
 
         // GET: api/ComisionAnualDetalles
-        public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes,bool incluirAlbaranes, string etiqueta)
+        public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
+        {
+            return GetComisionesAnualesDetalles(vendedor, anno, mes, incluirAlbaranes, etiqueta, false);
+        }
+        public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes,bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             int annoActual = DateTime.Today.Year;
             int mesActual = DateTime.Today.Month;
@@ -23,7 +27,7 @@ namespace NestoAPI.Controllers
             {
                 ServicioComisionesAnualesEstetica2018 servicio = new ServicioComisionesAnualesEstetica2018();
                 var etiquetaServicio = servicio.Etiquetas.Single(s => s.Nombre == etiqueta);
-                var comisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta).ToList();
+                var comisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta, incluirPicking).ToList();
                 return comisiones.Select(c=>
                     new vstLinPedidoVtaComisionesDetalle
                     {

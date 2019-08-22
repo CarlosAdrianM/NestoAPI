@@ -82,6 +82,18 @@ namespace NestoAPI.Controllers
             return Ok(vendedorComision.ResumenMesActual);
         }
 
+        // GET: api/Comisiones
+        [HttpGet]
+        [ResponseType(typeof(ResumenComisionesMes))]
+        public async Task<IHttpActionResult> GetComisiones(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
+        {
+            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioVendedor(vendedor, anno), vendedor, anno, mes, incluirAlbaranes, incluirPicking);
+
+            //await Task.Run(() => vendedor = new VendedorComisionAnual(servicio, "PA", 2018));
+
+            return Ok(vendedorComision.ResumenMesActual);
+        }
+
         // POST: api/Comisiones
         [ResponseType(typeof(List<ResumenComisionesMes>))]
         public async Task<IHttpActionResult> PostComisiones(int anno, int mes)

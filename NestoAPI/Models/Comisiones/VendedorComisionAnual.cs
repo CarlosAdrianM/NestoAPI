@@ -14,6 +14,7 @@ namespace NestoAPI.Models.Comisiones
         private int anno;
         private int mes;
         private bool incluirAlbaranes;
+        private bool incluirPicking;
         private int mesesAnno = 12;
         
         public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno)
@@ -27,12 +28,17 @@ namespace NestoAPI.Models.Comisiones
         }
 
         public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes)
+            :this(servicio, vendedor, anno, mes, incluirAlbaranes, false)
+        {
+        }
+        public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
             this.servicio = servicio;
             this.vendedor = vendedor;
             this.anno = anno;
             this.mes = mes;
             this.incluirAlbaranes = incluirAlbaranes;
+            this.incluirPicking = incluirPicking;
 
             Resumenes = servicio.LeerResumenAnno(vendedor, anno);
             if (Resumenes != null && Resumenes.Count>0)
@@ -46,7 +52,7 @@ namespace NestoAPI.Models.Comisiones
 
             if (ResumenMesActual == null)
             {
-                ResumenMesActual = CrearResumenMesActual(incluirAlbaranes);
+                ResumenMesActual = CrearResumenMesActual(incluirAlbaranes, incluirPicking);
             } else
             {
                 decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
@@ -61,7 +67,7 @@ namespace NestoAPI.Models.Comisiones
         public ICollection<ResumenComisionesMes> Resumenes { get; set; }
         public ResumenComisionesMes ResumenMesActual { get; set; }
 
-        private ResumenComisionesMes CrearResumenMesActual(bool incluirAlbaranes)
+        private ResumenComisionesMes CrearResumenMesActual(bool incluirAlbaranes, bool incluirPicking)
         {
             ResumenComisionesMes resumen = new ResumenComisionesMes
             {
@@ -73,7 +79,7 @@ namespace NestoAPI.Models.Comisiones
 
             foreach (IEtiquetaComision etiqueta in resumen.Etiquetas)
             {
-                etiqueta.Venta = servicio.Etiquetas.Single(e => e.Nombre == etiqueta.Nombre).LeerVentaMes(vendedor, anno, mes, incluirAlbaranes);
+                etiqueta.Venta = servicio.Etiquetas.Single(e => e.Nombre == etiqueta.Nombre).LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, incluirPicking);
             }
 
             int meses = Resumenes.Count + 1; //+1 por el mes actual
