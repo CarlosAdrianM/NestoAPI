@@ -13,14 +13,7 @@ namespace NestoAPI.Controllers
 {
     public class ComisionesController : ApiController
     {
-        private NVEntities db = new NVEntities();
-
-        const string GENERAL = "General";
-
-        // Refactorizar y quitar
-        const string UNION_LASER= "Unión Láser";
-        const string EVA_VISNU = "Eva Visnú";
-        const string OTROS_APARATOS = "Otros Aparatos";
+        private readonly NVEntities db = new NVEntities();
 
         // GET: api/Comisiones
         [HttpGet]

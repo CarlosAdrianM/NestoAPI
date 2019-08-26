@@ -21,6 +21,7 @@
                 public const int VISITA_PRESENCIAL = 0;
                 public const int PRIMERA_VISITA = 5;
             }
+
             public class EstadosMandatos
             {
                 public const int EN_PODER_DEL_CLIENTE = 2;
@@ -29,6 +30,12 @@
             public const string DIAS_EN_SERVIR_POR_DEFECTO = "11111";
             public const string GRUPO_POR_DEFECTO = "0";
             public const string SECUENCIA_POR_DEFECTO = "FRST";
+
+            public class TiposExtracto
+            {
+                public const string TIPO_FACTURA = "1";
+                public const string TIPO_CARTERA = "2";
+            }
         }
 
         public class Correos

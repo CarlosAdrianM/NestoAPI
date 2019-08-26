@@ -263,6 +263,7 @@
     <Compile Include="Controllers\EmpresasController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
+    <Compile Include="Controllers\FacturasController.cs" />
     <Compile Include="Controllers\FormasPagoController.cs" />
     <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
@@ -292,6 +293,7 @@
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GestorClientes.cs" />
     <Compile Include="Infraestructure\GestorComisiones.cs" />
+    <Compile Include="Infraestructure\GestorFacturas.cs" />
     <Compile Include="Infraestructure\GestorPrecios.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\OtrosAparatosNoPuedeLlevarDescuento.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\RamasonNoPuedeLlevarNingunDescuento.cs" />
@@ -300,13 +302,16 @@
     <Compile Include="Infraestructure\GestorStocks.cs" />
     <Compile Include="Infraestructure\IGestorAgencias.cs" />
     <Compile Include="Infraestructure\IGestorClientes.cs" />
+    <Compile Include="Infraestructure\IGestorFacturas.cs" />
     <Compile Include="Infraestructure\IGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioAgencias.cs" />
+    <Compile Include="Infraestructure\IServicioFacturas.cs" />
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
+    <Compile Include="Infraestructure\ServicioFacturas.cs" />
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
@@ -325,6 +330,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\CabFacturaCmp.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\CabFacturaVta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\CabPedidoVta.cs">
@@ -409,6 +417,11 @@
     <Compile Include="Models\ExtractoProveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Facturas\DireccionFactura.cs" />
+    <Compile Include="Models\Facturas\Factura.cs" />
+    <Compile Include="Models\Facturas\LineaFactura.cs" />
+    <Compile Include="Models\Facturas\TotalFactura.cs" />
+    <Compile Include="Models\Facturas\VencimientoFactura.cs" />
     <Compile Include="Models\Familia.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

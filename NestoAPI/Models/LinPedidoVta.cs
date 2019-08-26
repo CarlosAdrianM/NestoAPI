@@ -83,5 +83,6 @@ namespace NestoAPI.Models
         public virtual SubGruposProducto SubGruposProducto { get; set; }
         public virtual FormaVenta FormasVenta { get; set; }
         public virtual ICollection<PedidosEspeciale> PedidosEspeciales { get; set; }
+        public virtual CabFacturaVta CabFacturaVta { get; set; }
     }
 }

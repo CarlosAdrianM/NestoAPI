@@ -59,6 +59,33 @@
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="CabFacturaVta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Forma Pago" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="PlazosPago" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="IVA" Type="char" MaxLength="3" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="CCC" Type="char" MaxLength="3" />
+          <Property Name="Espejo" Type="char" MaxLength="10" />
+          <Property Name="Primer Vencimiento" Type="datetime" />
+          <Property Name="Serie" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Origen" Type="char" MaxLength="3" />
+          <Property Name="ContactoCobro" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NoComisiona" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="Operador" Type="char" MaxLength="3" />
+          <Property Name="Cadena" Type="char" MaxLength="3" />
+          <Property Name="EstadoCliente" Type="smallint" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="CabPedidoVta">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -1280,11 +1307,11 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisiones' no tiene d
           <Key>
             <PropertyRef Name="Nº Orden" />
             <PropertyRef Name="Empresa" />
-            <PropertyRef Name="Vendedor" />
             <PropertyRef Name="Número" />
             <PropertyRef Name="Fecha Entrega" />
             <PropertyRef Name="Estado" />
             <PropertyRef Name="Base Imponible" />
+            <PropertyRef Name="Vendedor" />
           </Key>
           <Property Name="Nº Orden" Type="int" Nullable="false" />
           <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
@@ -1401,6 +1428,106 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="NºProveedor" />
               <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_CCC">
+          <End Role="CCC" Type="Self.CCC" Multiplicity="0..1" />
+          <End Role="CabFacturaVta" Type="Self.CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CCC">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="CCC" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="CabFacturaVta" Type="Self.CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="CabFacturaVta" Type="Self.CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_Empresas1">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="0..1" />
+          <End Role="CabFacturaVta" Type="Self.CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Origen" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_FormasPago">
+          <End Role="FormasPago" Type="Self.FormasPago" Multiplicity="1" />
+          <End Role="CabFacturaVta" Type="Self.CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Forma Pago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_PlazosPago">
+          <End Role="PlazosPago" Type="Self.PlazosPago" Multiplicity="1" />
+          <End Role="CabFacturaVta" Type="Self.CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlazosPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="PlazosPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_Vendedores">
+          <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="1" />
+          <End Role="CabFacturaVta" Type="Self.CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -2568,6 +2695,20 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_LinPedidoVta_CabFacturaVta">
+          <End Role="CabFacturaVta" Type="Self.CabFacturaVta" Multiplicity="0..1" />
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Factura" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_LinPedidoVta_CabPedidoVta">
           <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="1" />
           <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
@@ -3394,6 +3535,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
         <EntityContainer Name="NVModelStoreContainer">
           <EntitySet Name="Bancos" EntityType="Self.Bancos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="CabFacturaVta" EntityType="Self.CabFacturaVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoVta" EntityType="Self.CabPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabRemesaPagos" EntityType="Self.CabRemesaPagos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CCC" EntityType="Self.CCC" Schema="dbo" store:Type="Tables" />
@@ -3515,6 +3657,34 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_CabFacturaCmp_Proveedores" Association="Self.FK_CabFacturaCmp_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_CCC" Association="Self.FK_CabFacturaVta_CCC">
+            <End Role="CCC" EntitySet="CCC" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_Clientes" Association="Self.FK_CabFacturaVta_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_Empresas" Association="Self.FK_CabFacturaVta_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_Empresas1" Association="Self.FK_CabFacturaVta_Empresas1">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_FormasPago" Association="Self.FK_CabFacturaVta_FormasPago">
+            <End Role="FormasPago" EntitySet="FormasPago" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_PlazosPago" Association="Self.FK_CabFacturaVta_PlazosPago">
+            <End Role="PlazosPago" EntitySet="PlazosPago" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_Vendedores" Association="Self.FK_CabFacturaVta_Vendedores">
+            <End Role="Vendedores" EntitySet="Vendedores" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVta" />
           </AssociationSet>
           <AssociationSet Name="FK_CabPedidoVta_Clientes" Association="Self.FK_CabPedidoVta_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -3847,6 +4017,10 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_LinPedidoCmp_Proveedores" Association="Self.FK_LinPedidoCmp_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="LinPedidoCmp" EntitySet="LinPedidoCmp" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_CabFacturaVta" Association="Self.FK_LinPedidoVta_CabFacturaVta">
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVta" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
           </AssociationSet>
           <AssociationSet Name="FK_LinPedidoVta_CabPedidoVta" Association="Self.FK_LinPedidoVta_CabPedidoVta">
             <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
@@ -4790,6 +4964,39 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="Empresa" EntitySet="Empresas" />
             <End Role="PersonasContactoCliente" EntitySet="PersonasContactoClientes" />
           </AssociationSet>
+          <EntitySet Name="CabFacturaVtas" EntityType="NVModel.CabFacturaVta" />
+          <AssociationSet Name="FK_CabFacturaVta_CCC" Association="NVModel.FK_CabFacturaVta_CCC">
+            <End Role="CCC" EntitySet="CCCs" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_Clientes" Association="NVModel.FK_CabFacturaVta_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_Empresas" Association="NVModel.FK_CabFacturaVta_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_Empresas1" Association="NVModel.FK_CabFacturaVta_Empresas1">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_FormasPago" Association="NVModel.FK_CabFacturaVta_FormasPago">
+            <End Role="FormaPago" EntitySet="FormasPago" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_PlazosPago" Association="NVModel.FK_CabFacturaVta_PlazosPago">
+            <End Role="PlazoPago" EntitySet="PlazosPago" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabFacturaVta_Vendedores" Association="NVModel.FK_CabFacturaVta_Vendedores">
+            <End Role="Vendedor" EntitySet="Vendedores" />
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_CabFacturaVta" Association="NVModel.FK_LinPedidoVta_CabFacturaVta">
+            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -4938,6 +5145,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_CódigosPostales_Empresas" FromRole="Empresa" ToRole="CódigosPostales" />
           <NavigationProperty Name="CódigosPostales1" Relationship="NVModel.FK_Empresas_CódigosPostales" FromRole="Empresa" ToRole="CódigosPostales" />
           <NavigationProperty Name="PersonasContactoClientes" Relationship="NVModel.FK_PersonasContactoCliente_Empresas" FromRole="Empresa" ToRole="PersonasContactoCliente" />
+          <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Empresas" FromRole="Empresa" ToRole="CabFacturaVta" />
+          <NavigationProperty Name="CabFacturaVtas1" Relationship="NVModel.FK_CabFacturaVta_Empresas1" FromRole="Empresa" ToRole="CabFacturaVta" />
           </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -5072,6 +5281,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_LinPedidoVta_FormasVenta" FromRole="LinPedidoVta" ToRole="FormasVenta" />
           <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_LinPedidoVta" FromRole="LinPedidoVta" ToRole="PedidosEspeciale" />
           <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
+          <NavigationProperty Name="CabFacturaVta" Relationship="NVModel.FK_LinPedidoVta_CabFacturaVta" FromRole="LinPedidoVta" ToRole="CabFacturaVta" />
         </EntityType>
         <Association Name="FK_LinPedidoVta_CabPedidoVta">
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1" />
@@ -5173,6 +5383,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_Clientes_CódigosPostales" FromRole="Cliente" ToRole="CódigosPostales" />
           <NavigationProperty Name="PersonasContactoClientes" Relationship="NVModel.FK_PersonasContactoCliente_Clientes" FromRole="Cliente" ToRole="PersonasContactoCliente" />
           <NavigationProperty Name="PersonasContactoClientes1" Relationship="NVModel.FK_PersonasContactoCliente_Clientes1" FromRole="Cliente" ToRole="PersonasContactoCliente" />
+          <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Clientes" FromRole="Cliente" ToRole="CabFacturaVta" />
           </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -5726,6 +5937,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="ExtractoProveedors" Relationship="NVModel.FK_ExtractoProveedor_FormasPago" FromRole="FormaPago" ToRole="ExtractoProveedor" />
           <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_FormasPago" FromRole="FormaPago" ToRole="CabFacturaCmp" />
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_FormasPago" FromRole="FormaPago" ToRole="ExtractoCliente" />
+          <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_FormasPago" FromRole="FormaPago" ToRole="CabFacturaVta" />
         </EntityType>
         <EntityType Name="PlazoPago">
           <Key>
@@ -5749,6 +5961,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="Empresas" Relationship="NVModel.FK_Empresas_PlazosPago" FromRole="PlazosPago" ToRole="Empresa" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_PlazosPago_Empresas" FromRole="PlazosPago" ToRole="Empresa" />
           <NavigationProperty Name="CabFacturaCmps" Relationship="NVModel.FK_CabFacturaCmp_PlazosPago" FromRole="PlazoPago" ToRole="CabFacturaCmp" />
+          <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_PlazosPago" FromRole="PlazoPago" ToRole="CabFacturaVta" />
         </EntityType>
         <Association Name="FK_CondPagoClientes_FormasPago">
           <End Type="NVModel.FormaPago" Role="FormasPago" Multiplicity="1" />
@@ -6785,6 +6998,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CCC_Empresas" FromRole="CCC" ToRole="Empresa" />
           <NavigationProperty Name="Clientes" Relationship="NVModel.FK_Clientes_CCC1" FromRole="CCC" ToRole="Cliente" />
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_CCC" FromRole="CCC" ToRole="ExtractoCliente" />
+          <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_CCC" FromRole="CCC" ToRole="CabFacturaVta" />
         </EntityType>
         <Association Name="FK_CCC_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
@@ -7500,6 +7714,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="SeguimientoClientes" Relationship="NVModel.FK_SeguimientoCliente_Vendedores" FromRole="Vendedor" ToRole="SeguimientoCliente" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Vendedores" FromRole="Vendedor" ToRole="PreExtrProducto" />
           <NavigationProperty Name="VendedoresCodigoPostalGrupoProductoes" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_Vendedores" FromRole="Vendedor" ToRole="VendedoresCodigoPostalGrupoProducto" />
+          <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Vendedores" FromRole="Vendedor" ToRole="CabFacturaVta" />
         </EntityType>
         <Association Name="FK_Clientes_Vendedores">
           <End Type="NVModel.Vendedor" Role="Vendedore" Multiplicity="0..1" />
@@ -8435,6 +8650,155 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Principal>
             <Dependent Role="PersonasContactoCliente">
               <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="CabFacturaVta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Nº_Cliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Forma_Pago" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="PlazosPago" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Vendedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CCC" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Espejo" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Primer_Vencimiento" Type="DateTime" Precision="3" />
+          <Property Name="Serie" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Origen" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ContactoCobro" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NoComisiona" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="Operador" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Cadena" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="EstadoCliente" Type="Int16" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="CCC1" Relationship="NVModel.FK_CabFacturaVta_CCC" FromRole="CabFacturaVta" ToRole="CCC" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_CabFacturaVta_Clientes" FromRole="CabFacturaVta" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CabFacturaVta_Empresas" FromRole="CabFacturaVta" ToRole="Empresa" />
+          <NavigationProperty Name="Empresa2" Relationship="NVModel.FK_CabFacturaVta_Empresas1" FromRole="CabFacturaVta" ToRole="Empresa" />
+          <NavigationProperty Name="FormasPago" Relationship="NVModel.FK_CabFacturaVta_FormasPago" FromRole="CabFacturaVta" ToRole="FormaPago" />
+          <NavigationProperty Name="PlazosPago1" Relationship="NVModel.FK_CabFacturaVta_PlazosPago" FromRole="CabFacturaVta" ToRole="PlazoPago" />
+          <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_CabFacturaVta_Vendedores" FromRole="CabFacturaVta" ToRole="Vendedor" />
+          <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_CabFacturaVta" FromRole="CabFacturaVta" ToRole="LinPedidoVta" />
+        </EntityType>
+        <Association Name="FK_CabFacturaVta_CCC">
+          <End Type="NVModel.CCC" Role="CCC" Multiplicity="0..1" />
+          <End Type="NVModel.CabFacturaVta" Role="CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CCC">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+              <PropertyRef Name="CCC" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.CabFacturaVta" Role="CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.CabFacturaVta" Role="CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_Empresas1">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
+          <End Type="NVModel.CabFacturaVta" Role="CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Origen" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_FormasPago">
+          <End Type="NVModel.FormaPago" Role="FormaPago" Multiplicity="1" />
+          <End Type="NVModel.CabFacturaVta" Role="CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormaPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Forma_Pago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_PlazosPago">
+          <End Type="NVModel.PlazoPago" Role="PlazoPago" Multiplicity="1" />
+          <End Type="NVModel.CabFacturaVta" Role="CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlazoPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="PlazosPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabFacturaVta_Vendedores">
+          <End Type="NVModel.Vendedor" Role="Vendedor" Multiplicity="1" />
+          <End Type="NVModel.CabFacturaVta" Role="CabFacturaVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_CabFacturaVta">
+          <End Type="NVModel.CabFacturaVta" Role="CabFacturaVta" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabFacturaVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Factura" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -9745,6 +10109,33 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Contacto" ColumnName="Contacto" />
                 <ScalarProperty Name="NºCliente" ColumnName="NºCliente" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="CabFacturaVtas">
+            <EntityTypeMapping TypeName="NVModel.CabFacturaVta">
+              <MappingFragment StoreEntitySet="CabFacturaVta">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="EstadoCliente" ColumnName="EstadoCliente" />
+                <ScalarProperty Name="Cadena" ColumnName="Cadena" />
+                <ScalarProperty Name="Operador" ColumnName="Operador" />
+                <ScalarProperty Name="NoComisiona" ColumnName="NoComisiona" />
+                <ScalarProperty Name="ContactoCobro" ColumnName="ContactoCobro" />
+                <ScalarProperty Name="Origen" ColumnName="Origen" />
+                <ScalarProperty Name="Serie" ColumnName="Serie" />
+                <ScalarProperty Name="Primer_Vencimiento" ColumnName="Primer Vencimiento" />
+                <ScalarProperty Name="Espejo" ColumnName="Espejo" />
+                <ScalarProperty Name="CCC" ColumnName="CCC" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="IVA" ColumnName="IVA" />
+                <ScalarProperty Name="PlazosPago" ColumnName="PlazosPago" />
+                <ScalarProperty Name="Forma_Pago" ColumnName="Forma Pago" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>

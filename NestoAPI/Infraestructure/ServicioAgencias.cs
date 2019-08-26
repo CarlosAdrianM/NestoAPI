@@ -161,11 +161,31 @@ namespace NestoAPI.Infraestructure
                         TelemetryClient telemetry = new TelemetryClient();
                         telemetry.TrackEvent("VariosResultadosGoogleMaps");
                     }
+                    
                     string direccionFormateada = respuestaJson["results"][0]["formatted_address"].ToString();
                     double longitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lng"].ToString());
                     double latitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lat"].ToString());
+                    string codigoPostalGoogle = "";
+                    foreach (var componente in respuestaJson["results"][0]["address_components"])
+                    {
+                        if (componente["types"][0].ToString() != "postal_code")
+                        {
+                            continue;
+                        }
+                        codigoPostalGoogle = componente["short_name"].ToString();
+                        if (!string.IsNullOrWhiteSpace(codigoPostalGoogle))
+                        {
+                            break;
+                        }
+                    }
+                        
+                    if (string.IsNullOrEmpty(codigoPostalGoogle))
+                    {
+                        TelemetryClient telemetry = new TelemetryClient();
+                        telemetry.TrackEvent("DireccionSinCodigoPostalGoogle");
+                        direccionFormateada = direccionFormateada + ", " + codigoPostal;
+                    }
 
-                    // Aquí hay que llamar a POST /b2b/orders/estimate para calcular los portes reales
                     decimal portes = await CalcularPortes(longitud, latitud, direccionFormateada);
 
                     RespuestaAgencia respuesta = new RespuestaAgencia
