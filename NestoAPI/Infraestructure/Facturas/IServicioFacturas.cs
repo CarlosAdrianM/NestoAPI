@@ -1,8 +1,9 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
+using System;
 using System.Collections.Generic;
 
-namespace NestoAPI.Infraestructure
+namespace NestoAPI.Infraestructure.Facturas
 {
     public interface IServicioFacturas
     {
@@ -14,6 +15,7 @@ namespace NestoAPI.Infraestructure
         Producto CargarProducto(string empresa, string numeroProducto);
         List<VencimientoFactura> CargarVencimientosExtracto(string empresa, string cliente, string numeroFactura);
         List<VencimientoFactura> CargarVencimientosOriginales(string empresa, string cliente, string numeroFactura);
-        List<string> CargarVendedoresFactura(string empresa, string numeroFactura);
+        List<VendedorFactura> CargarVendedoresFactura(string empresa, string numeroFactura);
+        string CuentaBancoEmpresa(string empresa);
     }
 }

@@ -5,6 +5,11 @@ namespace NestoAPI.Models.Facturas
     public class LineaFactura
     {
         public int Albaran { get; set; }
+        public DateTime FechaAlbaran { get; set; }
+        public string TextoAlbaran
+        {
+            get { return String.Format("Albarán {0} del {1}", Albaran.ToString(), FechaAlbaran.ToString("dd/MM/yy")); }
+        }
         public string Producto { get; set; }
         public string Descripcion { get; set; }
         public short? Tamanno { get; set; }

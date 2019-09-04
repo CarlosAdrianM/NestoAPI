@@ -4,7 +4,7 @@ using System.Linq;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 
-namespace NestoAPI.Infraestructure
+namespace NestoAPI.Infraestructure.Facturas
 {
     public class ServicioFacturas : IServicioFacturas
     {
@@ -43,18 +43,7 @@ namespace NestoAPI.Infraestructure
         public List<VencimientoFactura> CargarVencimientosExtracto(string empresa, string cliente, string numeroFactura)
         {
             var vtosExtracto = db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == numeroFactura && e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_CARTERA);
-            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
-            foreach(var vto in vtosExtracto)
-            {
-                VencimientoFactura vencimiento = new VencimientoFactura
-                {
-                    FormaPago = vto.FormaPago,
-                    Importe = vto.Importe,
-                    ImportePendiente = vto.ImportePdte,
-                    Vencimiento = vto.FechaVto != null ? (DateTime)vto.FechaVto : vto.Fecha
-                };
-                vencimientos.Add(vencimiento);
-            }
+            List<VencimientoFactura> vencimientos = GenerarListaVencimientos(vtosExtracto);
 
             return vencimientos;
         }
@@ -63,15 +52,63 @@ namespace NestoAPI.Infraestructure
         {
             int asientoOriginal = db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == numeroFactura && e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_FACTURA).First().Asiento;
             var vtosExtracto = db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == numeroFactura && e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_CARTERA && e.Asiento == asientoOriginal);
+            List<VencimientoFactura> vencimientos = GenerarListaVencimientos(vtosExtracto);
+            //List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
+            //foreach (var vto in vtosExtracto)
+            //{
+            //    VencimientoFactura vencimiento = new VencimientoFactura
+            //    {
+            //        CCC = vto.CCC,
+            //        FormaPago = vto.FormaPago,
+            //        Importe = vto.Importe,
+            //        ImportePendiente = vto.ImportePdte,
+            //        Vencimiento = vto.FechaVto != null ? (DateTime)vto.FechaVto : vto.Fecha,
+            //        Iban = vto.CCC1?.Pais + vto.CCC1?.DC_IBAN + vto.CCC1?.Entidad + vto.CCC1?.Oficina + vto.CCC1?.DC + vto.CCC1?.Nº_Cuenta
+            //    };
+            //    vencimientos.Add(vencimiento);
+            //}
+
+            return vencimientos;
+        }
+
+        public List<VendedorFactura> CargarVendedoresFactura(string empresa, string numeroFactura)
+        {
+            List<VendedorFactura> nombresVendedores = new List<VendedorFactura>();
+            var vendedores = db.vstLinPedidoVtaComisiones.Where(l => l.Empresa == empresa && l.Nº_Factura == numeroFactura).GroupBy(l => l.Vendedor);
+            foreach(var codigoVendedor in vendedores)
+            {
+                string vendedor = db.Vendedores.Single(v => v.Empresa == empresa && v.Número == codigoVendedor.Key).Descripción.Trim();
+                nombresVendedores.Add(new VendedorFactura { Nombre = vendedor });
+            }
+            return nombresVendedores;
+        }
+
+        public string CuentaBancoEmpresa(string empresa)
+        {
+            string cuentasEmpresa = "";
+            var cuentas = db.Bancos.Where(b => b.Empresa == empresa && b.DC_IBAN != null);
+            foreach(var cuenta in cuentas)
+            {
+                cuentasEmpresa += cuenta.Pais + cuenta.DC_IBAN + cuenta.Entidad + cuenta.Sucursal + cuenta.DC + cuenta.Nº_Cuenta + Environment.NewLine;
+            }
+            cuentasEmpresa = cuentasEmpresa.TrimEnd(Environment.NewLine.ToCharArray());
+            return cuentasEmpresa;
+        }
+
+
+        private static List<VencimientoFactura> GenerarListaVencimientos(IQueryable<ExtractoCliente> vtosExtracto)
+        {
             List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
             foreach (var vto in vtosExtracto)
             {
                 VencimientoFactura vencimiento = new VencimientoFactura
                 {
+                    CCC = vto.CCC,
                     FormaPago = vto.FormaPago,
                     Importe = vto.Importe,
                     ImportePendiente = vto.ImportePdte,
-                    Vencimiento = vto.FechaVto != null ? (DateTime)vto.FechaVto : vto.Fecha
+                    Vencimiento = vto.FechaVto != null ? (DateTime)vto.FechaVto : vto.Fecha,
+                    Iban = vto.CCC1?.Pais + vto.CCC1?.DC_IBAN + vto.CCC1?.Entidad + vto.CCC1?.Oficina + vto.CCC1?.DC + vto.CCC1?.Nº_Cuenta
                 };
                 vencimientos.Add(vencimiento);
             }
@@ -79,16 +116,5 @@ namespace NestoAPI.Infraestructure
             return vencimientos;
         }
 
-        public List<string> CargarVendedoresFactura(string empresa, string numeroFactura)
-        {
-            List<string> nombresVendedores = new List<string>();
-            var vendedores = db.vstLinPedidoVtaComisiones.Where(l => l.Empresa == empresa && l.Nº_Factura == numeroFactura).GroupBy(l => l.Vendedor);
-            foreach(var codigoVendedor in vendedores)
-            {
-                string vendedor = db.Vendedores.Single(v => v.Empresa == empresa && v.Número == codigoVendedor.Key).Descripción.Trim();
-                nombresVendedores.Add(vendedor);
-            }
-            return nombresVendedores;
-        }
     }
 }

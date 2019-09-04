@@ -17,10 +17,10 @@ namespace NestoAPI.Models.Facturas
         public string Ruta { get; set; }
         public List<DireccionFactura> Direcciones { get; set; }
         public List<LineaFactura> Lineas { get; set; }
-        public List<string> NotasAlPie { get; set; }
+        public List<NotaFactura> NotasAlPie { get; set; }
         public List<TotalFactura> Totales { get; set; }
         public List<VencimientoFactura> Vencimientos { get; set; }
-        public List<string> Vendedores { get; set; }
+        public List<VendedorFactura> Vendedores { get; set; }
         
     }
 }

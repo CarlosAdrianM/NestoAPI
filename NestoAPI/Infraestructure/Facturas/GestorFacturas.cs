@@ -1,18 +1,50 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
+using System.IO;
 using System.Linq;
+using System.Net.Http;
+using Microsoft.Reporting.WebForms;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 
-namespace NestoAPI.Infraestructure
+namespace NestoAPI.Infraestructure.Facturas
 {
     public class GestorFacturas : IGestorFacturas
     {
         IServicioFacturas servicio;
+        public GestorFacturas()
+        {
+            servicio = new ServicioFacturas();
+        }
 
         public GestorFacturas(IServicioFacturas servicio)
         {
             this.servicio = servicio;
+        }
+
+        public ByteArrayContent FacturasEnPDF(List<Factura> facturas)
+        {
+            Warning[] warnings;
+            string mimeType;
+            string[] streamids;
+            string encoding;
+            string filenameExtension;
+            ReportViewer viewer = new ReportViewer();
+            viewer.LocalReport.ReportPath = @"Models\Facturas\Factura.rdlc";
+            viewer.LocalReport.DataSources.Add(new ReportDataSource("Facturas", facturas));
+            viewer.LocalReport.DataSources.Add(new ReportDataSource("Direcciones", facturas.FirstOrDefault().Direcciones));
+            viewer.LocalReport.DataSources.Add(new ReportDataSource("LineasFactura", facturas.FirstOrDefault().Lineas));
+            viewer.LocalReport.DataSources.Add(new ReportDataSource("Vendedores", facturas.FirstOrDefault().Vendedores));
+            viewer.LocalReport.DataSources.Add(new ReportDataSource("Vencimientos", facturas.FirstOrDefault().Vencimientos));
+            viewer.LocalReport.DataSources.Add(new ReportDataSource("NotasAlPie", facturas.FirstOrDefault().NotasAlPie));
+            viewer.LocalReport.DataSources.Add(new ReportDataSource("Totales", facturas.FirstOrDefault().Totales));
+
+            viewer.LocalReport.Refresh();
+
+            var bytes = viewer.LocalReport.Render("PDF", null, out mimeType, out encoding, out filenameExtension, out streamids, out warnings);
+
+            return new ByteArrayContent(bytes);
         }
 
         public Factura LeerFactura(string empresa, string numeroFactura)
@@ -42,6 +74,7 @@ namespace NestoAPI.Infraestructure
 
             DireccionFactura direccionEmpresa = new DireccionFactura
             {
+                Tipo = "Empresa",
                 Nombre = empresaFactura.Nombre?.Trim(),
                 CodigoPostal = empresaFactura.CodPostal?.Trim(),
                 Direccion = empresaFactura.Dirección?.Trim() + "\n" + empresaFactura.Dirección2?.Trim(),
@@ -53,6 +86,7 @@ namespace NestoAPI.Infraestructure
 
             DireccionFactura direccionRazonSocial = new DireccionFactura
             {
+                Tipo = "Fiscal",
                 Nombre = clienteRazonSocial.Nombre?.Trim(),
                 CodigoPostal = clienteRazonSocial.CodPostal?.Trim(),
                 Direccion = clienteRazonSocial.Dirección?.Trim(),
@@ -63,6 +97,7 @@ namespace NestoAPI.Infraestructure
 
             DireccionFactura direccionEntrega = new DireccionFactura
             {
+                Tipo = "Entrega",
                 Nombre = clienteEntrega.Nombre?.Trim(),
                 CodigoPostal = clienteEntrega.CodPostal?.Trim(),
                 Direccion = clienteEntrega.Dirección?.Trim(),
@@ -84,6 +119,7 @@ namespace NestoAPI.Infraestructure
                 LineaFactura lineaNueva = new LineaFactura
                 {
                     Albaran = (int)linea.Nº_Albarán,
+                    FechaAlbaran = (DateTime)linea.Fecha_Albarán,
                     Cantidad = linea.Cantidad,
                     Descripcion = linea.Texto?.Trim(),
                     Descuento = linea.SumaDescuentos,
@@ -101,11 +137,14 @@ namespace NestoAPI.Infraestructure
                 lineas.Add(lineaNueva);
             }
 
-            List<string> notas = new List<string>
+            List<NotaFactura> notas = new List<NotaFactura>
             {
-                "EL PLAZO MÁXIMO PARA CUALQUIER RECLAMACIÓN DE ESTE PEDIDO ES DE 24 HORAS.",
-                "LOS GASTOS POR DEVOLUCIÓN DEL PRODUCTO SERÁN SIEMPRE A CARGO DEL CLIENTE."
+                new NotaFactura{ Nota = "EL PLAZO MÁXIMO PARA CUALQUIER RECLAMACIÓN DE ESTE PEDIDO ES DE 24 HORAS." },
+                new NotaFactura{ Nota = "LOS GASTOS POR DEVOLUCIÓN DEL PRODUCTO SERÁN SIEMPRE A CARGO DEL CLIENTE." }
             };
+
+            //decimal importeTotal = Math.Round(cabFactura.LinPedidoVtas.Sum(l => l.Total), 2);
+            decimal importeTotal = 0;
 
             List<TotalFactura> totales = new List<TotalFactura>();
             var gruposTotal = cabFactura.LinPedidoVtas.GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE });
@@ -115,17 +154,18 @@ namespace NestoAPI.Infraestructure
                 TotalFactura total = new TotalFactura
                 {
                     BaseImponible = lineasGrupo.Sum(l => l.Base_Imponible),
-                    ImporteIVA = Math.Round(lineasGrupo.Sum(l => l.ImporteIVA), 2),
-                    ImporteRecargoEquivalencia = Math.Round(lineasGrupo.Sum(l => l.ImporteRE), 2),
+                    ImporteIVA = Math.Round(lineasGrupo.Sum(l => l.ImporteIVA), 2, MidpointRounding.AwayFromZero),
+                    ImporteRecargoEquivalencia = Math.Round(lineasGrupo.Sum(l => l.ImporteRE), 2, MidpointRounding.AwayFromZero),
                     PorcentajeIVA = grupoTotal.Key.PorcentajeIVA / 100M,
                     PorcentajeRecargoEquivalencia = grupoTotal.Key.PorcentajeRE
                 };
                 totales.Add(total);
+                importeTotal += total.BaseImponible + total.ImporteIVA + total.ImporteRecargoEquivalencia;
             }
 
-            decimal importeTotal = Math.Round(cabFactura.LinPedidoVtas.Sum(l => l.Total), 2);
+            
 
-            List<string> vendedores = servicio.CargarVendedoresFactura(empresa, numeroFactura);
+            List<VendedorFactura> vendedores = servicio.CargarVendedoresFactura(empresa, numeroFactura);
             List<VencimientoFactura> vencimientos = servicio.CargarVencimientosExtracto(empresa, clienteRazonSocial.Nº_Cliente, numeroFactura);
             if (vencimientos.Count > 1)
             {
@@ -162,6 +202,22 @@ namespace NestoAPI.Infraestructure
             {
                 throw new Exception("No cuadran los vencimientos con el total de la factura");
             }
+
+            foreach(var vencimiento in vencimientos)
+            {
+                if (vencimiento.CCC != null && vencimiento.CCC.Trim() != "")
+                {
+                    continue;
+                }
+
+                if (vencimiento.FormaPago == "TRN")
+                {
+                    vencimiento.Iban = servicio.CuentaBancoEmpresa(empresa);
+                } else
+                {
+                    vencimiento.Iban = "<<< No Procede >>>";
+                }                
+            }
             
             Factura factura = new Factura
             {
@@ -171,7 +227,7 @@ namespace NestoAPI.Infraestructure
                 Direcciones = direcciones,
                 DatosRegistrales = empresaFactura.TextoFactura?.Trim(),
                 Fecha = cabFactura.Fecha,
-                LogoURL = String.Format("{0}\\{1}_factura", empresaFactura.Logotipo?.Trim(), empresa.ToString()),
+                LogoURL = String.Format("{0}\\{1}_factura.png", empresaFactura.Logotipo?.Trim(), cabFactura.Serie.Trim()),
                 ImporteTotal = importeTotal,
                 Lineas = lineas,
                 Nif = clienteRazonSocial.CIF_NIF?.Trim(),
@@ -179,11 +235,54 @@ namespace NestoAPI.Infraestructure
                 NumeroFactura = cabFactura.Número?.Trim(),
                 Ruta = cabPedido.Ruta?.Trim(),
                 Totales = totales,
-                Vencimientos = vencimientos,
+                Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
                 Vendedores = vendedores
             };
 
             return factura;
+        }
+
+        public List<Factura> LeerFacturas(List<FacturaLookup> numerosFactura)
+        {
+            List<Factura> facturas = new List<Factura>();
+
+            foreach (var factura in numerosFactura)
+            {
+                Factura nuevaFactura = LeerFactura(factura.Empresa, factura.Factura);
+                facturas.Add(nuevaFactura);
+            }
+
+            return facturas;
+        }
+
+        public List<DireccionFactura> DireccionesFactura(Factura factura)
+        {
+            return factura.Direcciones;
+        }
+        public List<LineaFactura> LineasFactura(Factura factura)
+        {
+            //esto no vale para mucho, pero es necesario para meter el dataset en el informe
+            return factura.Lineas;
+        }
+
+        public List<NotaFactura> NotasFactura(Factura factura)
+        {
+            return factura.NotasAlPie;
+        }
+
+        public List<TotalFactura> TotalesFactura(Factura factura)
+        {
+            return factura.Totales;
+        }
+
+        public List<VencimientoFactura> VencimientosFactura(Factura factura)
+        {
+            return factura.Vencimientos;
+        }
+
+        public List<VendedorFactura> VendedoresFactura(Factura factura)
+        {
+            return factura.Vendedores;
         }
     }
 }

@@ -4,6 +4,7 @@ namespace NestoAPI.Models.Facturas
 {
     public class VencimientoFactura
     {
+        public string CCC { get; set; }
         public string FormaPago { get; set; }
         public DateTime Vencimiento { get; set; }
         public decimal Importe { get; set; }
