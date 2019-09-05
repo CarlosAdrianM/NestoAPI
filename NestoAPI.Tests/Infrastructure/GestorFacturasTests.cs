@@ -23,6 +23,7 @@ namespace NestoAPI.Tests.Infrastructure
             LinPedidoVta linea = new LinPedidoVta
             {
                 Nº_Albarán = 1,
+                Fecha_Albarán = new System.DateTime(2019, 09, 5),
                 Cantidad = 1,
                 Texto = "PRODUCTO ROJO",
                 Precio = 10,
@@ -76,6 +77,7 @@ namespace NestoAPI.Tests.Infrastructure
             LinPedidoVta linea = new LinPedidoVta
             {
                 Nº_Albarán = 1,
+                Fecha_Albarán = new System.DateTime(2019, 09, 5),
                 Cantidad = 1,
                 Texto = "PRODUCTO ROJO",
                 Precio = 20,
@@ -135,6 +137,7 @@ namespace NestoAPI.Tests.Infrastructure
             LinPedidoVta linea = new LinPedidoVta
             {
                 Nº_Albarán = 1,
+                Fecha_Albarán = new System.DateTime(2019, 09, 5),
                 Cantidad = 1,
                 Texto = "PRODUCTO ROJO",
                 Precio = 20,
@@ -199,6 +202,7 @@ namespace NestoAPI.Tests.Infrastructure
             LinPedidoVta linea = new LinPedidoVta
             {
                 Nº_Albarán = 1,
+                Fecha_Albarán = new System.DateTime(2019, 09, 5),
                 Cantidad = 1,
                 Texto = "PRODUCTO ROJO",
                 Precio = 20,
@@ -241,6 +245,7 @@ namespace NestoAPI.Tests.Infrastructure
             LinPedidoVta linea = new LinPedidoVta
             {
                 Nº_Albarán = 1,
+                Fecha_Albarán = new System.DateTime(2019, 09, 5),
                 Cantidad = 1,
                 Texto = "PRODUCTO ROJO",
                 Precio = 20,
@@ -284,6 +289,7 @@ namespace NestoAPI.Tests.Infrastructure
             LinPedidoVta linea = new LinPedidoVta
             {
                 Nº_Albarán = 1,
+                Fecha_Albarán = new System.DateTime(2019, 09, 5),
                 Cantidad = 1,
                 Texto = "PRODUCTO ROJO",
                 Precio = 20,

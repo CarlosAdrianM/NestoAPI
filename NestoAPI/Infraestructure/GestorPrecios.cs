@@ -308,7 +308,7 @@ namespace NestoAPI.Infraestructure
                 decimal? precioProducto = producto.PVP;
                 decimal? descuentoFinal = 1 - descuentoReal;
                 double baseRedondear = (double)(precioProducto * descuentoFinal);
-                return (decimal)Math.Round(baseRedondear, 2);
+                return (decimal)Math.Round(baseRedondear, 2, MidpointRounding.AwayFromZero);
             }
 
         }
