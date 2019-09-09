@@ -53,20 +53,6 @@ namespace NestoAPI.Infraestructure.Facturas
             int asientoOriginal = db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == numeroFactura && e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_FACTURA).First().Asiento;
             var vtosExtracto = db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == numeroFactura && e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_CARTERA && e.Asiento == asientoOriginal);
             List<VencimientoFactura> vencimientos = GenerarListaVencimientos(vtosExtracto);
-            //List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
-            //foreach (var vto in vtosExtracto)
-            //{
-            //    VencimientoFactura vencimiento = new VencimientoFactura
-            //    {
-            //        CCC = vto.CCC,
-            //        FormaPago = vto.FormaPago,
-            //        Importe = vto.Importe,
-            //        ImportePendiente = vto.ImportePdte,
-            //        Vencimiento = vto.FechaVto != null ? (DateTime)vto.FechaVto : vto.Fecha,
-            //        Iban = vto.CCC1?.Pais + vto.CCC1?.DC_IBAN + vto.CCC1?.Entidad + vto.CCC1?.Oficina + vto.CCC1?.DC + vto.CCC1?.Nº_Cuenta
-            //    };
-            //    vencimientos.Add(vencimiento);
-            //}
 
             return vencimientos;
         }

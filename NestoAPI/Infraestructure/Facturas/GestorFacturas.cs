@@ -114,7 +114,7 @@ namespace NestoAPI.Infraestructure.Facturas
             };
 
             List<LineaFactura> lineas = new List<LineaFactura>();
-            foreach (LinPedidoVta linea in cabFactura.LinPedidoVtas)
+            foreach (LinPedidoVta linea in cabFactura.LinPedidoVtas?.OrderBy(l => l.Nº_Orden))
             {
                 LineaFactura lineaNueva = new LineaFactura
                 {

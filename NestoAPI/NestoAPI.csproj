@@ -762,9 +762,9 @@
     <EmbeddedResource Include="Migrations\201603171731031_InitialCreate.resx">
       <DependentUpon>201603171731031_InitialCreate.cs</DependentUpon>
     </EmbeddedResource>
-    <EmbeddedResource Include="Models\Facturas\Factura.rdlc">
+    <Content Include="Models\Facturas\Factura.rdlc">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </EmbeddedResource>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <WCFMetadata Include="Connected Services\" />

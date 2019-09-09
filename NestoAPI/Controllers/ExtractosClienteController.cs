@@ -52,6 +52,33 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/ExtractosCliente
+        public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string empresa, string cliente, string tipoApunte, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            var extracto = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == tipoApunte && e.Fecha >= fechaDesde && e.Fecha <= fechaHasta).OrderBy(e => e.Fecha)
+                .Select(extractoEncontrado => new ExtractoClienteDTO
+                {
+                    id = extractoEncontrado.Nº_Orden,
+                    empresa = extractoEncontrado.Empresa.Trim(),
+                    asiento = extractoEncontrado.Asiento,
+                    cliente = extractoEncontrado.Número.Trim(),
+                    contacto = extractoEncontrado.Contacto.Trim(),
+                    fecha = extractoEncontrado.Fecha,
+                    tipo = extractoEncontrado.TipoApunte.Trim(),
+                    documento = extractoEncontrado.Nº_Documento.Trim(),
+                    efecto = extractoEncontrado.Efecto.Trim(),
+                    concepto = extractoEncontrado.Concepto.Trim(),
+                    importe = extractoEncontrado.Importe,
+                    importePendiente = extractoEncontrado.ImportePdte,
+                    vendedor = extractoEncontrado.Vendedor.Trim(),
+                    vencimiento = extractoEncontrado.FechaVto,
+                    ccc = extractoEncontrado.CCC.Trim(),
+                    ruta = extractoEncontrado.Ruta.Trim(),
+                    estado = extractoEncontrado.Estado.Trim()
+                });
+            return extracto;
+        }
+
+        // GET: api/ExtractosCliente
         [Authorize]
         [ResponseType(typeof(Mod347DTO))]
         public async Task<IHttpActionResult> GetModelo347(string empresa, string cliente, string NIF)
@@ -114,7 +141,7 @@ namespace NestoAPI.Controllers
 
         // GET: api/ExtractosCliente/5
         [ResponseType(typeof(ExtractoCliente))]
-        public async Task<IHttpActionResult> GetExtractoCliente(string id)
+        public async Task<IHttpActionResult> GetExtractoCliente(int id)
         {
             ExtractoCliente extractoCliente = await db.ExtractosCliente.FindAsync(id);
             if (extractoCliente == null)
@@ -125,7 +152,7 @@ namespace NestoAPI.Controllers
             return Ok(extractoCliente);
         }
 
-
+        /*
         // PUT: api/ExtractosCliente/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutExtractoCliente(string id, ExtractoCliente extractoCliente)
@@ -206,6 +233,7 @@ namespace NestoAPI.Controllers
 
             return Ok(extractoCliente);
         }
+        */
 
         protected override void Dispose(bool disposing)
         {
@@ -216,9 +244,9 @@ namespace NestoAPI.Controllers
             base.Dispose(disposing);
         }
 
-        private bool ExtractoClienteExists(string id)
+        private bool ExtractoClienteExists(int id)
         {
-            return db.ExtractosCliente.Count(e => e.Empresa == id) > 0;
+            return db.ExtractosCliente.Count(e => e.Nº_Orden == id) > 0;
         }
     }
 }
