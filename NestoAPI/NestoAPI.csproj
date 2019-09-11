@@ -432,8 +432,14 @@
     <Compile Include="Models\Facturas\DireccionFactura.cs" />
     <Compile Include="Models\Facturas\Factura.cs" />
     <Compile Include="Models\Facturas\FacturaLookup.cs" />
+    <Compile Include="Models\Facturas\ISerieFactura.cs" />
     <Compile Include="Models\Facturas\LineaFactura.cs" />
     <Compile Include="Models\Facturas\NotaFactura.cs" />
+    <Compile Include="Models\Facturas\SeriesFactura\SerieCV.cs" />
+    <Compile Include="Models\Facturas\SeriesFactura\SerieEV.cs" />
+    <Compile Include="Models\Facturas\SeriesFactura\SerieGB.cs" />
+    <Compile Include="Models\Facturas\SeriesFactura\SerieNV.cs" />
+    <Compile Include="Models\Facturas\SeriesFactura\SerieUL.cs" />
     <Compile Include="Models\Facturas\TotalFactura.cs" />
     <Compile Include="Models\Facturas\VencimientoFactura.cs" />
     <Compile Include="Models\Facturas\VendedorFactura.cs" />
@@ -763,6 +769,15 @@
       <DependentUpon>201603171731031_InitialCreate.cs</DependentUpon>
     </EmbeddedResource>
     <Content Include="Models\Facturas\Factura.rdlc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Models\Facturas\FacturaGB.rdlc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Models\Facturas\FacturaVC.rdlc">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="Models\Facturas\FacturaUL.rdlc">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>

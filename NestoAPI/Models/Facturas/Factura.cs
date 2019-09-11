@@ -11,10 +11,11 @@ namespace NestoAPI.Models.Facturas
         public string Delegacion { get; set; }
         public DateTime Fecha { get; set; }
         public decimal ImporteTotal { get; set; }
-        public string LogoURL { get; set; }
         public string Nif { get; set; }
         public string NumeroFactura { get; set; }
         public string Ruta { get; set; }
+        public string RutaInforme { get; set; }
+        public string Serie { get; set; }
         public List<DireccionFactura> Direcciones { get; set; }
         public List<LineaFactura> Lineas { get; set; }
         public List<NotaFactura> NotasAlPie { get; set; }

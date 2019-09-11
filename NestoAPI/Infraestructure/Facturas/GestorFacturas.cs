@@ -7,6 +7,7 @@ using System.Net.Http;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
+using NestoAPI.Models.Facturas.SeriesFactura;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
@@ -31,7 +32,7 @@ namespace NestoAPI.Infraestructure.Facturas
             string encoding;
             string filenameExtension;
             ReportViewer viewer = new ReportViewer();
-            viewer.LocalReport.ReportPath = @"Models\Facturas\Factura.rdlc";
+            viewer.LocalReport.ReportPath = facturas.FirstOrDefault().RutaInforme;
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Facturas", facturas));
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Direcciones", facturas.FirstOrDefault().Direcciones));
             viewer.LocalReport.DataSources.Add(new ReportDataSource("LineasFactura", facturas.FirstOrDefault().Lineas));
@@ -46,12 +47,16 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return new ByteArrayContent(bytes);
         }
-
+        
         public Factura LeerFactura(string empresa, string numeroFactura)
         {
             
             CabFacturaVta cabFactura = servicio.CargarCabFactura(empresa, numeroFactura);
             LinPedidoVta primeraLinea = cabFactura.LinPedidoVtas.FirstOrDefault();
+
+            string claseSerie = "NestoAPI.Models.Facturas.SeriesFactura.Serie" + cabFactura.Serie.Trim();
+            Type elementType = Type.GetType(claseSerie);
+            ISerieFactura serieFactura = (ISerieFactura)Activator.CreateInstance(elementType);
 
             CabPedidoVta cabPedido;
             if (primeraLinea != null)
@@ -137,13 +142,6 @@ namespace NestoAPI.Infraestructure.Facturas
                 lineas.Add(lineaNueva);
             }
 
-            List<NotaFactura> notas = new List<NotaFactura>
-            {
-                new NotaFactura{ Nota = "EL PLAZO MÁXIMO PARA CUALQUIER RECLAMACIÓN DE ESTE PEDIDO ES DE 24 HORAS." },
-                new NotaFactura{ Nota = "LOS GASTOS POR DEVOLUCIÓN DEL PRODUCTO SERÁN SIEMPRE A CARGO DEL CLIENTE." }
-            };
-
-            //decimal importeTotal = Math.Round(cabFactura.LinPedidoVtas.Sum(l => l.Total), 2);
             decimal importeTotal = 0;
 
             List<TotalFactura> totales = new List<TotalFactura>();
@@ -218,7 +216,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     vencimiento.Iban = "<<< No Procede >>>";
                 }                
             }
-            
+
             Factura factura = new Factura
             {
                 Cliente = cabFactura.Nº_Cliente.Trim(),
@@ -227,13 +225,14 @@ namespace NestoAPI.Infraestructure.Facturas
                 Direcciones = direcciones,
                 DatosRegistrales = empresaFactura.TextoFactura?.Trim(),
                 Fecha = cabFactura.Fecha,
-                LogoURL = String.Format("{0}\\{1}_factura.png", empresaFactura.Logotipo?.Trim(), cabFactura.Serie.Trim()),
                 ImporteTotal = importeTotal,
                 Lineas = lineas,
                 Nif = clienteRazonSocial.CIF_NIF?.Trim(),
-                NotasAlPie = notas,
+                NotasAlPie = serieFactura.Notas,
                 NumeroFactura = cabFactura.Número?.Trim(),
                 Ruta = cabPedido.Ruta?.Trim(),
+                RutaInforme = serieFactura.RutaInforme,
+                Serie = cabFactura.Serie?.Trim(),
                 Totales = totales,
                 Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
                 Vendedores = vendedores
