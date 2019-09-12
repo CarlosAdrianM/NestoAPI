@@ -1,9 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Data;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Mail;
+using System.Text;
+using System.Threading.Tasks;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
@@ -23,7 +27,15 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             this.servicio = servicio;
         }
-
+        public ByteArrayContent FacturaEnPDF(string empresa, string numeroFactura)
+        {
+            Factura factura = LeerFactura(empresa, numeroFactura);
+            List<Factura> facturas = new List<Factura>
+            {
+                factura
+            };
+            return FacturasEnPDF(facturas);
+        }
         public ByteArrayContent FacturasEnPDF(List<Factura> facturas)
         {
             Warning[] warnings;
@@ -46,8 +58,7 @@ namespace NestoAPI.Infraestructure.Facturas
             var bytes = viewer.LocalReport.Render("PDF", null, out mimeType, out encoding, out filenameExtension, out streamids, out warnings);
 
             return new ByteArrayContent(bytes);
-        }
-        
+        }        
         public Factura LeerFactura(string empresa, string numeroFactura)
         {
             
@@ -240,7 +251,6 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return factura;
         }
-
         public List<Factura> LeerFacturas(List<FacturaLookup> numerosFactura)
         {
             List<Factura> facturas = new List<Factura>();
@@ -252,6 +262,81 @@ namespace NestoAPI.Infraestructure.Facturas
             }
 
             return facturas;
+        }                
+        public async Task<IQueryable<FacturaCorreo>> EnviarFacturasPorCorreo(DateTime dia)
+        {
+            var facturasCorreo = servicio.LeerFacturasDia(dia);
+            var listaCorreos = new List<MailMessage>();
+            string mailAnterior = "";
+            MailMessage mail = new MailMessage();
+            foreach (var fra in facturasCorreo)
+            {                
+                if (fra.Correo != mailAnterior)
+                {
+                    if (mailAnterior != "")
+                    {
+                        mail.Subject = mail.Subject.Trim().TrimEnd(',');
+                        listaCorreos.Add(mail);
+                    }
+                    mailAnterior = fra.Correo;
+                    mail = new MailMessage();
+                    mail.From = new MailAddress("nesto@nuevavision.es");
+                    mail.ReplyToList.Add(new MailAddress("administracion@nuevavision.es"));
+                    mail.To.Add(new MailAddress("administracion@nuevavision.es"));
+                    mail.Subject = "Facturación nº ";
+                    mail.Body = (await GenerarCorreoHTML(fra)).ToString();
+                    mail.IsBodyHtml = true;
+                }
+                mail.Subject += fra.Factura + ", ";
+                var facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura);
+                Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), fra.Factura+".pdf");
+                mail.Attachments.Add(attachment);
+            }
+            mail.Subject = mail.Subject.Trim().TrimEnd(',');
+            listaCorreos.Add(mail);
+
+            SmtpClient client = new SmtpClient();
+            client.Port = 587;
+            client.EnableSsl = true;
+            client.DeliveryMethod = SmtpDeliveryMethod.Network;
+            client.UseDefaultCredentials = false;
+            string contrasenna = ConfigurationManager.AppSettings["office365password"];
+            client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
+            client.Host = "smtp.office365.com";
+
+            foreach (var correo in listaCorreos)
+            {
+                //A veces no conecta a la primera, por lo que reintentamos 2s después
+                try
+                {
+                    client.Send(correo);
+                }
+                catch
+                {
+                    await Task.Delay(2000);
+                    client.Send(correo);
+                }
+            }
+
+            return facturasCorreo;
+        }
+
+        private async Task<StringBuilder> GenerarCorreoHTML(FacturaCorreo fra)
+        {
+            StringBuilder s = new StringBuilder();
+
+            //s.AppendLine("<img src=\"http://www.productosdeesteticaypeluqueriaprofesional.com/logofra.jpg\">");
+            s.AppendLine("<p>"+fra.Correo+"</p>");
+            s.AppendLine("<br/>");
+
+            s.AppendLine("<p>Adjunto le enviamos su facturación del día.</p>");
+            s.AppendLine("<br/>");
+            s.AppendLine("<br/>");
+            s.AppendLine("<br/>");
+            s.AppendLine("<br/>");
+            s.AppendLine("<p>Departamento de Administración<br/>Tel. 916281914<br/>administracion@nuevavision.es</p>");
+
+            return s;
         }
 
         public List<DireccionFactura> DireccionesFactura(Factura factura)
@@ -263,22 +348,18 @@ namespace NestoAPI.Infraestructure.Facturas
             //esto no vale para mucho, pero es necesario para meter el dataset en el informe
             return factura.Lineas;
         }
-
         public List<NotaFactura> NotasFactura(Factura factura)
         {
             return factura.NotasAlPie;
         }
-
         public List<TotalFactura> TotalesFactura(Factura factura)
         {
             return factura.Totales;
         }
-
         public List<VencimientoFactura> VencimientosFactura(Factura factura)
         {
             return factura.Vencimientos;
         }
-
         public List<VendedorFactura> VendedoresFactura(Factura factura)
         {
             return factura.Vendedores;

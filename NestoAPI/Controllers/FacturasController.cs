@@ -4,6 +4,7 @@ using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -23,16 +24,17 @@ namespace NestoAPI.Controllers
             servicio = new ServicioFacturas();
             gestor = new GestorFacturas(servicio);
         }
-        
-        //// GET api/Facturas
-        //[HttpGet]
-        //[ResponseType(typeof(Factura))]
-        //public async Task<IHttpActionResult> GetFactura(string empresa, string numeroFactura)
-        //{
-        //    Factura factura = gestor.LeerFactura(empresa, numeroFactura);
 
-        //    return Ok(factura);
-        //}
+        // GET api/Facturas
+        [HttpGet]
+        [Route("api/Facturas/FacturaJson")]
+        [ResponseType(typeof(Factura))]
+        public async Task<IHttpActionResult> GetFacturaJson(string empresa, string numeroFactura)
+        {
+            Factura factura = gestor.LeerFactura(empresa, numeroFactura);
+
+            return Ok(factura);
+        }
 
         // GET api/Facturas
         [HttpGet]
@@ -59,6 +61,18 @@ namespace NestoAPI.Controllers
                 new MediaTypeHeaderValue("application/pdf");
 
             return result;
+        }
+
+        [HttpGet]
+        [Route("api/Facturas/EnviarFacturasDia")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(List<FacturaCorreo>))]
+        public async Task<IHttpActionResult> EnviarFacturasDia()
+        {
+            GestorFacturas gestor = new GestorFacturas();
+            IQueryable<FacturaCorreo> respuesta = await gestor.EnviarFacturasPorCorreo(DateTime.Today);
+
+            return Ok(respuesta.ToList());
         }
     }
 }

@@ -31,6 +31,11 @@
             public const string GRUPO_POR_DEFECTO = "0";
             public const string SECUENCIA_POR_DEFECTO = "FRST";
 
+            public class PersonasContacto
+            {
+                public const short CARGO_FACTURA_POR_CORREO = 22;
+            }
+
             public class TiposExtracto
             {
                 public const string TIPO_FACTURA = "1";

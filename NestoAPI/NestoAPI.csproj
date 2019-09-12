@@ -431,6 +431,7 @@
     </Compile>
     <Compile Include="Models\Facturas\DireccionFactura.cs" />
     <Compile Include="Models\Facturas\Factura.cs" />
+    <Compile Include="Models\Facturas\FacturaCorreo.cs" />
     <Compile Include="Models\Facturas\FacturaLookup.cs" />
     <Compile Include="Models\Facturas\ISerieFactura.cs" />
     <Compile Include="Models\Facturas\LineaFactura.cs" />

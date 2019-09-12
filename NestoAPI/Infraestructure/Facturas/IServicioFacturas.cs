@@ -2,6 +2,7 @@
 using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
@@ -17,5 +18,6 @@ namespace NestoAPI.Infraestructure.Facturas
         List<VencimientoFactura> CargarVencimientosOriginales(string empresa, string cliente, string numeroFactura);
         List<VendedorFactura> CargarVendedoresFactura(string empresa, string numeroFactura);
         string CuentaBancoEmpresa(string empresa);
+        IQueryable<FacturaCorreo> LeerFacturasDia(DateTime dia);
     }
 }
