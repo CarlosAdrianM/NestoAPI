@@ -239,11 +239,11 @@ namespace NestoAPI.Models.Comisiones
                 }
             };
 
-            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "JM" || vendedor == "MRM" || vendedor == "RFG" || vendedor == "TAR")
+            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "MRM" || vendedor == "RFG" || vendedor == "JGP")
             {
                 return tramosCalle;
             }
-            else if (vendedor == "CL" || vendedor == "LA" || vendedor == "PA" || vendedor == "SH")
+            else if (vendedor == "CAR" || vendedor == "LA" || vendedor == "PA" || vendedor == "SH")
             {
                 return tramosTelefono;
             }

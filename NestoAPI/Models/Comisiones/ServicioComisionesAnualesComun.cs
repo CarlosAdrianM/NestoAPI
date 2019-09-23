@@ -89,7 +89,7 @@ namespace NestoAPI.Models.Comisiones
                 }
                 catch
                 {
-                    throw new Exception("Etiqueta no válida en la tabla de resúmenes de comisiones");
+                    Console.WriteLine("Etiqueta no válida en la tabla de resúmenes de comisiones del vendedor " + resumenMesDB.Vendedor);
                 }
 
             }

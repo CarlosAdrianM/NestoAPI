@@ -208,19 +208,11 @@ namespace NestoAPI.Controllers
                 },
                 new VendedorDTO
                 {
-                    vendedor = "TAR"
-                },
-                new VendedorDTO
-                {
                     vendedor = "MRM"
                 },
                 new VendedorDTO
                 {
                     vendedor = "RFG"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "CL"
                 },
                 new VendedorDTO
                 {
@@ -245,6 +237,10 @@ namespace NestoAPI.Controllers
                 new VendedorDTO
                 {
                     vendedor = "JGP"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "CAR"
                 }
             };
                         
@@ -261,7 +257,7 @@ namespace NestoAPI.Controllers
 
         private IServicioComisionesAnuales ServicioVendedor(string vendedor, int anno)
         {
-            if (vendedor == "IF" || vendedor == "AH" || vendedor == "JGP")
+            if (vendedor == "IF" || vendedor == "AH")
             {
                 if (anno == 2018)
                 {
