@@ -165,7 +165,7 @@ namespace NestoAPI.Models.Comisiones
                 {
                     Desde = 0M,
                     Hasta = 94974.68M,
-                    Tipo = .0067M,
+                    Tipo = .0M,
                     TipoExtra = .0M
                 },new TramoComision
                 {
@@ -239,13 +239,55 @@ namespace NestoAPI.Models.Comisiones
                 }
             };
 
+            Collection<TramoComision> tramosTelefonoParcial = new Collection<TramoComision>
+            {
+                new TramoComision
+                {
+                    Desde = 0M,
+                    Hasta = 8000M,
+                    Tipo = .0M,
+                    TipoExtra = .0M
+                },new TramoComision
+                {
+                    Desde = 8000.01M,
+                    Hasta = 16000M,
+                    Tipo = .045M,
+                    TipoExtra = .002M
+                },
+                new TramoComision
+                {
+                    Desde = 16000.01M,
+                    Hasta = 24000M,
+                    Tipo = .0225M,
+                    TipoExtra = .004M
+                },
+                new TramoComision
+                {
+                    Desde = 24000.01M,
+                    Hasta = 32000M,
+                    Tipo = .0355M,
+                    TipoExtra = .011M
+                },
+                new TramoComision
+                {
+                    Desde = 32000.01M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .0395M,
+                    TipoExtra = .017M
+                }
+            };
+
             if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "MRM" || vendedor == "RFG" || vendedor == "JGP")
             {
                 return tramosCalle;
             }
-            else if (vendedor == "CAR" || vendedor == "LA" || vendedor == "PA" || vendedor == "SH")
+            else if (vendedor == "LA" || vendedor == "PA" || vendedor == "SH")
             {
                 return tramosTelefono;
+            }
+            else if (vendedor == "CAR")
+            {
+                return tramosTelefonoParcial;
             }
 
             throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");
@@ -255,22 +297,6 @@ namespace NestoAPI.Models.Comisiones
         {
             //Este año no hay tramos mensuales
             return new Collection<TramoComision>();
-
-            /*
-            vendedor = vendedor.ToUpper();
-            Collection <TramoComision> tramosCalle = new Collection<TramoComision>
-            {
-                new TramoComision
-                {
-                    Desde = 0,
-                    Hasta = 0,
-                    Tipo = 0,
-                    TipoExtra = 0
-                }
-            };
-
-            return tramosCalle;            
-            */
         }
         
     }
