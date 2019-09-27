@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Net.Mail;
 
 namespace NestoAPI.Models.Facturas.SeriesFactura
 {
@@ -9,8 +10,11 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
 
         public List<NotaFactura> Notas => new List<NotaFactura>
             {
-                new NotaFactura{ Nota = "EL PLAZO MÁXIMO PARA CUALQUIER RECLAMACIÓN DE ESTE PEDIDO ES DE 24 HORAS." },
                 new NotaFactura{ Nota = "LA ASISTENCIA A CLASE ESTÁ SUPEDITADA A ENCONTRARSE AL CORRIENTE DE PAGO." }
             };
+
+        public MailAddress CorreoDesde => new MailAddress("administracion@nuevavision.es", "CURSOS NUEVA VISIÓN");
+
+        public string FirmaCorreo => "<p>Departamento de Formación y Cursos<br/>Tel. 915311923<br/>cursos@nuevavision.es</p>";
     }
 }

@@ -11,7 +11,6 @@ using System.Threading.Tasks;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
-using NestoAPI.Models.Facturas.SeriesFactura;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
@@ -61,13 +60,10 @@ namespace NestoAPI.Infraestructure.Facturas
         }        
         public Factura LeerFactura(string empresa, string numeroFactura)
         {
-            
+
             CabFacturaVta cabFactura = servicio.CargarCabFactura(empresa, numeroFactura);
             LinPedidoVta primeraLinea = cabFactura.LinPedidoVtas.FirstOrDefault();
-
-            string claseSerie = "NestoAPI.Models.Facturas.SeriesFactura.Serie" + cabFactura.Serie.Trim();
-            Type elementType = Type.GetType(claseSerie);
-            ISerieFactura serieFactura = (ISerieFactura)Activator.CreateInstance(elementType);
+            ISerieFactura serieFactura = LeerSerie(cabFactura.Serie);
 
             CabPedidoVta cabPedido;
             if (primeraLinea != null)
@@ -172,7 +168,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 importeTotal += total.BaseImponible + total.ImporteIVA + total.ImporteRecargoEquivalencia;
             }
 
-            
+
 
             List<VendedorFactura> vendedores = servicio.CargarVendedoresFactura(empresa, numeroFactura);
             List<VencimientoFactura> vencimientos = servicio.CargarVencimientosExtracto(empresa, clienteRazonSocial.Nº_Cliente, numeroFactura);
@@ -182,19 +178,21 @@ namespace NestoAPI.Infraestructure.Facturas
                 if (vencimientosPendientes.Sum(v => v.ImportePendiente) == importeTotal)
                 {
                     vencimientos = vencimientosPendientes;
-                } else
+                }
+                else
                 {
                     decimal totalAcumulado = 0;
                     int i = 0;
-                    
+
                     while (i < vencimientos.Count)
                     {
                         totalAcumulado += vencimientos[i].Importe;
                         if (totalAcumulado == 0)
                         {
-                            vencimientos.RemoveRange(0, i+1);
+                            vencimientos.RemoveRange(0, i + 1);
                             i = 0;
-                        } else
+                        }
+                        else
                         {
                             i++;
                         }
@@ -212,7 +210,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 throw new Exception("No cuadran los vencimientos con el total de la factura");
             }
 
-            foreach(var vencimiento in vencimientos)
+            foreach (var vencimiento in vencimientos)
             {
                 if (vencimiento.CCC != null && vencimiento.CCC.Trim() != "")
                 {
@@ -222,16 +220,18 @@ namespace NestoAPI.Infraestructure.Facturas
                 if (vencimiento.FormaPago == "TRN")
                 {
                     vencimiento.Iban = servicio.CuentaBancoEmpresa(empresa);
-                } else
+                }
+                else
                 {
                     vencimiento.Iban = "<<< No Procede >>>";
-                }                
+                }
             }
 
             Factura factura = new Factura
             {
                 Cliente = cabFactura.Nº_Cliente.Trim(),
                 Comentarios = cabPedido?.Comentarios?.Trim(),
+                CorreoDesde = serieFactura.CorreoDesde,
                 Delegacion = primeraLinea.Delegación?.Trim(),
                 Direcciones = direcciones,
                 DatosRegistrales = empresaFactura.TextoFactura?.Trim(),
@@ -251,6 +251,15 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return factura;
         }
+
+        private static ISerieFactura LeerSerie(string serie)
+        {
+            string claseSerie = "NestoAPI.Models.Facturas.SeriesFactura.Serie" + serie.Trim();
+            Type elementType = Type.GetType(claseSerie);
+            ISerieFactura serieFactura = (ISerieFactura)Activator.CreateInstance(elementType);
+            return serieFactura;
+        }
+
         public List<Factura> LeerFacturas(List<FacturaLookup> numerosFactura)
         {
             List<Factura> facturas = new List<Factura>();
@@ -279,9 +288,9 @@ namespace NestoAPI.Infraestructure.Facturas
                         listaCorreos.Add(mail);
                     }
                     mailAnterior = fra.Correo;
+                    ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
                     mail = new MailMessage();
-                    mail.From = new MailAddress("nesto@nuevavision.es");
-                    mail.ReplyToList.Add(new MailAddress("administracion@nuevavision.es"));
+                    mail.From = serieFactura.CorreoDesde;
                     mail.To.Add(new MailAddress("administracion@nuevavision.es"));
                     mail.Subject = "Facturación nº ";
                     mail.Body = (await GenerarCorreoHTML(fra)).ToString();
@@ -323,18 +332,16 @@ namespace NestoAPI.Infraestructure.Facturas
 
         private async Task<StringBuilder> GenerarCorreoHTML(FacturaCorreo fra)
         {
+            ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
             StringBuilder s = new StringBuilder();
 
-            //s.AppendLine("<img src=\"http://www.productosdeesteticaypeluqueriaprofesional.com/logofra.jpg\">");
             s.AppendLine("<p>"+fra.Correo+"</p>");
             s.AppendLine("<br/>");
 
             s.AppendLine("<p>Adjunto le enviamos su facturación del día.</p>");
             s.AppendLine("<br/>");
             s.AppendLine("<br/>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<p>Departamento de Administración<br/>Tel. 916281914<br/>administracion@nuevavision.es</p>");
+            s.AppendLine(serieFactura.FirmaCorreo);
 
             return s;
         }

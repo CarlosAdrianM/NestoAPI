@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Net.Mail;
 
 namespace NestoAPI.Models.Facturas
 {
@@ -7,6 +8,7 @@ namespace NestoAPI.Models.Facturas
     {
         public string Cliente { get; set; }
         public string Comentarios { get; set; }
+        public MailAddress CorreoDesde { get; set; }
         public string DatosRegistrales { get; set; }
         public string Delegacion { get; set; }
         public DateTime Fecha { get; set; }

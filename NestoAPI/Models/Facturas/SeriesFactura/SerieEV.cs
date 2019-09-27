@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Net.Mail;
 
 namespace NestoAPI.Models.Facturas.SeriesFactura
 {
@@ -11,5 +12,7 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
                 new NotaFactura{ Nota = "EL PLAZO MÁXIMO PARA CUALQUIER RECLAMACIÓN DE ESTE PEDIDO ES DE 24 HORAS." },
                 new NotaFactura{ Nota = "LOS GASTOS POR DEVOLUCIÓN DEL PRODUCTO SERÁN SIEMPRE A CARGO DEL CLIENTE." }
             };
+        public MailAddress CorreoDesde => new MailAddress("administracion@evavisnu.com", "EVA VISNÚ");
+        public string FirmaCorreo => "<p>Departamento de Administración<br/>Tel. 916281216<br/>administracion@evavisnu.com</p>";
     }
 }
