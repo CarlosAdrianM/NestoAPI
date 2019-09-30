@@ -15,5 +15,9 @@ namespace NestoAPI.Infraestructure
         Task<RespuestaDatosGeneralesClientes> CogerDatosCodigoPostal(string codigoPostal);
         Task<Cliente> PrepararCliente(ClienteCrear clienteDTO);
         Task<CCC> PrepararCCC(ClienteCrear clienteDTO);
+        Task<Cliente> BuscarCliente(string empresa, string cliente, string contacto);
+        Task<VendedorClienteGrupoProducto> BuscarVendedorGrupo(string empresa, string cliente, string contacto, string grupo);
+        Task<CondPagoCliente> BuscarCondicionesPago(string empresa, string cliente, string contacto);
+        Task<CCC> BuscarCCC(string empresa, string cliente, string contacto, string ccc);
     }
 }

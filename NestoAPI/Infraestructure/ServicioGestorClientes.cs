@@ -281,5 +281,46 @@ namespace NestoAPI.Infraestructure
         {
             throw new NotImplementedException();
         }
+
+        public async Task<Cliente> BuscarCliente(string empresa, string cliente, string contacto)
+        {
+            NVEntities db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+
+            Cliente clienteDevolver = await db.Clientes.SingleAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto);
+
+            return clienteDevolver;
+        }
+
+        public async Task<VendedorClienteGrupoProducto> BuscarVendedorGrupo(string empresa, string cliente, string contacto, string grupo)
+        {
+            NVEntities db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+
+            VendedorClienteGrupoProducto vendedorGrupo = await db.VendedoresClientesGruposProductos.SingleOrDefaultAsync(v => v.Empresa == empresa && v.Cliente == cliente && v.Contacto == contacto && v.GrupoProducto == grupo);
+
+            return vendedorGrupo;
+        }
+
+        public async Task<CondPagoCliente> BuscarCondicionesPago(string empresa, string cliente, string contacto)
+        {
+            NVEntities db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+
+            CondPagoCliente condPagoCliente = await db.CondPagoClientes.OrderBy(c => c.ImporteMínimo).FirstOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto);
+
+            return condPagoCliente;
+        }
+
+        public async Task<CCC> BuscarCCC(string empresa, string cliente, string contacto, string ccc)
+        {
+            NVEntities db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+
+            CCC cccCliente = await db.CCCs.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto == contacto && c.Número == ccc);
+
+            return cccCliente;
+
+        }
     }
 }

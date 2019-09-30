@@ -278,6 +278,18 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
+        [Route("api/Clientes/GetClienteCrear")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(ClienteCrear))]
+        public async Task<IHttpActionResult> GetClienteCrear(string direccion, string codigoPostal, string telefono)
+        {
+            GestorClientes gestor = new GestorClientes();
+            ClienteCrear respuesta = await gestor.ConstruirClienteCrear(direccion, codigoPostal, telefono);
+
+            return Ok(respuesta);
+        }
+
+        [HttpGet]
         [Route("api/Clientes/ComprobarNifNombre")]
         // GET: api/Clientes/5
         [ResponseType(typeof(RespuestaNifNombreCliente))]

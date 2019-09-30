@@ -344,5 +344,44 @@ namespace NestoAPI.Infraestructure
 
             return telefonoFormateado;
         }
+
+        public async Task<ClienteCrear> ConstruirClienteCrear(string empresa, string cliente, string contacto)
+        {
+            Cliente clienteDb = await servicio.BuscarCliente(empresa, cliente, contacto);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Empresa = clienteDb.Empresa.Trim(),
+                Cliente = clienteDb.Nº_Cliente.Trim(),
+                Contacto = clienteDb.Contacto.Trim(),
+                CodigoPostal = clienteDb.CodPostal?.Trim(),
+                Direccion = clienteDb.Dirección?.Trim(),
+                Estado = clienteDb.Estado,
+                Nif = clienteDb.CIF_NIF?.Trim(),
+                Nombre = clienteDb.Nombre?.Trim(),
+                Poblacion = clienteDb.Población?.Trim(),
+                Provincia = clienteDb.Provincia?.Trim(),
+                Ruta = clienteDb.Ruta?.Trim(),
+                Telefono = clienteDb.Teléfono?.Trim(),
+                VendedorEstetica = clienteDb.Vendedor?.Trim(),
+                EsContacto = !clienteDb.ClientePrincipal
+            };
+
+            VendedorClienteGrupoProducto vendedorGrupo = await servicio.BuscarVendedorGrupo(empresa, cliente, contacto, Constantes.Productos.GRUPO_PELUQUERIA);
+            if (vendedorGrupo != null)
+            {
+                clienteCrear.VendedorPeluqueria = vendedorGrupo.Vendedor?.Trim();
+            }
+            clienteCrear.Estetica = clienteCrear.VendedorEstetica != null && clienteCrear.VendedorEstetica != Constantes.Vendedores.VENDEDOR_GENERAL;
+            clienteCrear.Peluqueria = clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != Constantes.Vendedores.VENDEDOR_GENERAL;
+
+            CondPagoCliente condPagoCliente = await servicio.BuscarCondicionesPago(empresa, cliente, contacto);
+            clienteCrear.FormaPago = condPagoCliente.FormaPago;
+            clienteCrear.PlazosPago = condPagoCliente.PlazosPago;
+
+            CCC cccCliente = await servicio.BuscarCCC(empresa, cliente, contacto, clienteDb.CCC);
+            clienteCrear.Iban = cccCliente.Pais + cccCliente.DC_IBAN + cccCliente.Entidad + cccCliente.Oficina + cccCliente.DC + cccCliente.Nº_Cuenta;            
+
+            return clienteCrear;
+        }
     }
 }

@@ -325,5 +325,146 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual("925337754/618538006/123456789", respuesta);
         }
+
+        [TestMethod]
+        public void GestorClientes_ConstruirClienteCrear_LosDatosBasicosCoincidenConElCliente()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            Cliente clienteDevuelto = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "1234    ",
+                Contacto = "  0",
+                CodPostal = "28001",
+                Dirección = "Rue del percebe, 13      ",
+                Estado = 54,
+                CIF_NIF = "A78368255",
+                Nombre = "ACME, S.A.      ",
+                Población = "ALGETE    ",
+                Provincia = "MADRID    ",
+                Ruta = "AT ",
+                Teléfono = "915311923/916281914     ",
+                Vendedor = "CA ",
+                ClientePrincipal = false
+            };
+            A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(clienteDevuelto);
+            
+            var clienteCrear = gestor.ConstruirClienteCrear("1", "1234", "0").Result;
+
+            Assert.AreEqual(clienteCrear.Empresa, "1");
+            Assert.AreEqual(clienteCrear.Cliente, "1234");
+            Assert.AreEqual(clienteCrear.Contacto, "0");
+            Assert.AreEqual(clienteCrear.CodigoPostal, "28001");
+            Assert.AreEqual(clienteCrear.Direccion, "Rue del percebe, 13");
+            Assert.AreEqual(clienteCrear.Estado, (short)54);
+            Assert.AreEqual(clienteCrear.Nif, "A78368255");
+            Assert.AreEqual(clienteCrear.Nombre, "ACME, S.A.");
+            Assert.AreEqual(clienteCrear.Poblacion, "ALGETE");
+            Assert.AreEqual(clienteCrear.Provincia, "MADRID");
+            Assert.AreEqual(clienteCrear.Ruta, "AT");
+            Assert.AreEqual(clienteCrear.Telefono, "915311923/916281914");
+            Assert.AreEqual(clienteCrear.VendedorEstetica, "CA");
+            Assert.AreEqual(clienteCrear.EsContacto, true);
+        }
+
+        [TestMethod]
+        public void GestorClientes_ConstruirClienteCrear_LosDatosDeLosVendedoresCuadran()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            Cliente clienteDevuelto = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "1234    ",
+                Contacto = "  0",
+                Vendedor = "CA "
+            };
+            A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(clienteDevuelto);
+            VendedorClienteGrupoProducto vendedorGrupo = new VendedorClienteGrupoProducto
+            {
+                Empresa = "1",
+                Cliente = "1234",
+                Contacto = "0",
+                GrupoProducto = "PEL",
+                Vendedor="NV"
+            };
+            A.CallTo(() => servicio.BuscarVendedorGrupo("1", "1234", "0", "PEL")).Returns(vendedorGrupo);
+
+            var clienteCrear = gestor.ConstruirClienteCrear("1", "1234", "0").Result;
+
+            Assert.AreEqual("CA", clienteCrear.VendedorEstetica);
+            Assert.AreEqual("NV", clienteCrear.VendedorPeluqueria);
+            Assert.IsTrue(clienteCrear.Estetica);
+            Assert.IsFalse(clienteCrear.Peluqueria);
+        }
+
+        [TestMethod]
+        public void GestorClientes_ConstruirClienteCrear_LosDatosDePagoCuadran()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            Cliente clienteDevuelto = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "1234    ",
+                Contacto = "  0",
+                CCC = "1  "
+            };
+            A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(clienteDevuelto);
+
+            CondPagoCliente condPagoCliente = new CondPagoCliente
+            {
+                Empresa = "1",
+                Nº_Cliente = "1234",
+                Contacto = "0",
+                FormaPago = "RCB",
+                PlazosPago = "1/30"
+            };
+            A.CallTo(() => servicio.BuscarCondicionesPago("1", "1234", "0")).Returns(condPagoCliente);
+
+            var clienteCrear = gestor.ConstruirClienteCrear("1", "1234", "0").Result;
+
+            Assert.AreEqual("RCB", clienteCrear.FormaPago);
+            Assert.AreEqual("1/30", clienteCrear.PlazosPago);
+        }
+
+        [TestMethod]
+        public void GestorClientes_ConstruirClienteCrear_ElIbanCuadra()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            Cliente clienteDevuelto = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "1234    ",
+                Contacto = "  0",
+                CCC = "1  "
+            };
+            A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(clienteDevuelto);
+
+            CCC cccCliente = new CCC
+            {
+                Empresa = "1",
+                Cliente = "1234",
+                Contacto = "0",
+                Número = "1  ",
+                Pais = "ES",
+                DC_IBAN = "12",
+                Entidad = "3456",
+                Oficina = "7890",
+                DC = "**",
+                Nº_Cuenta = "0123456789"
+            };
+            A.CallTo(() => servicio.BuscarCCC("1", "1234", "0", "1  ")).Returns(cccCliente);
+
+            var clienteCrear = gestor.ConstruirClienteCrear("1", "1234", "0").Result;
+
+            Assert.AreEqual("ES1234567890**0123456789", clienteCrear.Iban);
+        }
     }
 }

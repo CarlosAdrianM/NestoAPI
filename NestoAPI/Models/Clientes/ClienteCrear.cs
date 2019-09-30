@@ -10,6 +10,7 @@ namespace NestoAPI.Models.Clientes
     {
         public string Empresa { get; set; }
         public string Cliente { get; set; }
+        public string Contacto { get; set; }
         public string CodigoPostal { get; set; }
         [StringLength(50)]
         public string Direccion { get; set; }
