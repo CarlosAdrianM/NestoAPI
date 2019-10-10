@@ -188,6 +188,7 @@ namespace NestoAPI.Models
 
     public class PersonaContactoDTO
     {
+        public int Numero { get; set; }
         public string Nombre { get; set; }
         public string CorreoElectronico { get; set; }
     }

@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Data.Entity;
 using System.IO;
@@ -156,113 +157,7 @@ namespace NestoAPI.Infraestructure
             return webRequest;
         }
 
-        public async Task<Cliente> PrepararCliente(ClienteCrear clienteCrear)
-        {
-            string contacto = CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
-            
-            Cliente cliente = new Cliente
-            {
-                Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
-                Nº_Cliente = clienteCrear.Cliente,
-                Contacto = contacto,
-
-                CIF_NIF = clienteCrear.Nif,
-                ClientePrincipal = !clienteCrear.EsContacto,
-                CodPostal = clienteCrear.CodigoPostal,
-                ContactoBonificacion = contacto,
-                ContactoCobro = contacto,
-                ContactoDefecto = contacto,
-                DiasEnServir = Constantes.Clientes.DIAS_EN_SERVIR_POR_DEFECTO,
-                Dirección = clienteCrear.Direccion,
-                Estado = clienteCrear.Estado,
-                Grupo = Constantes.Clientes.GRUPO_POR_DEFECTO,
-                IVA = Constantes.Empresas.IVA_POR_DEFECTO,
-                Nombre = clienteCrear.Nombre?.ToUpper(),
-                PeriodoFacturación = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
-                Población = clienteCrear.Poblacion,
-                Provincia = clienteCrear.Provincia,
-                Ruta = clienteCrear.Ruta,
-                ServirJunto = true,
-                Teléfono = clienteCrear.Telefono,
-                Vendedor = clienteCrear.VendedorEstetica,
-                Usuario = clienteCrear.Usuario
-            };
-
-            if (clienteCrear.Peluqueria && !clienteCrear.Estetica)
-            {
-                clienteCrear.VendedorPeluqueria = cliente.Vendedor;
-                clienteCrear.VendedorEstetica = Constantes.Vendedores.VENDEDOR_GENERAL;
-                cliente.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
-            }
-
-            if (clienteCrear.Peluqueria && clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != clienteCrear.VendedorEstetica)
-            {
-                cliente.VendedoresClienteGrupoProductoes.Add(new VendedorClienteGrupoProducto
-                {
-                    Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
-                    Cliente = clienteCrear.Cliente,
-                    Contacto = contacto,
-                    Vendedor = clienteCrear.Peluqueria ? clienteCrear.VendedorPeluqueria : Constantes.Vendedores.VENDEDOR_GENERAL,
-                    GrupoProducto = Constantes.Productos.GRUPO_PELUQUERIA,
-                    Usuario = clienteCrear.Usuario
-                });
-            }
-            
-            int i = 1;
-            foreach (PersonaContactoDTO personaCrear in clienteCrear.PersonasContacto.Where(p=> !string.IsNullOrEmpty(p.Nombre) ||  !string.IsNullOrEmpty(p.CorreoElectronico)))
-            {
-                PersonaContactoCliente persona = new PersonaContactoCliente
-                {
-                    Empresa = cliente.Empresa,
-                    Cliente = cliente,
-                    Número = i++.ToString(),
-                    Cargo = Constantes.Clientes.CARGO_POR_DEFECTO,
-                    Nombre = personaCrear.Nombre,
-                    CorreoElectrónico = personaCrear.CorreoElectronico,
-                    EnviarBoletin = true,
-                    Estado = 0,
-                    Usuario = clienteCrear.Usuario
-                };
-                cliente.PersonasContactoClientes.Add(persona);
-            }
-            
-            CondPagoCliente condicionesPago = new CondPagoCliente
-            {
-                Empresa = cliente.Empresa,
-                Cliente = cliente,
-                ImporteMínimo = 0,
-                FormaPago = clienteCrear.FormaPago,
-                PlazosPago = clienteCrear.PlazosPago
-            };
-            cliente.CondPagoClientes.Add(condicionesPago);
-
-            if (clienteCrear.Iban != null && clienteCrear.Iban!="")
-            {
-                CCC ccc = new CCC
-                {
-                    Empresa = cliente.Empresa,
-                    Cliente1 = cliente,
-                    Número = "1",
-                    Pais = clienteCrear.Iban.Substring(0, 2),
-                    DC_IBAN = clienteCrear.Iban.Substring(2, 2),
-                    Entidad = clienteCrear.Iban.Substring(5, 4),
-                    Oficina = clienteCrear.Iban.Substring(10, 4),
-                    DC = clienteCrear.Iban.Substring(15, 2),
-                    Nº_Cuenta = clienteCrear.Iban.Substring(17, 2)
-                    + clienteCrear.Iban.Substring(20, 4)
-                    + clienteCrear.Iban.Substring(25, 4),
-                    Estado = Constantes.Clientes.EstadosMandatos.EN_PODER_DEL_CLIENTE,
-                    Secuencia = Constantes.Clientes.SECUENCIA_POR_DEFECTO,
-                    Usuario = clienteCrear.Usuario
-                };
-                cliente.CCCs.Add(ccc);
-            }
-            
-            return cliente;
-
-        }
-
-        private string CalcularSiguienteContacto(string empresa, string cliente)
+        public async Task<string> CalcularSiguienteContacto(string empresa, string cliente)
         {
             NVEntities db = new NVEntities();
             bool existe = true;
@@ -271,7 +166,7 @@ namespace NestoAPI.Infraestructure
             while (existe && contador < MAXIMO_NUMERO_CONTACTOS)
             {
                 contador++;
-                existe = db.Clientes.SingleOrDefault(e => e.Empresa == empresa && e.Nº_Cliente == cliente && e.Contacto == contador.ToString()) != null;
+                existe = await db.Clientes.SingleOrDefaultAsync(e => e.Empresa == empresa && e.Nº_Cliente == cliente && e.Contacto == contador.ToString()) != null;
             }
             
             return contador.ToString();
@@ -286,8 +181,15 @@ namespace NestoAPI.Infraestructure
         {
             NVEntities db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
+            return await BuscarCliente(db, empresa, cliente, contacto);
+        }
 
-            Cliente clienteDevolver = await db.Clientes.SingleAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto);
+
+        public async Task<Cliente> BuscarCliente(NVEntities db, string empresa, string cliente, string contacto)
+        {
+            Cliente clienteDevolver = await db.Clientes.Include(c => c.CondPagoClientes)
+                .Include(c => c.CCC1).Include(c => c.Vendedore).Include(c => c.PersonasContactoClientes)
+                .SingleAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto);
 
             return clienteDevolver;
         }
@@ -322,5 +224,16 @@ namespace NestoAPI.Infraestructure
             return cccCliente;
 
         }
+
+        public async Task<List<PersonaContactoCliente>> BuscarPersonasContacto(string empresa, string cliente, string contacto)
+        {
+            NVEntities db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+
+            List<PersonaContactoCliente> personas = await db.PersonasContactoClientes.Where(c => c.Empresa == empresa && c.NºCliente == cliente && c.Contacto == contacto).ToListAsync();
+
+            return personas;
+        }
+
     }
 }

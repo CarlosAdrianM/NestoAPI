@@ -421,8 +421,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Empresa = "1",
                 Nº_Cliente = "1234",
                 Contacto = "0",
-                FormaPago = "RCB",
-                PlazosPago = "1/30"
+                FormaPago = "RCB   ",
+                PlazosPago = "1/30   "
             };
             A.CallTo(() => servicio.BuscarCondicionesPago("1", "1234", "0")).Returns(condPagoCliente);
 
@@ -465,6 +465,243 @@ namespace NestoAPI.Tests.Infrastructure
             var clienteCrear = gestor.ConstruirClienteCrear("1", "1234", "0").Result;
 
             Assert.AreEqual("ES1234567890**0123456789", clienteCrear.Iban);
+        }
+
+        [TestMethod]
+        public void GestorClientes_ConstruirClienteCrear_LasPersonasDeContactoSeCrean()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            Cliente clienteDevuelto = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "1234    ",
+                Contacto = "  0",
+                CCC = "1  "
+            };
+            A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(clienteDevuelto);
+
+            List<PersonaContactoCliente> personas = new List<PersonaContactoCliente>
+            {
+                new PersonaContactoCliente
+                {
+                    Nombre = "Carlos     ",
+                    CorreoElectrónico = "carlos@yo.com     "
+                },
+                new PersonaContactoCliente
+                {
+                    Nombre = "Adrián          ",
+                    CorreoElectrónico = "adrian@yo.com         "
+                }
+            };
+            A.CallTo(() => servicio.BuscarPersonasContacto("1", "1234", "0")).Returns(personas);
+
+            var clienteCrear = gestor.ConstruirClienteCrear("1", "1234", "0").Result;
+
+            Assert.AreEqual("Carlos", clienteCrear.PersonasContacto.First().Nombre);
+            Assert.AreEqual("carlos@yo.com", clienteCrear.PersonasContacto.First().CorreoElectronico);
+            Assert.AreEqual("Adrián", clienteCrear.PersonasContacto.Last().Nombre);
+            Assert.AreEqual("adrian@yo.com", clienteCrear.PersonasContacto.Last().CorreoElectronico);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_SiHayUnaPersonaDeContactoNuevaSeCrea() 
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ICollection<PersonaContactoDTO> personasContactoNuevas = new List<PersonaContactoDTO>
+            {
+                new PersonaContactoDTO
+                {
+                    Numero = 2,
+                    Nombre = "Carlos",
+                    CorreoElectronico = ""
+                },
+                new PersonaContactoDTO
+                {
+                    Nombre = "Adrián",
+                    CorreoElectronico = ""
+                }
+            };
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.PersonasContacto = personasContactoNuevas;
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Nombre = "Cliente existente";
+            clienteExistente.PersonasContactoClientes = new List<PersonaContactoCliente>
+            {
+                new PersonaContactoCliente
+                {
+                    Número = "2  ",
+                    Nombre = "Carlos",
+                    CorreoElectrónico = ""
+                }
+            };
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual(2, clienteNuevo.PersonasContactoClientes.Count);
+        }
+
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_SiCambiaUnaPersonaDeContactoSeModificaEnElCliente()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ICollection<PersonaContactoDTO> personasContactoNuevas = new List<PersonaContactoDTO>
+            {
+                new PersonaContactoDTO
+                {
+                    Numero = 2,
+                    Nombre = "Carlos",
+                    CorreoElectronico = "carlosadrian@nuevavision.es"
+                },
+                new PersonaContactoDTO
+                {
+                    Numero = 3,
+                    Nombre = "Adrián",
+                    CorreoElectronico = ""
+                }
+            };
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.PersonasContacto = personasContactoNuevas;
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Nombre = "Cliente existente";
+            clienteExistente.PersonasContactoClientes = new List<PersonaContactoCliente>
+            {
+                new PersonaContactoCliente
+                {
+                    Número = "2  ",
+                    Nombre = "Carlos",
+                    CorreoElectrónico = ""
+                },
+                new PersonaContactoCliente
+                {
+                    Número = "3  ",
+                    Nombre = "Martínez",
+                    CorreoElectrónico = ""
+                },
+            };
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual(2, clienteNuevo.PersonasContactoClientes.Count);
+            Assert.AreEqual("Carlos", clienteNuevo.PersonasContactoClientes.Single(p=>p.Número.Trim() == "2").Nombre);
+            Assert.AreEqual("carlosadrian@nuevavision.es", clienteNuevo.PersonasContactoClientes.Single(p => p.Número.Trim() == "2").CorreoElectrónico);
+            Assert.AreEqual("Adrián", clienteNuevo.PersonasContactoClientes.Single(p => p.Número.Trim() == "3").Nombre);
+            Assert.AreEqual("", clienteNuevo.PersonasContactoClientes.Single(p => p.Número.Trim() == "3").CorreoElectrónico);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_SiSeBorraUnaPersonaDeContactoSeQuitaDelCliente()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ICollection<PersonaContactoDTO> personasContactoNuevas = new List<PersonaContactoDTO>
+            {
+                new PersonaContactoDTO
+                {
+                    Numero = 2,
+                    Nombre = "Carlos",
+                    CorreoElectronico = "carlosadrian@nuevavision.es"
+                }
+            };
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.PersonasContacto = personasContactoNuevas;
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Nombre = "Cliente existente";
+            clienteExistente.PersonasContactoClientes = new List<PersonaContactoCliente>
+            {
+                new PersonaContactoCliente
+                {
+                    Número = "2  ",
+                    Nombre = "Carlos",
+                    CorreoElectrónico = ""
+                },
+                new PersonaContactoCliente
+                {
+                    Número = "3  ",
+                    Nombre = "Martínez",
+                    CorreoElectrónico = ""
+                },
+            };
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual(1, clienteNuevo.PersonasContactoClientes.Count);
+            Assert.AreEqual("Carlos", clienteNuevo.PersonasContactoClientes.Single(p => p.Número.Trim() == "2").Nombre);
+            Assert.AreEqual("carlosadrian@nuevavision.es", clienteNuevo.PersonasContactoClientes.Single(p => p.Número.Trim() == "2").CorreoElectrónico);
+        }
+
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_SiElClienteEsEstado5PeroTieneNifSePasaAEstado0()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Nif = "1234A";
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Nombre = "Cliente existente";
+            clienteExistente.Estado = Constantes.Clientes.Estados.PRIMERA_VISITA;
+            clienteExistente.CIF_NIF = "1234A"; // no debería ser estado 5, pero en la práctica ocurre
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual(Constantes.Clientes.Estados.VISITA_PRESENCIAL, clienteNuevo.Estado);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_SiNoTieneEsteticaYHayVendedorDePeluqueriaCreaElVendedorDePeluqueria()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.VendedorEstetica = "JE";
+            clienteCrear.VendedorPeluqueria = "AH";
+            clienteCrear.Estetica = false;
+            clienteCrear.Peluqueria = true;
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("NV", clienteNuevo.Vendedor);
+            Assert.AreEqual(1, clienteNuevo.VendedoresClienteGrupoProductoes.Count);
+            Assert.AreEqual("AH", clienteNuevo.VendedoresClienteGrupoProductoes.First().Vendedor);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_SiNoTieneEsteticaYNoHayVendedorDePeluqueriaCreaElVendedorDePeluqueria()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.VendedorEstetica = "JE";
+            clienteCrear.VendedorPeluqueria = null;
+            clienteCrear.Estetica = false;
+            clienteCrear.Peluqueria = true;
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("NV", clienteNuevo.Vendedor);
+            Assert.AreEqual(1, clienteNuevo.VendedoresClienteGrupoProductoes.Count);
+            Assert.AreEqual("JE", clienteNuevo.VendedoresClienteGrupoProductoes.First().Vendedor);
         }
     }
 }

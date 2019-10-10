@@ -13,11 +13,13 @@ namespace NestoAPI.Infraestructure
     {
         readonly IServicioGestorClientes servicio;
         readonly IServicioAgencias servicioAgencias;
+
         public GestorClientes()
         {
             servicio = new ServicioGestorClientes();
             servicioAgencias = new ServicioAgencias();
         }
+
         public GestorClientes(IServicioGestorClientes servicio, IServicioAgencias servicioAgencias)
         {
             this.servicio = servicio;
@@ -69,7 +71,9 @@ namespace NestoAPI.Infraestructure
             if(clienteEncontrado != null && clienteEncontrado.cliente != null)
             {
                 respuesta.ExisteElCliente = true;
+                respuesta.Empresa = clienteEncontrado.empresa;
                 respuesta.NumeroCliente = clienteEncontrado.cliente;
+                respuesta.Contacto = clienteEncontrado.contacto;
                 respuesta.NombreFormateado = clienteEncontrado.nombre;
                 respuesta.NifFormateado = clienteEncontrado.cifNif;
                 respuesta.NifValidado = true;
@@ -375,13 +379,281 @@ namespace NestoAPI.Infraestructure
             clienteCrear.Peluqueria = clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != Constantes.Vendedores.VENDEDOR_GENERAL;
 
             CondPagoCliente condPagoCliente = await servicio.BuscarCondicionesPago(empresa, cliente, contacto);
-            clienteCrear.FormaPago = condPagoCliente.FormaPago;
-            clienteCrear.PlazosPago = condPagoCliente.PlazosPago;
+            clienteCrear.FormaPago = condPagoCliente.FormaPago?.Trim();
+            clienteCrear.PlazosPago = condPagoCliente.PlazosPago?.Trim();
 
             CCC cccCliente = await servicio.BuscarCCC(empresa, cliente, contacto, clienteDb.CCC);
-            clienteCrear.Iban = cccCliente.Pais + cccCliente.DC_IBAN + cccCliente.Entidad + cccCliente.Oficina + cccCliente.DC + cccCliente.Nº_Cuenta;            
+            if (cccCliente != null)
+            {
+                clienteCrear.Iban = cccCliente.Pais + cccCliente.DC_IBAN + cccCliente.Entidad + cccCliente.Oficina + cccCliente.DC + cccCliente.Nº_Cuenta;
+            }
+
+            List<PersonaContactoCliente> personas = await servicio.BuscarPersonasContacto(empresa, cliente, contacto);
+            clienteCrear.PersonasContacto = new List<PersonaContactoDTO>();
+            foreach (var persona in personas)
+            {
+                int numeroPersona = 0;
+                try
+                {
+                    numeroPersona = Int32.Parse(persona.Número);
+                }
+                catch
+                {
+                    numeroPersona = 1;
+                }
+                clienteCrear.PersonasContacto.Add(new PersonaContactoDTO
+                {
+                    Numero = numeroPersona,
+                    Nombre = persona.Nombre?.Trim(),
+                    CorreoElectronico = persona.CorreoElectrónico?.Trim()
+                });
+            }
 
             return clienteCrear;
+        }
+
+        public async Task<Cliente> PrepararClienteModificar(ClienteCrear clienteModificar, NVEntities db)
+        {
+            Cliente clienteDB = await servicio.BuscarCliente(db, clienteModificar.Empresa, clienteModificar.Cliente, clienteModificar.Contacto);
+            if (clienteDB == null)
+            {
+                throw new Exception(String.Format("Bad request: no existe el cliente {0}/{1}/{2}", clienteModificar.Empresa, clienteModificar.Cliente, clienteModificar.Contacto));
+            }
+
+            //test estado 5 -> 0 o 9
+            if ((string.IsNullOrWhiteSpace(clienteDB.CIF_NIF) && !string.IsNullOrWhiteSpace(clienteModificar.Nif)) || 
+                (clienteDB.Estado == Constantes.Clientes.Estados.PRIMERA_VISITA) && !string.IsNullOrWhiteSpace(clienteDB.CIF_NIF))
+            {
+                clienteDB.Estado = clienteDB.Vendedore.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO ? 
+                    Constantes.Clientes.Estados.VISITA_TELEFONICA : Constantes.Clientes.Estados.VISITA_PRESENCIAL;
+            }
+
+            // test se rellenan los datos y el CIF sobre todo
+            clienteDB.CIF_NIF   = clienteModificar.Nif;
+            clienteDB.Nombre    = clienteModificar.Nombre;
+            clienteDB.Dirección = clienteModificar.Direccion;
+            clienteDB.CodPostal = clienteModificar.CodigoPostal;
+            clienteDB.Teléfono  = clienteModificar.Telefono;
+            clienteDB.Vendedor  = clienteModificar.VendedorEstetica;
+            
+            if (clienteDB.CondPagoClientes != null && clienteDB.CondPagoClientes.Count > 0 && (
+                clienteDB.CondPagoClientes.First().PlazosPago.Trim() != clienteModificar.PlazosPago.Trim() ||
+                clienteDB.CondPagoClientes.First().FormaPago.Trim() != clienteModificar.FormaPago.Trim()))
+            {
+                CondPagoCliente condPagoNueva = new CondPagoCliente
+                {
+                    Empresa = clienteModificar.Empresa,
+                    Nº_Cliente = clienteModificar.Cliente,
+                    Contacto = clienteModificar.Contacto,
+                    PlazosPago = clienteModificar.PlazosPago,
+                    FormaPago = clienteModificar.FormaPago,
+                    ImporteMínimo = 0
+                };
+                CondPagoCliente condPagoActual = clienteDB.CondPagoClientes.First();
+                clienteDB.CondPagoClientes.Remove(condPagoActual);
+                clienteDB.CondPagoClientes.Add(condPagoNueva);
+            }
+
+            // TODO: hacer test que si intento modificar iban da error
+            if (clienteModificar.Iban != null && clienteModificar.Iban?.Trim() != "" && clienteDB.CCC1 != null && (
+                clienteDB.CCC1.Pais != clienteModificar.Iban.Substring(0, 2) ||
+                clienteDB.CCC1.DC_IBAN != clienteModificar.Iban.Substring(2, 2) ||
+                clienteDB.CCC1.Entidad != clienteModificar.Iban.Substring(4, 4) ||
+                clienteDB.CCC1.Oficina != clienteModificar.Iban.Substring(8, 4) ||
+                clienteDB.CCC1.DC != clienteModificar.Iban.Substring(12, 2) ||
+                clienteDB.CCC1.Nº_Cuenta != clienteModificar.Iban.Substring(14, 10)))
+            {
+                throw new Exception("El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.");
+            }
+
+            // TODO: hacer test que si añado iban a uno que no tiene, me deja
+            if (clienteModificar.Iban?.Trim() != "" && clienteDB.CCC1 == null)
+            {
+                CCC nuevoCCC = new CCC
+                {
+                    Cliente1 = clienteDB,
+                    Número = "1", //TODO: mirar cual toca
+                    Pais = clienteModificar.Iban.Substring(0, 2),
+                    DC_IBAN = clienteModificar.Iban.Substring(2, 2),
+                    Entidad = clienteModificar.Iban.Substring(5, 4),
+                    Oficina = clienteModificar.Iban.Substring(10, 4),
+                    DC = clienteModificar.Iban.Substring(15, 2),
+                    Nº_Cuenta = clienteModificar.Iban.Substring(17, 2)
+                    + clienteModificar.Iban.Substring(20, 4)
+                    + clienteModificar.Iban.Substring(25, 4),
+                    Estado = Constantes.Clientes.EstadosMandatos.EN_PODER_DEL_CLIENTE,
+                    Secuencia = Constantes.Clientes.SECUENCIA_POR_DEFECTO,
+                    Usuario = clienteModificar.Usuario
+                };
+
+                clienteDB.CCCs.Add(nuevoCCC);
+            }     
+            
+            for (var i = 0; i < clienteDB.PersonasContactoClientes.Count; i++)
+            {
+                PersonaContactoCliente personaExistente = clienteDB.PersonasContactoClientes.ElementAt(i);
+                PersonaContactoDTO personaEncontrada = clienteModificar.PersonasContacto.SingleOrDefault(p => p.Numero.ToString() == personaExistente.Número.Trim());
+                if (personaEncontrada == null)
+                {
+                    clienteDB.PersonasContactoClientes.Remove(personaExistente);
+                }
+            }
+
+            // personas de contacto
+            foreach (var persona in clienteModificar.PersonasContacto)
+            {
+                bool encontrada = persona.Numero > 0;
+                PersonaContactoCliente personaEncontrada = null;
+                if (encontrada)
+                {
+                    personaEncontrada = clienteDB.PersonasContactoClientes.FirstOrDefault(p => p.Número.Trim() == persona.Numero.ToString());
+                    encontrada = personaEncontrada != null;
+                }
+                
+                if (!encontrada)
+                {
+                    int ultimoNumero = 0;
+                    try
+                    {
+                        ultimoNumero = Int32.Parse(clienteDB.PersonasContactoClientes.Max(p => p.Número));
+                    }
+                    catch
+                    {
+                        ultimoNumero = 1;
+                    }
+                    PersonaContactoCliente personaContacto = new PersonaContactoCliente
+                    {
+                        Empresa = clienteDB.Empresa,
+                        Cliente = clienteDB,
+                        Número = (ultimoNumero+1).ToString(),
+                        Cargo = Constantes.Clientes.CARGO_POR_DEFECTO,
+                        Nombre = persona.Nombre,
+                        CorreoElectrónico = persona.CorreoElectronico,
+                        EnviarBoletin = true,
+                        Estado = 0,
+                        Usuario = clienteModificar.Usuario
+                    };
+                    clienteDB.PersonasContactoClientes.Add(personaContacto);
+                } else
+                {
+                    if (persona.Nombre?.Trim() != personaEncontrada.Nombre?.Trim())
+                    {
+                        personaEncontrada.Nombre = persona.Nombre;
+                    }
+                    if (persona.CorreoElectronico?.Trim() != personaEncontrada.CorreoElectrónico?.Trim())
+                    {
+                        personaEncontrada.CorreoElectrónico = persona.CorreoElectronico;
+                    }
+
+                }
+            }
+
+            return clienteDB;
+        }
+
+        public async Task<Cliente> PrepararClienteCrear(ClienteCrear clienteCrear, NVEntities db)
+        {
+            string contacto = await servicio.CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
+
+            Cliente cliente = new Cliente
+            {
+                Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Nº_Cliente = clienteCrear.Cliente,
+                Contacto = contacto,
+
+                CIF_NIF = clienteCrear.Nif,
+                ClientePrincipal = !clienteCrear.EsContacto,
+                CodPostal = clienteCrear.CodigoPostal,
+                ContactoBonificacion = contacto,
+                ContactoCobro = contacto,
+                ContactoDefecto = contacto,
+                DiasEnServir = Constantes.Clientes.DIAS_EN_SERVIR_POR_DEFECTO,
+                Dirección = clienteCrear.Direccion,
+                Estado = clienteCrear.Estado,
+                Grupo = Constantes.Clientes.GRUPO_POR_DEFECTO,
+                IVA = Constantes.Empresas.IVA_POR_DEFECTO,
+                Nombre = clienteCrear.Nombre?.ToUpper(),
+                PeriodoFacturación = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                Población = clienteCrear.Poblacion,
+                Provincia = clienteCrear.Provincia,
+                Ruta = clienteCrear.Ruta,
+                ServirJunto = true,
+                Teléfono = clienteCrear.Telefono,
+                Vendedor = clienteCrear.VendedorEstetica,
+                Usuario = clienteCrear.Usuario
+            };
+
+            if (clienteCrear.Peluqueria && !clienteCrear.Estetica)
+            {
+                clienteCrear.VendedorPeluqueria = clienteCrear.VendedorPeluqueria ?? cliente.Vendedor;
+                clienteCrear.VendedorEstetica = Constantes.Vendedores.VENDEDOR_GENERAL;
+                cliente.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
+            }
+
+            if (clienteCrear.Peluqueria && clienteCrear.VendedorPeluqueria != null && clienteCrear.VendedorPeluqueria != clienteCrear.VendedorEstetica)
+            {
+                cliente.VendedoresClienteGrupoProductoes.Add(new VendedorClienteGrupoProducto
+                {
+                    Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    Cliente = clienteCrear.Cliente,
+                    Contacto = contacto,
+                    Vendedor = clienteCrear.Peluqueria ? clienteCrear.VendedorPeluqueria : Constantes.Vendedores.VENDEDOR_GENERAL,
+                    GrupoProducto = Constantes.Productos.GRUPO_PELUQUERIA,
+                    Usuario = clienteCrear.Usuario
+                });
+            }
+
+            int i = 1;
+            foreach (PersonaContactoDTO personaCrear in clienteCrear.PersonasContacto.Where(p => !string.IsNullOrEmpty(p.Nombre) || !string.IsNullOrEmpty(p.CorreoElectronico)))
+            {
+                PersonaContactoCliente persona = new PersonaContactoCliente
+                {
+                    Empresa = cliente.Empresa,
+                    Cliente = cliente,
+                    Número = i++.ToString(),
+                    Cargo = Constantes.Clientes.CARGO_POR_DEFECTO,
+                    Nombre = personaCrear.Nombre,
+                    CorreoElectrónico = personaCrear.CorreoElectronico,
+                    EnviarBoletin = true,
+                    Estado = 0,
+                    Usuario = clienteCrear.Usuario
+                };
+                cliente.PersonasContactoClientes.Add(persona);
+            }
+
+            CondPagoCliente condicionesPago = new CondPagoCliente
+            {
+                Empresa = cliente.Empresa,
+                Cliente = cliente,
+                ImporteMínimo = 0,
+                FormaPago = clienteCrear.FormaPago,
+                PlazosPago = clienteCrear.PlazosPago
+            };
+            cliente.CondPagoClientes.Add(condicionesPago);
+
+            if (clienteCrear.Iban != null && clienteCrear.Iban != "")
+            {
+                CCC ccc = new CCC
+                {
+                    Empresa = cliente.Empresa,
+                    Cliente1 = cliente,
+                    Número = "1",
+                    Pais = clienteCrear.Iban.Substring(0, 2),
+                    DC_IBAN = clienteCrear.Iban.Substring(2, 2),
+                    Entidad = clienteCrear.Iban.Substring(5, 4),
+                    Oficina = clienteCrear.Iban.Substring(10, 4),
+                    DC = clienteCrear.Iban.Substring(15, 2),
+                    Nº_Cuenta = clienteCrear.Iban.Substring(17, 2)
+                    + clienteCrear.Iban.Substring(20, 4)
+                    + clienteCrear.Iban.Substring(25, 4),
+                    Estado = Constantes.Clientes.EstadosMandatos.EN_PODER_DEL_CLIENTE,
+                    Secuencia = Constantes.Clientes.SECUENCIA_POR_DEFECTO,
+                    Usuario = clienteCrear.Usuario
+                };
+                cliente.CCCs.Add(ccc);
+            }
+
+            return cliente;
         }
     }
 }

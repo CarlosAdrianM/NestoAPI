@@ -281,10 +281,10 @@ namespace NestoAPI.Controllers
         [Route("api/Clientes/GetClienteCrear")]
         // GET: api/Clientes/5
         [ResponseType(typeof(ClienteCrear))]
-        public async Task<IHttpActionResult> GetClienteCrear(string direccion, string codigoPostal, string telefono)
+        public async Task<IHttpActionResult> GetClienteCrear(string empresa, string cliente, string contacto)
         {
             GestorClientes gestor = new GestorClientes();
-            ClienteCrear respuesta = await gestor.ConstruirClienteCrear(direccion, codigoPostal, telefono);
+            ClienteCrear respuesta = await gestor.ConstruirClienteCrear(empresa, cliente, contacto);
 
             return Ok(respuesta);
         }
@@ -325,6 +325,8 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        [HttpPut]
+        [Route("api/Clientes/ClienteComercial")]
         // PUT: api/Clientes/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutCliente(ClienteDTO cliente)
@@ -375,6 +377,50 @@ namespace NestoAPI.Controllers
             return StatusCode(HttpStatusCode.NoContent);
         }
 
+        // PUT: api/Clientes/5
+        [ResponseType(typeof(Cliente))]
+        public async Task<IHttpActionResult> PutCliente(ClienteCrear clienteCrear)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }                      
+
+            //IServicioGestorClientes servicio = new ServicioGestorClientes();
+            IGestorClientes gestor = new GestorClientes();
+            Cliente cliente = await gestor.PrepararClienteModificar(clienteCrear, db);
+                        
+            db.Entry(cliente).State = EntityState.Modified;
+                
+            try
+            {
+                await db.SaveChangesAsync();
+                if (cliente.CCCs.Count != 0 && cliente.CCC == null)
+                {
+                    cliente.CCC1 = cliente.CCCs.FirstOrDefault();
+                    await db.SaveChangesAsync();
+                }
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!ClienteExists(cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+
+            return CreatedAtRoute("DefaultApi", new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto }, cliente);
+        }
+
+
         // POST: api/Clientes
         [ResponseType(typeof(Cliente))]
         public async Task<IHttpActionResult> PostCliente(ClienteCrear clienteCrear)
@@ -396,8 +442,8 @@ namespace NestoAPI.Controllers
                 clienteCrear.Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
             }
 
-            IServicioGestorClientes servicio = new ServicioGestorClientes();
-            Cliente cliente = await servicio.PrepararCliente(clienteCrear);
+            IGestorClientes gestor = new GestorClientes();
+            Cliente cliente = await gestor.PrepararClienteCrear(clienteCrear, db);
             db.Clientes.Add(cliente);
 
             try

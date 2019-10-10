@@ -18,8 +18,9 @@
         {
             public class Estados
             {
-                public const int VISITA_PRESENCIAL = 0;
-                public const int PRIMERA_VISITA = 5;
+                public const short VISITA_PRESENCIAL = 0;
+                public const short VISITA_TELEFONICA = 9;
+                public const short PRIMERA_VISITA = 5;
             }
 
             public class EstadosMandatos
@@ -118,6 +119,8 @@
 
         public class Vendedores
         {
+            public const int ESTADO_VENDEDOR_PRESENCIAL = 0;
+            public const int ESTADO_VENDEDOR_TELEFONICO = 2;
             public const string VENDEDOR_GENERAL = "NV";
         }
     }
