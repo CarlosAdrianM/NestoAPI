@@ -291,9 +291,18 @@ namespace NestoAPI.Infraestructure.Facturas
                     ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
                     mail = new MailMessage();
                     mail.From = serieFactura.CorreoDesde;
-                    mail.To.Add(new MailAddress(fra.Correo));
+                    try
+                    {
+                        mail.To.Add(new MailAddress(fra.Correo));
+                        mail.Subject = "Facturación nº ";
+                    } catch
+                    {
+                        mail.To.Add(new MailAddress("administracion@nuevavision.es"));
+                        mail.Subject = String.Format("[ERROR: {0}] Facturación nº ", fra.Correo);
+                    }
+                    
                     mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
-                    mail.Subject = "Facturación nº ";
+                    
                     mail.Body = (await GenerarCorreoHTML(fra)).ToString();
                     mail.IsBodyHtml = true;
                 }
