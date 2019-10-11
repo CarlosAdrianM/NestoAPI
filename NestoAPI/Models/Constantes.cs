@@ -74,6 +74,11 @@
             public const int FACTURA = 4;
         }
 
+        public class FormasPago
+        {
+            public const string RECIBO_BANCARIO = "RCB";
+        }
+
         public class Pedidos
         {
             public const string PERIODO_FACTURACION_FIN_DE_MES = "FDM";

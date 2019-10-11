@@ -703,5 +703,39 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(1, clienteNuevo.VendedoresClienteGrupoProductoes.Count);
             Assert.AreEqual("JE", clienteNuevo.VendedoresClienteGrupoProductoes.First().Vendedor);
         }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_SiLaFormaDePagoEsEfectivoNoCreaCCC()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.FormaPago = "EFC";
+            clienteCrear.Iban = "XX12 3456 7890 1234 5678 9012";
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("EFC", clienteNuevo.CondPagoClientes.First().FormaPago);
+            Assert.AreEqual(0, clienteNuevo.CCCs.Count);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_SiLaFormaDePagoEsReciboSiCreaCCC()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.FormaPago = "RCB";
+            clienteCrear.Iban = "XX12 3456 7890 1234 5678 9012";
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("RCB", clienteNuevo.CondPagoClientes.First().FormaPago);
+            Assert.AreEqual(1, clienteNuevo.CCCs.Count);
+        }
     }
 }

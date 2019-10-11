@@ -631,7 +631,7 @@ namespace NestoAPI.Infraestructure
             };
             cliente.CondPagoClientes.Add(condicionesPago);
 
-            if (clienteCrear.Iban != null && clienteCrear.Iban != "")
+            if (clienteCrear.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO && clienteCrear.Iban != null && clienteCrear.Iban != "")
             {
                 CCC ccc = new CCC
                 {
@@ -652,7 +652,7 @@ namespace NestoAPI.Infraestructure
                 };
                 cliente.CCCs.Add(ccc);
             }
-
+            
             return cliente;
         }
     }
