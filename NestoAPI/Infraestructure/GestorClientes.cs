@@ -454,8 +454,8 @@ namespace NestoAPI.Infraestructure
                 clienteDB.CondPagoClientes.Add(condPagoNueva);
             }
 
-            // TODO: hacer test que si intento modificar iban da error
-            if (clienteModificar.Iban != null && clienteModificar.Iban?.Trim() != "" && clienteDB.CCC1 != null && (
+            if (clienteModificar.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO &&
+                clienteModificar.Iban != null && clienteModificar.Iban?.Trim() != "" && clienteDB.CCC1 != null && (
                 clienteDB.CCC1.Pais != clienteModificar.Iban.Substring(0, 2) ||
                 clienteDB.CCC1.DC_IBAN != clienteModificar.Iban.Substring(2, 2) ||
                 clienteDB.CCC1.Entidad != clienteModificar.Iban.Substring(4, 4) ||
