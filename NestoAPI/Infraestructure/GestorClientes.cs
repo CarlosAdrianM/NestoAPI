@@ -102,7 +102,12 @@ namespace NestoAPI.Infraestructure
             {
                 throw new ArgumentException("El código postal " + codigoPostal + " es incorrecto.\n" + direccionGoogle);
             }
-            var direccionFormateada = direccionGoogle.Substring(0, posicionCodigoPostal - 2); // porque quitamos coma y espacio
+            var direccionFormateada = "";
+            if (posicionCodigoPostal >= 2)
+            {
+                direccionFormateada = direccionGoogle.Substring(0, posicionCodigoPostal - 2); // porque quitamos coma y espacio
+            }
+            
 
             var posicionComaFormateada = direccionFormateada.IndexOf(", ");
             string numeroCalleFormateada;
@@ -120,8 +125,11 @@ namespace NestoAPI.Infraestructure
                     numeroCalleFormateada = direccion.IndexOf("S/N") != -1 ? "S/N" : "";
                 }
                 direccionHastaNumero = direccionHastaNumero?.Trim();
-                direccionFormateada = direccionHastaNumero.Substring(0, direccionHastaNumero.Length) + 
-                    ", " + numeroCalleFormateada;
+                if (direccionFormateada != "")
+                {
+                    direccionFormateada = direccionHastaNumero.Substring(0, direccionHastaNumero.Length) +
+                        ", " + numeroCalleFormateada;
+                }
             } else
             {
                 numeroCalleFormateada = direccionFormateada.Substring(posicionComaFormateada + 2);

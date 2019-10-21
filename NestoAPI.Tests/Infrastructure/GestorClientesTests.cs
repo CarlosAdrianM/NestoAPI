@@ -316,6 +316,21 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("C/ CAPITÁN FRANCISCO SÁNCHEZ, 1", respuesta);
         }
 
+        //"15969 BRETAL, LA CORUÑA, ESPAÑA"
+
+        [TestMethod]
+        public void GestorClientes_LimpiarDireccion_SiGoogleDevuelveElCodigoPostalLoPonemosDeDireccion()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarDireccion(
+                "C/ BRETAL, 195",
+                "15969 BRETAL, LA CORUÑA, ESPAÑA",
+                "15969");
+
+            Assert.AreEqual("C/ BRETAL, 195", respuesta);
+        }
+
         [TestMethod]
         public void GestorClientes_LimpiarTelefono_SeQuitanEspaciosEnBlanco()
         {
