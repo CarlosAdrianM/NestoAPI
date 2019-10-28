@@ -563,6 +563,11 @@ namespace NestoAPI.Infraestructure
         {
             string contacto = await servicio.CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
 
+            if (clienteCrear.Nif != null && clienteCrear.Nif.Trim() == String.Empty)
+            {
+                clienteCrear.Nif = null;
+            }
+
             Cliente cliente = new Cliente
             {
                 Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,

@@ -786,6 +786,21 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(1, clienteNuevo.CCCs.Count);
         }
 
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_SiElNifEsCadenaVaciaLoPonemosNulo()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Nif = "";
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.IsNull(clienteNuevo.CIF_NIF);
+        }
+
 
     }
 }
