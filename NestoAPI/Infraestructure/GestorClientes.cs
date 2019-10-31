@@ -48,6 +48,16 @@ namespace NestoAPI.Infraestructure
             respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
             respuesta.TelefonoFormateado = LimpiarTelefono(telefono);
 
+            String[] listaTelefonos = respuesta.TelefonoFormateado.Split(Constantes.Clientes.SEPARADOR_TELEFONOS);
+            respuesta.ClientesMismoTelefono = new List<string>();
+
+            foreach (var tel in listaTelefonos) 
+            {
+                respuesta.ClientesMismoTelefono.AddRange(await servicio.ClientesMismoTelefono(tel));
+            }
+
+            respuesta.ClientesMismoTelefono = respuesta.ClientesMismoTelefono.Distinct().ToList();
+            
             return respuesta;
         }
 

@@ -235,5 +235,22 @@ namespace NestoAPI.Infraestructure
             return personas;
         }
 
+        public async Task<List<string>> ClientesMismoTelefono(string telefono)
+        {
+            if (telefono.Length < 7)
+            {
+                return new List<string>();
+            }
+            NVEntities db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+
+            var clientes = await db.Clientes.Where(c => c.Teléfono.Contains(telefono)).Select(c => c.Empresa.Trim()+"/"+c.Nº_Cliente.Trim()+"/"+c.Contacto.Trim()).ToListAsync();
+            var personas = await db.PersonasContactoClientes.Where(c => c.Teléfono.Contains(telefono)).Select(c => c.Empresa.Trim() + "/" + c.NºCliente.Trim() + "/" + c.Contacto.Trim()).ToListAsync();
+
+            clientes.AddRange(personas);
+            var todos = clientes.Distinct().ToList();
+
+            return todos;
+        }
     }
 }

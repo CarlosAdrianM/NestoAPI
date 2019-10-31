@@ -21,5 +21,6 @@ namespace NestoAPI.Infraestructure
         Task<CCC> BuscarCCC(string empresa, string cliente, string contacto, string ccc);
         Task<List<PersonaContactoCliente>> BuscarPersonasContacto(string empresa, string cliente, string contacto);
         Task<string> CalcularSiguienteContacto(string empresa, string cliente);
+        Task<List<string>> ClientesMismoTelefono(string telefono);
     }
 }

@@ -27,6 +27,7 @@ namespace NestoAPI.Models.Clientes
         public string TelefonoFormateado { get; set; }
         public string VendedorEstetica { get; set; }
         public string VendedorPeluqueria { get; set; }
+        public List<string> ClientesMismoTelefono { get; set; }
     }
 
     public class RespuestaDatosBancoCliente

@@ -239,6 +239,85 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task GestorClientes_ComprobarDatosGenerales_SiHayOtroClienteConElMismoTelefonoLoDevuelve()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            var respuestaFake = new RespuestaDatosGeneralesClientes();
+            A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+
+            var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "915311923");
+
+            Assert.AreEqual(1, respuesta.ClientesMismoTelefono?.Count);
+            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.First());
+        }
+
+        [TestMethod]
+        public async Task GestorClientes_ComprobarDatosGenerales_SiHayUnClienteConAlgunTelefonoIgualLoDevuelve()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            var respuestaFake = new RespuestaDatosGeneralesClientes();
+            A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+
+            var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "916281914/915311923");
+
+            Assert.AreEqual(1, respuesta.ClientesMismoTelefono?.Count);
+            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.First());
+        }
+
+        [TestMethod]
+        public async Task GestorClientes_ComprobarDatosGenerales_SiHayMasDeUnClienteConAlgunTelefonoIgualLosDevuelveTodos()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            var respuestaFake = new RespuestaDatosGeneralesClientes();
+            A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            A.CallTo(() => servicio.ClientesMismoTelefono("916281914")).Returns(new List<string> { "1/54321/0" });
+
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+
+            var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "916281914/915311923");
+
+            Assert.AreEqual(2, respuesta.ClientesMismoTelefono?.Count);
+            Assert.AreEqual("1/54321/0", respuesta.ClientesMismoTelefono.First());
+            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.Last());
+
+        }
+
+        [TestMethod]
+        public async Task GestorClientes_ComprobarDatosGenerales_SiHayUnClienteRepetidoConAlgunTelefonoIgualLoDevuelveUnaVez()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            var respuestaFake = new RespuestaDatosGeneralesClientes();
+            A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+
+            var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "915311923/915311923");
+
+            Assert.AreEqual(1, respuesta.ClientesMismoTelefono?.Count);
+            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.First());
+        }
+
+        [TestMethod]
+        public async Task GestorClientes_ComprobarDatosGenerales_SiElTelefonoNoEstaBienFormateadoLoDevuelveIgualmente()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            var respuestaFake = new RespuestaDatosGeneralesClientes();
+            A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+
+            var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "(91)628.1914915(31) 19-23");
+
+            Assert.AreEqual(1, respuesta.ClientesMismoTelefono?.Count);
+            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.First());
+        }
+
+        [TestMethod]
         public void GestorClientes_LimpiarDireccion_SiNoHayComaBuscamosElPrimerNumero()
         {
             GestorClientes gestor = new GestorClientes();
