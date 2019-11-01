@@ -11,6 +11,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
+using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -235,17 +236,28 @@ namespace NestoAPI.Infraestructure
             return personas;
         }
 
-        public async Task<List<string>> ClientesMismoTelefono(string telefono)
+        public async Task<List<ClienteTelefonoLookup>> ClientesMismoTelefono(string telefono)
         {
             if (telefono.Length < 7)
             {
-                return new List<string>();
+                return new List<ClienteTelefonoLookup>();
             }
             NVEntities db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
 
-            var clientes = await db.Clientes.Where(c => c.Teléfono.Contains(telefono)).Select(c => c.Empresa.Trim()+"/"+c.Nº_Cliente.Trim()+"/"+c.Contacto.Trim()).ToListAsync();
-            var personas = await db.PersonasContactoClientes.Where(c => c.Teléfono.Contains(telefono)).Select(c => c.Empresa.Trim() + "/" + c.NºCliente.Trim() + "/" + c.Contacto.Trim()).ToListAsync();
+            var clientes = await db.Clientes.Where(c => c.Teléfono.Contains(telefono)).Take(5).Select(c => new ClienteTelefonoLookup {
+                Empresa = c.Empresa.Trim(),
+                Cliente = c.Nº_Cliente.Trim(),
+                Contacto = c.Contacto.Trim(),
+                Nombre = c.Nombre != null ? c.Nombre.Trim() : ""
+            }).ToListAsync();
+            var personas = await db.PersonasContactoClientes.Where(c => c.Teléfono.Contains(telefono)).Take(5).Select(c => new ClienteTelefonoLookup
+            {
+                Empresa = c.Empresa.Trim(),
+                Cliente = c.NºCliente.Trim(),
+                Contacto = c.Contacto.Trim(),
+                Nombre = c.Nombre != null ? c.Nombre.Trim() : ""
+            }).ToListAsync();
 
             clientes.AddRange(personas);
             var todos = clientes.Distinct().ToList();

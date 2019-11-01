@@ -8,6 +8,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -244,13 +245,20 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            ClienteTelefonoLookup clienteFake = new ClienteTelefonoLookup
+            {
+                Empresa = "1",
+                Cliente = "12345",
+                Contacto = "0",
+                Nombre = "Prueba"
+            };
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
             GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "915311923");
 
             Assert.AreEqual(1, respuesta.ClientesMismoTelefono?.Count);
-            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.First());
+            Assert.AreEqual(clienteFake, respuesta.ClientesMismoTelefono.First());
         }
 
         [TestMethod]
@@ -259,13 +267,20 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            ClienteTelefonoLookup clienteFake = new ClienteTelefonoLookup
+            {
+                Empresa = "1",
+                Cliente = "12345",
+                Contacto = "0",
+                Nombre = "Prueba"
+            };
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
             GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "916281914/915311923");
 
             Assert.AreEqual(1, respuesta.ClientesMismoTelefono?.Count);
-            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.First());
+            Assert.AreEqual(clienteFake, respuesta.ClientesMismoTelefono.First());
         }
 
         [TestMethod]
@@ -274,16 +289,30 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
-            A.CallTo(() => servicio.ClientesMismoTelefono("916281914")).Returns(new List<string> { "1/54321/0" });
+            ClienteTelefonoLookup clienteFake = new ClienteTelefonoLookup
+            {
+                Empresa = "1",
+                Cliente = "12345",
+                Contacto = "0",
+                Nombre = "Prueba"
+            };
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
+            ClienteTelefonoLookup clienteFake2 = new ClienteTelefonoLookup
+            {
+                Empresa = "1",
+                Cliente = "54321",
+                Contacto = "0",
+                Nombre = "Otra Prueba"
+            };
+            A.CallTo(() => servicio.ClientesMismoTelefono("916281914")).Returns(new List<ClienteTelefonoLookup> { clienteFake2 });
 
             GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "916281914/915311923");
 
             Assert.AreEqual(2, respuesta.ClientesMismoTelefono?.Count);
-            Assert.AreEqual("1/54321/0", respuesta.ClientesMismoTelefono.First());
-            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.Last());
+            Assert.AreEqual(clienteFake2, respuesta.ClientesMismoTelefono.First());
+            Assert.AreEqual(clienteFake, respuesta.ClientesMismoTelefono.Last());
 
         }
 
@@ -293,13 +322,20 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            ClienteTelefonoLookup clienteFake = new ClienteTelefonoLookup
+            {
+                Empresa = "1",
+                Cliente = "12345",
+                Contacto = "0",
+                Nombre = "Prueba"
+            };
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
             GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "915311923/915311923");
 
             Assert.AreEqual(1, respuesta.ClientesMismoTelefono?.Count);
-            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.First());
+            Assert.AreEqual(clienteFake, respuesta.ClientesMismoTelefono.First());
         }
 
         [TestMethod]
@@ -308,18 +344,25 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<string> { "1/12345/0" });
+            ClienteTelefonoLookup clienteFake = new ClienteTelefonoLookup
+            {
+                Empresa = "1",
+                Cliente = "12345",
+                Contacto = "0",
+                Nombre = "Prueba"
+            };
+            A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
             GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "(91)628.1914915(31) 19-23");
 
             Assert.AreEqual(1, respuesta.ClientesMismoTelefono?.Count);
-            Assert.AreEqual("1/12345/0", respuesta.ClientesMismoTelefono.First());
+            Assert.AreEqual(clienteFake, respuesta.ClientesMismoTelefono.First());
         }
 
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SiNoHayComaBuscamosElPrimerNumero()
-        {
+        {   
             GestorClientes gestor = new GestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
@@ -408,6 +451,19 @@ namespace NestoAPI.Tests.Infrastructure
                 "15969");
 
             Assert.AreEqual("C/ BRETAL, 195", respuesta);
+        }
+
+        [TestMethod]
+        public void GestorClientes_LimpiarDireccion_SiNoHayEspacioLoPonemos()
+        {
+            GestorClientes gestor = new GestorClientes();
+
+            string respuesta = gestor.LimpiarDireccion(
+                "reina5",
+                "Calle de la Reina, 28004 Madrid, España",
+                "28004");
+
+            Assert.AreEqual("C/ REINA, 5", respuesta);
         }
 
         [TestMethod]

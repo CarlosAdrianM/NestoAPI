@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using System.Web;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
+using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -49,7 +50,7 @@ namespace NestoAPI.Infraestructure
             respuesta.TelefonoFormateado = LimpiarTelefono(telefono);
 
             String[] listaTelefonos = respuesta.TelefonoFormateado.Split(Constantes.Clientes.SEPARADOR_TELEFONOS);
-            respuesta.ClientesMismoTelefono = new List<string>();
+            respuesta.ClientesMismoTelefono = new List<ClienteTelefonoLookup>();
 
             foreach (var tel in listaTelefonos) 
             {
@@ -119,7 +120,7 @@ namespace NestoAPI.Infraestructure
             }
             
 
-            var posicionComaFormateada = direccionFormateada.IndexOf(", ");
+            var posicionComaFormateada = direccionFormateada.IndexOf(", ", StringComparison.InvariantCulture);
             string numeroCalleFormateada;
             // Si es -1 es porque no hay coma: buscamos el primer numero
             if (posicionComaFormateada == -1)
@@ -130,9 +131,17 @@ namespace NestoAPI.Infraestructure
                     direccionFormateada.Substring(direccionHastaNumero.Length)
                     .TakeWhile(x => Char.IsNumber(x)).ToArray()
                 );
-                if (numeroCalleFormateada == "")
+                if (string.IsNullOrEmpty(numeroCalleFormateada))
                 {
-                    numeroCalleFormateada = direccion.IndexOf("S/N") != -1 ? "S/N" : "";
+                    numeroCalleFormateada = direccion.IndexOf("S/N", StringComparison.InvariantCulture) != -1 ? "S/N" : "";
+                }
+                if (string.IsNullOrEmpty(numeroCalleFormateada) && direccionGoogle.Substring(0,5) != codigoPostal)
+                {
+                    Match m = Regex.Match(direccion, "(\\d+)");
+                    if (m.Success)
+                    {
+                        numeroCalleFormateada = m.Value;
+                    }
                 }
                 direccionHastaNumero = direccionHastaNumero?.Trim();
                 if (direccionFormateada != "")

@@ -222,9 +222,10 @@ namespace NestoAPI.Controllers
             {
                 // poner vendedor general en ficha
                 Cliente cliente = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto);
-                if (cliente != null && cliente.Vendedor != null && cliente.Vendedor.Trim() != "NV")
+                if (cliente != null && cliente.Vendedor != null && cliente.Vendedor.Trim() != Constantes.Vendedores.VENDEDOR_GENERAL)
                 {
-                    cliente.Vendedor = "NV";
+                    cliente.Usuario = seguimientoClienteDTO.Usuario;
+                    cliente.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
                 }
             }
 
@@ -232,9 +233,10 @@ namespace NestoAPI.Controllers
             {
                 // poner vendedor general en peluquería
                 VendedorClienteGrupoProducto clienteGrupo = db.VendedoresClientesGruposProductos.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto && c.GrupoProducto == "PEL");
-                if (clienteGrupo != null && clienteGrupo.Vendedor !=null && clienteGrupo.Vendedor.Trim() != "NV")
+                if (clienteGrupo != null && clienteGrupo.Vendedor !=null && clienteGrupo.Vendedor.Trim() != Constantes.Vendedores.VENDEDOR_GENERAL)
                 {
-                    clienteGrupo.Vendedor = "NV";
+                    clienteGrupo.Usuario = seguimientoCliente.Usuario;
+                    clienteGrupo.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
                 }
             }
                         

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -21,6 +22,6 @@ namespace NestoAPI.Infraestructure
         Task<CCC> BuscarCCC(string empresa, string cliente, string contacto, string ccc);
         Task<List<PersonaContactoCliente>> BuscarPersonasContacto(string empresa, string cliente, string contacto);
         Task<string> CalcularSiguienteContacto(string empresa, string cliente);
-        Task<List<string>> ClientesMismoTelefono(string telefono);
+        Task<List<ClienteTelefonoLookup>> ClientesMismoTelefono(string telefono);
     }
 }
