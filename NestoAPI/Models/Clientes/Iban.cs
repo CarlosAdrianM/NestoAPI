@@ -102,5 +102,22 @@ namespace NestoAPI.Models.Clientes
                     + resto;
             }
         }
+        public string Enmascarado
+        {
+            get
+            {
+                return Formateado.Substring(0, Formateado.Length - 4) + "****";
+            }
+        }
+
+        public static string ComponerIban(CCC ccc)
+        {
+            if (ccc == null)
+            {
+                return string.Empty;
+            }
+            return ccc.Pais + ccc.DC_IBAN + ccc.Entidad + ccc.Oficina + ccc.DC + ccc.Nº_Cuenta;
+        }
+
     }
 }

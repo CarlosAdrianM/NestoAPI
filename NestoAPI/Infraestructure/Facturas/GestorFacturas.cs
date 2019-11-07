@@ -5,11 +5,13 @@ using System.Data;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Mail;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Models;
+using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Facturas;
 
 namespace NestoAPI.Infraestructure.Facturas
@@ -83,40 +85,9 @@ namespace NestoAPI.Infraestructure.Facturas
             }
 
             Empresa empresaFactura = servicio.CargarEmpresa(empresa);
-
-            DireccionFactura direccionEmpresa = new DireccionFactura
-            {
-                Tipo = "Empresa",
-                Nombre = empresaFactura.Nombre?.Trim(),
-                CodigoPostal = empresaFactura.CodPostal?.Trim(),
-                Direccion = empresaFactura.Dirección?.Trim() + "\n" + empresaFactura.Dirección2?.Trim(),
-                Comentarios = empresaFactura.Texto?.Trim(),
-                Poblacion = empresaFactura.Población?.Trim(),
-                Provincia = empresaFactura.Provincia?.Trim(),
-                Telefonos = empresaFactura.Teléfono?.Trim()
-            };
-
-            DireccionFactura direccionRazonSocial = new DireccionFactura
-            {
-                Tipo = "Fiscal",
-                Nombre = clienteRazonSocial.Nombre?.Trim(),
-                CodigoPostal = clienteRazonSocial.CodPostal?.Trim(),
-                Direccion = clienteRazonSocial.Dirección?.Trim(),
-                Poblacion = clienteRazonSocial.Población?.Trim(),
-                Provincia = clienteRazonSocial.Provincia?.Trim(),
-                Telefonos = clienteRazonSocial.Teléfono?.Trim()
-            };
-
-            DireccionFactura direccionEntrega = new DireccionFactura
-            {
-                Tipo = "Entrega",
-                Nombre = clienteEntrega.Nombre?.Trim(),
-                CodigoPostal = clienteEntrega.CodPostal?.Trim(),
-                Direccion = clienteEntrega.Dirección?.Trim(),
-                Poblacion = clienteEntrega.Población?.Trim(),
-                Provincia = clienteEntrega.Provincia?.Trim(),
-                Telefonos = clienteEntrega.Teléfono?.Trim()
-            };
+            DireccionFactura direccionEmpresa = CargarDireccionEmpresa(empresaFactura);
+            DireccionFactura direccionRazonSocial = CargarDireccionRazonSocial(clienteRazonSocial);
+            DireccionFactura direccionEntrega = CargarDireccionEntrega(clienteEntrega);
 
             List<DireccionFactura> direcciones = new List<DireccionFactura>
             {
@@ -137,7 +108,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     Descuento = linea.SumaDescuentos,
                     Importe = linea.Base_Imponible,
                     PrecioUnitario = linea.Precio,
-                    Producto = linea.Producto?.Trim()
+                    Producto = linea.Producto?.Trim(),
+                    Pedido = linea.Número
                 };
 
                 if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
@@ -227,6 +199,17 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
             }
 
+            string tipoDocumento = string.Empty;
+
+            if (totales.Sum(t => t.BaseImponible) >= 0)
+            {
+                tipoDocumento = Constantes.Facturas.TiposDocumento.FACTURA;
+            } else
+            {
+                tipoDocumento = Constantes.Facturas.TiposDocumento.FACTURA_RECTIFICATIVA;
+            }
+
+
             Factura factura = new Factura
             {
                 Cliente = cabFactura.Nº_Cliente.Trim(),
@@ -244,12 +227,224 @@ namespace NestoAPI.Infraestructure.Facturas
                 Ruta = cabPedido.Ruta?.Trim(),
                 RutaInforme = serieFactura.RutaInforme,
                 Serie = cabFactura.Serie?.Trim(),
+                TipoDocumento = tipoDocumento,
                 Totales = totales,
                 Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
                 Vendedores = vendedores
             };
 
             return factura;
+        }
+        
+        public Factura LeerPresupuesto(string empresa, int pedido)
+        {
+            CabPedidoVta cabPedido = servicio.CargarCabPedido(empresa, pedido);
+            LinPedidoVta primeraLinea = cabPedido.LinPedidoVtas.FirstOrDefault();
+            ISerieFactura serieFactura = LeerSerie(cabPedido.Serie);
+
+            Cliente clienteEntrega = servicio.CargarCliente(cabPedido.Empresa, cabPedido.Nº_Cliente, cabPedido.Contacto);
+            Cliente clienteRazonSocial = clienteEntrega;
+            if (!clienteRazonSocial.ClientePrincipal)
+            {
+                clienteRazonSocial = servicio.CargarClientePrincipal(cabPedido.Empresa, cabPedido.Nº_Cliente);
+            }
+
+            Empresa empresaPedido = servicio.CargarEmpresa(empresa);
+            DireccionFactura direccionEmpresa = CargarDireccionEmpresa(empresaPedido);
+            DireccionFactura direccionRazonSocial = CargarDireccionRazonSocial(clienteRazonSocial);
+            DireccionFactura direccionEntrega = CargarDireccionEntrega(clienteEntrega);
+
+            List<DireccionFactura> direcciones = new List<DireccionFactura>
+            {
+                direccionEmpresa,
+                direccionRazonSocial,
+                direccionEntrega
+            };
+
+            List<LineaFactura> lineas = new List<LineaFactura>();
+            foreach (LinPedidoVta linea in cabPedido.LinPedidoVtas?.OrderBy(l => l.Nº_Orden))
+            {
+                LineaFactura lineaNueva = new LineaFactura
+                {
+                    Albaran =  linea.Nº_Albarán != null ? (int)linea.Nº_Albarán : 0,
+                    FechaAlbaran = linea.Fecha_Albarán != null ? (DateTime)linea.Fecha_Albarán : DateTime.MinValue,
+                    Cantidad = linea.Cantidad,
+                    Descripcion = linea.Texto?.Trim(),
+                    Descuento = linea.SumaDescuentos,
+                    Importe = linea.Base_Imponible,
+                    PrecioUnitario = linea.Precio,
+                    Producto = linea.Producto?.Trim(),
+                    Pedido = linea.Número
+                };
+
+                if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    Producto producto = servicio.CargarProducto(linea.Empresa, linea.Producto);
+                    lineaNueva.Tamanno = producto.Tamaño;
+                    lineaNueva.UnidadMedida = producto.UnidadMedida?.Trim();
+                }
+                lineas.Add(lineaNueva);
+            }
+
+            decimal importeTotal = 0;
+
+            List<TotalFactura> totales = new List<TotalFactura>();
+            var gruposTotal = cabPedido.LinPedidoVtas.GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE });
+            foreach (var grupoTotal in gruposTotal)
+            {
+                var lineasGrupo = cabPedido.LinPedidoVtas.Where(l => l.PorcentajeIVA == grupoTotal.Key.PorcentajeIVA && l.PorcentajeRE == grupoTotal.Key.PorcentajeRE);
+                TotalFactura total = new TotalFactura
+                {
+                    BaseImponible = lineasGrupo.Sum(l => l.Base_Imponible),
+                    ImporteIVA = Math.Round(lineasGrupo.Sum(l => l.ImporteIVA), 2, MidpointRounding.AwayFromZero),
+                    ImporteRecargoEquivalencia = Math.Round(lineasGrupo.Sum(l => l.ImporteRE), 2, MidpointRounding.AwayFromZero),
+                    PorcentajeIVA = grupoTotal.Key.PorcentajeIVA / 100M,
+                    PorcentajeRecargoEquivalencia = grupoTotal.Key.PorcentajeRE
+                };
+                totales.Add(total);
+                importeTotal += total.BaseImponible + total.ImporteIVA + total.ImporteRecargoEquivalencia;
+            }
+
+            List<VendedorFactura> vendedores = servicio.CargarVendedoresPedido(empresa, pedido);
+            PlazoPago plazoPago = servicio.CargarPlazosPago(empresa, cabPedido.PlazosPago);
+            
+            List<VencimientoFactura> vencimientos = CalcularVencimientos(importeTotal, plazoPago, cabPedido.Forma_Pago, 
+                cabPedido.CCC, (DateTime)cabPedido.Primer_Vencimiento);
+
+            if (vencimientos.Sum(v => v.Importe) != importeTotal)
+            {
+                throw new Exception("No cuadran los vencimientos con el total de la factura");
+            }
+
+            foreach (var vencimiento in vencimientos)
+            {
+                if (!string.IsNullOrWhiteSpace(vencimiento.CCC))
+                {
+                    Iban iban = new Iban(servicio.ComponerIban(cabPedido.Empresa, cabPedido.Nº_Cliente, cabPedido.Contacto, cabPedido.CCC));
+                    vencimiento.Iban = iban.Enmascarado;
+                    continue;
+                }
+
+                if (vencimiento.FormaPago == "TRN")
+                {
+                    vencimiento.Iban = servicio.CuentaBancoEmpresa(empresa);
+                }
+                else
+                {
+                    vencimiento.Iban = "<<< No Procede >>>";
+                }
+            }
+
+            string tipoDocumento;
+            if (cabPedido.LinPedidoVtas.Any(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO))
+            {
+                tipoDocumento = Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA;
+            } else
+            {
+                tipoDocumento = Constantes.Facturas.TiposDocumento.PEDIDO;
+            }
+            
+
+            Factura factura = new Factura
+            {
+                Cliente = cabPedido.Nº_Cliente.Trim(),
+                Comentarios = cabPedido?.Comentarios?.Trim(),
+                CorreoDesde = serieFactura.CorreoDesde,
+                Delegacion = primeraLinea.Delegación?.Trim(),
+                Direcciones = direcciones,
+                DatosRegistrales = empresaPedido.TextoFactura?.Trim(),
+                Fecha = (DateTime)cabPedido.Fecha,
+                ImporteTotal = importeTotal,
+                Lineas = lineas,
+                Nif = clienteRazonSocial.CIF_NIF?.Trim(),
+                NotasAlPie = serieFactura.Notas,
+                NumeroFactura = cabPedido.Número.ToString(),
+                Ruta = cabPedido.Ruta?.Trim(),
+                RutaInforme = serieFactura.RutaInforme,
+                Serie = cabPedido.Serie?.Trim(),
+                TipoDocumento = tipoDocumento,
+                Totales = totales,
+                Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
+                Vendedores = vendedores
+            };
+
+            return factura;
+        }
+
+        public static List<VencimientoFactura> CalcularVencimientos(decimal importe, PlazoPago plazoPago, string formaPago, string ccc, DateTime primerVencimiento)
+        {
+            if (plazoPago == null || plazoPago.Nº_Plazos < 1)
+            {
+                throw new ArgumentException("No es posible hacer menos de un plazo");
+            }
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
+            decimal importePorAplicar = importe;
+            for (int i = 0; i < plazoPago.Nº_Plazos; i++)
+            {
+                decimal importeVencimiento;
+                if (i == plazoPago.Nº_Plazos -1 ) //último vencimiento
+                {
+                    importeVencimiento = importePorAplicar;
+                } else
+                {
+                    importeVencimiento = Math.Round(importe / plazoPago.Nº_Plazos, 2, MidpointRounding.AwayFromZero);
+                }
+                VencimientoFactura vencimiento = new VencimientoFactura
+                {
+                    CCC = ccc,
+                    Importe = importeVencimiento,
+                    ImportePendiente = importeVencimiento,
+                    FormaPago = formaPago,
+                    Vencimiento = primerVencimiento.AddDays(i * plazoPago.DíasEntrePlazos).AddMonths(i * plazoPago.MesesEntrePlazos)
+                };
+                vencimientos.Add(vencimiento);
+                importePorAplicar -= importeVencimiento;
+            }
+
+            return vencimientos;
+        }
+
+        private static DireccionFactura CargarDireccionEntrega(Cliente clienteEntrega)
+        {
+            return new DireccionFactura
+            {
+                Tipo = "Entrega",
+                Nombre = clienteEntrega.Nombre?.Trim(),
+                CodigoPostal = clienteEntrega.CodPostal?.Trim(),
+                Direccion = clienteEntrega.Dirección?.Trim(),
+                Poblacion = clienteEntrega.Población?.Trim(),
+                Provincia = clienteEntrega.Provincia?.Trim(),
+                Telefonos = clienteEntrega.Teléfono?.Trim()
+            };
+        }
+
+        private static DireccionFactura CargarDireccionRazonSocial(Cliente clienteRazonSocial)
+        {
+            return new DireccionFactura
+            {
+                Tipo = "Fiscal",
+                Nombre = clienteRazonSocial.Nombre?.Trim(),
+                CodigoPostal = clienteRazonSocial.CodPostal?.Trim(),
+                Direccion = clienteRazonSocial.Dirección?.Trim(),
+                Poblacion = clienteRazonSocial.Población?.Trim(),
+                Provincia = clienteRazonSocial.Provincia?.Trim(),
+                Telefonos = clienteRazonSocial.Teléfono?.Trim()
+            };
+        }
+
+        private static DireccionFactura CargarDireccionEmpresa(Empresa empresaPedido)
+        {
+            return new DireccionFactura
+            {
+                Tipo = "Empresa",
+                Nombre = empresaPedido.Nombre?.Trim(),
+                CodigoPostal = empresaPedido.CodPostal?.Trim(),
+                Direccion = empresaPedido.Dirección?.Trim() + "\n" + empresaPedido.Dirección2?.Trim(),
+                Comentarios = empresaPedido.Texto?.Trim(),
+                Poblacion = empresaPedido.Población?.Trim(),
+                Provincia = empresaPedido.Provincia?.Trim(),
+                Telefonos = empresaPedido.Teléfono?.Trim()
+            };
         }
 
         private static ISerieFactura LeerSerie(string serie)
@@ -266,7 +461,15 @@ namespace NestoAPI.Infraestructure.Facturas
 
             foreach (var factura in numerosFactura)
             {
-                Factura nuevaFactura = LeerFactura(factura.Empresa, factura.Factura);
+                Factura nuevaFactura;
+                if (Int32.TryParse(factura.Factura, out int numeroPedido))
+                {
+                    nuevaFactura = LeerPresupuesto(factura.Empresa, numeroPedido);
+                }
+                else
+                {
+                    nuevaFactura = LeerFactura(factura.Empresa, factura.Factura);
+                }
                 facturas.Add(nuevaFactura);
             }
 
@@ -347,6 +550,13 @@ namespace NestoAPI.Infraestructure.Facturas
 
             s.AppendLine("<p>Adjunto le enviamos su facturación del día.</p>");
             s.AppendLine("<br/>");
+            s.AppendLine("<p>¿Qué es la factura electrónica?</p>");
+            s.AppendLine("<ul><li>Una factura electrónica es, ante todo, una factura. Es decir, tiene los mismos efectos legales que una factura en papel.</li>");
+            s.AppendLine("<li>Recordemos que una factura es un justificante de la entrega de bienes o la prestación de servicios.</li>");
+            s.AppendLine("<li>Una factura electrónica es una factura que se expide y recibe en formato electrónico.</li>");
+            s.AppendLine("<li>La factura electrónica, por tanto, es una alternativa legal a la factura tradicional en papel.</li></ul>");
+            s.AppendLine("<br/>");
+            s.AppendLine("<p style=\"color: green;\">Nuestro compromiso con la protección del medio ambiente es firme, por lo que agradecemos que nos ayude a conseguirlo con la eliminación de las facturas en papel.</p>");
             s.AppendLine("<br/>");
             s.AppendLine(serieFactura.FirmaCorreo);
 
@@ -378,5 +588,72 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             return factura.Vendedores;
         }
+
+        static async Task<string> LeerProductosRecomendados()
+        {
+            // ESTÁ SIN USAR. 
+            // TODO: PONER LOS PRODUCTOS RECOMENDADOS EN EL HTML DEL CORREO DE LA FACTURA
+            // OJO, SOLO PARA FACTURA DE NV
+            using (var client = new HttpClient())
+            {
+                var scoreRequest = new
+                {
+
+                    Inputs = new Dictionary<string, StringTable>() {
+                        {
+                            "input1",
+                            new StringTable()
+                            {
+                                ColumnNames = new string[] {"userId", "productoId", "rating"},
+                                Values = new string[,] {  { "15191/0", "0", "0" }  }
+                            }
+                        },
+                    },
+                    GlobalParameters = new Dictionary<string, string>()
+                    {
+                    }
+                };
+                string apiKey = ConfigurationManager.AppSettings["RecomendacionProductosApiKey"]; // Replace this with the API key for the web service
+                client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+                client.BaseAddress = new Uri("https://ussouthcentral.services.azureml.net/workspaces/d77f0a96e7af4f318b1d1b2a3d260851/services/77d259cbcaef42a9aeb146d12e183350/execute?api-version=2.0&details=true");
+
+                // WARNING: The 'await' statement below can result in a deadlock if you are calling this code from the UI thread of an ASP.Net application.
+                // One way to address this would be to call ConfigureAwait(false) so that the execution does not attempt to resume on the original context.
+                // For instance, replace code such as:
+                //      result = await DoSomeTask()
+                // with the following:
+                //      result = await DoSomeTask().ConfigureAwait(false)
+
+
+                HttpResponseMessage response = await client.PostAsJsonAsync("", scoreRequest);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    string result = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine("Result: {0}", result);
+                    return result;
+                }
+                else
+                {
+                    Console.WriteLine(string.Format("The request failed with status code: {0}", response.StatusCode));
+
+                    // Print the headers - they include the requert ID and the timestamp, which are useful for debugging the failure
+                    Console.WriteLine(response.Headers.ToString());
+
+                    string responseContent = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine(responseContent);
+                    return responseContent;
+                }
+            }
+        }
     }
+}
+
+
+
+public class StringTable
+{
+    public string[] ColumnNames { get; set; }
+    public string[,] Values { get; set; }
 }

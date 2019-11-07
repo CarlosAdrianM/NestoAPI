@@ -19,5 +19,8 @@ namespace NestoAPI.Infraestructure.Facturas
         List<VendedorFactura> CargarVendedoresFactura(string empresa, string numeroFactura);
         string CuentaBancoEmpresa(string empresa);
         IQueryable<FacturaCorreo> LeerFacturasDia(DateTime dia);
+        List<VendedorFactura> CargarVendedoresPedido(string empresa, int pedido);
+        PlazoPago CargarPlazosPago(string empresa, string plazosPago);
+        string ComponerIban(string empresa, string cliente, string contacto, string ccc);
     }
 }

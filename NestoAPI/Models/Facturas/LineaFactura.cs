@@ -8,7 +8,16 @@ namespace NestoAPI.Models.Facturas
         public DateTime FechaAlbaran { get; set; }
         public string TextoAlbaran
         {
-            get { return String.Format("Albarán {0} del {1}", Albaran.ToString(), FechaAlbaran.ToString("dd/MM/yy")); }
+            get { 
+                if (Albaran != 0)
+                {
+                    return String.Format("Albarán {0} del {1} (Pedido {2})", Albaran.ToString(), FechaAlbaran.ToString("dd/MM/yy"), Pedido.ToString());
+                } else
+                {
+                    return String.Format("Pedido {0}", Pedido.ToString());
+                }
+                
+            }
         }
         public string Producto { get; set; }
         public string Descripcion { get; set; }
@@ -22,5 +31,6 @@ namespace NestoAPI.Models.Facturas
         public decimal? PrecioUnitario { get; set; }
         public decimal Descuento { get; set; }
         public decimal Importe { get; set; }
+        public int Pedido { get; set; }
     }
 }

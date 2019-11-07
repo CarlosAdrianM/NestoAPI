@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using NestoAPI.Models;
+using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Facturas;
 
 namespace NestoAPI.Infraestructure.Facturas
@@ -75,7 +76,8 @@ namespace NestoAPI.Infraestructure.Facturas
             var cuentas = db.Bancos.Where(b => b.Empresa == empresa && b.DC_IBAN != null);
             foreach(var cuenta in cuentas)
             {
-                cuentasEmpresa += cuenta.Pais + cuenta.DC_IBAN + cuenta.Entidad + cuenta.Sucursal + cuenta.DC + cuenta.Nº_Cuenta + Environment.NewLine;
+                Iban iban = new Iban(cuenta.Pais + cuenta.DC_IBAN + cuenta.Entidad + cuenta.Sucursal + cuenta.DC + cuenta.Nº_Cuenta);
+                cuentasEmpresa +=  iban.Formateado + Environment.NewLine;
             }
             cuentasEmpresa = cuentasEmpresa.TrimEnd(Environment.NewLine.ToCharArray());
             return cuentasEmpresa;
@@ -87,6 +89,7 @@ namespace NestoAPI.Infraestructure.Facturas
             List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
             foreach (var vto in vtosExtracto)
             {
+                Iban iban = new Iban(Iban.ComponerIban(vto.CCC1));
                 VencimientoFactura vencimiento = new VencimientoFactura
                 {
                     CCC = vto.CCC,
@@ -94,12 +97,18 @@ namespace NestoAPI.Infraestructure.Facturas
                     Importe = vto.Importe,
                     ImportePendiente = vto.ImportePdte,
                     Vencimiento = vto.FechaVto != null ? (DateTime)vto.FechaVto : vto.Fecha,
-                    Iban = vto.CCC1?.Pais + vto.CCC1?.DC_IBAN + vto.CCC1?.Entidad + vto.CCC1?.Oficina + vto.CCC1?.DC + vto.CCC1?.Nº_Cuenta
+                    Iban = iban.Enmascarado
                 };
                 vencimientos.Add(vencimiento);
             }
 
             return vencimientos;
+        }
+
+        public string ComponerIban(string empresa, string cliente, string contacto, string ccc)
+        {
+            NVEntities db = new NVEntities();
+            return Iban.ComponerIban(db.CCCs.FirstOrDefault(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto == contacto && c.Número == ccc));
         }
 
         public IQueryable<FacturaCorreo> LeerFacturasDia(DateTime dia)
@@ -114,6 +123,38 @@ namespace NestoAPI.Infraestructure.Facturas
                                Correo = c.PersonasContactoClientes.FirstOrDefault(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).CorreoElectrónico.Trim()
                            };
             return facturas;
+        }
+
+        public List<VendedorFactura> CargarVendedoresPedido(string empresa, int pedido)
+        {
+            List<VendedorFactura> nombresVendedores = new List<VendedorFactura>();
+            List<string> codigosVendedores = new List<string>();
+            var pedidoCompleto = db.CabPedidoVtas.Single(p => p.Empresa == empresa && p.Número == pedido);
+            var vendedorPeluqueria = db.VendedoresPedidosGruposProductos.SingleOrDefault(v => v.Empresa == empresa && v.Pedido == pedido);
+            var vendedorEstetica = pedidoCompleto.Vendedor;
+
+            var hayPeluqueria = pedidoCompleto.LinPedidoVtas.Any(l => l.Grupo == Constantes.Productos.GRUPO_PELUQUERIA);
+            var hayNoPeluqueria = pedidoCompleto.LinPedidoVtas.Any(l => l.Grupo != Constantes.Productos.GRUPO_PELUQUERIA);
+            if (hayPeluqueria)
+            {
+                codigosVendedores.Add(vendedorPeluqueria.Vendedor);
+            }
+            if (hayNoPeluqueria)
+            {
+                codigosVendedores.Add(vendedorEstetica);
+            }
+            
+            foreach (var codigoVendedor in codigosVendedores)
+            {
+                string vendedor = db.Vendedores.Single(v => v.Empresa == empresa && v.Número == codigoVendedor).Descripción.Trim();
+                nombresVendedores.Add(new VendedorFactura { Nombre = vendedor });
+            }
+            return nombresVendedores;
+        }
+
+        public PlazoPago CargarPlazosPago(string empresa, string plazosPago)
+        {
+            return db.PlazosPago.Single(p => p.Empresa == empresa && p.Número == plazosPago);
         }
     }
 }

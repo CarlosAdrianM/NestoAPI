@@ -8,23 +8,23 @@
             public const int ESTADO_EN_CURSO = 0;
         }
 
-        public class Almacenes
+        public static class Almacenes
         {
             public const string ALGETE = "ALG";
             public const string REINA = "REI";
         }
 
-        public class Clientes
+        public static class Clientes
         {
             public const char SEPARADOR_TELEFONOS = '/';
-            public class Estados
+            public static class Estados
             {
                 public const short VISITA_PRESENCIAL = 0;
                 public const short VISITA_TELEFONICA = 9;
                 public const short PRIMERA_VISITA = 5;
             }
 
-            public class EstadosMandatos
+            public static class EstadosMandatos
             {
                 public const int EN_PODER_DEL_CLIENTE = 2;
             }
@@ -33,31 +33,31 @@
             public const string GRUPO_POR_DEFECTO = "0";
             public const string SECUENCIA_POR_DEFECTO = "FRST";
 
-            public class PersonasContacto
+            public static class PersonasContacto
             {
                 public const short CARGO_FACTURA_POR_CORREO = 22;
             }
 
-            public class TiposExtracto
+            public static class TiposExtracto
             {
                 public const string TIPO_FACTURA = "1";
                 public const string TIPO_CARTERA = "2";
             }
         }
 
-        public class Correos
+        public static class Correos
         {
             public const string CORREO_DIRECCION = "direccion@nuevavision.es";
             public const string TIENDA_REINA = "tienda@nuevavision.es";
             public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
         }
 
-        public class Cuentas
+        public static class Cuentas
         {
             public const string CUENTA_PORTES_GLOVO = "62400017";
         }
 
-        public class Empresas
+        public static class Empresas
         {
             public const string DELEGACION_POR_DEFECTO = "ALG";
             public const string EMPRESA_ESPEJO_POR_DEFECTO = "3";
@@ -66,7 +66,7 @@
             public const string IVA_POR_DEFECTO = "G21";
         }
 
-        public class EstadosLineaVenta
+        public static class EstadosLineaVenta
         {
             public const int PRESUPUESTO = -3;
             public const int PENDIENTE = -1;
@@ -75,19 +75,30 @@
             public const int FACTURA = 4;
         }
 
-        public class FormasPago
+        public static class Facturas
+        {
+            public static class TiposDocumento
+            {
+                public const string FACTURA = "FACTURA";
+                public const string FACTURA_RECTIFICATIVA = "FACTURA RECTIFICATIVA";
+                public const string FACTURA_PROFORMA = "FACTURA PROFORMA";
+                public const string PEDIDO = "PEDIDO";
+            }
+        }
+
+        public static class FormasPago
         {
             public const string RECIBO_BANCARIO = "RCB";
         }
 
-        public class Pedidos
+        public static class Pedidos
         {
             public const string PERIODO_FACTURACION_FIN_DE_MES = "FDM";
             public const string PERIODO_FACTURACION_NORMAL = "NRM";
             public const string RUTA_GLOVO = "GLV";
         }
 
-        public class Productos
+        public static class Productos
         {
             public const string ALMACEN_POR_DEFECTO = "ALG";
             public const string ALMACEN_TIENDA = "REI";
@@ -97,7 +108,7 @@
             public const string SUBGRUPO_MUESTRAS = "MMP";
         }
 
-        public class TiposLineaVenta
+        public static class TiposLineaVenta
         {
             public const int TEXTO = 0;
             public const int PRODUCTO = 1;
@@ -105,7 +116,7 @@
             public const int INMOVILIZADO = 3;
         }
 
-        public class Ubicaciones
+        public static class Ubicaciones
         {
             public const int UBICADO = 0;
             public const int PENDIENTE_UBICAR = 2;
@@ -113,17 +124,17 @@
             public const int RESERVADO_REPOSICION = 3;
         }
 
-        public class Picking
+        public static class Picking
         {
             public const int HORA_MAXIMA_AMPLIAR_PEDIDOS = 11;
         }
 
-        public class ClientesEspeciales
+        public static class ClientesEspeciales
         {
             public const string EL_EDEN = "15191";
         }
 
-        public class Vendedores
+        public static class Vendedores
         {
             public const int ESTADO_VENDEDOR_PRESENCIAL = 0;
             public const int ESTADO_VENDEDOR_TELEFONICO = 2;

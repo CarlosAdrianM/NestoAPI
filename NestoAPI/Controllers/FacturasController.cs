@@ -47,7 +47,6 @@ namespace NestoAPI.Controllers
             };
             List<Factura> facturas = gestor.LeerFacturas(lista);
 
-
             var result = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = gestor.FacturasEnPDF(facturas)

@@ -271,6 +271,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest();
             }
+
+            Cliente cliente = await db.Clientes.SingleAsync(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
+            if (cliente == null || string.IsNullOrWhiteSpace(cliente.CIF_NIF))
+            {
+                throw new ArgumentException("No se pueden modificar pedidos de clientes sin NIF");
+            }
             
             // Cargamos las líneas
             //db.Entry(cabPedidoVta).Reference(l => l.LinPedidoVtas).Load();
