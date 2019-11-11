@@ -76,6 +76,7 @@ namespace NestoAPI.Infraestructure
             if (vendedorGrupoActual != null)
             {
                 vendedorGrupoActual.Vendedor = vendedorGrupoNuevo.vendedor;
+                vendedorGrupoActual.Usuario = vendedorGrupoNuevo.usuario;
             }
             else if (vendedorGrupoNuevo != null)
             {

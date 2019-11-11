@@ -390,5 +390,6 @@ namespace NestoAPI.Models
     {
         public string vendedor { get; set; }
         public string grupoProducto { get; set; }
+        public string usuario { get; set; }
     }
 }

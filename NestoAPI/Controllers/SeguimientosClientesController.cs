@@ -11,6 +11,8 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
 using System.Data.Entity.Core.Objects;
+using NestoAPI.Models.Rapports;
+using NestoAPI.Infraestructure.Rapports;
 
 namespace NestoAPI.Controllers
 {
@@ -105,6 +107,31 @@ namespace NestoAPI.Controllers
                 .OrderByDescending(s => s.Id);
         }
 
+        [HttpGet]
+        [Route("api/SeguimientosClientes/GetCodigosPostalesSinVisitar")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(ICollection<CodigoPostalSeguimientoLookup>))]
+        public async Task<IHttpActionResult> GetCodigosPostalesSinVisitar(string vendedor, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            GestorRapports gestor = new GestorRapports();
+            ICollection<CodigoPostalSeguimientoLookup> respuesta = await gestor.CodigosPostalesSinVisitar(vendedor, fechaDesde, fechaHasta);
+            return Ok(respuesta);
+        }
+
+
+        [HttpGet]
+        [Route("api/SeguimientosClientes/GetClientesSinVisitar")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(ICollection<ClienteSeguimientoLookup>))]
+        public async Task<IHttpActionResult> GetClientesSinVisitar(string vendedor, string codigoPostal, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            GestorRapports gestor = new GestorRapports();
+            ICollection<ClienteSeguimientoLookup> respuesta = await gestor.ClientesSinVisitar(vendedor, codigoPostal, fechaDesde, fechaHasta);
+            return Ok(respuesta);
+        }
+
+
+
         /*
         // GET: api/SeguimientosClientes/5
         [ResponseType(typeof(SeguimientoCliente))]
@@ -119,7 +146,7 @@ namespace NestoAPI.Controllers
             return Ok(seguimientoCliente);
         }
         */
-        
+
         // PUT: api/SeguimientosClientes/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutSeguimientoCliente(SeguimientoClienteDTO seguimientoClienteDTO)

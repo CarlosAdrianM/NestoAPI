@@ -340,6 +340,9 @@
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
+    <Compile Include="Infraestructure\Rapports\GestorRapports.cs" />
+    <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
+    <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
@@ -579,6 +582,8 @@
     <Compile Include="Models\ProveedoresProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Rapports\ClienteSeguimientoLookup.cs" />
+    <Compile Include="Models\Rapports\CodigoPostalSeguimientoLookup.cs" />
     <Compile Include="Models\RecursosHumanos\Accion.cs" />
     <Compile Include="Models\RecursosHumanos\Empleado.cs" />
     <Compile Include="Models\RecursosHumanos\Festivo.cs" />

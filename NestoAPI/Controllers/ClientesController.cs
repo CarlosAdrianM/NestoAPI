@@ -348,6 +348,7 @@ namespace NestoAPI.Controllers
             if (clienteDB.Vendedor != null && cliente.vendedor != null && clienteDB.Vendedor.Trim() != cliente.vendedor.Trim())
             {
                 clienteDB.Vendedor = cliente.vendedor;
+                clienteDB.Usuario = cliente.usuario;
             }
                         
             db.Entry(clienteDB).State = EntityState.Modified;
