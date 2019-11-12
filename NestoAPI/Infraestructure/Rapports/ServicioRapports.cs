@@ -62,8 +62,19 @@ namespace NestoAPI.Infraestructure.Rapports
                         Direccion = p.Dirección != null ? p.Dirección.Trim() : string.Empty,
                         Estado = (short)p.Estado
                     });
+                    
+                var resultadoFinal = await listaClientes.ToListAsync();
 
-                return await listaClientes.ToListAsync();
+                foreach (var cliente in resultadoFinal)
+                {
+                    var ultimoSeguimiento = await db.SeguimientosClientes.OrderByDescending(s => s.Fecha_Modificación).FirstOrDefaultAsync(s => s.Empresa == cliente.Empresa && s.Número == cliente.Cliente && s.Contacto == cliente.Contacto &&
+                        s.Tipo == Constantes.SeguimientosCliente.Tipos.TIPO_VISITA_PRESENCIAL && s.Vendedor == vendedor);
+                    var fecha = ultimoSeguimiento?.Fecha_Modificación;
+                    cliente.FechaUltimaVisita = fecha == null ? DateTime.MinValue : (DateTime)fecha;
+                }
+
+                return resultadoFinal.OrderBy(r => r.FechaUltimaVisita).ToList();
+                
             }
         }
     }
