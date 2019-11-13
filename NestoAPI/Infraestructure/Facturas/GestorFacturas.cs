@@ -475,7 +475,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return facturas;
         }                
-        public async Task<IQueryable<FacturaCorreo>> EnviarFacturasPorCorreo(DateTime dia)
+        public async Task<IEnumerable<FacturaCorreo>> EnviarFacturasPorCorreo(DateTime dia)
         {
             var facturasCorreo = servicio.LeerFacturasDia(dia);
             var listaCorreos = new List<MailMessage>();
@@ -500,7 +500,7 @@ namespace NestoAPI.Infraestructure.Facturas
                         mail.Subject = "Facturación nº ";
                     } catch
                     {
-                        mail.To.Add(new MailAddress("administracion@nuevavision.es"));
+                        mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
                         mail.Subject = String.Format("[ERROR: {0}] Facturación nº ", fra.Correo);
                     }
                     

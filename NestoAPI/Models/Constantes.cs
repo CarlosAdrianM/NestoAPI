@@ -51,6 +51,7 @@
             public const string CORREO_DIRECCION = "direccion@nuevavision.es";
             public const string TIENDA_REINA = "tienda@nuevavision.es";
             public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
+            public const string CORREO_ADMON = "administracion@nuevavision.es";
         }
 
         public static class Cuentas

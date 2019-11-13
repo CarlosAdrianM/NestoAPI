@@ -111,17 +111,19 @@ namespace NestoAPI.Infraestructure.Facturas
             return Iban.ComponerIban(db.CCCs.FirstOrDefault(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto == contacto && c.Número == ccc));
         }
 
-        public IQueryable<FacturaCorreo> LeerFacturasDia(DateTime dia)
+        public IEnumerable<FacturaCorreo> LeerFacturasDia(DateTime dia)
         {
-            var facturas = from f in db.CabFacturaVtas
+            var facturas = (from f in db.CabFacturaVtas
                            join c in db.Clientes
                            on new { f.Empresa, f.Nº_Cliente, f.Contacto } equals new { c.Empresa, c.Nº_Cliente, c.Contacto }
                            where f.Fecha == dia && c.PersonasContactoClientes.Where(c => c.CorreoElectrónico != null).Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
-                           select new FacturaCorreo {
-                               Empresa = f.Empresa.Trim(),
-                               Factura = f.Número.Trim(),
-                               Correo = c.PersonasContactoClientes.FirstOrDefault(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).CorreoElectrónico.Trim()
-                           };
+                           select new { Empresa = c.Empresa.Trim(), Factura = f.Número.Trim(), Correos = c.PersonasContactoClientes })
+                           .ToList()
+                           .Select (f => new FacturaCorreo {
+                               Empresa = f.Empresa,
+                               Factura = f.Factura,
+                               Correo = string.Join(";", f.Correos.Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).Select(c => c.CorreoElectrónico.Trim())) 
+                           });
             return facturas;
         }
 
