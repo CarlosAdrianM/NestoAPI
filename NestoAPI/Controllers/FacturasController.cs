@@ -69,7 +69,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> EnviarFacturasDia()
         {
             GestorFacturas gestor = new GestorFacturas();
-            IEnumerable<FacturaCorreo> respuesta = await gestor.EnviarFacturasPorCorreo(DateTime.Today.AddDays(-1));
+            IEnumerable<FacturaCorreo> respuesta = await gestor.EnviarFacturasPorCorreo(DateTime.Today);
 
             return Ok(respuesta.ToList());
         }
