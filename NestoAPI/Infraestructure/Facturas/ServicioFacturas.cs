@@ -123,7 +123,8 @@ namespace NestoAPI.Infraestructure.Facturas
                                Empresa = f.Empresa,
                                Factura = f.Factura,
                                Correo = string.Join(", ", f.Correos.Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).Select(c => c.CorreoElectrónico.Trim())) 
-                           });
+                           })
+                           .OrderBy(p => p.Correo);
             return facturas;
         }
 

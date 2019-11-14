@@ -492,11 +492,9 @@ namespace NestoAPI.Infraestructure.Facturas
                     }
                     mailAnterior = fra.Correo;
                     ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
-                    mail = new MailMessage();
-                    mail.From = serieFactura.CorreoDesde;
                     try
                     {
-                        mail.To.Add(new MailAddress(fra.Correo));
+                        mail = new MailMessage(serieFactura.CorreoDesde.Address, fra.Correo);
                         mail.Subject = "Facturación nº ";
                     } catch
                     {
