@@ -339,7 +339,7 @@ namespace NestoAPI.Controllers
             Cliente clienteDB = db.Clientes.SingleOrDefault(c => c.Empresa == cliente.empresa && c.Nº_Cliente == cliente.cliente && c.Contacto == cliente.contacto);
 
 
-            if (clienteDB == null)
+            if (clienteDB == null || cliente == null)
             {
                 return BadRequest();
             }
