@@ -8,6 +8,9 @@ using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 
+using System.Data.Entity;
+
+
 namespace NestoAPI.Infraestructure
 {
     public class GestorClientes : IGestorClientes
@@ -437,6 +440,145 @@ namespace NestoAPI.Infraestructure
             }
 
             return clienteCrear;
+        }
+                
+        public async Task<List<Cliente>> DejarDeVisitar(NVEntities db, ClienteCrear cliente)
+        {
+            // En el parámetro "cliente" es donde marcamos el cambio:
+            // - Si vendedorEstetica es NV es el vendedor de estética el que se lo quita
+            // - Si vendedorPeluqueria es NV es el vendedor de peluquería el que se lo quita
+            // No hay riesgo de que el cliente ya fuese de NV, porque solo marcamos el vendedor que se lo quita, no el que tiene actualmente
+
+            List<Cliente> clientesModificados = new List<Cliente>();
+
+            Cliente clienteDB = await servicio.BuscarCliente(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
+
+            var vendedoresTelefono = await servicio.VendedoresTelefonicos();
+            
+            int diaVendedor = servicio.Hoy().Minute % vendedoresTelefono.Count;
+            string nuevoVendedor = vendedoresTelefono.Contains(clienteDB.Vendedor) ? 
+                clienteDB.Vendedor :
+                vendedoresTelefono.ElementAt(diaVendedor);
+
+            List<Cliente> contactos = await servicio.BuscarContactos(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
+            List<string> vendedoresContacto = VendedoresContactosCliente(contactos);
+            if (nuevoVendedor == vendedoresTelefono.ElementAt(diaVendedor))
+            {
+                var vendedoresContactoTelefonicos = vendedoresContacto.Intersect(vendedoresTelefono);
+                if (vendedoresContactoTelefonicos.FirstOrDefault() != null)
+                {
+                    nuevoVendedor = vendedoresContactoTelefonicos.First();
+                }
+            }
+            
+            string vendedorPeluqueria = string.Empty;
+            List<string> vendedoresPresenciales = await servicio.VendedoresPresenciales();
+
+
+            // Se lo quita un comercial de estética
+            if (cliente.VendedorEstetica == Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Vendedor != Constantes.Vendedores.VENDEDOR_GENERAL)
+            {
+                clienteDB.Vendedor = nuevoVendedor;
+                clienteDB.Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA;
+                if (clienteDB.VendedoresClienteGrupoProductoes == null ||
+                    clienteDB.VendedoresClienteGrupoProductoes
+                        .SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA)?
+                        .Vendedor == Constantes.Vendedores.VENDEDOR_GENERAL)
+                {
+                    vendedorPeluqueria = nuevoVendedor;
+                }
+
+                contactos = contactos.Where(c => c.Estado == Constantes.Clientes.Estados.COMISIONA_SIN_VISITA).ToList();
+                foreach (Cliente contacto in contactos.Where(c => c.Vendedor == clienteDB.Vendedor || !vendedoresPresenciales.Contains(c.Vendedor)))
+                {
+                    contacto.Vendedor = nuevoVendedor;
+                    contacto.Usuario = cliente.Usuario;
+                    clientesModificados.Add(contacto);
+                }
+            }
+
+            // Se lo quita un comercial de peluquería
+            if (cliente.VendedorPeluqueria == Constantes.Vendedores.VENDEDOR_GENERAL)
+            {              
+                vendedoresPresenciales = vendedoresPresenciales.Where(v => !v.Equals(clienteDB.VendedoresClienteGrupoProductoes?.FirstOrDefault().Vendedor)).ToList();
+                if (vendedoresPresenciales.Contains(clienteDB.Vendedor))
+                {
+                    vendedorPeluqueria = Constantes.Vendedores.VENDEDOR_GENERAL;
+                }
+                else
+                {
+                    vendedoresContacto = vendedoresContacto.Where(v => v != clienteDB.VendedoresClienteGrupoProductoes?.FirstOrDefault().Vendedor).ToList();
+                    bool tieneVendedorPresencialEnContactos = vendedoresContacto.Intersect(vendedoresPresenciales).Any();
+                    bool noTieneNingunVendedorEnContactos = vendedoresContacto.All(v => v == Constantes.Vendedores.VENDEDOR_GENERAL || v == nuevoVendedor);
+                    vendedorPeluqueria = tieneVendedorPresencialEnContactos ? Constantes.Vendedores.VENDEDOR_GENERAL : nuevoVendedor;
+                    if (clienteDB.Vendedor == Constantes.Vendedores.VENDEDOR_GENERAL && !tieneVendedorPresencialEnContactos)
+                    {
+                        clienteDB.Vendedor = nuevoVendedor;
+                        clienteDB.Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA;
+                        clienteDB.Usuario = cliente.Usuario;
+                    }
+                    if (tieneVendedorPresencialEnContactos)
+                    {
+                        foreach (Cliente contacto in contactos)
+                        {
+                            var vendedorPeluqueriaContacto = contacto.VendedoresClienteGrupoProductoes.FirstOrDefault();
+                            if (vendedorPeluqueriaContacto != null)
+                            {
+                                vendedorPeluqueriaContacto.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
+                                contacto.Usuario = cliente.Usuario;
+                                clientesModificados.Add(contacto);
+                            }
+                        }
+                    }
+                    if (noTieneNingunVendedorEnContactos)
+                    {
+                        foreach (Cliente contacto in contactos)
+                        {
+                            contacto.Vendedor = nuevoVendedor;
+                            contacto.Usuario = cliente.Usuario;
+                            var vendedorPeluqueriaContacto = contacto.VendedoresClienteGrupoProductoes.FirstOrDefault();
+                            if (vendedorPeluqueriaContacto != null)
+                            {
+                                vendedorPeluqueriaContacto.Vendedor = nuevoVendedor;
+                                vendedorPeluqueriaContacto.Usuario = cliente.Usuario;
+                                clientesModificados.Add(contacto);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Si no existe el vendedor de peluquería y lo necesitamos, lo creamos
+            if (vendedorPeluqueria != string.Empty)
+            {
+                if (clienteDB.VendedoresClienteGrupoProductoes.SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA) != null)
+                {
+                    clienteDB.VendedoresClienteGrupoProductoes.SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA).Vendedor = vendedorPeluqueria;
+                    clienteDB.VendedoresClienteGrupoProductoes.SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA).Usuario = cliente.Usuario;
+                }
+                else
+                {
+                    clienteDB.VendedoresClienteGrupoProductoes.Add(new VendedorClienteGrupoProducto
+                    {
+                        GrupoProducto = Constantes.Productos.GRUPO_PELUQUERIA,
+                        Vendedor = vendedorPeluqueria,
+                        Usuario = cliente.Usuario
+                    });
+                }
+            }            
+
+            clienteDB.Usuario = cliente.Usuario;
+
+            clientesModificados.Add(clienteDB);
+
+            return clientesModificados;
+        }
+
+        private List<string> VendedoresContactosCliente(List<Cliente> contactos)
+        {
+            List<string> vendedoresGrupo = contactos.SelectMany(v => v.VendedoresClienteGrupoProductoes).Select(c => c.Vendedor).ToList();
+            var todosVendedores = contactos.Select(c => c.Vendedor).Union(vendedoresGrupo).Distinct();
+            return todosVendedores.ToList();
         }
 
         public async Task<Cliente> PrepararClienteModificar(ClienteCrear clienteModificar, NVEntities db)

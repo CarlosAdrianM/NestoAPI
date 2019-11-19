@@ -378,6 +378,48 @@ namespace NestoAPI.Controllers
             return StatusCode(HttpStatusCode.NoContent);
         }
 
+        [HttpPut]
+        [Route("api/Clientes/DejarDeVisitar")]
+        // PUT: api/Clientes/5
+        [ResponseType(typeof(void))]
+        public async Task<IHttpActionResult> DejarDeVisitar(ClienteCrear cliente)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            GestorClientes gestor = new GestorClientes();            
+
+            try
+            {
+                List<Cliente> clientesDB = await gestor.DejarDeVisitar(db, cliente);
+                foreach (var clienteDB in clientesDB)
+                {
+                    db.Entry(clienteDB).State = EntityState.Modified;
+                }
+
+                db.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!ClienteExists(cliente.Empresa, cliente.Cliente, cliente.Contacto))
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
         // PUT: api/Clientes/5
         [ResponseType(typeof(Cliente))]
         public async Task<IHttpActionResult> PutCliente(ClienteCrear clienteCrear)

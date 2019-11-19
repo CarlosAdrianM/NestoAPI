@@ -16,5 +16,6 @@ namespace NestoAPI.Infraestructure
         Task<ClienteCrear> ConstruirClienteCrear(string empresa, string cliente, string contacto);
         Task<Cliente> PrepararClienteCrear(ClienteCrear clienteCrear, NVEntities db);
         Task<Cliente> PrepararClienteModificar(ClienteCrear clienteModificar, NVEntities db);
+        Task<List<Cliente>> DejarDeVisitar(NVEntities db, ClienteCrear cliente);
     }
 }

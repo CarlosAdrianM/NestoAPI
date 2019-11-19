@@ -185,11 +185,11 @@ namespace NestoAPI.Infraestructure
             return await BuscarCliente(db, empresa, cliente, contacto);
         }
 
-
         public async Task<Cliente> BuscarCliente(NVEntities db, string empresa, string cliente, string contacto)
         {
             Cliente clienteDevolver = await db.Clientes.Include(c => c.CondPagoClientes)
                 .Include(c => c.CCC1).Include(c => c.Vendedore).Include(c => c.PersonasContactoClientes)
+                .Include(c => c.VendedoresClienteGrupoProductoes)
                 .SingleAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto);
 
             return clienteDevolver;
@@ -263,6 +263,55 @@ namespace NestoAPI.Infraestructure
             var todos = clientes.Distinct().ToList();
 
             return todos;
+        }
+
+        public async Task<List<string>> VendedoresTelefonicos()
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return await db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO && v.TipoComisión == "7")
+                    .Select(v => v.Número)
+                    .ToListAsync();
+            }
+        }
+
+        public DateTime Hoy()
+        {
+            return DateTime.Now;
+        }
+
+        public async Task<List<string>> VendedoresPresenciales()
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return await db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_PRESENCIAL)
+                    .Select(v => v.Número)
+                    .ToListAsync();
+            }
+        }
+
+        //public async Task<List<string>> VendedoresContactosCliente(string empresa, string cliente, string contacto)
+        //{
+        //    using (NVEntities db = new NVEntities())
+        //    {
+        //        var contactos = db.Clientes.Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto != contacto).Select(c => c.Vendedor);
+        //        var vendedoresGrupo = db.VendedoresClientesGruposProductos.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto != contacto).Select(c => c.Vendedor);
+        //        var todosVendedores = contactos.Union(vendedoresGrupo).Distinct();
+        //        return await todosVendedores.ToListAsync();
+        //    }
+        //}
+
+        public async Task<List<Cliente>> BuscarContactos(string empresa, string cliente, string contacto)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return await BuscarContactos(db, empresa, cliente, contacto);
+            }
+        }
+        public async Task<List<Cliente>> BuscarContactos(NVEntities db, string empresa, string cliente, string contacto)
+        {
+            return await db.Clientes.Include(v=> v.VendedoresClienteGrupoProductoes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto != contacto &&
+                c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL).ToListAsync();
         }
     }
 }
