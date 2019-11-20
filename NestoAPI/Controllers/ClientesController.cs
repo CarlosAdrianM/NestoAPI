@@ -399,7 +399,7 @@ namespace NestoAPI.Controllers
                     db.Entry(clienteDB).State = EntityState.Modified;
                 }
 
-                db.SaveChangesAsync();
+                await db.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
