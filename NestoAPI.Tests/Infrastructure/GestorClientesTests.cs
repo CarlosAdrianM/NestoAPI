@@ -988,7 +988,7 @@ namespace NestoAPI.Tests.Infrastructure
                         new VendedorClienteGrupoProducto
                         {
                             GrupoProducto = Constantes.Productos.GRUPO_PELUQUERIA,
-                            Vendedor = "NV"
+                            Vendedor = "NV    "
                         }
                     }
                 }

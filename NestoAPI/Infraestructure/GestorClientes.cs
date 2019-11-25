@@ -483,7 +483,7 @@ namespace NestoAPI.Infraestructure
                 if (clienteDB.VendedoresClienteGrupoProductoes == null ||
                     clienteDB.VendedoresClienteGrupoProductoes
                         .SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA)?
-                        .Vendedor == Constantes.Vendedores.VENDEDOR_GENERAL)
+                        .Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL)
                 {
                     vendedorPeluqueria = nuevoVendedor;
                 }
