@@ -9,13 +9,23 @@ namespace NestoAPI.Models.Picking
     {
         public void Ejecutar(NVEntities db)
         {
-            // throw new NotImplementedException("No se puede finalizar aún");
             try
             {
                 db.SaveChanges();
             } catch (Exception ex)
             {
-                throw new Exception(ex.InnerException != null ? ex.Message + ". " + ex.InnerException.Message : ex.Message);
+                string detalle = string.Empty;
+
+                while (ex != null)
+                {
+                    if (ex.Message != "An error occurred while updating the entries. See the inner exception for details.")
+                    {
+                        detalle += ex.Message + "\n";
+                    }
+                    // loop
+                    ex = ex.InnerException;
+                }
+                throw new Exception(detalle);
             }
             
         }

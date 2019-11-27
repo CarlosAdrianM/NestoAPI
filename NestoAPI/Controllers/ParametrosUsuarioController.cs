@@ -50,9 +50,19 @@ namespace NestoAPI.Controllers
                     Empresa = empresa,
                     Usuario = usuario,
                     Clave = clave,
-                    Valor = parametroUsuario.Valor
+                    Valor = parametroUsuario.Valor,
+                    Usuario2 = usuario,
+                    Fecha_Modificación = DateTime.Now
                 };
-                await db.SaveChangesAsync();
+                db.ParametrosUsuario.Add(parametroInsertar);
+                try
+                {
+                    await db.SaveChangesAsync();
+                } catch (Exception ex)
+                {
+                    throw ex;
+                }
+                
                 return Ok(parametroUsuario.Valor);
             }
 
