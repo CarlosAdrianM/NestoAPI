@@ -1,4 +1,5 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
 using NestoAPI.Models;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
@@ -24,7 +25,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return respuesta;
             }
 
-            if (!pedido.LineasPedido.Any(l =>l.producto == numeroProducto && l.texto.StartsWith("PRESENTE:")))
+            if (!pedido.LineasPedido.Any(l => l.producto == numeroProducto && l.texto.StartsWith("PRESENTE:")) && !EstamosDeBlackFriday())
             {
                 var producto = servicio.BuscarProducto(numeroProducto);
                 if (producto.Estado <= 2)
@@ -39,6 +40,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 Motivo = "El producto " + numeroProducto + " se permite por ser un regalo de tienda online",
                 ProductoId = numeroProducto
             };
+        }
+
+        private bool EstamosDeBlackFriday()
+        {
+            DateTime comienzaBlackFriday = new DateTime(2019, 11, 29);
+            DateTime terminaBlackFriday = new DateTime(2019, 12, 3);
+            return DateTime.Today >= comienzaBlackFriday && DateTime.Today <= terminaBlackFriday;
         }
     }
 }
