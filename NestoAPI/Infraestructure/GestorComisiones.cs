@@ -75,8 +75,15 @@ namespace NestoAPI.Infraestructure
             VendedorGrupoProductoDTO vendedorGrupoNuevo = cliente.VendedoresGrupoProducto.FirstOrDefault();
             if (vendedorGrupoActual != null)
             {
+                if (vendedorGrupoActual.Vendedor != vendedorGrupoNuevo.vendedor)
+                {
+                    vendedorGrupoActual.Usuario = cliente.usuario;
+                } else
+                {
+                    vendedorGrupoActual.Usuario = vendedorGrupoNuevo.usuario;
+                }
                 vendedorGrupoActual.Vendedor = vendedorGrupoNuevo.vendedor;
-                vendedorGrupoActual.Usuario = vendedorGrupoNuevo.usuario;
+                
             }
             else if (vendedorGrupoNuevo != null)
             {
