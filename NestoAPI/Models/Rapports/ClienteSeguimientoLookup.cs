@@ -14,5 +14,6 @@ namespace NestoAPI.Models.Rapports
         public string Direccion { get; set; }
         public short Estado { get; set; }
         public DateTime FechaUltimaVisita { get; set; }
+        public short NivelRiesgoPagos { get; set; }
     }
 }

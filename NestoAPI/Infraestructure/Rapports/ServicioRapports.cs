@@ -71,6 +71,27 @@ namespace NestoAPI.Infraestructure.Rapports
                         s.Tipo == Constantes.SeguimientosCliente.Tipos.TIPO_VISITA_PRESENCIAL && s.Vendedor == vendedor);
                     var fecha = ultimoSeguimiento?.Fecha_Modificación;
                     cliente.FechaUltimaVisita = fecha == null ? DateTime.MinValue : (DateTime)fecha;
+                    Cliente clienteCompleto = await db.Clientes.Include(c => c.CondPagoClientes).Where(c => c.Empresa == cliente.Empresa && c.Nº_Cliente == cliente.Cliente && c.Contacto == cliente.Contacto).SingleAsync();
+                    if (clienteCompleto.CondPagoClientes.Where(c => c.PlazosPago == Constantes.PlazosPago.CONTADO_RIGUROSO).Any())
+                    {
+                        cliente.NivelRiesgoPagos = Constantes.NivelRiesgoPagos.CONTADO_RIGUROSO;
+                    } 
+                    else if (db.ExtractosCliente.Where(e => e.Número == cliente.Cliente && e.Contacto == cliente.Contacto && e.ImportePdte > 0 && e.TipoApunte == Constantes.TiposExtractoCliente.IMPAGADO).Any())
+                    {
+                        cliente.NivelRiesgoPagos = Constantes.NivelRiesgoPagos.TIENE_IMPAGADOS_PENDIENTES;
+                    }
+                    else if (db.ExtractosCliente.Where(e => e.Número == cliente.Cliente && e.Contacto == cliente.Contacto && e.ImportePdte > 0 && e.FechaVto < DateTime.Today.AddDays(-1)).Any())
+                    {
+                        cliente.NivelRiesgoPagos = Constantes.NivelRiesgoPagos.TIENE_DEUDA_VENCIDA;
+                    }
+                    else if (db.ExtractosCliente.Where(e => e.Número == cliente.Cliente && e.Contacto == cliente.Contacto && e.ImportePdte > 0).Any())
+                    {
+                        cliente.NivelRiesgoPagos = Constantes.NivelRiesgoPagos.TIENE_DEUDA_NO_VENCIDA;
+                    }
+                    else
+                    {
+                        cliente.NivelRiesgoPagos = Constantes.NivelRiesgoPagos.NO_TIENE_DEUDA;
+                    }
                 }
 
                 return resultadoFinal.OrderBy(r => r.FechaUltimaVisita).ToList();

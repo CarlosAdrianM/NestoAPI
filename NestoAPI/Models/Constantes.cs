@@ -93,11 +93,24 @@
             public const string RECIBO_BANCARIO = "RCB";
         }
 
+        public static class NivelRiesgoPagos
+        {
+            public const short NO_TIENE_DEUDA = 1;
+            public const short TIENE_DEUDA_NO_VENCIDA = 2;
+            public const short TIENE_DEUDA_VENCIDA = 3;
+            public const short TIENE_IMPAGADOS_PENDIENTES = 4;
+            public const short CONTADO_RIGUROSO = 5;
+        }
+
         public static class Pedidos
         {
             public const string PERIODO_FACTURACION_FIN_DE_MES = "FDM";
             public const string PERIODO_FACTURACION_NORMAL = "NRM";
             public const string RUTA_GLOVO = "GLV";
+        }
+        public static class PlazosPago
+        {
+            public const string CONTADO_RIGUROSO = "CR";
         }
 
         public static class Productos
@@ -108,6 +121,11 @@
             public const string GRUPO_COSMETICA = "COS";
             public const string GRUPO_PELUQUERIA = "PEL";
             public const string SUBGRUPO_MUESTRAS = "MMP";
+        }
+
+        public static class TiposExtractoCliente
+        {
+            public const string IMPAGADO = "4";
         }
 
         public static class TiposLineaVenta

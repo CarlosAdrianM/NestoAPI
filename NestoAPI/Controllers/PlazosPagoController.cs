@@ -55,7 +55,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPlazosPago(string empresa, string cliente)
         //public IQueryable<FormaPago> GetFormasPago(string empresa)
         {
-            Cliente clienteBuscado = db.Clientes.Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true).SingleOrDefault();
+            Cliente clienteBuscado = db.Clientes.Include(p => p.CondPagoClientes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true).SingleOrDefault();
 
             List<PlazoPagoDTO> plazosPago = await db.PlazosPago.Where(l => l.Empresa == empresa).
                 Select(p => new PlazoPagoDTO
@@ -71,18 +71,23 @@ namespace NestoAPI.Controllers
                     financiacion = p.Financiacion
                 }).ToListAsync();
 
-            // Si el cliente tiene impagados o facturas vencidas, solo admitimos formas de pago de contado
-            int tiempoVencidas = 7; // días que tiene que llevar vencida una factura para que no sacar pedido
-            DateTime fechaDesdeVencida = System.DateTime.Today.AddDays(-tiempoVencidas);
-            ExtractoCliente impagado = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.TipoApunte == "4").FirstOrDefault();
-            ExtractoCliente deudaVencida = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.FechaVto < fechaDesdeVencida).FirstOrDefault();
-
-            if (impagado != null || deudaVencida != null)
+            // Si el cliente es CR no se puede poner otro plazo de pago
+            if (clienteBuscado.CondPagoClientes.Where(c => c.PlazosPago.Trim() == Constantes.PlazosPago.CONTADO_RIGUROSO).Any()) {
+                plazosPago = plazosPago.Where(p => p.plazoPago == Constantes.PlazosPago.CONTADO_RIGUROSO).ToList();
+            } else
             {
-                plazosPago = plazosPago.Where(p => p.diasPrimerPlazo == 0 && p.mesesPrimerPlazo == 0 && p.numeroPlazos == 1).ToList();
+                // Si el cliente tiene impagados o facturas vencidas, solo admitimos formas de pago de contado
+                int tiempoVencidas = 7; // días que tiene que llevar vencida una factura para que no sacar pedido
+                DateTime fechaDesdeVencida = System.DateTime.Today.AddDays(-tiempoVencidas);
+                ExtractoCliente impagado = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.TipoApunte == "4").FirstOrDefault();
+                ExtractoCliente deudaVencida = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.FechaVto < fechaDesdeVencida).FirstOrDefault();
+
+                if (impagado != null || deudaVencida != null)
+                {
+                    plazosPago = plazosPago.Where(p => p.diasPrimerPlazo == 0 && p.mesesPrimerPlazo == 0 && p.numeroPlazos == 1).ToList();
+                }
             }
-
-
+                
             return Ok(plazosPago);
         }
 
