@@ -189,7 +189,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     continue;
                 }
 
-                if (vencimiento.FormaPago == "TRN")
+                if (vencimiento.FormaPago == "TRN" || vencimiento.FormaPago == "CNF")
                 {
                     vencimiento.Iban = servicio.CuentaBancoEmpresa(empresa);
                 }

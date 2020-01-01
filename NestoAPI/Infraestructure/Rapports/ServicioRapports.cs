@@ -72,6 +72,7 @@ namespace NestoAPI.Infraestructure.Rapports
                     var fecha = ultimoSeguimiento?.Fecha_Modificación;
                     cliente.FechaUltimaVisita = fecha == null ? DateTime.MinValue : (DateTime)fecha;
                     Cliente clienteCompleto = await db.Clientes.Include(c => c.CondPagoClientes).Where(c => c.Empresa == cliente.Empresa && c.Nº_Cliente == cliente.Cliente && c.Contacto == cliente.Contacto).SingleAsync();
+                    var ayer = DateTime.Today.AddDays(-1);
                     if (clienteCompleto.CondPagoClientes.Where(c => c.PlazosPago == Constantes.PlazosPago.CONTADO_RIGUROSO).Any())
                     {
                         cliente.NivelRiesgoPagos = Constantes.NivelRiesgoPagos.CONTADO_RIGUROSO;
@@ -80,7 +81,7 @@ namespace NestoAPI.Infraestructure.Rapports
                     {
                         cliente.NivelRiesgoPagos = Constantes.NivelRiesgoPagos.TIENE_IMPAGADOS_PENDIENTES;
                     }
-                    else if (db.ExtractosCliente.Where(e => e.Número == cliente.Cliente && e.Contacto == cliente.Contacto && e.ImportePdte > 0 && e.FechaVto < DateTime.Today.AddDays(-1)).Any())
+                    else if (db.ExtractosCliente.Where(e => e.Número == cliente.Cliente && e.Contacto == cliente.Contacto && e.ImportePdte > 0 && e.FechaVto < ayer).Any())
                     {
                         cliente.NivelRiesgoPagos = Constantes.NivelRiesgoPagos.TIENE_DEUDA_VENCIDA;
                     }

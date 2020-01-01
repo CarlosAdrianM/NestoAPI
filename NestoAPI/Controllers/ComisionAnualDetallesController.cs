@@ -41,10 +41,10 @@ namespace NestoAPI.Controllers
                         Empresa = c.Empresa,
                         Pedido = c.Número
                     }
-                    ).AsQueryable();
+                    ).OrderBy(c => c.Fecha_Factura).AsQueryable();
             }
 
-            var detalle = db.vstLinPedidoVtaComisionesDetalles.Where(v => v.Vendedor == vendedor && v.Anno == anno && v.Mes == mes && v.Etiqueta == etiqueta);
+            var detalle = db.vstLinPedidoVtaComisionesDetalles.Where(v => v.Vendedor == vendedor && v.Anno == anno && v.Mes == mes && v.Etiqueta == etiqueta).OrderBy(v => v.Fecha_Factura);
             
             return detalle;
         }

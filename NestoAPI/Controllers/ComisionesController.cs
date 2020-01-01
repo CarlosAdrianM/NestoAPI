@@ -134,6 +134,7 @@ namespace NestoAPI.Controllers
 
                     try
                     {
+                        // Arreglar sin cadenas mágicas
                         if (linea.Grupo != null && linea.Grupo.ToLower().Trim() == "otros aparatos")
                         {
                             etiqueta = "Otros Aparatos";
@@ -193,6 +194,7 @@ namespace NestoAPI.Controllers
 
         private List<ResumenComisionesMes> CalcularComisiones(int anno, int mes)
         {
+            // Para el 2020: db.vendedores.where estado between 0 and 98 and número != 'NV'
             List<VendedorDTO> vendedores = new List<VendedorDTO> {
                 new VendedorDTO
                 {
@@ -230,17 +232,37 @@ namespace NestoAPI.Controllers
                 {
                     vendedor = "AH"
                 },
-                new VendedorDTO
-                {
-                    vendedor = "IF"
-                },
+                //new VendedorDTO
+                //{
+                //    vendedor = "IF"
+                //},
                 new VendedorDTO
                 {
                     vendedor = "JGP"
                 },
                 new VendedorDTO
                 {
-                    vendedor = "CAR"
+                    vendedor = "MMP"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "AL"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "SC"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "PI"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "MR"
+                },
+                new VendedorDTO
+                {
+                    vendedor = "CAM"
                 }
             };
                         
@@ -257,24 +279,35 @@ namespace NestoAPI.Controllers
 
         private IServicioComisionesAnuales ServicioVendedor(string vendedor, int anno)
         {
-            if (vendedor == "IF" || vendedor == "AH")
+
+            // Para 2020 db.vendedor.where estado = 4 and empresa = 1
+            if (vendedor == "AH") //vendedor == "IF" || 
             {
                 if (anno == 2018)
                 {
                     return new ServicioComisionesAnualesPeluqueria2018();
-                } else if (anno == 2019) {
+                }
+                else if (anno == 2019)
+                {
                     return new ServicioComisionesAnualesPeluqueria2019();
                 }
-
-                
+                else if (anno == 2020)
+                {
+                    return new ServicioComisionesAnualesPeluqueria2020();
+                }
             }
 
             if (anno == 2018)
             {
                 return new ServicioComisionesAnualesEstetica2018();
-            } else if (anno == 2019)
+            } 
+            else if (anno == 2019)
             {
                 return new ServicioComisionesAnualesEstetica2019();
+            }
+            else if (anno == 2020)
+            {
+                return new ServicioComisionesAnualesEstetica2020();
             }
 
             throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");
