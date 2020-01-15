@@ -158,6 +158,8 @@
         {
             public const int ESTADO_VENDEDOR_PRESENCIAL = 0;
             public const int ESTADO_VENDEDOR_TELEFONICO = 2;
+            public const int ESTADO_VENDEDOR_PELUQUERIA = 4;
+            public const int ESTADO_VENDEDOR_PARA_ANULAR = 99;
             public const string VENDEDOR_GENERAL = "NV";
         }
 

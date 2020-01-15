@@ -151,6 +151,10 @@ namespace NestoAPI.Controllers
                         {
                             etiqueta = "Lisap";
                         }
+                        else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "kach")
+                        {
+                            etiqueta = "Kach";
+                        }
                         else
                         {
                             etiqueta = "General";
@@ -194,78 +198,12 @@ namespace NestoAPI.Controllers
 
         private List<ResumenComisionesMes> CalcularComisiones(int anno, int mes)
         {
-            // Para el 2020: db.vendedores.where estado between 0 and 98 and número != 'NV'
-            List<VendedorDTO> vendedores = new List<VendedorDTO> {
-                new VendedorDTO
-                {
-                    vendedor = "ASH"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "DV"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "JE"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "MRM"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "RFG"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "LA"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "PA"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "SH"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "AH"
-                },
-                //new VendedorDTO
-                //{
-                //    vendedor = "IF"
-                //},
-                new VendedorDTO
-                {
-                    vendedor = "JGP"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "MMP"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "AL"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "SC"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "PI"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "MR"
-                },
-                new VendedorDTO
-                {
-                    vendedor = "CAM"
-                }
-            };
-                        
+            List<VendedorDTO> vendedores = db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Número != Constantes.Vendedores.VENDEDOR_GENERAL &&
+                v.Estado >= Constantes.Vendedores.ESTADO_VENDEDOR_PRESENCIAL && v.Estado < Constantes.Vendedores.ESTADO_VENDEDOR_PARA_ANULAR).
+                Select(v => new VendedorDTO {
+                    vendedor = v.Número.Trim()
+                }).ToList();
+    
             List<ResumenComisionesMes> comisiones = new List<ResumenComisionesMes>();
 
             foreach (VendedorDTO vendedor in vendedores)
@@ -279,9 +217,9 @@ namespace NestoAPI.Controllers
 
         private IServicioComisionesAnuales ServicioVendedor(string vendedor, int anno)
         {
-
-            // Para 2020 db.vendedor.where estado = 4 and empresa = 1
-            if (vendedor == "AH") //vendedor == "IF" || 
+            var vendedoresPeluqueria = db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_PELUQUERIA).Select(v => v.Número.Trim());
+            
+            if (vendedoresPeluqueria.Contains(vendedor))
             {
                 if (anno == 2018)
                 {

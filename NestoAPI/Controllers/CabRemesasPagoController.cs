@@ -256,7 +256,11 @@ namespace NestoAPI.Controllers
                     lineaFichero += strLen(empresaRemesa.NIF, 10);                  // NIF del ordenante: C
                     lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D
                     lineaFichero += "019";                                          // Número o tipo de dato: E
-                    correo = proveedor.PersonasContactoProveedors.SingleOrDefault(p => p.Cargo == 15).CorreoElectrónico;
+                    if (!proveedor.PersonasContactoProveedors.Where(p => p.Cargo == 15).Any())
+                    {
+                        throw new Exception("El proveedor " + proveedor.Número.Trim() + " no tiene persona de contacto de confirming (cargo 15)");
+                    }
+                    correo = proveedor.PersonasContactoProveedors.Single(p => p.Cargo == 15).CorreoElectrónico;
                     lineaFichero += correo.PadRight(36).Substring(0,36);            // Correo electrónico del proveedor: F1
                     lineaFichero += new String(' ', 7);                             // Libre: F2
                     insertarLinea(ref lineaFichero, ref sb);

@@ -138,7 +138,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
             var hayPeluqueria = pedidoCompleto.LinPedidoVtas.Any(l => l.Grupo == Constantes.Productos.GRUPO_PELUQUERIA);
             var hayNoPeluqueria = pedidoCompleto.LinPedidoVtas.Any(l => l.Grupo != Constantes.Productos.GRUPO_PELUQUERIA);
-            if (hayPeluqueria)
+            if (hayPeluqueria && vendedorPeluqueria != null)
             {
                 codigosVendedores.Add(vendedorPeluqueria.Vendedor);
             }

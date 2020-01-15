@@ -410,6 +410,7 @@
     <Compile Include="Models\Comisiones\ICalculadorProyecciones.cs" />
     <Compile Include="Models\Comisiones\IEtiquetaComision.cs" />
     <Compile Include="Models\Comisiones\IServicioComisionesAnuales.cs" />
+    <Compile Include="Models\Comisiones\Peluqueria\EtiquetaKach.cs" />
     <Compile Include="Models\Comisiones\Peluqueria\EtiquetaLisap.cs" />
     <Compile Include="Models\Comisiones\Peluqueria\ServicioComisionesAnualesPeluqueria2020.cs" />
     <Compile Include="Models\Comisiones\Peluqueria\ServicioComisionesAnualesPeluqueria2019.cs" />

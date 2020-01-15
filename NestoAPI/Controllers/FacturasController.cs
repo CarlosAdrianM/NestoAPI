@@ -70,7 +70,7 @@ namespace NestoAPI.Controllers
         {
             GestorFacturas gestor = new GestorFacturas();
             
-            IEnumerable<FacturaCorreo> respuesta = await gestor.EnviarFacturasPorCorreo(DateTime.Today);
+            IEnumerable<FacturaCorreo> respuesta = await gestor.EnviarFacturasPorCorreo(DateTime.Today.AddDays(-1));
 
             return Ok(respuesta.ToList());
         }
