@@ -62,7 +62,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
         {
             consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
-                    l.Familia.ToLower() == "eva visnu" &&
+                    (l.Familia.ToLower() == "eva visnu" || l.Empresa == "4") &&
                     l.Grupo.ToLower() != "otros aparatos" &&
                     l.Vendedor == vendedor
                 );

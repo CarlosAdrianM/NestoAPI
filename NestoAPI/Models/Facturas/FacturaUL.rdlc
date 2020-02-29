@@ -1145,7 +1145,7 @@
               <Paragraph>
                 <TextRuns>
                   <TextRun>
-                    <Value>=IIF(First(Fields!ImporteTotal.Value, "Facturas")&lt;0, "FACTURA RECTIFICATIVA", "FACTURA")</Value>
+                    <Value>=(First(Fields!TipoDocumento.Value, "Facturas"))</Value>
                     <Style>
                       <FontSize>16pt</FontSize>
                       <FontWeight>Bold</FontWeight>
@@ -2830,6 +2830,10 @@
           <DataField>Comentarios</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
+        <Field Name="CorreoDesde">
+          <DataField>CorreoDesde</DataField>
+          <rd:TypeName>System.Net.Mail.MailAddress</rd:TypeName>
+        </Field>
         <Field Name="DatosRegistrales">
           <DataField>DatosRegistrales</DataField>
           <rd:TypeName>System.String</rd:TypeName>
@@ -2846,10 +2850,6 @@
           <DataField>ImporteTotal</DataField>
           <rd:TypeName>System.Decimal</rd:TypeName>
         </Field>
-        <Field Name="LogoURL">
-          <DataField>LogoURL</DataField>
-          <rd:TypeName>System.String</rd:TypeName>
-        </Field>
         <Field Name="Nif">
           <DataField>Nif</DataField>
           <rd:TypeName>System.String</rd:TypeName>
@@ -2860,6 +2860,18 @@
         </Field>
         <Field Name="Ruta">
           <DataField>Ruta</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="RutaInforme">
+          <DataField>RutaInforme</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="Serie">
+          <DataField>Serie</DataField>
+          <rd:TypeName>System.String</rd:TypeName>
+        </Field>
+        <Field Name="TipoDocumento">
+          <DataField>TipoDocumento</DataField>
           <rd:TypeName>System.String</rd:TypeName>
         </Field>
         <Field Name="Direcciones">
