@@ -30,22 +30,46 @@ namespace NestoAPI.Controllers
 
         // GET: api/CabRemesasPago/5
         [ResponseType(typeof(string))]
-        public async Task<IHttpActionResult> GetCrearFicheroRemesa(string empresa, int id)
+        public async Task<IHttpActionResult> GetCrearFicheroRemesa(int remesaId)
         {
-            CabRemesaPago remesa = await db.CabRemesasPago.FindAsync(empresa, id);
+            CabRemesaPago remesa = await db.CabRemesasPago.SingleAsync(r => r.Numero == remesaId);
             if (remesa == null)
             {
                 return NotFound();
             }
-
-            Empresa empresaRemesa = db.Empresas.SingleOrDefault(e => e.Número == remesa.Empresa);
             Banco banco = db.Bancos.SingleOrDefault(b => b.Empresa == remesa.Empresa && b.Número == remesa.Banco);
             List<ExtractoProveedor> movimientos = db.ExtractosProveedor.Where(e => e.Remesa == remesa.Numero).OrderBy(e => e.Número).ToList();
 
+            return await GetCrearFicheroRemesa(banco, movimientos, remesa);
+        }
+
+        // GET: api/CabRemesasPago/5
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> GetCrearFicheroRemesa(int extractoId, string numeroBanco)
+        {
+            ExtractoProveedor movimiento = await db.ExtractosProveedor.SingleAsync(e => e.NºOrden == extractoId);
+            Banco banco = db.Bancos.SingleOrDefault(b => b.Empresa == movimiento.Empresa && b.Número == numeroBanco);
+            List<ExtractoProveedor> movimientos = new List<ExtractoProveedor> { movimiento };
+
+            return await GetCrearFicheroRemesa(banco, movimientos, null);
+        }
+
+        // GET: api/CabRemesasPago/5
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> GetCrearFicheroRemesa(Banco banco, List<ExtractoProveedor> movimientos, CabRemesaPago remesa)
+        {          
+            Empresa empresaRemesa = db.Empresas.SingleOrDefault(e => e.Número == banco.Empresa);
             
             string lineaFichero = "";
             StringBuilder sb = new StringBuilder();
-            DateTime fechaRemesa = (DateTime)remesa.Fecha;
+            DateTime fechaRemesa;
+            if (remesa != null) {
+                 fechaRemesa = (DateTime)remesa.Fecha;
+            } else
+            {
+                fechaRemesa = DateTime.Today;
+            }
+
             DateTime fechaFactura;
             
 
@@ -113,7 +137,7 @@ namespace NestoAPI.Controllers
 
             foreach (ExtractoProveedor efecto in movimientos)
             {
-                proveedor = db.Proveedores.Include(p => p.CCCProveedore).Include(p=>p.PersonasContactoProveedors).SingleOrDefault(p => p.Empresa == empresa && p.Número == efecto.Número && p.ProveedorPrincipal);
+                proveedor = db.Proveedores.Include(p => p.CCCProveedore).Include(p=>p.PersonasContactoProveedors).SingleOrDefault(p => p.Empresa == banco.Empresa && p.Número == efecto.Número && p.ProveedorPrincipal);
                 factura = db.CabFacturasCmp.SingleOrDefault(f=> f.Empresa == efecto.Empresa && f.Número == efecto.NºDocumento);
                 sumaFacturas -= efecto.Importe;
 
@@ -227,9 +251,11 @@ namespace NestoAPI.Controllers
                     lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D
                     lineaFichero += "016";                                          // Número o tipo de dato: E
                     lineaFichero += "T";                                            // Forma de pago. C=Cheque. T=Transferencia: F1
-                    fechaFactura = (DateTime)factura.FechaProveedor;
+                    fechaFactura = factura != null ? (DateTime)factura.FechaProveedor : 
+                        efecto.FechaProveedor != null ? (DateTime)efecto.FechaProveedor : (DateTime)efecto.Fecha_Modificación;
                     lineaFichero += strLen(fechaFactura.ToString("ddMMyy"), 6);     // Fecha de la factura: F2
-                    lineaFichero += strLen(efecto!=null ? efecto.NºDocumentoProv : "", 15);             // Número de la factura: F3
+                    string documento = efecto.NºDocumentoProv ?? efecto.NºDocumento;
+                    lineaFichero += strLen(efecto!=null ? documento : "", 15);             // Número de la factura: F3
                     lineaFichero += strLen(efecto != null ? efecto.Fecha.ToString("ddMMyy") : DateTime.Today.ToString("ddMMyy"), 6);     // Fecha de vencimiento de la factura: F4
                     lineaFichero += new String(' ', 8);                             // Libre: F5
                     lineaFichero += new String(' ', 7);                             // Libre: F6
@@ -291,7 +317,15 @@ namespace NestoAPI.Controllers
             insertarLinea(ref lineaFichero, ref sb);
 
             // Guardamos el fichero
-            string nombreFichero = String.Format("\\\\RDS2016\\Unidad_F\\Banco\\Confirming\\E{0}R{1}.txt", remesa.Empresa.Trim(), remesa.Numero.ToString().Trim());
+            string nombreFichero;
+            if (remesa != null)
+            {
+                nombreFichero = String.Format("\\\\RDS2016\\Unidad_F\\Banco\\Confirming\\E{0}R{1}.txt", remesa.Empresa.Trim(), remesa.Numero.ToString().Trim());
+            } else
+            {
+                nombreFichero = String.Format("\\\\RDS2016\\Unidad_F\\Banco\\Confirming\\E{0}F{1}.txt", banco.Empresa.Trim(), DateTime.Now.ToString("ddMMyyHHmm").Trim());
+            }
+            
             using (StreamWriter outfile = new StreamWriter(nombreFichero))
             {
                 outfile.Write(sb.ToString());
