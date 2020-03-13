@@ -143,8 +143,9 @@ namespace NestoAPI.Controllers
 
                 try {
                     numeroRegistrosFactura++;
-                    string ibanNoResidente = proveedor.CCCProveedore.IbanNoResidente != null ? proveedor.CCCProveedore.IbanNoResidente.Trim() : "";
-                    string idProveedor = ibanNoResidente == "" ? efecto.CIF_NIF.Trim() : proveedor.Número.Trim();
+                    string ibanNoResidente = proveedor.CCCProveedore.IbanNoResidente != null ? proveedor.CCCProveedore.IbanNoResidente.Trim() : string.Empty;
+                    string idProveedor = string.IsNullOrEmpty(ibanNoResidente) ? efecto.CIF_NIF.Trim() : proveedor.Número.Trim();
+                    string codigoPais = string.IsNullOrEmpty(ibanNoResidente) ? "ES" : proveedor.CCCProveedore.Swift.Substring(4, 2);
 
                     // Tipo de registro 10: Obligatorio
                     lineaFichero += "06";                                           // Código de registro: A
@@ -160,14 +161,14 @@ namespace NestoAPI.Controllers
                     lineaFichero += "9";                                            // Concepto de la orden: F9
                     lineaFichero += new String(' ', 2);                             // Libre: F7
                     lineaFichero += strLen(proveedor.CCCProveedore.DC, 2);          // Dígitos CCC de la cuenta de proveedor: F8
-                    lineaFichero += ibanNoResidente == "" ? "N" : "S";              // Indicador de proveedor no residente: F9
+                    lineaFichero += string.IsNullOrEmpty(ibanNoResidente) ? "N" : "S"; // Indicador de proveedor no residente: F9
                     lineaFichero += "C";                                            // Indicador de confirmación: F10
                     lineaFichero += "EUR";                                          // Moneda de la factura: F11
                     lineaFichero += new String(' ', 2);                             // Libre: F12
                     insertarLinea(ref lineaFichero, ref sb);
 
                     // Tipo de registro 43: Obligatorio solo para internacional
-                    if (ibanNoResidente != "")
+                    if (!string.IsNullOrEmpty(ibanNoResidente))
                     {
                         lineaFichero += "06";                                           // Código de registro: A
                         lineaFichero += "56";                                           // Código de operación: B
@@ -181,7 +182,7 @@ namespace NestoAPI.Controllers
                     }
 
                     // Tipo de registro 44: Obligatorio solo para internacional
-                    if (ibanNoResidente != "")
+                    if (!string.IsNullOrEmpty(ibanNoResidente))
                     {
                         lineaFichero += "06";                                           // Código de registro: A
                         lineaFichero += "56";                                           // Código de operación: B
@@ -189,7 +190,7 @@ namespace NestoAPI.Controllers
                         lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D (pongo el número porque en el registro 10 lo pide así)
                         lineaFichero += "044";                                          // Número o tipo de dato: E
                         lineaFichero += "1";                                            // Clave de gastos: F1
-                        lineaFichero += ibanNoResidente.Substring(0,2);                 // Código ISO país destino: F2
+                        lineaFichero += codigoPais;                                     // Código ISO país destino: F2
                         lineaFichero += new String(' ', 6);                             // Libre: F3
                         lineaFichero += strLen(proveedor.CCCProveedore.Swift, 12);      // Código SWIFT: F4
                         lineaFichero += new String(' ', 22);                            // Libre: F5
@@ -228,7 +229,7 @@ namespace NestoAPI.Controllers
                     insertarLinea(ref lineaFichero, ref sb);
 
                     // Tipo de registro 15: Obligatorio solo para no residentes
-                    if (ibanNoResidente != "")
+                    if (!string.IsNullOrEmpty(ibanNoResidente))
                     {
                         lineaFichero += "06";                                           // Código de registro: A
                         lineaFichero += "56";                                           // Código de operación: B
@@ -238,7 +239,7 @@ namespace NestoAPI.Controllers
                         lineaFichero += strLen(empresaRemesa.NIF, 15);                  // Código del proveedor que identifica al cliente: F1
                         lineaFichero += new string(' ', 12);                            // NIF proveedor si la factura está endosada: F2 (no lo informamos)
                         lineaFichero += new String(' ', 1);                             // Clasificación del proveedor: F3
-                        lineaFichero += ibanNoResidente.Substring(0, 2);                // Código ISO país destino: F4
+                        lineaFichero += codigoPais;                                     // Código ISO país destino: F4
                         lineaFichero += ibanNoResidente.Substring(0, 9);                // País destino: F5
                         lineaFichero += new String(' ', 4);                             // Libre: F6
                         insertarLinea(ref lineaFichero, ref sb);
@@ -262,7 +263,7 @@ namespace NestoAPI.Controllers
                     insertarLinea(ref lineaFichero, ref sb);
 
                     // Tipo de registro 18: Obligatorio solo para no residentes
-                    if (ibanNoResidente != "")
+                    if (!string.IsNullOrEmpty(ibanNoResidente))
                     {
                         lineaFichero += "06";                                           // Código de registro: A
                         lineaFichero += "56";                                           // Código de operación: B
@@ -344,7 +345,7 @@ namespace NestoAPI.Controllers
             // insertar en el StringBuilder
             sb.AppendLine(linea);
             numeroRegistrosTotales++;
-            linea = "";
+            linea = string.Empty;
         }
 
         private string strLen(string cadena, int longitud)
