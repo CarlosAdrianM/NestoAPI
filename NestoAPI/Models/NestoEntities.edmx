@@ -481,14 +481,14 @@
           <Property Name="Poblacion" Type="varchar" MaxLength="80" />
           <Property Name="Provincia" Type="varchar" MaxLength="80" />
           <Property Name="Pais" Type="int" Nullable="false" />
-          <Property Name="Telefono" Type="varchar" MaxLength="9" />
-          <Property Name="Movil" Type="varchar" MaxLength="9" />
-          <Property Name="Email" Type="varchar" MaxLength="200" />
+          <Property Name="Telefono" Type="varchar" MaxLength="15" />
+          <Property Name="Movil" Type="varchar" MaxLength="15" />
+          <Property Name="Email" Type="nvarchar" MaxLength="254" />
           <Property Name="Observaciones" Type="varchar" MaxLength="80" />
           <Property Name="Atencion" Type="varchar" MaxLength="80" />
           <Property Name="Reembolso" Type="money" Nullable="false" />
           <Property Name="FechaPagoReembolso" Type="date" />
-          <Property Name="CodigoBarras" Type="nvarchar" MaxLength="14" />
+          <Property Name="CodigoBarras" Type="nvarchar" MaxLength="30" />
           <Property Name="NombrePlaza" Type="varchar" MaxLength="80" />
           <Property Name="Nemonico" Type="varchar" MaxLength="3" />
           <Property Name="TelefonoPlaza" Type="varchar" MaxLength="27" />
@@ -4280,14 +4280,14 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="CodPostal" Type="String" MaxLength="20" FixedLength="false" Unicode="true" />
           <Property Name="Poblacion" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
           <Property Name="Provincia" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
-          <Property Name="Telefono" Type="String" MaxLength="9" FixedLength="false" Unicode="false" />
-          <Property Name="Movil" Type="String" MaxLength="9" FixedLength="false" Unicode="false" />
-          <Property Name="Email" Type="String" MaxLength="200" FixedLength="false" Unicode="false" />
+          <Property Name="Telefono" Type="String" MaxLength="15" FixedLength="false" Unicode="false" />
+          <Property Name="Movil" Type="String" MaxLength="15" FixedLength="false" Unicode="false" />
+          <Property Name="Email" Type="String" MaxLength="254" FixedLength="false" Unicode="true" />
           <Property Name="Observaciones" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
           <Property Name="Atencion" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
           <Property Name="Reembolso" Type="Decimal" Precision="19" Scale="4" Nullable="false" />
           <Property Name="FechaPagoReembolso" Type="DateTime" Precision="0" />
-          <Property Name="CodigoBarras" Type="String" MaxLength="14" FixedLength="false" Unicode="true" />
+          <Property Name="CodigoBarras" Type="String" MaxLength="30" FixedLength="false" Unicode="true" />
           <Property Name="NombrePlaza" Type="String" MaxLength="80" FixedLength="false" Unicode="false" />
           <Property Name="Nemonico" Type="String" MaxLength="3" FixedLength="false" Unicode="false" />
           <Property Name="TelefonoPlaza" Type="String" MaxLength="27" FixedLength="false" Unicode="false" />
