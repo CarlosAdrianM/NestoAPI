@@ -394,7 +394,8 @@ namespace NestoAPI.Controllers
             // - las líneas que la cantidad, o la base imponible sean diferentes hay que actualizarlas enteras
 
             // - las líneas que directamente no estén, hay que borrarlas
-            foreach(LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.ToList())
+            bool hayAlgunaLineaModificada = false;
+            foreach (LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.ToList())
             {
                 LineaPedidoVentaDTO lineaEncontrada = pedido.LineasPedido.SingleOrDefault(l => l.id == linea.Nº_Orden);
 
@@ -468,6 +469,7 @@ namespace NestoAPI.Controllers
 
                     if (modificado)
                     {
+                        hayAlgunaLineaModificada = true;
                         if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
                         {
                             errorPersonalizado("No se puede modificar la línea " + linea.Nº_Orden.ToString() + " porque ya tiene picking");
@@ -543,11 +545,14 @@ namespace NestoAPI.Controllers
             }
             
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
-            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
-            if (!respuesta.ValidacionSuperada)
+            if (hayAlgunaLineaModificada ||  hayLineasNuevas || aceptarPresupuesto)
             {
-                throw new Exception(respuesta.Motivo);
-            }
+                RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+                if (!respuesta.ValidacionSuperada)
+                {
+                    throw new Exception(respuesta.Motivo);
+                }
+            }            
 
 
             try
