@@ -191,6 +191,7 @@ namespace NestoAPI.Models
         public int Numero { get; set; }
         public string Nombre { get; set; }
         public string CorreoElectronico { get; set; }
+        public bool FacturacionElectronica { get; set; }
     }
 
     public class PlazoPagoDTO
@@ -278,6 +279,14 @@ namespace NestoAPI.Models
             }
             return Stock(almacen) - CantidadReservada(almacen);
         }
+        public int CantidadPendienteRecibir()
+        {
+            if (db == null)
+            {
+                return 0;
+            }
+            return db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+        }
     }
 
     public class SeguimientoClienteDTO
@@ -353,6 +362,7 @@ namespace NestoAPI.Models
     {
         public int stock { get; set; }
         public int cantidadDisponible { get; set; }
+        public int cantidadPendienteRecibir { get; set; }
         public string urlImagen { get; set; }
     }
 

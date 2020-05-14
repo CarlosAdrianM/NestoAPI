@@ -191,6 +191,7 @@ namespace NestoAPI.Controllers
             ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(productoStock, db);
             datosStock.stock = productoNuevo.Stock(almacen);
             datosStock.cantidadDisponible = productoNuevo.CantidadDisponible(almacen);
+            datosStock.cantidadPendienteRecibir = productoNuevo.CantidadPendienteRecibir();
 
             // Cargamos la imagen del producto
             datosStock.urlImagen = await ProductoDTO.RutaImagen(productoStock);
