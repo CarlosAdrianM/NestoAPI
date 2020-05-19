@@ -52,10 +52,12 @@
             public const string TIENDA_REINA = "tienda@nuevavision.es";
             public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
             public const string CORREO_ADMON = "administracion@nuevavision.es";
+            public const string LOGISTICA = "logistica@nuevavision.es";
         }
 
         public static class Cuentas
         {
+            public const string CUENTA_PORTES_CEX = "62400005";
             public const string CUENTA_PORTES_GLOVO = "62400017";
         }
 

@@ -12,6 +12,7 @@ using System.Web.Http.Description;
 using NestoAPI.Models;
 using System.Net.Mail;
 using System.Text;
+using NestoAPI.Infraestructure.Agencias;
 
 namespace NestoAPI.Controllers
 {
@@ -76,9 +77,6 @@ namespace NestoAPI.Controllers
             try
             {
                 await db.SaveChangesAsync();
-
-                // Enviamos el correo al cliente
-                enviarCorreoEstadoEnvio(enviosAgencia);
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -173,32 +171,16 @@ namespace NestoAPI.Controllers
         {
             return db.EnviosAgencias.Count(e => e.Numero == id) > 0;
         }
-        
-        
-        private void enviarCorreoEstadoEnvio(EnviosAgencia enviosAgencia)
+
+        [HttpPost]
+        [Route("api/EnviosAgencias/EnviarCorreoEntregaAgencia")]
+        public async Task<IHttpActionResult> EnviarCorreoEntregaAgencia(EnviosAgencia envio)
         {
-            // Command line argument must the the SMTP host.
-            SmtpClient client = new SmtpClient();
-            client.Port = 25;
-            client.Host = "smtp.nuevavision.es";
-            client.EnableSsl = false;
-            //client.Timeout = 10000;
-            client.DeliveryMethod = SmtpDeliveryMethod.Network;
-            client.UseDefaultCredentials = false;
-            //client.Credentials = new System.Net.NetworkCredential("Boletin", "Madrid2010");
+            GestorEnviosAgencia gestor = new GestorEnviosAgencia();
 
-            string asunto = "El pedido de " + enviosAgencia.Empresa1.Nombre.Trim() + " ha sido entregado a la agencia";
-            string cuerpo = "Puede ver el seguimiento del mismo en el siguiente enlace: <br/>" +
-                "<a href=\"http://88.26.231.83/?id="+ enviosAgencia.Numero +"&cliente="+ enviosAgencia.Cliente.Trim()+"\">Seguimiento del Envío</a>";
+            await gestor.EnviarCorreoEntregaAgencia(envio);
 
-            MailMessage mm = new MailMessage(enviosAgencia.Empresa1.Email.Trim(), "carlosadrian@nuevavision.es", //enviosAgencia.Email
-                asunto,
-                cuerpo);
-            mm.BodyEncoding = UTF8Encoding.UTF8;
-            mm.DeliveryNotificationOptions = DeliveryNotificationOptions.OnFailure;
-            mm.IsBodyHtml = true;
-
-            client.Send(mm);
+            return Ok();
         }
         
     }

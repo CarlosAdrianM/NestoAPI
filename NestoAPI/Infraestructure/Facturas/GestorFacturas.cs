@@ -109,7 +109,9 @@ namespace NestoAPI.Infraestructure.Facturas
                     Importe = linea.Base_Imponible,
                     PrecioUnitario = linea.Precio,
                     Producto = linea.Producto?.Trim(),
-                    Pedido = linea.Número
+                    Pedido = linea.Número,
+                    Estado = linea.Estado, 
+                    Picking = (int)linea.Picking
                 };
 
                 if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
@@ -274,7 +276,9 @@ namespace NestoAPI.Infraestructure.Facturas
                     Importe = linea.Base_Imponible,
                     PrecioUnitario = linea.Precio,
                     Producto = linea.Producto?.Trim(),
-                    Pedido = linea.Número
+                    Pedido = linea.Número,
+                    Estado = linea.Estado,
+                    Picking = (int)linea.Picking
                 };
 
                 if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)

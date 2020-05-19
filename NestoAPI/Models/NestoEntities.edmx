@@ -5,6 +5,20 @@
     <!-- SSDL content -->
     <edmx:StorageModels>
     <Schema Namespace="NVModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2008" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+        <EntityType Name="AgenciasTransporte">
+          <Key>
+            <PropertyRef Name="Numero" />
+          </Key>
+          <Property Name="Numero" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nombre" Type="nvarchar" MaxLength="50" />
+          <Property Name="Ruta" Type="char" MaxLength="3" />
+          <Property Name="Identificador" Type="nvarchar" MaxLength="50" />
+          <Property Name="PrefijoCodigoBarras" Type="varchar" MaxLength="7" />
+          <Property Name="CuentaReembolsos" Type="varchar" MaxLength="10" />
+          <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="Bancos">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -1363,6 +1377,32 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="Anno" Type="smallint" Nullable="false" />
           <Property Name="Mes" Type="tinyint" Nullable="false" />
         </EntityType>
+        <Association Name="FK_AgenciasTransporte_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="AgenciasTransporte" Type="Self.AgenciasTransporte" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="AgenciasTransporte">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_AgenciasTransporte_Rutas">
+          <End Role="Rutas" Type="Self.Rutas" Multiplicity="0..1" />
+          <End Role="AgenciasTransporte" Type="Self.AgenciasTransporte" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Rutas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="AgenciasTransporte">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Ruta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_CabFacturaCmp_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="CabFacturaCmp" Type="Self.CabFacturaCmp" Multiplicity="*" />
@@ -2140,6 +2180,30 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <Dependent Role="Empresas">
               <PropertyRef Name="Número" />
               <PropertyRef Name="VendedorVarios" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosAgencia_AgenciasTransporte">
+          <End Role="AgenciasTransporte" Type="Self.AgenciasTransporte" Multiplicity="1" />
+          <End Role="EnviosAgencia" Type="Self.EnviosAgencia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="AgenciasTransporte">
+              <PropertyRef Name="Numero" />
+            </Principal>
+            <Dependent Role="EnviosAgencia">
+              <PropertyRef Name="Agencia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosAgencia_AgenciasTransporte1">
+          <End Role="AgenciasTransporte" Type="Self.AgenciasTransporte" Multiplicity="1" />
+          <End Role="EnviosAgencia" Type="Self.EnviosAgencia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="AgenciasTransporte">
+              <PropertyRef Name="Numero" />
+            </Principal>
+            <Dependent Role="EnviosAgencia">
+              <PropertyRef Name="Agencia" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -3533,6 +3597,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Parameter Name="FechaOut" Type="datetime" Mode="InOut" />
         </Function>
         <EntityContainer Name="NVModelStoreContainer">
+          <EntitySet Name="AgenciasTransporte" EntityType="Self.AgenciasTransporte" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Bancos" EntityType="Self.Bancos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaVta" EntityType="Self.CabFacturaVta" Schema="dbo" store:Type="Tables" />
@@ -3638,6 +3703,14 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
     [vstLinPedidoVtaComisionesDetalle].[Mes] AS [Mes]
     FROM [dbo].[vstLinPedidoVtaComisionesDetalle] AS [vstLinPedidoVtaComisionesDetalle]</DefiningQuery>
           </EntitySet>
+          <AssociationSet Name="FK_AgenciasTransporte_Empresas" Association="Self.FK_AgenciasTransporte_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="AgenciasTransporte" EntitySet="AgenciasTransporte" />
+          </AssociationSet>
+          <AssociationSet Name="FK_AgenciasTransporte_Rutas" Association="Self.FK_AgenciasTransporte_Rutas">
+            <End Role="Rutas" EntitySet="Rutas" />
+            <End Role="AgenciasTransporte" EntitySet="AgenciasTransporte" />
+          </AssociationSet>
           <AssociationSet Name="FK_CabFacturaCmp_Empresas" Association="Self.FK_CabFacturaCmp_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
@@ -3857,6 +3930,14 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_Empresas_Vendedores" Association="Self.FK_Empresas_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="Empresas" EntitySet="Empresas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosAgencia_AgenciasTransporte" Association="Self.FK_EnviosAgencia_AgenciasTransporte">
+            <End Role="AgenciasTransporte" EntitySet="AgenciasTransporte" />
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosAgencia_AgenciasTransporte1" Association="Self.FK_EnviosAgencia_AgenciasTransporte1">
+            <End Role="AgenciasTransporte" EntitySet="AgenciasTransporte" />
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
           </AssociationSet>
           <AssociationSet Name="FK_EnviosAgencia_Clientes" Association="Self.FK_EnviosAgencia_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -4306,6 +4387,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="EnviosAgenciaCoordenada" Relationship="NVModel.FK_EnviosAgenciaCoordenadas_EnviosAgencia" FromRole="EnviosAgencia" ToRole="EnviosAgenciaCoordenada" />
           <NavigationProperty Name="CabPedidoVta" Relationship="NVModel.FK_EnviosAgencia_CabPedidoVta" FromRole="EnviosAgencia" ToRole="CabPedidoVta" />
+          <NavigationProperty Name="AgenciasTransporte" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte" FromRole="EnviosAgencia" ToRole="AgenciasTransporte" />
+          <NavigationProperty Name="AgenciasTransporte1" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte1" FromRole="EnviosAgencia" ToRole="AgenciasTransporte" />
         </EntityType>
         <EntityContainer Name="NVEntities" annotation:LazyLoadingEnabled="true">
           <EntitySet Name="EnviosAgencias" EntityType="Self.EnviosAgencia" />
@@ -4997,6 +5080,23 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
             <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
           </AssociationSet>
+          <EntitySet Name="AgenciasTransportes" EntityType="NVModel.AgenciaTransporte" />
+          <AssociationSet Name="FK_AgenciasTransporte_Empresas" Association="NVModel.FK_AgenciasTransporte_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="AgenciasTransporte" EntitySet="AgenciasTransportes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_AgenciasTransporte_Rutas" Association="NVModel.FK_AgenciasTransporte_Rutas">
+            <End Role="Ruta" EntitySet="Rutas" />
+            <End Role="AgenciasTransporte" EntitySet="AgenciasTransportes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosAgencia_AgenciasTransporte" Association="NVModel.FK_EnviosAgencia_AgenciasTransporte">
+            <End Role="AgenciasTransporte" EntitySet="AgenciasTransportes" />
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencias" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosAgencia_AgenciasTransporte1" Association="NVModel.FK_EnviosAgencia_AgenciasTransporte1">
+            <End Role="AgenciasTransporte" EntitySet="AgenciasTransportes" />
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencias" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -5147,6 +5247,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="PersonasContactoClientes" Relationship="NVModel.FK_PersonasContactoCliente_Empresas" FromRole="Empresa" ToRole="PersonasContactoCliente" />
           <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Empresas" FromRole="Empresa" ToRole="CabFacturaVta" />
           <NavigationProperty Name="CabFacturaVtas1" Relationship="NVModel.FK_CabFacturaVta_Empresas1" FromRole="Empresa" ToRole="CabFacturaVta" />
+          <NavigationProperty Name="AgenciasTransportes" Relationship="NVModel.FK_AgenciasTransporte_Empresas" FromRole="Empresa" ToRole="AgenciasTransporte" />
           </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -7153,6 +7254,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Rutas_Empresas" FromRole="Ruta" ToRole="Empresa" />
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_Rutas" FromRole="Ruta" ToRole="ExtractoCliente" />
+          <NavigationProperty Name="AgenciasTransportes" Relationship="NVModel.FK_AgenciasTransporte_Rutas" FromRole="Ruta" ToRole="AgenciasTransporte" />
         </EntityType>
         <Association Name="FK_Rutas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -8802,6 +8904,74 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="AgenciaTransporte">
+          <Key>
+            <PropertyRef Name="Numero" />
+          </Key>
+          <Property Name="Numero" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="Ruta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Identificador" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="PrefijoCodigoBarras" Type="String" MaxLength="7" FixedLength="false" Unicode="false" />
+          <Property Name="CuentaReembolsos" Type="String" MaxLength="10" FixedLength="false" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_AgenciasTransporte_Empresas" FromRole="AgenciasTransporte" ToRole="Empresa" />
+          <NavigationProperty Name="Ruta1" Relationship="NVModel.FK_AgenciasTransporte_Rutas" FromRole="AgenciasTransporte" ToRole="Ruta" />
+          <NavigationProperty Name="EnviosAgencias" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte" FromRole="AgenciasTransporte" ToRole="EnviosAgencia" />
+          <NavigationProperty Name="EnviosAgencias1" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte1" FromRole="AgenciasTransporte" ToRole="EnviosAgencia" />
+        </EntityType>
+        <Association Name="FK_AgenciasTransporte_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.AgenciaTransporte" Role="AgenciasTransporte" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="AgenciasTransporte">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_AgenciasTransporte_Rutas">
+          <End Type="NVModel.Ruta" Role="Ruta" Multiplicity="0..1" />
+          <End Type="NVModel.AgenciaTransporte" Role="AgenciasTransporte" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Ruta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="AgenciasTransporte">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Ruta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosAgencia_AgenciasTransporte">
+          <End Type="NVModel.AgenciaTransporte" Role="AgenciasTransporte" Multiplicity="1" />
+          <End Type="NVModel.EnviosAgencia" Role="EnviosAgencia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="AgenciasTransporte">
+              <PropertyRef Name="Numero" />
+            </Principal>
+            <Dependent Role="EnviosAgencia">
+              <PropertyRef Name="Agencia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosAgencia_AgenciasTransporte1">
+          <End Type="NVModel.AgenciaTransporte" Role="AgenciasTransporte" Multiplicity="1" />
+          <End Type="NVModel.EnviosAgencia" Role="EnviosAgencia" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="AgenciasTransporte">
+              <PropertyRef Name="Numero" />
+            </Principal>
+            <Dependent Role="EnviosAgencia">
+              <PropertyRef Name="Agencia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -10137,6 +10307,21 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Fecha" ColumnName="Fecha" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="AgenciasTransportes">
+            <EntityTypeMapping TypeName="NVModel.AgenciaTransporte">
+              <MappingFragment StoreEntitySet="AgenciasTransporte">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="CuentaReembolsos" ColumnName="CuentaReembolsos" />
+                <ScalarProperty Name="PrefijoCodigoBarras" ColumnName="PrefijoCodigoBarras" />
+                <ScalarProperty Name="Identificador" ColumnName="Identificador" />
+                <ScalarProperty Name="Ruta" ColumnName="Ruta" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Numero" ColumnName="Numero" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

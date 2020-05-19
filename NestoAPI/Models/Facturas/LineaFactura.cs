@@ -32,5 +32,7 @@ namespace NestoAPI.Models.Facturas
         public decimal Descuento { get; set; }
         public decimal Importe { get; set; }
         public int Pedido { get; set; }
+        public int Estado { get; set; }
+        public int Picking { get; set; }
     }
 }

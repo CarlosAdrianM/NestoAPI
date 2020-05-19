@@ -465,6 +465,7 @@
                               <Value>=Fields!Producto.Value</Value>
                               <Style>
                                 <FontSize>8pt</FontSize>
+                                <Color>=IIF(Fields!Estado.Value&gt;=2 orelse Fields!Estado.Value &lt; -1, "Black", IIF(Fields!Estado.Value = -1, "Red", IIF(Fields!Picking.Value = 0, "Blue", "Green")))</Color>
                               </Style>
                             </TextRun>
                           </TextRuns>
@@ -497,6 +498,7 @@
                               <Value>=Fields!DescripcionCompleta.Value</Value>
                               <Style>
                                 <FontSize>8pt</FontSize>
+                                <Color>=IIF(Fields!Estado.Value&gt;=2 orelse Fields!Estado.Value &lt; -1, "Black", IIF(Fields!Estado.Value = -1, "Red", IIF(Fields!Picking.Value = 0, "Blue", "Green")))</Color>
                               </Style>
                             </TextRun>
                           </TextRuns>
@@ -529,6 +531,7 @@
                               <Value>=Fields!Cantidad.Value</Value>
                               <Style>
                                 <FontSize>8pt</FontSize>
+                                <Color>=IIF(Fields!Estado.Value&gt;=2 orelse Fields!Estado.Value &lt; -1, "Black", IIF(Fields!Estado.Value = -1, "Red", IIF(Fields!Picking.Value = 0, "Blue", "Green")))</Color>
                               </Style>
                             </TextRun>
                           </TextRuns>
@@ -564,6 +567,7 @@
                               <Style>
                                 <FontSize>8pt</FontSize>
                                 <Format>#,0.00'€';(#,0.00'€')</Format>
+                                <Color>=IIF(Fields!Estado.Value&gt;=2 orelse Fields!Estado.Value &lt; -1, "Black", IIF(Fields!Estado.Value = -1, "Red", IIF(Fields!Picking.Value = 0, "Blue", "Green")))</Color>
                               </Style>
                             </TextRun>
                           </TextRuns>
@@ -600,6 +604,7 @@
                               <Style>
                                 <FontSize>8pt</FontSize>
                                 <Format>0.00%</Format>
+                                <Color>=IIF(Fields!Estado.Value&gt;=2 orelse Fields!Estado.Value &lt; -1, "Black", IIF(Fields!Estado.Value = -1, "Red", IIF(Fields!Picking.Value = 0, "Blue", "Green")))</Color>
                               </Style>
                             </TextRun>
                           </TextRuns>
@@ -635,6 +640,7 @@
                               <Style>
                                 <FontSize>8pt</FontSize>
                                 <Format>#,0.00 '€'</Format>
+                                <Color>=IIF(Fields!Estado.Value&gt;=2 orelse Fields!Estado.Value &lt; -1, "Black", IIF(Fields!Estado.Value = -1, "Red", IIF(Fields!Picking.Value = 0, "Blue", "Green")))</Color>
                               </Style>
                             </TextRun>
                           </TextRuns>
@@ -2959,6 +2965,18 @@
         <Field Name="Importe">
           <DataField>Importe</DataField>
           <rd:TypeName>System.Decimal</rd:TypeName>
+        </Field>
+        <Field Name="Pedido">
+          <DataField>Pedido</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="Estado">
+          <DataField>Estado</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
+        </Field>
+        <Field Name="Picking">
+          <DataField>Picking</DataField>
+          <rd:TypeName>System.Int32</rd:TypeName>
         </Field>
       </Fields>
       <rd:DataSetInfo>
