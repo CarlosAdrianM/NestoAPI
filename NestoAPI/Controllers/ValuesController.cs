@@ -55,7 +55,7 @@ namespace NestoAPI.Controllers
             List<RespuestaValidacion> listaRespuestas = new List<RespuestaValidacion>();
 
             PedidosVentaController pedidosVentaController = new PedidosVentaController();
-            IQueryable<ResumenPedidoVentaDTO> resumenes = pedidosVentaController.GetPedidosVenta();
+            List<ResumenPedidoVentaDTO> resumenes = pedidosVentaController.GetPedidosVenta();
 
             foreach (ResumenPedidoVentaDTO resumen in resumenes.Where(r => r.empresa == "1" || r.empresa == "3"))
             {

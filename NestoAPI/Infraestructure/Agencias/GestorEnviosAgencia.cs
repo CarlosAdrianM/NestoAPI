@@ -21,6 +21,11 @@ namespace NestoAPI.Infraestructure.Agencias
                 return;
             }
 
+            if (envio.Cliente == Constantes.ClientesEspeciales.TIENDA_ONLINE || envio.Cliente == Constantes.ClientesEspeciales.AMAZON)
+            {
+                return;
+            }
+
             MailMessage mail = new MailMessage(Constantes.Correos.LOGISTICA, "carlosadrian@nuevavision.es"); //envio.Email
             mail.Subject = string.Format("Pedido entregado a la agencia ({0}/{1})", envio.Cliente.Trim(), envio.Pedido.ToString());
             mail.Body = (await GenerarCorreoHTML(envio)).ToString();

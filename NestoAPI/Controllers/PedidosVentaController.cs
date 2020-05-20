@@ -48,12 +48,12 @@ namespace NestoAPI.Controllers
 
 
         // GET: api/PedidosVenta
-        public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta()
+        public List<ResumenPedidoVentaDTO> GetPedidosVenta()
         {
             return GetPedidosVenta("");
         }
 
-        public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor)
+        public List<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor)
         {
             IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
                                                    join v in db.VendedoresPedidosGruposProductos
@@ -94,13 +94,16 @@ namespace NestoAPI.Controllers
                 })
                 .OrderByDescending(c => c.numero);
 
-            foreach (ResumenPedidoVentaDTO cab in cabeceraPedidos)
+            List<ResumenPedidoVentaDTO> listaPedidos = cabeceraPedidos.ToList();
+
+            foreach (ResumenPedidoVentaDTO cab in listaPedidos)
             {
                 DateTime fechaEntregaFutura = fechaEntregaAjustada(DateTime.Now, cab.ruta);
-                cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado>= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
+                cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
+                cab.ultimoSeguimiento = db.EnviosAgencias.Where(e => e.Pedido == cab.numero).OrderByDescending(e => e.Numero).FirstOrDefault()?.CodigoBarras;
             }
 
-            return cabeceraPedidos;
+            return listaPedidos;
         }
 
         public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor, int estado)

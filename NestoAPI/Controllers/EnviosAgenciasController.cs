@@ -13,6 +13,7 @@ using NestoAPI.Models;
 using System.Net.Mail;
 using System.Text;
 using NestoAPI.Infraestructure.Agencias;
+using System.Web.Http.Cors;
 
 namespace NestoAPI.Controllers
 {
@@ -20,6 +21,11 @@ namespace NestoAPI.Controllers
     
     public class EnviosAgenciasController : ApiController
     {
+        public EnviosAgenciasController()
+        {
+            db.Configuration.LazyLoadingEnabled = false;
+        }
+
         private NVEntities db = new NVEntities();
 
         /*
@@ -173,14 +179,13 @@ namespace NestoAPI.Controllers
         }
 
         [HttpPost]
+        [EnableCors(origins: "*", headers: "*", methods: "*", SupportsCredentials = true)]
         [Route("api/EnviosAgencias/EnviarCorreoEntregaAgencia")]
-        public async Task<IHttpActionResult> EnviarCorreoEntregaAgencia(EnviosAgencia envio)
+        public async Task EnviarCorreoEntregaAgencia(EnviosAgencia envio)
         {
             GestorEnviosAgencia gestor = new GestorEnviosAgencia();
 
-            await gestor.EnviarCorreoEntregaAgencia(envio);
-
-            return Ok();
+            await gestor.EnviarCorreoEntregaAgencia(envio);            
         }
         
     }

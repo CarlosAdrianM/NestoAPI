@@ -154,6 +154,8 @@
         public static class ClientesEspeciales
         {
             public const string EL_EDEN = "15191";
+            public const string TIENDA_ONLINE = "31517";
+            public const string AMAZON = "32624";
         }
 
         public static class Vendedores

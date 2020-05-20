@@ -356,6 +356,7 @@ namespace NestoAPI.Models
         public decimal total { get; set; }
         public string vendedor { get; set; }
         public string ruta { get; set; }
+        public string ultimoSeguimiento { get; set; }
     }
 
     public class StockProductoPlantillaDTO
