@@ -340,10 +340,15 @@ namespace NestoAPI.Controllers
             cabPedidoVta.Fecha = pedido.fecha;
             // La forma de pago influye en el importe del reembolso de la agencia. Si se modifica la forma de pago
             // hay que modificar el importe del reembolso
+            FormaPago formaPago = db.FormasPago.Single(f => f.Empresa == pedido.empresa && f.Número == pedido.formaPago);
             cabPedidoVta.Forma_Pago = pedido.formaPago;
             // Ojo, que el CCC va en función de la forma de pago.
             // Mirad cómo lo hace la plantilla e intentar traer aquí la lógica (y la plantilla llame aquí)
-            cabPedidoVta.CCC = pedido.ccc;
+            if (formaPago.CCCObligatorio && pedido.ccc == null)
+            {
+                pedido.ccc = cliente.CCC;
+            }
+            cabPedidoVta.CCC = formaPago.CCCObligatorio ? pedido.ccc : null;
             // Comprobar si los plazos de pago son válidos
             cabPedidoVta.PlazosPago = pedido.plazosPago;
             cabPedidoVta.vtoBuenoPlazosPago = pedido.vistoBuenoPlazosPago;
