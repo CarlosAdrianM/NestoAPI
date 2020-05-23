@@ -21,15 +21,17 @@ namespace NestoAPI.Models.Picking
 
         public void Ejecutar()
         {
-            String cuenta = Constantes.Cuentas.CUENTA_PORTES_CEX;
+            String cuenta;
             decimal portes;
 
             if (pedido.CodigoPostal.StartsWith("28") || pedido.CodigoPostal.StartsWith("19") || pedido.CodigoPostal == "45223" || pedido.CodigoPostal == "45224")
             {
                 portes = 3;
+                cuenta = Constantes.Cuentas.CUENTA_PORTES_ONTIME;
             } else
             {
                 portes = 6;
+                cuenta = Constantes.Cuentas.CUENTA_PORTES_CEX;
             }
 
             // Si ya tiene portes, no los volvemos a añadir

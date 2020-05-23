@@ -57,8 +57,11 @@
 
         public static class Cuentas
         {
-            public const string CUENTA_PORTES_CEX = "62400005";
+            public const string CUENTA_PORTES_VENTA_GENERAL = "75900000";
             public const string CUENTA_PORTES_GLOVO = "62400017";
+            public const string CUENTA_PORTES_CEX = "62400005";
+            public const string CUENTA_PORTES_ONTIME = "62400002";
+
         }
 
         public static class Empresas

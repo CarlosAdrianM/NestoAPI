@@ -63,6 +63,22 @@ namespace NestoAPI.Controllers
             return Ok(enviosAgencia);
         }
 
+        // GET: api/EnviosAgencias/5
+        [ResponseType(typeof(List<EnvioAgenciaDTO>))]
+        public async Task<IHttpActionResult> GetEnviosAgencia(string empresa, int pedido)
+        {
+            List<EnvioAgenciaDTO> enviosAgencia = await db.EnviosAgencias.Where(e => e.Empresa == empresa && e.Pedido == pedido).Include("AgenciasTransportes").Select(e => new EnvioAgenciaDTO {
+                AgenciaId = e.Agencia,
+                AgenciaNombre = e.AgenciasTransporte.Nombre,
+                Estado = e.Estado,
+                Fecha = e.Fecha,
+                CodigoBarras = e.CodigoBarras,
+                CodigoPostal = e.CodPostal,
+                Cliente = e.Cliente,
+                Pedido = (int)e.Pedido
+            }).ToListAsync();
+            return Ok(enviosAgencia);
+        }
 
         // PUT: api/EnviosAgencias/5
         [ResponseType(typeof(void))]
