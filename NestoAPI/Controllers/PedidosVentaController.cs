@@ -106,6 +106,60 @@ namespace NestoAPI.Controllers
             return listaPedidos;
         }
 
+        public List<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor, string cliente)
+        {
+            IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
+                                                       join v in db.VendedoresPedidosGruposProductos
+
+                                                       //This is how you join by multiple values
+                                                       on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
+                                                       into jointData
+
+                                                       //This is how you actually turn the join into a left-join
+                                                       from jointRecord in jointData.DefaultIfEmpty()
+
+                                                       where (vendedor == "" || vendedor == null || c.Vendedor == vendedor || jointRecord.Vendedor == vendedor)
+                                                       select c;
+
+            IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
+                .Join(db.LinPedidoVtas, c => new { empresa = c.Empresa, numero = c.Número }, l => new { empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
+                .Where(c => c.Nº_Cliente == cliente)
+                .GroupBy(g => new { g.Empresa, g.Número, g.Nº_Cliente, g.Nombre, g.Dirección, g.CodPostal, g.Población, g.Provincia, g.Vendedor, g.Ruta })
+                .Select(x => new ResumenPedidoVentaDTO
+                {
+                    empresa = x.Key.Empresa.Trim(),
+                    numero = x.Key.Número,
+                    cliente = x.Key.Nº_Cliente.Trim(),
+                    nombre = x.Key.Nombre.Trim(),
+                    direccion = x.Key.Dirección.Trim(),
+                    codPostal = x.Key.CodPostal.Trim(),
+                    poblacion = x.Key.Población.Trim(),
+                    provincia = x.Key.Provincia.Trim(),
+                    fecha = x.Min(c => c.Fecha_Entrega),
+                    tieneProductos = x.FirstOrDefault(c => c.TipoLinea == 1) != null,
+                    //tieneFechasFuturas = x.FirstOrDefault(c => c.Fecha_Entrega > fechaEntregaAjustada(DateTime.Now, c.Ruta)) != null,
+                    tienePendientes = x.FirstOrDefault(c => c.Estado < 0) != null,
+                    tienePicking = x.FirstOrDefault(c => c.Picking != 0) != null,
+                    baseImponible = x.Sum(c => c.Base_Imponible),
+                    total = x.Sum(c => c.Total),
+                    vendedor = x.Key.Vendedor.Trim(),
+                    ruta = x.Key.Ruta.Trim()
+                })
+                .OrderByDescending(c => c.numero)
+                .Take(NUMERO_PRESUPUESTOS_MOSTRADOS);
+
+            List<ResumenPedidoVentaDTO> listaPedidos = cabeceraPedidos.ToList();
+
+            foreach (ResumenPedidoVentaDTO cab in listaPedidos)
+            {
+                DateTime fechaEntregaFutura = fechaEntregaAjustada(DateTime.Now, cab.ruta);
+                cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
+                cab.ultimoSeguimiento = db.EnviosAgencias.Where(e => e.Pedido == cab.numero).OrderByDescending(e => e.Numero).FirstOrDefault()?.CodigoBarras;
+            }
+
+            return listaPedidos;
+        }
+
         public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor, int estado)
         {
             IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
