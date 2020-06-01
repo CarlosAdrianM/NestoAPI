@@ -447,9 +447,52 @@ namespace NestoAPI.Tests.Infrastructure
 
             IGestorFacturas gestor = new GestorFacturas(servicio);
 
-            Factura factura = gestor.LeerPresupuesto("1", 11111);
+            Factura factura = gestor.LeerPedido("1", 11111);
 
             Assert.AreEqual(Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA, factura.TipoDocumento);
+        }
+
+
+        [TestMethod]
+        public void GestorFacturas_CargarFactura_SiEsNotaEntregaMostramosTextoNotaEntrega()
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabPedidoVta cab = A.Fake<CabPedidoVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            cab.CCC = "1";
+            cab.Forma_Pago = "EFC";
+            cab.Fecha = new DateTime(2019, 11, 7);
+            cab.Primer_Vencimiento = new DateTime(2019, 11, 7);
+            cab.PlazosPago = "UnPlazo";
+            cab.NotaEntrega = true;
+            PlazoPago plazoPago = new PlazoPago { Número = "UnPlazo", Nº_Plazos = 1 };
+            A.CallTo(() => servicio.CargarPlazosPago(A<string>.Ignored, A<string>.Ignored)).Returns(plazoPago);
+
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Cantidad = 1,
+                Texto = "PRODUCTO ROJO",
+                Precio = 20,
+                Producto = "123345",
+                Base_Imponible = 16.52M,
+                ImporteIVA = 3.48M,
+                ImporteRE = 0,
+                Total = 20,
+                PorcentajeIVA = (byte)0.21,
+                PorcentajeRE = 0M,
+                Estado = Constantes.EstadosLineaVenta.EN_CURSO
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabPedido("1", 11111)).Returns(cab);
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            Factura factura = gestor.LeerPedido("1", 11111);
+
+            Assert.AreEqual(Constantes.Facturas.TiposDocumento.NOTA_ENTREGA, factura.TipoDocumento);
+            Assert.AreEqual(0, factura.ImporteTotal);
         }
 
         [TestMethod]

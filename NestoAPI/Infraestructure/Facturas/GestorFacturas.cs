@@ -111,7 +111,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     Producto = linea.Producto?.Trim(),
                     Pedido = linea.Número,
                     Estado = linea.Estado, 
-                    Picking = (int)linea.Picking
+                    Picking = linea.Picking ?? 0
                 };
 
                 if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
@@ -238,7 +238,7 @@ namespace NestoAPI.Infraestructure.Facturas
             return factura;
         }
         
-        public Factura LeerPresupuesto(string empresa, int pedido)
+        public Factura LeerPedido(string empresa, int pedido)
         {
             CabPedidoVta cabPedido = servicio.CargarCabPedido(empresa, pedido);
             LinPedidoVta primeraLinea = cabPedido.LinPedidoVtas.FirstOrDefault();
@@ -263,6 +263,23 @@ namespace NestoAPI.Infraestructure.Facturas
                 direccionEntrega
             };
 
+
+            string tipoDocumento;
+            if (cabPedido.LinPedidoVtas.Any(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO))
+            {
+                tipoDocumento = Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA;
+            }
+            else if (cabPedido.NotaEntrega)
+            {
+                tipoDocumento = Constantes.Facturas.TiposDocumento.NOTA_ENTREGA;
+            }
+            else
+            {
+                tipoDocumento = Constantes.Facturas.TiposDocumento.PEDIDO;
+            }
+
+            bool ponerPrecios = tipoDocumento == Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA || !cabPedido.NotaEntrega && clienteEntrega.AlbaranValorado;
+
             List<LineaFactura> lineas = new List<LineaFactura>();
             foreach (LinPedidoVta linea in cabPedido.LinPedidoVtas?.OrderBy(l => l.Nº_Orden))
             {
@@ -273,12 +290,12 @@ namespace NestoAPI.Infraestructure.Facturas
                     Cantidad = linea.Cantidad,
                     Descripcion = linea.Texto?.Trim(),
                     Descuento = linea.SumaDescuentos,
-                    Importe = linea.Base_Imponible,
-                    PrecioUnitario = linea.Precio,
+                    Importe = ponerPrecios ? linea.Base_Imponible : 0,
+                    PrecioUnitario = ponerPrecios ? linea.Precio : 0,
                     Producto = linea.Producto?.Trim(),
                     Pedido = linea.Número,
                     Estado = linea.Estado,
-                    Picking = (int)linea.Picking
+                    Picking = linea.Picking ?? 0
                 };
 
                 if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
@@ -293,20 +310,23 @@ namespace NestoAPI.Infraestructure.Facturas
             decimal importeTotal = 0;
 
             List<TotalFactura> totales = new List<TotalFactura>();
-            var gruposTotal = cabPedido.LinPedidoVtas.GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE });
-            foreach (var grupoTotal in gruposTotal)
+            if (ponerPrecios)
             {
-                var lineasGrupo = cabPedido.LinPedidoVtas.Where(l => l.PorcentajeIVA == grupoTotal.Key.PorcentajeIVA && l.PorcentajeRE == grupoTotal.Key.PorcentajeRE);
-                TotalFactura total = new TotalFactura
+                var gruposTotal = cabPedido.LinPedidoVtas.GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE });
+                foreach (var grupoTotal in gruposTotal)
                 {
-                    BaseImponible = lineasGrupo.Sum(l => l.Base_Imponible),
-                    ImporteIVA = Math.Round(lineasGrupo.Sum(l => l.ImporteIVA), 2, MidpointRounding.AwayFromZero),
-                    ImporteRecargoEquivalencia = Math.Round(lineasGrupo.Sum(l => l.ImporteRE), 2, MidpointRounding.AwayFromZero),
-                    PorcentajeIVA = grupoTotal.Key.PorcentajeIVA / 100M,
-                    PorcentajeRecargoEquivalencia = grupoTotal.Key.PorcentajeRE
-                };
-                totales.Add(total);
-                importeTotal += total.BaseImponible + total.ImporteIVA + total.ImporteRecargoEquivalencia;
+                    var lineasGrupo = cabPedido.LinPedidoVtas.Where(l => l.PorcentajeIVA == grupoTotal.Key.PorcentajeIVA && l.PorcentajeRE == grupoTotal.Key.PorcentajeRE);
+                    TotalFactura total = new TotalFactura
+                    {
+                        BaseImponible = lineasGrupo.Sum(l => l.Base_Imponible),
+                        ImporteIVA = Math.Round(lineasGrupo.Sum(l => l.ImporteIVA), 2, MidpointRounding.AwayFromZero),
+                        ImporteRecargoEquivalencia = Math.Round(lineasGrupo.Sum(l => l.ImporteRE), 2, MidpointRounding.AwayFromZero),
+                        PorcentajeIVA = grupoTotal.Key.PorcentajeIVA / 100M,
+                        PorcentajeRecargoEquivalencia = grupoTotal.Key.PorcentajeRE
+                    };
+                    totales.Add(total);
+                    importeTotal += total.BaseImponible + total.ImporteIVA + total.ImporteRecargoEquivalencia;
+                }
             }
 
             List<VendedorFactura> vendedores = servicio.CargarVendedoresPedido(empresa, pedido);
@@ -337,17 +357,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     vencimiento.Iban = "<<< No Procede >>>";
                 }
-            }
-
-            string tipoDocumento;
-            if (cabPedido.LinPedidoVtas.Any(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO))
-            {
-                tipoDocumento = Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA;
-            } else
-            {
-                tipoDocumento = Constantes.Facturas.TiposDocumento.PEDIDO;
-            }
-            
+            }                       
 
             Factura factura = new Factura
             {
@@ -468,7 +478,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 Factura nuevaFactura;
                 if (Int32.TryParse(factura.Factura, out int numeroPedido))
                 {
-                    nuevaFactura = LeerPresupuesto(factura.Empresa, numeroPedido);
+                    nuevaFactura = LeerPedido(factura.Empresa, numeroPedido);
                 }
                 else
                 {

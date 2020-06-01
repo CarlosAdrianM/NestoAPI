@@ -11,7 +11,7 @@ namespace NestoAPI.Infraestructure.Facturas
     {
         List<DireccionFactura> DireccionesFactura(Factura factura);
         Factura LeerFactura(string empresa, string numeroFactura);
-        Factura LeerPresupuesto(string empresa, int pedido);
+        Factura LeerPedido(string empresa, int pedido);
         List<Factura> LeerFacturas(List<FacturaLookup> numerosFactura);
         List<LineaFactura> LineasFactura(Factura factura);
         ByteArrayContent FacturasEnPDF(List<Factura> facturas);

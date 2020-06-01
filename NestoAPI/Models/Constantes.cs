@@ -90,6 +90,7 @@
                 public const string FACTURA_RECTIFICATIVA = "FACTURA RECTIFICATIVA";
                 public const string FACTURA_PROFORMA = "FACTURA PROFORMA";
                 public const string PEDIDO = "PEDIDO";
+                public const string NOTA_ENTREGA = "NOTA DE ENTREGA";
             }
         }
 
