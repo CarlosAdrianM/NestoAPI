@@ -284,6 +284,7 @@ namespace NestoAPI.Controllers
                     vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
                     mantenerJunto = cabPedidoVta.MantenerJunto,
                     servirJunto = cabPedidoVta.ServirJunto,
+                    notaEntrega = cabPedidoVta.NotaEntrega,
                     usuario = cabPedidoVta.Usuario,
                     LineasPedido = lineasPedido,
                     VendedoresGrupoProducto = vendedoresGrupoProductoPedido,

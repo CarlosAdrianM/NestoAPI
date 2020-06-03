@@ -278,7 +278,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 tipoDocumento = Constantes.Facturas.TiposDocumento.PEDIDO;
             }
 
-            bool ponerPrecios = tipoDocumento == Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA || !cabPedido.NotaEntrega && clienteEntrega.AlbaranValorado;
+            bool ponerPrecios = tipoDocumento == Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA || (!cabPedido.NotaEntrega && clienteEntrega.AlbaranValorado);
 
             List<LineaFactura> lineas = new List<LineaFactura>();
             foreach (LinPedidoVta linea in cabPedido.LinPedidoVtas?.OrderBy(l => l.Nº_Orden))
@@ -381,6 +381,15 @@ namespace NestoAPI.Infraestructure.Facturas
                 Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
                 Vendedores = vendedores
             };
+
+            if (!ponerPrecios)
+            {
+                NotaFactura nota = new NotaFactura
+                {
+                    Nota = "Este documento se muestra sin valoración económica. Si desea recibir documentos valorados, no dude en comunicárnoslo. Gracias."
+                };
+                factura.NotasAlPie.Add(nota);
+            }
 
             return factura;
         }
