@@ -56,17 +56,17 @@ namespace NestoAPI.Infraestructure.Agencias
         {
             ServicioEnviosAgencia servicio = new ServicioEnviosAgencia();
             string nombreAgencia = servicio.LeerAgencia(envio.Agencia).Nombre;
+            EnvioAgenciaDTO envioDTO = new EnvioAgenciaDTO(envio);
+            envioDTO.AgenciaNombre = nombreAgencia;
             StringBuilder s = new StringBuilder();
 
             s.AppendLine("<h3>¡Hola!</h3>");
             s.AppendLine("<p>Le comunicamos que ya hemos enviado su pedido. Debido a que este pedido ya se encuentra en poder de la agencia de transportes, a partir de este momento no se puede realizar ninguna modificación en él. ");
             s.AppendLine("El pedido ya está en camino y por lo tanto no se puede modificar.</p>");
-            s.AppendLine("<br/>");
             s.AppendLine("<p>La propia agencia le enviará un correo electrónico a esta misma dirección con el enlace al seguimiento de la expedición, para que pueda saber en cada momento por donde va el envío.</p>");
-            s.AppendLine("<p>No obstante, le adelantamos que <b>la agencia responsable de la entrega es "+ nombreAgencia +" y el número de envío es "+envio.CodigoBarras+".</b></p>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<p>Adjunto encontrará un PDF con el pedido completo, en el que hemos marcado <span style=\"color: red;\">en rojo las líneas pendientes de entregar</span>, que se le enviarán tan ");
+            s.AppendLine("<p>No obstante, le adelantamos que <b>la agencia responsable de la entrega es "+ nombreAgencia +" y el número de envío es <a href=\""+envioDTO.EnlaceSeguimiento+"\">" +envio.CodigoBarras+"</a> </b>");
+            s.AppendLine("(es posible que el enlace tarde un rato en estar operativo).</p>");
+            s.AppendLine("<p>Adjunto encontrará un PDF con el pedido completo, en el que hemos marcado <span style=\"color: red;\">en rojo las líneas pendientes de entregar y facturar</span>, que se le enviarán tan ");
             s.AppendLine("pronto como tengamos stock y <span style=\"color: green;\">en verde las que enviamos en esta expedición</span>.</p>");
 
             return s;

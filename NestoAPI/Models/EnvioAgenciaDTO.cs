@@ -9,11 +9,27 @@ namespace NestoAPI.Models
 {
     public class EnvioAgenciaDTO
     {
+        public EnvioAgenciaDTO() { }
+        public EnvioAgenciaDTO(EnviosAgencia envio)
+        {
+            if (envio == null)
+            {
+                throw new Exception("No se puede crear un envío nuevo desde un parámetro nulo");
+            }
+            AgenciaId = envio.Agencia;
+            AgenciaNombre = envio.AgenciasTransporte?.Nombre;
+            Cliente = envio.Cliente;
+            Pedido = (int)envio.Pedido;
+            Estado = envio.Estado;
+            Fecha = envio.Fecha;
+            CodigoBarras = envio.CodigoBarras;
+            CodigoPostal = envio.CodPostal;
+        }
         public int AgenciaId { get; set; }
         public string AgenciaNombre { get; set; }
         public string Cliente { get; set; }
         public int Pedido { get; set; }
-        public int Estado { get; set; }
+        public short Estado { get; set; }
         public DateTime Fecha { get; set; }
         public string CodigoBarras { get; set; }
         public string CodigoPostal { get; set; }
@@ -41,5 +57,6 @@ namespace NestoAPI.Models
                 return enlace;
             }
         }
+
     }
 }
