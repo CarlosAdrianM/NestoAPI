@@ -9,8 +9,10 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
 
         public List<NotaFactura> Notas => new List<NotaFactura>();
 
-        public MailAddress CorreoDesde => throw new System.NotImplementedException();
+        public MailAddress CorreoDesdeFactura => throw new System.NotImplementedException();
 
         public string FirmaCorreo => throw new System.NotImplementedException();
+
+        public MailAddress CorreoDesdeLogistica => throw new System.NotImplementedException();
     }
 }

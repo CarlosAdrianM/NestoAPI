@@ -216,7 +216,7 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 Cliente = cabFactura.Nº_Cliente.Trim(),
                 Comentarios = cabPedido?.Comentarios?.Trim(),
-                CorreoDesde = serieFactura.CorreoDesde,
+                CorreoDesde = serieFactura.CorreoDesdeFactura,
                 Delegacion = primeraLinea.Delegación?.Trim(),
                 Direcciones = direcciones,
                 DatosRegistrales = empresaFactura.TextoFactura?.Trim(),
@@ -334,7 +334,6 @@ namespace NestoAPI.Infraestructure.Facturas
             
             List<VencimientoFactura> vencimientos = CalcularVencimientos(importeTotal, plazoPago, cabPedido.Forma_Pago, 
                 cabPedido.CCC, (DateTime)cabPedido.Primer_Vencimiento);
-
             if (vencimientos.Sum(v => v.Importe) != importeTotal)
             {
                 throw new Exception("No cuadran los vencimientos con el total de la factura");
@@ -357,13 +356,12 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     vencimiento.Iban = "<<< No Procede >>>";
                 }
-            }                       
-
+            }
             Factura factura = new Factura
             {
                 Cliente = cabPedido.Nº_Cliente.Trim(),
                 Comentarios = cabPedido?.Comentarios?.Trim(),
-                CorreoDesde = serieFactura.CorreoDesde,
+                CorreoDesde = serieFactura.CorreoDesdeFactura,
                 Delegacion = primeraLinea.Delegación?.Trim(),
                 Direcciones = direcciones,
                 DatosRegistrales = empresaPedido.TextoFactura?.Trim(),
@@ -378,7 +376,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 Serie = cabPedido.Serie?.Trim(),
                 TipoDocumento = tipoDocumento,
                 Totales = totales,
-                Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
+                Vencimientos = ponerPrecios ? vencimientos.OrderBy(v => v.Vencimiento).ToList() : new List<VencimientoFactura>(),
                 Vendedores = vendedores
             };
 
@@ -470,7 +468,7 @@ namespace NestoAPI.Infraestructure.Facturas
             };
         }
 
-        private static ISerieFactura LeerSerie(string serie)
+        public static ISerieFactura LeerSerie(string serie)
         {
             string claseSerie = "NestoAPI.Models.Facturas.SeriesFactura.Serie" + serie.Trim();
             Type elementType = Type.GetType(claseSerie);
@@ -517,7 +515,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
                     try
                     {
-                        mail = new MailMessage(serieFactura.CorreoDesde.Address, fra.Correo);
+                        mail = new MailMessage(serieFactura.CorreoDesdeFactura.Address, fra.Correo);
                         mail.Subject = "Facturación nº ";
                     } catch
                     {

@@ -13,7 +13,8 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
                 new NotaFactura{ Nota = "LA ASISTENCIA A CLASE ESTÁ SUPEDITADA A ENCONTRARSE AL CORRIENTE DE PAGO." }
             };
 
-        public MailAddress CorreoDesde => new MailAddress("administracion@nuevavision.es", "CURSOS NUEVA VISIÓN");
+        public MailAddress CorreoDesdeFactura => new MailAddress("administracion@nuevavision.es", "CURSOS NUEVA VISIÓN");
+        public MailAddress CorreoDesdeLogistica => new MailAddress("logistica@nuevavision.es", "LOGÍSTICA CURSOS NUEVA VISIÓN");
 
         public string FirmaCorreo => "<p>Departamento de Formación y Cursos<br/>Tel. 915311923<br/>cursos@nuevavision.es</p>";
     }

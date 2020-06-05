@@ -26,10 +26,6 @@ namespace NestoAPI.Infraestructure.Agencias
                 return;
             }
 
-            MailMessage mail = new MailMessage(Constantes.Correos.LOGISTICA, "carlosadrian@nuevavision.es"); //envio.Email
-            mail.Subject = string.Format("Pedido entregado a la agencia ({0}/{1})", envio.Cliente.Trim(), envio.Pedido.ToString());
-            mail.Body = (await GenerarCorreoHTML(envio)).ToString();
-            mail.IsBodyHtml = true;
             GestorFacturas gestorFacturas = new GestorFacturas();
             FacturaLookup factura = new FacturaLookup { Empresa = envio.Empresa, Factura = envio.Pedido.ToString() };
             List<FacturaLookup> lista = new List<FacturaLookup>
@@ -39,6 +35,26 @@ namespace NestoAPI.Infraestructure.Agencias
             List<Factura> facturas = gestorFacturas.LeerFacturas(lista);
             var facturaPdf = gestorFacturas.FacturasEnPDF(facturas);
             Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), envio.Pedido.ToString() + ".pdf");
+
+            MailMessage mail = new MailMessage();
+            try
+            {
+                ServicioFacturas servicio = new ServicioFacturas();
+                CabPedidoVta cabPedido = servicio.CargarCabPedido(envio.Empresa, (int)envio.Pedido);
+                ISerieFactura serieFactura = GestorFacturas.LeerSerie(cabPedido.Serie);
+                mail.From = serieFactura.CorreoDesdeLogistica;
+                mail.To.Add(new MailAddress(envio.Email));
+                mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
+                mail.Subject = string.Format("Pedido entregado a la agencia ({0}/{1})", envio.Cliente.Trim(), envio.Pedido.ToString());
+            }
+            catch
+            {
+                mail.To.Add(new MailAddress(Constantes.Correos.LOGISTICA));
+                mail.Subject = String.Format("[ERROR: {0}] Pedido entregado a la agencia ({1}/{2})", envio.Email, envio.Cliente.Trim(), envio.Pedido.ToString());
+            }
+            
+            mail.Body = (await GenerarCorreoHTML(envio)).ToString();
+            mail.IsBodyHtml = true;
             mail.Attachments.Add(attachment);
             SmtpClient client = new SmtpClient();
             client.Port = 587;
@@ -66,7 +82,7 @@ namespace NestoAPI.Infraestructure.Agencias
             s.AppendLine("<p>La propia agencia le enviará un correo electrónico a esta misma dirección con el enlace al seguimiento de la expedición, para que pueda saber en cada momento por donde va el envío.</p>");
             s.AppendLine("<p>No obstante, le adelantamos que <b>la agencia responsable de la entrega es "+ nombreAgencia +" y el número de envío es <a href=\""+envioDTO.EnlaceSeguimiento+"\">" +envio.CodigoBarras+"</a> </b>");
             s.AppendLine("(es posible que el enlace tarde un rato en estar operativo).</p>");
-            s.AppendLine("<p>Adjunto encontrará un PDF con el pedido completo, en el que hemos marcado <span style=\"color: red;\">en rojo las líneas pendientes de entregar y facturar</span>, que se le enviarán tan ");
+            s.AppendLine("<p>Adjunto encontrará un PDF con el pedido completo, en el que hemos marcado <span style=\"color: red;\">en rojo las líneas pendientes de enviar y facturar</span>, que se le enviarán tan ");
             s.AppendLine("pronto como tengamos stock y <span style=\"color: green;\">en verde las que enviamos en esta expedición</span>.</p>");
 
             return s;

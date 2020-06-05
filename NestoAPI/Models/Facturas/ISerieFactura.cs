@@ -7,7 +7,8 @@ namespace NestoAPI.Models.Facturas
     {
         string RutaInforme { get; }
         List<NotaFactura> Notas { get; }
-        MailAddress CorreoDesde { get; }
+        MailAddress CorreoDesdeFactura { get; }
+        MailAddress CorreoDesdeLogistica { get; }
         string FirmaCorreo { get; }
     }
 }
