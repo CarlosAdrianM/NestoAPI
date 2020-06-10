@@ -36,6 +36,7 @@
 
             public static class PersonasContacto
             {
+                public const short ESTADO_POR_DEFECTO = 0;
                 public const short CARGO_FACTURA_POR_CORREO = 22;
             }
 

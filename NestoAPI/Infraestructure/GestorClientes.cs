@@ -735,6 +735,7 @@ namespace NestoAPI.Infraestructure
                 Nº_Cliente = clienteCrear.Cliente,
                 Contacto = contacto,
 
+                AlbaranValorado = true,
                 CIF_NIF = clienteCrear.Nif,
                 ClientePrincipal = !clienteCrear.EsContacto,
                 CodPostal = clienteCrear.CodigoPostal,

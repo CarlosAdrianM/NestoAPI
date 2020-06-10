@@ -380,7 +380,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 Vendedores = vendedores
             };
 
-            if (!ponerPrecios)
+            if (!ponerPrecios && !cabPedido.NotaEntrega)
             {
                 NotaFactura nota = new NotaFactura
                 {

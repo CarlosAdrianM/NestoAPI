@@ -68,6 +68,8 @@ namespace NestoAPI.Models
         public string ruta { get; set; }
         public string formaPago { get; set; }
         public string plazosPago { get; set; }
+        public bool tieneCorreoElectronico { get; set; }
+        public bool tieneFacturacionElectronica { get; set; }
     }
 
     public class ExtractoClienteDTO
