@@ -9,7 +9,7 @@ using NestoAPI.Models.Clientes;
 using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 
 using System.Data.Entity;
-
+using System.Web.Http.ModelBinding.Binders;
 
 namespace NestoAPI.Infraestructure
 {
@@ -260,6 +260,13 @@ namespace NestoAPI.Infraestructure
             {
                 string buscar = abr.Key.ToUpper();
                 direccion = direccion.Replace(buscar + " ", abr.Value);
+                if (abr.Value != "Sra.")
+                {
+                    direccion = direccion.Replace(abr.Value + "DE LA ", abr.Value);
+                    direccion = direccion.Replace(abr.Value + "DEL ", abr.Value);
+                    direccion = direccion.Replace(abr.Value + "DE ", abr.Value);
+                }                
+
                 if (direccion.EndsWith(buscar))
                 {
                     direccion = direccion.Substring(0, direccion.Length - buscar.Length) + abr.Value;
