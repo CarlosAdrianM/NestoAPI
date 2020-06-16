@@ -464,12 +464,16 @@ namespace NestoAPI.Controllers
 
                 if (linea.Picking != 0 || !(linea.Estado == -1 || linea.Estado == 1))
                 {
-                    if (lineaEncontrada != null)
+                    if (lineaEncontrada != null && lineaEncontrada.cantidad == linea.Cantidad)
                     {
                         lineaEncontrada.baseImponible = linea.Base_Imponible;
                         lineaEncontrada.total = linea.Total;
+                        continue;
+                    } else
+                    {
+                        errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking o albarán");
                     }
-                    continue;
+                    
                 }
 
                 if (lineaEncontrada == null || (lineaEncontrada.cantidad == 0 && linea.Cantidad != 0))
