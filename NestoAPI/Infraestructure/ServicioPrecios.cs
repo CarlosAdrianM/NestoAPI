@@ -88,7 +88,7 @@ namespace NestoAPI.Infraestructure
         {
             using (NVEntities db = new NVEntities())
             {
-                var listaProductosPedido = pedido.LineasPedido.Select(l=>l.producto);
+                var listaProductosPedido = pedido.LineasPedido.Select(l => l.producto);
                 var importeGrupo = db.Productos.Where(p=>listaProductosPedido.Contains(p.Número))
                     .AsEnumerable()
                     .Join(pedido.LineasPedido,
@@ -99,6 +99,7 @@ namespace NestoAPI.Infraestructure
                         && r.Producto.Número?.Trim() == r.LineaPedidoVentaDTO.producto
                         && r.Producto.Grupo == grupo
                         && r.Producto.SubGrupo == subGrupo
+                        && (r.LineaPedidoVentaDTO.baseImponible == 0 || r.LineaPedidoVentaDTO.baseImponible != r.Producto.PVP * r.LineaPedidoVentaDTO.cantidad)
                     );
 
                 return (decimal)importeGrupo.Sum(r => r.Producto.PVP * r.LineaPedidoVentaDTO.cantidad);
