@@ -107,6 +107,42 @@ namespace NestoAPI.Controllers
                 .OrderByDescending(s => s.Id);
         }
 
+        // GET: api/SeguimientosClientes
+        public IQueryable<SeguimientoClienteDTO> GetSeguimientosClientes(string vendedor, string filtro)
+        {
+            DateTime fechaDesde = DateTime.Today.AddYears(-3);
+            var resultado = db.SeguimientosClientes
+                .Include(s => s.Cliente)
+                .Where(s => s.Comentarios.Contains(filtro));
+                
+            if (!string.IsNullOrEmpty(vendedor))
+            {
+                resultado = resultado.Include(s => s.Cliente).Where(s => s.Cliente.Vendedor == vendedor);
+            }
+
+            return resultado.Select(s => new SeguimientoClienteDTO
+            {
+                Aparatos = s.Aparatos,
+                Aviso = s.Aviso,
+                Cliente = s.Número,
+                ClienteNuevo = s.ClienteNuevo,
+                Comentarios = s.Comentarios,
+                Contacto = s.Contacto,
+                Direccion = s.Cliente.Dirección,
+                Empresa = s.Empresa,
+                Estado = (SeguimientoClienteDTO.EstadoSeguimientoDTO)s.Estado,
+                Fecha = s.Fecha,
+                GestionAparatos = s.GestiónAparatos,
+                Id = s.NºOrden,
+                Nombre = s.Cliente.Nombre,
+                Pedido = s.Pedido,
+                PrimeraVisita = s.PrimeraVisita,
+                Tipo = s.Tipo.Trim(),
+                Usuario = s.Usuario,
+                Vendedor = s.Vendedor
+            }).OrderByDescending(s => s.Id);
+        }
+
         [HttpGet]
         [Route("api/SeguimientosClientes/GetCodigosPostalesSinVisitar")]
         // GET: api/Clientes/5
