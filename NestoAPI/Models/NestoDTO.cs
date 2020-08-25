@@ -4,10 +4,10 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
+using System.Configuration;
 
 namespace NestoAPI.Models
 {
-
     public class ClienteDTO
     {
         public string empresa { get; set; }
@@ -43,7 +43,20 @@ namespace NestoAPI.Models
 
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
     }
-
+    public class ClienteProductoDTO
+    {
+        public string Vendedor { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public string Nombre { get; set; }
+        public string Direccion { get; set; }
+        public string CodigoPostal { get; set; }
+        public string Poblacion { get; set; }
+        public int Cantidad { get; set; }
+        public DateTime UltimaCompra { get; set; }
+        public int EstadoMinimo { get; set; }
+        public int EstadoMaximo { get; set; }
+    }
     public class DireccionesEntregaClienteDTO
     {
         public string contacto { get; set; }
@@ -71,7 +84,6 @@ namespace NestoAPI.Models
         public bool tieneCorreoElectronico { get; set; }
         public bool tieneFacturacionElectronica { get; set; }
     }
-
     public class ExtractoClienteDTO
     {
         public int id { get; set; }
@@ -92,7 +104,6 @@ namespace NestoAPI.Models
         public string ruta { get; set; }
         public string estado { get; set; }
     }
-
     public class FormaPagoDTO
     {
         public string formaPago { get; set; }
@@ -100,7 +111,6 @@ namespace NestoAPI.Models
         public bool bloquearPagos { get; set; }
         public bool cccObligatorio { get; set; }
     }
-
     public class LineaPlantillaVenta
     {
         public string producto { get; set; }
@@ -123,7 +133,6 @@ namespace NestoAPI.Models
         public short stock { get; set; }
         public short cantidadDisponible { get; set; }
     }
-
     public class LineaPedidoVentaDTO
     {
         public int id { get; set; }
@@ -150,7 +159,6 @@ namespace NestoAPI.Models
         public decimal descuentoProducto { get; set; }
         public decimal precioTarifa { get; set; }
     }
-
     public class PedidoVentaDTO
     {
         public PedidoVentaDTO()
@@ -188,7 +196,6 @@ namespace NestoAPI.Models
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
     }
-
     public class PersonaContactoDTO
     {
         public int Numero { get; set; }
@@ -196,7 +203,6 @@ namespace NestoAPI.Models
         public string CorreoElectronico { get; set; }
         public bool FacturacionElectronica { get; set; }
     }
-
     public class PlazoPagoDTO
     {
         public string plazoPago { get; set; }
@@ -209,7 +215,6 @@ namespace NestoAPI.Models
         public decimal descuentoPP { get; set; }
         public decimal? financiacion { get; set; }
     }
-
     public class PrecioProductoDTO
     {
         public decimal precio { get; set; }
@@ -217,7 +222,6 @@ namespace NestoAPI.Models
         public bool aplicarDescuento { get; set; }
         public string motivo { get; set; }
     }
-
     public class ProductoPlantillaDTO
     {
         private NVEntities db;
@@ -291,7 +295,6 @@ namespace NestoAPI.Models
             return db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
     }
-
     public class SeguimientoClienteDTO
     {
         public int Id { get; set; }
@@ -336,8 +339,6 @@ namespace NestoAPI.Models
             public const string VISITA = "V";
         }
     }
-
-
     public class ResumenPedidoVentaDTO
     {
         public string empresa { get; set; }
@@ -361,7 +362,6 @@ namespace NestoAPI.Models
         public string ruta { get; set; }
         public string ultimoSeguimiento { get; set; }
     }
-
     public class StockProductoPlantillaDTO
     {
         public int stock { get; set; }
@@ -369,7 +369,6 @@ namespace NestoAPI.Models
         public int cantidadPendienteRecibir { get; set; }
         public string urlImagen { get; set; }
     }
-
     public class Mod347DTO
     {
         public Mod347DTO()
@@ -385,7 +384,6 @@ namespace NestoAPI.Models
 
         public virtual ICollection<ExtractoClienteDTO> MovimientosMayor { get; set; }
     }
-
     public class UltimasVentasProductoClienteDTO
     {
         public DateTime fecha { get; set; }
@@ -394,7 +392,6 @@ namespace NestoAPI.Models
         public decimal descuentos { get; set; }
         public decimal precioNeto { get; set; }
     }
-
     public class VendedorDTO
     {
         public string vendedor { get; set; }

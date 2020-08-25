@@ -57,6 +57,64 @@ namespace NestoAPI.Controllers
             return Ok(productoDTO);
         }
 
+        // GET: api/Productos/5
+        [ResponseType(typeof(List<ClienteProductoDTO>))]
+        public async Task<IHttpActionResult> GetProducto(string empresa, string id, string vendedor)
+        {
+            var lineasVenta = db.LinPedidoVtas.Include("Cliente").Where(l => l.Empresa == empresa && l.Producto == id);
+            if (lineasVenta != null && !string.IsNullOrWhiteSpace(vendedor))
+            {
+                lineasVenta = lineasVenta.Where(l => l.Cliente.Vendedor == vendedor);
+            }
+            
+            if (lineasVenta == null)
+            {
+                return NotFound();
+            }
+
+            var clienteProductoDTO = lineasVenta
+                .Select(l => new ClienteProductoDTO
+                {
+                    Vendedor = l.Cliente.Vendedor.Trim(),
+                    Cliente = l.Nº_Cliente.Trim(),
+                    Contacto = l.Contacto.Trim(),
+                    Nombre = l.Cliente.Nombre.Trim(),
+                    Direccion = l.Cliente.Dirección.Trim(),
+                    CodigoPostal = l.Cliente.CodPostal.Trim(),
+                    Poblacion = l.Cliente.Población.Trim(),
+                    Cantidad = (int)l.Cantidad,
+                    EstadoMaximo = l.Estado,
+                    EstadoMinimo = l.Estado,
+                    UltimaCompra = l.Fecha_Modificación
+                });
+
+            clienteProductoDTO = clienteProductoDTO.GroupBy(g => new
+            {
+                g.Vendedor,
+                g.Cliente,
+                g.Contacto,
+                g.Nombre,
+                g.Direccion,
+                g.CodigoPostal,
+                g.Poblacion
+            })
+            .Select(x => new ClienteProductoDTO
+            {
+                Vendedor = x.Key.Vendedor,
+                Cliente = x.Key.Cliente,
+                Contacto = x.Key.Contacto,
+                Nombre = x.Key.Nombre,
+                Direccion = x.Key.Direccion,
+                CodigoPostal = x.Key.CodigoPostal,
+                Poblacion = x.Key.Poblacion,
+                Cantidad = x.Sum(c => c.Cantidad),
+                EstadoMaximo = x.Max(c => c.EstadoMaximo),
+                EstadoMinimo = x.Min(c => c.EstadoMinimo),
+                UltimaCompra = x.Max(c => c.UltimaCompra)
+            });
+
+            return Ok(clienteProductoDTO.OrderByDescending(c => c.Cantidad));
+        }
 
         // GET: api/Productos/5
         [ResponseType(typeof(ProductoDTO))]
@@ -150,7 +208,7 @@ namespace NestoAPI.Controllers
                 cliente = cliente,
                 contacto = contacto,
                 cantidad = cantidad,
-                aplicarDescuento = producto.Aplicar_Dto || cliente == "15191"
+                aplicarDescuento = producto.Aplicar_Dto || cliente == Constantes.ClientesEspeciales.EL_EDEN
             };
 
             GestorPrecios.calcularDescuentoProducto(precio);
