@@ -30,6 +30,7 @@ namespace NestoAPI.Models
             this.ParámetrosIVA1 = new HashSet<ParametroIVA>();
             this.ParámetrosIVA2 = new HashSet<ParametroIVA>();
             this.ParámetrosIVA3 = new HashSet<ParametroIVA>();
+            this.Prepagos = new HashSet<Prepago>();
         }
     
         public string Empresa { get; set; }
@@ -58,5 +59,6 @@ namespace NestoAPI.Models
         public virtual ICollection<ParametroIVA> ParámetrosIVA1 { get; set; }
         public virtual ICollection<ParametroIVA> ParámetrosIVA2 { get; set; }
         public virtual ICollection<ParametroIVA> ParámetrosIVA3 { get; set; }
+        public virtual ICollection<Prepago> Prepagos { get; set; }
     }
 }

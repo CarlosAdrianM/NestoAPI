@@ -164,6 +164,7 @@ namespace NestoAPI.Models
         public PedidoVentaDTO()
         {
             this.LineasPedido = new HashSet<LineaPedidoVentaDTO>();
+            this.Prepagos = new HashSet<PrepagoDTO>();
         }
 
         public string empresa { get; set; }
@@ -194,6 +195,7 @@ namespace NestoAPI.Models
         public string usuario { get; set; }
 
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
+        public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
     }
     public class PersonaContactoDTO
@@ -221,6 +223,13 @@ namespace NestoAPI.Models
         public decimal descuento { get; set; }
         public bool aplicarDescuento { get; set; }
         public string motivo { get; set; }
+    }
+    public class PrepagoDTO
+    {
+        public decimal Importe { get; set; }
+        public byte Estado { get; set; }
+        public string CuentaContable { get; set; }
+        public string ConceptoAdicional { get; set; }
     }
     public class ProductoPlantillaDTO
     {

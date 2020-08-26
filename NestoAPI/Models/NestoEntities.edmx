@@ -1071,6 +1071,20 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="Prepagos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Pedido" Type="int" Nullable="false" />
+          <Property Name="Importe" Type="money" Nullable="false" />
+          <Property Name="Estado" Type="tinyint" Nullable="false" />
+          <Property Name="CuentaContable" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="ConceptoAdicional" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+        </EntityType>
         <EntityType Name="Productos">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -3277,6 +3291,38 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Prepagos_CabPedidoVta">
+          <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Role="Prepagos" Type="Self.Prepagos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Prepagos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Pedido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Prepagos_PlanCuentas">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Role="Prepagos" Type="Self.Prepagos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="Prepagos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CuentaContable" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Productos_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="Productos" Type="Self.Productos" Multiplicity="*" />
@@ -3641,6 +3687,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="PlanCuentas" EntityType="Self.PlanCuentas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PlazosPago" EntityType="Self.PlazosPago" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PreExtrProducto" EntityType="Self.PreExtrProducto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Prepagos" EntityType="Self.Prepagos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Productos" EntityType="Self.Productos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Proveedores" EntityType="Self.Proveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ProveedoresProducto" EntityType="Self.ProveedoresProducto" Schema="dbo" store:Type="Tables" />
@@ -4246,6 +4293,14 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_PreExtrProducto_Vendedores" Association="Self.FK_PreExtrProducto_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Prepagos_CabPedidoVta" Association="Self.FK_Prepagos_CabPedidoVta">
+            <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
+            <End Role="Prepagos" EntitySet="Prepagos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Prepagos_PlanCuentas" Association="Self.FK_Prepagos_PlanCuentas">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="Prepagos" EntitySet="Prepagos" />
           </AssociationSet>
           <AssociationSet Name="FK_Productos_Empresas" Association="Self.FK_Productos_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -5097,6 +5152,15 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="AgenciasTransporte" EntitySet="AgenciasTransportes" />
             <End Role="EnviosAgencia" EntitySet="EnviosAgencias" />
           </AssociationSet>
+          <EntitySet Name="Prepagos" EntityType="NVModel.Prepago" />
+          <AssociationSet Name="FK_Prepagos_CabPedidoVta" Association="NVModel.FK_Prepagos_CabPedidoVta">
+            <End Role="CabPedidoVta" EntitySet="CabPedidoVtas" />
+            <End Role="Prepago" EntitySet="Prepagos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Prepagos_PlanCuentas" Association="NVModel.FK_Prepagos_PlanCuentas">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="Prepago" EntitySet="Prepagos" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -5312,6 +5376,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="VendedoresPedidoGrupoProductoes" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_CabPedidoVta" FromRole="CabPedidoVta" ToRole="VendedoresPedidoGrupoProducto" />
           <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="EnviosAgencias" Relationship="NVModel.FK_EnviosAgencia_CabPedidoVta" FromRole="CabPedidoVta" ToRole="EnviosAgencia" />
+          <NavigationProperty Name="Prepagos" Relationship="NVModel.FK_Prepagos_CabPedidoVta" FromRole="CabPedidoVta" ToRole="Prepago" />
         </EntityType>
         <EntityType Name="LinPedidoVta">
           <Key>
@@ -7373,6 +7438,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="ParámetrosIVA1" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas1" FromRole="PlanCuenta" ToRole="ParametroIVA" />
           <NavigationProperty Name="ParámetrosIVA2" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas2" FromRole="PlanCuenta" ToRole="ParametroIVA" />
           <NavigationProperty Name="ParámetrosIVA3" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas3" FromRole="PlanCuenta" ToRole="ParametroIVA" />
+          <NavigationProperty Name="Prepagos" Relationship="NVModel.FK_Prepagos_PlanCuentas" FromRole="PlanCuenta" ToRole="Prepago" />
         </EntityType>
         <Association Name="FK_Empresas_PlanCuentas">
           <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
@@ -8972,6 +9038,54 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="Prepago">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Pedido" Type="Int32" Nullable="false" />
+          <Property Name="Importe" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Estado" Type="Byte" Nullable="false" />
+          <Property Name="CuentaContable" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="ConceptoAdicional" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <NavigationProperty Name="CabPedidoVta" Relationship="NVModel.FK_Prepagos_CabPedidoVta" FromRole="Prepago" ToRole="CabPedidoVta" />
+          <NavigationProperty Name="PlanCuenta" Relationship="NVModel.FK_Prepagos_PlanCuentas" FromRole="Prepago" ToRole="PlanCuenta" />
+        </EntityType>
+        <Association Name="FK_Prepagos_CabPedidoVta">
+          <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Type="NVModel.Prepago" Role="Prepago" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Prepago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Pedido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Prepagos_PlanCuentas">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Type="NVModel.Prepago" Role="Prepago" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="Prepago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CuentaContable" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -10322,6 +10436,21 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Nombre" ColumnName="Nombre" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Numero" ColumnName="Numero" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Prepagos">
+            <EntityTypeMapping TypeName="NVModel.Prepago">
+              <MappingFragment StoreEntitySet="Prepagos">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="ConceptoAdicional" ColumnName="ConceptoAdicional" />
+                <ScalarProperty Name="CuentaContable" ColumnName="CuentaContable" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="Pedido" ColumnName="Pedido" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

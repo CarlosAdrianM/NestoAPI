@@ -289,7 +289,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     FechaAlbaran = linea.Fecha_Albarán != null ? (DateTime)linea.Fecha_Albarán : DateTime.MinValue,
                     Cantidad = linea.Cantidad,
                     Descripcion = linea.Texto?.Trim(),
-                    Descuento = linea.SumaDescuentos,
+                    Descuento = ponerPrecios ? linea.SumaDescuentos : 0,
                     Importe = ponerPrecios ? linea.Base_Imponible : 0,
                     PrecioUnitario = ponerPrecios ? linea.Precio : 0,
                     Producto = linea.Producto?.Trim(),

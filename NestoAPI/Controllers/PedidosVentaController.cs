@@ -795,6 +795,17 @@ namespace NestoAPI.Controllers
                 contador.Oferta += (int)maxNumeroOferta;
             }
 
+            foreach (var prepago in pedido.Prepagos)
+            {
+                cabecera.Prepagos.Add(new Prepago
+                {
+                    Importe = prepago.Importe,
+                    Estado = prepago.Estado,
+                    CuentaContable = prepago.CuentaContable,
+                    ConceptoAdicional = prepago.ConceptoAdicional,
+                    Usuario = pedido.usuario
+                });
+            }
 
             // Carlos 07/10/15:
             // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
