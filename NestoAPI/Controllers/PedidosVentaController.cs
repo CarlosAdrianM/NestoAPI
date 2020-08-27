@@ -257,6 +257,16 @@ namespace NestoAPI.Controllers
                 })
                 .ToList();
 
+            List<PrepagoDTO> prepagos = db.Prepagos.Where(p => p.Empresa == empresa && p.Pedido == numero).
+                Select(p => new PrepagoDTO
+                {
+                    Importe = p.Importe,
+                    Factura = p.Factura,
+                    CuentaContable = p.CuentaContable,
+                    ConceptoAdicional = p.ConceptoAdicional
+                })
+                .ToList();
+
             PedidoVentaDTO pedido;
             try
             {
@@ -288,6 +298,7 @@ namespace NestoAPI.Controllers
                     usuario = cabPedidoVta.Usuario,
                     LineasPedido = lineasPedido,
                     VendedoresGrupoProducto = vendedoresGrupoProductoPedido,
+                    Prepagos = prepagos,
                     EsPresupuesto = lineasPedido.FirstOrDefault(c => c.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) != null,
                 };
             } catch (Exception ex)
@@ -319,6 +330,8 @@ namespace NestoAPI.Controllers
                 Usuario = pedido.usuario
             };
             db.Modificaciones.Add(modificacion);
+
+            db.Entry(cabPedidoVta).Collection(c => c.Prepagos).Load();
 
             if (!ModelState.IsValid)
             {
@@ -619,8 +632,44 @@ namespace NestoAPI.Controllers
                 {
                     throw new Exception(respuesta.Motivo);
                 }
-            }            
+            }
 
+            // Carlos 27/08/20: comprobamos solo un prepago. Para comprobar todos hay que poner Id en PrepagoDTO
+            if (pedido.Prepagos.Where(p => p.Factura == null).Any())
+            {
+                PrepagoDTO prepagoPedido = pedido.Prepagos.Where(p => p.Factura == null).First();
+                if (cabPedidoVta.Prepagos.Where(p => p.Factura == null).Any())
+                {
+                    Prepago prepagoCabecera = cabPedidoVta.Prepagos.Where(p => p.Factura == null).First();
+                    prepagoCabecera.Importe = prepagoPedido.Importe;
+                    prepagoCabecera.CuentaContable = prepagoPedido.CuentaContable;
+                    prepagoCabecera.ConceptoAdicional = prepagoPedido.ConceptoAdicional;
+                } else
+                {
+                    cabPedidoVta.Prepagos.Add(new Prepago
+                    {
+                        Importe = prepagoPedido.Importe,
+                        CuentaContable = prepagoPedido.CuentaContable,
+                        ConceptoAdicional = prepagoPedido.ConceptoAdicional,
+                        Usuario = pedido.usuario
+                    });
+                }
+            } else
+            {
+                if (cabPedidoVta.Prepagos.Where(p => p.Factura == null).Any())
+                {
+                    /*
+                    for (int i = 0; i < cabPedidoVta.Prepagos.Where(p => p.Factura == null).Count(); i++)
+                    {
+                        cabPedidoVta.Prepagos.Remove(cabPedidoVta.Prepagos.ElementAt(i));
+                    }
+                    */
+                    foreach (var prepago in cabPedidoVta.Prepagos.Where(p => p.Factura == null).ToList())
+                    {
+                        db.Prepagos.Remove(prepago);
+                    }
+                }
+            }
 
             try
             {
