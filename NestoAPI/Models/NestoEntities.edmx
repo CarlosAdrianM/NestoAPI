@@ -1079,7 +1079,7 @@
           <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Pedido" Type="int" Nullable="false" />
           <Property Name="Importe" Type="money" Nullable="false" />
-          <Property Name="Estado" Type="tinyint" Nullable="false" />
+          <Property Name="Factura" Type="char" MaxLength="10" />
           <Property Name="CuentaContable" Type="char" MaxLength="10" Nullable="false" />
           <Property Name="ConceptoAdicional" Type="nvarchar" MaxLength="50" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
@@ -9046,7 +9046,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Pedido" Type="Int32" Nullable="false" />
           <Property Name="Importe" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
-          <Property Name="Estado" Type="Byte" Nullable="false" />
+          <Property Name="Factura" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="CuentaContable" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="ConceptoAdicional" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" annotation:StoreGeneratedPattern="Computed" />
@@ -10446,7 +10446,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="ConceptoAdicional" ColumnName="ConceptoAdicional" />
                 <ScalarProperty Name="CuentaContable" ColumnName="CuentaContable" />
-                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Factura" ColumnName="Factura" />
                 <ScalarProperty Name="Importe" ColumnName="Importe" />
                 <ScalarProperty Name="Pedido" ColumnName="Pedido" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />

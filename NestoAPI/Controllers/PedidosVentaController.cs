@@ -800,7 +800,7 @@ namespace NestoAPI.Controllers
                 cabecera.Prepagos.Add(new Prepago
                 {
                     Importe = prepago.Importe,
-                    Estado = prepago.Estado,
+                    Factura = prepago.Factura,
                     CuentaContable = prepago.CuentaContable,
                     ConceptoAdicional = prepago.ConceptoAdicional,
                     Usuario = pedido.usuario
