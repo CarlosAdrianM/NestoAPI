@@ -52,7 +52,8 @@ namespace NestoAPI.Models.Picking
 
         public bool LosProductosNoSobrePedidoOriginalesLlegabanAlImporteMinimo()
         {
-            return pedido.ImporteOriginalNoSobrePedido >= importeMinimo;
+            return pedido.ImporteOriginalNoSobrePedido >= importeMinimo ||
+                pedido.Lineas.All(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && l.CantidadReservada < 0);
         }
 
         public static bool esRutaConPortes(string ruta)

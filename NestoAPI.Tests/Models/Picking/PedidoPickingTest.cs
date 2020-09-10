@@ -573,5 +573,33 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsFalse(pedido.hayQueSumarPortes());
         }
+
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siTodoSonCuentasContablesYEsNegativaNoSuma()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = "60000000",
+                Cantidad = -1,
+                CantidadReservada = -1,
+                BaseImponible = -1M,
+                EsSobrePedido = false
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsPrecioPublicoFinal = false,
+                ImporteOriginalNoSobrePedido = -1M,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            Assert.IsFalse(pedido.hayQueSumarPortes());
+        }
     }
 }
