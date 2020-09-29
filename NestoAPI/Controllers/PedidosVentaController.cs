@@ -463,7 +463,7 @@ namespace NestoAPI.Controllers
             bool hayLineasNuevas = false;
             if (!cambiarClienteEnLineas && !cambiarContactoEnLineas && !cambiarIvaEnLineas)
             {
-                hayLineasNuevas = pedido.LineasPedido.Where(l => l.id == 0).FirstOrDefault() != null;
+                hayLineasNuevas = pedido.LineasPedido.Where(l => l.id == 0).Any();
             }
 
             // Sacar diferencias entre el pedido original y el que hemos pasado:
@@ -475,7 +475,13 @@ namespace NestoAPI.Controllers
             {
                 LineaPedidoVentaDTO lineaEncontrada = pedido.LineasPedido.SingleOrDefault(l => l.id == linea.Nº_Orden);
 
-                if (linea.Picking != 0 || !(linea.Estado == -1 || linea.Estado == 1))
+                if (linea.Picking != 0 || 
+                  !(
+                    linea.Estado == Constantes.EstadosLineaVenta.PENDIENTE || 
+                    linea.Estado == Constantes.EstadosLineaVenta.EN_CURSO || 
+                    linea.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO
+                    )
+                )
                 {
                     if (lineaEncontrada != null && lineaEncontrada.cantidad == linea.Cantidad)
                     {

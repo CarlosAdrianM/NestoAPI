@@ -54,7 +54,7 @@ namespace NestoAPI.Controllers
                     fechaUltimaVenta = x.Max(f => f.Fecha_Albarán),
                     iva = x.Key.IVA_Repercutido,
                     precio = (decimal)x.Key.PVP,
-                    aplicarDescuento = x.Key.aplicarDescuento
+                    aplicarDescuento = x.Key.aplicarDescuento || cliente == Constantes.ClientesEspeciales.EL_EDEN
                 })
                 .OrderBy(p => p.estado != 0)
                 .ThenByDescending(g => g.fechaUltimaVenta);
