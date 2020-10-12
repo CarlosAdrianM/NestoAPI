@@ -1,20 +1,15 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Data;
-using System.Data.Entity;
-using System.Data.Entity.Infrastructure;
-using System.Net;
-using System.Net.Http;
-using System.Web.Http.Description;
 using NestoAPI.Models;
-using System.IO;
-using System.Text.RegularExpressions;
 using NestoAPI.Infraestructure;
 using Microsoft.AspNet.Identity;
+using Microsoft.AspNet.Identity.Owin;
+using Microsoft.Owin.Security.DataProtection;
+using System.Net.Mail;
+using System.Configuration;
 
 namespace NestoAPI.Controllers
 {
@@ -128,6 +123,38 @@ namespace NestoAPI.Controllers
                 ModelState.AddModelError("", "Failed to add user roles");
                 return BadRequest(ModelState);
             }
+
+            return Ok();
+        }
+
+        [HttpPost]
+        public async Task<IHttpActionResult> OlvideMiContrasenna(string correo)
+        {
+            var user = await AppUserManager.FindByEmailAsync(correo).ConfigureAwait(false);
+            if (user == null)
+            {
+                return NotFound();
+            }
+            var provider = new DpapiDataProtectionProvider("SampleAppNameCarlos");
+            AppUserManager.UserTokenProvider = new DataProtectorTokenProvider<ApplicationUser>(provider.Create("SampleTokenNameCarlos"));
+            var token = await AppUserManager.GeneratePasswordResetTokenAsync(user.Id).ConfigureAwait(false);
+            var passwordResetLink = Url.Link("Default", new { Controller="Home", Action="ResetPassword", email = correo, token = token });
+            MailMessage mail = new MailMessage(new MailAddress("nesto@nuevavision.es"), new MailAddress(correo));
+            mail.Body = "<a>"+passwordResetLink.ToString()+"</a>";
+            mail.Subject = "Recuperación de contraseña NestoApp";
+            mail.IsBodyHtml = true;
+
+
+            SmtpClient client = new SmtpClient();
+            client.Port = 587;
+            client.EnableSsl = true;
+            client.DeliveryMethod = SmtpDeliveryMethod.Network;
+            client.UseDefaultCredentials = false;
+            string contrasenna = ConfigurationManager.AppSettings["office365password"];
+            client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
+            client.Host = "smtp.office365.com";
+
+            client.Send(mail);
 
             return Ok();
         }
