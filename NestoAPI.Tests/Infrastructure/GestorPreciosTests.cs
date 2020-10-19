@@ -59,6 +59,14 @@ namespace NestoAPI.Tests.Infrastructure
                 SubGrupo = "CER",
                 Familia = "DeMarca"
             });
+            A.CallTo(() => servicio.BuscarProducto("FAM_DTO")).Returns(new Producto
+            {
+                Número = "FAM_DTO",
+                PVP = 100,
+                Grupo = "COS",
+                SubGrupo = "CER",
+                Familia = "DeMarca"
+            });
             A.CallTo(() => servicio.BuscarProducto("REGALO")).Returns(new Producto
             {
                 Número = "REGALO",
@@ -217,6 +225,21 @@ namespace NestoAPI.Tests.Infrastructure
                     Familia = "DeMarca",
                     CantidadMínima = 0,
                     Precio = 25
+                }
+            });
+            A.CallTo(() => servicio.BuscarDescuentosPermitidos("FAM_DTO", "5", "0")).Returns(new List<DescuentosProducto>
+            {
+                new DescuentosProducto
+                {
+                    Nº_Producto = "FAM_DTO",
+                    CantidadMínima = 2,
+                    Descuento = .25M
+                },
+                new DescuentosProducto
+                {
+                    Familia = "DeMarca",
+                    CantidadMínima = 0,
+                    Descuento = .15M
                 }
             });
             A.CallTo(() => servicio.BuscarDescuentosPermitidos("REGALO", null, null)).Returns(new List<DescuentosProducto>
@@ -593,6 +616,29 @@ namespace NestoAPI.Tests.Infrastructure
             linea.cantidad = 1;
             linea.precio = 11; // el de ficha es 21
             linea.baseImponible = 11;
+            pedido.LineasPedido.Add(linea);
+
+            RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_EsOfertaPermitida_SiHayDosDescuentosAutorizadosYCumpleUnoEsValido()
+        {
+            // El descuento por familia tiene cantidad mínima que sí se cumple y el del producto no
+            Producto producto = GestorPrecios.servicio.BuscarProducto("FAM_DTO");
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
+            linea.producto = "FAM_DTO";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 1;
+            linea.precio = 100; // el de ficha es 100
+            linea.baseImponible = 85;
+            linea.descuento = .15M;
             pedido.LineasPedido.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);

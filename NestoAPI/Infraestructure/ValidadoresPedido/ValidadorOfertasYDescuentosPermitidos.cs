@@ -205,9 +205,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
                 IEnumerable<DescuentosProducto> descuentosEspecificosProducto = descuentos.Where(d => d.Nº_Producto?.Trim() == oferta.producto.Número.Trim());
                 // Si hay un descuento específico para el producto, éste prevale sobre el de la familia o grupo
-                if (descuentosEspecificosProducto != null && descuentosEspecificosProducto.Count() > 0)
+                if (descuentosEspecificosProducto != null && descuentosEspecificosProducto.Where(d => d.CantidadMínima <= (oferta.cantidad + oferta.cantidadOferta)).Any())
                 {
-                    descuentos = descuentosEspecificosProducto;
+                    descuentos = descuentosEspecificosProducto.Where(d => d.CantidadMínima <= (oferta.cantidad + oferta.cantidadOferta));
                 }
 
                 DescuentosProducto descuentoAutorizado = descuentos.FirstOrDefault(d =>
