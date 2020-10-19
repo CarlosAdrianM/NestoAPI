@@ -212,7 +212,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
                 DescuentosProducto descuentoAutorizado = descuentos.FirstOrDefault(d =>
                     d.Descuento >= oferta.descuentoReal && (oferta.cantidad + oferta.cantidadOferta) >= d.CantidadMínima
-                    && (d.FiltroProducto == null || d.FiltroProducto.Trim() == "" || producto.Nombre.StartsWith(d.FiltroProducto))
+                    && (d.FiltroProducto == null || string.IsNullOrEmpty(d.FiltroProducto.Trim()) || producto.Nombre.StartsWith(d.FiltroProducto))
                 );
                 if (descuentoAutorizado != null)
                 {
@@ -224,7 +224,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 }
 
                 DescuentosProducto precioAutorizado = descuentos.FirstOrDefault(d =>
-                    d.Precio <= oferta.precioCalculado && oferta.cantidad >= d.CantidadMínima);
+                    d.Precio <= Math.Round(oferta.precioCalculado, 2, MidpointRounding.AwayFromZero) && oferta.cantidad >= d.CantidadMínima);
                 if (precioAutorizado != null)
                 {
                     return new RespuestaValidacion

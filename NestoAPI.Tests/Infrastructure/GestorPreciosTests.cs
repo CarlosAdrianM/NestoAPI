@@ -621,7 +621,30 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(respuesta.ValidacionSuperada);
             Assert.AreEqual("Hay un precio autorizado de 28,00 €", respuesta.Motivo);
         }
-        
+
+
+        [TestMethod]
+        public void GestorPrecios_EsOfertaPermitida_SiHayUnPrecioFijoAutorizadoRedondeadoEsValido()
+        {
+            Producto producto = GestorPrecios.servicio.BuscarProducto("AA62");
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
+            linea.producto = "AA62";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 1;
+            linea.precio = 27.9951M; // el de ficha es 31 y el autorizado 28
+            linea.baseImponible = 27.9951M;
+            pedido.LineasPedido.Add(linea);
+
+            RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            Assert.AreEqual("Hay un precio autorizado de 28,00 €", respuesta.Motivo);
+        }
+
         [TestMethod]
         public void GestorPrecios_EsOfertaPermitida_SiHayUnPrecioFijoAutorizadoConSuficienteCantidadEsValido()
         {
