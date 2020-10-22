@@ -1169,8 +1169,9 @@ namespace NestoAPI.Controllers
                 linea.DescuentoProducto = 0;
                 sumaDescuentos = linea.Descuento;
             }
-            baseImponible = Math.Round(bruto * (1 - sumaDescuentos), 2, MidpointRounding.AwayFromZero);
-            if (iva != null && iva.Trim() != "")
+            importeDescuento = Math.Round(bruto * sumaDescuentos, 2, MidpointRounding.AwayFromZero);
+            baseImponible = Math.Round(bruto - importeDescuento, 2, MidpointRounding.AwayFromZero);
+            if (!string.IsNullOrWhiteSpace(iva))
             {
                 parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == linea.Empresa && p.IVA_Cliente_Prov == iva && p.IVA_Producto == linea.IVA);
                 porcentajeIVA = parametroIva != null ? (byte)parametroIva.C__IVA : (byte)0;
@@ -1185,8 +1186,7 @@ namespace NestoAPI.Controllers
                 importeIVA = 0;
                 importeRE = 0;
             }
-            importeDescuento = bruto * sumaDescuentos;
-
+            
             // Ponemos los valores en la línea
             linea.Bruto = bruto;
             linea.Base_Imponible = baseImponible;

@@ -273,7 +273,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
 
-            if (lineasSinPrecio.Count() == 0)
+            if (!lineasSinPrecio.Any())
             {
                 return new PrecioDescuentoProducto
                 {
@@ -281,7 +281,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     cantidad = (short)lineasConPrecio.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad),
                     producto = producto,
                     precioCalculado = (decimal)lineasConPrecio.Where(l=> l.producto == numeroProducto).Select(l => l.precio).DefaultIfEmpty().Average(),
-                    descuentoCalculado = lineasConPrecio.Where(l => l.producto == numeroProducto).Select(l => l.descuento + l.descuentoProducto).DefaultIfEmpty().Average()
+                    descuentoCalculado = lineasConPrecio.Where(l => l.producto == numeroProducto).Select(l => 1 - (1-l.descuento) * (1-l.descuentoProducto)).DefaultIfEmpty().Average()
                 };
             }
 
@@ -291,7 +291,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 cantidad = (short)lineasConPrecio.Sum(l => l.cantidad),
                 producto = producto,
                 precioCalculado = (decimal)lineasConPrecio.Select(l => l.precio).DefaultIfEmpty().Average(),
-                descuentoCalculado = lineasConPrecio.Select(l => l.descuento + l.descuentoProducto).DefaultIfEmpty().Average()
+                descuentoCalculado = lineasConPrecio.Select(l => 1 - (1 - l.descuento) * (1 - l.descuentoProducto)).DefaultIfEmpty().Average()
             };
 
         }
