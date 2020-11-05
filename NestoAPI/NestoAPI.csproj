@@ -307,6 +307,7 @@
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
+    <Compile Include="Controllers\ReclamacionDeudaController.cs" />
     <Compile Include="Controllers\RecursosHumanosController.cs" />
     <Compile Include="Controllers\RolesController.cs" />
     <Compile Include="Controllers\SeguimientosClientesController.cs" />
@@ -352,6 +353,7 @@
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
+    <Compile Include="Infraestructure\ServicioReclamacionDeuda.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasYDescuentosPermitidos.cs" />
@@ -597,6 +599,7 @@
     </Compile>
     <Compile Include="Models\Rapports\ClienteSeguimientoLookup.cs" />
     <Compile Include="Models\Rapports\CodigoPostalSeguimientoLookup.cs" />
+    <Compile Include="Models\ReclamacionDeuda.cs" />
     <Compile Include="Models\RecursosHumanos\Accion.cs" />
     <Compile Include="Models\RecursosHumanos\Empleado.cs" />
     <Compile Include="Models\RecursosHumanos\Festivo.cs" />
@@ -838,6 +841,12 @@
     <Analyzer Include="..\packages\Microsoft.NetCore.Analyzers.2.9.7\analyzers\dotnet\cs\Microsoft.NetCore.CSharp.Analyzers.dll" />
     <Analyzer Include="..\packages\Microsoft.NetFramework.Analyzers.2.9.7\analyzers\dotnet\cs\Microsoft.NetFramework.Analyzers.dll" />
     <Analyzer Include="..\packages\Microsoft.NetFramework.Analyzers.2.9.7\analyzers\dotnet\cs\Microsoft.NetFramework.CSharp.Analyzers.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\..\Desktop\API_.NET\RedsysAPI\RedsysAPI\RedsysAPI.csproj">
+      <Project>{170BEAFF-C372-4614-9AFD-86598A3C3C9A}</Project>
+      <Name>RedsysAPI</Name>
+    </ProjectReference>
   </ItemGroup>
   <PropertyGroup>
     <VisualStudioVersion Condition="'$(VisualStudioVersion)' == ''">10.0</VisualStudioVersion>
