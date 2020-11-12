@@ -1,15 +1,12 @@
 ﻿using NestoAPI.Models;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Web;
-using System.Security.Cryptography;
 using System.Net.Http;
 using Newtonsoft.Json;
 using System.Threading.Tasks;
 using System.Text;
 using Newtonsoft.Json.Linq;
-using System.Web.UI.WebControls;
 using System.Configuration;
 using RedsysAPIPrj;
 
@@ -126,7 +123,7 @@ public class RedsysTPV
     public string DS_MERCHANT_URLKO { get; set; }
     public string DS_MERCHANT_CUSTOMER_MOBILE { get; set; }
     public string DS_MERCHANT_CUSTOMER_MAIL { get; set; }
-    public DateTime DS_MERCHANT_P2F_EXPIRIDATE { get; set; }
+    public string DS_MERCHANT_P2F_EXPIRIDATE { get; set; } = (60 * 24 * 7).ToString();  // minutos
     public string DS_MERCHANT_CUSTOMER_SMS_TEXT { get; set; }
     public FormatoCorreoReclamacion DS_MERCHANT_P2F_XMLDATA { get; set; }
 
@@ -161,7 +158,7 @@ public class RedsysTPV
         r.SetParameter("DS_MERCHANT_URLKO", DS_MERCHANT_URLKO);
         r.SetParameter("DS_MERCHANT_CUSTOMER_MOBILE", DS_MERCHANT_CUSTOMER_MOBILE);
         r.SetParameter("DS_MERCHANT_CUSTOMER_MAIL", DS_MERCHANT_CUSTOMER_MAIL);
-        r.SetParameter("DS_MERCHANT_P2F_EXPIRIDATE", DS_MERCHANT_P2F_EXPIRIDATE.ToString("s"));
+        r.SetParameter("DS_MERCHANT_P2F_EXPIRIDATE", DS_MERCHANT_P2F_EXPIRIDATE);
         r.SetParameter("DS_MERCHANT_CUSTOMER_SMS_TEXT", DS_MERCHANT_CUSTOMER_SMS_TEXT);
         string p2f_xmldata = DS_MERCHANT_P2F_XMLDATA.ToXML();
         r.SetParameter("DS_MERCHANT_P2F_XMLDATA", p2f_xmldata);

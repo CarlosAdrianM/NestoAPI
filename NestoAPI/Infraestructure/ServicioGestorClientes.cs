@@ -90,6 +90,11 @@ namespace NestoAPI.Infraestructure
                 nombreDevuelto = "¡EMPRESA DE BAJA! " + nombreDevuelto;
             }
 
+            if (nombreDevuelto.Length > 50)
+            {
+                nombreDevuelto = nombreDevuelto.Substring(0, 50);
+            }
+
             return new RespuestaNifNombreCliente {
                 NifFormateado = nifDevuelto?.Trim(),
                 NombreFormateado = nombreDevuelto?.Trim(),
