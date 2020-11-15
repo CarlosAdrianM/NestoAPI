@@ -8,6 +8,7 @@ namespace NestoAPI.Models.Picking
     {
         private ModulosPicking modulos;
         private List<PedidoPicking> candidatos;
+        private List<PedidoPicking> retenidosPorPrepago;
         private NVEntities db = new NVEntities();
 
         public GestorPicking(ModulosPicking modulos)
@@ -82,6 +83,7 @@ namespace NestoAPI.Models.Picking
             GeneradorPendientes generadorPendientes = new GeneradorPendientes(db, candidatos);
             generadorPendientes.Ejecutar();
 
+            retenidosPorPrepago = candidatos.Where(c => c.RetenidoPorPrepago).ToList();
             candidatos.RemoveAll(c => c.Borrar);
 
             // Asignar Picking
@@ -101,6 +103,7 @@ namespace NestoAPI.Models.Picking
             GestorMargenes gestor = new GestorMargenes();
             gestor.Rellenar(asignadorPicking.numeroPicking);
             gestor.enviarCorreo();
+            GestorPrepagos.EnviarCorreo(retenidosPorPrepago);
             
         }
 

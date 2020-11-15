@@ -14,6 +14,7 @@ namespace NestoAPI.Models.Picking
         public int Cantidad { get; set; }
         public int CantidadRecogida { get; set; }
         public decimal BaseImponible { get; set; }
+        public decimal Total { get; set; }
         public int CantidadReservada { get; set; }
         public DateTime FechaEntrega { get; set; }
         public bool EsSobrePedido { get; set; } = true;

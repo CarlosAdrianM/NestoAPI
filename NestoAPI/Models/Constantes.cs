@@ -118,6 +118,7 @@
         public static class PlazosPago
         {
             public const string CONTADO_RIGUROSO = "CR";
+            public const string PREPAGO = "PRE";
         }
 
         public static class Productos

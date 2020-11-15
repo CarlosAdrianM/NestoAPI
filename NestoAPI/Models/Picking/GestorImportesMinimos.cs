@@ -47,7 +47,7 @@ namespace NestoAPI.Models.Picking
 
         public bool LosProductosDelPedidoOriginalLlegabanAlImporteSinPortes()
         {
-            return pedido.ImporteOriginalTotal() >= IMPORTE_SIN_PORTES;
+            return pedido.ImporteOriginalTotal >= IMPORTE_SIN_PORTES;
         }
 
         public bool LosProductosNoSobrePedidoOriginalesLlegabanAlImporteMinimo()

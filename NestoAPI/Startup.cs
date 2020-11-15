@@ -71,9 +71,8 @@ namespace NestoAPI
                 {
                     AuthenticationMode = AuthenticationMode.Active,
                     AllowedAudiences = new[] { audienceId },
-                    IssuerSecurityTokenProviders = new IIssuerSecurityTokenProvider[]
-                    {
-                        new SymmetricKeyIssuerSecurityTokenProvider(issuer, audienceSecret)
+                    IssuerSecurityKeyProviders = new IIssuerSecurityKeyProvider[] {
+                        new SymmetricKeyIssuerSecurityKeyProvider(issuer, audienceSecret)
                     }
                 });
         }

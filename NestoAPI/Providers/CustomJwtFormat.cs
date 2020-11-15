@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -33,13 +34,10 @@ namespace NestoAPI.Providers
             string symmetricKeyAsBase64 = ConfigurationManager.AppSettings["as:AudienceSecret"];
 
             var keyByteArray = TextEncodings.Base64Url.Decode(symmetricKeyAsBase64);
-
-            var signingKey = new HmacSigningCredentials(keyByteArray);
-            /*
             var securityKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(keyByteArray);
-            var signingCredentials = new Microsoft.IdentityModel.Tokens.SigningCredentials(
+            var signingKey = new Microsoft.IdentityModel.Tokens.SigningCredentials(
                         securityKey, Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature);
-            */
+
             var issued = data.Properties.IssuedUtc;
 
             var expires = data.Properties.ExpiresUtc;

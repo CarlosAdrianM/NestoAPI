@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models.Picking;
 using System.Collections.Generic;
 using NestoAPI.Models;
+using FakeItEasy;
 
 namespace NestoAPI.Tests.Models.Picking
 {
@@ -39,7 +40,7 @@ namespace NestoAPI.Tests.Models.Picking
             pedido.Lineas.Add(linea);
 
             Assert.IsFalse(pedido.saleEnPicking());
-
+            Assert.IsFalse(pedido.RetenidoPorPrepago);
         }
 
         [TestMethod]
@@ -53,9 +54,36 @@ namespace NestoAPI.Tests.Models.Picking
             };
 
             Assert.IsFalse(pedido.saleEnPicking());
-
+            Assert.IsFalse(pedido.RetenidoPorPrepago);
         }
-        
+
+
+        [TestMethod]
+        public void PedidoPicking_saleEnPicking_siEsPrepagoYNoEstaPagadoNoSale()
+        {
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 6,
+                CantidadReservada = 6,
+                Total = 1
+            };
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+            PedidoPicking pedido = new PedidoPicking (rellenador)
+            {
+                Id = 1,
+                ServirJunto = false,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);            
+
+            Assert.IsFalse(pedido.saleEnPicking());
+            Assert.IsTrue(pedido.RetenidoPorPrepago);
+        }
+
         [TestMethod]
         public void PedidoPicking_hayQueSumarPortes_siHayProductosQueNoSonSobrePedidoYElOriginalNoLlegabaAlMinimoSeSumanPortes()
         {

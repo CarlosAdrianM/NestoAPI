@@ -103,6 +103,7 @@ namespace NestoAPI.Models.Picking
                 ImporteOriginalNoSobrePedido = db.LinPedidoVtas.Where(l => l.Número == p.Número && (l.EstadoProducto == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO || l.LineaParcial)).Select(l => l.Base_Imponible).DefaultIfEmpty(0).Sum(),
                 CodigoPostal = p.Cliente.CodPostal,
                 Ruta = p.Ruta,
+                PlazosPago = p.PlazosPago?.Trim(),
                 Lineas = p.LinPedidoVtas.Where(l => l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && l.Empresa == p.Empresa && l.Número == p.Número && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && (l.Picking == null || l.Picking == 0))
                 .Select(l => new LineaPedidoPicking
                 {
@@ -113,6 +114,7 @@ namespace NestoAPI.Models.Picking
                     Cantidad = (int)l.Cantidad - l.Recoger,
                     CantidadRecogida = l.Recoger,
                     BaseImponible = l.Base_Imponible,
+                    Total = l.Total,
                     CantidadReservada = 0,
                     FechaEntrega = l.Fecha_Entrega,
                     EsSobrePedido = l.EstadoProducto != Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && !l.LineaParcial,
