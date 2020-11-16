@@ -38,7 +38,7 @@ namespace NestoAPI.Models.Picking
                     pedido.Borrar = true;
                 }
             }
-            pedidos.RemoveAll(p => p.Borrar);
+            //pedidos.RemoveAll(p => p.Borrar);
         }
 
         private LineaPedidoPicking pasarAPendiente(LineaPedidoPicking linea)

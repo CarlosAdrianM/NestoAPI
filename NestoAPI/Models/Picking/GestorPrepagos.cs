@@ -26,7 +26,7 @@ namespace NestoAPI.Models.Picking
             client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
             client.Host = "smtp.office365.com";
             mail.From = new MailAddress("nesto@nuevavision.es");
-            mail.To.Add(new MailAddress("carlosadrian@nuevavision.es"));
+            mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
             mail.Subject = "Pedidos retenidos por prepago inexistente";
             mail.Body = GenerarTablaHTML(pedidosRetenidos).ToString();
             mail.IsBodyHtml = true;

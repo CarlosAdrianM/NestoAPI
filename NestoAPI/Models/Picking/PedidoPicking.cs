@@ -67,9 +67,9 @@ namespace NestoAPI.Models.Picking
             if (PlazosPago == Constantes.PlazosPago.PREPAGO)
             {
                 Prepagos = rellenadorPrepagos.Prepagos(Id);
-                decimal total = ImporteTotalConIVA;
+                decimal total = Math.Round(ImporteTotalConIVA, 2, MidpointRounding.AwayFromZero);
                 var importePrepagos = Prepagos.Sum(i => i.Importe);
-                if (importePrepagos >= total)
+                if (importePrepagos >= total - .01M)
                 {
                     return true;
                 }
