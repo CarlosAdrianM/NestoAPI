@@ -9,6 +9,7 @@
         public string Nombre { get; set; }
         public string Direccion { get; set; }
         public string TextoSMS { get; set; }
+        public string Cliente { get; set; }
 
 
         public bool TramitadoOK { get; set; }
