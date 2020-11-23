@@ -9,6 +9,7 @@ namespace NestoAPI.Models.Picking
     public class PedidoPicking
     {
         private const string PREFIJO_PORTES = "624";
+        private const decimal DESCUADRE_PERMITIDO = .05M;
         public IRellenadorPrepagosService rellenadorPrepagos { get; set; }
 
         public PedidoPicking()
@@ -69,7 +70,7 @@ namespace NestoAPI.Models.Picking
                 Prepagos = rellenadorPrepagos.Prepagos(Id);
                 decimal total = Math.Round(ImporteTotalConIVA, 2, MidpointRounding.AwayFromZero);
                 var importePrepagos = Prepagos.Sum(i => i.Importe);
-                if (importePrepagos >= total - .01M)
+                if (importePrepagos >= total - DESCUADRE_PERMITIDO)
                 {
                     return true;
                 }

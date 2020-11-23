@@ -125,7 +125,19 @@ namespace NestoAPI.Infraestructure.Facturas
                                Correo = string.Join(", ", f.Correos.Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).Select(c => c.CorreoElectrónico.Trim())) 
                            })
                            .OrderBy(p => p.Correo);
-            return facturas;
+
+            List<FacturaCorreo> facturasSinDeudaVencida = new List<FacturaCorreo>();
+
+            foreach (var fra in facturas)
+            {
+                var estadoDVD = db.ExtractosCliente.Where(e => e.Empresa == fra.Empresa && e.Nº_Documento == fra.Factura && e.ImportePdte != 0 && e.Estado == Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA);
+                if (!estadoDVD.Any())
+                {
+                    facturasSinDeudaVencida.Add(fra);
+                }
+            }
+
+            return facturasSinDeudaVencida;
         }
 
         public List<VendedorFactura> CargarVendedoresPedido(string empresa, int pedido)

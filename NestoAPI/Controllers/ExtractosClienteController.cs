@@ -27,7 +27,7 @@ namespace NestoAPI.Controllers
         // GET: api/ExtractosCliente
         public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string cliente)
         {
-            List<ExtractoClienteDTO> extracto = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte != 0)
+            List<ExtractoClienteDTO> extracto = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte != 0 && e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA)
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,
@@ -99,9 +99,7 @@ namespace NestoAPI.Controllers
             DateTime fechaDesde = new DateTime(hoy.AddYears(-1).Year, 1, 1);
             DateTime fechaHasta = new DateTime(hoy.Year, 1, 1);
 
-            const string ESTADO_DEUDA_VENCIDA = "DVD";
-
-            List<ExtractoClienteDTO> extracto = await db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.TipoApunte == "1" && e.Fecha >= fechaDesde && e.Fecha < fechaHasta && e.Estado != ESTADO_DEUDA_VENCIDA)
+            List<ExtractoClienteDTO> extracto = await db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.TipoApunte == "1" && e.Fecha >= fechaDesde && e.Fecha < fechaHasta && e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA)
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,

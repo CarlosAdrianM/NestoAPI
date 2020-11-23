@@ -9,6 +9,7 @@ using System.Text;
 using Newtonsoft.Json.Linq;
 using System.Configuration;
 using RedsysAPIPrj;
+using Microsoft.VisualBasic;
 
 namespace NestoAPI.Infraestructure
 {
@@ -23,7 +24,7 @@ namespace NestoAPI.Infraestructure
             // Calculamos el pedido con un identificador único
             var ticks = new DateTime(2020, 1, 1).Ticks;
             var ans = DateTime.Now.Ticks - ticks;
-            var orderUniqueId = ans.ToString("X12");
+            var orderUniqueId = Strings.Right(ans.ToString("X12"), 12);
 
             //Parameters 
             // This is a example, use your own parameter

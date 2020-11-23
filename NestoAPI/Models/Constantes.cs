@@ -83,6 +83,14 @@
             public const int FACTURA = 4;
         }
 
+        public static class ExtractosCliente
+        {
+            public static class Estados
+            {
+                public const string DEUDA_VENCIDA = "DVD";
+            }
+        }
+
         public static class Facturas
         {
             public static class TiposDocumento
