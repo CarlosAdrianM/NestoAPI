@@ -25,6 +25,19 @@ namespace NestoAPI.Models.Comisiones
         public bool GeneralBajaSaltoMesSiguiente { get; set; }
 
         public decimal GeneralProyeccion { get; set; }
+        public decimal GeneralVentaAcumulada { get; set; }
+        public decimal GeneralComisionAcumulada { get; set; }
+        public decimal GeneralTipoConseguido { get; set; }
+        public decimal GeneralTipoReal {
+            get 
+            {
+                if (GeneralVentaAcumulada == 0)
+                {
+                    return 0;
+                }
+                return Math.Round(GeneralComisionAcumulada / GeneralVentaAcumulada, 4, MidpointRounding.AwayFromZero);
+            }
+        }
 
         public decimal TotalComisiones {
             get

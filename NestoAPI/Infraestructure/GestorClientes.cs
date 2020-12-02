@@ -365,7 +365,13 @@ namespace NestoAPI.Infraestructure
 
         public string LimpiarTelefono(string telefono)
         {
-            string telefonoFormateado = "";
+            if (telefono == null)
+            {
+                return string.Empty;
+            }
+
+            string telefonoFormateado = String.Empty;
+            
             foreach(var ch in telefono)
             {
                 if (Char.IsDigit(ch))

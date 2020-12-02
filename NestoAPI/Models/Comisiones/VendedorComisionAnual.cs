@@ -61,6 +61,9 @@ namespace NestoAPI.Models.Comisiones
                 ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
                 CalcularLimitesTramo(ResumenMesActual, tramosAnno);
                 ResumenMesActual.GeneralBajaSaltoMesSiguiente = servicio.CalculadorProyecciones.CalcularSiBajaDeSalto(servicio, vendedor, anno, mes, mesesAnno, ResumenMesActual, ventaAcumulada, meses, tramosAnno);
+                ResumenMesActual.GeneralVentaAcumulada = ventaAcumulada;
+                ResumenMesActual.GeneralComisionAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision);
+                ResumenMesActual.GeneralTipoConseguido = BuscarTramoComision(tramosAnno, ResumenMesActual.GeneralVentaAcumulada).Tipo;
             }
         }
 
@@ -131,6 +134,11 @@ namespace NestoAPI.Models.Comisiones
             {
                 resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 0;
             }
+
+            resumen.GeneralVentaAcumulada = ventaAcumulada;
+            resumen.GeneralComisionAcumulada = Resumenes.Where(r => r.Mes <= mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision) + resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision;
+            var tramoEncontrado = BuscarTramoComision(tramosAnno, resumen.GeneralVentaAcumulada);
+            resumen.GeneralTipoConseguido = tramoEncontrado != null ? tramoEncontrado.Tipo : 0;
 
             return resumen;
         }

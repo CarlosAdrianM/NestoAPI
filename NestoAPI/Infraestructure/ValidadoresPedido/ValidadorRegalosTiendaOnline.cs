@@ -23,6 +23,15 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             if (!pedido.LineasPedido.All(l => l.formaVenta == "WEB"))
             {
                 return respuesta;
+            } 
+            else if (EstamosDeBlackFriday())
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = true,
+                    Motivo = "El producto " + numeroProducto + " se permite por ser de tienda online en Black Friday",
+                    ProductoId = numeroProducto
+                };
             }
 
             if (!pedido.LineasPedido.Any(l => l.producto == numeroProducto && l.texto.StartsWith("PRESENTE:")) && !EstamosDeBlackFriday())
@@ -44,8 +53,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
         private bool EstamosDeBlackFriday()
         {
-            DateTime comienzaBlackFriday = new DateTime(2019, 11, 29);
-            DateTime terminaBlackFriday = new DateTime(2019, 12, 3);
+            DateTime comienzaBlackFriday = new DateTime(2020, 11, 27);
+            DateTime terminaBlackFriday = new DateTime(2020, 12, 1);
             return DateTime.Today >= comienzaBlackFriday && DateTime.Today <= terminaBlackFriday;
         }
     }
