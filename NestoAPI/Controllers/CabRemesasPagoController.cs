@@ -252,7 +252,7 @@ namespace NestoAPI.Controllers
                     lineaFichero += strLen(idProveedor, 12);                        // NIF del proveedor: D
                     lineaFichero += "016";                                          // Número o tipo de dato: E
                     lineaFichero += "T";                                            // Forma de pago. C=Cheque. T=Transferencia: F1
-                    fechaFactura = factura != null ? (DateTime)factura.FechaProveedor : 
+                    fechaFactura = factura != null && factura.FechaProveedor != null ? (DateTime)factura.FechaProveedor : 
                         efecto.FechaProveedor != null ? (DateTime)efecto.FechaProveedor : (DateTime)efecto.Fecha_Modificación;
                     lineaFichero += strLen(fechaFactura.ToString("ddMMyy"), 6);     // Fecha de la factura: F2
                     string documento = efecto.NºDocumentoProv ?? efecto.NºDocumento;

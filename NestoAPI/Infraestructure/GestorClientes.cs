@@ -352,7 +352,7 @@ namespace NestoAPI.Infraestructure
                     IbanValido = true
                 };
             }
-            if ((plazosPago == "CONTADO" && formaPago != "RCB") || (formaPago == "RCB" && respuesta.IbanValido && (plazosPago == "1/30" || plazosPago == "CONTADO")))
+            if (((plazosPago == "CONTADO" || plazosPago == "PRE") && formaPago != "RCB") || (formaPago == "RCB" && respuesta.IbanValido && (plazosPago == "1/30" || plazosPago == "CONTADO")))
             {
                 respuesta.DatosPagoValidos = true;
             } else

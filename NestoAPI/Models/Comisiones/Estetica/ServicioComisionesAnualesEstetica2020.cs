@@ -241,7 +241,7 @@ namespace NestoAPI.Models.Comisiones
                 {
                     Desde = 172890.02M,
                     Hasta = decimal.MaxValue,
-                    Tipo = .0462M,
+                    Tipo = .042M,
                     TipoExtra = .02M
                 }
             };

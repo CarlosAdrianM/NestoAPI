@@ -43,7 +43,7 @@ namespace NestoAPI.Controllers
                     importe = extractoEncontrado.Importe,
                     importePendiente = extractoEncontrado.ImportePdte,
                     vendedor = extractoEncontrado.Vendedor,
-                    vencimiento = extractoEncontrado.FechaVto,
+                    vencimiento = extractoEncontrado.FechaVto ?? extractoEncontrado.Fecha,
                     ccc = extractoEncontrado.CCC,
                     ruta = extractoEncontrado.Ruta,
                     estado = extractoEncontrado.Estado
