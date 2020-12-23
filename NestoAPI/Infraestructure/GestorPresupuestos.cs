@@ -141,7 +141,7 @@ namespace NestoAPI.Infraestructure
                 "<b>NUEVA VISIÓN, S.A.</b><br>" +
                 "<b>c/ Río Tiétar, 11</b><br>"+
                 "<b>Políg. Ind. Los Nogales</b><br>"+
-                "<b>28110 Algete (Madrid)</b><br>"+
+                "<b>28119 Algete (Madrid)</b><br>"+
                 "</td>");
             s.AppendLine("</tr>");
             s.AppendLine("</table>");
@@ -192,14 +192,22 @@ namespace NestoAPI.Infraestructure
             {
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
-                    string rutaImagen = await ProductoDTO.RutaImagen(linea.producto);
+                    string rutaImagen = await ProductoDTO.RutaImagen(linea.producto).ConfigureAwait(false);
                     s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"><img src=\"" + rutaImagen + "\" style=\"max-height:100%; max-width:100%\"></td>");
                 } else
                 {
                     s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"></td>");
                 }
                 s.Append("<td>" + linea.producto + "</td>");
-                s.Append("<td>" + linea.texto + "</td>");
+                if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    string rutaEnlace = await ProductoDTO.RutaEnlace(linea.producto).ConfigureAwait(false);
+                    rutaEnlace += "&utm_medium=correopedido";
+                    s.Append("<td><a href=\""+rutaEnlace+"\">" + linea.texto + "</a></td>");
+                } else
+                {
+                    s.Append("<td>" + linea.texto + "</td>");
+                }
                 s.Append("<td>" + linea.cantidad.ToString() + "</td>");
                 s.Append("<td style=\"text-align:right\">" + linea.precio.ToString("C") + "</td>");
                 s.Append("<td style=\"text-align:right\">" + linea.descuento.ToString("P") + "</td>");

@@ -315,6 +315,7 @@
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />
     <Compile Include="Controllers\RecursosHumanosController.cs" />
     <Compile Include="Controllers\RolesController.cs" />
+    <Compile Include="Controllers\SeEstaVendiendoController.cs" />
     <Compile Include="Controllers\SeguimientosClientesController.cs" />
     <Compile Include="Controllers\ValuesController.cs" />
     <Compile Include="Controllers\VendedoresController.cs" />
@@ -353,6 +354,7 @@
     <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
+    <Compile Include="Infraestructure\SeEstaVendiendo\GestorSeEstaVendiendo.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
@@ -633,6 +635,7 @@
     <Compile Include="Models\Ruta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\SeEstaVendiendo\SeEstaVendiendoModel.cs" />
     <Compile Include="Models\SeguimientoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

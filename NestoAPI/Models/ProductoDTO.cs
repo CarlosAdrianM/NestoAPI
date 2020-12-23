@@ -71,6 +71,35 @@ namespace NestoAPI.Models
                 }
             }
         }
+
+        public static async Task<string> RutaEnlace(string producto)
+        {
+            using (var client = new HttpClient())
+            {
+                System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+                client.BaseAddress = new Uri("http://www.productosdeesteticaypeluqueriaprofesional.com/enlacePorReferencia.php");
+                client.DefaultRequestHeaders.Accept.Clear();
+                try
+                {
+                    string parametros = "?producto=" + producto;
+                    HttpResponseMessage response = await client.GetAsync(parametros).ConfigureAwait(false);
+
+
+                    string rutaEnlace = string.Empty;
+                    if (response.IsSuccessStatusCode)
+                    {
+                        rutaEnlace = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                        rutaEnlace += "?utm_source=nuevavision&utm_campaign=nesto";
+                    }
+
+                    return rutaEnlace;
+                }
+                catch (Exception)
+                {
+                    return null;
+                }
+            }
+        }
     }
 
     
