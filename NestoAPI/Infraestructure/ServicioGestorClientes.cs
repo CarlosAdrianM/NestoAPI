@@ -19,21 +19,34 @@ namespace NestoAPI.Infraestructure
     {
         public async Task<ClienteDTO> BuscarClientePorNif(string nif)
         {
-            NVEntities db = new NVEntities();
-            Cliente cliente = await db.Clientes.FirstOrDefaultAsync(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.ClientePrincipal == true && c.CIF_NIF == nif);
-            if (cliente != null)
+            using (var db = new NVEntities())
             {
-                ClienteDTO clienteDTO = new ClienteDTO
+                try
                 {
-                    empresa = cliente.Empresa?.Trim(),
-                    cliente = cliente.Nº_Cliente?.Trim(),
-                    contacto = cliente.Contacto?.Trim(),
-                    cifNif = cliente.CIF_NIF?.Trim(),
-                    nombre = cliente.Nombre?.Trim()
-                };
-                return clienteDTO;
+                    var nifSinCero = nif.TrimStart('0');
+                    Cliente cliente = await db.Clientes.FirstOrDefaultAsync(
+                    c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.ClientePrincipal == true && c.CIF_NIF != null &&
+                    (c.CIF_NIF == nif || c.CIF_NIF == nifSinCero)
+                ).ConfigureAwait(false);
+                    if (cliente != null)
+                    {
+                        ClienteDTO clienteDTO = new ClienteDTO
+                        {
+                            empresa = cliente.Empresa?.Trim(),
+                            cliente = cliente.Nº_Cliente?.Trim(),
+                            contacto = cliente.Contacto?.Trim(),
+                            cifNif = cliente.CIF_NIF?.Trim(),
+                            nombre = cliente.Nombre?.Trim()
+                        };
+                        return clienteDTO;
+                    }
+                    return null;
+                }
+                catch (Exception ex)
+                {
+                    throw ex;
+                }
             }
-            return null;
         }
 
         public async Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre)

@@ -9,7 +9,7 @@ namespace NestoAPI.Models.Picking
     public class PedidoPicking
     {
         private const string PREFIJO_PORTES = "624";
-        private const decimal DESCUADRE_PERMITIDO = .05M;
+        private const decimal DESCUADRE_PERMITIDO = .25M;
         public IRellenadorPrepagosService rellenadorPrepagos { get; set; }
 
         public PedidoPicking()

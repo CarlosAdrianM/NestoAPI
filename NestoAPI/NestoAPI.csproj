@@ -417,6 +417,7 @@
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaEvaVisnu.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2021.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2020.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2019.cs" />
     <Compile Include="Models\Comisiones\EtiquetaGeneral.cs" />

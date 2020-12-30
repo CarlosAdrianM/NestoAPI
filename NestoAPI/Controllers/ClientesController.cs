@@ -351,7 +351,7 @@ namespace NestoAPI.Controllers
                 clienteDB.Usuario = cliente.usuario;
             }
                         
-            db.Entry(clienteDB).State = EntityState.Modified;
+            db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
 
             // Carlos 02/03/17: gestionamos el vendedor por grupo de producto
             GestorComisiones.ActualizarVendedorClienteGrupoProducto(db, clienteDB, cliente);
@@ -396,7 +396,7 @@ namespace NestoAPI.Controllers
                 List<Cliente> clientesDB = await gestor.DejarDeVisitar(db, cliente);
                 foreach (var clienteDB in clientesDB)
                 {
-                    db.Entry(clienteDB).State = EntityState.Modified;
+                    db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
                 }
 
                 await db.SaveChangesAsync();
@@ -433,7 +433,7 @@ namespace NestoAPI.Controllers
             IGestorClientes gestor = new GestorClientes();
             Cliente cliente = await gestor.PrepararClienteModificar(clienteCrear, db);
                         
-            db.Entry(cliente).State = EntityState.Modified;
+            db.Entry(cliente).State = System.Data.Entity.EntityState.Modified;
                 
             try
             {
