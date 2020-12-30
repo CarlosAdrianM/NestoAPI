@@ -40,7 +40,12 @@ namespace NestoAPI.Infraestructure.Agencias
             try
             {
                 ServicioFacturas servicio = new ServicioFacturas();
+                CabPedidoVta cabEspejo = servicio.CargarCabPedido(Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO, (int)envio.Pedido);
                 CabPedidoVta cabPedido = servicio.CargarCabPedido(envio.Empresa, (int)envio.Pedido);
+                if (cabEspejo != null || cabPedido.IVA == null)
+                {
+                    return;
+                }
                 ISerieFactura serieFactura = GestorFacturas.LeerSerie(cabPedido.Serie);
                 mail.From = serieFactura.CorreoDesdeLogistica;
                 mail.To.Add(new MailAddress(envio.Email));
