@@ -83,7 +83,7 @@ namespace NestoAPI.Infraestructure
                     vendedorGrupoActual.Usuario = vendedorGrupoNuevo.usuario;
                 }
                 vendedorGrupoActual.Vendedor = vendedorGrupoNuevo.vendedor;
-                
+                vendedorGrupoActual.Estado = vendedorGrupoNuevo.estado;
             }
             else if (vendedorGrupoNuevo != null)
             {
@@ -94,6 +94,7 @@ namespace NestoAPI.Infraestructure
                     Contacto = clienteDB.Contacto,
                     GrupoProducto = vendedorGrupoNuevo.grupoProducto,
                     Vendedor = vendedorGrupoNuevo.vendedor,
+                    Estado = Constantes.Clientes.Estados.VISITA_PRESENCIAL,
                     Usuario = cliente.usuario
                 };
                 db.VendedoresClientesGruposProductos.Add(vendedorGrupoActual);

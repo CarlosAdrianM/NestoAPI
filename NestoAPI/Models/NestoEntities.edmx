@@ -1302,6 +1302,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="GrupoProducto" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
@@ -7806,6 +7807,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Clientes" FromRole="VendedoresClienteGrupoProducto" ToRole="Cliente" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Vendedores" FromRole="VendedorClienteGrupoProducto" ToRole="Vendedore" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
         </EntityType>
         <EntityType Name="VendedorPedidoGrupoProducto">
           <Key>
@@ -10044,6 +10046,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySetMapping Name="VendedoresClientesGruposProductos">
             <EntityTypeMapping TypeName="NVModel.VendedorClienteGrupoProducto">
               <MappingFragment StoreEntitySet="VendedoresClienteGrupoProducto">
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />

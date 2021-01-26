@@ -236,6 +236,7 @@ namespace NestoAPI.Controllers
                 .Select(v => new VendedorGrupoProductoDTO
                 {
                     vendedor = v.Vendedor,
+                    estado = v.Estado,
                     grupoProducto = v.GrupoProducto
                 })
                 .ToList();

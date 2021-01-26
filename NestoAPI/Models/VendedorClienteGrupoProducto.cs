@@ -22,6 +22,7 @@ namespace NestoAPI.Models
         public string Vendedor { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
+        public short Estado { get; set; }
     
         public virtual Cliente Cliente1 { get; set; }
         public virtual Vendedor Vendedore { get; set; }

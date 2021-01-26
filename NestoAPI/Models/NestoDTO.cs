@@ -409,6 +409,7 @@ namespace NestoAPI.Models
     public class VendedorGrupoProductoDTO
     {
         public string vendedor { get; set; }
+        public short estado { get; set; }
         public string grupoProducto { get; set; }
         public string usuario { get; set; }
     }
