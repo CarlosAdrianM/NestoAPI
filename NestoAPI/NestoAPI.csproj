@@ -365,6 +365,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasYDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOtrosAparatosSiempreSinDescuento.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegaloPorImportePedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegalosTiendaOnline.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.Designer.cs">
@@ -629,6 +630,9 @@
     <Compile Include="Models\RecursosHumanos\TipoFestivo.cs" />
     <Compile Include="Models\RecursosHumanos\TipoAccion.cs" />
     <Compile Include="Models\RecursosHumanos\Vacaciones.cs" />
+    <Compile Include="Models\RegaloImportePedido.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\RentingFactura.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

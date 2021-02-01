@@ -64,7 +64,9 @@ namespace NestoAPI.Controllers
             var lineasVenta = db.LinPedidoVtas.Include("Cliente").Where(l => l.Empresa == empresa && l.Producto == id);
             if (lineasVenta != null && !string.IsNullOrWhiteSpace(vendedor))
             {
-                lineasVenta = lineasVenta.Where(l => l.Cliente.Vendedor == vendedor);
+                lineasVenta = lineasVenta.Where(l => l.Cliente.Vendedor == vendedor || 
+                    (l.Cliente.VendedoresClienteGrupoProductoes.FirstOrDefault() != null && l.Cliente.VendedoresClienteGrupoProductoes.FirstOrDefault().Vendedor == vendedor)
+                );
             }
             
             if (lineasVenta == null)

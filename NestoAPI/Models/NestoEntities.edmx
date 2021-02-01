@@ -1175,6 +1175,20 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="RegaloImportePedido">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="ImportePedido" Type="money" Nullable="false" />
+          <Property Name="Cantidad" Type="smallint" Nullable="false" />
+          <Property Name="FechaInicio" Type="datetime" />
+          <Property Name="FechaFin" Type="datetime" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <!--Errores durante la generación:
 advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ninguna clave principal. Se ha inferido la clave y la definición se creado como una vista o tabla de solo lectura.-->
         <EntityType Name="RentingFacturas">
@@ -3466,6 +3480,32 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_RegaloImportePedido_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="RegaloImportePedido" Type="Self.RegaloImportePedido" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="RegaloImportePedido">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_RegaloImportePedido_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="RegaloImportePedido" Type="Self.RegaloImportePedido" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="RegaloImportePedido">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Rutas_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="Rutas" Type="Self.Rutas" Multiplicity="*" />
@@ -3692,6 +3732,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="Productos" EntityType="Self.Productos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Proveedores" EntityType="Self.Proveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ProveedoresProducto" EntityType="Self.ProveedoresProducto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="RegaloImportePedido" EntityType="Self.RegaloImportePedido" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Rutas" EntityType="Self.Rutas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="SeguimientoCliente" EntityType="Self.SeguimientoCliente" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="SubGruposProducto" EntityType="Self.SubGruposProducto" Schema="dbo" store:Type="Tables" />
@@ -4342,6 +4383,14 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_ProveedoresProducto_Proveedores" Association="Self.FK_ProveedoresProducto_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="ProveedoresProducto" EntitySet="ProveedoresProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_RegaloImportePedido_Empresas" Association="Self.FK_RegaloImportePedido_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="RegaloImportePedido" EntitySet="RegaloImportePedido" />
+          </AssociationSet>
+          <AssociationSet Name="FK_RegaloImportePedido_Productos" Association="Self.FK_RegaloImportePedido_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="RegaloImportePedido" EntitySet="RegaloImportePedido" />
           </AssociationSet>
           <AssociationSet Name="FK_Rutas_Empresas" Association="Self.FK_Rutas_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -5162,6 +5211,15 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="PlanCuenta" EntitySet="PlanCuentas" />
             <End Role="Prepago" EntitySet="Prepagos" />
           </AssociationSet>
+          <EntitySet Name="RegalosImportePedido" EntityType="NVModel.RegaloImportePedido" />
+          <AssociationSet Name="FK_RegaloImportePedido_Empresas" Association="NVModel.FK_RegaloImportePedido_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="RegaloImportePedido" EntitySet="RegalosImportePedido" />
+          </AssociationSet>
+          <AssociationSet Name="FK_RegaloImportePedido_Productos" Association="NVModel.FK_RegaloImportePedido_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="RegaloImportePedido" EntitySet="RegalosImportePedido" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -5313,6 +5371,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Empresas" FromRole="Empresa" ToRole="CabFacturaVta" />
           <NavigationProperty Name="CabFacturaVtas1" Relationship="NVModel.FK_CabFacturaVta_Empresas1" FromRole="Empresa" ToRole="CabFacturaVta" />
           <NavigationProperty Name="AgenciasTransportes" Relationship="NVModel.FK_AgenciasTransporte_Empresas" FromRole="Empresa" ToRole="AgenciasTransporte" />
+          <NavigationProperty Name="RegaloImportePedidoes" Relationship="NVModel.FK_RegaloImportePedido_Empresas" FromRole="Empresa" ToRole="RegaloImportePedido" />
           </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -5713,6 +5772,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="OfertasPermitidas" Relationship="NVModel.FK_OfertasPermitidas_Productos" FromRole="Producto" ToRole="OfertasPermitida" />
           <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_Productos" FromRole="Producto" ToRole="OfertasCombinadasDetalle" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Productos" FromRole="Producto" ToRole="PreExtrProducto" />
+          <NavigationProperty Name="RegaloImportePedidoes" Relationship="NVModel.FK_RegaloImportePedido_Productos" FromRole="Producto" ToRole="RegaloImportePedido" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -9088,6 +9148,48 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="RegaloImportePedido">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Producto" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="ImportePedido" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Cantidad" Type="Int16" Nullable="false" />
+          <Property Name="FechaInicio" Type="DateTime" Precision="3" />
+          <Property Name="FechaFin" Type="DateTime" Precision="3" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_RegaloImportePedido_Empresas" FromRole="RegaloImportePedido" ToRole="Empresa" />
+          <NavigationProperty Name="Producto1" Relationship="NVModel.FK_RegaloImportePedido_Productos" FromRole="RegaloImportePedido" ToRole="Producto" />
+        </EntityType>
+        <Association Name="FK_RegaloImportePedido_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.RegaloImportePedido" Role="RegaloImportePedido" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="RegaloImportePedido">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_RegaloImportePedido_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.RegaloImportePedido" Role="RegaloImportePedido" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="RegaloImportePedido">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -10452,6 +10554,21 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Factura" ColumnName="Factura" />
                 <ScalarProperty Name="Importe" ColumnName="Importe" />
                 <ScalarProperty Name="Pedido" ColumnName="Pedido" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="RegalosImportePedido">
+            <EntityTypeMapping TypeName="NVModel.RegaloImportePedido">
+              <MappingFragment StoreEntitySet="RegaloImportePedido">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaFin" ColumnName="FechaFin" />
+                <ScalarProperty Name="FechaInicio" ColumnName="FechaInicio" />
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="ImportePedido" ColumnName="ImportePedido" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>

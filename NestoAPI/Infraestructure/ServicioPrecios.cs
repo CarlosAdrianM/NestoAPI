@@ -129,5 +129,16 @@ namespace NestoAPI.Infraestructure
                 return lineas;
             }
         }
+
+        public List<RegaloImportePedido> BuscarRegaloPorImportePedido(string numeroProducto)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.RegalosImportePedido.Where(
+                    r => r.Producto == numeroProducto && (r.FechaInicio == null || r.FechaInicio < DateTime.Now) &&
+                    (r.FechaFin == null || r.FechaFin > DateTime.Now)
+                ).ToList();
+            }
+        }
     }
 }

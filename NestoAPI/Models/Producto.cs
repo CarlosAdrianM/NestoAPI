@@ -25,6 +25,7 @@ namespace NestoAPI.Models
             this.OfertasPermitidas = new HashSet<OfertaPermitida>();
             this.OfertasCombinadasDetalles = new HashSet<OfertaCombinadaDetalle>();
             this.PreExtrProductoes = new HashSet<PreExtrProducto>();
+            this.RegaloImportePedidoes = new HashSet<RegaloImportePedido>();
         }
     
         public string Empresa { get; set; }
@@ -76,5 +77,6 @@ namespace NestoAPI.Models
         public virtual ICollection<OfertaPermitida> OfertasPermitidas { get; set; }
         public virtual ICollection<OfertaCombinadaDetalle> OfertasCombinadasDetalles { get; set; }
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
+        public virtual ICollection<RegaloImportePedido> RegaloImportePedidoes { get; set; }
     }
 }

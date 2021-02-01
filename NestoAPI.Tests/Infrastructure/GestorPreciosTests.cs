@@ -2242,7 +2242,126 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(respuesta.ValidacionSuperada);
             Assert.AreEqual(respuesta.Motivo, "No se encuentra autorizado el descuento del 100,00 % para el producto MUESTRA");
         }
-        
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorRegaloPorImportePedido_SiLlegaAlImporteLoPuedeRegalar()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "COBRADO";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 1;
+            linea.precio = 10; // es el de ficha
+            linea.baseImponible = 10;
+            pedido.LineasPedido.Add(linea);
+            LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
+            lineaRegalo.producto = "REGALO";
+            lineaRegalo.aplicarDescuento = true;
+            lineaRegalo.cantidad = 1;
+            lineaRegalo.precio = 1; // es el de ficha
+            lineaRegalo.descuento = 1M; // de regalo, 100% dto
+            lineaRegalo.baseImponible = 0;
+            pedido.LineasPedido.Add(lineaRegalo);
+            A.CallTo(() => GestorPrecios.servicio.BuscarRegaloPorImportePedido("REGALO")).Returns(new List<RegaloImportePedido>
+            {
+                new RegaloImportePedido
+                {
+                    Empresa = "1",
+                    Cantidad = 1,
+                    ImportePedido = 10M,
+                    Producto = "REGALO"
+                }
+            });
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "REGALO");
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            Assert.AreEqual("El producto REGALO puede ir a ese precio porque es un regalo autorizado para pedidos de este importe", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorRegaloPorImportePedido_SiNoLlegaAlImporteNoLoPuedeRegalar()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "COBRADO";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 1;
+            linea.precio = 9; // es el de ficha
+            linea.baseImponible = 9;
+            pedido.LineasPedido.Add(linea);
+            LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
+            lineaRegalo.producto = "REGALO";
+            lineaRegalo.aplicarDescuento = true;
+            lineaRegalo.cantidad = 1;
+            lineaRegalo.precio = 1; // es el de ficha
+            lineaRegalo.descuento = 1M; // de regalo, 100% dto
+            lineaRegalo.baseImponible = 0;
+            pedido.LineasPedido.Add(lineaRegalo);
+            A.CallTo(() => GestorPrecios.servicio.BuscarRegaloPorImportePedido("REGALO")).Returns(new List<RegaloImportePedido>
+            {
+                new RegaloImportePedido
+                {
+                    Empresa = "1",
+                    Cantidad = 1,
+                    ImportePedido = 10M,
+                    Producto = "REGALO"
+                }
+            });
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "REGALO");
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            Assert.AreEqual("El producto REGALO no puede ir a ese precio porque no es un regalo autorizado para pedidos de este importe", respuesta.Motivo);
+        }
+
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorRegaloPorImportePedido_SiLlegaAlImporteSoloPuedeRegalarLaCantidadPermitida()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.producto = "COBRADO";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 1;
+            linea.precio = 10; // es el de ficha
+            linea.baseImponible = 10;
+            pedido.LineasPedido.Add(linea);
+            LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
+            lineaRegalo.producto = "REGALO";
+            lineaRegalo.aplicarDescuento = true;
+            lineaRegalo.cantidad = 2;
+            lineaRegalo.precio = 1; // es el de ficha
+            lineaRegalo.descuento = 1M; // de regalo, 100% dto
+            lineaRegalo.baseImponible = 0;
+            pedido.LineasPedido.Add(lineaRegalo);
+            A.CallTo(() => GestorPrecios.servicio.BuscarRegaloPorImportePedido("REGALO")).Returns(new List<RegaloImportePedido>
+            {
+                new RegaloImportePedido
+                {
+                    Empresa = "1",
+                    Cantidad = 1,
+                    ImportePedido = 10M,
+                    Producto = "REGALO"
+                }
+            });
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "REGALO");
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            Assert.AreEqual("El producto REGALO no puede ir a ese precio porque no es un regalo autorizado para pedidos de este importe", respuesta.Motivo);
+        }
+
+
         [TestMethod]
         public void GestorPrecios_EsPedidoValido_SiNoTieneNingunaLineaDeProductoEsValido()
         {

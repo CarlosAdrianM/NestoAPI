@@ -11,5 +11,6 @@ namespace NestoAPI.Infraestructure
         List<OfertaCombinada> BuscarOfertasCombinadas(string numeroProducto);
         decimal CalcularImporteGrupo(PedidoVentaDTO pedido, string grupo, string subGrupo);
         List<LineaPedidoVentaDTO> FiltrarLineas(PedidoVentaDTO pedido, string filtroProducto, string familia);
+        List<RegaloImportePedido> BuscarRegaloPorImportePedido(string numeroProducto);
     }
 }
