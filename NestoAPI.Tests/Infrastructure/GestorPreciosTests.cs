@@ -311,7 +311,6 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("Oferta no puede llevar descuento en el producto " + linea.producto, respuesta.Motivo);
         }
 
-
         [TestMethod]
         public void GestorPrecios_EsOfertaPermitida_SiHayUnDescuentoAutorizadoEsValido()
         {
@@ -347,6 +346,29 @@ namespace NestoAPI.Tests.Infrastructure
             linea.cantidad = 2;
             linea.precio = 10;
             linea.baseImponible = 20;
+            pedido.LineasPedido.Add(linea);
+
+            RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            Assert.IsFalse(respuesta.AutorizadaDenegadaExpresamente);
+            //asertar el motivo para que no haya errores
+        }
+
+        [TestMethod]
+        public void GestorPrecios_EsOfertaPermitida_SiNoEstaRedondeadoPeroEsSuPrecioEsPermitida()
+        {
+            Producto producto = A.Fake<Producto>();
+            producto.Número = "AA11";
+            producto.PVP = 10M;
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
+            linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
+            linea.producto = "AA11";
+            linea.aplicarDescuento = true;
+            linea.cantidad = 2;
+            linea.precio = 9.9999M;
+            linea.baseImponible = linea.cantidad * linea.precio;
             pedido.LineasPedido.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);

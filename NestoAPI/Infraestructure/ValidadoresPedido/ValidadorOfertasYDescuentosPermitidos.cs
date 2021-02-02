@@ -280,7 +280,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     cantidadOferta = (short)lineasSinPrecio.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad),
                     cantidad = (short)lineasConPrecio.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad),
                     producto = producto,
-                    precioCalculado = (decimal)lineasConPrecio.Where(l=> l.producto == numeroProducto).Select(l => l.precio).DefaultIfEmpty().Average(),
+                    precioCalculado = (decimal)Math.Round(lineasConPrecio.Where(l=> l.producto == numeroProducto).Select(l => l.precio).DefaultIfEmpty().Average(), MidpointRounding.AwayFromZero),
                     descuentoCalculado = lineasConPrecio.Where(l => l.producto == numeroProducto).Select(l => 1 - (1-l.descuento) * (1-l.descuentoProducto)).DefaultIfEmpty().Average()
                 };
             }
