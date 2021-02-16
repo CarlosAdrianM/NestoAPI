@@ -92,5 +92,70 @@ namespace NestoAPI.Infraestructure.Agencias
 
             return s;
         }
+        
+        public static decimal ImporteReembolso(CabPedidoVta pedidoSeleccionado)
+        {
+            // Miramos la deuda que tenga en su extracto. 
+            // Esa deuda la tiene que pagar independientemente de la forma de pago
+            decimal importeDeuda = 0;
+
+            // Miramos los casos en los que no hay contra reembolso
+            if (pedidoSeleccionado == null) 
+            {
+                return importeDeuda;
+            }
+            if (pedidoSeleccionado.CCC != null)
+            {
+                return importeDeuda;
+            }
+            if (pedidoSeleccionado.Periodo_Facturacion == "FDM")
+            {
+                return importeDeuda;
+            }
+            if (pedidoSeleccionado.Forma_Pago == "CNF" ||
+                pedidoSeleccionado.Forma_Pago == "TRN" ||
+                pedidoSeleccionado.Forma_Pago == "CHC" ||
+                pedidoSeleccionado.Forma_Pago == "TAR")
+            {
+                return importeDeuda;
+            }
+
+            if (pedidoSeleccionado.NotaEntrega)
+            {
+                return importeDeuda;
+            }
+
+            if (pedidoSeleccionado.PlazosPago != null && pedidoSeleccionado.PlazosPago.Trim() == "PRE")
+            {
+                return importeDeuda;
+            }
+
+            if (pedidoSeleccionado.MantenerJunto) {
+
+                List<LinPedidoVta> lineasSinFacturar;
+                lineasSinFacturar = pedidoSeleccionado.LinPedidoVtas.Where(l => l.Estado == Constantes.EstadosLineaVenta.PENDIENTE).ToList();
+            if (lineasSinFacturar.Any()) {
+                    return importeDeuda;
+            }
+        }
+
+            // Para el resto de los casos ponemos el importe correcto
+            List<LinPedidoVta> lineas;
+            lineas = pedidoSeleccionado.LinPedidoVtas.Where(l => l.Picking != 0 && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO).ToList();
+            if (lineas == null || !lineas.Any()) {
+                return importeDeuda;
+            }
+
+            //Double importeFinal = Math.Round((Aggregate l In lineas Select l.Total Into Sum()) + importeDeuda, 2, MidpointRounding.AwayFromZero);
+            decimal importeFinal = Math.Round(lineas.Sum(l => l.Total) + importeDeuda, 2, MidpointRounding.AwayFromZero);
+
+            // Evitamos los reembolsos negativos
+            if (importeFinal < 0) {
+                importeFinal = 0;
+            }
+
+
+            return importeFinal;
+        }
     }
 }

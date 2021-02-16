@@ -105,6 +105,7 @@
 
         public static class FormasPago
         {
+            public const string EFECTIVO = "EFC";
             public const string RECIBO_BANCARIO = "RCB";
         }
 
@@ -125,6 +126,7 @@
         }
         public static class PlazosPago
         {
+            public const string CONTADO = "CONTADO";
             public const string CONTADO_RIGUROSO = "CR";
             public const string PREPAGO = "PRE";
         }

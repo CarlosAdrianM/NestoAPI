@@ -14,6 +14,7 @@ using Newtonsoft.Json;
 using NestoAPI.Models.Picking;
 using NestoAPI.Infraestructure;
 using System.Web.Http.Cors;
+using NestoAPI.Infraestructure.Agencias;
 
 namespace NestoAPI.Controllers
 {
@@ -368,6 +369,7 @@ namespace NestoAPI.Controllers
             // En una primera fase no permitimos modificar si ya está impresa la etiqueta de la agencia
             // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún con la etiqueta impresa
             // bool estaImpresaLaEtiqueta = db.EnviosAgencias.FirstOrDefault(e => e.Pedido == pedido.numero && e.Estado == ESTADO_ENVIO_EN_CURSO) != null;
+            var etiquetaAgencia = db.EnviosAgencias.SingleOrDefault(e => e.Estado == Constantes.Agencias.ESTADO_EN_CURSO && e.Pedido == pedido.numero);
 
             // En una primera fase no permitimos modificar si alguna línea de las pendientes tiene picking
             // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún teniendo picking
@@ -389,8 +391,7 @@ namespace NestoAPI.Controllers
             bool cambiarContactoEnLineas = false;
             if (cabPedidoVta.Contacto.Trim() != pedido.contacto.Trim())
             {
-                var etiqueta = db.EnviosAgencias.SingleOrDefault(e => e.Estado == Constantes.Agencias.ESTADO_EN_CURSO && e.Pedido == pedido.numero);
-                if (etiqueta != null)
+                if (etiquetaAgencia != null)
                 {
                     errorPersonalizado("No se puede cambiar el contacto " + pedido.numero + " porque ya tiene lo tiene la agencia");
                 }
@@ -438,8 +439,15 @@ namespace NestoAPI.Controllers
             }
 
             // Si cambia el periodo de facturación cambia el reembolso de la etiqueta
-            cabPedidoVta.Periodo_Facturacion = cambiarIvaEnLineas ? 
-                Constantes.Pedidos.PERIODO_FACTURACION_NORMAL : pedido.periodoFacturacion;
+            cabPedidoVta.Periodo_Facturacion = pedido.periodoFacturacion;
+
+            if (cambiarIvaEnLineas && pedido.iva == null)
+            {
+                cabPedidoVta.CCC = null;
+                cabPedidoVta.Forma_Pago = Constantes.FormasPago.EFECTIVO;
+                cabPedidoVta.PlazosPago = Constantes.PlazosPago.CONTADO;
+                cabPedidoVta.Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
+            }
 
             cabPedidoVta.Vendedor = pedido.vendedor;
             cabPedidoVta.Comentarios = pedido.comentarios;
@@ -629,7 +637,18 @@ namespace NestoAPI.Controllers
                     }
                 }
             }
-            
+
+            // Carlos 16/02/21: si el reembolso en la etiqueta ha variado, damos error
+            if (etiquetaAgencia != null)
+            {
+                decimal nuevoReembolso = GestorEnviosAgencia.ImporteReembolso(cabPedidoVta);
+                if (nuevoReembolso != etiquetaAgencia.Reembolso)
+                {
+                    errorPersonalizado(string.Format("No se puede modificar el pedido porque ya hay una etiqueta impresa con {0} de reembolso y el nuevo reembolso serían {1}",
+                        etiquetaAgencia.Reembolso.ToString("c"), nuevoReembolso.ToString("c")));
+                }
+            }
+
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
             if (hayAlgunaLineaModificada ||  hayLineasNuevas || aceptarPresupuesto)
             {

@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure
             // Calculamos el pedido con un identificador único
             var ticks = new DateTime(2020, 1, 1).Ticks;
             var ans = DateTime.Now.Ticks - ticks;
-            var orderUniqueId = Strings.Right(ans.ToString("X12") +"_"+ reclamacion.Cliente, 12);
+            var orderUniqueId = Strings.Right(ans.ToString("X12") +"C"+ reclamacion.Cliente, 12);
 
             //Parameters 
             // This is a example, use your own parameter
