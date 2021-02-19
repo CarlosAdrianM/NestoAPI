@@ -139,7 +139,8 @@ namespace NestoAPI.Controllers
                 PrecioProfesional = (decimal)producto.PVP,
                 Estado = (short)producto.Estado,
                 Grupo = producto.Grupo,
-                Subgrupo = producto.SubGruposProducto.Descripción?.Trim()                
+                Subgrupo = producto.SubGruposProducto.Descripción?.Trim(),
+                RoturaStockProveedor = producto.RoturaStockProveedor
             };
             
             // Lo dejo medio-hardcoded porque no quiero que los vendedores vean otros almacenes

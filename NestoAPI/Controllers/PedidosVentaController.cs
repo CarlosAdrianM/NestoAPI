@@ -550,6 +550,12 @@ namespace NestoAPI.Controllers
                         linea.Descuento = lineaEncontrada.descuento;
                         modificado = true;
                     }
+                    // El DescuentoPP está en la cabecera
+                    if (pedido.DescuentoPP != linea.DescuentoPP) 
+                    {
+                        linea.DescuentoPP = pedido.DescuentoPP;
+                        modificado = true;
+                    }
                     if (linea.Aplicar_Dto != lineaEncontrada.aplicarDescuento)
                     {
                         linea.Aplicar_Dto = lineaEncontrada.aplicarDescuento;
@@ -644,8 +650,9 @@ namespace NestoAPI.Controllers
                 decimal nuevoReembolso = GestorEnviosAgencia.ImporteReembolso(cabPedidoVta);
                 if (nuevoReembolso != etiquetaAgencia.Reembolso)
                 {
-                    errorPersonalizado(string.Format("No se puede modificar el pedido porque ya hay una etiqueta impresa con {0} de reembolso y el nuevo reembolso serían {1}",
-                        etiquetaAgencia.Reembolso.ToString("c"), nuevoReembolso.ToString("c")));
+                    string mensajeError = string.Format("No se puede modificar el pedido porque ya hay una etiqueta impresa con {0} de reembolso y el nuevo reembolso serían {1}",
+                        etiquetaAgencia.Reembolso.ToString("c"), nuevoReembolso.ToString("c"));
+                    errorPersonalizado(mensajeError);
                 }
             }
 
@@ -1401,7 +1408,8 @@ namespace NestoAPI.Controllers
             {
                 Content = new StringContent(mensajePersonalizado)
             };
-            throw new HttpResponseException(message);
+            var ex = new HttpResponseException(message);
+            throw ex;
         }
     }
 }
