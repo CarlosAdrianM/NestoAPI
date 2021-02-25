@@ -43,7 +43,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public List<VencimientoFactura> CargarVencimientosExtracto(string empresa, string cliente, string numeroFactura)
         {
-            var vtosExtracto = db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == numeroFactura && e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_CARTERA);
+            var vtosExtracto = db.ExtractosCliente.Where(e => e.Empresa == empresa && e.Número == cliente && e.Nº_Documento == numeroFactura && e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_CARTERA).OrderBy(e => e.Nº_Orden);
             List<VencimientoFactura> vencimientos = GenerarListaVencimientos(vtosExtracto);
 
             return vencimientos;

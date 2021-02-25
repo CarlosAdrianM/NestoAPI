@@ -1193,7 +1193,7 @@ namespace NestoAPI.Controllers
             else
             {
                 linea.DescuentoProducto = 0;
-                sumaDescuentos = linea.Descuento;
+                sumaDescuentos = (1 - (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
             }
             importeDescuento = Math.Round(bruto * sumaDescuentos, 2, MidpointRounding.AwayFromZero);
             baseImponible = Math.Round(bruto - importeDescuento, 2, MidpointRounding.AwayFromZero);
