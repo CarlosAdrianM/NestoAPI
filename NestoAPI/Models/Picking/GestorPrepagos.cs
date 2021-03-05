@@ -63,7 +63,10 @@ namespace NestoAPI.Models.Picking
                 s.Append("<td>" + pedido.Empresa + "</td>");
                 s.Append("<td>" + pedido.Id.ToString() + "</td>");
                 s.Append("<td style=\"text-align:right\">" + pedido.ImporteTotalConIVA.ToString("C") + "</td>");
-                s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Min(l => l.FechaEntrega).ToString("dd/MM/yyyy") + "</td>");
+                if (pedido.Lineas != null && pedido.Lineas.Any())
+                {
+                    s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Min(l => l.FechaEntrega).ToString("dd/MM/yyyy") + "</td>");
+                }
                 s.AppendLine("</tr>");
             }
             s.AppendLine("</tr>");
