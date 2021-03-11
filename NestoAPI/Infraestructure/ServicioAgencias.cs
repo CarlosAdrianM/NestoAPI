@@ -145,23 +145,42 @@ namespace NestoAPI.Infraestructure
                 // Call asynchronous network methods in a try/catch block to handle exceptions
                 try
                 {
-                    string urlGoogleMaps = "https://maps.googleapis.com/maps/api/geocode/json?region=ES&language=es&address=";
-                    urlGoogleMaps += direccion;
-                    urlGoogleMaps += "&components=country:ES|postal_code="+codigoPostal;
-                    string clave = ConfigurationManager.AppSettings["GoogleMapsApiKey"];
-                    urlGoogleMaps += "&key=" + clave;
-                    //HttpResponseMessage response = await client.GetAsync(urlGoogleMaps);
-                    //response.EnsureSuccessStatusCode();
-                    //string responseBody = await response.Content.ReadAsStringAsync();
-                    // Above three lines can be replaced with new helper method below
-                    string responseBody = await client.GetStringAsync(urlGoogleMaps);
-                    JObject respuestaJson = JsonConvert.DeserializeObject<JObject>(responseBody);
-                    if (respuestaJson["results"].Count()>1)
+                    int intentos = 0;
+                    JObject respuestaJson = null;
+                    while (intentos <= 2 && respuestaJson == null)
                     {
-                        TelemetryClient telemetry = new TelemetryClient();
-                        telemetry.TrackEvent("VariosResultadosGoogleMaps");
+                        string urlGoogleMaps = "https://maps.googleapis.com/maps/api/geocode/json?region=ES&language=es&address=";
+                        urlGoogleMaps += direccion;
+                        urlGoogleMaps += "&components=country:ES|postal_code=" + codigoPostal;
+                        string clave = ConfigurationManager.AppSettings["GoogleMapsApiKey"];
+                        urlGoogleMaps += "&key=" + clave;
+                        //HttpResponseMessage response = await client.GetAsync(urlGoogleMaps);
+                        //response.EnsureSuccessStatusCode();
+                        //string responseBody = await response.Content.ReadAsStringAsync();
+                        // Above three lines can be replaced with new helper method below
+                        string responseBody = await client.GetStringAsync(urlGoogleMaps);
+                        respuestaJson = JsonConvert.DeserializeObject<JObject>(responseBody);
+                        if (respuestaJson["results"] != null && respuestaJson["results"].Count() > 1)
+                        {
+                            TelemetryClient telemetry = new TelemetryClient();
+                            telemetry.TrackEvent("VariosResultadosGoogleMaps");
+                        }
+
+                        if (respuestaJson["results"] == null || !respuestaJson["results"].Any())
+                        {
+                            var direccionPartida = direccion.Split(',');
+                            if (direccionPartida.Length > 1)
+                            {
+                                direccion = direccionPartida[0] + ", " + direccionPartida[1];
+                            } else
+                            {
+                                direccion = direccionPartida[0];
+                            }
+                            
+                            intentos++;
+                            respuestaJson = null;
+                        }
                     }
-                    
                     string direccionFormateada = respuestaJson["results"][0]["formatted_address"].ToString();
                     double longitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lng"].ToString());
                     double latitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lat"].ToString());

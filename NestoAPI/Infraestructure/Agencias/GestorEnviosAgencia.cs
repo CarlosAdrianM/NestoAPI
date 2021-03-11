@@ -89,6 +89,7 @@ namespace NestoAPI.Infraestructure.Agencias
             s.AppendLine("(es posible que el enlace tarde un rato en estar operativo).</p>");
             s.AppendLine("<p>Adjunto encontrará un PDF con el pedido completo, en el que hemos marcado <span style=\"color: red;\">en rojo las líneas pendientes de enviar y facturar</span>, que se le enviarán tan ");
             s.AppendLine("pronto como tengamos stock y <span style=\"color: green;\">en verde las que enviamos en esta expedición</span>.</p>");
+            s.AppendLine("<p><strong>El archivo adjunto NO es una factura electrónica.</strong> Las facturas electrónicas se envían a partir de las 21h del día en que se emiten.</p>");
 
             return s;
         }

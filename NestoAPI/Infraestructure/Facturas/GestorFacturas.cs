@@ -134,7 +134,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     BaseImponible = lineasGrupo.Sum(l => l.Base_Imponible),
                     ImporteIVA = Math.Round(lineasGrupo.Sum(l => l.ImporteIVA), 2, MidpointRounding.AwayFromZero),
-                    ImporteRecargoEquivalencia = Math.Round(lineasGrupo.Sum(l => l.ImporteRE), 2, MidpointRounding.AwayFromZero),
+                    ImporteRecargoEquivalencia = Math.Round(lineasGrupo.Sum(l => l.PorcentajeRE * l.Base_Imponible), 2, MidpointRounding.AwayFromZero),
                     PorcentajeIVA = grupoTotal.Key.PorcentajeIVA / 100M,
                     PorcentajeRecargoEquivalencia = grupoTotal.Key.PorcentajeRE
                 };
