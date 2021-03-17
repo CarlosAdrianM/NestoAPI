@@ -244,9 +244,19 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(SeguimientoCliente))]
         public async Task<IHttpActionResult> PostSeguimientoCliente(SeguimientoClienteDTO seguimientoClienteDTO)
         {
-            if (!ModelState.IsValid)
+            if (!ModelState.IsValid || seguimientoClienteDTO == null)
             {
                 return BadRequest(ModelState);
+            }
+
+            DateTime fechaDesde = new DateTime(seguimientoClienteDTO.Fecha.Year, seguimientoClienteDTO.Fecha.Month, seguimientoClienteDTO.Fecha.Day);
+            DateTime fechaHasta = fechaDesde.AddDays(1);
+            if (db.SeguimientosClientes.Where(s => s.Fecha >= fechaDesde && 
+                s.Fecha < fechaHasta && s.Número == seguimientoClienteDTO.Cliente &&
+                s.Contacto == seguimientoClienteDTO.Contacto &&
+                s.Usuario.ToLower() == seguimientoClienteDTO.Usuario.ToLower()).Any())
+            {
+                throw new Exception(string.Format("Ya existe un seguimiento del cliente {0}/{1} para el día {2}", seguimientoClienteDTO.Cliente.Trim(), seguimientoClienteDTO.Contacto.Trim(), fechaDesde.ToShortDateString()));
             }
 
             string vendedorFicha = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto).Vendedor?.Trim();
