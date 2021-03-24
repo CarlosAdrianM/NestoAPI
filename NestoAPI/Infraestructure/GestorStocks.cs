@@ -44,6 +44,10 @@ namespace NestoAPI.Infraestructure
             return true;
         }
 
+        public int Stock(string producto)
+        {
+            return servicio.Stock(producto);
+        }
         public int Stock(string producto, string almacen)
         {
             return servicio.Stock(producto, almacen);
@@ -54,6 +58,10 @@ namespace NestoAPI.Infraestructure
             return servicio.UnidadesDisponiblesTodosLosAlmacenes(producto);
         }
 
+        public int UnidadesPendientesEntregar(string producto)
+        {
+            return servicio.UnidadesPendientesEntregar(producto);
+        }
         public int UnidadesPendientesEntregarAlmacen(string producto, string almacen)
         {
             return servicio.UnidadesPendientesEntregarAlmacen(producto, almacen);

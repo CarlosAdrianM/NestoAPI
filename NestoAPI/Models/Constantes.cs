@@ -49,6 +49,7 @@
 
         public static class Correos
         {
+            public const string COMPRAS = "compras@nuevavision.es";
             public const string CORREO_DIRECCION = "direccion@nuevavision.es";
             public const string TIENDA_REINA = "tienda@nuevavision.es";
             public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
@@ -136,9 +137,19 @@
             public const string ALMACEN_POR_DEFECTO = "ALG";
             public const string ALMACEN_TIENDA = "REI";
             public const short ESTADO_NO_SOBRE_PEDIDO = 0;
+            public const string FAMILIA_BONIFICACION = "Bonificac";
             public const string GRUPO_COSMETICA = "COS";
             public const string GRUPO_PELUQUERIA = "PEL";
             public const string SUBGRUPO_MUESTRAS = "MMP";
+            public const int DEPOSITO_DIAS_ESTADISTICA = 60;
+        }
+
+        public static class Proveedores
+        {
+            public static class PersonasContacto
+            {
+                public const int INFORMACION_PRODUCTO_DEPOSITO = 27;
+            }
         }
 
         public static class TiposExtractoCliente

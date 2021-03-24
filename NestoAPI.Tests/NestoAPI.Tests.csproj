@@ -101,6 +101,7 @@
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Infrastructure\GestosStocksTests.cs" />
+    <Compile Include="Infrastructure\GestorDepositosTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />
     <Compile Include="Models\Comisiones\VendedorComisionAnualTest.cs" />
     <Compile Include="Models\Picking\LineaPedidoPickingTest.cs" />

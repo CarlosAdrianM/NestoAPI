@@ -90,6 +90,10 @@ namespace NestoAPI.Infraestructure.Agencias
             s.AppendLine("<p>Adjunto encontrará un PDF con el pedido completo, en el que hemos marcado <span style=\"color: red;\">en rojo las líneas pendientes de enviar y facturar</span>, que se le enviarán tan ");
             s.AppendLine("pronto como tengamos stock y <span style=\"color: green;\">en verde las que enviamos en esta expedición</span>.</p>");
             s.AppendLine("<p><strong>El archivo adjunto NO es una factura electrónica.</strong> Las facturas electrónicas se envían a partir de las 21h del día en que se emiten.</p>");
+            s.AppendLine("<p></p>");
+            s.AppendLine("<p></p>");
+            s.AppendLine("<p></p>");
+            s.AppendLine("<a href=\"https://bit.ly/3skuKxx\"> <img src=\"http://productosdeesteticaypeluqueriaprofesional.com/Repositorio/Firma.jpg\" style=\"max-width:100%;\" /></a>");
 
             return s;
         }

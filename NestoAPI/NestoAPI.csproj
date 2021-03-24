@@ -297,6 +297,7 @@
     <Compile Include="Controllers\ClientesController.cs" />
     <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
+    <Compile Include="Controllers\DepositosController.cs" />
     <Compile Include="Controllers\EmpresasController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
@@ -306,6 +307,7 @@
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
+    <Compile Include="Controllers\IServicioGestorStock.cs" />
     <Compile Include="Controllers\ParametrosUsuarioController.cs" />
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\PickingController.cs" />
@@ -331,6 +333,9 @@
     <Compile Include="Infraestructure\ApplicationUserManager.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
+    <Compile Include="Infraestructure\Depositos\GestorDepositos.cs" />
+    <Compile Include="Infraestructure\Depositos\IServicioDeposito.cs" />
+    <Compile Include="Infraestructure\Depositos\ServicioDeposito.cs" />
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GestorClientes.cs" />
     <Compile Include="Infraestructure\GestorComisiones.cs" />
@@ -444,6 +449,9 @@
     <Compile Include="Models\ContadorGlobal.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Depositos\DatosCorreoDeposito.cs" />
+    <Compile Include="Models\Depositos\DepositoCorreoProveedor.cs" />
+    <Compile Include="Models\Depositos\PersonaContactoProveedorDTO.cs" />
     <Compile Include="Models\DescuentosCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

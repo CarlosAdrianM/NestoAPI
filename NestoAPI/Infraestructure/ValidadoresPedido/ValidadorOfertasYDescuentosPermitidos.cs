@@ -32,6 +32,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     };
                 }
 
+                if (producto.Ficticio && producto.Familia != null && producto.Familia.Trim() == Constantes.Productos.FAMILIA_BONIFICACION)
+                {
+                    continue;
+                }
+
                 PrecioDescuentoProducto datos = new PrecioDescuentoProducto
                 {
                     precioCalculado = linea.precio,

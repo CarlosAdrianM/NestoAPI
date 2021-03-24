@@ -15,6 +15,13 @@ namespace NestoAPI.Infraestructure
             db = new NVEntities();
         }
 
+        public int Stock(string producto)
+        {
+            return db.ExtractosProducto.Where(e => e.Número == producto)
+                .Select(e => (int)e.Cantidad)
+                .DefaultIfEmpty(0)
+                .Sum(c => c);
+        }
         public int Stock(string producto, string almacen)
         {
             return db.ExtractosProducto.Where(e => e.Almacén == almacen && e.Número == producto)
@@ -39,6 +46,15 @@ namespace NestoAPI.Infraestructure
             return stock - pendientes;
         }
 
+        public int UnidadesPendientesEntregar(string producto)
+        {
+            return (int)db.LinPedidoVtas.Where(l =>
+            l.Producto == producto &&
+            l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+            .Select(e => (int)e.Cantidad)
+                .DefaultIfEmpty(0)
+                .Sum(c => c);
+        }
         public int UnidadesPendientesEntregarAlmacen(string producto, string almacen)
         {
             return (int)db.LinPedidoVtas.Where(l =>
