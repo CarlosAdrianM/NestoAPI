@@ -37,7 +37,7 @@ namespace NestoAPI.Infraestructure.Depositos
                     {
                         continue;
                     }
-                    GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
+
                     /*
                     var FechaPrimerMovimiento = await servicio.LeerFechaPrimerVencimiento(prod.Producto).ConfigureAwait(false);
                     var UnidadesStock = servicioGestorStocks.Stock(prod.Producto);
@@ -79,8 +79,9 @@ namespace NestoAPI.Infraestructure.Depositos
                 using (MailMessage mail = new MailMessage())
                 {
                     //mail.From = new MailAddress(Constantes.Correos.COMPRAS, "NUEVA VISIÓN - COMPRAS");
-                    mail.From = new MailAddress("compras@nuevavision.es", "NUEVA VISIÓN - COMPRAS");
+                    mail.From = new MailAddress(Constantes.Correos.COMPRAS, "NUEVA VISIÓN - COMPRAS");
                     mail.To.Add(new MailAddress(correo.DireccionCorreo));
+                    mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
                     mail.Subject = string.Format("Productos en depósito {0}", correo.NombreProveedor);
                     mail.Body = GenerarTablaHTML(correo).ToString();
                     mail.IsBodyHtml = true;

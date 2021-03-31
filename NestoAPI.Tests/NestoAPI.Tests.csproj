@@ -111,6 +111,7 @@
     <Compile Include="Models\Picking\GestorImportesMinimosTest.cs" />
     <Compile Include="Models\Picking\GestorUbicacionesTest.cs" />
     <Compile Include="Models\Picking\GestorMargenesTest.cs" />
+    <Compile Include="Models\Picking\GeneradorPendientesTest.cs" />
     <Compile Include="Models\RecursosHumanos\GestorAccionesTest.cs" />
     <Compile Include="Models\RecursosHumanos\ImportadorAccionesAlgeteTest.cs" />
     <Compile Include="Models\RecursosHumanos\GestorEmpleadosTest.cs" />

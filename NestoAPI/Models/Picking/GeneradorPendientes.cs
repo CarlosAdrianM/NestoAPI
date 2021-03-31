@@ -25,7 +25,7 @@ namespace NestoAPI.Models.Picking
                 for (int i = 0; i < lineas.Count(); i++)
                 {
                     LineaPedidoPicking linea = lineas[i];
-                    LineaPedidoPicking lineaNueva = pasarAPendiente(linea);
+                    LineaPedidoPicking lineaNueva = pasarAPendiente(linea, pedido.Borrar);
                     
                     if(linea.CantidadReservada == 0 && !(pedido.EsNotaEntrega && !pedido.EsProductoYaFacturado))
                     {
@@ -41,7 +41,7 @@ namespace NestoAPI.Models.Picking
             //pedidos.RemoveAll(p => p.Borrar);
         }
 
-        private LineaPedidoPicking pasarAPendiente(LineaPedidoPicking linea)
+        private LineaPedidoPicking pasarAPendiente(LineaPedidoPicking linea, bool elPedidoSeBorrara)
         {
             PedidosVentaController pedidosCtrl = new PedidosVentaController();
 
@@ -54,10 +54,13 @@ namespace NestoAPI.Models.Picking
 
             if (lineaActual.Cantidad != linea.Cantidad - linea.CantidadReservada)
             {
-                LinPedidoVta lineaNueva;
+                LinPedidoVta lineaNueva = null;
                 lineaActual.Estado = Constantes.EstadosLineaVenta.PENDIENTE;
-                lineaNueva = pedidosCtrl.dividirLinea(db, lineaActual, (short)(linea.CantidadReservada));
-                linea.Cantidad = linea.CantidadReservada;
+                if (!elPedidoSeBorrara)
+                {
+                    lineaNueva = pedidosCtrl.dividirLinea(db, lineaActual, (short)(linea.CantidadReservada));
+                    linea.Cantidad = linea.CantidadReservada;
+                }                
                 // comprobar, pero creo que esto solo hay que hacerlo si la cantidad es distinta a la cantidadreservada
                 // porque al no crear línea nueva, lo que hacemos es volver a poner en estado 1.
                 // ¡¡¡ escribir test que falle antes de tocar nada!!!

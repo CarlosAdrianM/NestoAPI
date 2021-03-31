@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Depositos;
 using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Models;
 using NestoAPI.Models.Depositos;
 using System;
 using System.Collections.Generic;
@@ -27,6 +28,17 @@ namespace NestoAPI.Tests.Infrastructure
                     CorreoElectronico = "pepito@proveedor.com"
                 }
             });
+            A.CallTo(() => servicio.LeerProductosProveedor(A<string>.Ignored)).Returns(
+                new List<ProductoDTO>
+                {
+                    new ProductoDTO
+                    {
+                        Producto = "12345"
+                    }
+                }
+            );
+            A.CallTo(() => servicio.LeerUnidadesEnviadasProveedor("12345")).Returns(1);
+
             A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>.Ignored)).Returns(true);
             GestorDepositos gestor = new GestorDepositos(servicio, servicioGestorStocks);
 
