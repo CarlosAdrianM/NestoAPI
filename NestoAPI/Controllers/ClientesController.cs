@@ -315,6 +315,18 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
+        [Route("api/Clientes/GetClientePorEmail")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(ClienteTelefonoLookup))]
+        public async Task<IHttpActionResult> GetClientePorEmail(string email)
+        {
+            GestorClientes gestor = new GestorClientes();
+            ClienteTelefonoLookup respuesta = await gestor.BuscarClientePorEmail(email);
+
+            return Ok(respuesta);
+        }
+
+        [HttpGet]
         [Route("api/Clientes/ComprobarDatosBanco")]
         // GET: api/Clientes/5
         [ResponseType(typeof(RespuestaDatosBancoCliente))]

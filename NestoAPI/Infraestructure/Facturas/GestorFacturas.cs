@@ -44,6 +44,7 @@ namespace NestoAPI.Infraestructure.Facturas
             string[] streamids;
             string encoding;
             string filenameExtension;
+            
             ReportViewer viewer = new ReportViewer();
             viewer.LocalReport.ReportPath = facturas.FirstOrDefault().RutaInforme;
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Facturas", facturas));
@@ -57,6 +58,10 @@ namespace NestoAPI.Infraestructure.Facturas
             viewer.LocalReport.Refresh();
 
             var bytes = viewer.LocalReport.Render("PDF", null, out mimeType, out encoding, out filenameExtension, out streamids, out warnings);
+
+            //https://stackoverflow.com/questions/29643043/crystalreports-reportdocument-memory-leak-with-database-connections
+            viewer.LocalReport.Dispose();
+            viewer.Dispose();
 
             return new ByteArrayContent(bytes);
         }        
@@ -237,7 +242,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return factura;
         }
-        
+
         public Factura LeerPedido(string empresa, int pedido)
         {
             CabPedidoVta cabPedido = servicio.CargarCabPedido(empresa, pedido);
@@ -561,6 +566,70 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return facturasCorreo;
         }
+        public List<ClienteCorreoFactura> EnviarFacturasTrimestrePorCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)
+        {
+            List<ClienteCorreoFactura> clientesCorreo = servicio.LeerClientesCorreo(firstDayOfQuarter, lastDayOfQuarter);
+            /*
+            bool antesDelError = true;
+            int contador = 0;
+            */
+            foreach (var cliente in clientesCorreo)
+            {
+                /*
+                contador++;
+                if (cliente.Cliente.Trim() == "1252" && cliente.Contacto.Trim() == "0")
+                {
+                    antesDelError = false;
+                    continue;
+                }
+                if (antesDelError)
+                {
+                    continue;
+                }
+                */
+                IEnumerable<FacturaCorreo> facturasCorreo = servicio.LeerFacturasCliente(cliente.Cliente, cliente.Contacto, firstDayOfQuarter, lastDayOfQuarter);
+
+                List<Attachment> facturasAdjuntas = new List<Attachment>();
+                foreach (var fra in facturasCorreo)
+                {
+                    using (ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura))
+                    {
+                        var facturaBytes = facturaPdf.ReadAsByteArrayAsync().Result;
+                        Attachment attachment = new Attachment(new MemoryStream(facturaBytes), fra.Factura + ".pdf");
+                        facturasAdjuntas.Add(attachment);
+                    }
+                }
+
+                using (MailMessage mail = new MailMessage())
+                {
+                    try
+                    {
+                        mail.To.Add(cliente.Correo);
+                        mail.Subject = string.Format("Facturas del trimestre del {0} al {1} (cliente {2}/{3})", 
+                            firstDayOfQuarter.ToString("d"), lastDayOfQuarter.ToString("d"), cliente.Cliente.Trim(), cliente.Contacto.Trim());
+                        mail.Bcc.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+                        ISerieFactura serieFactura = LeerSerie(facturasCorreo.First().Factura.Substring(0, 2));
+                        mail.From = new MailAddress(serieFactura.CorreoDesdeFactura.Address);
+                        mail.Body = GenerarCorreoTrimestreHTML(serieFactura);
+                        mail.IsBodyHtml = true;
+                        foreach(var adjunta in facturasAdjuntas)
+                        {
+                            mail.Attachments.Add(adjunta);
+                        }
+                    }
+                    catch
+                    {
+                        mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+                        mail.Subject = String.Format("[ERROR: {0}] Facturas del trimestre", cliente.Correo);
+                    }
+
+                    servicio.EnviarCorreoSMTP(mail);
+                    mail.Dispose();
+                }
+            }
+
+            return clientesCorreo;
+        }
 
         private async Task<StringBuilder> GenerarCorreoHTML(FacturaCorreo fra)
         {
@@ -580,6 +649,26 @@ namespace NestoAPI.Infraestructure.Facturas
             s.AppendLine(serieFactura.FirmaCorreo);
 
             return s;
+        }
+
+        private string GenerarCorreoTrimestreHTML(ISerieFactura serieFactura)
+        {
+            StringBuilder s = new StringBuilder();
+
+            s.AppendLine("<p>Estimado cliente:</p>");
+            s.AppendLine("<p>Adjunto le enviamos todas sus facturas del trimestre para que se las pueda hacer llegar a su gestoría y facilitarle al máximo el trámite trimestral de impuestos.</p>");
+            s.AppendLine("<br/>");
+            s.AppendLine("<p>¿Qué es la factura electrónica?</p>");
+            s.AppendLine("<ul><li>Una factura electrónica es, ante todo, una factura. Es decir, tiene los mismos efectos legales que una factura en papel.</li>");
+            s.AppendLine("<li>Recordemos que una factura es un justificante de la entrega de bienes o la prestación de servicios.</li>");
+            s.AppendLine("<li>Una factura electrónica es una factura que se expide y recibe en formato electrónico.</li>");
+            s.AppendLine("<li>La factura electrónica, por tanto, es una alternativa legal a la factura tradicional en papel.</li></ul>");
+            s.AppendLine("<br/>");
+            s.AppendLine("<p style=\"color: green;\">Nuestro compromiso con la protección del medio ambiente es firme, por lo que agradecemos que nos ayude a conseguirlo con la eliminación de las facturas en papel.</p>");
+            s.AppendLine("<br/>");
+            s.AppendLine(serieFactura.FirmaCorreo);
+
+            return s.ToString();
         }
 
         public List<DireccionFactura> DireccionesFactura(Factura factura)

@@ -331,5 +331,21 @@ namespace NestoAPI.Infraestructure
             return await db.Clientes.Include(v=> v.VendedoresClienteGrupoProductoes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto != contacto &&
                 c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL).ToListAsync();
         }
+
+        public async Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                // Caso perfecto en el que existe y solo hay uno
+                PersonaContactoCliente personaContactoCliente = await db.PersonasContactoClientes.FirstAsync(p => p.CorreoElectrónico == email).ConfigureAwait(false);
+                return new ClienteTelefonoLookup
+                {
+                    Empresa = personaContactoCliente.Empresa.Trim(),
+                    Cliente = personaContactoCliente.NºCliente.Trim(),
+                    Contacto = personaContactoCliente.Contacto.Trim(),
+                    Nombre = personaContactoCliente.Nombre.Trim()
+                };
+            }
+        }
     }
 }

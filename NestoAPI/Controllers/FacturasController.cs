@@ -74,5 +74,23 @@ namespace NestoAPI.Controllers
 
             return Ok(respuesta.ToList());
         }
+
+        [HttpGet]
+        [Route("api/Facturas/EnviarFacturasTrimestre")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(List<FacturaCorreo>))]
+        public async Task<IHttpActionResult> EnviarFacturasTrimestre()
+        {
+            GestorFacturas gestor = new GestorFacturas();
+            DateTime hoy = DateTime.Today;
+            int quarterNumber = (hoy.Month - 1) / 3 + 1;
+            quarterNumber--;
+            DateTime firstDayOfQuarter = new DateTime(hoy.Year, (quarterNumber - 1) * 3 + 1, 1);
+            DateTime lastDayOfQuarter = firstDayOfQuarter.AddMonths(3).AddDays(-1);
+
+            List<ClienteCorreoFactura> respuesta = gestor.EnviarFacturasTrimestrePorCorreo(firstDayOfQuarter, lastDayOfQuarter);
+
+            return Ok(respuesta.ToList());
+        }
     }
 }

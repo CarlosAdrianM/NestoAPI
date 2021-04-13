@@ -23,19 +23,34 @@ namespace NestoAPI.Models.Depositos
 
         public string ColorTexto { 
             get {
+                if (ColorFondo == "#FFFFFF")
+                {
+                    return "#000000"; // negro
+                }
+                else
+                {
+                    return "#FFFFFF"; // blanco
+                }
+            } 
+        }
+
+        public string ColorFondo
+        {
+            get
+            {
                 if ((DiasStock > 90 && DiasAntiguedad > 15) || UnidadesEnviadasProveedor < 0)
                 {
-                    return "#FF0000"; //rojo -> retirar
+                    return "#FF0000"; // rojo -> retirar
                 }
-                else if (DiasStock < 7)
+                else if (DiasStock < 7 && TotalUnidadesVendidas > 0)
                 {
                     return "#008000"; // verde -> reponer
                 }
                 else
                 {
-                    return "#000000"; //negro -> Esperar
+                    return "#FFFFFF"; // blanco -> Esperar
                 }
-            } 
+            }
         }
         public int DiasAntiguedad { 
             get

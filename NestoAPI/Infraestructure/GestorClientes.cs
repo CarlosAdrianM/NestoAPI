@@ -454,7 +454,12 @@ namespace NestoAPI.Infraestructure
 
             return clienteCrear;
         }
-                
+
+        internal async Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email)
+        {
+            return await servicio.BuscarClientePorEmail(email);
+        }
+
         public async Task<List<Cliente>> DejarDeVisitar(NVEntities db, ClienteCrear cliente)
         {
             // En el parámetro "cliente" es donde marcamos el cambio:
@@ -645,6 +650,7 @@ namespace NestoAPI.Infraestructure
                 clienteDB.CCC1.DC != clienteModificar.Iban.Substring(12, 2) ||
                 clienteDB.CCC1.Nº_Cuenta != clienteModificar.Iban.Substring(14, 10)))
             {
+                // TODO: permitir modificar IBAN, pero ponerlo en estado "en poder del vendedor"
                 throw new Exception("El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.");
             }
 

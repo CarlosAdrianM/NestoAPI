@@ -3,6 +3,8 @@ using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Mail;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
@@ -22,5 +24,8 @@ namespace NestoAPI.Infraestructure.Facturas
         List<VendedorFactura> CargarVendedoresPedido(string empresa, int pedido);
         PlazoPago CargarPlazosPago(string empresa, string plazosPago);
         string ComponerIban(string empresa, string cliente, string contacto, string ccc);
+        List<ClienteCorreoFactura> LeerClientesCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter);
+        IEnumerable<FacturaCorreo> LeerFacturasCliente(string cliente, string contacto, DateTime firstDayOfQuarter, DateTime lastDayOfQuarter);
+        bool EnviarCorreoSMTP(MailMessage mail);
     }
 }

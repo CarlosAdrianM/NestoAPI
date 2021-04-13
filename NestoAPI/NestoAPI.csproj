@@ -480,6 +480,7 @@
     <Compile Include="Models\ExtractoProveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Facturas\ClienteCorreoFactura.cs" />
     <Compile Include="Models\Facturas\DireccionFactura.cs" />
     <Compile Include="Models\Facturas\Factura.cs" />
     <Compile Include="Models\Facturas\FacturaCorreo.cs" />

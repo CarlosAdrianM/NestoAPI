@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
+using System.Net.Mail;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Facturas;
@@ -170,6 +172,81 @@ namespace NestoAPI.Infraestructure.Facturas
         public PlazoPago CargarPlazosPago(string empresa, string plazosPago)
         {
             return db.PlazosPago.Single(p => p.Empresa == empresa && p.Número == plazosPago);
+        }
+
+        public List<ClienteCorreoFactura> LeerClientesCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)
+        {
+            var clientes = (from f in db.CabFacturaVtas
+                            join c in db.Clientes
+                            on new { f.Empresa, f.Nº_Cliente, f.Contacto } equals new { c.Empresa, c.Nº_Cliente, c.Contacto }
+                            where f.Fecha >= firstDayOfQuarter && f.Fecha <= lastDayOfQuarter && c.PersonasContactoClientes.Where(c => c.CorreoElectrónico != null).Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
+                            select new { Cliente = c.Nº_Cliente, Contacto = f.Contacto, Correos = c.PersonasContactoClientes.Where(p => p.CorreoElectrónico != null) })
+                            .ToList()
+                           .Select(f => new ClienteCorreoFactura
+                           {
+                               Cliente = f.Cliente,
+                               Contacto = f.Contacto,
+                               Correo = string.Join(", ", f.Correos.Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).Select(c => c.CorreoElectrónico.Trim()))
+                           })
+                           .OrderBy(p => p.Correo);
+
+            IEnumerable<ClienteCorreoFactura> filteredList = clientes.Distinct();
+
+            return filteredList.ToList();
+        }
+
+        public IEnumerable<FacturaCorreo> LeerFacturasCliente(string cliente, string contacto, DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)
+        {
+            var facturas = (from f in db.CabFacturaVtas
+                            join c in db.Clientes
+                            on new { f.Empresa, f.Nº_Cliente, f.Contacto } equals new { c.Empresa, c.Nº_Cliente, c.Contacto }
+                            where c.Nº_Cliente == cliente && c.Contacto == contacto && f.Fecha >= firstDayOfQuarter && f.Fecha <= lastDayOfQuarter && c.PersonasContactoClientes.Where(c => c.CorreoElectrónico != null).Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
+                            select new { Empresa = c.Empresa.Trim(), Factura = f.Número.Trim(), Correos = c.PersonasContactoClientes.Where(p => p.CorreoElectrónico != null) })
+                           .ToList()
+                           .Select(f => new FacturaCorreo
+                           {
+                               Empresa = f.Empresa,
+                               Factura = f.Factura,
+                               Correo = string.Join(", ", f.Correos.Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).Select(c => c.CorreoElectrónico.Trim()))
+                           })
+                           .OrderBy(p => p.Correo);
+
+            List<FacturaCorreo> facturasSinDeudaVencida = new List<FacturaCorreo>();
+
+            foreach (var fra in facturas)
+            {
+                var estadoDVD = db.ExtractosCliente.Where(e => e.Empresa == fra.Empresa && e.Nº_Documento == fra.Factura && e.ImportePdte != 0 && e.Estado == Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA);
+                if (!estadoDVD.Any())
+                {
+                    facturasSinDeudaVencida.Add(fra);
+                }
+            }
+
+            return facturasSinDeudaVencida;
+        }
+
+        public bool EnviarCorreoSMTP(MailMessage mail)
+        {
+            using (SmtpClient client = new SmtpClient())
+            {
+                client.Port = 587;
+                client.EnableSsl = true;
+                client.DeliveryMethod = SmtpDeliveryMethod.Network;
+                client.UseDefaultCredentials = false;
+                string contrasenna = ConfigurationManager.AppSettings["office365password"];
+                client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
+                client.Host = "smtp.office365.com";
+
+                try
+                {
+                    client.Send(mail);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }
         }
     }
 }

@@ -29,5 +29,6 @@ namespace NestoAPI.Infraestructure
         Task<List<Cliente>> BuscarContactos(string empresa, string cliente, string contacto);
         DateTime Hoy();
         Task<List<Cliente>> BuscarContactos(NVEntities db, string empresa, string cliente, string contacto);
+        Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email);
     }
 }

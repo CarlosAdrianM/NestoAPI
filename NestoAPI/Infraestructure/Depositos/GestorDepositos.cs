@@ -157,10 +157,10 @@ namespace NestoAPI.Infraestructure.Depositos
 
             foreach (var dato in correo.DatosCorreo)
             {
-                s.AppendLine("<tr>");
+                s.AppendLine("<tr style=\"background-color:"+dato.ColorFondo+"\">");
                 s.Append("<td valign=\"middle\" align=\"center\" height=\"50\"><img src=\"" + dato.Imagen + "\" height=\"100%\"></td>");
 
-                s.Append("<td><font color=\""+ dato.ColorTexto +"\">" + dato.ProductoId + "</font></td>");
+                s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto +"\">" + dato.ProductoId + "</font></td>");
 
                 string rutaEnlace = dato.Enlace;
                 rutaEnlace += "&utm_medium=correodeposito";
