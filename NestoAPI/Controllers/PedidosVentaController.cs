@@ -718,9 +718,16 @@ namespace NestoAPI.Controllers
                     throw;
                 }
             }
-            catch (Exception ex)
+            catch (Exception e)
             {
-                throw ex;
+                string message = e.Message;
+                Exception recorremosExcepcion = e;
+                while (recorremosExcepcion.InnerException != null)
+                {
+                    message = recorremosExcepcion.Message + ". " + recorremosExcepcion.InnerException.Message;
+                    recorremosExcepcion = recorremosExcepcion.InnerException;
+                }
+                throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 
             GestorPresupuestos gestor = new GestorPresupuestos(pedido);

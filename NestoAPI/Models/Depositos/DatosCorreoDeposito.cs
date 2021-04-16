@@ -84,6 +84,10 @@ namespace NestoAPI.Models.Depositos
         public int UnidadesPendientesFacturar { 
             get {
                 int cantidad = UnidadesEnviadasProveedor - UnidadesStock + UnidadesReservadas;
+                if (cantidad > UnidadesEnviadasProveedor)
+                {
+                    cantidad = UnidadesEnviadasProveedor;
+                }
                 return cantidad < 0 ? 0 : cantidad;
             } 
         }
@@ -96,6 +100,18 @@ namespace NestoAPI.Models.Depositos
                     return 0;
                 }
                 return Decimal.Divide(TotalUnidadesVendidas, DiasAntiguedad);
+            }
+        }
+
+        public int UnidadesRetenidasFaltaStock
+        {
+            get
+            {
+                if (UnidadesPendientesFacturar == UnidadesEnviadasProveedor - UnidadesStock + UnidadesReservadas)
+                {
+                    return 0;
+                }
+                return UnidadesEnviadasProveedor - UnidadesStock + UnidadesReservadas - UnidadesPendientesFacturar;
             }
         }
     }

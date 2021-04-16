@@ -151,6 +151,7 @@ namespace NestoAPI.Infraestructure.Depositos
             s.Append("<th>Depósito</th>");
             s.Append("<th>Stock</th>");
             s.Append("<th>Reservadas</th>");
+            s.Append("<th>Retenidas Falta Stock</th>");
             s.Append("<th>Facturables</th></tr>");
             s.AppendLine("</thead>");
             s.AppendLine("<tbody align = \"center\">");
@@ -169,6 +170,7 @@ namespace NestoAPI.Infraestructure.Depositos
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesEnviadasProveedor.ToString() + "</font></td>");
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesStock.ToString() + "</font></td>");
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesReservadas.ToString() + "</font></td>");
+                s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesRetenidasFaltaStock.ToString() + "</font></td>");
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesPendientesFacturar.ToString() + "</font></td>");
                 s.AppendLine("</tr>");
             }

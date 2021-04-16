@@ -294,6 +294,21 @@ namespace NestoAPI.Controllers
         }
 
 
+        // GET: api/PlantillaVentasBuscarProducto
+        //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
+        // Devuelve un listado de productos, filtrado por un concepto (para buscar productos que no ha comprado nunca)
+        [HttpGet]
+        public List<LineaPlantillaVenta> GetPonerStock(List<LineaPlantillaVenta> lineas, string almacen)
+        {
+            foreach (var linea in lineas)
+            {
+                ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(linea.producto, db);
+                linea.stock = (short)productoNuevo.Stock(almacen);
+            }
+
+            return lineas;
+        }
+
         /*
         // GET: api/PlantillaVentas/5
         [ResponseType(typeof(LinPedidoVta))]
