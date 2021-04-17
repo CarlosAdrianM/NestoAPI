@@ -52,7 +52,8 @@ namespace NestoAPI.Infraestructure.Rapports
                     .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.CodPostal == codigoPostal 
                     && p.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL && p.Estado != Constantes.Clientes.Estados.COMISIONA_SIN_VISITA
                     && (p.Vendedor == vendedor || listaPorGrupo.Contains(new { empresa = p.Empresa, cliente = p.Nº_Cliente, contacto = p.Contacto }))
-                    && !listaVisitados.Contains(new { empresa = p.Empresa, cliente = p.Nº_Cliente, contacto = p.Contacto }))
+                    //&& !listaVisitados.Contains(new { empresa = p.Empresa, cliente = p.Nº_Cliente, contacto = p.Contacto })
+                    )
                     .Select(p => new ClienteSeguimientoLookup
                     {
                         Empresa = p.Empresa.Trim(),
@@ -60,9 +61,10 @@ namespace NestoAPI.Infraestructure.Rapports
                         Contacto = p.Contacto.Trim(),
                         Nombre = p.Nombre != null ? p.Nombre.Trim() : string.Empty,
                         Direccion = p.Dirección != null ? p.Dirección.Trim() : string.Empty,
-                        Estado = (short)p.Estado
+                        Estado = (short)p.Estado,
+                        Visitado = listaVisitados.Contains(new { empresa = p.Empresa, cliente = p.Nº_Cliente, contacto = p.Contacto })
                     });
-                    
+
                 var resultadoFinal = await listaClientes.ToListAsync();
 
                 foreach (var cliente in resultadoFinal)
@@ -95,7 +97,7 @@ namespace NestoAPI.Infraestructure.Rapports
                     }
                 }
 
-                return resultadoFinal.OrderBy(r => r.FechaUltimaVisita).ToList();
+                return resultadoFinal.OrderBy(r => r.Visitado).ThenBy(r => r.FechaUltimaVisita).ToList();
                 
             }
         }

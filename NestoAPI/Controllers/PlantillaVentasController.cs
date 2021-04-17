@@ -293,20 +293,45 @@ namespace NestoAPI.Controllers
             return pedidos.ToList();
         }
 
-
-        // GET: api/PlantillaVentasBuscarProducto
-        //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
-        // Devuelve un listado de productos, filtrado por un concepto (para buscar productos que no ha comprado nunca)
-        [HttpGet]
-        public List<LineaPlantillaVenta> GetPonerStock(List<LineaPlantillaVenta> lineas, string almacen)
+        [HttpPost]
+        [Route("api/PlantillaVentas/PonerStock")]
+        public List<LineaPlantillaVenta> PonerStock(PonerStockParam param)
         {
-            foreach (var linea in lineas)
+            if (param == null)
+            {
+                return new List<LineaPlantillaVenta>();
+            }
+            var resultado = PonerStockLineas(param);
+            if (param.Ordenar)
+            {
+                return resultado.OrderByDescending(l => l.cantidadDisponible).ToList();
+            }
+            else
+            {
+                return resultado;
+            }
+        }
+
+        private List<LineaPlantillaVenta> PonerStockLineas(PonerStockParam param)
+        {
+            if (param == null || param.Lineas == null)
+            {
+                return new List<LineaPlantillaVenta>();
+            }
+            foreach (var linea in param.Lineas)
             {
                 ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(linea.producto, db);
-                linea.stock = (short)productoNuevo.Stock(almacen);
+                linea.cantidadDisponible = (short)productoNuevo.CantidadDisponible(param.Almacen);
             }
 
-            return lineas;
+            return param.Lineas;
+        }
+
+        public class PonerStockParam
+        {
+            public string Almacen { get; set; }
+            public List<LineaPlantillaVenta> Lineas { get; set; }
+            public bool Ordenar { get; set; }
         }
 
         /*

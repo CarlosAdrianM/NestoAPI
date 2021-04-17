@@ -15,5 +15,6 @@ namespace NestoAPI.Models.Rapports
         public short Estado { get; set; }
         public DateTime FechaUltimaVisita { get; set; }
         public short NivelRiesgoPagos { get; set; }
+        public bool Visitado { get; set; }
     }
 }
