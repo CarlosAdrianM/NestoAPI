@@ -136,7 +136,7 @@ namespace NestoAPI.Infraestructure.Depositos
                 "<b>Sugerencias en colores:</b><br>" +
                 "<ul>"+
                 "<li><font color=\"#008000\">En verde productos en los que se recomienda reponer stock</font></li>" +
-                "<li><font color=\"#FF0000\">En rojo productos que se recomienda retirar stock</font></li>" +
+                "<li><font color=\"#FF0000\">En rojo productos que se recomienda reducir el stock</font></li>" +
                 "<li><font color=\"#000000\">En negro productos en los que se recomienda esperar sin realizar ninguna acción</font></li>" +
                 "</ul>" +
                 "</td>");

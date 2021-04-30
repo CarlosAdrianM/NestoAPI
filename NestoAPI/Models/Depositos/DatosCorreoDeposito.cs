@@ -6,7 +6,9 @@ using System.Web;
 namespace NestoAPI.Models.Depositos
 {
     public class DatosCorreoDeposito
-    {       
+    {
+        private const int MAX_DIAS_SIN_ROJO = 15;
+
         public string Nombre { get; set; }
         public string Enlace { get; set; }
         public DateTime FechaPrimerMovimiento { get; set; }
@@ -38,7 +40,7 @@ namespace NestoAPI.Models.Depositos
         {
             get
             {
-                if ((DiasStock > 90 && DiasAntiguedad > 15) || UnidadesEnviadasProveedor < 0)
+                if ((DiasStock > 120 && DiasAntiguedad > MAX_DIAS_SIN_ROJO) || UnidadesEnviadasProveedor < 0 || (DiasAntiguedad > MAX_DIAS_SIN_ROJO && TotalUnidadesVendidas == 0))
                 {
                     return "#FF0000"; // rojo -> retirar
                 }
