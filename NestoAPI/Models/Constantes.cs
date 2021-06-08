@@ -139,6 +139,7 @@
             public const short ESTADO_NO_SOBRE_PEDIDO = 0;
             public const string FAMILIA_BONIFICACION = "Bonificac";
             public const string GRUPO_COSMETICA = "COS";
+            public const string GRUPO_MATERIAS_PRIMAS = "MTP";
             public const string GRUPO_PELUQUERIA = "PEL";
             public const string SUBGRUPO_MUESTRAS = "MMP";
             public const int DEPOSITO_DIAS_ESTADISTICA = 60;

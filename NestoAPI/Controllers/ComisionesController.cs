@@ -229,9 +229,13 @@ namespace NestoAPI.Controllers
                 {
                     return new ServicioComisionesAnualesPeluqueria2019();
                 }
-                else if (anno == 2020 || anno == 2021)
+                else if (anno == 2020)
                 {
                     return new ServicioComisionesAnualesPeluqueria2020();
+                }
+                else if (anno == 2021)
+                {
+                    return new ServicioComisionesAnualesPeluqueria2021();
                 }
             }
 

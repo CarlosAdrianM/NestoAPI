@@ -156,7 +156,7 @@ namespace NestoAPI.Controllers
         // GET: api/Productos/5
         public IQueryable<ProductoDTO> GetProducto(string empresa, string filtroNombre, string filtroFamilia, string filtroSubgrupo)
         {
-            IQueryable<Producto> productos = db.Productos.Where(p => p.Empresa == empresa && p.Estado >= Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO);
+            IQueryable<Producto> productos = db.Productos.Where(p => p.Empresa == empresa && p.Estado >= Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && p.Grupo != Constantes.Productos.GRUPO_MATERIAS_PRIMAS);
             if (filtroNombre != null && filtroNombre.Trim() != "")
             {
                 productos = productos.Where(p => p.Nombre.Contains(filtroNombre));

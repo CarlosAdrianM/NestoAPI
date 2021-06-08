@@ -60,7 +60,7 @@ namespace NestoAPI.Infraestructure
 
                 return db.DescuentosProductoes.Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && 
                     d.NºProveedor == null &&
-                    (d.Nº_Producto == numeroProducto.Trim() || d.Familia == producto.Familia || d.GrupoProducto == producto.Grupo) &&
+                    (d.Nº_Producto == numeroProducto.Trim() || d.Familia == producto.Familia || d.GrupoProducto == producto.Grupo || (d.Familia == producto.Familia && producto.Nombre.StartsWith(d.FiltroProducto))) &&
                     (d.Nº_Cliente == null || d.Nº_Cliente == numeroCliente) &&
                     (d.Contacto == null || (d.Nº_Cliente == numeroCliente && d.Contacto == contactoCliente))
                     ).ToList();

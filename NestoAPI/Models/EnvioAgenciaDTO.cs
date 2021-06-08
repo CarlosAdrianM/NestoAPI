@@ -18,6 +18,7 @@ namespace NestoAPI.Models
             }
             AgenciaId = envio.Agencia;
             AgenciaNombre = envio.AgenciasTransporte?.Nombre;
+            AgenciaIdentificador = envio.AgenciasTransporte?.Identificador;
             Cliente = envio.Cliente;
             Pedido = (int)envio.Pedido;
             Estado = envio.Estado;
@@ -26,6 +27,7 @@ namespace NestoAPI.Models
             CodigoPostal = envio.CodPostal;
         }
         public int AgenciaId { get; set; }
+        public string AgenciaIdentificador { get; set; }
         public string AgenciaNombre { get; set; }
         public string Cliente { get; set; }
         public int Pedido { get; set; }
@@ -49,6 +51,9 @@ namespace NestoAPI.Models
                         break;
                     case "Correos Express":
                         enlace = string.Format("https://s.correosexpress.com/c?n={0}", CodigoBarras);
+                        break;
+                    case "Sending":
+                        enlace = string.Format("https://info.sending.es/fgts/pub/locNumServ.seam?cliente={0}&localizador={1}", AgenciaIdentificador, CodigoBarras);
                         break;
                     default:
                         enlace = "error, agencia no definida";
