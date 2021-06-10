@@ -56,7 +56,8 @@ namespace NestoAPI.Infraestructure.Depositos
                         UnidadesEnviadasProveedor = unidadesEnviadasProveedor,
                         UnidadesReservadas = servicioGestorStocks.UnidadesPendientesEntregar(prod.Producto),
                         UnidadesVendidas = await servicio.LeerUnidadesVendidas(prod.Producto).ConfigureAwait(false),
-                        UnidadesDevueltas = await servicio.LeerUnidadesDevueltas(prod.Producto).ConfigureAwait(false)
+                        UnidadesDevueltas = await servicio.LeerUnidadesDevueltas(prod.Producto).ConfigureAwait(false),
+                        ClasificacionMasVendidos = prod.ClasificacionMasVendidos
                     };
                     datosCorreo.Add(datos);
                 }
@@ -152,7 +153,8 @@ namespace NestoAPI.Infraestructure.Depositos
             s.Append("<th>Stock</th>");
             s.Append("<th>Reservadas</th>");
             s.Append("<th>Retenidas Falta Stock</th>");
-            s.Append("<th>Facturables</th></tr>");
+            s.Append("<th>Facturables</th>");
+            s.Append("<th>Clasificación</th></tr>");
             s.AppendLine("</thead>");
             s.AppendLine("<tbody align = \"center\">");
 
@@ -172,6 +174,7 @@ namespace NestoAPI.Infraestructure.Depositos
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesReservadas.ToString() + "</font></td>");
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesRetenidasFaltaStock.ToString() + "</font></td>");
                 s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.UnidadesPendientesFacturar.ToString() + "</font></td>");
+                s.Append("<td style=\"text-align:center\"><font color=\"" + dato.ColorTexto + "\">" + dato.ClasificacionMasVendidos.ToString() + "</font></td>");
                 s.AppendLine("</tr>");
             }
             s.AppendLine("</tbody>");

@@ -210,6 +210,15 @@
           <Property Name="FechaModificación" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
           <Property Name="FechaCreación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="ClasificacionMasVendidos">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Producto" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Posicion" Type="int" Nullable="false" />
+        </EntityType>
         <EntityType Name="Clientes">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -511,6 +520,7 @@
           <Property Name="FechaFactura" Type="date" />
           <Property Name="ImporteGasto" Type="money" Nullable="false" />
           <Property Name="FechaRetornoRecibido" Type="date" />
+          <Property Name="ImporteAsegurado" Type="money" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
@@ -1641,6 +1651,22 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Principal>
             <Dependent Role="CCC">
               <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ClasificacionMasVendidos_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Role="ClasificacionMasVendidos" Type="Self.ClasificacionMasVendidos" Multiplicity="0..1" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ClasificacionMasVendidos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -3693,6 +3719,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="CCC" EntityType="Self.CCC" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CCCProveedores" EntityType="Self.CCCProveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CentrosCoste" EntityType="Self.CentrosCoste" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ClasificacionMasVendidos" EntityType="Self.ClasificacionMasVendidos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Clientes" EntityType="Self.Clientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CódigosPostales" EntityType="Self.CódigosPostales" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ComisionesAnualesDetalle" EntityType="Self.ComisionesAnualesDetalle" Schema="dbo" store:Type="Tables" />
@@ -3859,6 +3886,10 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_CCC_Empresas" Association="Self.FK_CCC_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="CCC" EntitySet="CCC" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ClasificacionMasVendidos_Productos" Association="Self.FK_ClasificacionMasVendidos_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="ClasificacionMasVendidos" EntitySet="ClasificacionMasVendidos" />
           </AssociationSet>
           <AssociationSet Name="FK_Clientes_CCC1" Association="Self.FK_Clientes_CCC1">
             <End Role="CCC" EntitySet="CCC" />
@@ -4494,6 +4525,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="CabPedidoVta" Relationship="NVModel.FK_EnviosAgencia_CabPedidoVta" FromRole="EnviosAgencia" ToRole="CabPedidoVta" />
           <NavigationProperty Name="AgenciasTransporte" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte" FromRole="EnviosAgencia" ToRole="AgenciasTransporte" />
           <NavigationProperty Name="AgenciasTransporte1" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte1" FromRole="EnviosAgencia" ToRole="AgenciasTransporte" />
+          <Property Name="ImporteAsegurado" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
         </EntityType>
         <EntityContainer Name="NVEntities" annotation:LazyLoadingEnabled="true">
           <EntitySet Name="EnviosAgencias" EntityType="Self.EnviosAgencia" />
@@ -5220,6 +5252,11 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="Producto" EntitySet="Productos" />
             <End Role="RegaloImportePedido" EntitySet="RegalosImportePedido" />
           </AssociationSet>
+          <EntitySet Name="ClasificacionMasVendidos" EntityType="NVModel.ClasificacionMasVendido" />
+          <AssociationSet Name="FK_ClasificacionMasVendidos_Productos" Association="NVModel.FK_ClasificacionMasVendidos_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="ClasificacionMasVendido" EntitySet="ClasificacionMasVendidos" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -5773,6 +5810,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_Productos" FromRole="Producto" ToRole="OfertasCombinadasDetalle" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_Productos" FromRole="Producto" ToRole="PreExtrProducto" />
           <NavigationProperty Name="RegaloImportePedidoes" Relationship="NVModel.FK_RegaloImportePedido_Productos" FromRole="Producto" ToRole="RegaloImportePedido" />
+          <NavigationProperty Name="ClasificacionMasVendido" Relationship="NVModel.FK_ClasificacionMasVendidos_Productos" FromRole="Producto" ToRole="ClasificacionMasVendido" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -9190,6 +9228,32 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="ClasificacionMasVendido">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Producto" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Producto" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Posicion" Type="Int32" Nullable="false" />
+          <NavigationProperty Name="Producto1" Relationship="NVModel.FK_ClasificacionMasVendidos_Productos" FromRole="ClasificacionMasVendido" ToRole="Producto" />
+        </EntityType>
+        <Association Name="FK_ClasificacionMasVendidos_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Type="NVModel.ClasificacionMasVendido" Role="ClasificacionMasVendido" Multiplicity="0..1" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ClasificacionMasVendido">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -9199,6 +9263,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySetMapping Name="EnviosAgencias">
             <EntityTypeMapping TypeName="NVModel.EnviosAgencia">
               <MappingFragment StoreEntitySet="EnviosAgencia">
+                <ScalarProperty Name="ImporteAsegurado" ColumnName="ImporteAsegurado" />
                 <ScalarProperty Name="RowVersion" ColumnName="RowVersion" />
                 <ScalarProperty Name="FechaEntrega" ColumnName="FechaEntrega" />
                 <ScalarProperty Name="Pais" ColumnName="Pais" />
@@ -10571,6 +10636,15 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Producto" ColumnName="Producto" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="ClasificacionMasVendidos">
+            <EntityTypeMapping TypeName="NVModel.ClasificacionMasVendido">
+              <MappingFragment StoreEntitySet="ClasificacionMasVendidos">
+                <ScalarProperty Name="Posicion" ColumnName="Posicion" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

@@ -51,16 +51,17 @@ namespace NestoAPI.Infraestructure.Depositos
         public Task<List<ProductoDTO>> LeerProductosProveedor(string proveedorId)
         {
             // Leer de linpedidocm
-            IQueryable<ProductoDTO> productos = db.Productos.Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado >= Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
+            IQueryable<ProductoDTO> productos = db.Productos.Include(nameof(ClasificacionMasVendido)).Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado >= Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
                 .Join(db.LinPedidoCmps.Where(l => l.Estado == Constantes.EstadosLineaVenta.ALBARAN && l.NºProveedor == proveedorId), 
                     p => new { producto = p.Número }, 
                     v => new { producto = v.Producto }, 
-                    (p, v) => new { Producto = v.Producto, p.Nombre, p.Estado })
-                .GroupBy(g => new { g.Producto, g.Nombre, g.Estado })
+                    (p, v) => new { Producto = v.Producto, p.Nombre, p.Estado, p.ClasificacionMasVendido })
+                .GroupBy(g => new { g.Producto, g.Nombre, g.Estado, g.ClasificacionMasVendido })
                 .Select(x => new ProductoDTO {
                     Producto = x.Key.Producto.Trim(),
                     Nombre = x.Key.Nombre.Trim(),
-                    Estado = (short)x.Key.Estado
+                    Estado = (short)x.Key.Estado,
+                    ClasificacionMasVendidos = x.Key.ClasificacionMasVendido.Posicion
                 });
             return productos.ToListAsync();
         }

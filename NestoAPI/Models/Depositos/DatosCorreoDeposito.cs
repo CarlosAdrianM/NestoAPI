@@ -19,6 +19,7 @@ namespace NestoAPI.Models.Depositos
         public int UnidadesReservadas { get; set; }
         public int UnidadesStock { get; set; }
         public int UnidadesVendidas { get; set; } // para el cálculo de cuando reponer
+        public int ClasificacionMasVendidos { get; set; }
 
        
 

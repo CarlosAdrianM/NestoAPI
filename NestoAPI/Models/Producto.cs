@@ -78,5 +78,6 @@ namespace NestoAPI.Models
         public virtual ICollection<OfertaCombinadaDetalle> OfertasCombinadasDetalles { get; set; }
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
         public virtual ICollection<RegaloImportePedido> RegaloImportePedidoes { get; set; }
+        public virtual ClasificacionMasVendido ClasificacionMasVendido { get; set; }
     }
 }
