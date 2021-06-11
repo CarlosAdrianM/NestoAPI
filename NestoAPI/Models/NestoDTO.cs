@@ -132,6 +132,7 @@ namespace NestoAPI.Models
         public bool aplicarDescuento { get; set; }
         public short stock { get; set; }
         public short cantidadDisponible { get; set; }
+        public int clasificacionMasVendidos { get; set; }
     }
     public class LineaPedidoVentaDTO
     {
