@@ -17,6 +17,7 @@
         public static class Clientes
         {
             public const char SEPARADOR_TELEFONOS = '/';
+            public const short ESTADO_DISTRIBUIDORES = 6;
             public static class Estados
             {
                 public const short VISITA_PRESENCIAL = 0;

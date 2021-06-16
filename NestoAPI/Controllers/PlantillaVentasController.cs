@@ -36,6 +36,8 @@ namespace NestoAPI.Controllers
                 throw new Exception("Empresa no válida");
             }
 
+            var clienteCompleto = db.Clientes.Single(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal);
+
             IQueryable<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
                 .Join(db.Productos.Include(nameof(ClasificacionMasVendido)).Where(p => p.Empresa == empresa).Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { producto = l.Producto }, p => new { producto = p.Número }, (l, p) => new { p.Empresa, l.Nº_Cliente, l.TipoLinea, producto = p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = (p.Aplicar_Dto || l.Nº_Cliente == Constantes.ClientesEspeciales.EL_EDEN), estadoLinea = l.Estado, grupo = p.Grupo, p.ClasificacionMasVendido }) // ojo, paso el estado del producto, no el de la línea
                 .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0 && l.estadoLinea == 4 && l.Fecha_Albarán >= DbFunctions.AddYears(DateTime.Today, -2) && l.grupo != Constantes.Productos.GRUPO_MATERIAS_PRIMAS) // ojo, es el estado del producto
@@ -54,8 +56,8 @@ namespace NestoAPI.Controllers
                     fechaUltimaVenta = x.Max(f => f.Fecha_Albarán),
                     iva = x.Key.IVA_Repercutido,
                     precio = (decimal)x.Key.PVP,
-                    aplicarDescuento = x.Key.aplicarDescuento || cliente == Constantes.ClientesEspeciales.EL_EDEN,
-                    clasificacionMasVendidos = x.Key.ClasificacionMasVendido.Posicion
+                    aplicarDescuento = x.Key.aplicarDescuento || cliente == Constantes.ClientesEspeciales.EL_EDEN || clienteCompleto.Estado == Constantes.Clientes.ESTADO_DISTRIBUIDORES,
+                    clasificacionMasVendidos = x.Key.ClasificacionMasVendido != null ? x.Key.ClasificacionMasVendido.Posicion : 0
                 })
                 .OrderBy(p => p.estado != 0)
                 .ThenByDescending(g => g.fechaUltimaVenta)
@@ -77,7 +79,7 @@ namespace NestoAPI.Controllers
 
             IQueryable<LineaPlantillaVenta> lineasPlantilla = db.Productos.Include(nameof(ClasificacionMasVendido))
                 .Include(f => f.Familia)
-                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, estadoFamilia = p.Familia1.Estado, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio, aplicarDescuento = p.Aplicar_Dto, precio = p.PVP, iva = p.IVA_Repercutido, grupo = p.Grupo, clasificacion = p.ClasificacionMasVendido.Posicion })
+                .Join(db.SubGruposProductoes, p => new { empresa = p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { empresa = s.Empresa, grupo = s.Grupo, numero = s.Número }, (p, s) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, estadoFamilia = p.Familia1.Estado, nombreSubGrupo = p.SubGruposProducto.Descripción, cantidad = 0, ficticio = p.Ficticio, aplicarDescuento = p.Aplicar_Dto, precio = p.PVP, iva = p.IVA_Repercutido, grupo = p.Grupo, clasificacion = p.ClasificacionMasVendido })
                 .Join(db.ProveedoresProductoes, p => new { empresa = p.Empresa, producto = p.Número }, r => new { empresa = r.Empresa, producto = r.Nº_Producto }, (p, r) => new { p.Empresa, p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, p.nombreFamilia, p.estadoFamilia, p.nombreSubGrupo, cantidad = 0, p.ficticio, p.aplicarDescuento, p.precio, p.iva, r.ReferenciaProv, p.grupo, p.clasificacion })
                 .Where(p => p.Empresa == empresa && p.Estado >= 0 && !p.ficticio && p.grupo != Constantes.Productos.GRUPO_MATERIAS_PRIMAS && (
                     p.Número.Contains(filtroProducto) ||
@@ -87,7 +89,7 @@ namespace NestoAPI.Controllers
                     p.ReferenciaProv.Contains(filtroProducto)
                 ))
                 .GroupBy(g => new { g.Número, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.estadoFamilia, g.Estado, g.nombreSubGrupo, g.aplicarDescuento, g.precio, g.iva, g.clasificacion })
-                .OrderBy(p => p.Key.Estado != 0).ThenBy(p => p.Key.estadoFamilia != 0).ThenBy(p => p.Key.clasificacion)
+                .OrderBy(p => p.Key.Estado != 0).ThenBy(p => p.Key.estadoFamilia != 0).ThenBy(p => p.Key.clasificacion.Posicion)
                 .Select(x => new LineaPlantillaVenta
                 {
                     producto = x.Key.Número.Trim(),
@@ -103,7 +105,7 @@ namespace NestoAPI.Controllers
                     aplicarDescuento = x.Key.aplicarDescuento,
                     iva = x.Key.iva,
                     precio = (decimal?)x.Key.precio ?? 0,
-                    clasificacionMasVendidos = x.Key.clasificacion
+                    clasificacionMasVendidos = x.Key.clasificacion != null ? x.Key.clasificacion.Posicion : 0
                 });
                 
 

@@ -17,10 +17,12 @@ namespace NestoAPI.Infraestructure
 
         public int Stock(string producto)
         {
-            return db.ExtractosProducto.Where(e => e.Número == producto)
+            int stockExtracto = db.ExtractosProducto.Where(e => e.Número == producto)
                 .Select(e => (int)e.Cantidad)
                 .DefaultIfEmpty(0)
                 .Sum(c => c);
+            int stockRepo = db.PreExtrProductos.Where(e => e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+            return stockExtracto + stockRepo;
         }
         public int Stock(string producto, string almacen)
         {
