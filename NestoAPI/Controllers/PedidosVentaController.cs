@@ -513,7 +513,7 @@ namespace NestoAPI.Controllers
                 } else 
                 {
                     bool modificado = false;
-                    if (linea.Producto.Trim() != lineaEncontrada.producto.Trim())
+                    if (linea.Producto?.Trim() != lineaEncontrada.producto?.Trim())
                     {
                         Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == lineaEncontrada.producto).SingleOrDefault();
                         linea.Producto = producto.Número;
@@ -525,7 +525,7 @@ namespace NestoAPI.Controllers
                         linea.Coste = (decimal)producto.PrecioMedio;
                         modificado = true;
                     }
-                    if(linea.Texto.Trim() != lineaEncontrada.texto.Trim())
+                    if(linea.Texto?.Trim() != lineaEncontrada.texto?.Trim())
                     {
                         linea.Texto = lineaEncontrada.texto;
                         modificado = true;

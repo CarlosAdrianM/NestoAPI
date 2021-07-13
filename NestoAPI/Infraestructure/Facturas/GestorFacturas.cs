@@ -487,16 +487,23 @@ namespace NestoAPI.Infraestructure.Facturas
 
             foreach (var factura in numerosFactura)
             {
-                Factura nuevaFactura;
-                if (Int32.TryParse(factura.Factura, out int numeroPedido))
+                try
                 {
-                    nuevaFactura = LeerPedido(factura.Empresa, numeroPedido);
-                }
-                else
+                    Factura nuevaFactura;
+                    if (Int32.TryParse(factura.Factura, out int numeroPedido))
+                    {
+                        nuevaFactura = LeerPedido(factura.Empresa, numeroPedido);
+                    }
+                    else
+                    {
+                        nuevaFactura = LeerFactura(factura.Empresa, factura.Factura);
+                    }
+                    facturas.Add(nuevaFactura);
+                } catch
                 {
-                    nuevaFactura = LeerFactura(factura.Empresa, factura.Factura);
+                    continue;
                 }
-                facturas.Add(nuevaFactura);
+                
             }
 
             return facturas;
@@ -517,9 +524,10 @@ namespace NestoAPI.Infraestructure.Facturas
                         listaCorreos.Add(mail);
                     }
                     mailAnterior = fra.Correo;
-                    ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
+                    ISerieFactura serieFactura;
                     try
                     {
+                        serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
                         mail = new MailMessage(serieFactura.CorreoDesdeFactura.Address, fra.Correo);
                         mail.Subject = "Facturación nº ";
                     } catch
@@ -569,15 +577,15 @@ namespace NestoAPI.Infraestructure.Facturas
         public List<ClienteCorreoFactura> EnviarFacturasTrimestrePorCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)
         {
             List<ClienteCorreoFactura> clientesCorreo = servicio.LeerClientesCorreo(firstDayOfQuarter, lastDayOfQuarter);
-            /*
+            
             bool antesDelError = true;
             int contador = 0;
-            */
+            
             foreach (var cliente in clientesCorreo)
             {
-                /*
+                
                 contador++;
-                if (cliente.Cliente.Trim() == "1252" && cliente.Contacto.Trim() == "0")
+                if (cliente.Cliente.Trim() == "17765" && cliente.Contacto.Trim() == "0")
                 {
                     antesDelError = false;
                     continue;
@@ -586,18 +594,25 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     continue;
                 }
-                */
+                
                 IEnumerable<FacturaCorreo> facturasCorreo = servicio.LeerFacturasCliente(cliente.Cliente, cliente.Contacto, firstDayOfQuarter, lastDayOfQuarter);
 
                 List<Attachment> facturasAdjuntas = new List<Attachment>();
                 foreach (var fra in facturasCorreo)
                 {
-                    using (ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura))
+                    try
                     {
-                        var facturaBytes = facturaPdf.ReadAsByteArrayAsync().Result;
-                        Attachment attachment = new Attachment(new MemoryStream(facturaBytes), fra.Factura + ".pdf");
-                        facturasAdjuntas.Add(attachment);
+                        using (ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura))
+                        {
+                            var facturaBytes = facturaPdf.ReadAsByteArrayAsync().Result;
+                            Attachment attachment = new Attachment(new MemoryStream(facturaBytes), fra.Factura + ".pdf");
+                            facturasAdjuntas.Add(attachment);
+                        }
+                    } catch
+                    {
+                        continue;
                     }
+                    
                 }
 
                 using (MailMessage mail = new MailMessage())
