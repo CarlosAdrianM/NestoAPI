@@ -355,6 +355,9 @@
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\Rapports\GestorRapports.cs" />
     <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />

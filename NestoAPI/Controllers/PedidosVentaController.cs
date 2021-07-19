@@ -15,6 +15,7 @@ using NestoAPI.Models.Picking;
 using NestoAPI.Infraestructure;
 using System.Web.Http.Cors;
 using NestoAPI.Infraestructure.Agencias;
+using NestoAPI.Infraestructure.PedidosVenta;
 
 namespace NestoAPI.Controllers
 {
@@ -22,8 +23,7 @@ namespace NestoAPI.Controllers
     {
         private const int ESTADO_LINEA_EN_CURSO = Constantes.EstadosLineaVenta.EN_CURSO;
         private const int ESTADO_LINEA_PENDIENTE = Constantes.EstadosLineaVenta.PENDIENTE;
-        private const int ESTADO_ENVIO_EN_CURSO = 0;
-
+        
         public const int TIPO_LINEA_TEXTO = 0;
         public const int TIPO_LINEA_PRODUCTO = 1;
         public const int TIPO_LINEA_CUENTA_CONTABLE = 2;
@@ -33,18 +33,22 @@ namespace NestoAPI.Controllers
 
 
         private NVEntities db;
+        private readonly ServicioPedidosVenta servicio = new ServicioPedidosVenta(); // inyectar para tests
+        private readonly GestorPedidosVenta gestor;
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
         {
             db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
-        }
+            gestor = new GestorPedidosVenta(servicio);
+    }
 
         // Carlos 31/05/18: para poder hacer tests sobre el controlador
         public PedidosVentaController(NVEntities db)
         {
             this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
+            gestor = new GestorPedidosVenta(servicio);
         }
 
 
@@ -99,7 +103,7 @@ namespace NestoAPI.Controllers
 
             foreach (ResumenPedidoVentaDTO cab in listaPedidos)
             {
-                DateTime fechaEntregaFutura = fechaEntregaAjustada(DateTime.Now, cab.ruta);
+                DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta);
                 cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
                 cab.ultimoSeguimiento = db.EnviosAgencias.Where(e => e.Pedido == cab.numero).OrderByDescending(e => e.Numero).FirstOrDefault()?.CodigoBarras;
             }
@@ -153,7 +157,7 @@ namespace NestoAPI.Controllers
 
             foreach (ResumenPedidoVentaDTO cab in listaPedidos)
             {
-                DateTime fechaEntregaFutura = fechaEntregaAjustada(DateTime.Now, cab.ruta);
+                DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta);
                 cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
                 cab.ultimoSeguimiento = db.EnviosAgencias.Where(e => e.Pedido == cab.numero).OrderByDescending(e => e.Numero).FirstOrDefault()?.CodigoBarras;
             }
@@ -204,7 +208,7 @@ namespace NestoAPI.Controllers
 
             foreach (ResumenPedidoVentaDTO cab in cabeceraPedidos)
             {
-                DateTime fechaEntregaFutura = fechaEntregaAjustada(DateTime.Now, cab.ruta);
+                DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta);
                 cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
             }
 
@@ -215,102 +219,11 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(PedidoVentaDTO))]
         public async Task<IHttpActionResult> GetPedidoVenta(string empresa, int numero)
         {
-            CabPedidoVta cabPedidoVta = await db.CabPedidoVtas.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == numero);
-            if (cabPedidoVta == null)
+            PedidoVentaDTO pedido = await GestorPedidosVenta.LeerPedido(empresa, numero).ConfigureAwait(false);
+            if (pedido == null)
             {
                 return NotFound();
             }
-
-            List<LineaPedidoVentaDTO> lineasPedido = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == numero && l.Estado > -99)
-                .Select(l => new LineaPedidoVentaDTO
-                {
-                    id = l.Nº_Orden,
-                    almacen = l.Almacén,
-                    aplicarDescuento = l.Aplicar_Dto,
-                    cantidad = (l.Cantidad != null ? (short)l.Cantidad : (short)0), 
-                    delegacion = l.Delegación, 
-                    descuento = l.Descuento,
-                    descuentoProducto = l.DescuentoProducto,
-                    estado = l.Estado,
-                    fechaEntrega = l.Fecha_Entrega,
-                    formaVenta = l.Forma_Venta,
-                    iva = l.IVA,
-                    oferta = l.NºOferta,
-                    picking = (l.Picking != null ? (int)l.Picking : 0),
-                    precio = (l.Precio != null ? (decimal)l.Precio : 0),
-                    producto = l.Producto.Trim(),
-                    texto = l.Texto.Trim(),
-                    tipoLinea = l.TipoLinea,
-                    usuario = l.Usuario,
-                    vistoBueno = l.VtoBueno,
-                    baseImponible = l.Base_Imponible,
-                    importeIva = l.ImporteIVA,
-                    total = l.Total
-                })
-                .OrderBy(l => l.id)
-                .ToList();
-
-            List<VendedorGrupoProductoDTO> vendedoresGrupoProductoPedido = db.VendedoresPedidosGruposProductos.Where(v => v.Empresa == empresa && v.Pedido == numero)
-                .Select(v => new VendedorGrupoProductoDTO
-                {
-                    vendedor = v.Vendedor,
-                    grupoProducto = v.GrupoProducto
-                })
-                .ToList();
-
-            List<PrepagoDTO> prepagos = db.Prepagos.Where(p => p.Empresa == empresa && p.Pedido == numero).
-                Select(p => new PrepagoDTO
-                {
-                    Importe = p.Importe,
-                    Factura = p.Factura,
-                    CuentaContable = p.CuentaContable,
-                    ConceptoAdicional = p.ConceptoAdicional
-                })
-                .ToList();
-
-            PedidoVentaDTO pedido;
-            try
-            {
-                pedido = new PedidoVentaDTO
-                {
-                    empresa = cabPedidoVta.Empresa.Trim(),
-                    numero = cabPedidoVta.Número,
-                    cliente = cabPedidoVta.Nº_Cliente.Trim(),
-                    contacto = cabPedidoVta.Contacto.Trim(),
-                    fecha = cabPedidoVta.Fecha,
-                    formaPago = cabPedidoVta.Forma_Pago,
-                    plazosPago = cabPedidoVta.PlazosPago.Trim(),
-                    primerVencimiento = cabPedidoVta.Primer_Vencimiento,
-                    iva = cabPedidoVta.IVA,
-                    vendedor = cabPedidoVta.Vendedor,
-                    comentarios = cabPedidoVta.Comentarios,
-                    comentarioPicking = cabPedidoVta.ComentarioPicking,
-                    periodoFacturacion = cabPedidoVta.Periodo_Facturacion,
-                    ruta = cabPedidoVta.Ruta,
-                    serie = cabPedidoVta.Serie,
-                    ccc = cabPedidoVta.CCC,
-                    origen = (cabPedidoVta.Origen != null && cabPedidoVta.Origen.Trim() != "") ? cabPedidoVta.Origen : cabPedidoVta.Empresa,
-                    contactoCobro = cabPedidoVta.ContactoCobro,
-                    noComisiona = cabPedidoVta.NoComisiona,
-                    vistoBuenoPlazosPago = cabPedidoVta.vtoBuenoPlazosPago,
-                    mantenerJunto = cabPedidoVta.MantenerJunto,
-                    servirJunto = cabPedidoVta.ServirJunto,
-                    notaEntrega = cabPedidoVta.NotaEntrega,
-                    usuario = cabPedidoVta.Usuario,
-                    LineasPedido = lineasPedido,
-                    VendedoresGrupoProducto = vendedoresGrupoProductoPedido,
-                    Prepagos = prepagos,
-                    EsPresupuesto = lineasPedido.FirstOrDefault(c => c.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) != null,
-                };
-            } catch (Exception ex)
-            {
-                throw ex;
-            }
-
-            /*
-            GestorPresupuestos gestor = new GestorPresupuestos(pedido);
-            await gestor.EnviarCorreo();
-            */
 
             return Ok(pedido);
         }
@@ -322,15 +235,22 @@ namespace NestoAPI.Controllers
 
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
-            // Guardamos registro de los cambios
-            Modificacion modificacion = new Modificacion
+            try
             {
-                Tabla = "Pedidos",
-                Anterior = JsonConvert.SerializeObject(cabPedidoVta),
-                Nuevo = JsonConvert.SerializeObject(pedido),
-                Usuario = pedido.usuario
-            };
-            db.Modificaciones.Add(modificacion);
+                // Guardamos registro de los cambios
+                Modificacion modificacion = new Modificacion
+                {
+                    Tabla = "Pedidos",
+                    Anterior = JsonConvert.SerializeObject(cabPedidoVta),
+                    Nuevo = JsonConvert.SerializeObject(pedido),
+                    Usuario = pedido.usuario
+                };
+                db.Modificaciones.Add(modificacion);
+            } catch (Exception ex)
+            {
+                
+            }
+            
 
             db.Entry(cabPedidoVta).Collection(c => c.Prepagos).Load();
 
@@ -355,7 +275,7 @@ namespace NestoAPI.Controllers
             cabPedidoVta = db.CabPedidoVtas.Include(l => l.LinPedidoVtas).SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
             // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
-            bool tienePendientes = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => (l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) || l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO) != null;
+            bool tienePendientes = cabPedidoVta.LinPedidoVtas.Any(l => (l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) || l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
             if (!tienePendientes) {
                 errorPersonalizado("No se puede modificar un pedido ya facturado");
             }
@@ -374,7 +294,7 @@ namespace NestoAPI.Controllers
             // En una primera fase no permitimos modificar si alguna línea de las pendientes tiene picking
             // En una segunda fase se podría ajustar para permitir modificar algunos campos, aún teniendo picking
             //bool algunaLineaTienePicking = estaImpresaLaEtiqueta || cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
-            bool algunaLineaTienePicking = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0) != null;
+            bool algunaLineaTienePicking = cabPedidoVta.LinPedidoVtas.Any(l => l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO && l.Picking > 0);
 
 
             // Son diferentes, porque el del pedido está con trim
@@ -505,7 +425,7 @@ namespace NestoAPI.Controllers
 
                 if (lineaEncontrada == null || (lineaEncontrada.cantidad == 0 && linea.Cantidad != 0))
                 {
-                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
+                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
                     {
                         errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking");
                     }
@@ -570,11 +490,11 @@ namespace NestoAPI.Controllers
                     if (modificado)
                     {
                         hayAlgunaLineaModificada = true;
-                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < fechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
+                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
                         {
                             errorPersonalizado("No se puede modificar la línea " + linea.Nº_Orden.ToString() + " porque ya tiene picking");
                         }
-                        calcularImportesLinea(linea);
+                        this.gestor.CalcularImportesLinea(linea);
                     }
                     lineaEncontrada.baseImponible = linea.Base_Imponible;
                     lineaEncontrada.total = linea.Total;
@@ -591,7 +511,7 @@ namespace NestoAPI.Controllers
                     if (linea.id == 0)
                     {
                         ComprobarSiSePuedenInsertarLineas(pedido, algunaLineaTienePicking, linea); //da error si no se puede
-                        lineaPedido = crearLineaVta(linea, pedido.empresa, pedido.numero);
+                        lineaPedido = this.gestor.CrearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
                         linea.baseImponible = lineaPedido.Base_Imponible;
                         linea.total = lineaPedido.Total;
@@ -738,7 +658,7 @@ namespace NestoAPI.Controllers
 
         public void ComprobarSiSePuedenInsertarLineas(PedidoVentaDTO pedido, bool algunaLineaTienePicking, LineaPedidoVentaDTO linea)
         {
-            if (algunaLineaTienePicking && fechaEntregaAjustada(linea.fechaEntrega, pedido.ruta) <= DateTime.Today && DateTime.Now.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
+            if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta) <= DateTime.Today && DateTime.Now.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
             {
                 errorPersonalizado("No se pueden insertar líneas porque son más de las " + Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS.ToString() + "h. y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
             }
@@ -835,7 +755,7 @@ namespace NestoAPI.Controllers
                     linea.vistoBueno = true;
                     linea.fechaEntrega = DateTime.Today;
                 }
-                linPedido = crearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
+                linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
                 linea.baseImponible = linPedido.Base_Imponible;
                 linea.total = linPedido.Total;
                 //db.LinPedidoVtas.Add(linPedido);
@@ -867,7 +787,7 @@ namespace NestoAPI.Controllers
                         vistoBueno = true,
                         usuario = pedido.LineasPedido.FirstOrDefault().usuario
                     };
-                    linPedido = crearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
+                    linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
                     lineaPortes.baseImponible = linPedido.Base_Imponible;
                     lineaPortes.total = linPedido.Total;
                     //pedido.LineasPedido.Add(lineaPortes);
@@ -959,7 +879,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PonerDescuentoTodasLasLineas(string empresa, int pedido, decimal descuento)
         {
             IQueryable<LinPedidoVta> lineas = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == pedido && l.Estado>= Constantes.EstadosLineaVenta .PENDIENTE && l.Estado < Constantes.EstadosLineaVenta.FACTURA);
-            await Task.Run(() => this.calcularDescuentoTodasLasLineas(lineas.ToList(), descuento));
+            await Task.Run(() => this.gestor.CalcularDescuentoTodasLasLineas(lineas.ToList(), descuento));
 
             return Ok(lineas);
         }
@@ -978,362 +898,6 @@ namespace NestoAPI.Controllers
             return db.CabPedidoVtas.Count(e => e.Empresa == empresa && e.Número == id) > 0;
         }
 
-        public LinPedidoVta crearLineaVta(string empresa, int numeroPedido, byte tipoLinea, string producto, short cantidad, decimal precio, string usuario)
-        {
-            string delegacion = calcularDelegacion(usuario, empresa, numeroPedido);
-            string almacen = calcularAlmacen(usuario, empresa, numeroPedido);
-            string formaVenta = calcularFormaVenta(usuario, empresa, numeroPedido);
-
-            string texto;
-            switch (tipoLinea)
-            {
-                case Constantes.TiposLineaVenta.CUENTA_CONTABLE:
-                    texto = db.PlanCuentas.SingleOrDefault(p => p.Empresa == empresa && p.Nº_Cuenta == producto).Concepto;
-                    texto = texto.Substring(0, 50);
-                    break;
-                case Constantes.TiposLineaVenta.PRODUCTO:
-                    texto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == producto).Nombre;
-                    break;
-                case Constantes.TiposLineaVenta.INMOVILIZADO:
-                    texto = db.Inmovilizados.Single(p => p.Empresa == empresa && p.Número == producto).Descripción;
-                    break;
-                default:
-                    texto = "";
-                    break;
-            }
-
-            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
-            {
-                tipoLinea = tipoLinea,
-                estado = Constantes.EstadosLineaVenta.EN_CURSO,
-                producto = producto,
-                texto = texto,
-                cantidad = cantidad,
-                precio = precio,
-                delegacion = delegacion,
-                formaVenta = formaVenta,
-                almacen = almacen,
-                usuario = usuario == "" ? System.Environment.UserDomainName + "\\" + System.Environment.UserName : System.Environment.UserDomainName + "\\" + usuario
-            };
-            return crearLineaVta(linea, empresa, numeroPedido);
-        }
-
-        public LinPedidoVta crearLineaVta(LineaPedidoVentaDTO linea, string empresa, int numeroPedido)
-        {
-            // Si hubiese en dos empresas el mismo pedido, va a dar error
-            CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroPedido);
-            PlazoPago plazo = db.PlazosPago.SingleOrDefault(p => p.Empresa == pedido.Empresa && p.Número == pedido.PlazosPago);
-            if (pedido.IVA != null && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
-            {
-                Producto producto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == linea.producto);
-                linea.iva = producto.IVA_Repercutido;
-            } else if (pedido.IVA != null && linea.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
-            {
-                PlanCuenta cuenta = db.PlanCuentas.SingleOrDefault(c => c.Empresa == empresa && c.Nº_Cuenta == linea.producto);
-                linea.iva = cuenta.IVA;
-            }
-            return crearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta);
-        }
-
-        public LinPedidoVta crearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto)
-        {
-            CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroPedido);
-            return crearLineaVta(linea, numeroPedido, empresa, iva, plazoPago, cliente, contacto, pedido.Ruta);
-        }
-
-        public LinPedidoVta crearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto, string ruta)
-        {
-            string tipoExclusiva, grupo, subGrupo, familia, ivaRepercutido;
-            decimal coste, precioTarifa;
-            short estadoProducto;
-            CentrosCoste centroCoste = null;
-
-            // Calculamos las variables que se pueden corresponden a la cabecera
-            decimal descuentoCliente, descuentoPP;
-            DescuentosCliente dtoCliente = db.DescuentosClientes.OrderBy(d => d.ImporteMínimo).FirstOrDefault(d => d.Empresa == empresa && d.Nº_Cliente == cliente && d.Contacto == contacto);
-            descuentoCliente = dtoCliente != null ? dtoCliente.Descuento : 0;
-            descuentoPP = plazoPago.DtoProntoPago;
-
-            switch (linea.tipoLinea)
-            {
-                
-                case Constantes.TiposLineaVenta.PRODUCTO:
-                    if (linea.cantidad == 0)
-                    {
-                        errorPersonalizado("No se pueden crear líneas de producto con cantidad 0");
-                    }
-                    Producto producto = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == linea.producto);
-                    precioTarifa = (decimal)producto.PVP;
-                    coste = (decimal)producto.PrecioMedio;
-                    grupo = producto.Grupo;
-                    subGrupo = producto.SubGrupo;
-                    familia = producto.Familia;
-                    ivaRepercutido = producto.IVA_Repercutido; // ¿Se usa? Ojo, que puede venir el IVA nulo y estar bien
-                    estadoProducto = (short)producto.Estado;
-                    break;
-
-                case Constantes.TiposLineaVenta.CUENTA_CONTABLE:
-                    precioTarifa = 0;
-                    coste = 0;
-                    grupo = null;
-                    subGrupo = null;
-                    familia = null;
-                    ivaRepercutido = db.Empresas.SingleOrDefault(e => e.Número == empresa).TipoIvaDefecto;
-                    estadoProducto = 0;
-                    if (linea.producto.Substring(0, 1) == "6" || linea.producto.Substring(0, 1) == "7")
-                    {
-                        centroCoste = calcularCentroCoste(empresa, numeroPedido);
-                    }
-                    break;
-
-                default:
-                    precioTarifa = 0;
-                    coste = 0;
-                    grupo = null;
-                    subGrupo = null;
-                    familia = null;
-                    ivaRepercutido = db.Empresas.SingleOrDefault(e => e.Número == empresa).TipoIvaDefecto;
-                    estadoProducto = 0;
-                    break;
-            }
-
-
-            // Posiblemente este if se pueda refactorizar con el switch de arriba, pero hay que comprobarlo bien primero
-            if (linea.tipoLinea == PedidosVentaController.TIPO_LINEA_PRODUCTO)
-            {
-                // la cláusula include es case sensitive, por lo que la familia "pure" es distinta a "Pure" y no la encuentra (es lo que da error)
-                Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == empresa && p.Número == linea.producto).SingleOrDefault();
-                tipoExclusiva = producto.Familia1.TipoExclusiva;
-            } else
-            {
-                tipoExclusiva = null;
-            }
-
-            // Calculamos los valores que nos falten
-            // esto habría que refactorizarlo para que solo lo lea una vez por pedido
-            if (linea.almacen==null)
-            {
-                linea.almacen = calcularAlmacen(linea.usuario, empresa, numeroPedido);
-            }
-
-            if (linea.formaVenta == null)
-            {
-                linea.formaVenta = calcularFormaVenta(linea.usuario, empresa, numeroPedido);
-            }
-
-            if (linea.delegacion == null)
-            {
-                linea.delegacion = calcularDelegacion(linea.usuario, empresa, numeroPedido);
-            }
-
-
-            LinPedidoVta lineaNueva = new LinPedidoVta
-            {
-                Estado = linea.estado,
-                TipoLinea = linea.tipoLinea,
-                Producto = linea.producto,
-                Texto = linea.texto.Length > 50 ? linea.texto.Substring(0, 50) : linea.texto, // porque 50 es la longitud del campo
-                Cantidad = linea.cantidad,
-                Fecha_Entrega = this.fechaEntregaAjustada(linea.fechaEntrega.Date, ruta),
-                Precio = linea.precio,
-                PrecioTarifa = precioTarifa,
-                Coste = coste,
-                Descuento = linea.descuento,
-                DescuentoProducto = linea.descuentoProducto,
-                Aplicar_Dto = linea.aplicarDescuento,
-                VtoBueno = linea.vistoBueno,
-                Usuario = linea.usuario,
-                Almacén = linea.almacen,
-                IVA = linea.iva,
-                Grupo = grupo,
-                Empresa = empresa,
-                Número = numeroPedido,
-                Nº_Cliente = cliente,
-                Contacto = contacto,
-                DescuentoCliente = descuentoCliente,
-                DescuentoPP = descuentoPP,
-                Delegación = linea.delegacion,
-                Forma_Venta = linea.formaVenta,
-                SubGrupo = subGrupo,
-                Familia = familia,
-                TipoExclusiva = tipoExclusiva,
-                Picking = 0,
-                NºOferta = linea.oferta,
-                BlancoParaBorrar = "NestoAPI",
-                LineaParcial = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? !esSobrePedido(linea.producto, linea.cantidad) : true,
-                EstadoProducto = estadoProducto,
-                CentroCoste = centroCoste != null ? centroCoste.Número : null,
-                Departamento = centroCoste != null ? centroCoste.Departamento : null
-            };
-            /*
-            Nota sobre LineaParcial: aunque siga llamándos el campo línea parcial, por retrocompatibidad, en realidad
-            ya nada tiene que ver con que se quede una parte de la línea sin entregar, sino que ahora indica si tiene
-            que salir aunque no llegue al mínimo. De este modo, todo lo que sea estado 0, por ejemplo, sale siempre, por 
-            lo que la línea parcial siempre será cero (no es sobre pedido).
-            */          
-            
-            calcularImportesLinea(lineaNueva, iva);
-
-            return lineaNueva;
-
-        }
-                
-        // Si pongo public, lo confunde con el método POST, porque solo llevan un parámetro
-        void calcularImportesLinea(LinPedidoVta linea)
-        {
-            string iva = db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == linea.Empresa && c.Número == linea.Número).IVA;
-            calcularImportesLinea(linea, iva);
-        }
-
-        public void calcularImportesLinea(LinPedidoVta linea, string iva)
-        {
-            decimal baseImponible, bruto, importeDescuento, importeIVA, importeRE, sumaDescuentos, porcentajeRE;
-            byte porcentajeIVA;
-            ParametroIVA parametroIva;
-            
-            // Para que redondee a la baja
-            bruto = (decimal)(linea.Cantidad * (decimal.Truncate((decimal)linea.Precio * 10000) / 10000));
-            if (linea.Aplicar_Dto)
-            {
-                sumaDescuentos = (1 - (1 - (linea.DescuentoCliente)) * (1 - (linea.DescuentoProducto)) * (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
-            }
-            else
-            {
-                linea.DescuentoProducto = 0;
-                sumaDescuentos = (1 - (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
-            }
-            importeDescuento = Math.Round(bruto * sumaDescuentos, 2, MidpointRounding.AwayFromZero);
-            baseImponible = Math.Round(bruto - importeDescuento, 2, MidpointRounding.AwayFromZero);
-            if (!string.IsNullOrWhiteSpace(iva))
-            {
-                parametroIva = db.ParametrosIVA.SingleOrDefault(p => p.Empresa == linea.Empresa && p.IVA_Cliente_Prov == iva && p.IVA_Producto == linea.IVA);
-                porcentajeIVA = parametroIva != null ? (byte)parametroIva.C__IVA : (byte)0;
-                porcentajeRE = parametroIva != null ? (decimal)parametroIva.C__RE / 100 : (decimal)0;
-                importeIVA = baseImponible * porcentajeIVA / 100;
-                importeRE = baseImponible * porcentajeRE;
-            }
-            else
-            {
-                porcentajeIVA = 0;
-                porcentajeRE = 0;
-                importeIVA = 0;
-                importeRE = 0;
-            }
-            
-            // Ponemos los valores en la línea
-            linea.Bruto = bruto;
-            linea.Base_Imponible = baseImponible;
-            linea.Total = baseImponible + importeIVA + importeRE;
-            linea.PorcentajeIVA = porcentajeIVA;
-            linea.PorcentajeRE = porcentajeRE;
-            linea.SumaDescuentos = sumaDescuentos;
-            linea.ImporteDto = importeDescuento;
-            linea.ImporteIVA = importeIVA;
-            linea.ImporteRE = importeRE;
-            
-        }
-
-        private string calcularAlmacen(string usuario, string empresa, int numeroPedido)
-        {
-            string almacen = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Almacén;
-            if (almacen != null && almacen != "")
-            {
-                return almacen;
-            }
-            ParametroUsuario parametroUsuario;
-
-            if (usuario != null)
-            {
-                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == "AlmacénPedidoVta");
-                if (parametroUsuario != null && parametroUsuario.Valor.Trim() != "")
-                {
-                    return parametroUsuario.Valor.Trim();
-                }
-            }
-
-            return Constantes.Productos.ALMACEN_POR_DEFECTO;
-        }
-
-        private string calcularDelegacion(string usuario, string empresa, int numeroPedido)
-        {
-            string delegacion = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Delegación;
-            if (delegacion != null && delegacion != "")
-            {
-                return delegacion;
-            }
-            ParametroUsuario parametroUsuario;
-
-            if (usuario != null)
-            {
-                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == "DelegaciónDefecto");
-                if (parametroUsuario != null && parametroUsuario.Valor.Trim() != "")
-                {
-                    return parametroUsuario.Valor.Trim();
-                }
-            }
-
-            return Constantes.Empresas.DELEGACION_POR_DEFECTO;
-        }
-
-        private string calcularFormaVenta(string usuario, string empresa, int numeroPedido)
-        {
-            string formaVenta = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Forma_Venta;
-            if (formaVenta != null && formaVenta != "")
-            {
-                return formaVenta;
-            }
-            ParametroUsuario parametroUsuario;
-
-            if (usuario != null)
-            {
-                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == "FormaVentaDefecto");
-                if (parametroUsuario != null && parametroUsuario.Valor.Trim() != "")
-                {
-                    return parametroUsuario.Valor.Trim();
-                }
-            }
-
-            return Constantes.Empresas.FORMA_VENTA_POR_DEFECTO;
-        }
-
-        
-        private CentrosCoste calcularCentroCoste(string empresa, int numeroPedido)
-        {
-            CabPedidoVta cabPedidoCoste = db.CabPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
-            if (cabPedidoCoste == null)
-            {
-                cabPedidoCoste = db.CabPedidoVtas.Local.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
-            }
-            string vendedor = cabPedidoCoste?.Vendedor;
-            if (vendedor == null || vendedor == "")
-            {
-                throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque falta el vendedor");
-            }
-            ParametroUsuario parametroUsuario;
-            UsuarioVendedor usuarioVendedor = db.UsuarioVendedores.SingleOrDefault(u => u.Vendedor == vendedor);
-
-            if (usuarioVendedor == null)
-            {
-                throw new Exception("El pedido " + numeroPedido.ToString() + " no tiene vendedor");
-            }
-
-            string usuario = usuarioVendedor.Usuario;
-            string numeroCentroCoste = "";
-            if (usuario != null)
-            {
-                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuario && p.Clave == "CentroCosteDefecto");
-                if (parametroUsuario != null && parametroUsuario.Valor.Trim() != "")
-                {
-                    numeroCentroCoste = parametroUsuario.Valor.Trim();
-                }
-            } else
-            {
-                throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque el vendedor "+ vendedor +" no tiene un usuario asociado");
-            }
-
-            return db.CentrosCostes.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroCentroCoste);
-        }
-
         public LinPedidoVta dividirLinea(LinPedidoVta lineaActual, short cantidad)
         {
             return this.dividirLinea(db, lineaActual, cantidad);
@@ -1348,11 +912,11 @@ namespace NestoAPI.Controllers
 
             LinPedidoVta lineaNueva = (LinPedidoVta)db.Entry(linea).CurrentValues.ToObject();
             lineaNueva.Cantidad -= cantidad;
-            this.calcularImportesLinea(lineaNueva);
+            this.gestor.CalcularImportesLinea(lineaNueva);
             db.LinPedidoVtas.Add(lineaNueva); 
 
             linea.Cantidad = cantidad;
-            this.calcularImportesLinea(linea);
+            this.gestor.CalcularImportesLinea(linea);
 
             return lineaNueva;
         }
@@ -1366,48 +930,16 @@ namespace NestoAPI.Controllers
             
             return await gestor.SePuedeServirPedido(pedido, new ServicioAgencias(), new GestorStocks());
         }
-        
-        private bool esSobrePedido(string producto, short cantidad)
+
+        [HttpPost]
+        [EnableCors(origins: "*", headers: "*", methods: "*", SupportsCredentials = true)]
+        [Route("api/PedidosVenta/UnirPedidos")]
+        public async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, int numeroPedidoAmpliacion)
         {
-            Producto productoBuscado = db.Productos.SingleOrDefault(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto);
-            if (productoBuscado.Estado == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
-            {
-                return false;
-            }
-
-            ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(producto, db);
-
-            return productoNuevo.CantidadDisponible() < cantidad;
+            PedidoVentaDTO pedidoUnido = await gestor.UnirPedidos(empresa, numeroPedidoOriginal, numeroPedidoAmpliacion).ConfigureAwait(false);
+            return pedidoUnido;
         }
 
-        // A las 11h de la mañana se cierra la ruta y los pedidos que se metan son ya para el día siguiente
-        private DateTime fechaEntregaAjustada(DateTime fecha, string ruta)
-        {
-            DateTime fechaMinima;
-            
-            if (ruta != Constantes.Pedidos.RUTA_GLOVO && GestorImportesMinimos.esRutaConPortes(ruta))
-            {
-                fechaMinima = DateTime.Now.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS ? DateTime.Today : DateTime.Today.AddDays(1);
-            } else
-            {
-                fechaMinima = DateTime.Today;
-            }
-            
-            return fechaMinima < fecha ? fecha : fechaMinima;
-        }
-
-        private void calcularDescuentoTodasLasLineas(List<LinPedidoVta> lineas, decimal descuento)
-        {
-            foreach (LinPedidoVta linea in lineas)
-            {
-                linea.Descuento = descuento;
-                this.calcularImportesLinea(linea);
-            }
-        }
-
-        private void copiarDatosProductoEnLinea(LinPedidoVta linea) {
-
-        }
 
         private void errorPersonalizado(string mensajePersonalizado)
         {

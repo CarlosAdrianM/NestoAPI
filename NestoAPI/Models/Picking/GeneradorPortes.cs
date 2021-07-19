@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -41,8 +42,8 @@ namespace NestoAPI.Models.Picking
                 return;
             }
 
-            PedidosVentaController pedidoCtrl = new PedidosVentaController();
-            LinPedidoVta lineaVta = pedidoCtrl.crearLineaVta(pedido.Empresa, pedido.Id, PedidosVentaController.TIPO_LINEA_CUENTA_CONTABLE, cuenta, 1, portes, "");
+            GestorPedidosVenta gestorPedidos = new GestorPedidosVenta(new ServicioPedidosVenta());
+            LinPedidoVta lineaVta = gestorPedidos.CrearLineaVta(pedido.Empresa, pedido.Id, PedidosVentaController.TIPO_LINEA_CUENTA_CONTABLE, cuenta, 1, portes, "");
             db.LinPedidoVtas.Add(lineaVta);
             pedido.Lineas.Add(new LineaPedidoPicking
             {
