@@ -755,7 +755,7 @@ namespace NestoAPI.Controllers
                     linea.vistoBueno = true;
                     linea.fechaEntrega = DateTime.Today;
                 }
-                linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
+                linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
                 linea.baseImponible = linPedido.Base_Imponible;
                 linea.total = linPedido.Total;
                 //db.LinPedidoVtas.Add(linPedido);
@@ -787,7 +787,7 @@ namespace NestoAPI.Controllers
                         vistoBueno = true,
                         usuario = pedido.LineasPedido.FirstOrDefault().usuario
                     };
-                    linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta);
+                    linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
                     lineaPortes.baseImponible = linPedido.Base_Imponible;
                     lineaPortes.total = linPedido.Total;
                     //pedido.LineasPedido.Add(lineaPortes);

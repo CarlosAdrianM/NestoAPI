@@ -158,7 +158,7 @@ namespace NestoAPI.Infraestructure.Depositos
             s.AppendLine("</thead>");
             s.AppendLine("<tbody align = \"center\">");
 
-            foreach (var dato in correo.DatosCorreo.OrderByDescending(c => c.UnidadesPendientesFacturar).ThenBy(c => c.UnidadesStock))
+            foreach (var dato in correo.DatosCorreo.OrderByDescending(c => c.UnidadesRetenidasFaltaStock).ThenByDescending(c => c.UnidadesPendientesFacturar).ThenBy(c => c.UnidadesStock))
             {
                 s.AppendLine("<tr style=\"background-color:"+dato.ColorFondo+"\">");
                 s.Append("<td valign=\"middle\" align=\"center\" height=\"50\"><img src=\"" + dato.Imagen + "\" height=\"100%\"></td>");

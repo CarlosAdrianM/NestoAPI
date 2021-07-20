@@ -26,6 +26,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             return servicio.CalcularCentroCoste(empresa, numeroPedido);
         }
+        internal CentrosCoste CalcularCentroCoste(string empresa, string vendedor)
+        {
+            return servicio.CalcularCentroCoste(empresa, vendedor);
+        }
         internal string CalcularDelegacion(string usuario, string empresa, int numeroPedido)
         {
             return servicio.CalcularDelegacion(usuario, empresa, numeroPedido);
@@ -48,7 +52,6 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             string iva = servicio.LeerCabPedidoVta(linea.Empresa, linea.Número).IVA;
             CalcularImportesLinea(linea, iva);
         }
-
         public void CalcularImportesLinea(LinPedidoVta linea, string iva)
         {
             decimal baseImponible, bruto, importeDescuento, importeIVA, importeRE, sumaDescuentos, porcentajeRE;
@@ -134,7 +137,6 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             };
             return CrearLineaVta(linea, empresa, numeroPedido);
         }
-
         public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, string empresa, int numeroPedido)
         {
             // Si hubiese en dos empresas el mismo pedido, va a dar error
@@ -150,14 +152,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 PlanCuenta cuenta = servicio.LeerPlanCuenta(empresa, linea.producto);
                 linea.iva = cuenta.IVA;
             }
-            return CrearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta);
+            return CrearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta, pedido.Vendedor);
         }
         public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto)
         {
             CabPedidoVta pedido = servicio.LeerCabPedidoVta(empresa, numeroPedido);
-            return CrearLineaVta(linea, numeroPedido, empresa, iva, plazoPago, cliente, contacto, pedido.Ruta);
+            return CrearLineaVta(linea, numeroPedido, empresa, iva, plazoPago, cliente, contacto, pedido.Ruta, pedido.Vendedor);
         }
-        public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto, string ruta)
+        public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto, string ruta, string vendedor)
         {
             string tipoExclusiva, grupo, subGrupo, familia, ivaRepercutido;
             decimal coste, precioTarifa;
@@ -198,7 +200,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     estadoProducto = 0;
                     if (linea.producto.Substring(0, 1) == "6" || linea.producto.Substring(0, 1) == "7")
                     {
-                        centroCoste = CalcularCentroCoste(empresa, numeroPedido);
+                        centroCoste = string.IsNullOrWhiteSpace(vendedor) ? CalcularCentroCoste(empresa, numeroPedido) : CalcularCentroCoste(empresa, vendedor);
                     }
                     break;
 
