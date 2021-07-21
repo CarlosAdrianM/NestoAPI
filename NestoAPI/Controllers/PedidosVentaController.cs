@@ -16,6 +16,8 @@ using NestoAPI.Infraestructure;
 using System.Web.Http.Cors;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Models.PedidosVenta;
+using Newtonsoft.Json.Linq;
 
 namespace NestoAPI.Controllers
 {
@@ -934,12 +936,27 @@ namespace NestoAPI.Controllers
         [HttpPost]
         [EnableCors(origins: "*", headers: "*", methods: "*", SupportsCredentials = true)]
         [Route("api/PedidosVenta/UnirPedidos")]
-        public async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, int numeroPedidoAmpliacion)
+        public async Task<PedidoVentaDTO> UnirPedidos(JObject parametro)
         {
-            PedidoVentaDTO pedidoUnido = await gestor.UnirPedidos(empresa, numeroPedidoOriginal, numeroPedidoAmpliacion).ConfigureAwait(false);
+            ParametroStringIntInt parametroStringIntInt = parametro.ToObject<ParametroStringIntInt>();
+            ParametroStringIntPedido parametroStringIntPedido = parametro.ToObject<ParametroStringIntPedido>(); 
+
+            if (parametroStringIntInt == null && parametroStringIntPedido == null)
+            {
+                throw new Exception("No se han pasado parametros");
+            }
+
+            PedidoVentaDTO pedidoUnido;
+            if (parametroStringIntPedido == null || parametroStringIntPedido.PedidoAmpliacion == null)
+            {
+                pedidoUnido = await gestor.UnirPedidos(parametroStringIntInt.Empresa, parametroStringIntInt.NumeroPedidoOriginal, parametroStringIntInt.NumeroPedidoAmpliacion).ConfigureAwait(false);
+            } else
+            {
+                pedidoUnido = await gestor.UnirPedidos(parametroStringIntPedido.Empresa, parametroStringIntPedido.NumeroPedidoOriginal, parametroStringIntPedido.PedidoAmpliacion).ConfigureAwait(false);
+            }
+            
             return pedidoUnido;
         }
-
 
         private void errorPersonalizado(string mensajePersonalizado)
         {

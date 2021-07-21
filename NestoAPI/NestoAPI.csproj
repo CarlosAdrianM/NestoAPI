@@ -192,6 +192,7 @@
     <Reference Include="System.Spatial, Version=5.8.4.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\System.Spatial.5.8.4\lib\net40\System.Spatial.dll</HintPath>
     </Reference>
+    <Reference Include="System.Transactions" />
     <Reference Include="System.Web.Cors, Version=5.2.7.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.AspNet.Cors.5.2.7\lib\net45\System.Web.Cors.dll</HintPath>
     </Reference>
@@ -572,6 +573,8 @@
     <Compile Include="Models\PedidosEspeciale.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />
+    <Compile Include="Models\PedidosVenta\ParametroStringIntPedido.cs" />
     <Compile Include="Models\PersonaContactoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

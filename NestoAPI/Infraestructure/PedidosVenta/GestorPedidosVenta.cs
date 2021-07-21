@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Transactions;
 using System.Web;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
@@ -420,6 +421,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             PedidoVentaDTO pedidoOriginal = await LeerPedido(empresa, numeroPedidoOriginal).ConfigureAwait(false);
             PedidoVentaDTO pedidoAmpliacion = await LeerPedido(empresa, numeroPedidoAmpliacion).ConfigureAwait(false);
 
+            return await UnirPedidos(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(false);
+        }
+
+        internal async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
+        {
+            PedidoVentaDTO pedidoOriginal = await LeerPedido(empresa, numeroPedidoOriginal).ConfigureAwait(false);
+            
+            return await UnirPedidos(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(false);
+        }
+
+        internal async Task<PedidoVentaDTO> UnirPedidos(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
+        {
             foreach (LineaPedidoVentaDTO linea in pedidoAmpliacion.LineasPedido.Where(l => l.estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.estado <= Constantes.EstadosLineaVenta.EN_CURSO).ToList())
             {
                 linea.id = 0;
@@ -427,10 +440,28 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 pedidoAmpliacion.LineasPedido.Remove(linea);
             }
 
-            using (PedidosVentaController controller = new PedidosVentaController())
+            using (TransactionScope transaction = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
             {
-                await controller.PutPedidoVenta(pedidoAmpliacion).ConfigureAwait(false);
-                await controller.PutPedidoVenta(pedidoOriginal).ConfigureAwait(false);
+                using (PedidosVentaController controller = new PedidosVentaController())
+                {
+                    try
+                    {
+                        if (pedidoAmpliacion.numero != 0)
+                        {
+                            await controller.PutPedidoVenta(pedidoAmpliacion).ConfigureAwait(true);
+                        }                        
+                        await controller.PutPedidoVenta(pedidoOriginal).ConfigureAwait(true);                        
+                        transaction.Complete();
+                    }
+                    catch (TransactionAbortedException ex)
+                    {
+                        throw new Exception(ex.Message);
+                    }
+                    catch (Exception ex)
+                    {
+                        throw new Exception(ex.Message);
+                    }
+                }
             }
 
             return pedidoOriginal;
