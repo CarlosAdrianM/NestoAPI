@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Transactions;
 using System.Web;
+using System.Web.Http;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
 {
@@ -421,14 +422,27 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             PedidoVentaDTO pedidoOriginal = await LeerPedido(empresa, numeroPedidoOriginal).ConfigureAwait(false);
             PedidoVentaDTO pedidoAmpliacion = await LeerPedido(empresa, numeroPedidoAmpliacion).ConfigureAwait(false);
 
-            return await UnirPedidos(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(false);
+            try
+            {
+                return await UnirPedidos(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception(ex.Message);
+            }
         }
 
         internal async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
         {
             PedidoVentaDTO pedidoOriginal = await LeerPedido(empresa, numeroPedidoOriginal).ConfigureAwait(false);
-            
-            return await UnirPedidos(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(false);
+            try
+            {
+                return await UnirPedidos(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception(ex.Message);
+            }
         }
 
         internal async Task<PedidoVentaDTO> UnirPedidos(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
@@ -456,6 +470,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     catch (TransactionAbortedException ex)
                     {
                         throw new Exception(ex.Message);
+                    }
+                    catch (HttpResponseException ex)
+                    {
+                        throw new Exception(ex.Response.ReasonPhrase);
                     }
                     catch (Exception ex)
                     {

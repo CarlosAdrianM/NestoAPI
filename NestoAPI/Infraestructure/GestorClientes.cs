@@ -207,6 +207,10 @@ namespace NestoAPI.Infraestructure
             {
                 direccion = "C/ " + direccion.Substring(6);
             }
+            if (direccion.StartsWith("C. "))
+            {
+                direccion = "C/ " + direccion.Substring(3);
+            }
             if (direccion.StartsWith("C/ DE LA "))
             {
                 direccion = "C/ " + direccion.Substring(9);
