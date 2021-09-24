@@ -354,7 +354,7 @@ namespace NestoAPI.Models.Comisiones
             {
                 return tramosCalle;
             }
-            else if (vendedor == "PA" || vendedor == "LA" || vendedor == "MPP")
+            else if (vendedor == "PA" || vendedor == "LA" || vendedor == "MPP" || vendedor == "AGR")
             {
                 return tramosTelefono;
             }
