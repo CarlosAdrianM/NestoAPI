@@ -85,6 +85,8 @@ namespace NestoAPI.Infraestructure.Agencias
             s.AppendLine("<p>Le comunicamos que ya hemos enviado su pedido. Debido a que este pedido ya se encuentra en poder de la agencia de transportes, a partir de este momento no se puede realizar ninguna modificación en él. ");
             s.AppendLine("El pedido ya está en camino y por lo tanto no se puede modificar.</p>");
             s.AppendLine("<p>¡IMPORTANTE! Si a la entrega de la mercancía encuentra algún daño en la caja, es <strong>importante que lo indique en el albarán o PDA del transportista</strong>. En caso contrario, la agencia no admitirá reclamaciones posteriores.</p>");
+            s.AppendLine("<p>También es muy importante, de cara a una posible reclamación posterior, <strong>comprobar que el nº de bultos que pone en la PDA o albarán coincide con el nº de bultos efectivamente recibido</strong>.</p>");
+            s.AppendLine("<p></p>");
             s.AppendLine("<p>La propia agencia le enviará un correo electrónico a esta misma dirección con el enlace al seguimiento de la expedición, para que pueda saber en cada momento por donde va el envío.</p>");
             s.AppendLine("<p>No obstante, le adelantamos que <b>la agencia responsable de la entrega es "+ nombreAgencia +" y el número de envío es <a href=\""+envioDTO.EnlaceSeguimiento+"\">" +envio.CodigoBarras+"</a> </b>");
             s.AppendLine("(es posible que el enlace tarde un rato en estar operativo).</p>");

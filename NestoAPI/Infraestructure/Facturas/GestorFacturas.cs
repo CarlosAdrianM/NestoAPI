@@ -653,6 +653,8 @@ namespace NestoAPI.Infraestructure.Facturas
 
             s.AppendLine("<p>Adjunto le enviamos su facturación del día.</p>");
             s.AppendLine("<br/>");
+            s.AppendLine("<p>La factura se ha generado hoy mismo, por lo que <strong>es lógico que aún no haya recibido los productos</strong>, pero se la adelantamos para que pueda llevar los controles pertinentes.</p>");
+            s.AppendLine("<br/>");
             s.AppendLine("<p>¿Qué es la factura electrónica?</p>");
             s.AppendLine("<ul><li>Una factura electrónica es, ante todo, una factura. Es decir, tiene los mismos efectos legales que una factura en papel.</li>");
             s.AppendLine("<li>Recordemos que una factura es un justificante de la entrega de bienes o la prestación de servicios.</li>");
