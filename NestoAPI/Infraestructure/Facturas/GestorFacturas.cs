@@ -512,13 +512,13 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             var facturasCorreo = servicio.LeerFacturasDia(dia);
             var listaCorreos = new List<MailMessage>();
-            string mailAnterior = "";
+            string mailAnterior = string.Empty;
             MailMessage mail = new MailMessage();
             foreach (var fra in facturasCorreo)
             {                
                 if (fra.Correo != mailAnterior)
                 {
-                    if (mailAnterior != "")
+                    if (!string.IsNullOrEmpty(mailAnterior))
                     {
                         mail.Subject = mail.Subject.Trim().TrimEnd(',');
                         listaCorreos.Add(mail);
@@ -528,9 +528,18 @@ namespace NestoAPI.Infraestructure.Facturas
                     try
                     {
                         serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
+                    } 
+                    catch
+                    {
+                        mail = new MailMessage();
+                        mailAnterior = string.Empty;
+                        continue;
+                    }
+                    try { 
                         mail = new MailMessage(serieFactura.CorreoDesdeFactura.Address, fra.Correo);
                         mail.Subject = "Facturación nº ";
-                    } catch
+                    } 
+                    catch
                     {
                         mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
                         mail.Subject = String.Format("[ERROR: {0}] Facturación nº ", fra.Correo);
