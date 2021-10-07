@@ -1,11 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Serialization;
 using System.Text.RegularExpressions;
 using System.Web;
 
 namespace NestoAPI.Models.Clientes
 {
+    [DataContract]
     public class Iban
     {
         public Iban(string codigo) {
@@ -65,6 +67,7 @@ namespace NestoAPI.Models.Clientes
 
             }
         }
+        
         public string Formateado
         {
             get
@@ -118,6 +121,9 @@ namespace NestoAPI.Models.Clientes
             }
             return ccc.Pais + ccc.DC_IBAN + ccc.Entidad + ccc.Oficina + ccc.DC + ccc.Nº_Cuenta;
         }
-
+        public override string ToString()
+        {
+            return Formateado;
+        }
     }
 }

@@ -146,7 +146,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 totales.Add(total);
                 importeTotal += total.BaseImponible + total.ImporteIVA + total.ImporteRecargoEquivalencia;
             }
-
+            importeTotal = Math.Round(importeTotal, 2, MidpointRounding.AwayFromZero);
 
 
             List<VendedorFactura> vendedores = servicio.CargarVendedoresFactura(empresa, numeroFactura);
@@ -587,22 +587,22 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             List<ClienteCorreoFactura> clientesCorreo = servicio.LeerClientesCorreo(firstDayOfQuarter, lastDayOfQuarter);
             
-            bool antesDelError = true;
+            //bool antesDelError = true;
             int contador = 0;
             
             foreach (var cliente in clientesCorreo)
             {
                 
                 contador++;
-                if (cliente.Cliente.Trim() == "17765" && cliente.Contacto.Trim() == "0")
-                {
-                    antesDelError = false;
-                    continue;
-                }
-                if (antesDelError)
-                {
-                    continue;
-                }
+                //if (cliente.Cliente.Trim() == "17765" && cliente.Contacto.Trim() == "0")
+                //{
+                //    antesDelError = false;
+                //    continue;
+                //}
+                //if (antesDelError)
+                //{
+                //    continue;
+                //}
                 
                 IEnumerable<FacturaCorreo> facturasCorreo = servicio.LeerFacturasCliente(cliente.Cliente, cliente.Contacto, firstDayOfQuarter, lastDayOfQuarter);
 

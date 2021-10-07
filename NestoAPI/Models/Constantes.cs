@@ -39,6 +39,7 @@
             {
                 public const short ESTADO_POR_DEFECTO = 0;
                 public const short CARGO_FACTURA_POR_CORREO = 22;
+                public const short CARGO_COBROS = 1;
             }
 
             public static class TiposExtracto
@@ -156,6 +157,7 @@
 
         public static class TiposExtractoCliente
         {
+            public const string PAGO = "3";
             public const string IMPAGADO = "4";
         }
 

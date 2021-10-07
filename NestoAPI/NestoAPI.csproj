@@ -337,6 +337,9 @@
     <Compile Include="Infraestructure\Depositos\GestorDepositos.cs" />
     <Compile Include="Infraestructure\Depositos\IServicioDeposito.cs" />
     <Compile Include="Infraestructure\Depositos\ServicioDeposito.cs" />
+    <Compile Include="Infraestructure\Domiciliaciones\GestorDomiciliaciones.cs" />
+    <Compile Include="Infraestructure\Domiciliaciones\IServicioDomiciliaciones.cs" />
+    <Compile Include="Infraestructure\Domiciliaciones\ServicioDomiciliaciones.cs" />
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GestorClientes.cs" />
     <Compile Include="Infraestructure\GestorComisiones.cs" />
@@ -353,6 +356,7 @@
     <Compile Include="Infraestructure\IGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioAgencias.cs" />
     <Compile Include="Infraestructure\Facturas\IServicioFacturas.cs" />
+    <Compile Include="Infraestructure\IServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
@@ -366,6 +370,7 @@
     <Compile Include="Infraestructure\SeEstaVendiendo\GestorSeEstaVendiendo.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
+    <Compile Include="Infraestructure\ServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
@@ -466,6 +471,7 @@
     <Compile Include="Models\DescuentosProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Domiciliaciones\DomiciliacionesCliente.cs" />
     <Compile Include="Models\DíasPagoClientes.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -482,6 +488,7 @@
     <Compile Include="Models\ExtractoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Domiciliaciones\EfectoDomiciliado.cs" />
     <Compile Include="Models\ExtractoProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

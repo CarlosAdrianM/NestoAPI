@@ -9,7 +9,10 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Domiciliaciones;
 using NestoAPI.Models;
+using NestoAPI.Models.Domiciliaciones;
 
 namespace NestoAPI.Controllers
 {
@@ -150,88 +153,103 @@ namespace NestoAPI.Controllers
             return Ok(extractoCliente);
         }
 
-        /*
-        // PUT: api/ExtractosCliente/5
-        [ResponseType(typeof(void))]
-        public async Task<IHttpActionResult> PutExtractoCliente(string id, ExtractoCliente extractoCliente)
+        [HttpGet]
+        [Route("api/ExtractosCliente/EnviarCorreoDomiciliacionDia")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(List<EfectoDomiciliado>))]
+        public IHttpActionResult EnviarCorreoDomiciliacionDia()
         {
-            if (!ModelState.IsValid)
+            IServicioDomiciliaciones servicio = new ServicioDomiciliaciones();
+            IServicioCorreoElectronico servicioCorreo = new ServicioCorreoElectronico();
+            GestorDomiciliaciones gestor = new GestorDomiciliaciones(servicio, servicioCorreo);
+
+            IEnumerable<EfectoDomiciliado> respuesta = gestor.EnviarCorreoDomiciliacion(DateTime.Today);
+
+            return Ok(respuesta.ToList());
+        }
+
+            /*
+            // PUT: api/ExtractosCliente/5
+            [ResponseType(typeof(void))]
+            public async Task<IHttpActionResult> PutExtractoCliente(string id, ExtractoCliente extractoCliente)
             {
-                return BadRequest(ModelState);
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+
+                if (id != extractoCliente.Empresa)
+                {
+                    return BadRequest();
+                }
+
+                db.Entry(extractoCliente).State = EntityState.Modified;
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    if (!ExtractoClienteExists(id))
+                    {
+                        return NotFound();
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+
+                return StatusCode(HttpStatusCode.NoContent);
             }
 
-            if (id != extractoCliente.Empresa)
+            // POST: api/ExtractosCliente
+            [ResponseType(typeof(ExtractoCliente))]
+            public async Task<IHttpActionResult> PostExtractoCliente(ExtractoCliente extractoCliente)
             {
-                return BadRequest();
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+
+                db.ExtractosCliente.Add(extractoCliente);
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                }
+                catch (DbUpdateException)
+                {
+                    if (ExtractoClienteExists(extractoCliente.Empresa))
+                    {
+                        return Conflict();
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+
+                return CreatedAtRoute("DefaultApi", new { id = extractoCliente.Empresa }, extractoCliente);
             }
 
-            db.Entry(extractoCliente).State = EntityState.Modified;
-
-            try
+            // DELETE: api/ExtractosCliente/5
+            [ResponseType(typeof(ExtractoCliente))]
+            public async Task<IHttpActionResult> DeleteExtractoCliente(string id)
             {
-                await db.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!ExtractoClienteExists(id))
+                ExtractoCliente extractoCliente = await db.ExtractosCliente.FindAsync(id);
+                if (extractoCliente == null)
                 {
                     return NotFound();
                 }
-                else
-                {
-                    throw;
-                }
-            }
 
-            return StatusCode(HttpStatusCode.NoContent);
-        }
-
-        // POST: api/ExtractosCliente
-        [ResponseType(typeof(ExtractoCliente))]
-        public async Task<IHttpActionResult> PostExtractoCliente(ExtractoCliente extractoCliente)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            db.ExtractosCliente.Add(extractoCliente);
-
-            try
-            {
+                db.ExtractosCliente.Remove(extractoCliente);
                 await db.SaveChangesAsync();
+
+                return Ok(extractoCliente);
             }
-            catch (DbUpdateException)
-            {
-                if (ExtractoClienteExists(extractoCliente.Empresa))
-                {
-                    return Conflict();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-
-            return CreatedAtRoute("DefaultApi", new { id = extractoCliente.Empresa }, extractoCliente);
-        }
-
-        // DELETE: api/ExtractosCliente/5
-        [ResponseType(typeof(ExtractoCliente))]
-        public async Task<IHttpActionResult> DeleteExtractoCliente(string id)
-        {
-            ExtractoCliente extractoCliente = await db.ExtractosCliente.FindAsync(id);
-            if (extractoCliente == null)
-            {
-                return NotFound();
-            }
-
-            db.ExtractosCliente.Remove(extractoCliente);
-            await db.SaveChangesAsync();
-
-            return Ok(extractoCliente);
-        }
-        */
+            */
 
         protected override void Dispose(bool disposing)
         {
