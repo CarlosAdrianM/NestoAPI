@@ -124,7 +124,12 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
             string ultimoCorreo = string.Empty;
             foreach (var efecto in efectosDomiciliados.Where(e => !string.IsNullOrEmpty(e.Correo)).OrderBy(e => e.Correo))
             {
-                if (!string.IsNullOrEmpty(ultimoCorreo) && ultimoCorreo != efecto.Correo)
+                if (string.IsNullOrEmpty(ultimoCorreo))
+                {
+                    ultimoCorreo = efecto.Correo;
+                    domiciliacion.Correo = ultimoCorreo;
+                }
+                if (ultimoCorreo != efecto.Correo)
                 {
                     domiciliacionesClientes.Add(domiciliacion);
                     domiciliacion = new DomiciliacionesCliente
@@ -135,6 +140,8 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                 domiciliacion.ListaEfectos.Add(efecto);
                 ultimoCorreo = efecto.Correo;
             }
+            domiciliacion.Correo = ultimoCorreo;
+            domiciliacionesClientes.Add(domiciliacion);
             return domiciliacionesClientes;
         }
     }
