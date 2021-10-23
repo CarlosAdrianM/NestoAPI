@@ -216,7 +216,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 }
 
                 DescuentosProducto descuentoAutorizado = descuentos.FirstOrDefault(d =>
-                    d.Descuento >= oferta.descuentoReal && (oferta.cantidad + oferta.cantidadOferta) >= d.CantidadMínima
+                    d.Descuento >= Math.Round((decimal)oferta.descuentoReal, 3) && (oferta.cantidad + oferta.cantidadOferta) >= d.CantidadMínima
                     && (d.FiltroProducto == null || string.IsNullOrEmpty(d.FiltroProducto.Trim()) || producto.Nombre.StartsWith(d.FiltroProducto))
                 );
                 if (descuentoAutorizado != null)
