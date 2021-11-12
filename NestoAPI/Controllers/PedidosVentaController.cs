@@ -398,7 +398,6 @@ namespace NestoAPI.Controllers
 
             // Sacar diferencias entre el pedido original y el que hemos pasado:
             // - las líneas que la cantidad, o la base imponible sean diferentes hay que actualizarlas enteras
-
             // - las líneas que directamente no estén, hay que borrarlas
             bool hayAlgunaLineaModificada = false;
             foreach (LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.ToList())
@@ -438,6 +437,9 @@ namespace NestoAPI.Controllers
                     if (linea.Producto?.Trim() != lineaEncontrada.producto?.Trim())
                     {
                         Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == lineaEncontrada.producto).SingleOrDefault();
+                        if (producto.Estado < Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO) {
+                            errorPersonalizado($"El producto {producto.Número} está en un estado nulo ({producto.Estado})");
+                        }
                         linea.Producto = producto.Número;
                         linea.Grupo = producto.Grupo;
                         linea.SubGrupo = producto.SubGrupo;

@@ -183,6 +183,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         throw new Exception("No se pueden crear líneas de producto con cantidad 0");
                     }
                     Producto producto = servicio.LeerProducto(empresa, linea.producto);
+                    if (producto.Estado < Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
+                    {
+                        throw new Exception($"El producto {producto.Número.Trim()} ({producto.Nombre?.Trim()}) está en un estado nulo ({producto.Estado})");
+                    }
                     precioTarifa = (decimal)producto.PVP;
                     coste = (decimal)producto.PrecioMedio;
                     grupo = producto.Grupo;
@@ -447,9 +451,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal async Task<PedidoVentaDTO> UnirPedidos(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
         {
+            bool originalEsPresupuesto = pedidoOriginal.LineasPedido.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);            
+
             foreach (LineaPedidoVentaDTO linea in pedidoAmpliacion.LineasPedido.Where(l => l.estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.estado <= Constantes.EstadosLineaVenta.EN_CURSO).ToList())
             {
                 linea.id = 0;
+                if (originalEsPresupuesto)
+                {
+                    linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
+                }
                 pedidoOriginal.LineasPedido.Add(linea);
                 pedidoAmpliacion.LineasPedido.Remove(linea);
             }

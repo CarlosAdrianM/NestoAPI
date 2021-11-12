@@ -101,7 +101,7 @@ namespace NestoAPI.Infraestructure
 
         private string LimpiarNif(string param)
         {
-            var resultado = System.Text.RegularExpressions.Regex.Replace(param, "[^a-zA-Z0-9_]+", "");
+            var resultado = Regex.Replace(param, "[^a-zA-Z0-9_]+", string.Empty);
             return resultado.Trim();
         }
 
@@ -116,7 +116,7 @@ namespace NestoAPI.Infraestructure
             {
                 throw new ArgumentException("El código postal " + codigoPostal + " es incorrecto.\n" + direccionGoogle);
             }
-            var direccionFormateada = "";
+            var direccionFormateada = string.Empty;
             if (posicionCodigoPostal >= 2)
             {
                 direccionFormateada = direccionGoogle.Substring(0, posicionCodigoPostal - 2); // porque quitamos coma y espacio
@@ -136,7 +136,7 @@ namespace NestoAPI.Infraestructure
                 );
                 if (string.IsNullOrEmpty(numeroCalleFormateada))
                 {
-                    numeroCalleFormateada = direccion.IndexOf("S/N", StringComparison.InvariantCulture) != -1 ? "S/N" : "";
+                    numeroCalleFormateada = direccion.IndexOf("S/N", StringComparison.InvariantCulture) != -1 ? "S/N" : string.Empty;
                 }
                 if (string.IsNullOrEmpty(numeroCalleFormateada) && direccionGoogle.Substring(0,5) != codigoPostal)
                 {
@@ -147,7 +147,7 @@ namespace NestoAPI.Infraestructure
                     }
                 }
                 direccionHastaNumero = direccionHastaNumero?.Trim();
-                if (direccionFormateada != "")
+                if (!string.IsNullOrEmpty(direccionFormateada))
                 {
                     direccionFormateada = direccionHastaNumero.Substring(0, direccionHastaNumero.Length) +
                         ", " + numeroCalleFormateada;
@@ -176,6 +176,10 @@ namespace NestoAPI.Infraestructure
             }
             var inicioDireccion = direccion.Substring(0, posicionNumero + numeroCalleFormateada.Length);
             var finalDireccion = direccion.Substring(inicioDireccion.Length);
+            if (finalDireccion.Trim() == ",")
+            {
+                finalDireccion = string.Empty;
+            }
 
             if (posicionNumero == -1)
             {
@@ -216,6 +220,10 @@ namespace NestoAPI.Infraestructure
                 direccion = "C/ " + direccion.Substring(9);
             }
             if (direccion.StartsWith("C/ DEL "))
+            {
+                direccion = "C/ " + direccion.Substring(7);
+            }
+            if (direccion.StartsWith("C/ DE "))
             {
                 direccion = "C/ " + direccion.Substring(7);
             }
@@ -351,8 +359,8 @@ namespace NestoAPI.Infraestructure
             {
                 respuesta = new RespuestaDatosBancoCliente
                 {
-                    Iban = "",
-                    IbanFormateado = "",
+                    Iban = string.Empty,
+                    IbanFormateado = string.Empty,
                     IbanValido = true
                 };
             }
@@ -646,7 +654,7 @@ namespace NestoAPI.Infraestructure
             }
 
             if (clienteModificar.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO &&
-                clienteModificar.Iban != null && clienteModificar.Iban?.Trim() != "" && clienteDB.CCC1 != null && (
+                clienteModificar.Iban != null && !string.IsNullOrWhiteSpace(clienteModificar.Iban) && clienteDB.CCC1 != null && (
                 clienteDB.CCC1.Pais != clienteModificar.Iban.Substring(0, 2) ||
                 clienteDB.CCC1.DC_IBAN != clienteModificar.Iban.Substring(2, 2) ||
                 clienteDB.CCC1.Entidad != clienteModificar.Iban.Substring(4, 4) ||
@@ -659,7 +667,7 @@ namespace NestoAPI.Infraestructure
             }
 
             // TODO: hacer test que si añado iban a uno que no tiene, me deja
-            if (clienteModificar.Iban?.Trim() != "" && clienteDB.CCC1 == null)
+            if (!string.IsNullOrWhiteSpace(clienteModificar.Iban) && clienteDB.CCC1 == null)
             {
                 CCC nuevoCCC = new CCC
                 {
@@ -829,7 +837,7 @@ namespace NestoAPI.Infraestructure
             };
             cliente.CondPagoClientes.Add(condicionesPago);
 
-            if (clienteCrear.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO && clienteCrear.Iban != null && clienteCrear.Iban != "")
+            if (clienteCrear.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO && clienteCrear.Iban != null && !string.IsNullOrEmpty(clienteCrear.Iban))
             {
                 CCC ccc = new CCC
                 {

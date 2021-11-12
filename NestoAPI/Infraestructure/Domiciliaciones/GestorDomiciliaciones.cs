@@ -102,9 +102,9 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                 s.AppendLine("</tr>");
             }
             s.AppendLine("</table>");
-            s.AppendLine("<p>Su banco tardará todavía un par de días en cargar dichos efectos en cuenta, por lo que le rogamos se asegure de tener saldo suficiente para cubrir el importe total.</p>");
-            s.AppendLine("<p>El tiempo que tarde el banco en cargar los recibos en su cuenta ya no depende de nosotros, por lo que si precisa información más exacta al respecto, le sugerimos se ponga en contacto con su oficina bancaria.</p>");
-            s.AppendLine("<p>Si necesita cualquier otra aclaración adicional puede preguntarnos respondiendo a este mismo correo.</p>");
+            s.AppendLine("<p style=\"color: blue;\"><strong>Este es un correo automatizado y con carácter meramente informativo, para que usted pueda tener controlados los recibos que le hemos girado.</strong></p>");
+            s.AppendLine("<p>El tiempo que tarde el banco en cargar los recibos en su cuenta no depende de nosotros, por lo que si precisa información más exacta al respecto, le sugerimos se ponga en contacto con su oficina bancaria.</p>");
+            s.AppendLine("<p>Si algo de lo aquí expresado no es de su conformidad o necesita cualquier otra aclaración adicional, puede contactarnos respondiendo a este mismo correo.</p>");
             
 
             //<!-- Footer -->
