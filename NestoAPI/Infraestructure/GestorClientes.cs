@@ -10,6 +10,7 @@ using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 
 using System.Data.Entity;
 using System.Web.Http.ModelBinding.Binders;
+using System.Globalization;
 
 namespace NestoAPI.Infraestructure
 {
@@ -108,6 +109,7 @@ namespace NestoAPI.Infraestructure
         public string LimpiarDireccion(string direccion, string direccionGoogle, string codigoPostal)
         {
             direccion = direccion.ToUpper().Trim();
+            codigoPostal = codigoPostal.Trim();
             direccionGoogle = direccionGoogle.ToUpper().Trim();
 
             var posicionCodigoPostal = direccionGoogle.LastIndexOf(codigoPostal);
@@ -225,7 +227,7 @@ namespace NestoAPI.Infraestructure
             }
             if (direccion.StartsWith("C/ DE "))
             {
-                direccion = "C/ " + direccion.Substring(7);
+                direccion = "C/ " + direccion.Substring(6);
             }
 
             // Avenida
@@ -822,6 +824,7 @@ namespace NestoAPI.Infraestructure
                     CorreoElectrónico = personaCrear.CorreoElectronico,
                     EnviarBoletin = true,
                     Estado = 0,
+                    Saludo = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(personaCrear.Nombre.ToLower()),
                     Usuario = clienteCrear.Usuario
                 };
                 cliente.PersonasContactoClientes.Add(persona);
