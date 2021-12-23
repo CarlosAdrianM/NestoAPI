@@ -61,6 +61,9 @@ namespace NestoAPI.Models
             this.CabFacturaVtas1 = new HashSet<CabFacturaVta>();
             this.AgenciasTransportes = new HashSet<AgenciaTransporte>();
             this.RegaloImportePedidoes = new HashSet<RegaloImportePedido>();
+            this.CabPedidoCmps = new HashSet<CabPedidoCmp>();
+            this.CabPedidoCmps1 = new HashSet<CabPedidoCmp>();
+            this.OfertasProveedores = new HashSet<OfertaProveedor>();
         }
     
         public string Número { get; set; }
@@ -211,5 +214,8 @@ namespace NestoAPI.Models
         public virtual ICollection<CabFacturaVta> CabFacturaVtas1 { get; set; }
         public virtual ICollection<AgenciaTransporte> AgenciasTransportes { get; set; }
         public virtual ICollection<RegaloImportePedido> RegaloImportePedidoes { get; set; }
+        public virtual ICollection<CabPedidoCmp> CabPedidoCmps { get; set; }
+        public virtual ICollection<CabPedidoCmp> CabPedidoCmps1 { get; set; }
+        public virtual ICollection<OfertaProveedor> OfertasProveedores { get; set; }
     }
 }

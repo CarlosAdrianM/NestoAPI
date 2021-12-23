@@ -824,7 +824,7 @@ namespace NestoAPI.Infraestructure
                     CorreoElectrónico = personaCrear.CorreoElectronico,
                     EnviarBoletin = true,
                     Estado = 0,
-                    Saludo = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(personaCrear.Nombre.ToLower()),
+                    Saludo = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(personaCrear.Nombre?.ToLower()),
                     Usuario = clienteCrear.Usuario
                 };
                 cliente.PersonasContactoClientes.Add(persona);

@@ -232,6 +232,18 @@
         <AssociationConnector Association="NVModel.FK_RegaloImportePedido_Productos" />
         <EntityTypeShape EntityType="NVModel.ClasificacionMasVendido" Width="1.5" PointX="7.25" PointY="64.125" />
         <AssociationConnector Association="NVModel.FK_ClasificacionMasVendidos_Productos" />
+        <EntityTypeShape EntityType="NVModel.CabPedidoCmp" Width="1.5" PointX="20.875" PointY="33.5" />
+        <AssociationConnector Association="NVModel.FK_CabPedidoCmp_Empresas" />
+        <AssociationConnector Association="NVModel.FK_CabPedidoCmp_Empresas1" />
+        <AssociationConnector Association="NVModel.FK_CabPedidoCmp_FormasPago" />
+        <AssociationConnector Association="NVModel.FK_CabPedidoCmp_PlazosPago" />
+        <AssociationConnector Association="NVModel.FK_CabPedidoCmp_Proveedores" />
+        <AssociationConnector Association="NVModel.FK_LinPedidoCmp_CabPedidoCmp" />
+        <EntityTypeShape EntityType="NVModel.ControlStock" Width="1.5" PointX="6.75" PointY="11.75" />
+        <EntityTypeShape EntityType="NVModel.OfertaProveedor" Width="1.5" PointX="10.75" PointY="30.75" />
+        <AssociationConnector Association="NVModel.FK_OfertasProveedores_Empresas" />
+        <AssociationConnector Association="NVModel.FK_OfertasProveedores_Productos" />
+        <AssociationConnector Association="NVModel.FK_OfertasProveedores_Proveedores" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

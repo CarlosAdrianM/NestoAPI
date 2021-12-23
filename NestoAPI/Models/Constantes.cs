@@ -161,6 +161,14 @@
             public const string IMPAGADO = "4";
         }
 
+        public static class TiposLineaCompra
+        {
+            public const string TEXTO = "0";
+            public const string PRODUCTO = "1";
+            public const string CUENTA_CONTABLE = "2";
+            public const string INMOVILIZADO = "3";
+        }
+
         public static class TiposLineaVenta
         {
             public const int TEXTO = 0;

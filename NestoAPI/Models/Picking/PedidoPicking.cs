@@ -76,7 +76,7 @@ namespace NestoAPI.Models.Picking
                 }
                 ExtractosPendientes = rellenadorPrepagos.ExtractosPendientes(Id);
                 var importePendiente = -ExtractosPendientes.Where(e => e.estado == null || e.estado == "NRM").Sum(e => e.importePendiente);
-                bool estaPagado = importePendiente >= total;
+                bool estaPagado = importePendiente >= total - DESCUADRE_PERMITIDO;
                 if (estaPagado)
                 {
                     return true;

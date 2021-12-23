@@ -26,6 +26,8 @@ namespace NestoAPI.Models
             this.PedidosEspeciales = new HashSet<PedidosEspeciale>();
             this.LinPedidoCmps = new HashSet<LinPedidoCmp>();
             this.PreExtrProductoes = new HashSet<PreExtrProducto>();
+            this.CabPedidoCmps = new HashSet<CabPedidoCmp>();
+            this.OfertasProveedores = new HashSet<OfertaProveedor>();
         }
     
         public string Empresa { get; set; }
@@ -68,5 +70,7 @@ namespace NestoAPI.Models
         public virtual ICollection<LinPedidoCmp> LinPedidoCmps { get; set; }
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
         public virtual CodigoPostal CódigosPostales { get; set; }
+        public virtual ICollection<CabPedidoCmp> CabPedidoCmps { get; set; }
+        public virtual ICollection<OfertaProveedor> OfertasProveedores { get; set; }
     }
 }
