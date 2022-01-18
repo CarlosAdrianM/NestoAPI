@@ -233,7 +233,7 @@ namespace NestoAPI.Controllers
                 {
                     return new ServicioComisionesAnualesPeluqueria2020();
                 }
-                else if (anno == 2021)
+                else if (anno == 2021 || anno == 2022)
                 {
                     return new ServicioComisionesAnualesPeluqueria2021();
                 }
@@ -254,6 +254,10 @@ namespace NestoAPI.Controllers
             else if (anno == 2021)
             {
                 return new ServicioComisionesAnualesEstetica2021();
+            }
+            else if (anno == 2022)
+            {
+                return new ServicioComisionesAnualesEstetica2022();
             }
 
             throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");

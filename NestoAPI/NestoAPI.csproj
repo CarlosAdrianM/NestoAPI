@@ -438,6 +438,7 @@
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaEvaVisnu.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2022.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2021.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2020.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2019.cs" />
@@ -466,6 +467,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\ControlStock.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\DatoConfirming.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Depositos\DatosCorreoDeposito.cs" />

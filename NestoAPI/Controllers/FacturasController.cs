@@ -84,8 +84,16 @@ namespace NestoAPI.Controllers
             GestorFacturas gestor = new GestorFacturas();
             DateTime hoy = DateTime.Today;
             int quarterNumber = (hoy.Month - 1) / 3 + 1;
-            quarterNumber--;
-            DateTime firstDayOfQuarter = new DateTime(hoy.Year, (quarterNumber - 1) * 3 + 1, 1);
+            int anno = hoy.Year;
+            if (quarterNumber != 1)
+            {
+                quarterNumber--;
+            } else
+            {
+                quarterNumber = 4;
+                anno--;
+            }
+            DateTime firstDayOfQuarter = new DateTime(anno, (quarterNumber - 1) * 3 + 1, 1);
             DateTime lastDayOfQuarter = firstDayOfQuarter.AddMonths(3).AddDays(-1);
 
             List<ClienteCorreoFactura> respuesta = gestor.EnviarFacturasTrimestrePorCorreo(firstDayOfQuarter, lastDayOfQuarter);

@@ -591,26 +591,32 @@ namespace NestoAPI.Controllers
             }
 
             // Carlos 27/08/20: comprobamos solo un prepago. Para comprobar todos hay que poner Id en PrepagoDTO
+            // Carlos 12/01/22: usamos el concepto como Id
             if (pedido.Prepagos.Where(p => p.Factura == null).Any())
             {
-                PrepagoDTO prepagoPedido = pedido.Prepagos.Where(p => p.Factura == null).First();
-                if (cabPedidoVta.Prepagos.Where(p => p.Factura == null).Any())
+                foreach (var prepagoPedido in pedido.Prepagos.Where(p => p.Factura == null))
                 {
-                    Prepago prepagoCabecera = cabPedidoVta.Prepagos.Where(p => p.Factura == null).First();
-                    prepagoCabecera.Importe = prepagoPedido.Importe;
-                    prepagoCabecera.CuentaContable = prepagoPedido.CuentaContable;
-                    prepagoCabecera.ConceptoAdicional = prepagoPedido.ConceptoAdicional;
-                } else
-                {
-                    cabPedidoVta.Prepagos.Add(new Prepago
+                    if (cabPedidoVta.Prepagos.Where(p => p.Factura == null && p.ConceptoAdicional == prepagoPedido.ConceptoAdicional).Any())
                     {
-                        Importe = prepagoPedido.Importe,
-                        CuentaContable = prepagoPedido.CuentaContable,
-                        ConceptoAdicional = prepagoPedido.ConceptoAdicional,
-                        Usuario = pedido.usuario
-                    });
+                        Prepago prepagoCabecera = cabPedidoVta.Prepagos.Where(p => p.Factura == null && p.ConceptoAdicional == prepagoPedido.ConceptoAdicional).Single();
+                        prepagoCabecera.Importe = prepagoPedido.Importe;
+                        prepagoCabecera.CuentaContable = prepagoPedido.CuentaContable;
+                        prepagoCabecera.ConceptoAdicional = prepagoPedido.ConceptoAdicional;
+                    }
+                    else
+                    {
+                        cabPedidoVta.Prepagos.Add(new Prepago
+                        {
+                            Importe = prepagoPedido.Importe,
+                            CuentaContable = prepagoPedido.CuentaContable,
+                            ConceptoAdicional = prepagoPedido.ConceptoAdicional,
+                            Usuario = pedido.usuario
+                        });
+                    }
+
                 }
-            } else
+            }
+            else
             {
                 if (cabPedidoVta.Prepagos.Where(p => p.Factura == null).Any())
                 {

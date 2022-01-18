@@ -28,6 +28,7 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             this.servicio = servicio;
         }
+
         public ByteArrayContent FacturaEnPDF(string empresa, string numeroFactura)
         {
             Factura factura = LeerFactura(empresa, numeroFactura);
@@ -37,6 +38,7 @@ namespace NestoAPI.Infraestructure.Facturas
             };
             return FacturasEnPDF(facturas);
         }
+
         public ByteArrayContent FacturasEnPDF(List<Factura> facturas)
         {
             Warning[] warnings;
@@ -65,6 +67,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return new ByteArrayContent(bytes);
         }        
+
         public Factura LeerFactura(string empresa, string numeroFactura)
         {
 
@@ -396,7 +399,6 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return factura;
         }
-
         public static List<VencimientoFactura> CalcularVencimientos(decimal importe, PlazoPago plazoPago, string formaPago, string ccc, DateTime primerVencimiento)
         {
             if (plazoPago == null || plazoPago.Nº_Plazos < 1)
@@ -647,7 +649,15 @@ namespace NestoAPI.Infraestructure.Facturas
                         mail.Subject = String.Format("[ERROR: {0}] Facturas del trimestre", cliente.Correo);
                     }
 
-                    servicio.EnviarCorreoSMTP(mail);
+                    bool exito = servicio.EnviarCorreoSMTP(mail);
+                    if (!exito)
+                    {
+                        mail.Subject = "[ERROR] " + mail.Subject;
+                        mail.To.Clear();
+                        mail.To.Add(Constantes.Correos.CORREO_ADMON);
+                        System.Threading.Thread.Sleep(1000);
+                        servicio.EnviarCorreoSMTP(mail);
+                    }
                     mail.Dispose();
                 }
             }

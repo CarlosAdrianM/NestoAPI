@@ -7,19 +7,31 @@ using System.Data.SqlClient;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Cors;
 using System.Web.Http.Description;
 using Nesto.Modulos.PedidoCompra.Models;
+using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models;
+using NestoAPI.Models.Facturas;
 using NestoAPI.Models.PedidosCompra;
 
 namespace NestoAPI.Controllers
 {
     public class PedidosCompraController : ApiController
     {
+        private readonly IServicioFacturas servicio;
+        private readonly IGestorFacturas gestor;
+
         private NVEntities db = new NVEntities();
+
+        public PedidosCompraController()
+        {
+            servicio = new ServicioFacturas();
+            gestor = new GestorFacturas(servicio);
+        }
         /*
         // GET: api/PedidosCompra
         public IQueryable<CabFacturaCmp> GetCabFacturasCmp()
@@ -81,8 +93,8 @@ namespace NestoAPI.Controllers
                     DescuentoProveedor = l.DescuentoProveedor,
                     CodigoIvaProducto = l.IVA,
                     PorcentajeIva = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeIvaProducto : 0,
-                    PrecioTarifa = (decimal)l.PrecioTarifa,
-                    EstadoProducto = (int)l.EstadoProducto
+                    PrecioTarifa = (decimal)(l.PrecioTarifa == null ? 0 : l.PrecioTarifa),
+                    EstadoProducto = (int)(l.EstadoProducto == null ? 0 : l.EstadoProducto)
                 }).ToListAsync().ConfigureAwait(false);
 
                 pedidoCompra.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
@@ -234,7 +246,7 @@ namespace NestoAPI.Controllers
                 var productos = db.Productos.Include(p => p.ProveedoresProductoes)
                 .Where(p =>
                     p.Empresa == pedido.Empresa &&
-                    p.Estado >= Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO &&
+                    p.Estado == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO &&
                     p.ProveedoresProductoes.Any(v => v.Nº_Proveedor == pedido.Proveedor)
                 );
                 IEnumerable<LineaPedidoCompraDTO> productosInsertar = DatosProductosProcesados(productos, pedido.Empresa, pedido.Proveedor, pedido.Lineas.Any() ? pedido.Lineas.FirstOrDefault().FechaRecepcion : pedido.Fecha);
@@ -289,6 +301,7 @@ namespace NestoAPI.Controllers
                 (x, prod) =>
                 new
                 {
+                    EsNulo = x.ctrl.FirstOrDefault() == null,
                     StockMaximo = x.ctrl.FirstOrDefault() != null ? x.ctrl.FirstOrDefault().StockMáximo : 0,
                     Stock = stock.Where(p => p.Número == x.prod.Número).Select(e => (int)e.Cantidad).DefaultIfEmpty().Sum(),
                     PendienteEntregar = pendientesEntregar.Where(p => p.Producto == x.prod.Número).Select(p => (int)p.Cantidad).DefaultIfEmpty().Sum(),
@@ -315,6 +328,7 @@ namespace NestoAPI.Controllers
                         CantidadRegalo = d.CantidadRegalo
                     })
                 })
+                //.Where(l => !l.EsNulo)
                 .Select(l => new
                 {
                     Cantidad = l.StockMaximo - l.Stock + l.PendienteEntregar - l.PendienteRecibir > 0 ? l.StockMaximo - l.Stock + l.PendienteEntregar - l.PendienteRecibir : 0,
@@ -364,6 +378,15 @@ namespace NestoAPI.Controllers
                     EstadoProducto = x.EstadoProducto
                 }
             );
+            /*
+            var p2 = productos.ToList();
+            var c1 = controles.ToList();
+            var d1 = descuentosProducto.ToList();
+            var o1 = ofertas.ToList();
+            var p1 = prequery.ToList();
+            var q1 = query.ToList();
+            var i1 = productosInsertar.ToList();
+            */
             return productosInsertar;
         }
 
@@ -418,8 +441,8 @@ namespace NestoAPI.Controllers
             ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
             if (pedido.Id == 0)
             {
-                contador.Pedidos++;
-                pedido.Id = contador.Pedidos;
+                contador.PedidosCmp++;
+                pedido.Id = contador.PedidosCmp;
             }
 
             CabPedidoCmp cabecera = pedido.ToCabPedidoCmp();
@@ -449,7 +472,7 @@ namespace NestoAPI.Controllers
             return Ok(cabecera.Número);
             //return CreatedAtRoute("DefaultApi", new { empresa = cabFacturaCmp.Empresa, id = cabFacturaCmp.Número }, cabFacturaCmp);
         }
-        
+
         /*
         // DELETE: api/PedidosCompra/5
         [ResponseType(typeof(CabFacturaCmp))]

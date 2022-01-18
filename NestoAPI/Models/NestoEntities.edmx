@@ -388,6 +388,27 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="DatosConfirming">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Numero" />
+            <PropertyRef Name="Contacto" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Numero" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="TipoDocumento" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="FormaPago" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="BarradoCheque" Type="bit" Nullable="false" />
+          <Property Name="TipoEnvio" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="IdiomaProveedor" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="CodigoPaisDomicilio" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="CodigoPaisDestino" Type="char" MaxLength="3" />
+          <Property Name="CodigoSwift" Type="char" MaxLength="3" />
+          <Property Name="CodigoIBAN" Type="char" MaxLength="3" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="DescuentosCliente">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -1972,6 +1993,22 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <Dependent Role="CondPagoClientes">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="PlazosPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_DatosConfirming_Proveedores">
+          <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="1" />
+          <End Role="DatosConfirming" Type="Self.DatosConfirming" Multiplicity="0..1" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DatosConfirming">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Numero" />
+              <PropertyRef Name="Contacto" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -3915,6 +3952,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="CondPagoClientes" EntityType="Self.CondPagoClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ContadoresGlobales" EntityType="Self.ContadoresGlobales" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ControlesStock" EntityType="Self.ControlesStock" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="DatosConfirming" EntityType="Self.DatosConfirming" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DescuentosCliente" EntityType="Self.DescuentosCliente" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DescuentosProducto" EntityType="Self.DescuentosProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DíasPagoClientes" EntityType="Self.DíasPagoClientes" Schema="dbo" store:Type="Tables" />
@@ -4148,6 +4186,10 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_CondPagoClientes_PlazosPago" Association="Self.FK_CondPagoClientes_PlazosPago">
             <End Role="PlazosPago" EntitySet="PlazosPago" />
             <End Role="CondPagoClientes" EntitySet="CondPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_DatosConfirming_Proveedores" Association="Self.FK_DatosConfirming_Proveedores">
+            <End Role="Proveedores" EntitySet="Proveedores" />
+            <End Role="DatosConfirming" EntitySet="DatosConfirming" />
           </AssociationSet>
           <AssociationSet Name="FK_DescuentosCliente_Clientes" Association="Self.FK_DescuentosCliente_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -5521,6 +5563,11 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_OfertasProveedores_Proveedores" Association="NVModel.FK_OfertasProveedores_Proveedores">
             <End Role="Proveedor" EntitySet="Proveedores" />
             <End Role="OfertasProveedore" EntitySet="OfertasProveedores" />
+          </AssociationSet>
+          <EntitySet Name="DatosConfirmings" EntityType="NVModel.DatoConfirming" />
+          <AssociationSet Name="FK_DatosConfirming_Proveedores" Association="NVModel.FK_DatosConfirming_Proveedores">
+            <End Role="Proveedor" EntitySet="Proveedores" />
+            <End Role="DatosConfirming" EntitySet="DatosConfirmings" />
           </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
@@ -6963,6 +7010,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_Proveedores_CódigosPostales" FromRole="Proveedor" ToRole="CódigosPostales" />
           <NavigationProperty Name="CabPedidoCmps" Relationship="NVModel.FK_CabPedidoCmp_Proveedores" FromRole="Proveedor" ToRole="CabPedidoCmp" />
           <NavigationProperty Name="OfertasProveedores" Relationship="NVModel.FK_OfertasProveedores_Proveedores" FromRole="Proveedor" ToRole="OfertasProveedore" />
+          <NavigationProperty Name="DatosConfirming" Relationship="NVModel.FK_DatosConfirming_Proveedores" FromRole="Proveedor" ToRole="DatosConfirming" />
         </EntityType>
         <Association Name="FK_Proveedores_CCCProveedores">
           <End Type="NVModel.CCCProveedor" Role="CCCProveedor" Multiplicity="0..1" />
@@ -9724,6 +9772,44 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="DatoConfirming">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Numero" />
+            <PropertyRef Name="Contacto" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Numero" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="TipoDocumento" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaPago" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="BarradoCheque" Type="Boolean" Nullable="false" />
+          <Property Name="TipoEnvio" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="IdiomaProveedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CodigoPaisDomicilio" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CodigoPaisDestino" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CodigoSwift" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CodigoIBAN" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_DatosConfirming_Proveedores" FromRole="DatosConfirming" ToRole="Proveedor" />
+        </EntityType>
+        <Association Name="FK_DatosConfirming_Proveedores">
+          <End Type="NVModel.Proveedor" Role="Proveedor" Multiplicity="1" />
+          <End Type="NVModel.DatoConfirming" Role="DatosConfirming" Multiplicity="0..1" />
+          <ReferentialConstraint>
+            <Principal Role="Proveedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="DatosConfirming">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Numero" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -11173,6 +11259,26 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Contacto" ColumnName="Contacto" />
                 <ScalarProperty Name="NºProveedor" ColumnName="NºProveedor" />
                 <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="DatosConfirmings">
+            <EntityTypeMapping TypeName="NVModel.DatoConfirming">
+              <MappingFragment StoreEntitySet="DatosConfirming">
+                <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="CodigoIBAN" ColumnName="CodigoIBAN" />
+                <ScalarProperty Name="CodigoSwift" ColumnName="CodigoSwift" />
+                <ScalarProperty Name="CodigoPaisDestino" ColumnName="CodigoPaisDestino" />
+                <ScalarProperty Name="CodigoPaisDomicilio" ColumnName="CodigoPaisDomicilio" />
+                <ScalarProperty Name="IdiomaProveedor" ColumnName="IdiomaProveedor" />
+                <ScalarProperty Name="TipoEnvio" ColumnName="TipoEnvio" />
+                <ScalarProperty Name="BarradoCheque" ColumnName="BarradoCheque" />
+                <ScalarProperty Name="FormaPago" ColumnName="FormaPago" />
+                <ScalarProperty Name="TipoDocumento" ColumnName="TipoDocumento" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Numero" ColumnName="Numero" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>

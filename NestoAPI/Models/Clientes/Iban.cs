@@ -121,6 +121,14 @@ namespace NestoAPI.Models.Clientes
             }
             return ccc.Pais + ccc.DC_IBAN + ccc.Entidad + ccc.Oficina + ccc.DC + ccc.Nº_Cuenta;
         }
+        public static string ComponerIbanProveedor(CCCProveedor ccc, DatoConfirming dato)
+        {
+            if (ccc == null)
+            {
+                return string.Empty;
+            }
+            return dato.CodigoPaisDomicilio + dato.CodigoIBAN + ccc.Entidad + ccc.Oficina + ccc.DC + ccc.Nº_Cuenta;
+        }
         public override string ToString()
         {
             return Formateado;

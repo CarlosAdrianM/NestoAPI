@@ -72,5 +72,6 @@ namespace NestoAPI.Models
         public virtual CodigoPostal CódigosPostales { get; set; }
         public virtual ICollection<CabPedidoCmp> CabPedidoCmps { get; set; }
         public virtual ICollection<OfertaProveedor> OfertasProveedores { get; set; }
+        public virtual DatoConfirming DatosConfirming { get; set; }
     }
 }

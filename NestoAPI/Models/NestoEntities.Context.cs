@@ -92,6 +92,7 @@ namespace NestoAPI.Models
         public virtual DbSet<CabPedidoCmp> CabPedidosCmp { get; set; }
         public virtual DbSet<ControlStock> ControlesStocks { get; set; }
         public virtual DbSet<OfertaProveedor> OfertasProveedores { get; set; }
+        public virtual DbSet<DatoConfirming> DatosConfirmings { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {
