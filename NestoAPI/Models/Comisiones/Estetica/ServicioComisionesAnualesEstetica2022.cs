@@ -357,13 +357,11 @@ namespace NestoAPI.Models.Comisiones
 
 
             // Aquí usamos cadenas mágicas porque son los que YA han firmado las condiciones
-            //if (vendedor == "JE")
-            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "RFG" || vendedor == "JGP" || vendedor == "MRM")
+            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "RFG" || vendedor == "JGP" || vendedor == "MRM")
             {
                 return tramosCalle;
             }
-            //else if (vendedor == "LA")
-            else if (vendedor == "AGR" || vendedor == "MPP" || vendedor == "PA")
+            else if (vendedor == "AGR" || vendedor == "LA" || vendedor == "MPP" || vendedor == "PA")
             {
                 return tramosTelefono;
             }

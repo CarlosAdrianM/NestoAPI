@@ -72,7 +72,7 @@ namespace NestoAPI.Controllers
         [HttpGet]
         public IQueryable<LineaPlantillaVenta> GetBuscarProducto(string empresa, string filtroProducto)
         {
-            if (filtroProducto.Length<3)
+            if (filtroProducto == null || filtroProducto.Length<3)
             {
                 throw new Exception("El filtro de productos debe tener al menos 3 caracteres de largo");
             }

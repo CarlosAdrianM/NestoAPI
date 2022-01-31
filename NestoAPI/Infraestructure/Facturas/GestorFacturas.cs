@@ -548,7 +548,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     }
                     
                     mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
-                    
+                    mail.Bcc.Add(new MailAddress("monicaprado@nuevavision.es"));
+
                     mail.Body = (await GenerarCorreoHTML(fra)).ToString();
                     mail.IsBodyHtml = true;
                 }
