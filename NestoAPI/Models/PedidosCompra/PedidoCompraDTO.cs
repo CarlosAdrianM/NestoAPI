@@ -27,6 +27,8 @@ namespace NestoAPI.Models.PedidosCompra
         public string Nombre { get; set; }
         public string Direccion { get; set; }
         public string PeriodoFacturacion { get; set; }
+        public string PathPedido { get; set; }
+        public string CorreoRecepcionPedidos { get; set; }
         public decimal BaseImponible { get => Math.Round(Lineas.Sum(l => l.BaseImponible), 2, MidpointRounding.AwayFromZero); }
         public decimal Total { get => Math.Round(Lineas.Sum(l => l.Total), 2, MidpointRounding.AwayFromZero); }
         public string Usuario { get; set; }
@@ -48,6 +50,7 @@ namespace NestoAPI.Models.PedidosCompra
                 PrimerVencimiento = PrimerVencimiento,
                 IVA = CodigoIvaProveedor,
                 PeriodoFacturación = PeriodoFacturacion,
+                DíasEnServir = (byte)DiasEnServir,
                 Usuario = Usuario,
                 Fecha_Modificación = DateTime.Now
             };

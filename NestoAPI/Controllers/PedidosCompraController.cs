@@ -99,6 +99,13 @@ namespace NestoAPI.Controllers
 
                 pedidoCompra.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
 
+                pedidoCompra.CorreoRecepcionPedidos = (await db.PersonasContactoProveedores.FirstOrDefaultAsync(
+                    p => p.Empresa == pedidoCompra.Empresa && 
+                    p.NºProveedor == pedidoCompra.Proveedor && 
+                    p.Contacto == pedidoCompra.Contacto && 
+                    p.Cargo == Constantes.Proveedores.PersonasContacto.RECEPCION_PEDIDOS
+                ).ConfigureAwait(false)).CorreoElectrónico?.Trim();
+
                 return Ok(pedidoCompra);
             } catch (Exception ex)
             {
@@ -390,22 +397,29 @@ namespace NestoAPI.Controllers
             return productosInsertar;
         }
 
-        /*
+        
         // PUT: api/PedidosCompra/5
         [ResponseType(typeof(void))]
-        public async Task<IHttpActionResult> PutCabFacturaCmp(string id, CabFacturaCmp cabFacturaCmp)
+        public async Task<IHttpActionResult> PutPedidoCompra(PedidoCompraDTO pedido)
         {
-            if (!ModelState.IsValid)
+            if (!ModelState.IsValid || pedido == null)
             {
                 return BadRequest(ModelState);
             }
 
-            if (id != cabFacturaCmp.Empresa)
+            CabPedidoCmp cabPedidoCmp = db.CabPedidosCmp.Include(c => c.LinPedidoCmps).Single(c => c.Empresa == pedido.Empresa && c.Número == pedido.Id);
+
+            if (string.IsNullOrEmpty(cabPedidoCmp.PathPedido) && !string.IsNullOrEmpty(pedido.PathPedido))
             {
-                return BadRequest();
+                cabPedidoCmp.PathPedido = pedido.PathPedido;
+                foreach (var linea in cabPedidoCmp.LinPedidoCmps)
+                {
+                    linea.Enviado = true;
+                    linea.FechaRecepción = DateTime.Today.AddDays(cabPedidoCmp.DíasEnServir);
+                }
             }
 
-            db.Entry(cabFacturaCmp).State = EntityState.Modified;
+            db.Entry(cabPedidoCmp).State = EntityState.Modified;
 
             try
             {
@@ -413,7 +427,7 @@ namespace NestoAPI.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!CabFacturaCmpExists(id))
+                if (!CabPedidoCmpExists(pedido.Empresa, pedido.Id))
                 {
                     return NotFound();
                 }
@@ -425,7 +439,7 @@ namespace NestoAPI.Controllers
 
             return StatusCode(HttpStatusCode.NoContent);
         }
-        */
+        
 
 
         // POST: api/PedidosCompra

@@ -153,6 +153,7 @@
             public static class PersonasContacto
             {
                 public const int INFORMACION_PRODUCTO_DEPOSITO = 27;
+                public const int RECEPCION_PEDIDOS = 3;
             }
         }
 
