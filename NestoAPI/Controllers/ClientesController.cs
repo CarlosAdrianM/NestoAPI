@@ -12,6 +12,7 @@ using System.Web.Http.Description;
 using NestoAPI.Models;
 using NestoAPI.Infraestructure;
 using NestoAPI.Models.Clientes;
+using System.Data.Entity.Validation;
 
 namespace NestoAPI.Controllers
 {
@@ -521,7 +522,19 @@ namespace NestoAPI.Controllers
                 {
                     throw ex;
                 }
-            } catch (Exception ex)
+            }
+            catch (DbEntityValidationException ex)
+            {
+                if (ex.EntityValidationErrors.Any())
+                {
+                    throw new Exception(ex.EntityValidationErrors.First().ValidationErrors.First().ErrorMessage);
+                }
+                else
+                {
+                    throw ex;
+                }
+            }
+            catch (Exception ex)
             {
                 Console.Write(ex.ToString());
             }

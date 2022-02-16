@@ -104,7 +104,7 @@ namespace NestoAPI.Controllers
                     p.NºProveedor == pedidoCompra.Proveedor && 
                     p.Contacto == pedidoCompra.Contacto && 
                     p.Cargo == Constantes.Proveedores.PersonasContacto.RECEPCION_PEDIDOS
-                ).ConfigureAwait(false)).CorreoElectrónico?.Trim();
+                ).ConfigureAwait(false))?.CorreoElectrónico?.Trim();
 
                 return Ok(pedidoCompra);
             } catch (Exception ex)
@@ -136,7 +136,8 @@ namespace NestoAPI.Controllers
                     TieneVistoBueno = r.LinPedidoCmps.Where(l => l.VistoBueno).Any(),
                     BaseImponible = r.LinPedidoCmps.Sum(l => l.BaseImponible),
                     Total = r.LinPedidoCmps.Sum(l => l.Total)
-                });
+                })
+                .OrderByDescending(p => p.Pedido);
 
             return Ok(await pedidos.ToListAsync().ConfigureAwait(false));
         }
