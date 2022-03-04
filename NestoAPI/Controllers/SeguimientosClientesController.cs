@@ -251,7 +251,7 @@ namespace NestoAPI.Controllers
 
             DateTime fechaDesde = new DateTime(seguimientoClienteDTO.Fecha.Year, seguimientoClienteDTO.Fecha.Month, seguimientoClienteDTO.Fecha.Day);
             DateTime fechaHasta = fechaDesde.AddDays(1);
-            if (db.SeguimientosClientes.Where(s => s.Fecha >= fechaDesde && 
+            if (seguimientoClienteDTO.Estado != SeguimientoClienteDTO.EstadoSeguimientoDTO.Gestion_Administrativa && db.SeguimientosClientes.Where(s => s.Fecha >= fechaDesde && 
                 s.Fecha < fechaHasta && s.Número == seguimientoClienteDTO.Cliente &&
                 s.Contacto == seguimientoClienteDTO.Contacto &&
                 s.Usuario.ToLower() == seguimientoClienteDTO.Usuario.ToLower()).Any())
@@ -280,6 +280,7 @@ namespace NestoAPI.Controllers
                 Pedido = seguimientoClienteDTO.Pedido,
                 PrimeraVisita = seguimientoClienteDTO.PrimeraVisita,
                 Tipo = seguimientoClienteDTO.Tipo,
+                NumOrdenExtracto = seguimientoClienteDTO.NumOrdenExtracto,
                 Usuario = seguimientoClienteDTO.Usuario
             };
 
@@ -329,6 +330,10 @@ namespace NestoAPI.Controllers
                 {
                     throw;
                 }
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("No se ha podido guardar el seguimiento", ex);
             }
 
             return CreatedAtRoute("DefaultApi", new { id = seguimientoCliente.NºOrden }, seguimientoCliente);

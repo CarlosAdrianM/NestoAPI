@@ -106,7 +106,7 @@ namespace NestoAPI.Controllers
             foreach (ResumenPedidoVentaDTO cab in listaPedidos)
             {
                 DateTime fechaEntregaFutura = gestor.FechaEntregaAjustada(DateTime.Now, cab.ruta);
-                cab.tieneFechasFuturas = db.LinPedidoVtas.FirstOrDefault(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura) != null;
+                cab.tieneFechasFuturas = db.LinPedidoVtas.Any(c => c.Empresa == cab.empresa && c.Número == cab.numero && c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && c.Fecha_Entrega > fechaEntregaFutura);
                 cab.ultimoSeguimiento = db.EnviosAgencias.Where(e => e.Pedido == cab.numero).OrderByDescending(e => e.Numero).FirstOrDefault()?.CodigoBarras;
             }
 
@@ -856,6 +856,12 @@ namespace NestoAPI.Controllers
                     }
                     throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
                 }
+            }
+            catch (Exception e)
+            {
+                string message = e.Message;
+                // faltaría recorrer el InnerException
+                throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 
             GestorPresupuestos gestor = new GestorPresupuestos(pedido);

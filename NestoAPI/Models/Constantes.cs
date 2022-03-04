@@ -91,6 +91,7 @@
             public static class Estados
             {
                 public const string DEUDA_VENCIDA = "DVD";
+                public const string RETENIDO = "RTN";
             }
         }
 

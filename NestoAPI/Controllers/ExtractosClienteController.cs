@@ -6,6 +6,8 @@ using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Mail;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -49,7 +51,8 @@ namespace NestoAPI.Controllers
                     vencimiento = extractoEncontrado.FechaVto ?? extractoEncontrado.Fecha,
                     ccc = extractoEncontrado.CCC,
                     ruta = extractoEncontrado.Ruta,
-                    estado = extractoEncontrado.Estado
+                    estado = extractoEncontrado.Estado,
+                    formaPago = extractoEncontrado.FormaPago
                 }).ToList();
             return extracto.AsQueryable();
         }
@@ -76,7 +79,8 @@ namespace NestoAPI.Controllers
                     vencimiento = extractoEncontrado.FechaVto,
                     ccc = extractoEncontrado.CCC.Trim(),
                     ruta = extractoEncontrado.Ruta.Trim(),
-                    estado = extractoEncontrado.Estado.Trim()
+                    estado = extractoEncontrado.Estado.Trim(),
+                    formaPago = extractoEncontrado.FormaPago.Trim()
                 });
             return extracto;
         }
@@ -168,88 +172,209 @@ namespace NestoAPI.Controllers
             return Ok(respuesta.ToList());
         }
 
-            /*
-            // PUT: api/ExtractosCliente/5
-            [ResponseType(typeof(void))]
-            public async Task<IHttpActionResult> PutExtractoCliente(string id, ExtractoCliente extractoCliente)
+            
+        // PUT: api/ExtractosCliente/5
+        [ResponseType(typeof(void))]
+        public async Task<IHttpActionResult> PutExtractoCliente(ExtractoClienteDTO extractoCliente)
+        {
+            if (!ModelState.IsValid)
             {
-                if (!ModelState.IsValid)
-                {
-                    return BadRequest(ModelState);
-                }
-
-                if (id != extractoCliente.Empresa)
-                {
-                    return BadRequest();
-                }
-
-                db.Entry(extractoCliente).State = EntityState.Modified;
-
-                try
-                {
-                    await db.SaveChangesAsync();
-                }
-                catch (DbUpdateConcurrencyException)
-                {
-                    if (!ExtractoClienteExists(id))
-                    {
-                        return NotFound();
-                    }
-                    else
-                    {
-                        throw;
-                    }
-                }
-
-                return StatusCode(HttpStatusCode.NoContent);
+                return BadRequest(ModelState);
             }
 
-            // POST: api/ExtractosCliente
-            [ResponseType(typeof(ExtractoCliente))]
-            public async Task<IHttpActionResult> PostExtractoCliente(ExtractoCliente extractoCliente)
+            if (extractoCliente == null)
             {
-                if (!ModelState.IsValid)
-                {
-                    return BadRequest(ModelState);
-                }
-
-                db.ExtractosCliente.Add(extractoCliente);
-
-                try
-                {
-                    await db.SaveChangesAsync();
-                }
-                catch (DbUpdateException)
-                {
-                    if (ExtractoClienteExists(extractoCliente.Empresa))
-                    {
-                        return Conflict();
-                    }
-                    else
-                    {
-                        throw;
-                    }
-                }
-
-                return CreatedAtRoute("DefaultApi", new { id = extractoCliente.Empresa }, extractoCliente);
+                return BadRequest();
             }
 
-            // DELETE: api/ExtractosCliente/5
-            [ResponseType(typeof(ExtractoCliente))]
-            public async Task<IHttpActionResult> DeleteExtractoCliente(string id)
+            ExtractoCliente extractoActual = db.ExtractosCliente.Single(e => e.Nº_Orden == extractoCliente.id);
+            bool enviarCorreoDelCambio = false;
+            var correo = new MailMessage();
+            bool hayCambios = false;
+
+            if (extractoActual.FechaVto != extractoCliente.vencimiento)
             {
-                ExtractoCliente extractoCliente = await db.ExtractosCliente.FindAsync(id);
-                if (extractoCliente == null)
+                hayCambios = true;
+                extractoActual.FechaVto = extractoCliente.vencimiento;
+            }
+
+            if (extractoActual.CCC != extractoCliente.ccc)
+            {
+                hayCambios = true;
+                extractoActual.CCC = string.IsNullOrWhiteSpace(extractoCliente.ccc) ? null : extractoCliente.ccc;
+            }
+
+            if (extractoActual.Estado != extractoCliente.estado)
+            {
+                hayCambios = true;
+                if (extractoActual.Estado?.ToUpper() == Constantes.ExtractosCliente.Estados.RETENIDO || extractoCliente.estado?.ToUpper() == Constantes.ExtractosCliente.Estados.RETENIDO)
+                {
+                    enviarCorreoDelCambio = true;
+                }
+                
+                try
+                {
+                    correo.From = new MailAddress(Constantes.Correos.CORREO_ADMON, "NUEVA VISIÓN (Administración)");
+                    var seguimientos = db.SeguimientosClientes.Where(s => s.NumOrdenExtracto == extractoActual.Nº_Orden);
+                    IQueryable<ParametroUsuario> correosPara = db.ParametrosUsuario.Where(p => p.Empresa == extractoActual.Empresa && seguimientos.Where(s => s.Usuario != extractoCliente.usuario).Select(s => s.Usuario.Substring(s.Usuario.IndexOf("\\") + 1).Trim()).Contains(p.Usuario) && p.Clave == "CorreoDefecto");
+                    foreach (var correoPara in correosPara.Select(c => c.Valor).Distinct())
+                    {
+                        correo.To.Add(correoPara);
+                    }
+                    correo.Subject = $"Cambio de estado retenido en extracto cliente (cliente {extractoActual.Número.Trim()})";
+                    correo.Bcc.Add("carlosadrian@nuevavision.es");
+                    correo.IsBodyHtml = true;
+                    correo.Body = GenerarCorreoCambioEstado(seguimientos, extractoActual, extractoCliente);
+                }
+                catch
+                {
+                    correo.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+                    correo.Subject = $"[ERROR {extractoActual.Número.Trim()}] Cambio de estado retenido en extracto cliente";
+                }
+                
+                extractoActual.Estado = string.IsNullOrWhiteSpace(extractoCliente.estado) ? null : extractoCliente.estado.ToUpper();
+            }
+
+            if (extractoActual.FormaPago != extractoCliente.formaPago)
+            {
+                hayCambios = true;
+                extractoActual.FormaPago = extractoCliente.formaPago.ToUpper();
+            }
+
+            if (!hayCambios)
+            {
+                throw new Exception("No hay ningún cambio que guardar");
+            }
+            //db.Entry(extractoCliente).State = EntityState.Modified;
+
+            try
+            {
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                if (enviarCorreoDelCambio)
+                {
+                    IServicioCorreoElectronico servicioCorreo = new ServicioCorreoElectronico();
+                    servicioCorreo.EnviarCorreoSMTP(correo);
+                }
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!ExtractoClienteExists(extractoCliente.id))
                 {
                     return NotFound();
                 }
-
-                db.ExtractosCliente.Remove(extractoCliente);
-                await db.SaveChangesAsync();
-
-                return Ok(extractoCliente);
+                else
+                {
+                    throw;
+                }
             }
-            */
+            catch (Exception ex)
+            {
+                throw new Exception("Se ha producido un error al actualizar el extracto del producto", ex);
+            }
+
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        private string GenerarCorreoCambioEstado(IQueryable<SeguimientoCliente> seguimientos, ExtractoCliente extractoAnterior, ExtractoClienteDTO extractoNuevo)
+        {
+            StringBuilder s = new StringBuilder();
+
+            s.AppendLine("<!DOCTYPE html>");
+            s.AppendLine("<html lang='es'>");
+            s.AppendLine("<head>");
+            s.AppendLine("<meta http-equiv='Content-Type' content='text/html; charset=utf-8' />");
+            s.AppendLine("<meta name='viewport' content='width=device-width'>");
+            s.AppendLine("<title>Cambio de estado</title>");
+            s.AppendLine("<style></style>");
+            s.AppendLine("</head>");
+
+            s.AppendLine("<body>");
+
+            //<!-- Header --> 
+            s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
+            s.AppendLine("<tr>");
+            s.AppendLine("<td width=\"50%\" align='left'><img src=\"http://www.productosdeesteticaypeluqueriaprofesional.com/logofra.jpg\"></td>");
+            s.AppendLine("</tr>");
+            s.AppendLine("</table>");
+
+            //<!-- Body --> 
+            s.AppendLine("<p>Se ha modificado un estado retenido.</p>");
+            s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
+            s.AppendLine("<tr>");
+            s.AppendLine("<td align='left' style='border: 1px solid black;color:#333;padding:3px'>Datos de los efectos</td>");
+            s.AppendLine("</tr>");
+            foreach (var seg in seguimientos)
+            {
+                s.AppendLine("<tr>");
+                s.AppendLine("<td style='border: 1px solid black;color:#333;padding:3px'>");
+                s.AppendLine("<ul>");
+                s.AppendLine("<li>Fecha: " + seg.Fecha_Modificación.ToString() + "</li>");
+                s.AppendLine($"<li>{seg.Comentarios}</li>");
+                s.AppendLine("</ul>");
+                s.AppendLine("</td>");
+                s.AppendLine("</tr>");
+            }
+            s.AppendLine("</table>");
+            
+
+            //<!-- Footer -->
+            s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
+            s.AppendLine("</table>");
+            //s.AppendLine("</div>");
+            s.AppendLine("</body>");
+
+
+            return s.ToString();
+        }
+
+        /*
+
+   // POST: api/ExtractosCliente
+   [ResponseType(typeof(ExtractoCliente))]
+   public async Task<IHttpActionResult> PostExtractoCliente(ExtractoCliente extractoCliente)
+   {
+       if (!ModelState.IsValid)
+       {
+           return BadRequest(ModelState);
+       }
+
+       db.ExtractosCliente.Add(extractoCliente);
+
+       try
+       {
+           await db.SaveChangesAsync();
+       }
+       catch (DbUpdateException)
+       {
+           if (ExtractoClienteExists(extractoCliente.Empresa))
+           {
+               return Conflict();
+           }
+           else
+           {
+               throw;
+           }
+       }
+
+       return CreatedAtRoute("DefaultApi", new { id = extractoCliente.Empresa }, extractoCliente);
+   }
+
+   // DELETE: api/ExtractosCliente/5
+   [ResponseType(typeof(ExtractoCliente))]
+   public async Task<IHttpActionResult> DeleteExtractoCliente(string id)
+   {
+       ExtractoCliente extractoCliente = await db.ExtractosCliente.FindAsync(id);
+       if (extractoCliente == null)
+       {
+           return NotFound();
+       }
+
+       db.ExtractosCliente.Remove(extractoCliente);
+       await db.SaveChangesAsync();
+
+       return Ok(extractoCliente);
+   }
+   */
 
         protected override void Dispose(bool disposing)
         {
@@ -262,7 +387,7 @@ namespace NestoAPI.Controllers
 
         private bool ExtractoClienteExists(int id)
         {
-            return db.ExtractosCliente.Count(e => e.Nº_Orden == id) > 0;
+            return db.ExtractosCliente.Any(e => e.Nº_Orden == id);
         }
     }
 }

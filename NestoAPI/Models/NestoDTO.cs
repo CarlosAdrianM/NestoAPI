@@ -103,6 +103,8 @@ namespace NestoAPI.Models
         public string ccc { get; set; }
         public string ruta { get; set; }
         public string estado { get; set; }
+        public string formaPago { get; set; }
+        public string usuario { get; set; }
     }
     public class FormaPagoDTO
     {
@@ -327,6 +329,7 @@ namespace NestoAPI.Models
         public TiposCentro TipoCentro { get; set; }
         public string Nombre { get; set; }
         public string Direccion { get; set; }
+        public int? NumOrdenExtracto { get; set; }
 
         public enum TiposCentro
         {
