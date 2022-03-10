@@ -104,6 +104,7 @@ namespace NestoAPI.Models.Picking
                 CodigoPostal = p.Cliente.CodPostal,
                 Ruta = p.Ruta,
                 PlazosPago = p.PlazosPago?.Trim(),
+                Usuario = p.Usuario?.Trim(),
                 Lineas = p.LinPedidoVtas.Where(l => l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && l.Empresa == p.Empresa && l.Número == p.Número && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && (l.Picking == null || l.Picking == 0))
                 .Select(l => new LineaPedidoPicking
                 {

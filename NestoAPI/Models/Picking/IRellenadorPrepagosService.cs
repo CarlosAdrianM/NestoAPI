@@ -6,5 +6,6 @@ namespace NestoAPI.Models.Picking
     {
         List<PrepagoDTO> Prepagos(int pedido);
         List<ExtractoClienteDTO> ExtractosPendientes(int pedido);
+        string CorreoUsuario(string usuario);
     }
 }

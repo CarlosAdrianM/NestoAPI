@@ -26,7 +26,11 @@ namespace NestoAPI.Models.Picking
             client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
             client.Host = "smtp.office365.com";
             mail.From = new MailAddress("nesto@nuevavision.es");
-            mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+            foreach (var correoUsuario in pedidosRetenidos.Select(p => p.CorreoUsuarioPedido).Distinct())
+            {
+                mail.To.Add(new MailAddress(correoUsuario));
+            }
+            mail.CC.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
             mail.Subject = "Pedidos retenidos por prepago inexistente";
             mail.Body = GenerarTablaHTML(pedidosRetenidos).ToString();
             mail.IsBodyHtml = true;
@@ -53,6 +57,7 @@ namespace NestoAPI.Models.Picking
             s.Append("<th>Pedido</th>");
             s.Append("<th>Total</th>");
             s.Append("<th>Fecha Entrega</th>");
+            s.Append("<th>Usuario</th>");
             s.AppendLine("</thead>");
             s.AppendLine("<tbody align = \"right\">");
             foreach (PedidoPicking pedido in pedidosRetenidos)
@@ -67,6 +72,7 @@ namespace NestoAPI.Models.Picking
                 {
                     s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Min(l => l.FechaEntrega).ToString("dd/MM/yyyy") + "</td>");
                 }
+                s.Append("<td>" + pedido.Usuario + "</td>");
                 s.AppendLine("</tr>");
             }
             s.AppendLine("</tr>");

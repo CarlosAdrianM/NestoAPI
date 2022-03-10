@@ -36,6 +36,7 @@ namespace NestoAPI.Models.Picking
         public string PlazosPago { get; set; }
         public bool Borrar { get; set; }
         public bool RetenidoPorPrepago { get; private set; }
+        public string Usuario { get; set; }
         public List<PrepagoDTO> Prepagos { get; set; }
         public List<ExtractoClienteDTO> ExtractosPendientes { get; set; }
         public decimal ImporteTotalConIVA
@@ -128,6 +129,10 @@ namespace NestoAPI.Models.Picking
 
             return false;
             
+        }
+        public string CorreoUsuarioPedido
+        {
+            get => rellenadorPrepagos.CorreoUsuario(Usuario);
         }
     }
 }
