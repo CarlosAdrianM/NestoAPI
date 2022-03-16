@@ -118,6 +118,7 @@ namespace NestoAPI.Models.PedidosCompra
                         Subgrupo = linea.Subgrupo,
                         PrecioTarifa = linea.PrecioTarifa,
                         EstadoProducto = (short)linea.EstadoProducto,
+                        VistoBueno = true,
                         Bruto = 0,
                         ImporteDto = 0,
                         BaseImponible = 0,

@@ -386,7 +386,7 @@ namespace NestoAPI.Controllers
                 }
             } catch (Exception ex)
             {
-                throw ex;
+                throw new Exception("No se ha podido actualizar el cliente", ex);
             }
 
             return StatusCode(HttpStatusCode.NoContent);

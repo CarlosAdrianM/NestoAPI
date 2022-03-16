@@ -580,7 +580,18 @@ namespace NestoAPI.Infraestructure.Facturas
                 catch
                 {
                     await Task.Delay(2000);
-                    client.Send(correo);
+                    try
+                    {
+                        client.Send(correo);
+                    }
+                    catch
+                    {
+                        correo.To.Clear();
+                        correo.To.Add(Constantes.Correos.CORREO_ADMON);
+                        correo.Subject = "[ERROR] " + correo.Subject;
+                        await Task.Delay(2000);
+                        client.Send(correo);
+                    }
                 }
             }
 
