@@ -176,6 +176,11 @@ namespace NestoAPI.Infraestructure.Facturas
                         }
                         else
                         {
+                            if (i > 0 && vencimientos[i].Importe < 0)
+                            {
+                                vencimientos[i - 1].Importe += vencimientos[i].Importe;
+                                vencimientos.RemoveAt(i);
+                            }
                             i++;
                         }
                     }
@@ -543,6 +548,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     } 
                     catch
                     {
+                        mail.From = new MailAddress(serieFactura.CorreoDesdeFactura.Address);
                         mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
                         mail.Subject = String.Format("[ERROR: {0}] Facturación nº ", fra.Correo);
                     }

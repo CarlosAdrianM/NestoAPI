@@ -85,7 +85,7 @@ namespace NestoAPI.Infraestructure
                 vendedorGrupoActual.Vendedor = vendedorGrupoNuevo.vendedor;
                 vendedorGrupoActual.Estado = vendedorGrupoNuevo.estado;
             }
-            else if (vendedorGrupoNuevo != null)
+            else if (vendedorGrupoNuevo != null && vendedorGrupoNuevo.vendedor != null)
             {
                 vendedorGrupoActual = new VendedorClienteGrupoProducto
                 {
