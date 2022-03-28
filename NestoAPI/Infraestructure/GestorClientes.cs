@@ -462,7 +462,8 @@ namespace NestoAPI.Infraestructure
                 {
                     Numero = numeroPersona,
                     Nombre = persona.Nombre?.Trim(),
-                    CorreoElectronico = persona.CorreoElectrónico?.Trim()
+                    CorreoElectronico = persona.CorreoElectrónico?.Trim(),
+                    FacturacionElectronica = persona.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
                 });
             }
 
