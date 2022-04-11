@@ -303,7 +303,7 @@ namespace NestoAPI.Controllers
             s.AppendLine("<tr>");
             s.AppendLine("<td align='left' style='border: 1px solid black;color:#333;padding:3px'>Datos de los efectos</td>");
             s.AppendLine("</tr>");
-            foreach (var seg in seguimientos)
+            foreach (var seg in seguimientos.OrderBy(e => e.NºOrden))
             {
                 s.AppendLine("<tr>");
                 s.AppendLine("<td style='border: 1px solid black;color:#333;padding:3px'>");

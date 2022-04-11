@@ -147,12 +147,13 @@ namespace NestoAPI.Controllers
                     formaPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).FormaPago,
                     plazosPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).PlazosPago.Trim(),
                     tieneCorreoElectronico = clienteEncontrado.PersonasContactoClientes.Any(p => !string.IsNullOrEmpty(p.CorreoElectrónico) && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO),
-                    tieneFacturacionElectronica = clienteEncontrado.PersonasContactoClientes.Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO)
+                    tieneFacturacionElectronica = clienteEncontrado.PersonasContactoClientes.Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO),
+                    nif = clienteEncontrado.CIF_NIF != null ? clienteEncontrado.CIF_NIF.Trim() : string.Empty,
                 });
 
             
 
-            return clientes;
+            return clientes.OrderBy(c => c.contacto);
         }
 
         [HttpGet]

@@ -485,41 +485,85 @@ namespace NestoAPI.Infraestructure
             List<Cliente> clientesModificados = new List<Cliente>();
 
             Cliente clienteDB = await servicio.BuscarCliente(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
-
-            var vendedoresTelefono = await servicio.VendedoresTelefonicos();
-            
-            int diaVendedor = servicio.Hoy().Minute % vendedoresTelefono.Count;
-            string nuevoVendedor = vendedoresTelefono.Contains(clienteDB.Vendedor) ? 
-                clienteDB.Vendedor :
-                vendedoresTelefono.ElementAt(diaVendedor);
-
+            string nuevoVendedor = String.Empty;
+            short nuevoEstado = Constantes.Clientes.Estados.VISITA_TELEFONICA;
             List<Cliente> contactos = await servicio.BuscarContactos(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
             List<string> vendedoresContacto = VendedoresContactosCliente(contactos);
-            if (nuevoVendedor == vendedoresTelefono.ElementAt(diaVendedor))
+
+            if (clienteDB.Estado != Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO)
             {
-                var vendedoresContactoTelefonicos = vendedoresContacto.Intersect(vendedoresTelefono);
-                if (vendedoresContactoTelefonicos.FirstOrDefault() != null)
+
+                var vendedoresTelefono = await servicio.VendedoresTelefonicos();
+
+                int diaVendedor = servicio.Hoy().Minute % vendedoresTelefono.Count;
+                nuevoVendedor = vendedoresTelefono.Contains(clienteDB.Vendedor) ?
+                    clienteDB.Vendedor :
+                    vendedoresTelefono.ElementAt(diaVendedor);
+                               
+                if (nuevoVendedor == vendedoresTelefono.ElementAt(diaVendedor))
                 {
-                    nuevoVendedor = vendedoresContactoTelefonicos.First();
+                    var vendedoresContactoTelefonicos = vendedoresContacto.Intersect(vendedoresTelefono);
+                    if (vendedoresContactoTelefonicos.FirstOrDefault() != null)
+                    {
+                        nuevoVendedor = vendedoresContactoTelefonicos.First();
+                    }
                 }
             }
-            
             string vendedorPeluqueria = string.Empty;
+            short estadoPeluqueria = Constantes.Clientes.Estados.VISITA_PRESENCIAL;
             List<string> vendedoresPresenciales = await servicio.VendedoresPresenciales();
 
+            // Se lo quita un comercial de estética telefónico
+            if (cliente.VendedorEstetica == Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Vendedor != Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO)
+            {
+                nuevoVendedor = Constantes.Vendedores.VENDEDOR_GENERAL;                
+                SeguimientoCliente seguimiento = await servicio.BuscarSeguimiento(cliente.Empresa, cliente.Cliente, cliente.Contacto).ConfigureAwait(false);
+                if (seguimiento != null && !string.IsNullOrEmpty(seguimiento.Comentarios))
+                {
+                    bool soloEstetica = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "solo estetica", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
+                    bool soloPeluqueria = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "solo peluqueria", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
+                    bool esteticaYPeluqueria = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "estetica y peluqueria", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0; 
+                    bool pasarANulo = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "pasar a nulo", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
+                    if (soloEstetica)
+                    {
+                        nuevoEstado = Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_ESTETICA;
+                    }
+                    else if (soloPeluqueria)
+                    {
+                        nuevoEstado = Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA;
+                    }
+                    else if (esteticaYPeluqueria)
+                    {
+                        nuevoEstado = Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_ESTETICA_Y_PELUQUERIA;
+                    }
+                    else if (pasarANulo)
+                    {
+                        nuevoEstado = Constantes.Clientes.Estados.NULO;
+                    }
+                    else
+                    {
+                        throw new Exception("Debe especificar en el texto del seguimiento algún texto que ayude a determinar a qué estado se debe pasar el cliente");
+                    }
+                }
+            }
 
-            // Se lo quita un comercial de estética
+            // Se lo quita un comercial de estética (presencial o telefónico)
             if (cliente.VendedorEstetica == Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Vendedor != Constantes.Vendedores.VENDEDOR_GENERAL)
             {
-                clienteDB.Vendedor = nuevoVendedor;
-                clienteDB.Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA;
                 if (clienteDB.VendedoresClienteGrupoProductoes == null ||
                     clienteDB.VendedoresClienteGrupoProductoes
                         .SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA)?
-                        .Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL)
+                        .Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL ||
+                    clienteDB.VendedoresClienteGrupoProductoes
+                        .SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA)?
+                        .Vendedor?.Trim() == clienteDB.Vendedor)
                 {
                     vendedorPeluqueria = nuevoVendedor;
+                    estadoPeluqueria = nuevoEstado;
                 }
+
+                clienteDB.Vendedor = nuevoVendedor;
+                clienteDB.Estado = nuevoEstado;
 
                 contactos = contactos.Where(c => c.Estado == Constantes.Clientes.Estados.COMISIONA_SIN_VISITA).ToList();
                 foreach (Cliente contacto in contactos.Where(c => c.Vendedor == clienteDB.Vendedor || !vendedoresPresenciales.Contains(c.Vendedor)))
@@ -587,6 +631,7 @@ namespace NestoAPI.Infraestructure
                 if (clienteDB.VendedoresClienteGrupoProductoes.SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA) != null)
                 {
                     clienteDB.VendedoresClienteGrupoProductoes.SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA).Vendedor = vendedorPeluqueria;
+                    clienteDB.VendedoresClienteGrupoProductoes.SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA).Estado = estadoPeluqueria;
                     clienteDB.VendedoresClienteGrupoProductoes.SingleOrDefault(v => v.GrupoProducto == Constantes.Productos.GRUPO_PELUQUERIA).Usuario = cliente.Usuario;
                 }
                 else

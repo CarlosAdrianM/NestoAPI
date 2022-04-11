@@ -1618,5 +1618,141 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(1, contacto2DB.VendedoresClienteGrupoProductoes.Count);
             Assert.AreEqual("TU", contacto2DB.VendedoresClienteGrupoProductoes.ElementAt(0).Vendedor);
         }
+
+        [TestMethod]
+        public void GestorClientes_DejarDeVisitar_SiEsUnVendedorTelefonicoTambienDevuelveElVendedorYEstadoCambiados()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            A.CallTo(() => servicio.Hoy()).Returns(new DateTime());
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(
+                new List<string>
+                {
+                    "YO"
+                });
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
+                new Cliente
+                {
+                    Vendedor = "YO",
+                    Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA,
+                    Usuario = "erastu"
+                }
+            );
+            A.CallTo(() => servicio.BuscarSeguimiento(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
+                new SeguimientoCliente
+                {
+                    Comentarios = "solo estética"
+                }
+            );
+            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            ClienteCrear cliente = new ClienteCrear
+            {
+                Empresa = "1",
+                Cliente = "1000",
+                Contacto = "0",
+                VendedorEstetica = Constantes.Vendedores.VENDEDOR_GENERAL,
+                Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA,
+                Usuario = "cestmoi"
+            };
+
+            Cliente clienteDB = gestor.DejarDeVisitar(db, cliente).Result[0];
+
+            Assert.AreEqual("NV", clienteDB.Vendedor);
+            Assert.AreEqual("cestmoi", clienteDB.Usuario);
+            Assert.AreEqual(Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_ESTETICA, clienteDB.Estado);
+        }
+
+        [TestMethod]
+        public void GestorClientes_DejarDeVisitar_SiHayGrupoYSeLoQuitaElVendedorTelefonicoSeQuitaTambienElVendedorDelGrupo()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
+                new Cliente
+                {
+                    Vendedor = "nosotros",
+                    Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA,
+                    Usuario = "erastu",
+                    VendedoresClienteGrupoProductoes = new List<VendedorClienteGrupoProducto> {
+                        new VendedorClienteGrupoProducto
+                        {
+                            GrupoProducto = Constantes.Productos.GRUPO_PELUQUERIA,
+                            Vendedor = "nosotros"
+                        }
+                    }
+                }
+            );
+            A.CallTo(() => servicio.BuscarSeguimiento(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
+                new SeguimientoCliente
+                {
+                    Comentarios = "Sólo estética"
+                }
+            );
+            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            ClienteCrear cliente = new ClienteCrear
+            {
+                Empresa = "1",
+                Cliente = "1000",
+                Contacto = "0",
+                Usuario = "cestmoi",
+                VendedorEstetica = Constantes.Vendedores.VENDEDOR_GENERAL
+            };
+
+            Cliente clienteDB = gestor.DejarDeVisitar(db, cliente).Result[0];
+
+            Assert.AreEqual(Constantes.Vendedores.VENDEDOR_GENERAL, clienteDB.Vendedor);
+            Assert.AreEqual("cestmoi", clienteDB.Usuario);
+            Assert.AreEqual(Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_ESTETICA, clienteDB.Estado);
+            Assert.AreEqual(1, clienteDB.VendedoresClienteGrupoProductoes.Count);
+            Assert.AreEqual(Constantes.Vendedores.VENDEDOR_GENERAL, clienteDB.VendedoresClienteGrupoProductoes.ElementAt(0).Vendedor);
+            Assert.AreEqual(Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_ESTETICA, clienteDB.VendedoresClienteGrupoProductoes.ElementAt(0).Estado);
+        }
+
+
+        [TestMethod]
+        public void GestorClientes_DejarDeVisitar_SiEsUnVendedorTelefonicoYEnElUltimoRapportPoneSoloPeluqueriaSePasaAEstadoDeSoloPeluqueria()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            A.CallTo(() => servicio.Hoy()).Returns(new DateTime());
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(
+                new List<string>
+                {
+                    "YO"
+                });
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
+                new Cliente
+                {
+                    Vendedor = "YO",
+                    Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA,
+                    Usuario = "erastu"
+                }
+            );
+            A.CallTo(() => servicio.BuscarSeguimiento(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
+                new SeguimientoCliente
+                {
+                    Comentarios = "Es solo peluqueria"
+                }
+            );
+            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            ClienteCrear cliente = new ClienteCrear
+            {
+                Empresa = "1",
+                Cliente = "1000",
+                Contacto = "0",
+                VendedorEstetica = Constantes.Vendedores.VENDEDOR_GENERAL,
+                Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA,
+                Usuario = "cestmoi"
+            };
+
+            Cliente clienteDB = gestor.DejarDeVisitar(db, cliente).Result[0];
+
+            Assert.AreEqual("NV", clienteDB.Vendedor);
+            Assert.AreEqual("cestmoi", clienteDB.Usuario);
+            Assert.AreEqual(Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA, clienteDB.Estado);
+        }
     }
 }

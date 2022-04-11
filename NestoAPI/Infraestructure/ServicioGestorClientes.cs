@@ -347,5 +347,14 @@ namespace NestoAPI.Infraestructure
                 };
             }
         }
+
+        public async Task<SeguimientoCliente> BuscarSeguimiento(string empresa, string cliente, string contacto)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                var seguimiento = await db.SeguimientosClientes.Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto).OrderByDescending(s => s.NºOrden).FirstOrDefaultAsync().ConfigureAwait(false);
+                return seguimiento;
+            }
+        }
     }
 }

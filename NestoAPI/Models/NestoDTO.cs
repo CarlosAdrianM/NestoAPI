@@ -83,6 +83,7 @@ namespace NestoAPI.Models
         public string plazosPago { get; set; }
         public bool tieneCorreoElectronico { get; set; }
         public bool tieneFacturacionElectronica { get; set; }
+        public string nif { get; set; }
     }
     public class ExtractoClienteDTO
     {

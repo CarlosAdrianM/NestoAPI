@@ -20,10 +20,14 @@
             public const short ESTADO_DISTRIBUIDORES = 6;
             public static class Estados
             {
+                public const short NULO = -1;
                 public const short VISITA_PRESENCIAL = 0;
                 public const short VISITA_TELEFONICA = 9;
                 public const short PRIMERA_VISITA = 5;
                 public const short COMISIONA_SIN_VISITA = 7;
+                public const short SIN_ACCION_COMERCIAL_SOLO_ESTETICA = 93;
+                public const short SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA = 11;
+                public const short SIN_ACCION_COMERCIAL_ESTETICA_Y_PELUQUERIA = 22;
             }
 
             public static class EstadosMandatos
@@ -203,7 +207,7 @@
         public static class Vendedores
         {
             public const int ESTADO_VENDEDOR_PRESENCIAL = 0;
-            public const int ESTADO_VENDEDOR_TELEFONICO = 2;
+            public const int ESTADO_VENDEDOR_TELEFONICO = 9;
             public const int ESTADO_VENDEDOR_PELUQUERIA = 4;
             public const int ESTADO_VENDEDOR_PARA_ANULAR = 99;
             public const string VENDEDOR_GENERAL = "NV";
