@@ -194,7 +194,7 @@
 
         public static class Picking
         {
-            public const int HORA_MAXIMA_AMPLIAR_PEDIDOS = 11;
+            public const int HORA_MAXIMA_AMPLIAR_PEDIDOS = 12;
         }
 
         public static class ClientesEspeciales

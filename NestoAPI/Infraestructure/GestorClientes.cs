@@ -415,6 +415,9 @@ namespace NestoAPI.Infraestructure
                 Cliente = clienteDb.Nº_Cliente.Trim(),
                 Contacto = clienteDb.Contacto.Trim(),
                 CodigoPostal = clienteDb.CodPostal?.Trim(),
+                Comentarios = clienteDb.Comentarios?.Trim(),
+                ComentariosPicking = clienteDb.ComentarioPicking?.Trim(),
+                ComentariosRuta = clienteDb.ComentarioRuta?.Trim(),
                 Direccion = clienteDb.Dirección?.Trim(),
                 Estado = clienteDb.Estado,
                 Nif = clienteDb.CIF_NIF?.Trim(),
@@ -493,16 +496,16 @@ namespace NestoAPI.Infraestructure
             if (clienteDB.Estado != Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO)
             {
 
-                var vendedoresTelefono = await servicio.VendedoresTelefonicos();
+                var vendedoresQueRecibenClientes = await servicio.VendedoresQueRecibenClientes();
 
-                int diaVendedor = servicio.Hoy().Minute % vendedoresTelefono.Count;
-                nuevoVendedor = vendedoresTelefono.Contains(clienteDB.Vendedor) ?
+                int diaVendedor = servicio.Hoy().Minute % vendedoresQueRecibenClientes.Count;
+                nuevoVendedor = vendedoresQueRecibenClientes.Contains(clienteDB.Vendedor) ?
                     clienteDB.Vendedor :
-                    vendedoresTelefono.ElementAt(diaVendedor);
+                    vendedoresQueRecibenClientes.ElementAt(diaVendedor);
                                
-                if (nuevoVendedor == vendedoresTelefono.ElementAt(diaVendedor))
+                if (nuevoVendedor == vendedoresQueRecibenClientes.ElementAt(diaVendedor))
                 {
-                    var vendedoresContactoTelefonicos = vendedoresContacto.Intersect(vendedoresTelefono);
+                    var vendedoresContactoTelefonicos = vendedoresContacto.Intersect(vendedoresQueRecibenClientes);
                     if (vendedoresContactoTelefonicos.FirstOrDefault() != null)
                     {
                         nuevoVendedor = vendedoresContactoTelefonicos.First();
@@ -682,7 +685,10 @@ namespace NestoAPI.Infraestructure
             clienteDB.CodPostal = clienteModificar.CodigoPostal;
             clienteDB.Teléfono  = clienteModificar.Telefono;
             clienteDB.Vendedor  = clienteModificar.VendedorEstetica;
-            
+            clienteDB.Comentarios = clienteModificar.Comentarios;
+            clienteDB.ComentarioPicking = clienteModificar.ComentariosPicking;
+            clienteDB.ComentarioRuta = clienteModificar.ComentariosRuta;
+
             if (clienteDB.CondPagoClientes != null && clienteDB.CondPagoClientes.Count > 0 && (
                 clienteDB.CondPagoClientes.First().PlazosPago.Trim() != clienteModificar.PlazosPago.Trim() ||
                 clienteDB.CondPagoClientes.First().FormaPago.Trim() != clienteModificar.FormaPago.Trim()))
@@ -701,14 +707,15 @@ namespace NestoAPI.Infraestructure
                 clienteDB.CondPagoClientes.Add(condPagoNueva);
             }
 
+            Iban iban = new Iban(clienteModificar.Iban);
             if (clienteModificar.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO &&
                 clienteModificar.Iban != null && !string.IsNullOrWhiteSpace(clienteModificar.Iban) && clienteDB.CCC1 != null && (
-                clienteDB.CCC1.Pais != clienteModificar.Iban.Substring(0, 2) ||
-                clienteDB.CCC1.DC_IBAN != clienteModificar.Iban.Substring(2, 2) ||
-                clienteDB.CCC1.Entidad != clienteModificar.Iban.Substring(4, 4) ||
-                clienteDB.CCC1.Oficina != clienteModificar.Iban.Substring(8, 4) ||
-                clienteDB.CCC1.DC != clienteModificar.Iban.Substring(12, 2) ||
-                clienteDB.CCC1.Nº_Cuenta != clienteModificar.Iban.Substring(14, 10)))
+                clienteDB.CCC1.Pais != iban.Pais ||
+                clienteDB.CCC1.DC_IBAN != iban.DigitoControlPais ||
+                clienteDB.CCC1.Entidad != iban.Entidad ||
+                clienteDB.CCC1.Oficina != iban.Oficina ||
+                clienteDB.CCC1.DC != iban.DigitoControl ||
+                clienteDB.CCC1.Nº_Cuenta != iban.NumeroCuenta))
             {
                 // TODO: permitir modificar IBAN, pero ponerlo en estado "en poder del vendedor"
                 throw new Exception("El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.");
@@ -721,14 +728,12 @@ namespace NestoAPI.Infraestructure
                 {
                     Cliente1 = clienteDB,
                     Número = "1", //TODO: mirar cual toca
-                    Pais = clienteModificar.Iban.Substring(0, 2),
-                    DC_IBAN = clienteModificar.Iban.Substring(2, 2),
-                    Entidad = clienteModificar.Iban.Substring(5, 4),
-                    Oficina = clienteModificar.Iban.Substring(10, 4),
-                    DC = clienteModificar.Iban.Substring(15, 2),
-                    Nº_Cuenta = clienteModificar.Iban.Substring(17, 2)
-                    + clienteModificar.Iban.Substring(20, 4)
-                    + clienteModificar.Iban.Substring(25, 4),
+                    Pais = iban.Pais,
+                    DC_IBAN = iban.DigitoControlPais,
+                    Entidad = iban.Entidad,
+                    Oficina = iban.Oficina,
+                    DC = iban.DigitoControl,
+                    Nº_Cuenta = iban.NumeroCuenta,
                     Estado = Constantes.Clientes.EstadosMandatos.EN_PODER_DEL_CLIENTE,
                     Secuencia = Constantes.Clientes.SECUENCIA_POR_DEFECTO,
                     Usuario = clienteModificar.Usuario
@@ -808,6 +813,12 @@ namespace NestoAPI.Infraestructure
                 clienteCrear.Nif = null;
             }
 
+            var vendedoresTelefono = await servicio.VendedoresTelefonicos().ConfigureAwait(false);
+            if (clienteCrear.Estado == Constantes.Clientes.Estados.VISITA_PRESENCIAL && vendedoresTelefono.Contains(clienteCrear.VendedorEstetica))
+            {
+                clienteCrear.Estado = Constantes.Clientes.Estados.VISITA_TELEFONICA;
+            }
+
             Cliente cliente = new Cliente
             {
                 Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
@@ -818,6 +829,9 @@ namespace NestoAPI.Infraestructure
                 CIF_NIF = clienteCrear.Nif,
                 ClientePrincipal = !clienteCrear.EsContacto,
                 CodPostal = clienteCrear.CodigoPostal,
+                Comentarios = clienteCrear.Comentarios,
+                ComentarioPicking = clienteCrear.ComentariosPicking,
+                ComentarioRuta = clienteCrear.ComentariosRuta,
                 ContactoBonificacion = contacto,
                 ContactoCobro = contacto,
                 ContactoDefecto = contacto,

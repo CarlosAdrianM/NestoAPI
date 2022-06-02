@@ -12,6 +12,11 @@ namespace NestoAPI.Models.Clientes
         public string Cliente { get; set; }
         public string Contacto { get; set; }
         public string CodigoPostal { get; set; }
+        public string Comentarios { get; set; }
+        [StringLength(50)]
+        public string ComentariosPicking { get; set; }
+        [StringLength(50)]
+        public string ComentariosRuta { get; set; }
         [StringLength(50)]
         public string Direccion { get; set; }
         public bool EsContacto {get;set;}

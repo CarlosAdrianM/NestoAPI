@@ -20,7 +20,12 @@ namespace NestoAPI.Models.Clientes
             get { return _codigo; }
             set
             {
-                _codigo = value;
+                if (value == null) {
+                    _codigo = String.Empty;
+                } else
+                {
+                    _codigo = value;
+                }                
                 _codigo = _codigo.Trim();
                 _codigo.Replace(" ", "");
                 _codigo = Regex.Replace(_codigo, ESPECIALES, "", RegexOptions.None);
@@ -112,6 +117,63 @@ namespace NestoAPI.Models.Clientes
                 return Formateado.Substring(0, Formateado.Length - 4) + "****";
             }
         }
+
+
+        public string Pais
+        {
+            get
+            {
+                if (Codigo == null || Codigo.Length < 2) return string.Empty;
+                return Codigo.Substring(0, 2);
+            }
+        }
+
+        public string DigitoControlPais
+        {
+            get
+            {
+                if (Codigo == null || Codigo.Length < 4) return string.Empty;
+                return Codigo.Substring(2, 2);
+            }
+        }
+
+        public string Entidad
+        {
+            get
+            {
+                if (Codigo == null || Codigo.Length < 8) return string.Empty;
+                return Codigo.Substring(4, 4);
+            }
+        }
+
+        public string Oficina
+        {
+            get
+            {
+                if (Codigo == null || Codigo.Length < 12) return string.Empty;
+                return Codigo.Substring(8, 4);
+            }
+        }
+        
+        public string DigitoControl
+        {
+            get
+            {
+                if (Codigo == null || Codigo.Length < 14) return string.Empty;
+                return Codigo.Substring(12, 2);
+            }
+        }
+        
+        public string NumeroCuenta
+        {
+            get
+            {
+                if (Codigo == null || Codigo.Length < 24) return string.Empty;
+                return Codigo.Substring(14, 10);
+            }
+        }
+
+        
 
         public static string ComponerIban(CCC ccc)
         {

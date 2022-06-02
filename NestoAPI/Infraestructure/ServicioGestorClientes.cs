@@ -283,11 +283,20 @@ namespace NestoAPI.Infraestructure
             return todos;
         }
 
-        public async Task<List<string>> VendedoresTelefonicos()
+        public async Task<List<string>> VendedoresQueRecibenClientes()
         {
             using (NVEntities db = new NVEntities())
             {
                 return await db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO && v.TipoComisión == "7")
+                    .Select(v => v.Número)
+                    .ToListAsync();
+            }
+        }
+        public async Task<List<string>> VendedoresTelefonicos()
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return await db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO)
                     .Select(v => v.Número)
                     .ToListAsync();
             }

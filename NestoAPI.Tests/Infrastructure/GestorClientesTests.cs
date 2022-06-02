@@ -948,7 +948,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime());
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(
                 new List<string>
                 {
                     "YO"
@@ -976,7 +976,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
                 new Cliente
@@ -1018,7 +1018,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>{"YO","TU"});
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string>{"YO","TU"});
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
                 new Cliente
@@ -1060,7 +1060,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
                 new Cliente
@@ -1102,7 +1102,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
                 new Cliente
@@ -1144,7 +1144,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
                 new Cliente
@@ -1186,7 +1186,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             //A.CallTo(() => servicio.VendedoresContactosCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(new List<string> { "TU", "NOSOTROS" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
@@ -1263,7 +1263,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             //A.CallTo(() => servicio.VendedoresContactosCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(new List<string> { "TU", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
@@ -1332,7 +1332,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             //A.CallTo(() => servicio.VendedoresContactosCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(new List<string> { "NV", "EL" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
@@ -1431,7 +1431,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             //A.CallTo(() => servicio.VendedoresContactosCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(new List<string> { "NV", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
@@ -1530,7 +1530,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
                 new Cliente
@@ -1625,7 +1625,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime());
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(
                 new List<string>
                 {
                     "YO"
@@ -1668,7 +1668,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime(2017, 12, 31, 23, 2, 0)); //2 minutos -> "YO"
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string> { "YO", "TU" });
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(new List<string> { "YO", "TU" });
             A.CallTo(() => servicio.VendedoresPresenciales()).Returns(new List<string> { "EL", "ELLA" });
             A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(
                 new Cliente
@@ -1718,7 +1718,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             A.CallTo(() => servicio.Hoy()).Returns(new DateTime());
-            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(
+            A.CallTo(() => servicio.VendedoresQueRecibenClientes()).Returns(
                 new List<string>
                 {
                     "YO"
