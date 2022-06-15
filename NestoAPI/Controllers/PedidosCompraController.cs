@@ -223,12 +223,15 @@ namespace NestoAPI.Controllers
                         CodigoIvaProducto = p.IVA_Soportado
                     }).FirstOrDefaultAsync().ConfigureAwait(false);
                 }
-                /*
-                var parametroIVA = await db.ParametrosIVA.SingleAsync(
-                    p => p.Empresa == empresa && p.IVA_Cliente_Prov == ivaCabecera && p.IVA_Producto == lineaProducto.CodigoIvaProducto
-                    ).ConfigureAwait(false);
-                lineaProducto.PorcentajeIva = (decimal)parametroIVA.C__IVA / 100;
-                */
+                
+                if (lineaProducto != null && !string.IsNullOrWhiteSpace(lineaProducto.CodigoIvaProducto) && lineaProducto.PorcentajeIva == 0)
+                {
+                    var parametroIVA = await db.ParametrosIVA.SingleAsync(
+                        p => p.Empresa == empresa && p.IVA_Cliente_Prov == ivaCabecera && p.IVA_Producto == lineaProducto.CodigoIvaProducto
+                        ).ConfigureAwait(false);
+                    lineaProducto.PorcentajeIva = (decimal)parametroIVA.C__IVA / 100;
+                }                
+                
                 return Ok(lineaProducto);
             } 
             catch (Exception ex)
