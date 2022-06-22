@@ -325,6 +325,19 @@ namespace NestoAPI.Controllers
                 cambiarContactoEnLineas = true;
             }
 
+            // Carlos 17/06/22: no se pueden mezclar lineas de distintos almacenes
+            if (pedido.LineasPedido.Any(l => l.almacen != pedido.LineasPedido.First().almacen))
+            {
+                errorPersonalizado("No se pueden mezclar líneas de distintos almacenes");
+            }
+
+
+            // Carlos 17/06/22: no se pueden mezclar pedidos con presupuestos
+            if (pedido.LineasPedido.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.LineasPedido.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO))
+            {
+                errorPersonalizado("No se pueden mezclar pedidos con presupuestos");
+            }
+
             // Si todas las líneas están en -3 pero la cabecera dice que no es presupuesto, es porque queremos pasarlo a pedido
             bool aceptarPresupuesto = pedido.LineasPedido.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.EsPresupuesto;
             

@@ -101,8 +101,8 @@ namespace NestoAPI.Infraestructure
                 return;
             }
             mail.CC.Add(Constantes.Correos.CORREO_DIRECCION);
-            mail.Subject = tipoCorreo + " "+TEXTO_PEDIDO+" c/ " + pedido.cliente.ToString();
-            mail.Body = (await GenerarTablaHTML(pedido)).ToString();
+            mail.Subject = string.Format("{0} {1} - c/ {2}", TEXTO_PEDIDO, pedido.numero, pedido.cliente);
+            mail.Body = (await GenerarTablaHTML(pedido, tipoCorreo)).ToString();
             mail.IsBodyHtml = true;
             if (pedido.LineasPedido.FirstOrDefault().almacen == Constantes.Almacenes.REINA)
             {
@@ -128,11 +128,11 @@ namespace NestoAPI.Infraestructure
                 client.Send(mail);
             }
         }
-        private async Task<StringBuilder> GenerarTablaHTML(PedidoVentaDTO pedido)
+        private async Task<StringBuilder> GenerarTablaHTML(PedidoVentaDTO pedido, string tipoCorreo)
         {
             StringBuilder s = new StringBuilder();
 
-            s.AppendLine("<H1>"+TEXTO_PEDIDO+"</H1>");
+            s.AppendLine(string.Format("<H1>{0} {1} {2}</H1>", tipoCorreo, TEXTO_PEDIDO, pedido.numero));
 
             s.AppendLine("<table border=\"0\" style=\"width:100%\">");
             s.AppendLine("<tr>");
