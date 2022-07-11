@@ -51,6 +51,7 @@ namespace NestoAPI.Models.PedidosCompra
                 IVA = CodigoIvaProveedor,
                 PeriodoFacturación = PeriodoFacturacion,
                 DíasEnServir = (byte)DiasEnServir,
+                Comentarios = Comentarios,
                 Usuario = Usuario,
                 Fecha_Modificación = DateTime.Now
             };

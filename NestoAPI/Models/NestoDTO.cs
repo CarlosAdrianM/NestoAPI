@@ -207,6 +207,7 @@ namespace NestoAPI.Models
     {
         public int Numero { get; set; }
         public string Nombre { get; set; }
+        [EmailAddress]
         public string CorreoElectronico { get; set; }
         public bool FacturacionElectronica { get; set; }
     }
