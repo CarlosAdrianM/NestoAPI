@@ -246,6 +246,8 @@
         <AssociationConnector Association="NVModel.FK_OfertasProveedores_Proveedores" />
         <EntityTypeShape EntityType="NVModel.DatoConfirming" Width="1.5" PointX="10.75" PointY="26.125" />
         <AssociationConnector Association="NVModel.FK_DatosConfirming_Proveedores" />
+        <EntityTypeShape EntityType="NVModel.EfectoPedidoVenta" Width="1.5" PointX="5.875" PointY="17.875" />
+        <AssociationConnector Association="NVModel.FK_EfectosPedidoVenta_CabPedidoVta" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

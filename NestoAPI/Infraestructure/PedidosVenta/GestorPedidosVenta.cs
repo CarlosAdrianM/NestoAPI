@@ -378,6 +378,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     })
                     .ToList();
 
+                List<EfectoPedidoVentaDTO> efectos = db.EfectosPedidosVentas.Where(p => p.Empresa == empresa && p.Pedido == numero).
+                    Select(p => new EfectoPedidoVentaDTO
+                    {
+                        FechaVencimiento = p.FechaVencimiento,
+                        Importe = p.Importe,
+                        FormaPago = p.FormaPago,
+                        Ccc = p.CCC
+                    })
+                    .ToList();                
+
                 PedidoVentaDTO pedido;
                 try
                 {
@@ -395,6 +405,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         vendedor = cabPedidoVta.Vendedor,
                         comentarios = cabPedidoVta.Comentarios,
                         comentarioPicking = cabPedidoVta.ComentarioPicking,
+                        crearEfectosManualmente = efectos.Any(),
                         periodoFacturacion = cabPedidoVta.Periodo_Facturacion,
                         ruta = cabPedidoVta.Ruta,
                         serie = cabPedidoVta.Serie,
@@ -410,6 +421,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         LineasPedido = lineasPedido,
                         VendedoresGrupoProducto = vendedoresGrupoProductoPedido,
                         Prepagos = prepagos,
+                        Efectos = efectos,
                         EsPresupuesto = lineasPedido.Any(c => c.estado == Constantes.EstadosLineaVenta.PRESUPUESTO),
                     };
                 }

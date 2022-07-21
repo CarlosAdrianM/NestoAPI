@@ -255,6 +255,7 @@ namespace NestoAPI.Controllers
             
 
             db.Entry(cabPedidoVta).Collection(c => c.Prepagos).Load();
+            db.Entry(cabPedidoVta).Collection(c => c.EfectosPedidoVentas).Load();
 
             if (!ModelState.IsValid)
             {
@@ -646,6 +647,70 @@ namespace NestoAPI.Controllers
                 }
             }
 
+
+            // Carlos 21/07/22: guardamos los efectos
+            if (pedido.crearEfectosManualmente && pedido.Efectos.Any())
+            {
+                foreach (var efectoPedido in pedido.Efectos)
+                {
+                    if (cabPedidoVta.EfectosPedidoVentas.Where(
+                        p => p.FechaVencimiento == efectoPedido.FechaVencimiento && 
+                        p.Importe == efectoPedido.Importe &&
+                        p.FormaPago?.Trim() == efectoPedido.FormaPago?.Trim() &&
+                        ((p.CCC?.Trim() == efectoPedido.Ccc?.Trim()) || (p.CCC == null && string.IsNullOrWhiteSpace(efectoPedido.Ccc)))
+                    ).Any())
+                    {
+                        EfectoPedidoVenta efectoCabecera = cabPedidoVta.EfectosPedidoVentas.Where(
+                            p => p.FechaVencimiento == efectoPedido.FechaVencimiento &&
+                            p.Importe == efectoPedido.Importe &&
+                            p.FormaPago?.Trim() == efectoPedido.FormaPago?.Trim() &&
+                            ((p.CCC?.Trim() == efectoPedido.Ccc?.Trim()) || (p.CCC == null && string.IsNullOrWhiteSpace(efectoPedido.Ccc)))
+                        ).Single();
+                        efectoCabecera.FechaVencimiento = efectoPedido.FechaVencimiento;
+                        efectoCabecera.Importe = efectoPedido.Importe;
+                        efectoCabecera.FormaPago = efectoPedido.FormaPago;
+                        efectoCabecera.CCC = string.IsNullOrWhiteSpace(efectoPedido.Ccc) ? null : efectoPedido.Ccc;
+                    }
+                    else
+                    {
+                        cabPedidoVta.EfectosPedidoVentas.Add(new EfectoPedidoVenta
+                        {
+                            FechaVencimiento = efectoPedido.FechaVencimiento,
+                            Importe = efectoPedido.Importe,
+                            FormaPago = efectoPedido.FormaPago,
+                            CCC = string.IsNullOrWhiteSpace(efectoPedido.Ccc) ? null : efectoPedido.Ccc,
+                            Usuario = pedido.usuario
+                        });
+                    }
+                }
+                List<EfectoPedidoVenta> efectosBorrar = new List<EfectoPedidoVenta>();
+                for (var i = 0; i < cabPedidoVta.EfectosPedidoVentas.Count(); i++)
+                {
+                    var efectoCabecera = cabPedidoVta.EfectosPedidoVentas.ElementAt(i);
+                    if (!pedido.Efectos.Any(e => 
+                        e.FechaVencimiento == efectoCabecera.FechaVencimiento && 
+                        e.Importe == efectoCabecera.Importe && 
+                        e.FormaPago?.Trim() == efectoCabecera.FormaPago?.Trim() &&
+                        ((e.Ccc?.Trim() == efectoCabecera.CCC?.Trim()) || (e.Ccc == null && string.IsNullOrWhiteSpace(efectoCabecera.CCC)))
+                    ))
+                    {
+                        efectosBorrar.Add(efectoCabecera);
+                    }
+                }
+                db.EfectosPedidosVentas.RemoveRange(efectosBorrar);
+            }
+            else
+            {
+                if (cabPedidoVta.EfectosPedidoVentas.Any())
+                {                    
+                    foreach (var efecto in cabPedidoVta.EfectosPedidoVentas.ToList())
+                    {
+                        db.EfectosPedidosVentas.Remove(efecto);
+                    }
+                }
+            }
+
+
             try
             {
                 await db.SaveChangesAsync();
@@ -838,6 +903,22 @@ namespace NestoAPI.Controllers
                 });
             }
 
+            // Carlos 20/07/22: guardamos los efectos manuales
+            if (pedido.crearEfectosManualmente)
+            {
+                foreach (var efecto in pedido.Efectos)
+                {
+                    cabecera.EfectosPedidoVentas.Add(new EfectoPedidoVenta
+                    {
+                        FechaVencimiento = efecto.FechaVencimiento,
+                        Importe = efecto.Importe,
+                        FormaPago = efecto.FormaPago,
+                        CCC = efecto.Ccc,
+                        Usuario = pedido.usuario
+                    });
+                }
+            }
+            
             // Carlos 07/10/15:
             // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
 

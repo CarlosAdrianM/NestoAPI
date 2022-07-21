@@ -85,6 +85,14 @@ namespace NestoAPI.Models
         public bool tieneFacturacionElectronica { get; set; }
         public string nif { get; set; }
     }
+
+    public class EfectoPedidoVentaDTO
+    {
+        public DateTime FechaVencimiento { get; set; }
+        public decimal Importe { get; set; }
+        public string FormaPago { get; set; }
+        public string Ccc { get; set; }
+    }
     public class ExtractoClienteDTO
     {
         public int id { get; set; }
@@ -169,12 +177,14 @@ namespace NestoAPI.Models
         {
             this.LineasPedido = new HashSet<LineaPedidoVentaDTO>();
             this.Prepagos = new HashSet<PrepagoDTO>();
+            this.Efectos = new HashSet<EfectoPedidoVentaDTO>();
         }
 
         public string empresa { get; set; }
         public int numero { get; set; }
         public string cliente { get; set; }
         public string contacto { get; set; }
+        public bool crearEfectosManualmente { get; set; }
         public Nullable<System.DateTime> fecha { get; set; }
         public string formaPago { get; set; }
         [Required]
@@ -202,6 +212,7 @@ namespace NestoAPI.Models
         public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
         public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
+        public virtual ICollection<EfectoPedidoVentaDTO> Efectos { get; set; }
     }
     public class PersonaContactoDTO
     {

@@ -457,6 +457,20 @@
           <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Número" Type="smallint" Nullable="false" />
         </EntityType>
+        <EntityType Name="EfectosPedidoVenta">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Pedido" Type="int" Nullable="false" />
+          <Property Name="FechaVencimiento" Type="date" Nullable="false" />
+          <Property Name="Importe" Type="money" Nullable="false" />
+          <Property Name="FormaPago" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="CCC" Type="char" MaxLength="3" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+        </EntityType>
         <EntityType Name="Empresas">
           <Key>
             <PropertyRef Name="Número" />
@@ -2137,6 +2151,22 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Principal>
             <Dependent Role="DíasPagoClientes">
               <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EfectosPedidoVenta_CabPedidoVta">
+          <End Role="CabPedidoVta" Type="Self.CabPedidoVta" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Role="EfectosPedidoVenta" Type="Self.EfectosPedidoVenta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="EfectosPedidoVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Pedido" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -3956,6 +3986,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="DescuentosCliente" EntityType="Self.DescuentosCliente" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DescuentosProducto" EntityType="Self.DescuentosProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DíasPagoClientes" EntityType="Self.DíasPagoClientes" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="EfectosPedidoVenta" EntityType="Self.EfectosPedidoVenta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Empresas" EntityType="Self.Empresas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EnviosAgencia" EntityType="Self.EnviosAgencia" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EnviosAgenciaCoordenadas" EntityType="Self.EnviosAgenciaCoordenadas" Schema="dbo" store:Type="Tables" />
@@ -4226,6 +4257,10 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_DíasPagoClientes_Empresas" Association="Self.FK_DíasPagoClientes_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="DíasPagoClientes" EntitySet="DíasPagoClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EfectosPedidoVenta_CabPedidoVta" Association="Self.FK_EfectosPedidoVenta_CabPedidoVta">
+            <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
+            <End Role="EfectosPedidoVenta" EntitySet="EfectosPedidoVenta" />
           </AssociationSet>
           <AssociationSet Name="FK_Empresas_CódigosPostales" Association="Self.FK_Empresas_CódigosPostales">
             <End Role="CódigosPostales" EntitySet="CódigosPostales" />
@@ -5569,6 +5604,11 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="Proveedor" EntitySet="Proveedores" />
             <End Role="DatosConfirming" EntitySet="DatosConfirmings" />
           </AssociationSet>
+          <EntitySet Name="EfectosPedidosVentas" EntityType="NVModel.EfectoPedidoVenta" />
+          <AssociationSet Name="FK_EfectosPedidoVenta_CabPedidoVta" Association="NVModel.FK_EfectosPedidoVenta_CabPedidoVta">
+            <End Role="CabPedidoVta" EntitySet="CabPedidoVtas" />
+            <End Role="EfectosPedidoVenta" EntitySet="EfectosPedidosVentas" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -5789,6 +5829,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="EnviosAgencias" Relationship="NVModel.FK_EnviosAgencia_CabPedidoVta" FromRole="CabPedidoVta" ToRole="EnviosAgencia" />
           <NavigationProperty Name="Prepagos" Relationship="NVModel.FK_Prepagos_CabPedidoVta" FromRole="CabPedidoVta" ToRole="Prepago" />
+          <NavigationProperty Name="EfectosPedidoVentas" Relationship="NVModel.FK_EfectosPedidoVenta_CabPedidoVta" FromRole="CabPedidoVta" ToRole="EfectosPedidoVenta" />
         </EntityType>
         <EntityType Name="LinPedidoVta">
           <Key>
@@ -9810,6 +9851,37 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="EfectoPedidoVenta">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Pedido" Type="Int32" Nullable="false" />
+          <Property Name="FechaVencimiento" Type="DateTime" Nullable="false" Precision="0" />
+          <Property Name="Importe" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="FormaPago" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CCC" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
+          <NavigationProperty Name="CabPedidoVta" Relationship="NVModel.FK_EfectosPedidoVenta_CabPedidoVta" FromRole="EfectosPedidoVenta" ToRole="CabPedidoVta" />
+        </EntityType>
+        <Association Name="FK_EfectosPedidoVenta_CabPedidoVta">
+          <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Type="NVModel.EfectoPedidoVenta" Role="EfectosPedidoVenta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CabPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="EfectosPedidoVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Pedido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -11280,6 +11352,21 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Contacto" ColumnName="Contacto" />
                 <ScalarProperty Name="Numero" ColumnName="Numero" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="EfectosPedidosVentas">
+            <EntityTypeMapping TypeName="NVModel.EfectoPedidoVenta">
+              <MappingFragment StoreEntitySet="EfectosPedidoVenta">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="CCC" ColumnName="CCC" />
+                <ScalarProperty Name="FormaPago" ColumnName="FormaPago" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="FechaVencimiento" ColumnName="FechaVencimiento" />
+                <ScalarProperty Name="Pedido" ColumnName="Pedido" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

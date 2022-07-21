@@ -175,6 +175,18 @@ namespace NestoAPI.Infraestructure
                 "<b>"+ pedido.comentarios + "</b><br>" +
                 "</td>");
             s.AppendLine("</tr>");
+            if (!string.IsNullOrEmpty(pedido.comentarios))
+            {
+                s.AppendLine("<tr>");
+                s.AppendLine($"<td colspan='2'>Comentarios: {pedido.comentarios.Trim()}</td>");
+                s.AppendLine("</tr>");
+            }
+            if (!string.IsNullOrEmpty(pedido.comentarioPicking))
+            {
+                s.AppendLine("<tr>");
+                s.AppendLine($"<td colspan='2'>Comentarios picking: {pedido.comentarioPicking.Trim()}</td>");
+                s.AppendLine("</tr>");
+            }
             s.AppendLine("</table>");
 
             s.AppendLine("<table border=\"1\" style=\"width:100%\">");
@@ -233,6 +245,42 @@ namespace NestoAPI.Infraestructure
             s.AppendLine("</tr>");
             s.AppendLine("</tbody>");
             s.AppendLine("</table>");
+
+            if (pedido.crearEfectosManualmente && pedido.Efectos.Any())
+            {
+                s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+                s.AppendLine("<thead align = \"center\">");
+                s.Append("<tr><th>Vencimiento</th>");
+                s.Append("<th>Importe</th>");
+                s.Append("<th>Forma Pago</th>");
+                s.Append("<th>CCC</th></tr>");
+                s.AppendLine("</thead>");
+                s.AppendLine("<tbody align = \"right\">");
+                foreach (EfectoPedidoVentaDTO efecto in pedido.Efectos)
+                {
+                    s.Append("<tr><td style=\"text-align:center\">" + efecto.FechaVencimiento.ToString("d") + "</td>");
+                    s.Append("<td style=\"text-align:right\">" + efecto.Importe.ToString("C") + "</td>");
+                    s.Append("<td style=\"text-align:center\">" + efecto.FormaPago + "</td>");
+                    s.Append("<td style=\"text-align:center\">" + efecto.Ccc + "</td></tr>");
+                }
+                s.AppendLine("</tbody>");
+                s.AppendLine("</table>");
+            } 
+            else
+            {
+                s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+                s.AppendLine("<thead align = \"center\">");
+                s.Append("<tr><th>Forma de pago</th>");
+                s.Append("<th>Plazos de pago</th>");
+                s.Append("<th>CCC</th></tr>");
+                s.AppendLine("</thead>");
+                s.AppendLine("<tbody align = \"right\">");
+                s.Append("<tr><td style=\"text-align:center\">" + pedido.formaPago + "</td>");
+                s.Append("<td style=\"text-align:center\">" + pedido.plazosPago + "</td>");
+                s.Append($"<td style=\"text-align:center\"> { pedido.ccc } </td></tr>");
+                s.AppendLine("</tbody>");
+                s.AppendLine("</table>");
+            }
 
             return s;
         }
