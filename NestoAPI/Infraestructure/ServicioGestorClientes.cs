@@ -82,6 +82,14 @@ namespace NestoAPI.Infraestructure
             string nifDevuelto;
             string nombreDevuelto;
             string resultadoDevuelto;
+            //try
+            //{
+            //    WebResponse response = await request.GetResponseAsync();
+            //}
+            //catch (Exception ex)
+            //{
+            //    throw ex;
+            //}
             using (WebResponse response = await request.GetResponseAsync())
             {
                 using (StreamReader rd = new StreamReader(response.GetResponseStream()))
@@ -163,6 +171,7 @@ namespace NestoAPI.Infraestructure
             X509Certificate2Collection certificates = new X509Certificate2Collection();
             certificates.Import(certName, password, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
 
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             ServicePointManager.ServerCertificateValidationCallback = (a, b, c, d) => true;
 
             HttpWebRequest webRequest = (HttpWebRequest)WebRequest.Create(host);
