@@ -1,11 +1,13 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.30621.155
+# Visual Studio Version 17
+VisualStudioVersion = 17.3.32819.101
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NestoAPI", "NestoAPI\NestoAPI.csproj", "{6789673D-EE07-4FEB-9848-C74FE9D1137A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "NestoAPI.Tests", "NestoAPI.Tests\NestoAPI.Tests.csproj", "{375DC8DC-6664-46A2-8F47-8A12C97F1EDE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibreriaInformes", "LibreriaInformes\LibreriaInformes.csproj", "{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{375DC8DC-6664-46A2-8F47-8A12C97F1EDE}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{375DC8DC-6664-46A2-8F47-8A12C97F1EDE}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{375DC8DC-6664-46A2-8F47-8A12C97F1EDE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6A4B525D-C88C-4B10-B7CC-FE94522E12F4}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

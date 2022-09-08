@@ -653,23 +653,17 @@ namespace NestoAPI.Controllers
             {
                 foreach (var efectoPedido in pedido.Efectos)
                 {
-                    if (cabPedidoVta.EfectosPedidoVentas.Where(
-                        p => p.FechaVencimiento == efectoPedido.FechaVencimiento && 
-                        p.Importe == efectoPedido.Importe &&
-                        p.FormaPago?.Trim() == efectoPedido.FormaPago?.Trim() &&
-                        ((p.CCC?.Trim() == efectoPedido.Ccc?.Trim()) || (p.CCC == null && string.IsNullOrWhiteSpace(efectoPedido.Ccc)))
-                    ).Any())
+                    if (efectoPedido.Id != 0)
                     {
                         EfectoPedidoVenta efectoCabecera = cabPedidoVta.EfectosPedidoVentas.Where(
-                            p => p.FechaVencimiento == efectoPedido.FechaVencimiento &&
-                            p.Importe == efectoPedido.Importe &&
-                            p.FormaPago?.Trim() == efectoPedido.FormaPago?.Trim() &&
-                            ((p.CCC?.Trim() == efectoPedido.Ccc?.Trim()) || (p.CCC == null && string.IsNullOrWhiteSpace(efectoPedido.Ccc)))
+                            p => p.Id == efectoPedido.Id
                         ).Single();
                         efectoCabecera.FechaVencimiento = efectoPedido.FechaVencimiento;
                         efectoCabecera.Importe = efectoPedido.Importe;
                         efectoCabecera.FormaPago = efectoPedido.FormaPago;
                         efectoCabecera.CCC = string.IsNullOrWhiteSpace(efectoPedido.Ccc) ? null : efectoPedido.Ccc;
+                        efectoCabecera.Usuario = pedido.usuario;
+                        efectoCabecera.FechaModificacion = DateTime.Now;
                     }
                     else
                     {
@@ -688,10 +682,7 @@ namespace NestoAPI.Controllers
                 {
                     var efectoCabecera = cabPedidoVta.EfectosPedidoVentas.ElementAt(i);
                     if (!pedido.Efectos.Any(e => 
-                        e.FechaVencimiento == efectoCabecera.FechaVencimiento && 
-                        e.Importe == efectoCabecera.Importe && 
-                        e.FormaPago?.Trim() == efectoCabecera.FormaPago?.Trim() &&
-                        ((e.Ccc?.Trim() == efectoCabecera.CCC?.Trim()) || (e.Ccc == null && string.IsNullOrWhiteSpace(efectoCabecera.CCC)))
+                        e.Id == efectoCabecera.Id
                     ))
                     {
                         efectosBorrar.Add(efectoCabecera);

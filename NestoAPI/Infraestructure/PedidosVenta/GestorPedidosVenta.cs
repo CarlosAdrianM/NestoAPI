@@ -381,6 +381,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 List<EfectoPedidoVentaDTO> efectos = db.EfectosPedidosVentas.Where(p => p.Empresa == empresa && p.Pedido == numero).
                     Select(p => new EfectoPedidoVentaDTO
                     {
+                        Id = p.Id,
                         FechaVencimiento = p.FechaVencimiento,
                         Importe = p.Importe,
                         FormaPago = p.FormaPago,

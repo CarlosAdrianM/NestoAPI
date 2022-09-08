@@ -7,6 +7,7 @@ using System.Web;
 
 namespace NestoAPI.Models.Clientes
 {
+    [Serializable]
     [DataContract]
     public class Iban
     {

@@ -13,6 +13,9 @@ using NestoAPI.Models;
 using NestoAPI.Infraestructure;
 using NestoAPI.Models.Clientes;
 using System.Data.Entity.Validation;
+using NestoAPI.Models.Facturas;
+using System.Net.Http.Headers;
+using System.Numerics;
 
 namespace NestoAPI.Controllers
 {
@@ -587,6 +590,30 @@ namespace NestoAPI.Controllers
 
         //    return Ok(cliente);
         //}
+
+        [HttpGet]
+        [Route("api/Clientes/MandatoPDF")]
+        //http://localhost:53364/api/Clientes/MandatoPDF?empresa=1&cliente=1&contacto=1&ccc=1
+        public async Task<HttpResponseMessage> GetMandato(string empresa, string cliente, string contacto, string ccc)
+        {
+            GestorClientes gestor = new GestorClientes();
+            Mandato mandato = await gestor.LeerMandato(empresa, cliente, contacto, ccc).ConfigureAwait(true);
+            List<Mandato> mandatos = new List<Mandato> { mandato };
+
+            var result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = gestor.MandatoEnPDF(mandatos)
+            };
+            //result.Content.Headers.ContentDisposition =
+            //    new ContentDispositionHeaderValue("attachment")
+            //    {
+            //        FileName = factura.Item2 + ".pdf"
+            //    };
+            result.Content.Headers.ContentType =
+                new MediaTypeHeaderValue("application/pdf");
+
+            return result;
+        }
 
         protected override void Dispose(bool disposing)
         {

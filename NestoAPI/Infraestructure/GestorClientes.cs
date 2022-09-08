@@ -11,6 +11,9 @@ using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 using System.Data.Entity;
 using System.Web.Http.ModelBinding.Binders;
 using System.Globalization;
+using Microsoft.Reporting.WebForms;
+using NestoAPI.Models.Facturas;
+using System.Net.Http;
 
 namespace NestoAPI.Infraestructure
 {
@@ -923,6 +926,58 @@ namespace NestoAPI.Infraestructure
             }
             
             return cliente;
+        }
+
+
+        public ByteArrayContent MandatoEnPDF(List<Mandato> mandatos)
+        {
+            Warning[] warnings;
+            string mimeType;
+            string[] streamids;
+            string encoding;
+            string filenameExtension;
+
+            ReportViewer viewer = new ReportViewer();
+            viewer.LocalReport.ReportPath = @"Models\Clientes\MandatoCoreSEPA.rdlc";
+            viewer.LocalReport.DataSources.Add(new ReportDataSource("MandatoDataSet", mandatos));
+            viewer.LocalReport.EnableExternalImages = true;
+
+            viewer.LocalReport.Refresh();
+
+            var bytes = viewer.LocalReport.Render("PDF", null, out mimeType, out encoding, out filenameExtension, out streamids, out warnings);
+
+            viewer.LocalReport.Dispose();
+            viewer.Dispose();
+
+            return new ByteArrayContent(bytes);
+        }
+
+        public async Task<Mandato> LeerMandato(string empresa, string cliente, string contacto, string ccc)
+        {
+            Cliente clienteDB = await servicio.BuscarCliente(empresa, cliente, contacto).ConfigureAwait(false);
+            CCC cccDB = await servicio.BuscarCCC(empresa, cliente, contacto, ccc).ConfigureAwait(false);
+
+            Mandato mandato = new Mandato
+            {
+                Referencia = $"{empresa}/{cliente}/{ccc}",
+                IdentificadorAcreedor = "ESA78368255",
+                NombreAcreedor = "Nueva Visión, S.A.",
+                DireccionAcreedor = "C/ Río Tiétar, 11, nave",
+                CodigoPostalAcreedor = "28119",
+                PoblacionAcreedor = "Algete",
+                ProvinciaAcreedor = "Madrid",
+                PaisAcreedor = "España",
+                NombreDeudor = clienteDB.Nombre.Trim(),
+                DireccionDeudor = clienteDB.Dirección.Trim(),
+                CodigoPostalDeudor = clienteDB.CodPostal.Trim(),
+                PoblacionDeudor = clienteDB.Población.Trim(),
+                ProvinciaDeudor = clienteDB.Provincia.Trim(),
+                PaisDeudor = "España",
+                Iban = new Iban($"{cccDB.Pais}{cccDB.DC_IBAN}{cccDB.Entidad}{cccDB.Oficina}{cccDB.DC}{cccDB.Nº_Cuenta}"),
+                SwiftBic = cccDB.BIC,
+                PersonaFirmante = clienteDB.Nombre
+            };
+            return mandato;
         }
     }
 }
