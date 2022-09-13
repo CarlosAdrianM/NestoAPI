@@ -975,8 +975,9 @@ namespace NestoAPI.Infraestructure
                 PaisDeudor = "España",
                 Iban = new Iban($"{cccDB.Pais}{cccDB.DC_IBAN}{cccDB.Entidad}{cccDB.Oficina}{cccDB.DC}{cccDB.Nº_Cuenta}"),
                 SwiftBic = cccDB.BIC,
-                PersonaFirmante = clienteDB.Nombre
+                PersonaFirmante = "0123456789XY".Contains(clienteDB.CIF_NIF.Substring(0, 1)) ? clienteDB.Nombre : String.Empty
             };
+
             return mandato;
         }
     }

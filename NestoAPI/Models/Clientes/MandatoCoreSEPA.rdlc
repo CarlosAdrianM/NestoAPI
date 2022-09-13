@@ -1308,7 +1308,7 @@
           <Paragraph>
             <TextRuns>
               <TextRun>
-                <Value>=Today() &amp; " - " &amp; First(Fields!PoblacionDeudor.Value, "MandatoDataSet")</Value>
+                <Value>=Today.ToString("dd-MM-yyyy") &amp; " - " &amp; First(Fields!PoblacionDeudor.Value, "MandatoDataSet")</Value>
                 <Style>
                   <FontFamily>Courier New</FontFamily>
                 </Style>

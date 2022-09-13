@@ -598,6 +598,10 @@ namespace NestoAPI.Controllers
         {
             GestorClientes gestor = new GestorClientes();
             Mandato mandato = await gestor.LeerMandato(empresa, cliente, contacto, ccc).ConfigureAwait(true);
+            if (!mandato.Iban.EsValido)
+            {
+                throw new Exception($"El IBAN {mandato.Iban.Formateado} no es válido");
+            }
             List<Mandato> mandatos = new List<Mandato> { mandato };
 
             var result = new HttpResponseMessage(HttpStatusCode.OK)
