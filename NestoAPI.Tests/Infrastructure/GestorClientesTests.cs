@@ -699,7 +699,6 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(2, clienteNuevo.PersonasContactoClientes.Count);
         }
 
-
         [TestMethod]
         public void GestorClientes_PrepararClienteModificar_SiCambiaUnaPersonaDeContactoSeModificaEnElCliente()
         {
@@ -796,7 +795,6 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("carlosadrian@nuevavision.es", clienteNuevo.PersonasContactoClientes.Single(p => p.Número.Trim() == "2").CorreoElectrónico);
         }
 
-
         [TestMethod]
         public void GestorClientes_PrepararClienteModificar_SiElClienteEsEstado5PeroTieneNifSePasaAEstado0()
         {
@@ -834,21 +832,82 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, clienteNuevo.CCCs.Count);
         }
 
+
         [TestMethod]
-        [ExpectedException(typeof(AggregateException),
-        "El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.")]
-        public void GestorClientes_PrepararClienteModificar_SiLaFormaDePagoEsReciboDaError()
+        public void GestorClientes_PrepararClienteModificar_SiElCCCYaExistePeroNoEstaEnFichaLoPonemos()
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Contacto = "0";
             clienteCrear.FormaPago = "RCB";
-            clienteCrear.Iban = "NULL XXXX 7890 1234 5678 9012";
+            clienteCrear.Iban = "ES62 2100 6273 9802 0007 6607";
             NVEntities db = A.Fake<NVEntities>();
+            A.CallTo(() => servicio.BuscarCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).
+                Returns(new Cliente {
+                    CCC = null
+                });
+
+            A.CallTo(() => servicio.BuscarIban(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored, A<Iban>.Ignored)).
+                Returns(new CCC
+                {
+                    Contacto = "0",
+                    Número = "3"
+                });
 
             Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual("3", clienteNuevo.CCC);
         }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_SiElCCCYaExistePeroEstaEnOtroContactoLoCreamos()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Contacto = "0";
+            clienteCrear.FormaPago = "RCB";
+            clienteCrear.Iban = "ES62 2100 6273 9802 0007 6607";
+            NVEntities db = A.Fake<NVEntities>();
+            A.CallTo(() => servicio.BuscarCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).
+                Returns(new Cliente
+                {
+                    CCC = null
+                });
+
+            CCC cccNulo = null;
+            A.CallTo(() => servicio.BuscarIban(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored, A<Iban>.Ignored)).
+                Returns(cccNulo);
+            A.CallTo(() => servicio.BuscarIban(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<Iban>.Ignored)).
+                Returns(new CCC
+                {
+                    Contacto = "1",
+                    Número = "3"
+                });
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual("3", clienteNuevo.CCC);
+        }
+
+        //[TestMethod]
+        //[ExpectedException(typeof(AggregateException),
+        //"El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.")]
+        //public void GestorClientes_PrepararClienteModificar_SiLaFormaDePagoEsReciboDaError()
+        //{
+        //    IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+        //    IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+        //    GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+        //    ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+        //    clienteCrear.FormaPago = "RCB";
+        //    clienteCrear.Iban = "NULL XXXX 7890 1234 5678 9012";
+        //    NVEntities db = A.Fake<NVEntities>();
+
+        //    Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+        //}
 
         [TestMethod]
         public void GestorClientes_PrepararClienteCrear_SiNoTieneEsteticaYHayVendedorDePeluqueriaCreaElVendedorDePeluqueria()

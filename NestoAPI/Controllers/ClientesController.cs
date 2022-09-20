@@ -448,12 +448,12 @@ namespace NestoAPI.Controllers
 
             //IServicioGestorClientes servicio = new ServicioGestorClientes();
             IGestorClientes gestor = new GestorClientes();
-            Cliente cliente = await gestor.PrepararClienteModificar(clienteCrear, db);
-                        
-            db.Entry(cliente).State = System.Data.Entity.EntityState.Modified;
-                
+            Cliente cliente = await gestor.PrepararClienteModificar(clienteCrear, db);         
+            
+
             try
             {
+                db.Entry(cliente).State = System.Data.Entity.EntityState.Modified;
                 await db.SaveChangesAsync();
                 if (cliente.CCCs.Count != 0 && cliente.CCC == null)
                 {

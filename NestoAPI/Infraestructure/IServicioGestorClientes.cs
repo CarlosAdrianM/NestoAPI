@@ -32,5 +32,9 @@ namespace NestoAPI.Infraestructure
         Task<List<Cliente>> BuscarContactos(NVEntities db, string empresa, string cliente, string contacto);
         Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email);
         Task<SeguimientoCliente> BuscarSeguimiento(string empresa, string cliente, string contacto);
+        Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, Iban iban);
+        Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, string contacto, Iban iban);
+        Task<int> MayorCCC(string empresa, string cliente);
+        Task<bool> CrearCCC(CCC nuevoCCC);
     }
 }

@@ -14,6 +14,7 @@ using System.Globalization;
 using Microsoft.Reporting.WebForms;
 using NestoAPI.Models.Facturas;
 using System.Net.Http;
+using System.Web.Http.OData.Formatter.Serialization;
 
 namespace NestoAPI.Infraestructure
 {
@@ -710,40 +711,110 @@ namespace NestoAPI.Infraestructure
                 clienteDB.CondPagoClientes.Add(condPagoNueva);
             }
 
-            Iban iban = new Iban(clienteModificar.Iban);
-            if (clienteModificar.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO &&
-                clienteModificar.Iban != null && !string.IsNullOrWhiteSpace(clienteModificar.Iban) && clienteDB.CCC1 != null && (
-                clienteDB.CCC1.Pais != iban.Pais ||
-                clienteDB.CCC1.DC_IBAN != iban.DigitoControlPais ||
-                clienteDB.CCC1.Entidad != iban.Entidad ||
-                clienteDB.CCC1.Oficina != iban.Oficina ||
-                clienteDB.CCC1.DC != iban.DigitoControl ||
-                clienteDB.CCC1.Nº_Cuenta != iban.NumeroCuenta))
+            
+            if (clienteModificar.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO && !string.IsNullOrWhiteSpace(clienteModificar.Iban))
             {
-                // TODO: permitir modificar IBAN, pero ponerlo en estado "en poder del vendedor"
-                throw new Exception("El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.");
+                Iban iban = new Iban(clienteModificar.Iban);
+                bool esElMismoIban = false;
+                //CCC cccEncontrado = await servicio.BuscarIban(clienteModificar.Empresa, clienteModificar.Cliente, iban).ConfigureAwait(false);
+                if (clienteDB.CCC1 != null && (
+                clienteDB.CCC1.Pais == iban.Pais &&
+                clienteDB.CCC1.DC_IBAN == iban.DigitoControlPais &&
+                clienteDB.CCC1.Entidad == iban.Entidad &&
+                clienteDB.CCC1.Oficina == iban.Oficina &&
+                clienteDB.CCC1.DC == iban.DigitoControl &&
+                clienteDB.CCC1.Nº_Cuenta == iban.NumeroCuenta))
+                {
+                    // TODO: permitir modificar IBAN, pero ponerlo en estado "en poder del vendedor"
+                    //throw new Exception("El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.");
+                    esElMismoIban = true;
+                }
+
+                // TODO: hacer test que si añado iban a uno que no tiene, me deja
+                if (!esElMismoIban && !string.IsNullOrWhiteSpace(clienteModificar.Iban))
+                {
+                    // 1. mirar si existe pero no está puesto en ficha y ponerlo
+                    CCC cccEncontrado = await servicio.BuscarIban(db, clienteModificar.Empresa, clienteModificar.Cliente, clienteModificar.Contacto, iban).ConfigureAwait(false);
+                    if (cccEncontrado == null)
+                    {
+                        cccEncontrado = await servicio.BuscarIban(db, clienteModificar.Empresa, clienteModificar.Cliente, iban).ConfigureAwait(false);
+                    }
+                    if (cccEncontrado != null)
+                    {
+                        if (cccEncontrado.Contacto?.Trim() == clienteModificar.Contacto?.Trim()) 
+                        {
+                            clienteDB.CCC = cccEncontrado.Número; 
+                        }
+                        else
+                        {
+                            // crear el CCC en el contacto
+                            CCC nuevoCCC = new CCC
+                            {
+                                //Cliente1 = clienteDB, 
+                                Empresa = clienteDB.Empresa,
+                                Cliente = clienteDB.Nº_Cliente,
+                                Contacto = clienteDB.Contacto,
+                                Número = cccEncontrado.Número,
+                                Pais = iban.Pais,
+                                DC_IBAN = iban.DigitoControlPais,
+                                Entidad = iban.Entidad,
+                                Oficina = iban.Oficina,
+                                DC = iban.DigitoControl,
+                                Nº_Cuenta = iban.NumeroCuenta,
+                                Estado = cccEncontrado.Estado,
+                                Secuencia = cccEncontrado.Secuencia,
+                                Usuario = clienteModificar.Usuario
+                            };
+
+                            /*
+                            //db.Entry(nuevoCCC).State = EntityState.Added;
+                            //clienteDB.CCC1 = nuevoCCC;
+                            nuevoCCC.Clientes.Add(clienteDB);
+                            db.Entry(nuevoCCC).State = EntityState.Detached;
+                            //clienteDB.CCCs.Add(nuevoCCC);
+                            clienteDB.CCC = nuevoCCC.Número;
+                            //clienteDB.CCC = cccEncontrado.Número;
+                            */
+                            bool creado = await servicio.CrearCCC(nuevoCCC).ConfigureAwait(false);
+                            if (!creado)
+                            {
+                                throw new Exception("No se pudo crear el CCC");
+                            }
+                            clienteDB.CCC = nuevoCCC.Número;
+                        }
+                    }
+                    else
+                    {
+                        // 2. cc. crearlo -> Comentar y hacer test
+                        CCC nuevoCCC = new CCC
+                        {
+                            //Cliente1 = clienteDB, 
+                            Empresa = clienteDB.Empresa,
+                            Cliente = clienteDB.Nº_Cliente,
+                            Contacto = clienteDB.Contacto,
+                            Número = (await servicio.MayorCCC(clienteModificar.Empresa, clienteModificar.Cliente).ConfigureAwait(false) + 1).ToString(),
+                            Pais = iban.Pais,
+                            DC_IBAN = iban.DigitoControlPais,
+                            Entidad = iban.Entidad,
+                            Oficina = iban.Oficina,
+                            DC = iban.DigitoControl,
+                            Nº_Cuenta = iban.NumeroCuenta,
+                            Estado = Constantes.Clientes.EstadosMandatos.EN_PODER_DEL_CLIENTE,
+                            Secuencia = Constantes.Clientes.SECUENCIA_POR_DEFECTO,
+                            Usuario = clienteModificar.Usuario
+                        };
+
+                        bool creado = await servicio.CrearCCC(nuevoCCC).ConfigureAwait(false);
+                        if (!creado)
+                        {
+                            throw new Exception("No se pudo crear el CCC");
+                        }
+                        clienteDB.CCC = nuevoCCC.Número;
+                    }                    
+                }
             }
 
-            // TODO: hacer test que si añado iban a uno que no tiene, me deja
-            if (!string.IsNullOrWhiteSpace(clienteModificar.Iban) && clienteDB.CCC1 == null)
-            {
-                CCC nuevoCCC = new CCC
-                {
-                    Cliente1 = clienteDB,
-                    Número = "1", //TODO: mirar cual toca
-                    Pais = iban.Pais,
-                    DC_IBAN = iban.DigitoControlPais,
-                    Entidad = iban.Entidad,
-                    Oficina = iban.Oficina,
-                    DC = iban.DigitoControl,
-                    Nº_Cuenta = iban.NumeroCuenta,
-                    Estado = Constantes.Clientes.EstadosMandatos.EN_PODER_DEL_CLIENTE,
-                    Secuencia = Constantes.Clientes.SECUENCIA_POR_DEFECTO,
-                    Usuario = clienteModificar.Usuario
-                };
-
-                clienteDB.CCCs.Add(nuevoCCC);
-            }     
+            
             
             for (var i = 0; i < clienteDB.PersonasContactoClientes.Count; i++)
             {

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Data.Entity;
+using System.Diagnostics.Contracts;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -12,6 +13,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
 using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -372,6 +374,41 @@ namespace NestoAPI.Infraestructure
             {
                 var seguimiento = await db.SeguimientosClientes.Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto).OrderByDescending(s => s.NºOrden).FirstOrDefaultAsync().ConfigureAwait(false);
                 return seguimiento;
+            }
+        }
+
+        public async Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, Iban iban)
+        {
+            var ibanEncontrado = await db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Entidad == iban.Entidad && c.Oficina == iban.Oficina && c.Nº_Cuenta == iban.NumeroCuenta).OrderByDescending(c => c.Fecha_Modificación).FirstOrDefaultAsync().ConfigureAwait(false);
+            return ibanEncontrado;
+        }
+
+        public async Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, string contacto, Iban iban)
+        {
+            var ibanEncontrado = await db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto == contacto && c.Entidad == iban.Entidad && c.Oficina == iban.Oficina && c.Nº_Cuenta == iban.NumeroCuenta).OrderByDescending(c => c.Fecha_Modificación).FirstOrDefaultAsync().ConfigureAwait(false);
+            return ibanEncontrado;
+        }
+
+        public async Task<int> MayorCCC(string empresa, string cliente)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                string mayorCCC = await db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente).OrderByDescending(c => c.Número).Select(c => c.Número).FirstOrDefaultAsync().ConfigureAwait(false);
+                if (int.TryParse(mayorCCC, out int mayor))
+                {
+                    return mayor;
+                }
+                return 0;
+            }
+        }
+
+        public async Task<bool> CrearCCC(CCC nuevoCCC)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                db.CCCs.Add(nuevoCCC);
+                int grabado = await db.SaveChangesAsync().ConfigureAwait(false);
+                return (grabado > 0);
             }
         }
     }

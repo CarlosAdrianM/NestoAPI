@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data.Entity.Core.Mapping;
 using System.Linq;
 using System.Runtime.Serialization;
 using System.Text.RegularExpressions;
@@ -31,6 +32,10 @@ namespace NestoAPI.Models.Clientes
                 _codigo.Replace(" ", "");
                 _codigo = Regex.Replace(_codigo, ESPECIALES, "", RegexOptions.None);
                 _codigo = _codigo.ToUpper();
+                if (!string.IsNullOrEmpty(_codigo) && !EsValido)
+                {
+                    throw new ArgumentException($"El IBAN {_codigo} es incorrecto.");
+                }
             }
         }
         public bool EsValido {
