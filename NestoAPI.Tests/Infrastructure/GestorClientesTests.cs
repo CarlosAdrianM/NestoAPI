@@ -363,6 +363,21 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(clienteFake, respuesta.ClientesMismoTelefono.First());
         }
 
+
+        [TestMethod]
+        public void GestorClientes_ComprobarDatosBancoGenerales_SiElIbanNoEsNuloPeroTieneElValorNullLoTratamosComoNulo()
+        {
+            var gestor = new GestorClientes();
+            var respuestaFake = new RespuestaDatosBancoCliente();
+
+            var respuesta = gestor.ComprobarDatosBanco("EFC", "CONTADO", "NULL");
+
+            Assert.AreEqual(String.Empty, respuesta.Iban);
+            Assert.AreEqual(String.Empty, respuesta.IbanFormateado);
+            Assert.IsTrue(respuesta.IbanValido);
+        }
+
+
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SiNoHayComaBuscamosElPrimerNumero()
         {   
@@ -887,6 +902,7 @@ namespace NestoAPI.Tests.Infrastructure
                     Contacto = "1",
                     Número = "3"
                 });
+            A.CallTo(() => servicio.CrearCCC(A<CCC>.Ignored)).Returns(true);
 
             Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
 

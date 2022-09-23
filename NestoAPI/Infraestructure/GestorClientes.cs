@@ -352,7 +352,7 @@ namespace NestoAPI.Infraestructure
         public RespuestaDatosBancoCliente ComprobarDatosBanco(string formaPago, string plazosPago, string ibanComprobar)
         {
             RespuestaDatosBancoCliente respuesta;
-            if (ibanComprobar != null)
+            if (ibanComprobar != null && ibanComprobar.ToLower() != "null")
             {
                 Iban iban = new Iban(ibanComprobar);
                 respuesta = new RespuestaDatosBancoCliente
