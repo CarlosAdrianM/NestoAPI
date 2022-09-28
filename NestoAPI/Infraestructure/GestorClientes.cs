@@ -743,7 +743,15 @@ namespace NestoAPI.Infraestructure
                     {
                         if (cccEncontrado.Contacto?.Trim() == clienteModificar.Contacto?.Trim()) 
                         {
-                            clienteDB.CCC = cccEncontrado.Número; 
+                            clienteDB.CCC = cccEncontrado.Número;
+                            if (cccEncontrado.Estado == Constantes.Clientes.Estados.NULO)
+                            {
+                                bool recuperado = await servicio.RecuperarCCC(cccEncontrado);
+                                if (!recuperado)
+                                {
+                                    throw new Exception("No se pudo recuperar el CCC");
+                                }
+                            }
                         }
                         else
                         {

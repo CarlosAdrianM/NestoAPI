@@ -411,5 +411,16 @@ namespace NestoAPI.Infraestructure
                 return (grabado > 0);
             }
         }
+
+        public async Task<bool> RecuperarCCC(CCC cccEncontrado)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                CCC cccRecuperar = await db.CCCs.SingleAsync(c => c.Empresa == cccEncontrado.Empresa && c.Cliente == cccEncontrado.Cliente && c.Contacto == cccEncontrado.Contacto && c.Número == cccEncontrado.Número).ConfigureAwait(false);
+                cccRecuperar.Estado = 0; // sin mandato
+                int modificado = await db.SaveChangesAsync().ConfigureAwait(false);
+                return (modificado > 0);
+            }
+        }
     }
 }

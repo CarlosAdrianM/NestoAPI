@@ -36,5 +36,6 @@ namespace NestoAPI.Infraestructure
         Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, string contacto, Iban iban);
         Task<int> MayorCCC(string empresa, string cliente);
         Task<bool> CrearCCC(CCC nuevoCCC);
+        Task<bool> RecuperarCCC(CCC cccEncontrado);
     }
 }
