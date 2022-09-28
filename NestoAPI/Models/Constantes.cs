@@ -24,6 +24,7 @@
                 public const short VISITA_PRESENCIAL = 0;
                 public const short VISITA_TELEFONICA = 9;
                 public const short PRIMERA_VISITA = 5;
+                public const short DISTRIBUIDOR = 6;
                 public const short COMISIONA_SIN_VISITA = 7;
                 public const short SIN_ACCION_COMERCIAL_SOLO_ESTETICA = 93;
                 public const short SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA = 11;
