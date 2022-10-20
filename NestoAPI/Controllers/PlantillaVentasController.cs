@@ -13,17 +13,20 @@ using NestoAPI.Models;
 using NestoAPI.Infraestructure;
 using System.Web;
 using System.Data.Entity.Core.Objects;
+using System.Reflection.Emit;
 
 namespace NestoAPI.Controllers
 {
     public class PlantillaVentasController : ApiController
     {
         private NVEntities db = new NVEntities();
+        private readonly IServicioPlantillaVenta servicio;
         
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
         public PlantillaVentasController()
         {
             db.Configuration.LazyLoadingEnabled = false;
+            servicio = new ServicioPlantillaVenta();
         }
 
         // GET: api/PlantillaVentas
@@ -332,6 +335,22 @@ namespace NestoAPI.Controllers
 
             return param.Lineas;
         }
+
+        [HttpPost]
+        [Route("api/PlantillaVentas/ProductosBonificables")]
+        [ResponseType(typeof(List<LineaPlantillaVenta>))]
+        public async Task<IHttpActionResult> GetCargarProductosBonificables((string, List<LineaPlantillaVenta>) parametro)
+        {
+            string cliente = parametro.Item1;
+            List<LineaPlantillaVenta> lineas = parametro.Item2;
+            var productosBonificables = servicio.CargarProductosBonificables();
+            var productosYaComprados = servicio.CargarProductosYaComprados(cliente);
+            productosYaComprados.UnionWith(lineas.Select(l => l.producto).ToHashSet());
+            productosBonificables.ExceptWith(productosYaComprados);
+            List<LineaPlantillaVenta> lineasBonificables = productosBonificables.Select(i => new LineaPlantillaVenta { producto = i }).ToList();
+            return Ok(lineasBonificables);
+        }
+
 
         public class PonerStockParam
         {

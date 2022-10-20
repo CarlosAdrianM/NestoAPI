@@ -378,6 +378,7 @@
     <Compile Include="Infraestructure\IServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
+    <Compile Include="Infraestructure\IServicioPlantillaVenta.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
@@ -392,6 +393,7 @@
     <Compile Include="Infraestructure\ServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
+    <Compile Include="Infraestructure\ServicioPlantillaVenta.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
     <Compile Include="Infraestructure\ServicioReclamacionDeuda.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
