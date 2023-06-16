@@ -1,16 +1,17 @@
 ﻿using Nesto.Modulos.PedidoCompra.Models;
+using NestoAPI.Models.PedidosBase;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace NestoAPI.Models.PedidosCompra
 {
-    public class PedidoCompraDTO
+    public class PedidoCompraDTO : PedidoBase<LineaPedidoCompraDTO>
     {
         public PedidoCompraDTO()
         {
             Lineas = new List<LineaPedidoCompraDTO>();
-            ParametrosIva = new List<ParametrosIvaCompra>();
+            ParametrosIva = new List<ParametrosIvaBase>();
         }
         public int Id { get; set; }
         public string Empresa { get; set; }
@@ -29,11 +30,13 @@ namespace NestoAPI.Models.PedidosCompra
         public string PeriodoFacturacion { get; set; }
         public string PathPedido { get; set; }
         public string CorreoRecepcionPedidos { get; set; }
+        /*
         public decimal BaseImponible { get => Math.Round(Lineas.Sum(l => l.BaseImponible), 2, MidpointRounding.AwayFromZero); }
         public decimal Total { get => Math.Round(Lineas.Sum(l => l.Total), 2, MidpointRounding.AwayFromZero); }
         public string Usuario { get; set; }
+        */
         public IEnumerable<LineaPedidoCompraDTO> Lineas { get; set; }
-        public IEnumerable<ParametrosIvaCompra> ParametrosIva { get; set; }
+        public IEnumerable<ParametrosIvaBase> ParametrosIva { get; set; }
 
 
         internal CabPedidoCmp ToCabPedidoCmp()

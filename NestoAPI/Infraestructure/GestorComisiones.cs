@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -28,7 +29,7 @@ namespace NestoAPI.Infraestructure
                     Pedido = cabPedido.Número,
                     GrupoProducto = vendedorPedidoGrupoNuevo.grupoProducto,
                     Vendedor = vendedorPedidoGrupoNuevo.vendedor,
-                    Usuario = pedido.usuario
+                    Usuario = pedido.Usuario
                 };
                 db.VendedoresPedidosGruposProductos.Add(vendedorPedidoGrupoActual);
             }            
@@ -56,7 +57,7 @@ namespace NestoAPI.Infraestructure
                     Pedido = cabPedido.Número,
                     GrupoProducto = vendedorCliente.GrupoProducto,
                     Vendedor = vendedorCliente.Vendedor,
-                    Usuario = pedido.usuario
+                    Usuario = pedido.Usuario
                 };
                 db.VendedoresPedidosGruposProductos.Add(vendedorPedido);
             }

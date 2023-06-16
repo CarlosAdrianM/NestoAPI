@@ -311,6 +311,7 @@
     <Compile Include="Areas\HelpPage\SampleGeneration\TextSample.cs" />
     <Compile Include="Areas\HelpPage\XmlDocumentationProvider.cs" />
     <Compile Include="Controllers\AccountsController.cs" />
+    <Compile Include="Controllers\AgenciasLlamadasWebController.cs" />
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
@@ -408,6 +409,9 @@
     </Compile>
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Models\AccountBindingModels.cs" />
+    <Compile Include="Models\AgenciaLlamadaWeb.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\AgenciaTransporte.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -615,6 +619,9 @@
     <Compile Include="Models\ParametroUsuario.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PedidosBase\LineaPedidoBase.cs" />
+    <Compile Include="Models\PedidosBase\ParametrosIvaBase.cs" />
+    <Compile Include="Models\PedidosBase\PedidoBase.cs" />
     <Compile Include="Models\PedidosCompra\DescuentoCantidadCompra.cs" />
     <Compile Include="Models\PedidosCompra\LineaPedidoCompraDTO.cs" />
     <Compile Include="Models\PedidosCompra\OfertaCompra.cs" />
@@ -626,8 +633,12 @@
     <Compile Include="Models\PedidosEspeciale.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />
+    <Compile Include="Models\PedidosVenta\LineaPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntPedido.cs" />
+    <Compile Include="Models\PedidosVenta\PedidoVentaDTO.cs" />
+    <Compile Include="Models\PedidosVenta\PrepagoDTO.cs" />
     <Compile Include="Models\PersonaContactoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

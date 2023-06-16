@@ -16,6 +16,7 @@ using Nesto.Modulos.PedidoCompra.Models;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
+using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosCompra;
 
 namespace NestoAPI.Controllers
@@ -69,7 +70,7 @@ namespace NestoAPI.Controllers
 
                 var parametros = db.ParametrosIVA
                     .Where(p => p.Empresa == empresa && p.IVA_Cliente_Prov == pedidoCompra.CodigoIvaProveedor)
-                    .Select(p => new ParametrosIvaCompra
+                    .Select(p => new ParametrosIvaBase
                     {
                         CodigoIvaProducto = p.IVA_Producto.Trim(),
                         PorcentajeIvaProducto = (decimal)p.C__IVA / 100
@@ -175,7 +176,7 @@ namespace NestoAPI.Controllers
             {
                 pedido.ParametrosIva = await db.ParametrosIVA
                     .Where(p => p.Empresa == empresa && p.IVA_Cliente_Prov == pedido.CodigoIvaProveedor)
-                    .Select(p => new ParametrosIvaCompra
+                    .Select(p => new ParametrosIvaBase
                     {
                         CodigoIvaProducto = p.IVA_Producto.Trim(),
                         PorcentajeIvaProducto = (decimal)p.C__IVA / 100

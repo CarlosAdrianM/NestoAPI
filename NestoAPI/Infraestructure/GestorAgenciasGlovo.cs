@@ -3,6 +3,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.ApplicationInsights;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Infraestructure
 {
@@ -54,7 +55,7 @@ namespace NestoAPI.Infraestructure
             RespuestaAgencia respuesta = await servicio.LeerDireccionPedidoGoogleMaps(pedido);
 
             TelemetryClient telemetry = new TelemetryClient();
-            telemetry.Context.User.Id = pedido.usuario;
+            telemetry.Context.User.Id = pedido.Usuario;
             telemetry.TrackEvent("OfrecidoGlovo");
 
             return new RespuestaAgencia {

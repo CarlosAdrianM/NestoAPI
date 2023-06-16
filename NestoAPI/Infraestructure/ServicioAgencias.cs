@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Web;
 using Microsoft.ApplicationInsights;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 

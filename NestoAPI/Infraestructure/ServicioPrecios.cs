@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Web;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Infraestructure
 {
@@ -88,18 +89,18 @@ namespace NestoAPI.Infraestructure
         {
             using (NVEntities db = new NVEntities())
             {
-                var listaProductosPedido = pedido.LineasPedido.Select(l => l.producto);
+                var listaProductosPedido = pedido.Lineas.Select(l => l.Producto);
                 var importeGrupo = db.Productos.Where(p=>listaProductosPedido.Contains(p.Número))
                     .AsEnumerable()
-                    .Join(pedido.LineasPedido,
+                    .Join(pedido.Lineas,
                         prod => prod.Número?.Trim(),
-                        lin => lin.producto?.Trim(),
+                        lin => lin.Producto?.Trim(),
                         (prod, lin) => new { Producto = prod, LineaPedidoVentaDTO = lin})
                     .Where(r => r.Producto.Empresa?.Trim() == pedido.empresa
-                        && r.Producto.Número?.Trim() == r.LineaPedidoVentaDTO.producto
+                        && r.Producto.Número?.Trim() == r.LineaPedidoVentaDTO.Producto
                         && r.Producto.Grupo == grupo
                         && r.Producto.SubGrupo == subGrupo
-                        && (r.LineaPedidoVentaDTO.baseImponible == 0 || r.LineaPedidoVentaDTO.baseImponible != r.Producto.PVP * r.LineaPedidoVentaDTO.cantidad)
+                        && (r.LineaPedidoVentaDTO.BaseImponible == 0 || r.LineaPedidoVentaDTO.BaseImponible != r.Producto.PVP * r.LineaPedidoVentaDTO.cantidad)
                     );
 
                 return (decimal)importeGrupo.Sum(r => r.Producto.PVP * r.LineaPedidoVentaDTO.cantidad);
@@ -110,7 +111,7 @@ namespace NestoAPI.Infraestructure
         {
             using (NVEntities db = new NVEntities())
             {
-                var listaProductosPedido = pedido.LineasPedido.Select(l => l.producto);
+                var listaProductosPedido = pedido.Lineas.Select(l => l.Producto);
                 var consultaFiltrados = db.Productos.Where(p => 
                     p.Empresa == pedido.empresa
                     && listaProductosPedido.Contains(p.Número)
@@ -125,7 +126,7 @@ namespace NestoAPI.Infraestructure
                     productosFiltrados = consultaFiltrados.Select(p => p.Número);
                 }
                 
-                var lineas = pedido.LineasPedido.Where(l => productosFiltrados.Contains(l.producto)).ToList();
+                var lineas = pedido.Lineas.Where(l => productosFiltrados.Contains(l.Producto)).ToList();
                 return lineas;
             }
         }

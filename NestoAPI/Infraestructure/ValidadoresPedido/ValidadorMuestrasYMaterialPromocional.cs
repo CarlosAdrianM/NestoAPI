@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Web;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
 {
@@ -26,8 +27,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
             if (producto.SubGrupo == Constantes.Productos.SUBGRUPO_MUESTRAS && producto.Grupo == Constantes.Productos.GRUPO_COSMETICA)
             {
-                decimal baseImponiblePedido = pedido.LineasPedido.Sum(l => l.baseImponible);
-                int maximoUnidades = pedido.LineasPedido.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad);
+                decimal baseImponiblePedido = pedido.Lineas.Sum(l => l.BaseImponible);
+                int maximoUnidades = pedido.Lineas.Where(l => l.Producto == numeroProducto).Sum(l => l.cantidad);
                 
                 var importeMuestras = GestorPrecios.servicio.CalcularImporteGrupo(pedido, Constantes.Productos.GRUPO_COSMETICA, Constantes.Productos.SUBGRUPO_MUESTRAS);
                 if (importeMuestras <= baseImponiblePedido * PORCENTAJE_MAXIMO_MUESTRAS && maximoUnidades <= UNIDADES_MAXIMO_MUESTRAS)

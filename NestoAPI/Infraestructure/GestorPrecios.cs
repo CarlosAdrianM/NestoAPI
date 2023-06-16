@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Infraestructure.ValidadoresPedido;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;

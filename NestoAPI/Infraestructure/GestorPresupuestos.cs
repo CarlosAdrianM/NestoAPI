@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Configuration;
 using System.Linq;
@@ -37,7 +38,7 @@ namespace NestoAPI.Infraestructure
 
         public async Task EnviarCorreo(string tipoCorreo)
         {
-            if (pedido.LineasPedido.Count == 0)
+            if (pedido.Lineas.Count == 0)
             {
                 return;
             }
@@ -84,7 +85,7 @@ namespace NestoAPI.Infraestructure
 
             // Miramos si ponemos al usuario que metió el pedido
             ParametroUsuario parametroUsuario;
-            string usuarioParametro = pedido.usuario.Substring(pedido.usuario.IndexOf("\\") + 1);
+            string usuarioParametro = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
             if (usuarioParametro != null)
             {
                 parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "CorreoDefecto");
@@ -104,7 +105,7 @@ namespace NestoAPI.Infraestructure
             mail.Subject = string.Format("{0} {1} - c/ {2}", TEXTO_PEDIDO, pedido.numero, pedido.cliente);
             mail.Body = (await GenerarTablaHTML(pedido, tipoCorreo)).ToString();
             mail.IsBodyHtml = true;
-            if (pedido.LineasPedido.FirstOrDefault().almacen == Constantes.Almacenes.REINA)
+            if (pedido.Lineas.FirstOrDefault().almacen == Constantes.Almacenes.REINA)
             {
                 mail.CC.Add(Constantes.Correos.TIENDA_REINA);
             }
@@ -163,7 +164,7 @@ namespace NestoAPI.Infraestructure
                 s.AppendLine("Vendedor Peluquería: " + nombreVendedorPeluqueria + "<br>");
             }
             s.AppendLine("Fecha: " + fechaPedido.ToString("D") + "<br>" +
-                "Le Atendió: " + pedido.usuario + "<br>" +
+                "Le Atendió: " + pedido.Usuario + "<br>" +
                 "</td>");
             s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">"+
                 "<b>DIRECCIÓN DE ENTREGA</b><br>" +
@@ -200,33 +201,58 @@ namespace NestoAPI.Infraestructure
             s.Append("<th>Importe</th></tr>");
             s.AppendLine("</thead>");
             s.AppendLine("<tbody align = \"right\">");
-            foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
             {
+                string colorCantidad = "black";
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
-                    string rutaImagen = await ProductoDTO.RutaImagen(linea.producto).ConfigureAwait(false);
+                    ServicioGestorStocks servicioGestorStocks = new ServicioGestorStocks();
+                    GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
+                    int stockAlmacen = gestorStocks.Stock(linea.Producto, linea.almacen);
+                    int pendientesEntregar = gestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, linea.almacen);
+                    if (stockAlmacen - pendientesEntregar >= 0)
+                    {
+                        colorCantidad = "green";
+                    }
+                    else
+                    {
+                        int cantidadDisponible = gestorStocks.UnidadesDisponiblesTodosLosAlmacenes(linea.Producto);
+                        if (cantidadDisponible >= 0)
+                        {
+                            colorCantidad = "orange";
+                        }
+                        else
+                        {
+                            colorCantidad = "red";
+                        }
+                    }
+                }
+                s.Append("<tr style=\"color: "+ colorCantidad +";\">");
+                if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    string rutaImagen = await ProductoDTO.RutaImagen(linea.Producto).ConfigureAwait(false);
                     s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"><img src=\"" + rutaImagen + "\" style=\"max-height:100%; max-width:100%\"></td>");
                 } else
                 {
                     s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"></td>");
                 }
-                s.Append("<td>" + linea.producto + "</td>");
+                s.Append("<td>" + linea.Producto + "</td>");
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
-                    string rutaEnlace = await ProductoDTO.RutaEnlace(linea.producto).ConfigureAwait(false);
+                    string rutaEnlace = await ProductoDTO.RutaEnlace(linea.Producto).ConfigureAwait(false);
                     rutaEnlace += "&utm_medium=correopedido";
                     s.Append("<td><a href=\""+rutaEnlace+"\">" + linea.texto + "</a></td>");
                 } else
                 {
                     s.Append("<td>" + linea.texto + "</td>");
                 }
-                s.Append("<td>" + linea.cantidad.ToString() + "</td>");
+                s.Append("<td>" + linea.cantidad.ToString() + "</td>");  
                 s.Append("<td style=\"text-align:right\">" + linea.precio.ToString("C") + "</td>");
                 s.Append("<td style=\"text-align:right\">" + linea.descuento.ToString("P") + "</td>");
-                s.Append("<td style=\"text-align:right\">" + linea.baseImponible.ToString("C") + "</td>");
+                s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
                 s.AppendLine("</tr>");
             }
-            s.AppendLine("</tr>");
+            //s.AppendLine("</tr>");
             s.AppendLine("</tbody>");
             s.AppendLine("</table>");
 
@@ -238,10 +264,10 @@ namespace NestoAPI.Infraestructure
             s.Append("<th>Total</th></tr>");
             s.AppendLine("</thead>");
             s.AppendLine("<tbody align = \"right\">");
-            s.Append("<td style=\"text-align:right\">" + pedido.LineasPedido.Sum(l => l.baseImponible).ToString("C")+"</td>");
+            s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.BaseImponible).ToString("C")+"</td>");
             s.Append("<td style=\"text-align:right\">" + pedido.iva + "</td>");
-            s.Append("<td style=\"text-align:right\">" + pedido.LineasPedido.Sum(l=> l.importeIva).ToString("C") + "</td>");
-            s.Append("<td style=\"text-align:right\">" + pedido.LineasPedido.Sum(l=>l.total).ToString("C") + "</td>");
+            s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l=> l.ImporteIva).ToString("C") + "</td>");
+            s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l=>l.Total).ToString("C") + "</td>");
             s.AppendLine("</tr>");
             s.AppendLine("</tbody>");
             s.AppendLine("</table>");

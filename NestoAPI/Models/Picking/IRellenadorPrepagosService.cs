@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using NestoAPI.Models.PedidosVenta;
+using System.Collections.Generic;
 
 namespace NestoAPI.Models.Picking
 {

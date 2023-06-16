@@ -298,7 +298,7 @@ namespace NestoAPI.Infraestructure
         {
             using (NVEntities db = new NVEntities())
             {
-                return await db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO && v.TipoComisión == "7")
+                return await db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO || v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_MINI) && v.TipoComisión == "7")
                     .Select(v => v.Número)
                     .ToListAsync();
             }

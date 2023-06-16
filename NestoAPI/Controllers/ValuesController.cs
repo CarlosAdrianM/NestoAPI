@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;

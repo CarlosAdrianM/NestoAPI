@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Web;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
 {
@@ -15,9 +16,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 Motivo = "El pedido " + pedido.numero + " no tiene ninguna línea de productos"
             };
             bool esValidoDeMomento = true;
-            foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido.Where(l => l.tipoLinea == 1)) //1=Producto
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas.Where(l => l.tipoLinea == 1)) //1=Producto
             {
-                Producto producto = servicio.BuscarProducto(linea.producto);
+                Producto producto = servicio.BuscarProducto(linea.Producto);
 
                 if (producto == null)
                 {
@@ -25,7 +26,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     {
                         ValidacionSuperada = false,
                         AutorizadaDenegadaExpresamente = false,
-                        Motivo = "No existe el producto " + linea.producto + " en la línea " + linea.id.ToString()
+                        Motivo = "No existe el producto " + linea.Producto + " en la línea " + linea.id.ToString()
                     };
                 }
 
@@ -46,8 +47,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     return new RespuestaValidacion
                     {
                         ValidacionSuperada = false,
-                        Motivo = "El producto " + linea.producto + " no puede llevar ningún descuento ni oferta porque es Otros Aparatos" ,
-                        ProductoId = linea.producto,
+                        Motivo = "El producto " + linea.Producto + " no puede llevar ningún descuento ni oferta porque es Otros Aparatos" ,
+                        ProductoId = linea.Producto,
                         AutorizadaDenegadaExpresamente = true
                     };
                 }

@@ -356,8 +356,8 @@ namespace NestoAPI.Models.Comisiones
             };
 
 
-            // Aquí usamos cadenas mágicas porque son los que YA han firmado las condiciones
-            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "RFG" || vendedor == "JGP" || vendedor == "MRM" || vendedor == "RAS")
+            // Aquí usamos cadenas mágicas porque son los que YA han firmado las condiciones (Héctor en 2023)
+            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "RFG" || vendedor == "JGP" || vendedor == "MRM" || vendedor == "RAS" || vendedor == "HPS")
             {
                 return tramosCalle;
             }

@@ -40,6 +40,7 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                     correo.Subject = $"[ERROR {cliente.Correo}] Información de cargo por domiciliación bancaria (cliente {cliente.ListaEfectos[0].Cliente})";
                 }
                 correo.Bcc.Add("carlosadrian@nuevavision.es");
+                correo.Bcc.Add("monicaprado@nuevavision.es");
                 correo.IsBodyHtml = true;
                 correo.Body = GenerarCorreoDomiciliacionHTML(cliente);
                 listaCorreos.Add(correo);

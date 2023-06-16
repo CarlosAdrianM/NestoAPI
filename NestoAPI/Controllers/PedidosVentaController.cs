@@ -245,7 +245,7 @@ namespace NestoAPI.Controllers
                     Tabla = "Pedidos",
                     Anterior = JsonConvert.SerializeObject(cabPedidoVta),
                     Nuevo = JsonConvert.SerializeObject(pedido),
-                    Usuario = pedido.usuario
+                    Usuario = pedido.Usuario
                 };
                 db.Modificaciones.Add(modificacion);
             } catch (Exception ex)
@@ -327,20 +327,20 @@ namespace NestoAPI.Controllers
             }
 
             // Carlos 17/06/22: no se pueden mezclar lineas de distintos almacenes
-            if (pedido.LineasPedido.Any(l => l.almacen != pedido.LineasPedido.First().almacen))
+            if (pedido.Lineas.Any(l => l.almacen != pedido.Lineas.First().almacen))
             {
                 errorPersonalizado("No se pueden mezclar líneas de distintos almacenes");
             }
 
 
             // Carlos 17/06/22: no se pueden mezclar pedidos con presupuestos
-            if (pedido.LineasPedido.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.LineasPedido.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO))
+            if (pedido.Lineas.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.Lineas.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO))
             {
                 errorPersonalizado("No se pueden mezclar pedidos con presupuestos");
             }
 
             // Si todas las líneas están en -3 pero la cabecera dice que no es presupuesto, es porque queremos pasarlo a pedido
-            bool aceptarPresupuesto = pedido.LineasPedido.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.EsPresupuesto;
+            bool aceptarPresupuesto = pedido.Lineas.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.EsPresupuesto;
             
             cabPedidoVta.Fecha = pedido.fecha;
             // La forma de pago influye en el importe del reembolso de la agencia. Si se modifica la forma de pago
@@ -395,7 +395,7 @@ namespace NestoAPI.Controllers
             cabPedidoVta.MantenerJunto = pedido.mantenerJunto;
             cabPedidoVta.ServirJunto = pedido.servirJunto;
             
-            cabPedidoVta.Usuario = pedido.usuario;
+            cabPedidoVta.Usuario = pedido.Usuario;
             cabPedidoVta.Fecha_Modificación = DateTime.Now;
             
             db.Entry(cabPedidoVta).State = EntityState.Modified;
@@ -407,7 +407,7 @@ namespace NestoAPI.Controllers
             bool hayLineasNuevas = false;
             if (!cambiarClienteEnLineas && !cambiarContactoEnLineas && !cambiarIvaEnLineas)
             {
-                hayLineasNuevas = pedido.LineasPedido.Where(l => l.id == 0).Any();
+                hayLineasNuevas = pedido.Lineas.Where(l => l.id == 0).Any();
             }
 
             // Sacar diferencias entre el pedido original y el que hemos pasado:
@@ -416,7 +416,7 @@ namespace NestoAPI.Controllers
             bool hayAlgunaLineaModificada = false;
             foreach (LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.ToList())
             {
-                LineaPedidoVentaDTO lineaEncontrada = pedido.LineasPedido.SingleOrDefault(l => l.id == linea.Nº_Orden);
+                LineaPedidoVentaDTO lineaEncontrada = pedido.Lineas.SingleOrDefault(l => l.id == linea.Nº_Orden);
 
                 if (linea.Picking != 0 || 
                   !(
@@ -428,8 +428,8 @@ namespace NestoAPI.Controllers
                 {
                     if (lineaEncontrada != null && lineaEncontrada.cantidad == linea.Cantidad)
                     {
-                        lineaEncontrada.baseImponible = linea.Base_Imponible;
-                        lineaEncontrada.total = linea.Total;
+                        //lineaEncontrada.BaseImponible = linea.Base_Imponible;
+                        //lineaEncontrada.Total = linea.Total;
                         continue;
                     } else
                     {
@@ -448,9 +448,9 @@ namespace NestoAPI.Controllers
                 } else 
                 {
                     bool modificado = false;
-                    if (linea.Producto?.Trim() != lineaEncontrada.producto?.Trim())
+                    if (linea.Producto?.Trim() != lineaEncontrada.Producto?.Trim())
                     {
-                        Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == lineaEncontrada.producto).SingleOrDefault();
+                        Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == lineaEncontrada.Producto).SingleOrDefault();
                         if (producto.Estado < Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO) {
                             errorPersonalizado($"El producto {producto.Número} está en un estado nulo ({producto.Estado})");
                         }
@@ -514,15 +514,15 @@ namespace NestoAPI.Controllers
                         }
                         this.gestor.CalcularImportesLinea(linea);
                     }
-                    lineaEncontrada.baseImponible = linea.Base_Imponible;
-                    lineaEncontrada.total = linea.Total;
+                    lineaEncontrada.BaseImponible = linea.Base_Imponible;
+                    //lineaEncontrada.Total = linea.Total;
                 }
             }
             
 
             // Modificamos las líneas
             if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas || aceptarPresupuesto) { 
-                foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido)
+                foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
                 {
                     LinPedidoVta lineaPedido;
 
@@ -531,8 +531,8 @@ namespace NestoAPI.Controllers
                         ComprobarSiSePuedenInsertarLineas(pedido, algunaLineaTienePicking, linea); //da error si no se puede
                         lineaPedido = this.gestor.CrearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
-                        linea.baseImponible = lineaPedido.Base_Imponible;
-                        linea.total = lineaPedido.Total;
+                        linea.BaseImponible = lineaPedido.Base_Imponible;
+                        //linea.Total = lineaPedido.Total;
                         continue;
                     }
 
@@ -568,8 +568,8 @@ namespace NestoAPI.Controllers
                             }
                         }
 
-                        linea.baseImponible = lineaPedido.Base_Imponible;
-                        linea.total = lineaPedido.Total;
+                        linea.BaseImponible = lineaPedido.Base_Imponible;
+                        //linea.Total = lineaPedido.Total;
 
                         db.Entry(lineaPedido).State = EntityState.Modified;
                     }
@@ -624,7 +624,7 @@ namespace NestoAPI.Controllers
                             Importe = prepagoPedido.Importe,
                             CuentaContable = prepagoPedido.CuentaContable,
                             ConceptoAdicional = prepagoPedido.ConceptoAdicional,
-                            Usuario = pedido.usuario
+                            Usuario = pedido.Usuario
                         });
                     }
 
@@ -662,7 +662,7 @@ namespace NestoAPI.Controllers
                         efectoCabecera.Importe = efectoPedido.Importe;
                         efectoCabecera.FormaPago = efectoPedido.FormaPago;
                         efectoCabecera.CCC = string.IsNullOrWhiteSpace(efectoPedido.Ccc) ? null : efectoPedido.Ccc;
-                        efectoCabecera.Usuario = pedido.usuario;
+                        efectoCabecera.Usuario = pedido.Usuario;
                         efectoCabecera.FechaModificacion = DateTime.Now;
                     }
                     else
@@ -673,7 +673,7 @@ namespace NestoAPI.Controllers
                             Importe = efectoPedido.Importe,
                             FormaPago = efectoPedido.FormaPago,
                             CCC = string.IsNullOrWhiteSpace(efectoPedido.Ccc) ? null : efectoPedido.Ccc,
-                            Usuario = pedido.usuario
+                            Usuario = pedido.Usuario
                         });
                     }
                 }
@@ -792,7 +792,7 @@ namespace NestoAPI.Controllers
                 ServirJunto = pedido.servirJunto,
                 ComentarioPicking = pedido.comentarioPicking,
                 Comentarios = pedido.comentarios,
-                Usuario = pedido.usuario
+                Usuario = pedido.Usuario
             };
             
             db.CabPedidoVtas.Add(cabecera);
@@ -803,7 +803,7 @@ namespace NestoAPI.Controllers
             ParametroUsuario parametroUsuario;
 
             // Guardamos el parámetro de pedido, para que al abrir la ventana el usuario vea el pedido
-            string usuarioParametro = pedido.usuario.Substring(pedido.usuario.IndexOf("\\")+1);
+            string usuarioParametro = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\")+1);
             if (usuarioParametro != null && (usuarioParametro.Length<7 || usuarioParametro.Substring(0,7) != "Cliente"))
             {
                 parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "UltNumPedidoVta");
@@ -816,7 +816,7 @@ namespace NestoAPI.Controllers
 
             List<LinPedidoVta> lineasPedidoInsertar = new List<LinPedidoVta>();
             // Bucle de insertar líneas
-            foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido) {
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas) {
                 if (linea.oferta != null && linea.oferta != 0)
                 {
                     if (linea.oferta > maxNumeroOferta)
@@ -835,8 +835,8 @@ namespace NestoAPI.Controllers
                     linea.fechaEntrega = DateTime.Today;
                 }
                 linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
-                linea.baseImponible = linPedido.Base_Imponible;
-                linea.total = linPedido.Total;
+                linea.BaseImponible = linPedido.Base_Imponible;
+                //linea.Total = linPedido.Total;
                 //db.LinPedidoVtas.Add(linPedido);
                 lineasPedidoInsertar.Add(linPedido);
             }
@@ -849,28 +849,28 @@ namespace NestoAPI.Controllers
                 ServicioAgencias servicio = new ServicioAgencias();
                 RespuestaAgencia respuestaMaps = await servicio.LeerDireccionPedidoGoogleMaps(pedido);
 
-                if (pedido.LineasPedido.Sum(b => b.baseImponible) < GestorImportesMinimos.IMPORTE_MINIMO)
+                if (pedido.Lineas.Sum(b => b.BaseImponible) < GestorImportesMinimos.IMPORTE_MINIMO)
                 {
                     LineaPedidoVentaDTO lineaPortes = new LineaPedidoVentaDTO
                     {
                         tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
                         almacen = Constantes.Productos.ALMACEN_TIENDA,
-                        producto = Constantes.Cuentas.CUENTA_PORTES_GLOVO,
+                        Producto = Constantes.Cuentas.CUENTA_PORTES_GLOVO,
                         cantidad = 1,
-                        delegacion = pedido.LineasPedido.FirstOrDefault().delegacion,
-                        formaVenta = pedido.LineasPedido.FirstOrDefault().formaVenta,
+                        delegacion = pedido.Lineas.FirstOrDefault().delegacion,
+                        formaVenta = pedido.Lineas.FirstOrDefault().formaVenta,
                         estado = Constantes.EstadosLineaVenta.EN_CURSO,
                         texto = "Portes Glovo",
                         precio = respuestaMaps.Coste,
                         iva = pedido.iva,
                         vistoBueno = true,
-                        usuario = pedido.LineasPedido.FirstOrDefault().usuario
+                        usuario = pedido.Lineas.FirstOrDefault().usuario
                     };
                     linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
-                    lineaPortes.baseImponible = linPedido.Base_Imponible;
-                    lineaPortes.total = linPedido.Total;
+                    lineaPortes.BaseImponible = linPedido.Base_Imponible;
+                    //lineaPortes.Total = linPedido.Total;
                     //pedido.LineasPedido.Add(lineaPortes);
-                    pedido.LineasPedido.Add(lineaPortes);
+                    pedido.Lineas.Add(lineaPortes);
                     lineasPedidoInsertar.Add(linPedido);
                 }
             }
@@ -890,7 +890,7 @@ namespace NestoAPI.Controllers
                     Factura = prepago.Factura,
                     CuentaContable = prepago.CuentaContable,
                     ConceptoAdicional = prepago.ConceptoAdicional,
-                    Usuario = pedido.usuario
+                    Usuario = pedido.Usuario
                 });
             }
 
@@ -905,7 +905,7 @@ namespace NestoAPI.Controllers
                         Importe = efecto.Importe,
                         FormaPago = efecto.FormaPago,
                         CCC = efecto.Ccc,
-                        Usuario = pedido.usuario
+                        Usuario = pedido.Usuario
                     });
                 }
             }

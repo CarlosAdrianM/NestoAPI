@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System.Collections.Generic;
 
 namespace NestoAPI.Infraestructure

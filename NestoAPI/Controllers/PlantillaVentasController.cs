@@ -347,7 +347,7 @@ namespace NestoAPI.Controllers
             var productosYaComprados = servicio.CargarProductosYaComprados(cliente);
             productosYaComprados.UnionWith(lineas.Select(l => l.producto).ToHashSet());
             productosBonificables.ExceptWith(productosYaComprados);
-            List<LineaPlantillaVenta> lineasBonificables = productosBonificables.Select(i => new LineaPlantillaVenta { producto = i }).ToList();
+            List<LineaPlantillaVenta> lineasBonificables = productosBonificables.Select(i => new LineaPlantillaVenta { producto = i, estado = 1 }).ToList();
             return Ok(lineasBonificables);
         }
 

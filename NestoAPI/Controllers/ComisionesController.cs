@@ -233,7 +233,7 @@ namespace NestoAPI.Controllers
                 {
                     return new ServicioComisionesAnualesPeluqueria2020();
                 }
-                else if (anno == 2021 || anno == 2022)
+                else if (anno == 2021 || anno == 2022 || anno == 2023)
                 {
                     return new ServicioComisionesAnualesPeluqueria2021();
                 }
@@ -256,6 +256,10 @@ namespace NestoAPI.Controllers
                 return new ServicioComisionesAnualesEstetica2021();
             }
             else if (anno == 2022)
+            {
+                return new ServicioComisionesAnualesEstetica2022();
+            }
+            else if (anno == 2023) // mantenemos las comisiones del año pasado
             {
                 return new ServicioComisionesAnualesEstetica2022();
             }

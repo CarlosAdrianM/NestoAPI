@@ -85,15 +85,6 @@ namespace NestoAPI.Models
         public bool tieneFacturacionElectronica { get; set; }
         public string nif { get; set; }
     }
-
-    public class EfectoPedidoVentaDTO
-    {
-        public int Id { get; set; }
-        public DateTime FechaVencimiento { get; set; }
-        public decimal Importe { get; set; }
-        public string FormaPago { get; set; }
-        public string Ccc { get; set; }
-    }
     public class ExtractoClienteDTO
     {
         public int id { get; set; }
@@ -146,75 +137,6 @@ namespace NestoAPI.Models
         public short cantidadDisponible { get; set; }
         public int clasificacionMasVendidos { get; set; }
     }
-    public class LineaPedidoVentaDTO
-    {
-        public int id { get; set; }
-        public string almacen { get; set; }
-        public bool aplicarDescuento { get; set; }
-        public short cantidad { get; set; } // era Nullable<short> 
-        public string delegacion { get; set; }
-        public decimal descuento { get; set; }
-        public short estado { get; set; }
-        public System.DateTime fechaEntrega { get; set; }
-        public string formaVenta { get; set; }
-        public string iva { get; set; }
-        public Nullable<int> oferta { get; set; }
-        public int picking { get; set; }
-        public decimal precio { get; set; } // era Nullable<decimal> 
-        public string producto { get; set; }
-        public string texto { get; set; }
-        public Nullable<byte> tipoLinea { get; set; }
-        public string usuario { get; set; }
-        public bool vistoBueno { get; set; }
-        public decimal baseImponible { get; set; }
-        public decimal importeIva { get; set; }
-        public decimal total { get; set; }
-        public decimal descuentoProducto { get; set; }
-        public decimal precioTarifa { get; set; }
-    }
-    public class PedidoVentaDTO
-    {
-        public PedidoVentaDTO()
-        {
-            this.LineasPedido = new HashSet<LineaPedidoVentaDTO>();
-            this.Prepagos = new HashSet<PrepagoDTO>();
-            this.Efectos = new HashSet<EfectoPedidoVentaDTO>();
-        }
-
-        public string empresa { get; set; }
-        public int numero { get; set; }
-        public string cliente { get; set; }
-        public string contacto { get; set; }
-        public bool crearEfectosManualmente { get; set; }
-        public Nullable<System.DateTime> fecha { get; set; }
-        public string formaPago { get; set; }
-        [Required]
-        public string plazosPago { get; set; }
-        public Nullable<System.DateTime> primerVencimiento { get; set; }
-        public string iva { get; set; }
-        public string vendedor { get; set; }
-        public string comentarios { get; set; }
-        public string comentarioPicking { get; set; }
-        public string periodoFacturacion { get; set; }
-        public string ruta { get; set; }
-        public string serie { get; set; }
-        public string ccc { get; set; }
-        public string origen { get; set; }
-        public string contactoCobro { get; set; }
-        public decimal noComisiona { get; set; }
-        public bool vistoBuenoPlazosPago { get; set; }
-        public bool mantenerJunto { get; set; }
-        public bool servirJunto { get; set; }
-        public bool EsPresupuesto { get; set; }
-        public bool notaEntrega { get; set; }
-        public decimal DescuentoPP { get; set; }
-        public string usuario { get; set; }
-
-        public virtual ICollection<LineaPedidoVentaDTO> LineasPedido { get; set; }
-        public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
-        public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
-        public virtual ICollection<EfectoPedidoVentaDTO> Efectos { get; set; }
-    }
     public class PersonaContactoDTO
     {
         public int Numero { get; set; }
@@ -241,13 +163,6 @@ namespace NestoAPI.Models
         public decimal descuento { get; set; }
         public bool aplicarDescuento { get; set; }
         public string motivo { get; set; }
-    }
-    public class PrepagoDTO
-    {
-        public decimal Importe { get; set; }
-        public string Factura { get; set; }
-        public string CuentaContable { get; set; }
-        public string ConceptoAdicional { get; set; }
     }
     public class ProductoPlantillaDTO
     {

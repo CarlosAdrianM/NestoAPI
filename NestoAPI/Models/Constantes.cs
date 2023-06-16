@@ -208,6 +208,7 @@
         public static class Vendedores
         {
             public const int ESTADO_VENDEDOR_PRESENCIAL = 0;
+            public const int ESTADO_VENDEDOR_MINI = 2;
             public const int ESTADO_VENDEDOR_TELEFONICO = 9;
             public const int ESTADO_VENDEDOR_PELUQUERIA = 4;
             public const int ESTADO_VENDEDOR_PARA_ANULAR = 99;

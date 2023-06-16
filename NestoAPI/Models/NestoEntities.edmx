@@ -5,6 +5,20 @@
     <!-- SSDL content -->
     <edmx:StorageModels>
     <Schema Namespace="NVModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2008" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+        <EntityType Name="AgenciasLlamadasWeb">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Agencia" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
+          <Property Name="Exito" Type="bit" Nullable="false" />
+          <Property Name="CuerpoLlamada" Type="nvarchar(max)" Nullable="false" />
+          <Property Name="CuerpoRespuesta" Type="nvarchar(max)" Nullable="false" />
+          <Property Name="UrlLlamada" Type="nvarchar" MaxLength="255" Nullable="false" />
+          <Property Name="TextoRespuestaError" Type="nvarchar" MaxLength="255" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+        </EntityType>
         <EntityType Name="AgenciasTransporte">
           <Key>
             <PropertyRef Name="Numero" />
@@ -3964,6 +3978,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Parameter Name="FechaOut" Type="datetime" Mode="InOut" />
         </Function>
         <EntityContainer Name="NVModelStoreContainer">
+          <EntitySet Name="AgenciasLlamadasWeb" EntityType="Self.AgenciasLlamadasWeb" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="AgenciasTransporte" EntityType="Self.AgenciasTransporte" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Bancos" EntityType="Self.Bancos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
@@ -5609,6 +5624,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="CabPedidoVta" EntitySet="CabPedidoVtas" />
             <End Role="EfectosPedidoVenta" EntitySet="EfectosPedidosVentas" />
           </AssociationSet>
+          <EntitySet Name="AgenciasLlamadasWeb" EntityType="NVModel.AgenciaLlamadaWeb" />
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -9882,6 +9898,20 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="AgenciaLlamadaWeb">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Agencia" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Exito" Type="Boolean" Nullable="false" />
+          <Property Name="CuerpoLlamada" Type="String" Nullable="false" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="CuerpoRespuesta" Type="String" Nullable="false" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="UrlLlamada" Type="String" Nullable="false" MaxLength="255" FixedLength="false" Unicode="true" />
+          <Property Name="TextoRespuestaError" Type="String" Nullable="false" MaxLength="255" FixedLength="false" Unicode="true" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
+        </EntityType>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -11366,6 +11396,21 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="FechaVencimiento" ColumnName="FechaVencimiento" />
                 <ScalarProperty Name="Pedido" ColumnName="Pedido" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="AgenciasLlamadasWeb">
+            <EntityTypeMapping TypeName="NVModel.AgenciaLlamadaWeb">
+              <MappingFragment StoreEntitySet="AgenciasLlamadasWeb">
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="TextoRespuestaError" ColumnName="TextoRespuestaError" />
+                <ScalarProperty Name="UrlLlamada" ColumnName="UrlLlamada" />
+                <ScalarProperty Name="CuerpoRespuesta" ColumnName="CuerpoRespuesta" />
+                <ScalarProperty Name="CuerpoLlamada" ColumnName="CuerpoLlamada" />
+                <ScalarProperty Name="Exito" ColumnName="Exito" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Agencia" ColumnName="Agencia" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>

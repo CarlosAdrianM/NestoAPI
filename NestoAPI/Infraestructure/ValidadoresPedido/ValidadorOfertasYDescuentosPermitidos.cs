@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Web;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
 {
@@ -17,9 +18,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 Motivo = "El pedido " + pedido.numero + " no tiene ninguna línea de productos"
             };
 
-            foreach (LineaPedidoVentaDTO linea in pedido.LineasPedido.Where(l => l.tipoLinea == 1)) //1=Producto
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas.Where(l => l.tipoLinea == 1)) //1=Producto
             {
-                Producto producto = servicio.BuscarProducto(linea.producto);
+                Producto producto = servicio.BuscarProducto(linea.Producto);
 
                 if (producto == null)
                 {
@@ -27,8 +28,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     {
                         ValidacionSuperada = false,
                         AutorizadaDenegadaExpresamente = false,
-                        Motivo = "No existe el producto " + linea.producto + " en la línea " + linea.id.ToString(),
-                        ProductoId = linea.producto
+                        Motivo = "No existe el producto " + linea.Producto + " en la línea " + linea.id.ToString(),
+                        ProductoId = linea.Producto
                     };
                 }
 
@@ -182,7 +183,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     int cantidadOferta = 0;
                     foreach (LineaPedidoVentaDTO linea in lineas)
                     {
-                        if (linea.baseImponible == 0) {
+                        if (linea.BaseImponible == 0) {
                             cantidadOferta += linea.cantidad;
                         } else {
                             cantidadCobrada += linea.cantidad;
@@ -267,14 +268,14 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 numeroProducto = numeroProducto.Trim();
             }
             List<string> productosMismoPrecio = ProductosMismoPrecio(numeroProducto, pedido);
-            IEnumerable<LineaPedidoVentaDTO> lineasProducto = pedido.LineasPedido.Where(p => productosMismoPrecio.Contains(p.producto));
+            IEnumerable<LineaPedidoVentaDTO> lineasProducto = pedido.Lineas.Where(p => productosMismoPrecio.Contains(p.Producto));
             if (lineasProducto == null || lineasProducto.Count() == 0)
             {
                 return null;
             }
 
-            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.baseImponible / l.cantidad != 0);
-            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.baseImponible / l.cantidad == 0);
+            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.BaseImponible / l.cantidad != 0);
+            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.BaseImponible / l.cantidad == 0);
 
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
 
@@ -282,11 +283,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 return new PrecioDescuentoProducto
                 {
-                    cantidadOferta = (short)lineasSinPrecio.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad),
-                    cantidad = (short)lineasConPrecio.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad),
+                    cantidadOferta = (short)lineasSinPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.cantidad),
+                    cantidad = (short)lineasConPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.cantidad),
                     producto = producto,
-                    precioCalculado = (decimal)Math.Round(lineasConPrecio.Where(l=> l.producto == numeroProducto).Select(l => l.precio).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
-                    descuentoCalculado = lineasConPrecio.Where(l => l.producto == numeroProducto).Select(l => 1 - (1-l.descuento) * (1-l.descuentoProducto)).DefaultIfEmpty().Average()
+                    precioCalculado = (decimal)Math.Round(lineasConPrecio.Where(l=> l.Producto == numeroProducto).Select(l => l.precio).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
+                    descuentoCalculado = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => 1 - (1-l.descuento) * (1-l.descuentoProducto)).DefaultIfEmpty().Average()
                 };
             }
 
@@ -305,7 +306,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         {
             Producto productoBuscado = GestorPrecios.servicio.BuscarProducto(numeroProducto);
             List<string> productosMismoPrecio = new List<string>();
-            foreach (string productoLinea in pedido.LineasPedido.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO).Select(l=>l.producto).Distinct())
+            foreach (string productoLinea in pedido.Lineas.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO).Select(l=>l.Producto).Distinct())
             {
                 Producto productoEncontrado = GestorPrecios.servicio.BuscarProducto(productoLinea);
                 if (productoEncontrado.PVP == productoBuscado.PVP && productoEncontrado.Familia == productoBuscado.Familia)

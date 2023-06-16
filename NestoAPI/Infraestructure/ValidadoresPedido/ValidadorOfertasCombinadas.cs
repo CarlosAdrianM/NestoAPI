@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -22,7 +23,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             OfertaCombinada ofertaCumplida = ofertasCombinadas.FirstOrDefault(o => 
                 o.OfertasCombinadasDetalles.Where(d=> d.Cantidad > 0).All(d => 
-                    pedido.LineasPedido.Where(p=>p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto.Trim()).Contains(d.Producto.Trim())
+                    pedido.Lineas.Where(p=>p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
                 )
             );
 
@@ -30,7 +31,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 bool tieneAlgunProducto = ofertasCombinadas.FirstOrDefault(o =>
                         o.OfertasCombinadasDetalles.Where(d => d.Producto != numeroProducto).Any(d =>
-                            pedido.LineasPedido.Where(p => p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto.Trim()).Contains(d.Producto.Trim())
+                            pedido.Lineas.Where(p => p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
                         )
                     ) != null;
 
@@ -44,7 +45,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 IEnumerable<OfertaCombinada> ofertasConImporteMinimo = ofertasCombinadas.Where(o =>
                     o.OfertasCombinadasDetalles.All(d =>
-                        pedido.LineasPedido.Where(p => p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.producto.Trim()).Contains(d.Producto.Trim())
+                        pedido.Lineas.Where(p => p.precio >= d.Precio && p.cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
                         && o.ImporteMinimo>0
                     )
                 );
@@ -56,10 +57,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
                     if (ofertaConImporteMinimo != null)
                     {
-                        IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.LineasPedido.Where(l =>
-                            ofertaConImporteMinimo.OfertasCombinadasDetalles.Select(d => d.Producto.Trim()).Contains(l.producto.Trim())
+                        IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.Lineas.Where(l =>
+                            ofertaConImporteMinimo.OfertasCombinadasDetalles.Select(d => d.Producto.Trim()).Contains(l.Producto.Trim())
                         );
-                        var sumaImporte = lineasOfertaPedido.Sum(l => l.baseImponible);
+                        var sumaImporte = lineasOfertaPedido.Sum(l => l.BaseImponible);
                         if (sumaImporte >= ofertaConImporteMinimo.ImporteMinimo)
                         {
                             ofertaCumplida = ofertaConImporteMinimo;
@@ -81,12 +82,12 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // Comprobamos los múltiplos
             if (ofertaCumplida != null)
             {
-                var cantidadLineas = pedido.LineasPedido.Where(l => l.producto == numeroProducto).Sum(l => l.cantidad);
+                var cantidadLineas = pedido.Lineas.Where(l => l.Producto == numeroProducto).Sum(l => l.cantidad);
                 var cantidadOferta = ofertaCumplida.OfertasCombinadasDetalles.Where(o => o.Producto == numeroProducto).Sum(o => o.Cantidad);
                 if (cantidadLineas > cantidadOferta)
                 {
-                    IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.LineasPedido.Where(l =>
-                        ofertaCumplida.OfertasCombinadasDetalles.Where(o => (float)l.cantidad / o.Cantidad < (float)cantidadLineas / cantidadOferta).Select(d => d.Producto).Contains(l.producto)
+                    IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.Lineas.Where(l =>
+                        ofertaCumplida.OfertasCombinadasDetalles.Where(o => (float)l.cantidad / o.Cantidad < (float)cantidadLineas / cantidadOferta).Select(d => d.Producto).Contains(l.Producto)
                     );
                     if (lineasOfertaPedido != null && lineasOfertaPedido.Count() > 0)
                     {

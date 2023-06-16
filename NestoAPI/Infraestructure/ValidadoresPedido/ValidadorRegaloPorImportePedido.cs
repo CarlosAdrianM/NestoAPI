@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -29,8 +30,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             var listaRegalos = GestorPrecios.servicio.BuscarRegaloPorImportePedido(numeroProducto);
 
-            if (listaRegalos.Any(l => pedido.LineasPedido.Sum(p => p.baseImponible) >= l.ImportePedido &&
-                pedido.LineasPedido.Where(p => p.producto == numeroProducto).Sum(p => p.cantidad) <= l.Cantidad))
+            if (listaRegalos.Any(l => pedido.Lineas.Sum(p => p.BaseImponible) >= l.ImportePedido &&
+                pedido.Lineas.Where(p => p.Producto == numeroProducto).Sum(p => p.cantidad) <= l.Cantidad))
             {
                 return new RespuestaValidacion
                 {

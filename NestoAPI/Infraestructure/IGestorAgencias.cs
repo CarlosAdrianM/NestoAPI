@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure
