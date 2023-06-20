@@ -7,10 +7,12 @@
         //public decimal BaseImponible { get => Bruto - ImporteDescuento; }
         public virtual decimal BaseImponible { get; set; }
         public decimal PorcentajeIva { get; set; }
+        public decimal PorcentajeRecargoEquivalencia { get; set; }
         public string Producto { get; set; }
 
         // Propiedades calculadas
         public virtual decimal ImporteIva { get => BaseImponible * PorcentajeIva; }
-        public virtual decimal Total { get => BaseImponible + ImporteIva; }
+        public virtual decimal ImporteRecargoEquivalencia { get => BaseImponible * PorcentajeRecargoEquivalencia; }
+        public virtual decimal Total { get => BaseImponible + ImporteIva + ImporteRecargoEquivalencia; }
     }
 }

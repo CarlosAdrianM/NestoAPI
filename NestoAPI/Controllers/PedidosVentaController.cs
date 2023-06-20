@@ -18,6 +18,7 @@ using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models.PedidosVenta;
 using Newtonsoft.Json.Linq;
+using NestoAPI.Models.PedidosBase;
 
 namespace NestoAPI.Controllers
 {
@@ -762,6 +763,20 @@ namespace NestoAPI.Controllers
             vencimientoPedido = vencimientoPedido.AddMonths(plazoPago.MesesPrimerPlazo);
             db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
 
+            if (pedido.ParametrosIva == null)
+            {
+                var parametros = db.ParametrosIVA
+                    .Where(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva)
+                    .Select(p => new ParametrosIvaBase
+                    {
+                        CodigoIvaProducto = p.IVA_Producto.Trim(),
+                        PorcentajeIvaProducto = (decimal)p.C__IVA / 100,
+                        PorcentajeRecargoEquivalencia = (decimal)p.C__RE / 100
+                    });
+
+                pedido.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
+            }
+
             // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales
             ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
             if (pedido.numero == 0)
@@ -836,6 +851,11 @@ namespace NestoAPI.Controllers
                 }
                 linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
                 linea.BaseImponible = linPedido.Base_Imponible;
+                if (pedido.ParametrosIva.Any())
+                {
+                    linea.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva).PorcentajeIvaProducto;
+                    linea.PorcentajeRecargoEquivalencia = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva).PorcentajeRecargoEquivalencia;
+                }                
                 //linea.Total = linPedido.Total;
                 //db.LinPedidoVtas.Add(linPedido);
                 lineasPedidoInsertar.Add(linPedido);

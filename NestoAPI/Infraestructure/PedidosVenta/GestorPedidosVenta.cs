@@ -376,7 +376,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     .Select(p => new ParametrosIvaBase
                     {
                         CodigoIvaProducto = p.IVA_Producto.Trim(),
-                        PorcentajeIvaProducto = (decimal)p.C__IVA / 100
+                        PorcentajeIvaProducto = (decimal)p.C__IVA / 100,
+                        PorcentajeRecargoEquivalencia = (decimal)p.C__RE / 100
                     });
 
                 pedido.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
@@ -405,6 +406,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         vistoBueno = l.VtoBueno,
                         BaseImponible = l.Base_Imponible,
                         PorcentajeIva = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeIvaProducto : 0,
+                        PorcentajeRecargoEquivalencia = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeRecargoEquivalencia : 0
                         //ImporteIva = l.ImporteIVA,
                         //Total = l.Total
                     })
