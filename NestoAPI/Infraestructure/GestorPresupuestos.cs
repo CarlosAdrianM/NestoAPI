@@ -153,13 +153,13 @@ namespace NestoAPI.Infraestructure
             s.AppendLine("<tr>");
             s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">" +
                 "<b>" + TEXTO_PEDIDO + " " + pedido.numero.ToString() + "</b><br>" +
-                "Nº Cliente: " + pedido.cliente + "<br>" +
+                "Nº Cliente: " + pedido.cliente + "/" + pedido.contacto + "<br>" +
                 "CIF/NIF: " + cliente.CIF_NIF + "<br>");
-            if (nombreVendedorCabecera.Trim()!="")
+            if (!string.IsNullOrEmpty(nombreVendedorCabecera))
             {
                 s.AppendLine("Vendedor: " + nombreVendedorCabecera + "<br>");
             }
-            if (nombreVendedorPeluqueria.Trim() != "")
+            if (!string.IsNullOrEmpty(nombreVendedorPeluqueria))
             {
                 s.AppendLine("Vendedor Peluquería: " + nombreVendedorPeluqueria + "<br>");
             }
@@ -188,6 +188,7 @@ namespace NestoAPI.Infraestructure
                 s.AppendLine($"<td colspan='2'>Comentarios picking: {pedido.comentarioPicking.Trim()}</td>");
                 s.AppendLine("</tr>");
             }
+
             s.AppendLine("</table>");
 
             s.AppendLine("<table border=\"1\" style=\"width:100%\">");
@@ -201,6 +202,9 @@ namespace NestoAPI.Infraestructure
             s.Append("<th>Importe</th></tr>");
             s.AppendLine("</thead>");
             s.AppendLine("<tbody align = \"right\">");
+
+            bool faltaStockDeAlgo = false;
+            bool tieneQueVenirAlgunProducto = false;
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
             {
                 string colorCantidad = "black";
@@ -219,10 +223,12 @@ namespace NestoAPI.Infraestructure
                         int cantidadDisponible = gestorStocks.UnidadesDisponiblesTodosLosAlmacenes(linea.Producto);
                         if (cantidadDisponible >= 0)
                         {
-                            colorCantidad = "orange";
+                            tieneQueVenirAlgunProducto = true;
+                            colorCantidad = "DeepPink";
                         }
                         else
                         {
+                            faltaStockDeAlgo = true;
                             colorCantidad = "red";
                         }
                     }
@@ -252,7 +258,31 @@ namespace NestoAPI.Infraestructure
                 s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
                 s.AppendLine("</tr>");
             }
-            //s.AppendLine("</tr>");
+            if (!pedido.servirJunto || pedido.mantenerJunto)
+            {
+                string textoServirMantener = string.Empty;
+                string colorServirJunto = "black";
+                if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto && !pedido.servirJunto)
+                {
+                    colorServirJunto = "red";
+                    textoServirMantener += "¡¡¡ ATENCIÓN !!!";
+                }                
+                if (!pedido.servirJunto)
+                {
+                    textoServirMantener += " Desmarcado servir junto ";
+                }
+                if (!pedido.servirJunto && pedido.mantenerJunto)
+                {
+                    textoServirMantener += "y";
+                }
+                if (pedido.mantenerJunto)
+                {
+                    textoServirMantener += " Marcado mantener junto ";
+                }
+                s.AppendLine("<tr style=\"color: " + colorServirJunto + ";\">");
+                s.AppendLine($"<td colspan='2'>{textoServirMantener.Trim()}</td>");
+                s.AppendLine("</tr>");
+            }
             s.AppendLine("</tbody>");
             s.AppendLine("</table>");
 
@@ -261,12 +291,20 @@ namespace NestoAPI.Infraestructure
             s.Append("<tr><th>Base Imponible</th>");
             s.Append("<th>IVA</th>");
             s.Append("<th>Importe IVA</th>");
+            if (pedido.Lineas.Sum(l => l.ImporteRecargoEquivalencia) != 0)
+            {
+                s.Append("<th>Importe RE</th>");
+            }
             s.Append("<th>Total</th></tr>");
             s.AppendLine("</thead>");
             s.AppendLine("<tbody align = \"right\">");
             s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.BaseImponible).ToString("C")+"</td>");
             s.Append("<td style=\"text-align:right\">" + pedido.iva + "</td>");
-            s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l=> l.ImporteIva).ToString("C") + "</td>");
+            s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.ImporteIva).ToString("C") + "</td>");
+            if (pedido.Lineas.Sum(l => l.ImporteRecargoEquivalencia) != 0)
+            {
+                s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.ImporteRecargoEquivalencia).ToString("C") + "</td>");
+            }            
             s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l=>l.Total).ToString("C") + "</td>");
             s.AppendLine("</tr>");
             s.AppendLine("</tbody>");

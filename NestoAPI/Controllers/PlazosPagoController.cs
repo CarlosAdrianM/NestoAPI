@@ -74,21 +74,38 @@ namespace NestoAPI.Controllers
             // Si el cliente es CR no se puede poner otro plazo de pago
             if (clienteBuscado.CondPagoClientes.Where(c => c.PlazosPago.Trim() == Constantes.PlazosPago.CONTADO_RIGUROSO).Any()) {
                 plazosPago = plazosPago.Where(p => p.plazoPago == Constantes.PlazosPago.CONTADO_RIGUROSO || p.plazoPago == Constantes.PlazosPago.PREPAGO).ToList();
-            } else
-            {
-                // Si el cliente tiene impagados o facturas vencidas, solo admitimos formas de pago de contado
-                int tiempoVencidas = 7; // días que tiene que llevar vencida una factura para que no sacar pedido
-                DateTime fechaDesdeVencida = System.DateTime.Today.AddDays(-tiempoVencidas);
-                ExtractoCliente impagado = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.TipoApunte == "4").FirstOrDefault();
-                ExtractoCliente deudaVencida = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.FechaVto < fechaDesdeVencida).FirstOrDefault();
+                return Ok(plazosPago);
+            } 
 
-                if (impagado != null || deudaVencida != null)
-                {
-                    plazosPago = plazosPago.Where(p => p.diasPrimerPlazo == 0 && p.mesesPrimerPlazo == 0 && p.numeroPlazos == 1).ToList();
-                }
+            // Si el cliente tiene impagados o facturas vencidas, solo admitimos formas de pago de contado
+            int tiempoVencidas = 7; // días que tiene que llevar vencida una factura para que no sacar pedido
+            DateTime fechaDesdeVencida = System.DateTime.Today.AddDays(-tiempoVencidas);
+            ExtractoCliente impagado = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO).FirstOrDefault();
+            ExtractoCliente deudaVencida = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.FechaVto < fechaDesdeVencida).FirstOrDefault();
+
+            if (impagado != null || deudaVencida != null)
+            {
+                plazosPago = plazosPago.Where(p => p.diasPrimerPlazo == 0 && p.mesesPrimerPlazo == 0 && p.numeroPlazos == 1).ToList();
+                return Ok(plazosPago);
             }
-                
-            return Ok(plazosPago);
+
+            bool tuvoImpagados = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO).Any();
+            bool tieneSuficientesRecibos = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.PAGO && e.CCC != null).Take(10).Count() == 10;
+            DateTime haceUnAnno = DateTime.Today.AddYears(-1);
+            bool tieneSuficienteAntiguedad = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.PAGO && e.CCC != null && e.Fecha > haceUnAnno).Any();
+
+            // Si el cliente nunca ha tenido un impagado, nos compra hace tiempo y ya se le han girado varios recibos, dejamos financiar hasta 6 meses
+            // En estos dos últimos casos aceptamos cualquier forma de pago que haya en la ficha del cliente, para dar flexibilidad y que se puedan hacer excepciones
+            if (!tuvoImpagados && tieneSuficienteAntiguedad && tieneSuficientesRecibos)
+            {
+                plazosPago = plazosPago.Where(p => (p.numeroPlazos <= 6 && p.financiacion <= 105) || clienteBuscado.CondPagoClientes.Select(c => c.PlazosPago?.Trim()).Contains(p.plazoPago)).ToList();
+                return Ok(plazosPago);
+            }
+            else
+            {
+                plazosPago = plazosPago.Where(p => (p.numeroPlazos <= 3 && p.financiacion <= 60) || clienteBuscado.CondPagoClientes.Select(c => c.PlazosPago?.Trim()).Contains(p.plazoPago)).ToList();
+                return Ok(plazosPago);
+            }
         }
 
         /*

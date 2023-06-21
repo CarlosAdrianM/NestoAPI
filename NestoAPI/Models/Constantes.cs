@@ -98,6 +98,11 @@
                 public const string DEUDA_VENCIDA = "DVD";
                 public const string RETENIDO = "RTN";
             }
+            public static class TiposApunte
+            {
+                public const string PAGO = "3";
+                public const string IMPAGADO = "4";
+            }
         }
 
         public static class Facturas
