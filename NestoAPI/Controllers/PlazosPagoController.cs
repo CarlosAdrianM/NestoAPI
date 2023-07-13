@@ -72,7 +72,7 @@ namespace NestoAPI.Controllers
                 }).ToListAsync();
 
             // Si el cliente es CR no se puede poner otro plazo de pago
-            if (clienteBuscado.CondPagoClientes.Where(c => c.PlazosPago.Trim() == Constantes.PlazosPago.CONTADO_RIGUROSO).Any()) {
+            if (clienteBuscado == null || clienteBuscado.CondPagoClientes.Where(c => c.PlazosPago.Trim() == Constantes.PlazosPago.CONTADO_RIGUROSO).Any()) {
                 plazosPago = plazosPago.Where(p => p.plazoPago == Constantes.PlazosPago.CONTADO_RIGUROSO || p.plazoPago == Constantes.PlazosPago.PREPAGO).ToList();
                 return Ok(plazosPago);
             } 

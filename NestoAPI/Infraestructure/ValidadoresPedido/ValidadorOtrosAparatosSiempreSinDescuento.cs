@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web;
+﻿using System.Linq;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 
@@ -32,11 +29,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
                 PrecioDescuentoProducto datos = new PrecioDescuentoProducto
                 {
-                    precioCalculado = linea.precio,
-                    descuentoCalculado = linea.descuento,
+                    precioCalculado = linea.PrecioUnitario,
+                    descuentoCalculado = linea.DescuentoLinea,
                     producto = producto,
-                    cantidad = linea.cantidad,
-                    aplicarDescuento = linea.aplicarDescuento
+                    cantidad = (short)linea.Cantidad,
+                    aplicarDescuento = linea.AplicarDescuento
                 };
 
                 esValidoDeMomento = new OtrosAparatosNoPuedeLlevarDescuento().precioAceptado(datos);

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Web;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 
@@ -40,11 +39,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
                 PrecioDescuentoProducto datos = new PrecioDescuentoProducto
                 {
-                    precioCalculado = linea.precio,
-                    descuentoCalculado = linea.descuento,
+                    precioCalculado = linea.PrecioUnitario,
+                    descuentoCalculado = linea.DescuentoLinea,
                     producto = producto,
-                    cantidad = linea.cantidad,
-                    aplicarDescuento = linea.aplicarDescuento
+                    cantidad = (short)linea.Cantidad,
+                    aplicarDescuento = linea.AplicarDescuento
                 };
 
                 respuesta = EsOfertaPermitida(producto, pedido);
@@ -184,9 +183,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     foreach (LineaPedidoVentaDTO linea in lineas)
                     {
                         if (linea.BaseImponible == 0) {
-                            cantidadOferta += linea.cantidad;
+                            cantidadOferta += linea.Cantidad;
                         } else {
-                            cantidadCobrada += linea.cantidad;
+                            cantidadCobrada += linea.Cantidad;
                         };
                     }
                     if (cantidadCobrada>=ofertaCombinada.CantidadConPrecio && 
@@ -274,8 +273,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return null;
             }
 
-            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.BaseImponible / l.cantidad != 0);
-            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.BaseImponible / l.cantidad == 0);
+            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.BaseImponible / l.Cantidad != 0);
+            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.BaseImponible / l.Cantidad == 0);
 
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
 
@@ -283,21 +282,21 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             {
                 return new PrecioDescuentoProducto
                 {
-                    cantidadOferta = (short)lineasSinPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.cantidad),
-                    cantidad = (short)lineasConPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.cantidad),
+                    cantidadOferta = (short)lineasSinPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad),
+                    cantidad = (short)lineasConPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad),
                     producto = producto,
-                    precioCalculado = (decimal)Math.Round(lineasConPrecio.Where(l=> l.Producto == numeroProducto).Select(l => l.precio).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
-                    descuentoCalculado = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => 1 - (1-l.descuento) * (1-l.descuentoProducto)).DefaultIfEmpty().Average()
+                    precioCalculado = (decimal)Math.Round(lineasConPrecio.Where(l=> l.Producto == numeroProducto).Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
+                    descuentoCalculado = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => 1 - (1-l.DescuentoLinea) * (1-l.DescuentoProducto)).DefaultIfEmpty().Average()
                 };
             }
 
             return new PrecioDescuentoProducto
             {
-                cantidadOferta = (short)lineasSinPrecio.Sum(l => l.cantidad),
-                cantidad = (short)lineasConPrecio.Sum(l => l.cantidad),
+                cantidadOferta = (short)lineasSinPrecio.Sum(l => l.Cantidad),
+                cantidad = (short)lineasConPrecio.Sum(l => l.Cantidad),
                 producto = producto,
-                precioCalculado = (decimal)lineasConPrecio.Select(l => l.precio).DefaultIfEmpty().Average(),
-                descuentoCalculado = lineasConPrecio.Select(l => 1 - (1 - l.descuento) * (1 - l.descuentoProducto)).DefaultIfEmpty().Average()
+                precioCalculado = (decimal)lineasConPrecio.Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(),
+                descuentoCalculado = lineasConPrecio.Select(l => 1 - (1 - l.DescuentoLinea) * (1 - l.DescuentoProducto)).DefaultIfEmpty().Average()
             };
 
         }

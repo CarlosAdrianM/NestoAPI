@@ -18,7 +18,7 @@ namespace NestoAPI.Models.PedidosCompra
         public string Texto { get; set; }
         public DateTime FechaRecepcion { get; set; }
         private int _cantidad;
-        public int Cantidad { 
+        public override int Cantidad { 
             get => _cantidad;
             set {
                 if (Descuentos != null && Descuentos.Any())
@@ -49,11 +49,10 @@ namespace NestoAPI.Models.PedidosCompra
             }
         }
         public int CantidadBruta { get; set; }
-        public decimal PrecioUnitario { get; set; }
-        public decimal DescuentoLinea { get; set; }
-        public decimal DescuentoProveedor { get; set; }
-        public decimal DescuentoProducto { get; set; }
-        public bool AplicarDescuentos { get; set; } = true;
+        public decimal DescuentoProveedor { 
+            get => DescuentoEntidad; 
+            set => DescuentoEntidad = value; 
+        }
         //public decimal PorcentajeIva { get; set; }
         public string CodigoIvaProducto { get; set; }
         public int StockMaximo { get; set; }
@@ -68,10 +67,10 @@ namespace NestoAPI.Models.PedidosCompra
 
 
 
-        public decimal Bruto { get => (decimal)(CantidadCobrada == null ? Cantidad * PrecioUnitario : CantidadCobrada * PrecioUnitario); }
-        public decimal SumaDescuentos { get => AplicarDescuentos ? 1 - (1 - DescuentoProveedor) * (1 - DescuentoProducto) * (1 - DescuentoLinea) : 0; }
-        public decimal ImporteDescuento { get => Math.Round(Bruto * SumaDescuentos, 2, MidpointRounding.AwayFromZero); }
-        public override decimal BaseImponible { get => Math.Round(Bruto - ImporteDescuento, 2, MidpointRounding.AwayFromZero); }
+        public override decimal Bruto { get => (decimal)(CantidadCobrada == null ? Cantidad * PrecioUnitario : CantidadCobrada * PrecioUnitario); }
+        //public decimal SumaDescuentos { get => AplicarDescuentos ? 1 - (1 - DescuentoProveedor) * (1 - DescuentoProducto) * (1 - DescuentoLinea) : 0; }
+        //public decimal ImporteDescuento { get => Math.Round(Bruto * SumaDescuentos, 2, MidpointRounding.AwayFromZero); }
+        //public override decimal BaseImponible { get => Math.Round(Bruto - ImporteDescuento, 2, MidpointRounding.AwayFromZero); }
         //public decimal ImporteIva { get => BaseImponible * PorcentajeIva; }
         //public decimal Total { get => BaseImponible + ImporteIva; }
         public int? CantidadCobrada { get; set; }

@@ -427,7 +427,7 @@ namespace NestoAPI.Controllers
                     )
                 )
                 {
-                    if (lineaEncontrada != null && lineaEncontrada.cantidad == linea.Cantidad)
+                    if (lineaEncontrada != null && lineaEncontrada.Cantidad == linea.Cantidad)
                     {
                         //lineaEncontrada.BaseImponible = linea.Base_Imponible;
                         //lineaEncontrada.Total = linea.Total;
@@ -439,7 +439,7 @@ namespace NestoAPI.Controllers
                     
                 }
 
-                if (lineaEncontrada == null || (lineaEncontrada.cantidad == 0 && linea.Cantidad != 0))
+                if (lineaEncontrada == null || (lineaEncontrada.Cantidad == 0 && linea.Cantidad != 0))
                 {
                     if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
                     {
@@ -469,24 +469,24 @@ namespace NestoAPI.Controllers
                         linea.Texto = lineaEncontrada.texto;
                         modificado = true;
                     }
-                    if(linea.Precio != lineaEncontrada.precio)
+                    if(linea.Precio != lineaEncontrada.PrecioUnitario)
                     {
-                        linea.Precio = lineaEncontrada.precio;
+                        linea.Precio = lineaEncontrada.PrecioUnitario;
                         modificado = true;
                     }
-                    if (linea.Cantidad != lineaEncontrada.cantidad)
+                    if (linea.Cantidad != lineaEncontrada.Cantidad)
                     {
-                        linea.Cantidad = lineaEncontrada.cantidad;
+                        linea.Cantidad = (short)lineaEncontrada.Cantidad;
                         modificado = true;
                     }
-                    if (linea.DescuentoProducto != lineaEncontrada.descuentoProducto)
+                    if (linea.DescuentoProducto != lineaEncontrada.DescuentoProducto)
                     {
-                        linea.DescuentoProducto = lineaEncontrada.descuentoProducto;
+                        linea.DescuentoProducto = lineaEncontrada.DescuentoProducto;
                         modificado = true;
                     }
-                    if (linea.Descuento != lineaEncontrada.descuento)
+                    if (linea.Descuento != lineaEncontrada.DescuentoLinea)
                     {
-                        linea.Descuento = lineaEncontrada.descuento;
+                        linea.Descuento = lineaEncontrada.DescuentoLinea;
                         modificado = true;
                     }
                     // El DescuentoPP está en la cabecera
@@ -495,9 +495,9 @@ namespace NestoAPI.Controllers
                         linea.DescuentoPP = pedido.DescuentoPP;
                         modificado = true;
                     }
-                    if (linea.Aplicar_Dto != lineaEncontrada.aplicarDescuento)
+                    if (linea.Aplicar_Dto != lineaEncontrada.AplicarDescuento)
                     {
-                        linea.Aplicar_Dto = lineaEncontrada.aplicarDescuento;
+                        linea.Aplicar_Dto = lineaEncontrada.AplicarDescuento;
                         modificado = true;
                     }
                     if (linea.Fecha_Entrega != lineaEncontrada.fechaEntrega)
@@ -515,7 +515,7 @@ namespace NestoAPI.Controllers
                         }
                         this.gestor.CalcularImportesLinea(linea);
                     }
-                    lineaEncontrada.BaseImponible = linea.Base_Imponible;
+                    //lineaEncontrada.BaseImponible = linea.Base_Imponible;
                     //lineaEncontrada.Total = linea.Total;
                 }
             }
@@ -532,7 +532,7 @@ namespace NestoAPI.Controllers
                         ComprobarSiSePuedenInsertarLineas(pedido, algunaLineaTienePicking, linea); //da error si no se puede
                         lineaPedido = this.gestor.CrearLineaVta(linea, pedido.empresa, pedido.numero);
                         db.LinPedidoVtas.Add(lineaPedido);
-                        linea.BaseImponible = lineaPedido.Base_Imponible;
+                        //linea.BaseImponible = lineaPedido.Base_Imponible;
                         //linea.Total = lineaPedido.Total;
                         continue;
                     }
@@ -569,7 +569,7 @@ namespace NestoAPI.Controllers
                             }
                         }
 
-                        linea.BaseImponible = lineaPedido.Base_Imponible;
+                        //linea.BaseImponible = lineaPedido.Base_Imponible;
                         //linea.Total = lineaPedido.Total;
 
                         db.Entry(lineaPedido).State = EntityState.Modified;
@@ -850,7 +850,7 @@ namespace NestoAPI.Controllers
                     linea.fechaEntrega = DateTime.Today;
                 }
                 linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
-                linea.BaseImponible = linPedido.Base_Imponible;
+                //linea.BaseImponible = linPedido.Base_Imponible;
                 if (pedido.ParametrosIva.Any())
                 {
                     linea.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva).PorcentajeIvaProducto;
@@ -876,18 +876,18 @@ namespace NestoAPI.Controllers
                         tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
                         almacen = Constantes.Productos.ALMACEN_TIENDA,
                         Producto = Constantes.Cuentas.CUENTA_PORTES_GLOVO,
-                        cantidad = 1,
+                        Cantidad = 1,
                         delegacion = pedido.Lineas.FirstOrDefault().delegacion,
                         formaVenta = pedido.Lineas.FirstOrDefault().formaVenta,
                         estado = Constantes.EstadosLineaVenta.EN_CURSO,
                         texto = "Portes Glovo",
-                        precio = respuestaMaps.Coste,
+                        PrecioUnitario = respuestaMaps.Coste,
                         iva = pedido.iva,
                         vistoBueno = true,
                         usuario = pedido.Lineas.FirstOrDefault().usuario
                     };
                     linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
-                    lineaPortes.BaseImponible = linPedido.Base_Imponible;
+                    //lineaPortes.BaseImponible = linPedido.Base_Imponible;
                     //lineaPortes.Total = linPedido.Total;
                     //pedido.LineasPedido.Add(lineaPortes);
                     pedido.Lineas.Add(lineaPortes);

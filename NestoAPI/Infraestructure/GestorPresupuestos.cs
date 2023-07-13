@@ -252,9 +252,9 @@ namespace NestoAPI.Infraestructure
                 {
                     s.Append("<td>" + linea.texto + "</td>");
                 }
-                s.Append("<td>" + linea.cantidad.ToString() + "</td>");  
-                s.Append("<td style=\"text-align:right\">" + linea.precio.ToString("C") + "</td>");
-                s.Append("<td style=\"text-align:right\">" + linea.descuento.ToString("P") + "</td>");
+                s.Append("<td>" + linea.Cantidad.ToString() + "</td>");  
+                s.Append("<td style=\"text-align:right\">" + linea.PrecioUnitario.ToString("C") + "</td>");
+                s.Append("<td style=\"text-align:right\">" + linea.DescuentoLinea.ToString("P") + "</td>");
                 s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
                 s.AppendLine("</tr>");
             }
@@ -280,7 +280,7 @@ namespace NestoAPI.Infraestructure
                     textoServirMantener += " Marcado mantener junto ";
                 }
                 s.AppendLine("<tr style=\"color: " + colorServirJunto + ";\">");
-                s.AppendLine($"<td colspan='2'>{textoServirMantener.Trim()}</td>");
+                s.AppendLine($"<td colspan='7'>{textoServirMantener.Trim()}</td>");
                 s.AppendLine("</tr>");
             }
             s.AppendLine("</tbody>");

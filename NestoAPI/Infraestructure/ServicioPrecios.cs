@@ -100,10 +100,10 @@ namespace NestoAPI.Infraestructure
                         && r.Producto.Número?.Trim() == r.LineaPedidoVentaDTO.Producto
                         && r.Producto.Grupo == grupo
                         && r.Producto.SubGrupo == subGrupo
-                        && (r.LineaPedidoVentaDTO.BaseImponible == 0 || r.LineaPedidoVentaDTO.BaseImponible != r.Producto.PVP * r.LineaPedidoVentaDTO.cantidad)
+                        && (r.LineaPedidoVentaDTO.BaseImponible == 0 || r.LineaPedidoVentaDTO.BaseImponible != r.Producto.PVP * r.LineaPedidoVentaDTO.Cantidad)
                     );
 
-                return (decimal)importeGrupo.Sum(r => r.Producto.PVP * r.LineaPedidoVentaDTO.cantidad);
+                return (decimal)importeGrupo.Sum(r => r.Producto.PVP * r.LineaPedidoVentaDTO.Cantidad);
             }
         }
 

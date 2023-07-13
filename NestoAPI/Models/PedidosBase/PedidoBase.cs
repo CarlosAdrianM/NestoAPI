@@ -13,6 +13,32 @@ namespace NestoAPI.Models.PedidosBase
         }
 
         // Propiedades
+        private decimal _descuentoEntidad;
+        public decimal DescuentoEntidad
+        {
+            get => _descuentoEntidad;
+            set
+            {
+                _descuentoEntidad = value;
+                foreach(var l in Lineas)
+                {
+                    l.DescuentoEntidad = value;
+                }
+            }
+        }
+        private decimal _descuentoPP;
+        public decimal DescuentoPP
+        {
+            get => _descuentoPP;
+            set
+            {
+                _descuentoPP = value;
+                foreach(var l in Lineas)
+                {
+                    l.DescuentoPP = value;
+                }
+            }
+        }
         public string Usuario { get; set; }
 
         // Propiedades Calculadas

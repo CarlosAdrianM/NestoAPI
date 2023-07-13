@@ -1,17 +1,15 @@
 ﻿using NestoAPI.Controllers;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosBase;
-using NestoAPI.Models.PedidosCompra;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.Picking;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
-using System.Drawing.Drawing2D;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Transactions;
-using System.Web;
 using System.Web.Http;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
@@ -65,7 +63,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             ParametroIVA parametroIva;
 
             // Para que redondee a la baja
-            bruto = (decimal)(linea.Cantidad * (decimal.Truncate((decimal)linea.Precio * 10000) / 10000));
+            //bruto = (decimal)(linea.Cantidad * (decimal.Truncate((decimal)linea.Precio * 10000) / 10000));
+            // Carlos 09/07/23 ¿por qué tiene que redondear a la baja?
+            bruto = (decimal)(linea.Cantidad * linea.Precio);
             if (linea.Aplicar_Dto)
             {
                 sumaDescuentos = (1 - (1 - (linea.DescuentoCliente)) * (1 - (linea.DescuentoProducto)) * (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
@@ -75,7 +75,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 linea.DescuentoProducto = 0;
                 sumaDescuentos = (1 - (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
             }
-            importeDescuento = Math.Round(bruto * sumaDescuentos, 2, MidpointRounding.AwayFromZero);
+            importeDescuento = bruto * sumaDescuentos;
             baseImponible = Math.Round(bruto - importeDescuento, 2, MidpointRounding.AwayFromZero);
             if (!string.IsNullOrWhiteSpace(iva))
             {
@@ -134,8 +134,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 estado = Constantes.EstadosLineaVenta.EN_CURSO,
                 Producto = producto,
                 texto = texto,
-                cantidad = cantidad,
-                precio = precio,
+                Cantidad = cantidad,
+                PrecioUnitario = precio,
                 delegacion = delegacion,
                 formaVenta = formaVenta,
                 almacen = almacen,
@@ -182,7 +182,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
 
                 case Constantes.TiposLineaVenta.PRODUCTO:
-                    if (linea.cantidad == 0)
+                    if (linea.Cantidad == 0)
                     {
                         throw new Exception("No se pueden crear líneas de producto con cantidad 0");
                     }
@@ -260,14 +260,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 TipoLinea = linea.tipoLinea,
                 Producto = linea.Producto,
                 Texto = linea.texto.Length > 50 ? linea.texto.Substring(0, 50) : linea.texto, // porque 50 es la longitud del campo
-                Cantidad = linea.cantidad,
+                Cantidad = (short)linea.Cantidad,
                 Fecha_Entrega = FechaEntregaAjustada(linea.fechaEntrega.Date, ruta),
-                Precio = linea.precio,
+                Precio = linea.PrecioUnitario,
                 PrecioTarifa = precioTarifa,
                 Coste = coste,
-                Descuento = linea.descuento,
-                DescuentoProducto = linea.descuentoProducto,
-                Aplicar_Dto = linea.aplicarDescuento,
+                Descuento = linea.DescuentoLinea,
+                DescuentoProducto = linea.DescuentoProducto,
+                Aplicar_Dto = linea.AplicarDescuento,
                 VtoBueno = linea.vistoBueno,
                 Usuario = linea.usuario,
                 Almacén = linea.almacen,
@@ -287,7 +287,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Picking = 0,
                 NºOferta = linea.oferta,
                 BlancoParaBorrar = "NestoAPI",
-                LineaParcial = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? !EsSobrePedido(linea.Producto, linea.cantidad) : true,
+                LineaParcial = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? !EsSobrePedido(linea.Producto, (short)linea.Cantidad) : true,
                 EstadoProducto = estadoProducto,
                 CentroCoste = centroCoste?.Número,
                 Departamento = centroCoste?.Departamento
@@ -334,6 +334,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     return null;
                 }
+
+                decimal totalComprobacion = Math.Round(cabPedidoVta.LinPedidoVtas.Sum(l => l.Total), 2, MidpointRounding.AwayFromZero);
 
                 PedidoVentaDTO pedido;
                 try
@@ -382,33 +384,37 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
                 pedido.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
 
+                var plazosPago = db.PlazosPago.Single(p => p.Empresa == empresa && p.Número == pedido.plazosPago);
+                pedido.DescuentoPP = plazosPago.DtoProntoPago;
+
                 List<LineaPedidoVentaDTO> lineasPedido = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == numero && l.Estado > -99)
                     .Select(l => new LineaPedidoVentaDTO
                     {
                         id = l.Nº_Orden,
                         almacen = l.Almacén,
-                        aplicarDescuento = l.Aplicar_Dto,
-                        cantidad = (l.Cantidad != null ? (short)l.Cantidad : (short)0),
+                        AplicarDescuento = l.Aplicar_Dto,
+                        Cantidad = (l.Cantidad != null ? (short)l.Cantidad : (short)0),
                         delegacion = l.Delegación,
-                        descuento = l.Descuento,
-                        descuentoProducto = l.DescuentoProducto,
+                        DescuentoLinea = l.Descuento,
+                        DescuentoProducto = l.DescuentoProducto,
                         estado = l.Estado,
                         fechaEntrega = l.Fecha_Entrega,
                         formaVenta = l.Forma_Venta,
                         iva = l.IVA,
                         oferta = l.NºOferta,
                         picking = (l.Picking != null ? (int)l.Picking : 0),
-                        precio = (l.Precio != null ? (decimal)l.Precio : 0),
+                        PrecioUnitario = (l.Precio != null ? (decimal)l.Precio : 0),
                         Producto = l.Producto.Trim(),
                         texto = l.Texto.Trim(),
                         tipoLinea = l.TipoLinea,
                         usuario = l.Usuario,
                         vistoBueno = l.VtoBueno,
-                        BaseImponible = l.Base_Imponible,
+                        //BaseImponible = l.Base_Imponible,
                         PorcentajeIva = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeIvaProducto : 0,
-                        PorcentajeRecargoEquivalencia = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeRecargoEquivalencia : 0
+                        PorcentajeRecargoEquivalencia = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeRecargoEquivalencia : 0,
                         //ImporteIva = l.ImporteIVA,
-                        //Total = l.Total
+                        //Total = l.Total,
+                        //Bruto = l.Bruto
                     })
                     .OrderBy(l => l.id)
                     .ToList();
@@ -442,12 +448,22 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     })
                 .ToList();
 
+                foreach (var linea in lineasPedido)
+                {
+                    linea.Pedido = pedido;
+                }
                 pedido.Lineas = lineasPedido;
                 pedido.VendedoresGrupoProducto = vendedoresGrupoProductoPedido;
                 pedido.Prepagos = prepagos;
                 pedido.Efectos = efectos;
                 pedido.crearEfectosManualmente = efectos.Any();
                 pedido.EsPresupuesto = lineasPedido.Any(c => c.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+
+                decimal totalPedidoLeido = Math.Round(pedido.Total, 2, MidpointRounding.AwayFromZero);
+                if (Math.Abs(totalComprobacion - totalPedidoLeido) > 0.05M)
+                {
+                    Debug.Print($"No cuadra el total guardado ({totalComprobacion.ToString("c")}) con el del pedido leído {totalPedidoLeido.ToString("c")}");
+                }
 
                 return pedido;
             }

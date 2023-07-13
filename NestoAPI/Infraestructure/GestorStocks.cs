@@ -28,16 +28,16 @@ namespace NestoAPI.Infraestructure
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
             {
                 int stock = servicio.Stock(linea.Producto, Constantes.Almacenes.REINA);
-                if (stock < linea.cantidad)
+                if (stock < linea.Cantidad)
                 {
                     return false;
                 }
 
-                if (stock - servicio.UnidadesPendientesEntregarAlmacen(linea.Producto, Constantes.Almacenes.REINA) < linea.cantidad) {
+                if (stock - servicio.UnidadesPendientesEntregarAlmacen(linea.Producto, Constantes.Almacenes.REINA) < linea.Cantidad) {
                     return false;
                 }
 
-                if (servicio.UnidadesDisponiblesTodosLosAlmacenes(linea.Producto) < linea.cantidad)
+                if (servicio.UnidadesDisponiblesTodosLosAlmacenes(linea.Producto) < linea.Cantidad)
                 {
                     return false;
                 }

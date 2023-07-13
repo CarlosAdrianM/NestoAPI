@@ -31,7 +31,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             var listaRegalos = GestorPrecios.servicio.BuscarRegaloPorImportePedido(numeroProducto);
 
             if (listaRegalos.Any(l => pedido.Lineas.Sum(p => p.BaseImponible) >= l.ImportePedido &&
-                pedido.Lineas.Where(p => p.Producto == numeroProducto).Sum(p => p.cantidad) <= l.Cantidad))
+                pedido.Lineas.Where(p => p.Producto == numeroProducto).Sum(p => p.Cantidad) <= l.Cantidad))
             {
                 return new RespuestaValidacion
                 {

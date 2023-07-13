@@ -88,7 +88,7 @@ namespace NestoAPI.Controllers
                     FechaRecepcion = (DateTime)l.FechaRecepción,
                     Cantidad = (int)l.Cantidad,
                     PrecioUnitario = l.Precio,
-                    AplicarDescuentos = l.AplicarDto,
+                    AplicarDescuento = l.AplicarDto,
                     DescuentoLinea = l.Descuento,
                     DescuentoProducto = l.DescuentoProducto,
                     DescuentoProveedor = l.DescuentoProveedor,
