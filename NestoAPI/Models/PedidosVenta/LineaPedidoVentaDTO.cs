@@ -1,10 +1,12 @@
 ﻿using NestoAPI.Models.PedidosBase;
+using Newtonsoft.Json;
 using System;
 
 namespace NestoAPI.Models.PedidosVenta
 {
     public class LineaPedidoVentaDTO : LineaPedidoBase
     {
+        [JsonIgnore]
         public PedidoVentaDTO Pedido { get; set; }
         public int id { get; set; }
         public string almacen { get; set; }

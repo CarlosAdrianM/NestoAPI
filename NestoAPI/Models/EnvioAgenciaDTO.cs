@@ -43,17 +43,24 @@ namespace NestoAPI.Models
                 switch (AgenciaNombre)
                 {
                     case "ASM":
-                        enlace = string.Format("http://m.gls-spain.es/e/{0}/{1}", CodigoBarras, CodigoPostal);
+                        enlace = !string.IsNullOrEmpty(CodigoBarras) && !string.IsNullOrEmpty(CodigoPostal) ? string.Format("http://m.gls-spain.es/e/{0}/{1}", CodigoBarras, CodigoPostal) : string.Empty;
                         break;
                     case "OnTime":
-                        string referencia = WebUtility.UrlEncode(Cliente.Trim() + "-" + Pedido.ToString());
-                        enlace = string.Format("https://ontimegts.alertran.net/gts/pub/clielocserv.seam?cliente=02890107&referencia={0}", referencia);
+                        if (!string.IsNullOrEmpty(Pedido.ToString()))
+                        {
+                            string referencia = WebUtility.UrlEncode(Cliente.Trim() + "-" + Pedido.ToString());
+                            enlace = string.Format("https://ontimegts.alertran.net/gts/pub/clielocserv.seam?cliente=02890107&referencia={0}", referencia);
+                        }
+                        else
+                        {
+                            enlace = string.Empty;
+                        }                        
                         break;
                     case "Correos Express":
-                        enlace = string.Format("https://s.correosexpress.com/c?n={0}", CodigoBarras);
+                        enlace = !string.IsNullOrEmpty(CodigoBarras) ? string.Format("https://s.correosexpress.com/c?n={0}", CodigoBarras) : string.Empty;
                         break;
                     case "Sending":
-                        enlace = string.Format("https://info.sending.es/fgts/pub/locNumServ.seam?cliente={0}&localizador={1}", AgenciaIdentificador, CodigoBarras);
+                        enlace = !string.IsNullOrEmpty(AgenciaIdentificador) && !string.IsNullOrEmpty(CodigoBarras) ? string.Format("https://info.sending.es/fgts/pub/locNumServ.seam?cliente={0}&localizador={1}", AgenciaIdentificador, CodigoBarras) : string.Empty;
                         break;
                     default:
                         enlace = "error, agencia no definida";

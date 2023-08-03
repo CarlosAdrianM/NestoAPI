@@ -69,6 +69,7 @@ namespace NestoAPI.Controllers
         {
             List<EnvioAgenciaDTO> enviosAgencia = await db.EnviosAgencias.Where(e => e.Empresa == empresa && e.Pedido == pedido).Include("AgenciasTransportes").Select(e => new EnvioAgenciaDTO {
                 AgenciaId = e.Agencia,
+                AgenciaIdentificador = e.AgenciasTransporte.Identificador,
                 AgenciaNombre = e.AgenciasTransporte.Nombre,
                 Estado = e.Estado,
                 Fecha = e.Fecha,

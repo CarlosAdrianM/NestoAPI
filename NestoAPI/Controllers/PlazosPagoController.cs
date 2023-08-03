@@ -2,13 +2,13 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
-using System.Data.Entity.Infrastructure;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
+using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using System.Web.Http.Results;
 using NestoAPI.Models;
 
 namespace NestoAPI.Controllers
@@ -106,6 +106,46 @@ namespace NestoAPI.Controllers
                 plazosPago = plazosPago.Where(p => (p.numeroPlazos <= 3 && p.financiacion <= 60) || clienteBuscado.CondPagoClientes.Select(c => c.PlazosPago?.Trim()).Contains(p.plazoPago)).ToList();
                 return Ok(plazosPago);
             }
+        }
+
+        [ResponseType(typeof(PlazoPagoDTO))]
+        public async Task<IHttpActionResult> GetPlazosPago(string empresa, string cliente, string formaPago, decimal totalPedido)
+        {
+            Cliente clienteBuscado = db.Clientes.Include(p => p.CondPagoClientes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true).SingleOrDefault();
+
+            IHttpActionResult result = await GetPlazosPago(empresa, cliente).ConfigureAwait(false);
+            
+            if (!(result is OkNegotiatedContentResult<List<PlazoPagoDTO>> okResult))
+            {
+                return BadRequest("La solicitud es incorrecta o incompleta.");
+            }
+
+            var plazosPago = okResult.Content;
+            var plazosPagoCliente = clienteBuscado.CondPagoClientes.Where(c => c.ImporteMínimo >= totalPedido || (totalPedido <= 0 && c.ImporteMínimo == 0)).ToList();
+
+            if (formaPago == Constantes.FormasPago.EFECTIVO)
+            {
+                plazosPago = plazosPago.Where(p => p.numeroPlazos == 1 && p.diasPrimerPlazo == 0 && p.mesesPrimerPlazo == 0 || plazosPagoCliente.Any(c => c.PlazosPago?.Trim() == p.plazoPago)).ToList();
+            }
+
+            try
+            {
+                plazosPago = plazosPago
+                .Where(p => p.numeroPlazos == 1 ||
+                    ((p.diasPrimerPlazo + p.mesesPrimerPlazo > 0) ?
+                    totalPedido / p.numeroPlazos >= 100 :
+                    totalPedido / (p.numeroPlazos - 1) >= 100)
+                    || (plazosPagoCliente.Any(c => c.ImporteMínimo > totalPedido && c.PlazosPago == p.plazoPago))
+                    )
+                .ToList();
+            } catch (Exception ex)
+            {
+
+            }
+            
+                        
+
+            return Ok(plazosPago);
         }
 
         /*
