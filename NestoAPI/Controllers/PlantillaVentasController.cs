@@ -2,18 +2,12 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
-using System.Data.Entity.Infrastructure;
 using System.Linq;
-using System.Net;
-using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
 using NestoAPI.Infraestructure;
-using System.Web;
-using System.Data.Entity.Core.Objects;
-using System.Reflection.Emit;
 
 namespace NestoAPI.Controllers
 {
@@ -119,6 +113,13 @@ namespace NestoAPI.Controllers
         [HttpGet]
         public IQueryable<DireccionesEntregaClienteDTO> GetDireccionesEntrega(string empresa, string clienteDirecciones)
         {
+            var result = GetDireccionesEntrega(empresa, clienteDirecciones, 0);
+            return result;
+        }
+        // Devuelve las posibles direcciones de entrega del pedido
+        [HttpGet]
+        public IQueryable<DireccionesEntregaClienteDTO> GetDireccionesEntrega(string empresa, string clienteDirecciones, decimal totalPedido)
+        {
             Cliente clienteDireccionPorDefecto = db.Clientes
                 .Where(c => (c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones && c.ClientePrincipal))
                 .SingleOrDefault();
@@ -147,8 +148,8 @@ namespace NestoAPI.Controllers
                     periodoFacturacion = clienteEncontrado.PeriodoFacturación.Trim(),
                     ccc = clienteEncontrado.CCC.Trim(),
                     ruta = clienteEncontrado.Ruta.Trim(),
-                    formaPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).FormaPago,
-                    plazosPago = clienteEncontrado.CondPagoClientes.FirstOrDefault(c => c.ImporteMínimo == 0).PlazosPago.Trim(),
+                    formaPago = clienteEncontrado.CondPagoClientes.OrderByDescending(c => c.ImporteMínimo).FirstOrDefault(c => c.ImporteMínimo <= totalPedido).FormaPago,
+                    plazosPago = clienteEncontrado.CondPagoClientes.OrderByDescending(c => c.ImporteMínimo).FirstOrDefault(c => c.ImporteMínimo <= totalPedido).PlazosPago.Trim(),
                     tieneCorreoElectronico = clienteEncontrado.PersonasContactoClientes.Any(p => !string.IsNullOrEmpty(p.CorreoElectrónico) && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO),
                     tieneFacturacionElectronica = clienteEncontrado.PersonasContactoClientes.Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO),
                     nif = clienteEncontrado.CIF_NIF != null ? clienteEncontrado.CIF_NIF.Trim() : string.Empty,
