@@ -148,7 +148,7 @@ namespace NestoAPI.Controllers
                     periodoFacturacion = clienteEncontrado.PeriodoFacturación.Trim(),
                     ccc = clienteEncontrado.CCC.Trim(),
                     ruta = clienteEncontrado.Ruta.Trim(),
-                    formaPago = clienteEncontrado.CondPagoClientes.OrderByDescending(c => c.ImporteMínimo).FirstOrDefault(c => c.ImporteMínimo <= totalPedido).FormaPago,
+                    formaPago = clienteEncontrado.CondPagoClientes.OrderByDescending(c => c.ImporteMínimo).FirstOrDefault(c => c.ImporteMínimo <= totalPedido).FormaPago.Trim(),
                     plazosPago = clienteEncontrado.CondPagoClientes.OrderByDescending(c => c.ImporteMínimo).FirstOrDefault(c => c.ImporteMínimo <= totalPedido).PlazosPago.Trim(),
                     tieneCorreoElectronico = clienteEncontrado.PersonasContactoClientes.Any(p => !string.IsNullOrEmpty(p.CorreoElectrónico) && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO),
                     tieneFacturacionElectronica = clienteEncontrado.PersonasContactoClientes.Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO && p.Estado >= Constantes.Clientes.PersonasContacto.ESTADO_POR_DEFECTO),

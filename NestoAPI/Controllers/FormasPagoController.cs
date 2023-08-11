@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using System.Web.Http.Results;
 using NestoAPI.Models;
 
 namespace NestoAPI.Controllers
@@ -42,6 +43,26 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/FormasPago
+        [ResponseType(typeof(FormaPagoDTO))]
+        public async Task<IHttpActionResult> GetFormasPago(string empresa, string cliente, decimal totalPedido, string tipoIva)
+        //public IQueryable<FormaPago> GetFormasPago(string empresa)
+        {
+            IHttpActionResult result = await GetFormasPago(empresa, cliente);
+
+            if (!(result is OkNegotiatedContentResult<List<FormaPagoDTO>> okResult))
+            {
+                return BadRequest("La solicitud es incorrecta o incompleta.");
+            }
+            var formasPago = okResult.Content;
+
+            if (totalPedido >= 1000M && !string.IsNullOrEmpty(tipoIva))
+            {
+                formasPago = formasPago.Where(r => r.formaPago != Constantes.FormasPago.EFECTIVO).ToList();
+            }
+
+            return Ok(formasPago);
+        }
+            // GET: api/FormasPago
         [ResponseType(typeof(FormaPagoDTO))]
         public async Task<IHttpActionResult> GetFormasPago(string empresa, string cliente)
         //public IQueryable<FormaPago> GetFormasPago(string empresa)

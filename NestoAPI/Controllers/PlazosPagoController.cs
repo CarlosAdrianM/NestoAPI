@@ -121,7 +121,7 @@ namespace NestoAPI.Controllers
             }
 
             var plazosPago = okResult.Content;
-            var plazosPagoCliente = clienteBuscado.CondPagoClientes.Where(c => c.ImporteMínimo >= totalPedido || (totalPedido <= 0 && c.ImporteMínimo == 0)).ToList();
+            var plazosPagoCliente = clienteBuscado.CondPagoClientes.Where(c => c.ImporteMínimo <= totalPedido || (totalPedido <= 0 && c.ImporteMínimo == 0)).ToList();
 
             if (formaPago == Constantes.FormasPago.EFECTIVO)
             {
@@ -135,7 +135,7 @@ namespace NestoAPI.Controllers
                     ((p.diasPrimerPlazo + p.mesesPrimerPlazo > 0) ?
                     totalPedido / p.numeroPlazos >= 100 :
                     totalPedido / (p.numeroPlazos - 1) >= 100)
-                    || (plazosPagoCliente.Any(c => c.ImporteMínimo > totalPedido && c.PlazosPago == p.plazoPago))
+                    || (plazosPagoCliente.Any(c => c.ImporteMínimo <= totalPedido && c.PlazosPago.Trim() == p.plazoPago))
                     )
                 .ToList();
             } catch (Exception ex)

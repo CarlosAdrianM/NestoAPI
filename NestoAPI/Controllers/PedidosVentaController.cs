@@ -754,6 +754,12 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            // Carlos 11/08/23:
+            if (string.IsNullOrEmpty(pedido.formaPago) || string.IsNullOrEmpty(pedido.plazosPago))
+            {
+                throw new Exception("El pedido tiene que tener formas y plazos de pago");
+            }
+
             // Carlos 28/09/15: ajustamos el primer vencimiento a los plazos de pago y a los días de pago
             DateTime vencimientoPedido;
             System.Data.Entity.Core.Objects.ObjectParameter primerVencimiento = new System.Data.Entity.Core.Objects.ObjectParameter("FechaOut", typeof(DateTime));
