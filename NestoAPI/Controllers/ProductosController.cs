@@ -148,6 +148,7 @@ namespace NestoAPI.Controllers
             {
                 productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
                 productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
+                productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Almacenes.ALCOBENDAS));
             }            
 
             return Ok(productoDTO);

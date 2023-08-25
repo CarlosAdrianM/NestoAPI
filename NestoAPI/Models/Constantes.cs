@@ -10,6 +10,7 @@
 
         public static class Almacenes
         {
+            public const string ALCOBENDAS = "ALC";
             public const string ALGETE = "ALG";
             public const string REINA = "REI";
         }

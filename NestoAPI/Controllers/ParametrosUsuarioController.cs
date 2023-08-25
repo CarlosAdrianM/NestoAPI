@@ -91,22 +91,17 @@ namespace NestoAPI.Controllers
             return "";
         }
 
-        /*
+        
         // PUT: api/ParametrosUsuario/5
         [ResponseType(typeof(void))]
-        public async Task<IHttpActionResult> PutParametroUsuario(string id, ParametroUsuario parametroUsuario)
+        public async Task<IHttpActionResult> PutParametroUsuario(ParametroUsuario parametro)
         {
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
             }
-
-            if (id != parametroUsuario.Empresa)
-            {
-                return BadRequest();
-            }
-
-            db.Entry(parametroUsuario).State = EntityState.Modified;
+            
+            db.Entry(parametro).State = EntityState.Modified;
 
             try
             {
@@ -114,7 +109,7 @@ namespace NestoAPI.Controllers
             }
             catch (DbUpdateConcurrencyException)
             {
-                if (!ParametroUsuarioExists(id))
+                if (!ParametroUsuarioExists(parametro.Empresa, parametro.Usuario, parametro.Clave))
                 {
                     return NotFound();
                 }
@@ -126,7 +121,7 @@ namespace NestoAPI.Controllers
 
             return StatusCode(HttpStatusCode.NoContent);
         }
-
+        /*
         // POST: api/ParametrosUsuario
         [ResponseType(typeof(ParametroUsuario))]
         public async Task<IHttpActionResult> PostParametroUsuario(ParametroUsuario parametroUsuario)
@@ -182,9 +177,9 @@ namespace NestoAPI.Controllers
             base.Dispose(disposing);
         }
 
-        private bool ParametroUsuarioExists(string id)
+        private bool ParametroUsuarioExists(string empresa, string usuario, string clave)
         {
-            return db.ParametrosUsuario.Count(e => e.Empresa == id) > 0;
+            return db.ParametrosUsuario.Any(e => e.Empresa == empresa && e.Usuario == usuario && e.Clave == clave);
         }
 
     }
