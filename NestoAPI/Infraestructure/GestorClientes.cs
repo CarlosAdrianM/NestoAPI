@@ -686,6 +686,13 @@ namespace NestoAPI.Infraestructure
             clienteDB.CIF_NIF   = clienteModificar.Nif;
             clienteDB.Nombre    = clienteModificar.Nombre;
             clienteDB.Dirección = clienteModificar.Direccion;
+            // Aquí hay que modificar la población y la provincia si el código postal ha cambiado
+            if (clienteDB.CodPostal.Trim() != clienteModificar.CodigoPostal)
+            {
+                CodigoPostal cp = await servicio.BuscarCodigoPostal(clienteModificar.Empresa, clienteModificar.CodigoPostal).ConfigureAwait(false);
+                clienteDB.Población = cp.Descripción;
+                clienteDB.Provincia = cp.Provincia;
+            }
             clienteDB.CodPostal = clienteModificar.CodigoPostal;
             clienteDB.Teléfono  = clienteModificar.Telefono;
             clienteDB.Vendedor  = clienteModificar.VendedorEstetica;
@@ -879,7 +886,14 @@ namespace NestoAPI.Infraestructure
                     {
                         personaEncontrada.CorreoElectrónico = persona.CorreoElectronico;
                     }
-
+                    if (persona.FacturacionElectronica && personaEncontrada.Cargo != Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
+                    {
+                        personaEncontrada.Cargo = Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO;
+                    }
+                    if (!persona.FacturacionElectronica && personaEncontrada.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
+                    {
+                        personaEncontrada.Cargo = Constantes.Clientes.CARGO_POR_DEFECTO;
+                    }
                 }
             }
 

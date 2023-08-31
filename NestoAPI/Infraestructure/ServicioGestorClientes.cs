@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Data.Entity;
-using System.Diagnostics.Contracts;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -12,7 +11,6 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
-using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
 using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure
@@ -420,6 +418,15 @@ namespace NestoAPI.Infraestructure
                 cccRecuperar.Estado = 0; // sin mandato
                 int modificado = await db.SaveChangesAsync().ConfigureAwait(false);
                 return (modificado > 0);
+            }
+        }
+
+        public async Task<CodigoPostal> BuscarCodigoPostal(string empresa, string codigoPostal)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                var cpDB = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == codigoPostal).ConfigureAwait(false);
+                return cpDB;
             }
         }
     }
