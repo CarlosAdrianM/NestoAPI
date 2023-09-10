@@ -1,4 +1,7 @@
-﻿namespace NestoAPI.Models
+﻿using static NestoAPI.Models.Constantes;
+using System.Collections.Generic;
+
+namespace NestoAPI.Models
 {
     public class Constantes
     {
@@ -168,7 +171,15 @@
                 public const int RECEPCION_PEDIDOS = 3;
             }
         }
-
+        public class Sedes
+        {
+            public static List<string> ListaSedes = new List<string>
+            {
+                "ALG",
+                "REI",
+                "ALC"
+            };
+        }
         public static class TiposExtractoCliente
         {
             public const string PAGO = "3";

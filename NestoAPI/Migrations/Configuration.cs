@@ -44,16 +44,16 @@ namespace NestoAPI.Migrations
 
             var user = new ApplicationUser()
             {
-                UserName = "Almudena",
-                Email = "almudenagonzalez@nuevavision.es",
+                UserName = "Paloma",
+                Email = "paloma@nuevavision.es",
                 EmailConfirmed = true,
-                FirstName = "Almudena",
-                LastName = "González",
+                FirstName = "Paloma",
+                LastName = "Sánchez",
                 Level = 1,
                 JoinDate = DateTime.Now
             };
 
-            manager.Create(user, "Algete.2023");
+            manager.Create(user, "Alcobendas.2023");
 
             
             if (roleManager.Roles.Count() == 0)
@@ -65,7 +65,7 @@ namespace NestoAPI.Migrations
                 roleManager.Create(new IdentityRole { Name = "VendedorTelefono" });
             }
 
-            var adminUser = manager.FindByName("Almudena");
+            var adminUser = manager.FindByName("Paloma");
 
             manager.AddToRoles(adminUser.Id, new string[] { "VendedorTelefono" });
         }

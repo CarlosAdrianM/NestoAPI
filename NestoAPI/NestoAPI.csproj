@@ -317,6 +317,7 @@
     <Compile Include="Controllers\ClientesController.cs" />
     <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
+    <Compile Include="Controllers\ControlesStockController.cs" />
     <Compile Include="Controllers\DepositosController.cs" />
     <Compile Include="Controllers\EmpresasController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
@@ -686,6 +687,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\ProductoDTO.cs" />
+    <Compile Include="Models\Productos\ControlStockAlmacenModel.cs" />
+    <Compile Include="Models\Productos\ControlStockBase.cs" />
+    <Compile Include="Models\Productos\ControlStockProductoModel.cs" />
     <Compile Include="Models\Proveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
