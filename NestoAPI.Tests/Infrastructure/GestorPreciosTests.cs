@@ -5,6 +5,7 @@ using NestoAPI.Models;
 using FakeItEasy;
 using System.Collections.Generic;
 using NestoAPI.Infraestructure.ValidadoresPedido;
+using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -289,26 +290,26 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 10;
-            linea.descuento = .1M;
-            linea.baseImponible = 18;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 10;
+            linea.DescuentoLinea = .1M;
+            //linea.BaseImponible = 18; --> SI FALLA MIRAR ESTA LÍNEA
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "AA11";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA11";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
             Assert.IsFalse(respuesta.ValidacionSuperada);
-            Assert.AreEqual("Oferta no puede llevar descuento en el producto " + linea.producto, respuesta.Motivo);
+            Assert.AreEqual("Oferta no puede llevar descuento en el producto " + linea.Producto, respuesta.Motivo);
         }
 
         [TestMethod]
@@ -320,12 +321,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 11; // el de ficha es 21
-            linea.baseImponible = 11;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 11; // el de ficha es 21
+            //linea.BaseImponible = 11; --> SI FALLA MIRAR ESTA LÍNEA
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -341,12 +342,12 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 10;
-            linea.baseImponible = 20;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 10;
+            //linea.BaseImponible = 20;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -364,12 +365,12 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 9.9999M;
-            linea.baseImponible = linea.cantidad * linea.precio;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 9.9999M;
+            ////linea.BaseImponible = linea.Cantidad * linea.precio;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -387,12 +388,12 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 11;
-            linea.baseImponible = 22;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 11;
+            ////linea.BaseImponible = 22;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -409,21 +410,21 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "2"; // la oferta solo es válida para el 1
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "OF_CLI1";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 4; //5+1 permitido para todos, 4+1 solo para el cliente 1
-            linea.precio = 13;
-            linea.baseImponible = 4 * 13;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "OF_CLI1";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 4; //5+1 permitido para todos, 4+1 solo para el cliente 1
+            linea.PrecioUnitario= 13;
+            ////linea.BaseImponible = 4 * 13;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "OF_CLI1";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "OF_CLI1";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            ////linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -439,21 +440,21 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0"; // la oferta solo es válida para el 2
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "OF_CLI1";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 3; //5+1 permitido para todos, 4+1 solo para el cliente 1, 3+1 solo contacto 2
-            linea.precio = 13;
-            linea.baseImponible = 3 * 13;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "OF_CLI1";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 3; //5+1 permitido para todos, 4+1 solo para el cliente 1, 3+1 solo contacto 2
+            linea.PrecioUnitario = 13;
+            //linea.BaseImponible = 3 * 13;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "OF_CLI1";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "OF_CLI1";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -467,21 +468,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "OF_FAMILIA";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 6; 
-            linea.precio = 130;
-            linea.baseImponible = 960;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "OF_FAMILIA";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 6; 
+            linea.PrecioUnitario = 130;
+            //linea.BaseImponible = 960;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "OF_FAMILIA";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "OF_FAMILIA";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -515,21 +516,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "OF_FAMILIA";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 6;
-            linea.precio = 130;
-            linea.baseImponible = 960;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "OF_FAMILIA";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 6;
+            linea.PrecioUnitario = 130;
+            //linea.BaseImponible = 960;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "MISMO_PRECIO";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "MISMO_PRECIO";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(mismoPrecio, pedido);
 
@@ -554,21 +555,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "OF_FAMILIA";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 6;
-            linea.precio = 130.01M ;
-            linea.baseImponible = 960;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "OF_FAMILIA";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 6;
+            linea.PrecioUnitario = 130.01M ;
+            //linea.BaseImponible = 960;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "MISMO_PRECIO";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "MISMO_PRECIO";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(mismoPrecio, pedido);
 
@@ -582,21 +583,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "FAMYPROD";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 4;
-            linea.precio = 100;
-            linea.baseImponible = 400;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "FAMYPROD";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 4;
+            linea.PrecioUnitario = 100;
+            //linea.BaseImponible = 400;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "FAMYPROD";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "FAMYPROD";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -613,12 +614,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "FAMYPROD";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 30;
-            linea.baseImponible = 30;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "FAMYPROD";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 30;
+            //linea.BaseImponible = 30;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -633,12 +634,12 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 5; // el de ficha es 21
-            linea.baseImponible = 5;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 5; // el de ficha es 21
+            //linea.BaseImponible = 5;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -656,13 +657,13 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "FAM_DTO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 100; // el de ficha es 100
-            linea.baseImponible = 85;
-            linea.descuento = .15M;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "FAM_DTO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 100; // el de ficha es 100
+            //linea.BaseImponible = 85;
+            linea.DescuentoLinea = .15M;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -678,12 +679,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA62";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 28; // el de ficha es 31
-            linea.baseImponible = 28;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA62";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 28; // el de ficha es 31
+            //linea.BaseImponible = 28;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -701,12 +702,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA62";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 27.9951M; // el de ficha es 31 y el autorizado 28
-            linea.baseImponible = 27.9951M;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA62";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 27.9951M; // el de ficha es 31 y el autorizado 28
+            //linea.BaseImponible = 27.9951M;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -723,12 +724,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 6;
-            linea.precio = 5; // el de ficha es 21
-            linea.baseImponible = 30;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 6;
+            linea.PrecioUnitario = 5; // el de ficha es 21
+            //linea.BaseImponible = 30;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -744,12 +745,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "OF_FAMILIA";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 30;
-            linea.baseImponible = 30;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "OF_FAMILIA";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 30;
+            //linea.BaseImponible = 30;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -778,21 +779,21 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA62";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 28;
-            linea.baseImponible = 28;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA62";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 28;
+            //linea.BaseImponible = 28;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "MISMO_PRECIO";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 31;
-            linea2.baseImponible = 31;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "MISMO_PRECIO";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 31;
+            //linea2.BaseImponible = 31;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(mismoPrecio, pedido);
 
@@ -807,26 +808,26 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 2;
-            linea.precio = 9;
-            linea.baseImponible = 18;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 9;
+            //linea.BaseImponible = 18;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "AA21";
-            linea2.aplicarDescuento = false;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA21";
+            linea2.AplicarDescuento = false;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
             Assert.IsFalse(respuesta.ValidacionSuperada);
-            Assert.AreEqual("Oferta a precio inferior al de ficha en el producto " + linea.producto, respuesta.Motivo);
+            Assert.AreEqual("Oferta a precio inferior al de ficha en el producto " + linea.Producto, respuesta.Motivo);
         }
 
         [TestMethod]
@@ -837,12 +838,12 @@ namespace NestoAPI.Tests.Infrastructure
             
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "REGALO";
-            linea2.aplicarDescuento = false;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "REGALO";
+            linea2.AplicarDescuento = false;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -856,21 +857,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 2;
-            linea.precio = 30;
-            linea.baseImponible = 60;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 30;
+            //linea.BaseImponible = 60;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "AA21";
-            linea2.aplicarDescuento = false;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA21";
+            linea2.AplicarDescuento = false;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -884,21 +885,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 3; // la oferta permitida es 2+1
-            linea.precio = 30;
-            linea.baseImponible = 90;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 3; // la oferta permitida es 2+1
+            linea.PrecioUnitario = 30;
+            //linea.BaseImponible = 90;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "AA21";
-            linea2.aplicarDescuento = false;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA21";
+            linea2.AplicarDescuento = false;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -912,21 +913,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 9; // la oferta permitida es 2+1
-            linea.precio = 30;
-            linea.baseImponible = 270;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 9; // la oferta permitida es 2+1
+            linea.PrecioUnitario = 30;
+            //linea.BaseImponible = 270;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "AA21";
-            linea2.aplicarDescuento = false;
-            linea2.cantidad = 3;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA21";
+            linea2.AplicarDescuento = false;
+            linea2.Cantidad = 3;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -942,12 +943,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 5; // se permite a partir de 6 unidades
-            linea.baseImponible = 5;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 5; // se permite a partir de 6 unidades
+            //linea.BaseImponible = 5;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -963,13 +964,13 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 21; // es el de ficha
-            linea.descuento = .6M; // se permite a partir de 6 unidades
-            linea.baseImponible = 8.4M;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 21; // es el de ficha
+            linea.DescuentoLinea = .6M; // se permite a partir de 6 unidades
+            //linea.BaseImponible = 8.4M;
+            pedido.Lineas.Add(linea);
 
             RespuestaValidacion respuesta = ValidadorOfertasYDescuentosPermitidos.EsOfertaPermitida(producto, pedido);
 
@@ -1002,20 +1003,20 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "SIN_FILTRO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 2;
-            linea.baseImponible = 4;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "SIN_FILTRO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 2;
+            //linea.BaseImponible = 4;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = 1;
-            linea2.producto = "SIN_FILTRO";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "SIN_FILTRO";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
             ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
 
             RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, GestorPrecios.servicio);
@@ -1059,20 +1060,20 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "ROJO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 2;
-            linea.baseImponible = 4;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "ROJO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 2;
+            //linea.BaseImponible = 4;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = 1;
-            linea2.producto = "AZUL";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AZUL";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
             ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
             A.CallTo(() => GestorPrecios.servicio.FiltrarLineas(pedido, "ESMALTE", "DeMarca")).Returns(new List<LineaPedidoVentaDTO> {linea, linea2 });
 
@@ -1127,20 +1128,20 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "ROJO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 5;
-            linea.precio = 2;
-            linea.baseImponible = 4;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "ROJO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 5;
+            linea.PrecioUnitario = 2;
+            //linea.BaseImponible = 4;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = 1;
-            linea2.producto = "AZUL";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 2;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AZUL";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 2;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
             ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
             A.CallTo(() => GestorPrecios.servicio.FiltrarLineas(pedido, "ESMALTE", "DeMarca")).Returns(new List<LineaPedidoVentaDTO> { linea, linea2 });
 
@@ -1191,21 +1192,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "ROJO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 3;
-            linea.precio = 2;
-            linea.baseImponible = 4;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "ROJO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 3;
+            linea.PrecioUnitario = 2;
+            //linea.BaseImponible = 4;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = 1;
-            linea2.producto = "AZUL";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 2;
-            linea2.descuento = 1.0M;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AZUL";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 2;
+            linea2.DescuentoLinea = 1.0M;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
             ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
             A.CallTo(() => GestorPrecios.servicio.FiltrarLineas(pedido, "ESMALTE", "DeMarca")).Returns(new List<LineaPedidoVentaDTO> { linea, linea2 });
 
@@ -1241,20 +1242,20 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "CON_FILTRO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 2;
-            linea.baseImponible = 4;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "CON_FILTRO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 2;
+            //linea.BaseImponible = 4;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = 1;
-            linea2.producto = "CON_FILTRO";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "CON_FILTRO";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
             ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
 
             RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, GestorPrecios.servicio);
@@ -1290,13 +1291,13 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "SIN_FILTRO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 2;
-            linea.descuento = .2M;
-            linea.baseImponible = 1.6M;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "SIN_FILTRO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 2;
+            linea.DescuentoLinea = .2M;
+            //linea.BaseImponible = 1.6M;
+            pedido.Lineas.Add(linea);
             ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
 
             RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, GestorPrecios.servicio);
@@ -1332,12 +1333,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "27095";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 7;
-            linea.precio = 80;
-            linea.baseImponible = 560M;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "27095";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 7;
+            linea.PrecioUnitario = 80;
+            //linea.BaseImponible = 560M;
+            pedido.Lineas.Add(linea);
             ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
 
             RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, GestorPrecios.servicio);
@@ -1373,12 +1374,12 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "27095";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 5;
-            linea.precio = 80;
-            linea.baseImponible = 400M;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "27095";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 5;
+            linea.PrecioUnitario = 80;
+            //linea.BaseImponible = 400M;
+            pedido.Lineas.Add(linea);
             ValidadorOfertasYDescuentosPermitidos validador = new ValidadorOfertasYDescuentosPermitidos();
 
             RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, GestorPrecios.servicio);
@@ -1393,20 +1394,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -1458,27 +1459,27 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
-            linea2.producto = "AA62";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 31; // es el de ficha
-            linea2.baseImponible = 31;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA62";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 31; // es el de ficha
+            //linea2.BaseImponible = 31;
+            pedido.Lineas.Add(linea2);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -1529,20 +1530,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            ////lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA21")).Returns(null);
 
@@ -1560,20 +1561,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 8; // el de ficha es 10 y el de la oferta 9
-            linea.baseImponible = 8;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 8; // el de ficha es 10 y el de la oferta 9
+            //linea.BaseImponible = 8;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -1618,26 +1619,26 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
-            linea2.producto = "AA62";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 31; // es el de ficha
-            linea2.baseImponible = 31;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA62";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 31; // es el de ficha
+            //linea2.BaseImponible = 31;
+            pedido.Lineas.Add(linea2);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 1; // el de ficha es 21 €
-            lineaRegalo.baseImponible = 1;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 1; // el de ficha es 21 €
+            //lineaRegalo.BaseImponible = 1;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -1687,20 +1688,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            linea.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //linea.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -1744,20 +1745,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 20;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 20;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 2;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 2;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -1802,20 +1803,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 4;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 40;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 4;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 40;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 2;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 2;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -1859,20 +1860,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -1943,20 +1944,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -2008,19 +2009,19 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             //LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            //linea.producto = "AA11";
-            //linea.aplicarDescuento = true;
-            //linea.cantidad = 1;
-            //linea.precio = 10; // es el de ficha
-            //pedido.LineasPedido.Add(linea);
+            //linea.Producto = "AA11";
+            //linea.AplicarDescuento = true;
+            //linea.Cantidad = 1;
+            //linea.PrecioUnitario = 10; // es el de ficha
+            //pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -2072,20 +2073,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = A.Fake<LineaPedidoVentaDTO>();
-            lineaMuestra.producto = "MUESTRA";
-            lineaMuestra.aplicarDescuento = true;
-            lineaMuestra.cantidad = 1;
-            lineaMuestra.precio = 1; // es el de ficha
-            lineaMuestra.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra);
+            lineaMuestra.Producto = "MUESTRA";
+            lineaMuestra.AplicarDescuento = true;
+            lineaMuestra.Cantidad = 1;
+            lineaMuestra.PrecioUnitario = 1; // es el de ficha
+            lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra.BaseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra);
 
             RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA");
 
@@ -2100,20 +2101,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = A.Fake<LineaPedidoVentaDTO>();
-            lineaMuestra.producto = "MUESTRA_2";
-            lineaMuestra.aplicarDescuento = true;
-            lineaMuestra.cantidad = 1;
-            lineaMuestra.precio = 2; // es el de ficha
-            lineaMuestra.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra);
+            lineaMuestra.Producto = "MUESTRA_2";
+            lineaMuestra.AplicarDescuento = true;
+            lineaMuestra.Cantidad = 1;
+            lineaMuestra.PrecioUnitario = 2; // es el de ficha
+            lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra.BaseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra);
 
             A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido,"COS","MMP")).Returns(2);
 
@@ -2130,28 +2131,28 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = A.Fake<LineaPedidoVentaDTO>();
-            lineaMuestra.producto = "MUESTRA";
-            lineaMuestra.aplicarDescuento = true;
-            lineaMuestra.cantidad = 1;
-            lineaMuestra.precio = 1; // es el de ficha
-            lineaMuestra.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra);
+            lineaMuestra.Producto = "MUESTRA";
+            lineaMuestra.AplicarDescuento = true;
+            lineaMuestra.Cantidad = 1;
+            lineaMuestra.PrecioUnitario = 1; // es el de ficha
+            lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra.BaseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra);
             LineaPedidoVentaDTO lineaMuestra2 = A.Fake<LineaPedidoVentaDTO>();
-            lineaMuestra2.producto = "MUESTRA_2";
-            lineaMuestra2.aplicarDescuento = true;
-            lineaMuestra2.cantidad = 1;
-            lineaMuestra2.precio = 2; // es el de ficha
-            lineaMuestra2.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra2.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra2);
+            lineaMuestra2.Producto = "MUESTRA_2";
+            lineaMuestra2.AplicarDescuento = true;
+            lineaMuestra2.Cantidad = 1;
+            lineaMuestra2.PrecioUnitario = 2; // es el de ficha
+            lineaMuestra2.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra2.baseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra2);
 
             A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido,"COS","MMP")).Returns(3);
 
@@ -2168,28 +2169,28 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 30; 
-            linea.baseImponible = 30;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 30; 
+            //linea.BaseImponible = 30;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = A.Fake<LineaPedidoVentaDTO>();
-            lineaMuestra.producto = "MUESTRA";
-            lineaMuestra.aplicarDescuento = true;
-            lineaMuestra.cantidad = 1;
-            lineaMuestra.precio = 1; // es el de ficha
-            lineaMuestra.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra);
+            lineaMuestra.Producto = "MUESTRA";
+            lineaMuestra.AplicarDescuento = true;
+            lineaMuestra.Cantidad = 1;
+            lineaMuestra.PrecioUnitario = 1; // es el de ficha
+            lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra.BaseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra);
             LineaPedidoVentaDTO lineaMuestra2 = A.Fake<LineaPedidoVentaDTO>();
-            lineaMuestra2.producto = "MUESTRA_2";
-            lineaMuestra2.aplicarDescuento = true;
-            lineaMuestra2.cantidad = 1;
-            lineaMuestra2.precio = 2; // es el de ficha
-            lineaMuestra2.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra2.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra2);
+            lineaMuestra2.Producto = "MUESTRA_2";
+            lineaMuestra2.AplicarDescuento = true;
+            lineaMuestra2.Cantidad = 1;
+            lineaMuestra2.PrecioUnitario = 2; // es el de ficha
+            lineaMuestra2.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra2.baseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra2);
 
             RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA_2");
 
@@ -2204,28 +2205,28 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 15; 
-            linea.baseImponible = 15;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 15; 
+            //linea.BaseImponible = 15;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = A.Fake<LineaPedidoVentaDTO>();
-            lineaMuestra.producto = "MUESTRA";
-            lineaMuestra.aplicarDescuento = true;
-            lineaMuestra.cantidad = 1;
-            lineaMuestra.precio = 1; // es el de ficha
-            lineaMuestra.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra);
+            lineaMuestra.Producto = "MUESTRA";
+            lineaMuestra.AplicarDescuento = true;
+            lineaMuestra.Cantidad = 1;
+            lineaMuestra.PrecioUnitario = 1; // es el de ficha
+            lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra.BaseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra);
             LineaPedidoVentaDTO lineaMuestra2 = A.Fake<LineaPedidoVentaDTO>();
-            lineaMuestra2.producto = "MUESTRA_2";
-            lineaMuestra2.aplicarDescuento = true;
-            lineaMuestra2.cantidad = 1;
-            lineaMuestra2.precio = 1; // el de ficha es 2
-            lineaMuestra2.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra2.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra2);
+            lineaMuestra2.Producto = "MUESTRA_2";
+            lineaMuestra2.AplicarDescuento = true;
+            lineaMuestra2.Cantidad = 1;
+            lineaMuestra2.PrecioUnitario = 1; // el de ficha es 2
+            lineaMuestra2.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra2.baseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra2);
 
             A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido,"COS","MMP")).Returns(3);
 
@@ -2243,21 +2244,21 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = A.Fake<LineaPedidoVentaDTO>();
             lineaMuestra.tipoLinea = 1;
-            lineaMuestra.producto = "MUESTRA";
-            lineaMuestra.aplicarDescuento = true;
-            lineaMuestra.cantidad = 11;
-            lineaMuestra.precio = .1M; // es el de ficha
-            lineaMuestra.descuento = 1M; // de regalo, 100% dto
-            lineaMuestra.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaMuestra);
+            lineaMuestra.Producto = "MUESTRA";
+            lineaMuestra.AplicarDescuento = true;
+            lineaMuestra.Cantidad = 11;
+            lineaMuestra.PrecioUnitario = .1M; // es el de ficha
+            lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra.BaseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra);
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 
@@ -2273,20 +2274,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "COBRADO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "COBRADO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "REGALO";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 1; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "REGALO";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 1; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             A.CallTo(() => GestorPrecios.servicio.BuscarRegaloPorImportePedido("REGALO")).Returns(new List<RegaloImportePedido>
             {
                 new RegaloImportePedido
@@ -2312,20 +2313,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "COBRADO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 9; // es el de ficha
-            linea.baseImponible = 9;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "COBRADO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 9; // es el de ficha
+            //linea.BaseImponible = 9;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "REGALO";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 1; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "REGALO";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 1; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             A.CallTo(() => GestorPrecios.servicio.BuscarRegaloPorImportePedido("REGALO")).Returns(new List<RegaloImportePedido>
             {
                 new RegaloImportePedido
@@ -2352,20 +2353,20 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.cliente = "5";
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "COBRADO";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "COBRADO";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
-            lineaRegalo.producto = "REGALO";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 2;
-            lineaRegalo.precio = 1; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "REGALO";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 2;
+            lineaRegalo.PrecioUnitario = 1; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             A.CallTo(() => GestorPrecios.servicio.BuscarRegaloPorImportePedido("REGALO")).Returns(new List<RegaloImportePedido>
             {
                 new RegaloImportePedido
@@ -2391,13 +2392,13 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.numero = 1;
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 2;
-            linea.producto = "123144AAAAA";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.descuento = .05M;
-            linea.precio = 10;
-            linea.baseImponible = 9.5M;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "123144AAAAA";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.DescuentoLinea = .05M;
+            linea.PrecioUnitario = 10;
+            //linea.BaseImponible = 9.5M;
+            pedido.Lineas.Add(linea);
 
             IServicioPrecios servicio = A.Fake<IServicioPrecios>();
             Producto producto = A.Fake<Producto>();
@@ -2406,7 +2407,7 @@ namespace NestoAPI.Tests.Infrastructure
             producto.SubGrupo = "ACP";
             producto.PVP = 10;
 
-            A.CallTo(() => servicio.BuscarProducto(linea.producto)).Returns(producto);
+            A.CallTo(() => servicio.BuscarProducto(linea.Producto)).Returns(producto);
             GestorPrecios.servicio = servicio;
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
@@ -2421,13 +2422,13 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "123144AAAAA";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.descuento = .05M;
-            linea.precio = 10;
-            linea.baseImponible = 9.5M;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "123144AAAAA";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.DescuentoLinea = .05M;
+            linea.PrecioUnitario = 10;
+            //linea.BaseImponible = 9.5M;
+            pedido.Lineas.Add(linea);
 
             IServicioPrecios servicio = A.Fake<IServicioPrecios>();
             Producto producto = A.Fake<Producto>();
@@ -2436,7 +2437,7 @@ namespace NestoAPI.Tests.Infrastructure
             producto.SubGrupo = "ACP";
             producto.PVP = 10;
 
-            A.CallTo(() => servicio.BuscarProducto(linea.producto)).Returns(producto);
+            A.CallTo(() => servicio.BuscarProducto(linea.Producto)).Returns(producto);
             GestorPrecios.servicio = servicio;
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
@@ -2450,21 +2451,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 21;
-            linea.baseImponible = 42;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 21;
+            //linea.BaseImponible = 42;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea2.producto = "AA21";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA21";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 
@@ -2477,21 +2478,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 10;
-            linea.precio = 21;
-            linea.baseImponible = 210;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 10;
+            linea.PrecioUnitario = 21;
+            //linea.BaseImponible = 210;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = 1;
-            linea2.producto = "AA21";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 5;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA21";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 5;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 
@@ -2505,20 +2506,20 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "AA62";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 3;
-            linea.precio = 31;
-            linea.baseImponible = 93;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA62";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 3;
+            linea.PrecioUnitario = 31;
+            //linea.BaseImponible = 93;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
-            linea2.producto = "AA62";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA62";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 
@@ -2531,20 +2532,20 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "AA21";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 11;
-            linea.precio = 15;
-            linea.baseImponible = 11 * 15;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA21";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 11;
+            linea.PrecioUnitario = 15;
+            //linea.BaseImponible = 11 * 15;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
-            linea2.producto = "AA21";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 5;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA21";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 5;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 
@@ -2557,20 +2558,20 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 15;
-            linea.baseImponible = 30;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 15;
+            //linea.BaseImponible = 30;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
-            linea2.producto = "AA11";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA11";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 
@@ -2583,12 +2584,12 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "123144AAAAA";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 1;
-            linea.precio = 10;
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "123144AAAAA";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10;
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
 
             IServicioPrecios servicio = A.Fake<IServicioPrecios>();
             Producto producto = A.Fake<Producto>();
@@ -2598,7 +2599,7 @@ namespace NestoAPI.Tests.Infrastructure
             producto.SubGrupo = "ACP";
             producto.PVP = 10;
 
-            A.CallTo(() => servicio.BuscarProducto(linea.producto)).Returns(producto);
+            A.CallTo(() => servicio.BuscarProducto(linea.Producto)).Returns(producto);
             GestorPrecios.servicio = servicio;
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
@@ -2614,21 +2615,21 @@ namespace NestoAPI.Tests.Infrastructure
             pedido.contacto = "0";
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 1;
-            linea.precio = 10; // es el de ficha
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; // es el de ficha
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaRegalo = A.Fake<LineaPedidoVentaDTO>();
             lineaRegalo.tipoLinea = 1;
-            lineaRegalo.producto = "AA21";
-            lineaRegalo.aplicarDescuento = true;
-            lineaRegalo.cantidad = 1;
-            lineaRegalo.precio = 21; // es el de ficha
-            lineaRegalo.descuento = 1M; // de regalo, 100% dto
-            lineaRegalo.baseImponible = 0;
-            pedido.LineasPedido.Add(lineaRegalo);
+            lineaRegalo.Producto = "AA21";
+            lineaRegalo.AplicarDescuento = true;
+            lineaRegalo.Cantidad = 1;
+            lineaRegalo.PrecioUnitario = 21; // es el de ficha
+            lineaRegalo.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaRegalo.BaseImponible = 0;
+            pedido.Lineas.Add(lineaRegalo);
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
             List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
             {
@@ -2672,21 +2673,21 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = 1;
-            linea.producto = "OTROS_APA";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 6;
-            linea.precio = 130;
-            linea.baseImponible = 780;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "OTROS_APA";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 6;
+            linea.PrecioUnitario = 130;
+            //linea.BaseImponible = 780;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = 1;
-            linea2.producto = "OTROS_APA";
-            linea2.aplicarDescuento = true;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "OTROS_APA";
+            linea2.AplicarDescuento = true;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 
@@ -2700,14 +2701,14 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 1;
-            linea.precio = 6; //El precio de ficha son 10
-            linea.baseImponible = 6;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 6; //El precio de ficha son 10
+            //linea.BaseImponible = 6;
+            pedido.Lineas.Add(linea);
             
-            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.producto, pedido);
+            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.Producto, pedido);
 
             Assert.AreEqual(0, precioDescuentoProducto.cantidadOferta);
             Assert.AreEqual(1, precioDescuentoProducto.cantidad);
@@ -2720,16 +2721,16 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 1;
-            linea.precio = 10; //El precio de ficha son 10
-            linea.descuento = .5M;
-            linea.descuentoProducto = .5M;
-            linea.baseImponible = linea.precio * linea.cantidad; //para el test vale
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10; //El precio de ficha son 10
+            linea.DescuentoLinea = .5M;
+            linea.DescuentoProducto = .5M;
+            //linea.BaseImponible = linea.PrecioUnitario * linea.Cantidad; //para el test vale
+            pedido.Lineas.Add(linea);
 
-            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.producto, pedido);
+            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.Producto, pedido);
 
             Assert.AreEqual(0, precioDescuentoProducto.cantidadOferta);
             Assert.AreEqual(1, precioDescuentoProducto.cantidad);
@@ -2741,12 +2742,12 @@ namespace NestoAPI.Tests.Infrastructure
         {
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
-            linea.producto = "AA12";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 1;
-            linea.precio = 10;
-            linea.baseImponible = 10;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA12";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 1;
+            linea.PrecioUnitario = 10;
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
 
             PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido("AA11", pedido);
 
@@ -2759,23 +2760,23 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 2;
-            linea.precio = 10;
-            linea.baseImponible = 20;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 10;
+            //linea.BaseImponible = 20;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "AA11";
-            linea2.aplicarDescuento = false;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "AA11";
+            linea2.AplicarDescuento = false;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
-            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.producto, pedido);
+            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.Producto, pedido);
 
             Assert.AreEqual(1, precioDescuentoProducto.cantidadOferta);
             Assert.AreEqual(2, precioDescuentoProducto.cantidad);
@@ -2788,13 +2789,13 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "AA11";
-            linea.aplicarDescuento = true;
-            linea.cantidad = 2;
-            linea.precio = 10;
-            linea.descuento = .1M;
-            linea.baseImponible = 18;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 10;
+            linea.DescuentoLinea = .1M;
+            //linea.BaseImponible = 18;
+            pedido.Lineas.Add(linea);
 
             PrecioDescuentoProducto oferta = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(producto.Número, pedido);
 
@@ -2807,23 +2808,23 @@ namespace NestoAPI.Tests.Infrastructure
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             LineaPedidoVentaDTO linea = A.Fake<LineaPedidoVentaDTO>();
             linea.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea.producto = "FAMYPROD";
-            linea.aplicarDescuento = false;
-            linea.cantidad = 2;
-            linea.precio = 10;
-            linea.baseImponible = 20;
-            pedido.LineasPedido.Add(linea);
+            linea.Producto = "FAMYPROD";
+            linea.AplicarDescuento = false;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 10;
+            //linea.BaseImponible = 20;
+            pedido.Lineas.Add(linea);
 
             LineaPedidoVentaDTO linea2 = A.Fake<LineaPedidoVentaDTO>();
             linea2.tipoLinea = Constantes.TiposLineaVenta.PRODUCTO;
-            linea2.producto = "REGALO";
-            linea2.aplicarDescuento = false;
-            linea2.cantidad = 1;
-            linea2.precio = 0;
-            linea2.baseImponible = 0;
-            pedido.LineasPedido.Add(linea2);
+            linea2.Producto = "REGALO";
+            linea2.AplicarDescuento = false;
+            linea2.Cantidad = 1;
+            linea2.PrecioUnitario = 0;
+            //linea2.BaseImponible = 0;
+            pedido.Lineas.Add(linea2);
 
-            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.producto, pedido);
+            PrecioDescuentoProducto precioDescuentoProducto = ValidadorOfertasYDescuentosPermitidos.MontarOfertaPedido(linea.Producto, pedido);
 
             Assert.AreEqual(1, precioDescuentoProducto.cantidadOferta);
             Assert.AreEqual(2, precioDescuentoProducto.cantidad);

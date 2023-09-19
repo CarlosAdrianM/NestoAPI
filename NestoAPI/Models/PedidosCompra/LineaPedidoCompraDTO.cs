@@ -68,11 +68,6 @@ namespace NestoAPI.Models.PedidosCompra
 
 
         public override decimal Bruto { get => (decimal)(CantidadCobrada == null ? Cantidad * PrecioUnitario : CantidadCobrada * PrecioUnitario); }
-        //public decimal SumaDescuentos { get => AplicarDescuentos ? 1 - (1 - DescuentoProveedor) * (1 - DescuentoProducto) * (1 - DescuentoLinea) : 0; }
-        //public decimal ImporteDescuento { get => Math.Round(Bruto * SumaDescuentos, 2, MidpointRounding.AwayFromZero); }
-        //public override decimal BaseImponible { get => Math.Round(Bruto - ImporteDescuento, 2, MidpointRounding.AwayFromZero); }
-        //public decimal ImporteIva { get => BaseImponible * PorcentajeIva; }
-        //public decimal Total { get => BaseImponible + ImporteIva; }
         public int? CantidadCobrada { get; set; }
         public int? CantidadRegalo { get; set; }
 

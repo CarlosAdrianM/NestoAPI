@@ -249,6 +249,10 @@
         <EntityTypeShape EntityType="NVModel.EfectoPedidoVenta" Width="1.5" PointX="5.875" PointY="17.875" />
         <AssociationConnector Association="NVModel.FK_EfectosPedidoVenta_CabPedidoVta" />
         <EntityTypeShape EntityType="NVModel.AgenciaLlamadaWeb" Width="1.5" PointX="11.75" PointY="10.75" />
+        <EntityTypeShape EntityType="NVModel.DiarioProducto" Width="1.5" PointX="3" PointY="97.25" />
+        <AssociationConnector Association="NVModel.FK_DiariosProducto_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoProducto_DiariosProducto" />
+        <AssociationConnector Association="NVModel.FK_PreExtrProducto_DiariosProducto" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

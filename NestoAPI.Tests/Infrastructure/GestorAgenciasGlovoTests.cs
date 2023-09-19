@@ -1,7 +1,7 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
-using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using System;
 
 namespace NestoAPI.Tests.Infrastructure
@@ -102,10 +102,10 @@ namespace NestoAPI.Tests.Infrastructure
         {
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
-                producto = "producto",
+                Producto = "producto",
                 almacen = "REI"
             };
-            pedido.LineasPedido.Add(linea);
+            pedido.Lineas.Add(linea);
 
             RespuestaAgencia resultado = gestor.SePuedeServirPedido(pedido, servicio, gestorStocks).Result;
 

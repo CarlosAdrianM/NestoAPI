@@ -64,6 +64,7 @@ namespace NestoAPI.Models
             this.CabPedidoCmps = new HashSet<CabPedidoCmp>();
             this.CabPedidoCmps1 = new HashSet<CabPedidoCmp>();
             this.OfertasProveedores = new HashSet<OfertaProveedor>();
+            this.DiariosProductoes = new HashSet<DiarioProducto>();
         }
     
         public string Número { get; set; }
@@ -217,5 +218,6 @@ namespace NestoAPI.Models
         public virtual ICollection<CabPedidoCmp> CabPedidoCmps { get; set; }
         public virtual ICollection<CabPedidoCmp> CabPedidoCmps1 { get; set; }
         public virtual ICollection<OfertaProveedor> OfertasProveedores { get; set; }
+        public virtual ICollection<DiarioProducto> DiariosProductoes { get; set; }
     }
 }

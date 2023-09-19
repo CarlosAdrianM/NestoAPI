@@ -30,11 +30,15 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetControlStock(string productoId)
         {
             var controlesStock = await db.ControlesStocks.Where(e => e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && e.Número == productoId).ToListAsync().ConfigureAwait(false);
-            if (controlesStock == null || !controlesStock.Any())
+            if (controlesStock == null)
             {
-                return NotFound();
+                controlesStock = new List<ControlStock>();
             }
-            //var proveedor = await db.ProveedoresProductoes.Include(e => e.Proveedore).OrderBy(p => p.Orden).FirstAsync(e => e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && e.Nº_Producto == productoId).ConfigureAwait(false);
+            if (!controlesStock.Any())
+            {
+                controlesStock.Add(new ControlStock());
+            }
+
             var proveedor = await db.ProveedoresProductoes
                 .Where(e => e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && e.Nº_Producto == productoId)
                 .OrderBy(p => p.Orden)

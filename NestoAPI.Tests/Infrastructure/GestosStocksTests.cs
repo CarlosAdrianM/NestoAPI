@@ -2,11 +2,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Models;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -42,11 +38,11 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicio.Stock("producto", "almacen")).Returns(0);
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
-                producto = "producto",
+                Producto = "producto",
                 almacen = "almacen",
-                cantidad = 1
+                Cantidad = 1
             };
-            pedido.LineasPedido.Add(linea);
+            pedido.Lineas.Add(linea);
 
             bool resultado = gestor.HayStockDisponibleDeTodo(pedido);
 
@@ -59,11 +55,11 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicio.Stock("producto", "REI")).Returns(1);
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
-                producto = "producto",
+                Producto = "producto",
                 almacen = "REI",
-                cantidad = 1
+                Cantidad = 1
             };
-            pedido.LineasPedido.Add(linea);
+            pedido.Lineas.Add(linea);
 
             bool resultado = gestor.HayStockDisponibleDeTodo(pedido);
 
@@ -76,11 +72,11 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicio.Stock("producto", "almacen")).Returns(1);
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
-                producto = "producto",
+                Producto = "producto",
                 almacen = "almacen",
-                cantidad = 2
+                Cantidad = 2
             };
-            pedido.LineasPedido.Add(linea);
+            pedido.Lineas.Add(linea);
 
             bool resultado = gestor.HayStockDisponibleDeTodo(pedido);
 
@@ -94,11 +90,11 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicio.UnidadesPendientesEntregarAlmacen("producto", Constantes.Almacenes.REINA)).Returns(1);
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
-                producto = "producto",
+                Producto = "producto",
                 almacen = Constantes.Almacenes.REINA,
-                cantidad = 1
+                Cantidad = 1
             };
-            pedido.LineasPedido.Add(linea);
+            pedido.Lineas.Add(linea);
 
             bool resultado = gestor.HayStockDisponibleDeTodo(pedido);
 
@@ -113,11 +109,11 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicio.UnidadesDisponiblesTodosLosAlmacenes("producto")).Returns(0);
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
-                producto = "producto",
+                Producto = "producto",
                 almacen = "almacen",
-                cantidad = 1
+                Cantidad = 1
             };
-            pedido.LineasPedido.Add(linea);
+            pedido.Lineas.Add(linea);
 
             bool resultado = gestor.HayStockDisponibleDeTodo(pedido);
 
@@ -132,11 +128,11 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicio.UnidadesDisponiblesTodosLosAlmacenes("producto")).Returns(1);
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
             {
-                producto = "producto",
+                Producto = "producto",
                 almacen = "almacen",
-                cantidad = 2
+                Cantidad = 2
             };
-            pedido.LineasPedido.Add(linea);
+            pedido.Lineas.Add(linea);
 
             bool resultado = gestor.HayStockDisponibleDeTodo(pedido);
 
