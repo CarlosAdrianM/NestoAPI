@@ -859,8 +859,8 @@ namespace NestoAPI.Controllers
                 //linea.BaseImponible = linPedido.Base_Imponible;
                 if (pedido.ParametrosIva.Any())
                 {
-                    linea.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva).PorcentajeIvaProducto;
-                    linea.PorcentajeRecargoEquivalencia = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva).PorcentajeRecargoEquivalencia;
+                    linea.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva?.Trim()).PorcentajeIvaProducto;
+                    linea.PorcentajeRecargoEquivalencia = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva?.Trim()).PorcentajeRecargoEquivalencia;
                 }                
                 //linea.Total = linPedido.Total;
                 //db.LinPedidoVtas.Add(linPedido);

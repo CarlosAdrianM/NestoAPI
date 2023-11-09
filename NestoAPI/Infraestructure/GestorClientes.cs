@@ -690,7 +690,7 @@ namespace NestoAPI.Infraestructure
             if (clienteDB.CodPostal.Trim() != clienteModificar.CodigoPostal)
             {
                 CodigoPostal cp = await servicio.BuscarCodigoPostal(clienteModificar.Empresa, clienteModificar.CodigoPostal).ConfigureAwait(false);
-                clienteDB.Población = cp.Descripción;
+                clienteDB.Población = cp.Descripción.Substring(0, 30);
                 clienteDB.Provincia = cp.Provincia;
             }
             clienteDB.CodPostal = clienteModificar.CodigoPostal;

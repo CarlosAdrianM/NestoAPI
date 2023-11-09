@@ -109,6 +109,10 @@ namespace NestoAPI.Infraestructure
             {
                 mail.CC.Add(Constantes.Correos.TIENDA_REINA);
             }
+            else if (pedido.Lineas.FirstOrDefault().almacen == Constantes.Almacenes.ALCOBENDAS)
+            {
+                mail.CC.Add(Constantes.Correos.TIENDA_ALCOBENDAS);
+            }
             if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
             {
                 mail.Subject = "[GLOVO] " + mail.Subject;

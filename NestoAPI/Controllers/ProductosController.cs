@@ -11,6 +11,7 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
 using NestoAPI.Infraestructure;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Controllers
 {
@@ -122,7 +123,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ProductoDTO))]
         public async Task<IHttpActionResult> GetProducto(string empresa, string id, bool fichaCompleta)
         {
-            Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id);
+            Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id).ConfigureAwait(false);
             if (producto == null)
             {
                 return NotFound();
@@ -130,7 +131,9 @@ namespace NestoAPI.Controllers
 
             ProductoDTO productoDTO = new ProductoDTO()
             {
-                UrlFoto = await ProductoDTO.RutaImagen(id),
+                UrlFoto = fichaCompleta ? await ProductoDTO.RutaImagen(id).ConfigureAwait(false) : null,
+                PrecioPublicoFinal = fichaCompleta ? await ProductoDTO.LeerPrecioPublicoFinal(id).ConfigureAwait(false) : 0,
+                UrlEnlace = fichaCompleta ? await ProductoDTO.RutaEnlace(id).ConfigureAwait(false) : null,
                 Producto = producto.Número?.Trim(),
                 Nombre = producto.Nombre?.Trim(),
                 Tamanno = producto.Tamaño,
@@ -144,7 +147,7 @@ namespace NestoAPI.Controllers
             };
             
             // Lo dejo medio-hardcoded porque no quiero que los vendedores vean otros almacenes
-            if (!producto.Ficticio)
+            if (!producto.Ficticio && fichaCompleta)
             {
                 productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
                 productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
@@ -155,7 +158,7 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/Productos/5
-        public IQueryable<ProductoDTO> GetProducto(string empresa, string filtroNombre, string filtroFamilia, string filtroSubgrupo)
+        public ICollection<ProductoDTO> GetProducto(string empresa, string filtroNombre, string filtroFamilia, string filtroSubgrupo, string almacen = "")
         {
             IQueryable<Producto> productos = db.Productos.Where(p => p.Empresa == empresa && p.Estado >= Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && p.Grupo != Constantes.Productos.GRUPO_MATERIAS_PRIMAS);
             if (filtroNombre != null && filtroNombre.Trim() != "")
@@ -179,7 +182,15 @@ namespace NestoAPI.Controllers
                 Subgrupo = x.SubGruposProducto.Descripción.Trim(),
                 PrecioProfesional = (decimal)x.PVP,
                 Estado = (short)x.Estado
-            });
+            }).ToList();
+
+            if (almacen != string.Empty)
+            {
+                foreach (var productoDTO in productosDTO)
+                {
+                    productoDTO.Stocks.Add(CalcularStockProducto(productoDTO.Producto, almacen));
+                }
+            }
 
             return productosDTO;
         }
@@ -319,6 +330,28 @@ namespace NestoAPI.Controllers
 
             return stockProducto;
         }
+
+        // GET: api/Productos/5
+        [ResponseType(typeof(ProductoDTO))]
+        public async Task<IHttpActionResult> GetProducto(string codigoBarras)
+        {
+            if (codigoBarras == null)
+            {
+                throw new Exception("Código de barras no puede ser nulo");
+            }
+
+            codigoBarras = codigoBarras.Trim();
+            Producto producto = await db.Productos.FirstOrDefaultAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (p.CodBarras == codigoBarras || p.Número.Trim() == codigoBarras)).ConfigureAwait(false);
+            if (producto == null)
+            {
+                return NotFound();
+            }
+
+            IHttpActionResult actionResult = await GetProducto(producto.Empresa, producto.Número, true);
+
+            return actionResult;
+        }
+
 
         protected override void Dispose(bool disposing)
         {
