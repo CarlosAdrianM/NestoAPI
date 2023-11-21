@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.Vendedores;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -33,9 +34,11 @@ namespace NestoAPI.Models.Comisiones.Estetica
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
             CrearConsulta();
+            var servicioVendedores = new ServicioVendedores();
+            var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
             consulta = consulta
                 .Where(l =>
-                    l.Vendedor == vendedor
+                    listaVendedores.Contains(l.Vendedor)
                 );
 
             return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
@@ -61,11 +64,13 @@ namespace NestoAPI.Models.Comisiones.Estetica
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
             CrearConsulta();
+            var servicioVendedores = new ServicioVendedores();
+            var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
             consulta = consulta
                 .Where(l =>
-                    l.Vendedor == vendedor
+                    listaVendedores.Contains(l.Vendedor)
                 );
-                
+
             return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
     }

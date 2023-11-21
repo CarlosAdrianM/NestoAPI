@@ -28,6 +28,37 @@ namespace NestoAPI.Models.Comisiones
 
         public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019();
 
+        public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
+        {
+            string etiqueta;
+
+            if (linea.Grupo != null && linea.Grupo.ToLower().Trim() == "otros aparatos")
+            {
+                etiqueta = "Otros Aparatos";
+            }
+            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "uniónláser")
+            {
+                etiqueta = "Unión Láser";
+            }
+            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "eva visnu")
+            {
+                etiqueta = "Eva Visnú";
+            }
+            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "lisap")
+            {
+                etiqueta = "Lisap";
+            }
+            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "kach")
+            {
+                etiqueta = "Kach";
+            }
+            else
+            {
+                etiqueta = "General";
+            }
+            return etiqueta;
+        }
+
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
             return ServicioComisionesAnualesComun.LeerResumenAnno(this, vendedor, anno);

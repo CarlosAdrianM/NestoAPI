@@ -194,9 +194,7 @@ namespace NestoAPI.Controllers
 
             return productosDTO;
         }
-
-            
-
+        
         // GET: api/Productos/5
         [ResponseType(typeof(ProductoPlantillaDTO))]
         public async Task<IHttpActionResult> GetProducto(string empresa, string id, string cliente, string contacto, short cantidad)
@@ -233,6 +231,52 @@ namespace NestoAPI.Controllers
 
             return Ok(productoDTO);
         }
+
+        // GET: api/Productos/Relacionados/5
+        [ResponseType(typeof(List<ProductoDTO>))]
+        [Route("api/Productos/Relacionados")]
+        public async Task<IHttpActionResult> GetProductosRelacionados(string id)
+        {
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            // Obtener el producto base
+            Producto productoBase = db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == id);
+            if (productoBase == null)
+            {
+                return NotFound();
+            }
+
+            // Obtener productos relacionados que cumplen con los criterios
+            var productosRelacionados = db.Productos
+                .Where(p => p.Empresa == empresa && p.Grupo == productoBase.Grupo && p.SubGrupo == productoBase.SubGrupo && p.PVP > productoBase.PVP && p.Estado == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
+                .OrderBy(p => p.PVP);
+
+            // Obtener los tres productos con menor posición en ClasificacionMasVendidos
+            var productosOrdenados = db.ClasificacionMasVendidos
+                .Where(cm => productosRelacionados.Any(pr => pr.Número == cm.Producto && pr.Empresa == cm.Empresa))
+                .OrderBy(cm => cm.Posicion)
+                .Take(3)
+                .Select(cm => new
+                {
+                    Producto = productosRelacionados.FirstOrDefault(pr => pr.Número == cm.Producto && pr.Empresa == cm.Empresa)
+                })
+                .ToList();
+
+            // Mapear los productos a DTO
+            var productosDTO = await Task.WhenAll(productosOrdenados.Select(async p => new ProductoDTO
+            {
+                UrlFoto = await ProductoDTO.RutaImagen(id).ConfigureAwait(false),
+                //UrlEnlace = await ProductoDTO.RutaEnlace(id).ConfigureAwait(false),
+                Producto = p.Producto.Número?.Trim(),
+                Nombre = p.Producto.Nombre?.Trim(),
+                PrecioProfesional = (decimal)p.Producto.PVP,
+                Estado = (short)p.Producto.Estado
+            })).ConfigureAwait(false);
+
+            return Content(HttpStatusCode.OK, productosDTO.ToList(), Configuration.Formatters.JsonFormatter);
+        }
+
+
+
         /*
         // PUT: api/Productos/5
         [ResponseType(typeof(void))]

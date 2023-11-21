@@ -739,6 +739,7 @@ namespace NestoAPI.Tests.Infrastructure
             clienteCrear.PersonasContacto = personasContactoNuevas;
             Cliente clienteExistente = A.Fake<Cliente>();
             clienteExistente.Nombre = "Cliente existente";
+            clienteExistente.CodPostal = "28119";
             clienteExistente.PersonasContactoClientes = new List<PersonaContactoCliente>
             {
                 new PersonaContactoCliente

@@ -96,6 +96,7 @@ namespace NestoAPI.Models
         public virtual DbSet<EfectoPedidoVenta> EfectosPedidosVentas { get; set; }
         public virtual DbSet<AgenciaLlamadaWeb> AgenciasLlamadasWeb { get; set; }
         public virtual DbSet<DiarioProducto> DiariosProductos { get; set; }
+        public virtual DbSet<EquipoVenta> EquiposVentas { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

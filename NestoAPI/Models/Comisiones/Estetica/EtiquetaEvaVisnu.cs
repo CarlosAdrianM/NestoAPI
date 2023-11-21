@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.Vendedores;
+using System;
 using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
@@ -60,11 +61,14 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         private void CrearConsulta(string vendedor)
         {
+            var servicioVendedores = new ServicioVendedores();
+            var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
+
             consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
                     (l.Familia.ToLower() == "eva visnu" || l.Empresa == "4") &&
                     l.Grupo.ToLower() != "otros aparatos" &&
-                    l.Vendedor == vendedor
+                    listaVendedores.Contains(l.Vendedor)
                 );
         }
 

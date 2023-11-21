@@ -1,23 +1,20 @@
 ﻿using NestoAPI.Infraestructure.Vendedores;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaOtrosAparatos : IEtiquetaComision
+    public class EtiquetaFamiliasEspeciales : IEtiquetaComision
     {
-        private const decimal TIPO_FIJO_OTROSAPARATOS = .02M;
-
         private NVEntities db = new NVEntities();
 
-        IQueryable<vstLinPedidoVtaComisione> consulta;
+        private IQueryable<vstLinPedidoVtaComisione> consulta;
 
         public string Nombre
         {
             get
             {
-                return "Otros Aparatos";
+                return "Especiales";
             }
         }
 
@@ -31,9 +28,10 @@ namespace NestoAPI.Models.Comisiones.Estetica
             }
             set
             {
-                throw new Exception("La comisión de Otros Aparatos no se puede fijar manualmente");
+                throw new Exception("La comisión de las familias especiales no se puede fijar manualmente");
             }
         }
+
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
@@ -42,12 +40,12 @@ namespace NestoAPI.Models.Comisiones.Estetica
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
-
             CrearConsulta(vendedor);
 
             return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
-        
+
+
         IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
@@ -65,18 +63,20 @@ namespace NestoAPI.Models.Comisiones.Estetica
         {
             var servicioVendedores = new ServicioVendedores();
             var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
-
+            
             consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
-                    listaVendedores.Contains(l.Vendedor) &&
-                    l.Grupo.ToLower() == "otros aparatos" &&
-                    l.EstadoFamilia == 0
+                    FamiliasEspeciales.Contains(l.Familia.ToLower()) &&
+                    !l.Grupo.ToLower().Equals("otros aparatos", StringComparison.OrdinalIgnoreCase) &&
+                    listaVendedores.Contains(l.Vendedor)
                 );
         }
 
         public decimal SetTipo(TramoComision tramo)
         {
-            return TIPO_FIJO_OTROSAPARATOS;
+            return tramo.TipoExtra;
         }
+
+        public static string[] FamiliasEspeciales = { "eva visnu", "santhilea", "max2origin", "mina", "apraise", "maderas", "diagmyskin", "faby", "cursos" };
     }
 }

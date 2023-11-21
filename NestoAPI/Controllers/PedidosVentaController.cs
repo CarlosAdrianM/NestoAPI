@@ -19,6 +19,9 @@ using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models.PedidosVenta;
 using Newtonsoft.Json.Linq;
 using NestoAPI.Models.PedidosBase;
+using System.Web.Http.Results;
+using System.Runtime.CompilerServices;
+using NestoAPI.Infraestructure.Vendedores;
 
 namespace NestoAPI.Controllers
 {
@@ -37,6 +40,7 @@ namespace NestoAPI.Controllers
 
         private NVEntities db;
         private readonly ServicioPedidosVenta servicio = new ServicioPedidosVenta(); // inyectar para tests
+        private readonly ServicioVendedores servicioVendedores = new ServicioVendedores();
         private readonly GestorPedidosVenta gestor;
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
@@ -44,7 +48,7 @@ namespace NestoAPI.Controllers
             db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             gestor = new GestorPedidosVenta(servicio);
-    }
+        }
 
         // Carlos 31/05/18: para poder hacer tests sobre el controlador
         public PedidosVentaController(NVEntities db)
@@ -56,26 +60,64 @@ namespace NestoAPI.Controllers
 
 
         // GET: api/PedidosVenta
-        public List<ResumenPedidoVentaDTO> GetPedidosVenta()
+        public async Task<List<ResumenPedidoVentaDTO>> GetPedidosVenta()
         {
-            return GetPedidosVenta("");
+            return await GetPedidosVenta("");
         }
 
-        public List<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor)
+        public async Task<List<ResumenPedidoVentaDTO>> GetPedidosVenta(string vendedor)
         {
+            //IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
+            //                                       join v in db.VendedoresPedidosGruposProductos
+
+            //                                       //This is how you join by multiple values
+            //                                       on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
+            //                                       into jointData
+
+            //                                       //This is how you actually turn the join into a left-join
+            //                                       from jointRecord in jointData.DefaultIfEmpty()
+
+            //                                       where (vendedor == "" || vendedor == null || c.Vendedor ==  vendedor || jointRecord.Vendedor == vendedor)
+            //                                       select c;
+
+            List<string> vendedoresLista;
+            if (string.IsNullOrWhiteSpace(vendedor))
+            {
+                vendedoresLista = new List<string>();
+            } 
+            else
+            {
+                //// Crear una instancia del controlador VendedoresController
+                //VendedoresController vendedoresController = new VendedoresController();
+
+                //// Llamar al método GetVendedores con los parámetros deseados
+                string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+                //var resultado = await vendedoresController.GetVendedores(empresa, vendedor).ConfigureAwait(false);
+                List<VendedorDTO> listaVendedores;
+                listaVendedores = await servicioVendedores.VendedoresEquipo(empresa, vendedor).ConfigureAwait(false);
+                //// Puedes procesar el resultado y devolver la respuesta adecuada
+                //if (resultado is OkNegotiatedContentResult<List<VendedorDTO>>)
+                //{
+                //    listaVendedores = ((OkNegotiatedContentResult<List<VendedorDTO>>)resultado).Content;
+                //}
+                //else //(resultado is BadRequestErrorMessageResult)
+                //{
+                //    var mensajeError = ((BadRequestErrorMessageResult)resultado).Message;
+                //    // Manejar el error de acuerdo a tus necesidades
+                //    throw new Exception(mensajeError);
+                //}
+                vendedoresLista = listaVendedores.Select(v => v.vendedor).ToList();
+            }
+
             IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
-                                                   join v in db.VendedoresPedidosGruposProductos
+                                                              join v in db.VendedoresPedidosGruposProductos
+                                                              on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
+                                                              into jointData
+                                                              from jointRecord in jointData.DefaultIfEmpty()
+                                                              where (vendedor == "" || vendedor == null || vendedoresLista.Contains(c.Vendedor) || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor)))
+                                                              select c;
 
-                                                   //This is how you join by multiple values
-                                                   on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
-                                                   into jointData
 
-                                                   //This is how you actually turn the join into a left-join
-                                                   from jointRecord in jointData.DefaultIfEmpty()
-
-                                                   where (vendedor == "" || vendedor == null || c.Vendedor ==  vendedor || jointRecord.Vendedor == vendedor)
-                                                   select c;
-            
             IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
                 .Join(db.LinPedidoVtas, c => new { empresa = c.Empresa, numero = c.Número }, l => new { empresa = l.Empresa, numero = l.Número }, (c, l) => new { c.Vendedor, c.Empresa, c.Número, c.Nº_Cliente, c.Cliente.Nombre, c.Cliente.Dirección, c.Cliente.CodPostal, c.Cliente.Población, c.Cliente.Provincia, c.Fecha, l.TipoLinea, l.Estado, l.Picking, l.Fecha_Entrega, l.Base_Imponible, l.Total, c.Ruta })
                 .Where(c => c.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && c.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)

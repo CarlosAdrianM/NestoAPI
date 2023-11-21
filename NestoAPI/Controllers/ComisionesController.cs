@@ -128,37 +128,11 @@ namespace NestoAPI.Controllers
                     && l.Grupo != null && l.Familia != null);
 
                 foreach (vstLinPedidoVtaComisione linea in lineas)
-                {                  
-
-                    string etiqueta;
-
+                {
                     try
                     {
-                        // Arreglar sin cadenas mágicas
-                        if (linea.Grupo != null && linea.Grupo.ToLower().Trim() == "otros aparatos")
-                        {
-                            etiqueta = "Otros Aparatos";
-                        }
-                        else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "uniónláser")
-                        {
-                            etiqueta = "Unión Láser";
-                        }
-                        else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "eva visnu")
-                        {
-                            etiqueta = "Eva Visnú";
-                        }
-                        else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "lisap")
-                        {
-                            etiqueta = "Lisap";
-                        }
-                        else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "kach")
-                        {
-                            etiqueta = "Kach";
-                        }
-                        else
-                        {
-                            etiqueta = "General";
-                        }
+                        string etiqueta = ServicioVendedor(linea.Vendedor, anno).EtiquetaLinea(linea);
+
                         db.ComisionesAnualesDetalles.Add(new ComisionAnualDetalle
                         {
                             Id = linea.Nº_Orden,
@@ -170,7 +144,8 @@ namespace NestoAPI.Controllers
                             Mes = (byte)mes,
                             Etiqueta = etiqueta
                         });
-                    } catch (Exception ex)
+                    }
+                    catch (Exception ex)
                     {
                         throw ex;
                     }
@@ -255,14 +230,14 @@ namespace NestoAPI.Controllers
             {
                 return new ServicioComisionesAnualesEstetica2021();
             }
-            else if (anno == 2022)
+            else if (anno == 2022 || anno == 2023)
             {
                 return new ServicioComisionesAnualesEstetica2022();
             }
-            else if (anno == 2023) // mantenemos las comisiones del año pasado
-            {
-                return new ServicioComisionesAnualesEstetica2022();
-            }
+            //else if (anno == 2024)
+            //{
+            //    return new ServicioComisionesAnualesEstetica2024();
+            //}
 
             throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");
         }

@@ -39,7 +39,8 @@ namespace NestoAPI.Models.Picking
             client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
             client.Host = "smtp.office365.com";
             mail.From = new MailAddress("nesto@nuevavision.es");
-            mail.To.Add(new MailAddress("direccion@nuevavision.es"));
+            mail.To.Add(new MailAddress("carlosadrian@nuevavision.es"));
+            mail.To.Add(new MailAddress("manuelrodriguez@nuevavision.es"));
             mail.To.Add(new MailAddress("alfredo@nuevavision.es"));
             mail.Subject = "Pedidos por Debajo del Margen Mínimo";
             mail.Body = generarTablaHTML(lineasMargen).ToString();

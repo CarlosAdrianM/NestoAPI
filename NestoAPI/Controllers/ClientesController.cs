@@ -16,29 +16,59 @@ using System.Data.Entity.Validation;
 using NestoAPI.Models.Facturas;
 using System.Net.Http.Headers;
 using System.Numerics;
+using System.Web.Http.Results;
+using NestoAPI.Infraestructure.Vendedores;
 
 namespace NestoAPI.Controllers
 {
     
     public class ClientesController : ApiController
     {
+        private IServicioVendedores servicioVendedores { get; }
+        private NVEntities db = new NVEntities();
+
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
         public ClientesController()
         {
             db.Configuration.LazyLoadingEnabled = false;
+            servicioVendedores = new ServicioVendedores();
         }
 
-        private NVEntities db = new NVEntities();
-        
-
         // GET: api/Clientes
-        public IQueryable<ClienteDTO> GetClientes(string empresa, string vendedor, string filtro)
+        public async Task<IQueryable<ClienteDTO>> GetClientes(string empresa, string vendedor, string filtro)
         {
             if ((filtro == null) || ((filtro.Length < 4) && (!filtro.All(c => char.IsDigit(c)))))
             {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }
+            List<string> vendedoresLista;
+            if (string.IsNullOrWhiteSpace(vendedor))
+            {
+                vendedoresLista = new List<string>();
+            }
+            else
+            {
+                //// Crear una instancia del controlador VendedoresController
+                //VendedoresController vendedoresController = new VendedoresController();
 
+                //// Llamar al método GetVendedores con los parámetros deseados
+                //var resultado = await vendedoresController.GetVendedores(empresa, vendedor).ConfigureAwait(false);
+                List<VendedorDTO> listaVendedores;
+                listaVendedores = await servicioVendedores.VendedoresEquipo(empresa, vendedor).ConfigureAwait(false);
+                //// Puedes procesar el resultado y devolver la respuesta adecuada
+                //if (resultado is OkNegotiatedContentResult<List<VendedorDTO>>)
+                //{
+                //    listaVendedores = ((OkNegotiatedContentResult<List<VendedorDTO>>)resultado).Content;
+                //}
+                //else //(resultado is BadRequestErrorMessageResult)
+                //{
+                //    var mensajeError = ((BadRequestErrorMessageResult)resultado).Message;
+                //    // Manejar el error de acuerdo a tus necesidades
+                //    throw new Exception(mensajeError);
+                //}
+                vendedoresLista = listaVendedores.Select(v => v.vendedor).ToList();
+                
+            }
             IQueryable<Cliente> clientesVendedor = from c in db.Clientes
                                                    join v in db.VendedoresClientesGruposProductos
                                                    
@@ -49,7 +79,8 @@ namespace NestoAPI.Controllers
                                                    //This is how you actually turn the join into a left-join
                                                    from jointRecord in jointData.DefaultIfEmpty()
 
-                                                   where vendedor == "" || vendedor == null || (c.Empresa == empresa && (c.Vendedor == vendedor || jointRecord.Vendedor == vendedor))
+                                                   //where vendedor == "" || vendedor == null || (c.Empresa == empresa && (c.Vendedor == vendedor || jointRecord.Vendedor == vendedor))
+                                                   where (vendedor == "" || vendedor == null || vendedoresLista.Contains(c.Vendedor) || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor)))
                                                    select c;
 
             IQueryable<Cliente> clientesTabla = db.Clientes

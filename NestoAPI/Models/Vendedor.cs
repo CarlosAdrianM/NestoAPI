@@ -28,6 +28,8 @@ namespace NestoAPI.Models
             this.PreExtrProductoes = new HashSet<PreExtrProducto>();
             this.VendedoresCodigoPostalGrupoProductoes = new HashSet<VendedorCodigoPostalGrupoProducto>();
             this.CabFacturaVtas = new HashSet<CabFacturaVta>();
+            this.EquiposVentas = new HashSet<EquipoVenta>();
+            this.EquiposVentas1 = new HashSet<EquipoVenta>();
         }
     
         public string Empresa { get; set; }
@@ -54,5 +56,7 @@ namespace NestoAPI.Models
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
         public virtual ICollection<VendedorCodigoPostalGrupoProducto> VendedoresCodigoPostalGrupoProductoes { get; set; }
         public virtual ICollection<CabFacturaVta> CabFacturaVtas { get; set; }
+        public virtual ICollection<EquipoVenta> EquiposVentas { get; set; }
+        public virtual ICollection<EquipoVenta> EquiposVentas1 { get; set; }
     }
 }

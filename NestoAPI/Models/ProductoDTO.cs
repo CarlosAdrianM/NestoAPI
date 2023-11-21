@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Globalization;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -139,27 +140,27 @@ namespace NestoAPI.Models
 
                     if (productNode != null)
                     {
-                        string urlProducto = productNode.Attributes["xlink:href"].Value;
-
+                        string urlProducto = $"{productNode.Attributes["xlink:href"].Value}?price[final_price][use_tax]=1";
                         HttpResponseMessage responseProducto = await client.GetAsync(urlProducto).ConfigureAwait(false);
 
                         if (responseProducto.IsSuccessStatusCode)
                         {
                             string responseContent = await responseProducto.Content.ReadAsStringAsync().ConfigureAwait(false);
                             XmlDocument xmlDocProducto = new XmlDocument();
-                            xmlDocProducto.LoadXml(responseContent);
-
-                            XmlNode priceNode = xmlDocProducto.SelectSingleNode("//price");
-
+                            xmlDocProducto.LoadXml(responseContent);                           
+                                                        
+                            XmlNode priceNode = xmlDocProducto.SelectSingleNode("//final_price");
                             if (priceNode != null)
                             {
-                                decimal price = decimal.Parse(priceNode.InnerText);
-                                precioPublico = Math.Round(price/1000000, 2, MidpointRounding.AwayFromZero);
+                                if (decimal.TryParse(priceNode.InnerText, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal price))
+                                {
+                                    precioPublico = Math.Round(price, 2, MidpointRounding.AwayFromZero);
+                                }
                             }
                             else
                             {
                                 Console.WriteLine("No se encontró el precio en el XML");
-                            }
+                            }                            
                         }
                         else
                         {

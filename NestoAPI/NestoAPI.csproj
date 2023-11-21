@@ -405,6 +405,8 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOtrosAparatosSiempreSinDescuento.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegaloPorImportePedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegalosTiendaOnline.cs" />
+    <Compile Include="Infraestructure\Vendedores\IServicioVendedores.cs" />
+    <Compile Include="Infraestructure\Vendedores\ServicioVendedores.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.Designer.cs">
       <DependentUpon>201603171731031_InitialCreate.cs</DependentUpon>
@@ -466,10 +468,12 @@
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaEvaVisnu.cs" />
+    <Compile Include="Models\Comisiones\Estetica\EtiquetaFamiliasEspeciales.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2022.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2021.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2020.cs" />
     <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2019.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ServicioComisionesAnualesEstetica2024.cs" />
     <Compile Include="Models\Comisiones\EtiquetaGeneral.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaOtrosAparatos.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaUnionLaser.cs" />
@@ -527,6 +531,9 @@
     </Compile>
     <Compile Include="Models\EnvioAgenciaDTO.cs" />
     <Compile Include="Models\EnviosAgencia.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\EquipoVenta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\ExtractoCliente.cs">

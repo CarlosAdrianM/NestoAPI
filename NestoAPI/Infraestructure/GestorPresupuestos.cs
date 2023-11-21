@@ -101,7 +101,8 @@ namespace NestoAPI.Infraestructure
             {
                 return;
             }
-            mail.CC.Add(Constantes.Correos.CORREO_DIRECCION);
+            mail.CC.Add("carlosadrian@nuevavision.es");
+            mail.CC.Add("manuelrodriguez@nuevavision.es");
             mail.Subject = string.Format("{0} {1} - c/ {2}", TEXTO_PEDIDO, pedido.numero, pedido.cliente);
             mail.Body = (await GenerarTablaHTML(pedido, tipoCorreo)).ToString();
             mail.IsBodyHtml = true;
@@ -117,10 +118,18 @@ namespace NestoAPI.Infraestructure
             {
                 mail.Subject = "[GLOVO] " + mail.Subject;
             }
-            // Si falta la foto ponemos copia a Quique
+            // Si falta la foto ponemos copia a tienda online
             if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") || mail.Body.Contains("-home_default/.jpg"))
             {
                 mail.CC.Add(Constantes.Correos.TIENDA_ONLINE);
+            }
+            // Si tiene varios plazos y se podría servir junto, ponemos en copia a administración
+            if (mail.Body.Contains("¡¡¡ ATENCIÓN !!!"))
+            {
+                if (pedido.Prepagos.Any() || db.PlazosPago.Where(f => f.Empresa == pedido.empresa && f.Número == pedido.formaPago && f.Nº_Plazos > 1).Any())
+                {
+                    mail.CC.Add(Constantes.Correos.CORREO_ADMON);
+                }
             }
 
             // A veces no conecta a la primera, por lo que reintentamos 2s después

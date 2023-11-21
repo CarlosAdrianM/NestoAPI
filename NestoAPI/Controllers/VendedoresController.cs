@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
 
 namespace NestoAPI.Controllers
@@ -16,12 +17,15 @@ namespace NestoAPI.Controllers
     public class VendedoresController : ApiController
     {
         private NVEntities db = new NVEntities();
+        private IServicioVendedores Servicio { get; }
 
         // Carlos 01/03/17: lo pongo para desactivar el Lazy Loading
         public VendedoresController()
         {
             db.Configuration.LazyLoadingEnabled = false;
+            Servicio = new ServicioVendedores();
         }
+                
 
         [ResponseType(typeof(VendedorDTO))]
         public async Task<IHttpActionResult> GetVendedores(string empresa)
@@ -33,9 +37,16 @@ namespace NestoAPI.Controllers
                     vendedor = p.Número.Trim(),
                     nombre = p.Descripción.Trim()
                 }).OrderBy(l => l.nombre)
-                .ToListAsync();
+                .ToListAsync()
+                .ConfigureAwait(false);
 
             return Ok(vendedores);
+        }
+
+        [ResponseType(typeof(List<VendedorDTO>))]
+        public async Task<IHttpActionResult> GetVendedores(string empresa, string vendedor)
+        {
+            return Ok(await Servicio.VendedoresEquipo(empresa, vendedor).ConfigureAwait(false));
         }
 
         /*

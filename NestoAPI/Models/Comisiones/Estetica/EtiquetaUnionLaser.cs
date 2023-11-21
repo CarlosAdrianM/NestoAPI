@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.Vendedores;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -75,9 +76,12 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         private void CrearConsulta (string vendedor)
         {
+            var servicioVendedores = new ServicioVendedores();
+            var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
+            
             consulta = db.vstLinPedidoVtaComisiones
                 .Where(l =>
-                    l.Vendedor == vendedor &&
+                    listaVendedores.Contains(l.Vendedor) &&
                     l.Familia.ToLower() == "unionlaser" &&
                     l.Grupo.ToLower() != "otros aparatos"
                 )
@@ -87,7 +91,10 @@ namespace NestoAPI.Models.Comisiones.Estetica
         private void CrearConsultaRenting(string vendedor, bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta)
         {
             var facturasRenting = db.RentingFacturas.Select(r => r.Numero);
-            consultaRenting = db.vstLinPedidoVtaComisiones.Where(l => l.Vendedor == vendedor && facturasRenting.Contains(l.Nº_Factura));
+            var servicioVendedores = new ServicioVendedores();
+            var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
+
+            consultaRenting = db.vstLinPedidoVtaComisiones.Where(l => listaVendedores.Contains(l.Vendedor) && facturasRenting.Contains(l.Nº_Factura));
 
             if (incluirAlbaranes)
             {
