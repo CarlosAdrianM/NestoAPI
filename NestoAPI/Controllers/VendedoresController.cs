@@ -35,7 +35,8 @@ namespace NestoAPI.Controllers
                 Select(p => new VendedorDTO
                 {
                     vendedor = p.Número.Trim(),
-                    nombre = p.Descripción.Trim()
+                    nombre = p.Descripción.Trim(),
+                    estado = (int)p.Estado
                 }).OrderBy(l => l.nombre)
                 .ToListAsync()
                 .ConfigureAwait(false);

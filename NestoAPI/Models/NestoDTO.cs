@@ -339,6 +339,7 @@ namespace NestoAPI.Models
     {
         public string vendedor { get; set; }
         public string nombre { get; set; }
+        public int estado { get; set; }
     }
     public class VendedorGrupoProductoDTO
     {

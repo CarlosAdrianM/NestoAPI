@@ -30,7 +30,8 @@ namespace NestoAPI.Infraestructure.Vendedores
                     .Select(p => new VendedorDTO
                     {
                         vendedor = p.Número.Trim(),
-                        nombre = p.Descripción.Trim()
+                        nombre = p.Descripción.Trim(),
+                        estado = (int)p.Estado
                     })
                     .OrderBy(v => v.vendedor)
                     .ToListAsync()
@@ -41,7 +42,8 @@ namespace NestoAPI.Infraestructure.Vendedores
                     .Select(p => new VendedorDTO
                     {
                         vendedor = p.Número.Trim(),
-                        nombre = p.Descripción.Trim()
+                        nombre = p.Descripción.Trim(),
+                        estado = (int)p.Estado
                     })
                     .ToListAsync()
                     .ConfigureAwait(false)
