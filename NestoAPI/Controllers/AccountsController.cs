@@ -11,8 +11,6 @@ using Microsoft.Owin.Security.DataProtection;
 using System.Net.Mail;
 using System.Configuration;
 using System.Web.Http.Cors;
-using System.Web.UI;
-using System.Web.Http.OData.Builder;
 
 namespace NestoAPI.Controllers
 {

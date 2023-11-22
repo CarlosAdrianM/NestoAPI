@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Web.Http;
-using System.Web.Http.OData.Builder;
-using System.Web.Http.OData.Extensions;
-using NestoAPI.Models;
+﻿using System.Web.Http;
 
 
 namespace NestoAPI

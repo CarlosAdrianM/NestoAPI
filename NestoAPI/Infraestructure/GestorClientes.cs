@@ -3,18 +3,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Web;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
-using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
-
-using System.Data.Entity;
-using System.Web.Http.ModelBinding.Binders;
 using System.Globalization;
 using Microsoft.Reporting.WebForms;
-using NestoAPI.Models.Facturas;
 using System.Net.Http;
-using System.Web.Http.OData.Formatter.Serialization;
 
 namespace NestoAPI.Infraestructure
 {
