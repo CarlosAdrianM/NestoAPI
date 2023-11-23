@@ -5,13 +5,13 @@ using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones.Peluqueria
 {
-    public class ServicioComisionesAnualesPeluqueria2021 : IServicioComisionesAnuales
+    public class ComisionesAnualesPeluqueria2020 : IComisionesAnuales
     {
         const string GENERAL = "General";
 
         private NVEntities db = new NVEntities();
 
-        public ServicioComisionesAnualesPeluqueria2021()
+        public ComisionesAnualesPeluqueria2020()
         {
             Etiquetas = NuevasEtiquetas;
         }
@@ -61,7 +61,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return ServicioComisionesAnualesComun.LeerResumenAnno(this, vendedor, anno);
+            return (new ServicioComisionesAnualesComun()).LeerResumenAnno(this, vendedor, anno);
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
@@ -100,13 +100,20 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
                 new TramoComision
                 {
                     Desde = 132000.01M,
-                    Hasta = 134000M,
+                    Hasta = 139260M,
                     Tipo = .03M,
                     TipoExtra = .012M
                 },
                 new TramoComision
                 {
-                    Desde = 134000.01M,
+                    Desde = 139260.01M,
+                    Hasta = 150150M,
+                    Tipo = .04M,
+                    TipoExtra = .013M
+                },
+                new TramoComision
+                {
+                    Desde = 150150.01M,
                     Hasta = 166980M,
                     Tipo = .05M,
                     TipoExtra = .014M

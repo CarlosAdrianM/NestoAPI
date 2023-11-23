@@ -60,7 +60,7 @@ namespace NestoAPI.Infraestructure
 
             // Miramos si ponemos copia al vendedor de la cabecera
             Vendedor vendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == pedido.vendedor);
-            correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : Constantes.Correos.CORREO_DIRECCION;
+            correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : Constantes.Correos.INFORMATICA;
             bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL" && l.Base_Imponible!=0);
             if (tieneLineasNoPeluqueria)
             {
@@ -89,7 +89,7 @@ namespace NestoAPI.Infraestructure
             if (usuarioParametro != null)
             {
                 parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "CorreoDefecto");
-                correoUsuario = parametroUsuario != null ? parametroUsuario.Valor : Constantes.Correos.CORREO_DIRECCION;
+                correoUsuario = parametroUsuario != null ? parametroUsuario.Valor : Constantes.Correos.INFORMATICA;
                 if (correoUsuario != null && correoUsuario.Trim()!="")
                 {
                     correoUsuario = correoUsuario.Trim().ToLower();

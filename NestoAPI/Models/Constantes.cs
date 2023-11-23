@@ -61,12 +61,13 @@ namespace NestoAPI.Models
         public static class Correos
         {
             public const string COMPRAS = "compras@nuevavision.es";
+            public const string CORREO_ADMON = "administracion@nuevavision.es";
             public const string CORREO_DIRECCION = "direccion@nuevavision.es";
             public const string TIENDA_ALCOBENDAS = "alcobendas@nuevavision.es";
-            public const string TIENDA_REINA = "tienda@nuevavision.es";
-            public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
-            public const string CORREO_ADMON = "administracion@nuevavision.es";
+            public const string INFORMATICA = "carlosadrian@nuevavision.es";
             public const string LOGISTICA = "logistica@nuevavision.es";
+            public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
+            public const string TIENDA_REINA = "tienda@nuevavision.es";            
         }
 
         public static class Cuentas
@@ -157,6 +158,7 @@ namespace NestoAPI.Models
             public const short ESTADO_A_EXTINGUIR = 4;
             public const short ESTADO_NO_SOBRE_PEDIDO = 0;
             public const string FAMILIA_BONIFICACION = "Bonificac";
+            public const string GRUPO_APARATOS = "APA";
             public const string GRUPO_COSMETICA = "COS";
             public const string GRUPO_MATERIAS_PRIMAS = "MTP";
             public const string GRUPO_PELUQUERIA = "PEL";

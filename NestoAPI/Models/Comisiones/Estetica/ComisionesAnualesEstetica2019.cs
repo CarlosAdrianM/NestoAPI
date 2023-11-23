@@ -5,13 +5,13 @@ using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ServicioComisionesAnualesEstetica2022 : IServicioComisionesAnuales
+    public class ComisionesAnualesEstetica2019 : IComisionesAnuales
     {
         const string GENERAL = "General";
         
         private NVEntities db = new NVEntities();
 
-        public ServicioComisionesAnualesEstetica2022()
+        public ComisionesAnualesEstetica2019()
         {
             Etiquetas = NuevasEtiquetas;
         }
@@ -26,13 +26,12 @@ namespace NestoAPI.Models.Comisiones
                 new EtiquetaOtrosAparatos()
             };
 
-        // El cálculo de proyecciones de 2019 sigue perfecto para 2022
         public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019();
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
         {
             string etiqueta;
-            
+
             if (linea.Grupo != null && linea.Grupo.ToLower().Trim() == "otros aparatos")
             {
                 etiqueta = "Otros Aparatos";
@@ -62,7 +61,7 @@ namespace NestoAPI.Models.Comisiones
 
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return ServicioComisionesAnualesComun.LeerResumenAnno(this, vendedor, anno);
+            return (new ServicioComisionesAnualesComun()).LeerResumenAnno(this, vendedor, anno);
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
@@ -73,118 +72,118 @@ namespace NestoAPI.Models.Comisiones
                 new TramoComision
                 {
                     Desde = 0M,
-                    Hasta = 32130M,
+                    Hasta = 30000M,
                     Tipo = .0M,
                     TipoExtra = .00M
                 },
                 new TramoComision
                 {
-                    Desde = 32130.01M,
-                    Hasta = 70686M,
+                    Desde = 30000.01M,
+                    Hasta = 66000M,
                     Tipo = .02M,
                     TipoExtra = .00M
                 },
                 new TramoComision
                 {
-                    Desde = 70686.01M,
-                    Hasta = 91035M,
+                    Desde = 66000.01M,
+                    Hasta = 85000M,
                     Tipo = .023M,
                     TipoExtra = .00M
                 },
                 new TramoComision
                 {
-                    Desde = 91035.01M,
-                    Hasta = 107100M,
+                    Desde = 85000.01M,
+                    Hasta = 100000M,
                     Tipo = .025M,
                     TipoExtra = .00M
                 },
                 new TramoComision
                 {
-                    Desde = 107100.01M,
-                    Hasta = 139230M,
+                    Desde = 100000.01M,
+                    Hasta = 130000M,
                     Tipo = .027M,
                     TipoExtra = .00M
                 },
                 new TramoComision
                 {
-                    Desde = 139230.01M,
-                    Hasta = 176715M,
+                    Desde = 130000.01M,
+                    Hasta = 165000M,
                     Tipo = .028M,
                     TipoExtra = .00M
                 },
                 new TramoComision
                 {
-                    Desde = 176715,
-                    Hasta = 207774M,
+                    Desde = 165000.01M,
+                    Hasta = 194000M,
                     Tipo = .029M,
                     TipoExtra = .0005M
                 },
                 new TramoComision
                 {
-                    Desde = 207774.01M,
-                    Hasta = 219019.50M,
+                    Desde = 194000.01M,
+                    Hasta = 204500M,
                     Tipo = .03M,
                     TipoExtra = .001M
                 },
                 new TramoComision
                 {
-                    Desde = 219019.51M,
-                    Hasta = 231065.57M,
+                    Desde = 204500.01M,
+                    Hasta = 215747.5M,
                     Tipo = .035M,
                     TipoExtra = .002M
                 },
                 new TramoComision
                 {
-                    Desde = 231065.58M,
-                    Hasta = 255157.72M,
+                    Desde = 215747.51M,
+                    Hasta = 238242.5M,
                     Tipo = .045M,
                     TipoExtra = .003M
                 },
                 new TramoComision
                 {
-                    Desde = 255157.73M,
-                    Hasta = 277059.67M,
+                    Desde = 238242.51M,
+                    Hasta = 258692.5M,
                     Tipo = .055M,
                     TipoExtra = .004M
                 },
                 new TramoComision
                 {
-                    Desde = 277059.68M,
-                    Hasta = 291295.94M,
+                    Desde = 258692.51M,
+                    Hasta = 271985M,
                     Tipo = .0671M,
                     TipoExtra = .005M
                 },
                 new TramoComision
                 {
-                    Desde = 291295.95M,
-                    Hasta = 307722.40M,
+                    Desde = 271985.01M,
+                    Hasta = 287322.5M,
                     Tipo = .072M,
                     TipoExtra = .008M
                 },
                 new TramoComision
                 {
-                    Desde = 307722.41M,
-                    Hasta = 336194.93M,
+                    Desde = 287322.51M,
+                    Hasta = 313907.5M,
                     Tipo = .077M,
                     TipoExtra = .011M
                 },
                 new TramoComision
                 {
-                    Desde = 336194.94M,
-                    Hasta = 354811.59M,
+                    Desde = 313907.51M,
+                    Hasta = 331290M,
                     Tipo = .08M,
-                    TipoExtra = .014M
+                    TipoExtra = .017M
                 },
                 new TramoComision
                 {
-                    Desde = 354811.60M,
-                    Hasta = 371238.05M,
+                    Desde = 331290.01M,
+                    Hasta = 346627.5M,
                     Tipo = .085M,
                     TipoExtra = .017M
                 },
                 new TramoComision
                 {
-                    Desde = 371238.06M,
+                    Desde = 346627.51M,
                     Hasta = decimal.MaxValue,
                     Tipo = .0925M,
                     TipoExtra = .02M
@@ -196,209 +195,130 @@ namespace NestoAPI.Models.Comisiones
                 new TramoComision
                 {
                     Desde = 0M,
-                    Hasta = 47250M,
+                    Hasta = 94974.68M,
                     Tipo = .0M,
                     TipoExtra = .0M
                 },new TramoComision
                 {
-                    Desde = 47250.01M,
-                    Hasta = 101717.89M,
-                    Tipo = .006M,
-                    TipoExtra = .0005M
-                },new TramoComision
-                {
-                    Desde = 101717.90M,
-                    Hasta = 107100.01M,
+                    Desde = 94974.69M,
+                    Hasta = 100000M,
                     Tipo = .012M,
                     TipoExtra = .001M
                 },
                 new TramoComision
                 {
-                    Desde = 107100.02M,
-                    Hasta = 127391.26M,
+                    Desde = 100000.01M,
+                    Hasta = 105500M,
                     Tipo = .0145M,
                     TipoExtra = .002M
                 },
                 new TramoComision
                 {
-                    Desde = 127391.27M,
-                    Hasta = 140070.01M,
+                    Desde = 105500.01M,
+                    Hasta = 116000M,
                     Tipo = .0195M,
                     TipoExtra = .003M
                 },
                 new TramoComision
                 {
-                    Desde = 140070.02M,
-                    Hasta = 152748.76M,
+                    Desde = 116000.01M,
+                    Hasta = 126500M,
                     Tipo = .0225M,
                     TipoExtra = .004M
                 },
                 new TramoComision
                 {
-                    Desde = 152748.77M,
-                    Hasta = 160597.51M,
+                    Desde = 126500.01M,
+                    Hasta = 133000M,
                     Tipo = .0306M,
                     TipoExtra = .005M
                 },
                 new TramoComision
                 {
-                    Desde = 160597.52M,
-                    Hasta = 169653.76M,
+                    Desde = 133000.01M,
+                    Hasta = 140500M,
                     Tipo = .033M,
                     TipoExtra = .008M
                 },
                 new TramoComision
                 {
-                    Desde = 169653.77M,
-                    Hasta = 185351.26M,
+                    Desde = 140500.01M,
+                    Hasta = 153500M,
                     Tipo = .0355M,
                     TipoExtra = .011M
                 },
                 new TramoComision
                 {
-                    Desde = 185351.27M,
-                    Hasta = 195615.01M,
+                    Desde = 153500.01M,
+                    Hasta = 162000M,
                     Tipo = .0370M,
                     TipoExtra = .014M
                 },
                 new TramoComision
                 {
-                    Desde = 195615.02M,
-                    Hasta = 204671.26M,
+                    Desde = 162000.01M,
+                    Hasta = 169500M,
                     Tipo = .0395M,
                     TipoExtra = .017M
                 },
                 new TramoComision
                 {
-                    Desde = 204671.27M,
-                    Hasta = 231065.57M,
-                    Tipo = .042M,
-                    TipoExtra = .02M
-                },
-                new TramoComision
-                {
-                    Desde = 231065.58M,
-                    Hasta = 255157.72M,
-                    Tipo = .045M,
-                    TipoExtra = .02M
-                },
-                new TramoComision
-                {
-                    Desde = 255157.73M,
-                    Hasta = 277059.67M,
-                    Tipo = .055M,
-                    TipoExtra = .02M
-                },
-                new TramoComision
-                {
-                    Desde = 277059.68M,
+                    Desde = 169500.01M,
                     Hasta = decimal.MaxValue,
-                    Tipo = .0671M,
+                    Tipo = .0462M,
                     TipoExtra = .02M
                 }
             };
 
-            Collection<TramoComision> tramosMinivendedores = new Collection<TramoComision>
+            Collection<TramoComision> tramosTelefonoParcial = new Collection<TramoComision>
             {
                 new TramoComision
                 {
                     Desde = 0M,
-                    Hasta = 5250M,
+                    Hasta = 8000M,
                     Tipo = .0M,
-                    TipoExtra = .00M
-                },
-                new TramoComision
+                    TipoExtra = .0M
+                },new TramoComision
                 {
-                    Desde = 5250.01M,
-                    Hasta = 10500M,
-                    Tipo = .029M,
-                    TipoExtra = .0005M
-                },
-                new TramoComision
-                {
-                    Desde = 10500.01M,
-                    Hasta = 15750M,
-                    Tipo = .03M,
-                    TipoExtra = .001M
-                },
-                new TramoComision
-                {
-                    Desde = 15750.01M,
-                    Hasta = 21000M,
-                    Tipo = .035M,
+                    Desde = 8000.01M,
+                    Hasta = 16000M,
+                    Tipo = .045M,
                     TipoExtra = .002M
                 },
                 new TramoComision
                 {
-                    Desde = 21000.01M,
-                    Hasta = 36750M,
-                    Tipo = .045M,
-                    TipoExtra = .003M
-                },
-                new TramoComision
-                {
-                    Desde = 36750.01M,
-                    Hasta = 47250M,
-                    Tipo = .055M,
+                    Desde = 16000.01M,
+                    Hasta = 24000M,
+                    Tipo = .0225M,
                     TipoExtra = .004M
                 },
                 new TramoComision
                 {
-                    Desde = 47250.01M,
-                    Hasta = 57750M,
-                    Tipo = .0671M,
-                    TipoExtra = .005M
-                },
-                new TramoComision
-                {
-                    Desde = 57750.01M,
-                    Hasta = 68250M,
-                    Tipo = .072M,
-                    TipoExtra = .008M
-                },
-                new TramoComision
-                {
-                    Desde = 68250.01M,
-                    Hasta = 78750M,
-                    Tipo = .077M,
+                    Desde = 24000.01M,
+                    Hasta = 32000M,
+                    Tipo = .0355M,
                     TipoExtra = .011M
                 },
                 new TramoComision
                 {
-                    Desde = 78750.01M,
-                    Hasta = 89250M,
-                    Tipo = .08M,
-                    TipoExtra = .014M
-                },
-                new TramoComision
-                {
-                    Desde = 89250.01M,
-                    Hasta = 99750M,
-                    Tipo = .085M,
-                    TipoExtra = .017M
-                },
-                new TramoComision
-                {
-                    Desde = 99750.01M,
+                    Desde = 32000.01M,
                     Hasta = decimal.MaxValue,
-                    Tipo = .0925M,
-                    TipoExtra = .02M
+                    Tipo = .0395M,
+                    TipoExtra = .017M
                 }
             };
 
-
-            // Aquí usamos cadenas mágicas porque son los que YA han firmado las condiciones (Héctor en 2023)
-            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "RFG" || vendedor == "JGP" || vendedor == "MRM" || vendedor == "RAS" || vendedor == "HPS")
+            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "MRM" || vendedor == "RFG" || vendedor == "JGP")
             {
                 return tramosCalle;
             }
-            else if (vendedor == "AGR" || vendedor == "LA" || vendedor == "MPP" || vendedor == "PA" || vendedor == "KCP") //vendedor == "LGR" || 
+            else if (vendedor == "LA" || vendedor == "PA" || vendedor == "SH")
             {
                 return tramosTelefono;
             }
-            else if (vendedor == "AL" || vendedor == "CAM" || vendedor == "MR" || vendedor == "PI" || vendedor == "SC") 
+            else if (vendedor == "CAR")
             {
-                return tramosMinivendedores;
+                return tramosTelefonoParcial;
             }
 
             throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");

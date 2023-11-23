@@ -9,7 +9,7 @@ namespace NestoAPI.Models.Comisiones
         
         const string GENERAL = "General";
 
-        private IServicioComisionesAnuales servicio;
+        private IComisionesAnuales servicio;
         private string vendedor;
         private int anno;
         private int mes;
@@ -17,21 +17,21 @@ namespace NestoAPI.Models.Comisiones
         private bool incluirPicking;
         private int mesesAnno = 12;
         
-        public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno)
+        public VendedorComisionAnual(IComisionesAnuales servicio, string vendedor, int anno)
             : this(servicio, vendedor, anno, DateTime.Today.Month)
         {
         }
 
-        public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes)
+        public VendedorComisionAnual(IComisionesAnuales servicio, string vendedor, int anno, int mes)
             :this(servicio, vendedor, anno, mes, false)
         {
         }
 
-        public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes)
+        public VendedorComisionAnual(IComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes)
             :this(servicio, vendedor, anno, mes, incluirAlbaranes, false)
         {
         }
-        public VendedorComisionAnual(IServicioComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
+        public VendedorComisionAnual(IComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
             this.servicio = servicio;
             this.vendedor = vendedor;

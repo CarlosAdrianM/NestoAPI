@@ -22,6 +22,7 @@ using NestoAPI.Models.PedidosBase;
 using System.Web.Http.Results;
 using System.Runtime.CompilerServices;
 using NestoAPI.Infraestructure.Vendedores;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Controllers
 {
@@ -503,7 +504,7 @@ namespace NestoAPI.Controllers
                         linea.Familia = producto.Familia;
                         linea.TipoExclusiva = producto.Familia1.TipoExclusiva;
                         linea.PrecioTarifa = producto.PVP;
-                        linea.Coste = (decimal)producto.PrecioMedio;
+                        linea.Coste = (decimal)producto.PrecioMedio;                        
                         modificado = true;
                     }
                     if(linea.Texto?.Trim() != lineaEncontrada.texto?.Trim())
@@ -545,6 +546,16 @@ namespace NestoAPI.Controllers
                     if (linea.Fecha_Entrega != lineaEncontrada.fechaEntrega)
                     {
                         linea.Fecha_Entrega = lineaEncontrada.fechaEntrega;
+                        modificado = true;
+                    }
+                    if (linea.Grupo != lineaEncontrada.GrupoProducto)
+                    {
+                        linea.Grupo = lineaEncontrada.GrupoProducto;
+                        modificado = true;
+                    }
+                    if (linea.SubGrupo != lineaEncontrada.SubgrupoProducto)
+                    {
+                        linea.SubGrupo = lineaEncontrada.SubgrupoProducto;
                         modificado = true;
                     }
 
@@ -899,6 +910,14 @@ namespace NestoAPI.Controllers
                 }
                 linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
                 //linea.BaseImponible = linPedido.Base_Imponible;
+                if (linea.GrupoProducto != linPedido.Grupo)
+                {
+                    linea.GrupoProducto = linPedido.Grupo;
+                }
+                if (linea.SubgrupoProducto != linPedido.SubGrupo)
+                {
+                    linea.SubgrupoProducto = linPedido.SubGrupo;
+                }
                 if (pedido.ParametrosIva.Any())
                 {
                     linea.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva?.Trim()).PorcentajeIvaProducto;

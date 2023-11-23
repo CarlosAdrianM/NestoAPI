@@ -5,7 +5,7 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ServicioComisionesAnualesComun
+    public class ServicioComisionesAnualesComun : IServicioComisionesAnuales
     {
         const string GENERAL = "General";
 
@@ -41,7 +41,7 @@ namespace NestoAPI.Models.Comisiones
             return consulta;
         }
 
-        public static ICollection<ResumenComisionesMes> LeerResumenAnno(IServicioComisionesAnuales servicio, string vendedor, int anno)
+        public ICollection<ResumenComisionesMes> LeerResumenAnno(IComisionesAnuales comisiones, string vendedor, int anno)
         {
             NVEntities db = new NVEntities();
             var resumenDb = db.ComisionesAnualesResumenMes
@@ -60,7 +60,7 @@ namespace NestoAPI.Models.Comisiones
                 Vendedor = vendedor,
                 Anno = anno,
                 Mes = mesAnterior,
-                Etiquetas = servicio.NuevasEtiquetas
+                Etiquetas = comisiones.NuevasEtiquetas
             };
             foreach (ComisionAnualResumenMes resumenMesDB in resumenDb)
             {
@@ -72,7 +72,7 @@ namespace NestoAPI.Models.Comisiones
                         Vendedor = resumenMesDB.Vendedor,
                         Anno = resumenMesDB.Anno,
                         Mes = resumenMesDB.Mes,
-                        Etiquetas = servicio.NuevasEtiquetas
+                        Etiquetas = comisiones.NuevasEtiquetas
                     };
                     mesAnterior = resumenMesDB.Mes;
                 }

@@ -15,7 +15,7 @@ namespace NestoAPI.Tests.Models.Comisiones
         const string EVA_VISNU = "Eva Visnú";
         const string OTROS_APARATOS = "Otros Aparatos";
 
-        IServicioComisionesAnuales servicio = A.Fake<IServicioComisionesAnuales>();
+        IComisionesAnuales servicio = A.Fake<IComisionesAnuales>();
         IEtiquetaComision etiquetaGeneral = A.Fake<IEtiquetaComision>();
         IEtiquetaComision etiquetaUnionLaser = A.Fake<IEtiquetaComision>();
         IEtiquetaComision etiquetaEvaVisnu = A.Fake<IEtiquetaComision>();

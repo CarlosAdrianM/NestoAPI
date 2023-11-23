@@ -5,13 +5,13 @@ using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ServicioComisionesAnualesEstetica2020 : IServicioComisionesAnuales
+    public class ComisionesAnualesEstetica2021 : IComisionesAnuales
     {
         const string GENERAL = "General";
         
         private NVEntities db = new NVEntities();
 
-        public ServicioComisionesAnualesEstetica2020()
+        public ComisionesAnualesEstetica2021()
         {
             Etiquetas = NuevasEtiquetas;
         }
@@ -26,7 +26,7 @@ namespace NestoAPI.Models.Comisiones
                 new EtiquetaOtrosAparatos()
             };
 
-        // El cálculo de proyecciones de 2019 está perfecto para 2020
+        // El cálculo de proyecciones de 2019 está perfecto para 2021
         public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019();
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
@@ -62,7 +62,7 @@ namespace NestoAPI.Models.Comisiones
 
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return ServicioComisionesAnualesComun.LeerResumenAnno(this, vendedor, anno);
+            return (new ServicioComisionesAnualesComun()).LeerResumenAnno(this, vendedor, anno);
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
@@ -215,64 +215,78 @@ namespace NestoAPI.Models.Comisiones
                 new TramoComision
                 {
                     Desde = 102000.02M,
-                    Hasta = 107610.01M,
+                    Hasta = 121325.01M,
                     Tipo = .0145M,
                     TipoExtra = .002M
                 },
                 new TramoComision
                 {
-                    Desde = 107610.02M,
-                    Hasta = 118320.01M,
+                    Desde = 121325.02M,
+                    Hasta = 133400.01M,
                     Tipo = .0195M,
                     TipoExtra = .003M
                 },
                 new TramoComision
                 {
-                    Desde = 118320.02M,
-                    Hasta = 129030.01M,
+                    Desde = 133400.02M,
+                    Hasta = 145475.01M,
                     Tipo = .0225M,
                     TipoExtra = .004M
                 },
                 new TramoComision
                 {
-                    Desde = 129030.02M,
-                    Hasta = 135660.01M,
+                    Desde = 145475.02M,
+                    Hasta = 152950.01M,
                     Tipo = .0306M,
                     TipoExtra = .005M
                 },
                 new TramoComision
                 {
-                    Desde = 135660.02M,
-                    Hasta = 143310.01M,
+                    Desde = 152950.02M,
+                    Hasta = 161575.01M,
                     Tipo = .033M,
                     TipoExtra = .008M
                 },
                 new TramoComision
                 {
-                    Desde = 143310.02M,
-                    Hasta = 156570.01M,
+                    Desde = 161575.02M,
+                    Hasta = 176525.01M,
                     Tipo = .0355M,
                     TipoExtra = .011M
                 },
                 new TramoComision
                 {
-                    Desde = 156570.02M,
-                    Hasta = 165240.01M,
+                    Desde = 176525.02M,
+                    Hasta = 186300.01M,
                     Tipo = .0370M,
                     TipoExtra = .014M
                 },
                 new TramoComision
                 {
-                    Desde = 165240.02M,
-                    Hasta = 172890.01M,
+                    Desde = 186300.02M,
+                    Hasta = 194925.01M,
                     Tipo = .0395M,
                     TipoExtra = .017M
                 },
                 new TramoComision
                 {
-                    Desde = 172890.02M,
-                    Hasta = decimal.MaxValue,
+                    Desde = 194925.02M,
+                    Hasta = 220062.45M,
                     Tipo = .042M,
+                    TipoExtra = .02M
+                },
+                new TramoComision
+                {
+                    Desde = 220062.46M,
+                    Hasta = 243007.35M,
+                    Tipo = .045M,
+                    TipoExtra = .02M
+                },
+                new TramoComision
+                {
+                    Desde = 243007.36M,
+                    Hasta = decimal.MaxValue,
+                    Tipo = .055M,
                     TipoExtra = .02M
                 }
             };
@@ -367,15 +381,15 @@ namespace NestoAPI.Models.Comisiones
 
 
             // Aquí usamos cadenas mágicas porque son los que YA han firmado las condiciones
-            if (vendedor == "ASH" || vendedor == "DV" || vendedor == "JE" || vendedor == "RFG" || vendedor == "JGP" || vendedor == "MRM")
+            if (vendedor == "DV" || vendedor == "JE" || vendedor == "ASH" || vendedor == "RFG" || vendedor == "JGP" || vendedor == "MRM")
             {
                 return tramosCalle;
             }
-            else if (vendedor == "LA" || vendedor == "PA" || vendedor == "SH" || vendedor == "MPP") 
+            else if (vendedor == "PA" || vendedor == "LA" || vendedor == "MPP" || vendedor == "AGR")
             {
                 return tramosTelefono;
             }
-            else if (vendedor == "AL" || vendedor == "CAM" || vendedor == "MR" || vendedor == "PI" || vendedor == "SC" || vendedor == "LC")
+            else if (vendedor == "AL" || vendedor == "CAM" || vendedor == "MR" || vendedor == "PI" || vendedor == "SC") 
             {
                 return tramosMinivendedores;
             }

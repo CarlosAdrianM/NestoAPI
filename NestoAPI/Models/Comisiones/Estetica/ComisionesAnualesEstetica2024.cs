@@ -6,29 +6,26 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ServicioComisionesAnualesEstetica2024 : IServicioComisionesAnuales
+    public class ComisionesAnualesEstetica2024 : IComisionesAnuales
     {
-        //const string GENERAL = "General";
-
-        //private NVEntities db = new NVEntities();
-
-        public ServicioComisionesAnualesEstetica2024()
+        public ComisionesAnualesEstetica2024(ICalculadorProyecciones _calculadorProyecciones)
         {
             Etiquetas = NuevasEtiquetas;
+            CalculadorProyecciones = _calculadorProyecciones;
         }
 
         public ICollection<IEtiquetaComision> Etiquetas { get; set; }
 
         public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
-            {
-                new EtiquetaGeneral(),
-                new EtiquetaUnionLaser(),
-                new EtiquetaFamiliasEspeciales(),
-                new EtiquetaOtrosAparatos()
-            };
+        {
+            new EtiquetaGeneral(),
+            new EtiquetaUnionLaser(),
+            new EtiquetaFamiliasEspeciales(),
+            new EtiquetaOtrosAparatos()
+        };
 
-        // El cálculo de proyecciones de 2019 sigue perfecto para 2024
-        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019();
+        public ICalculadorProyecciones CalculadorProyecciones { get; set; }
+        public IServicioComisionesAnuales ServicioComisionesAnuales { get; set; }
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
         {
@@ -52,10 +49,9 @@ namespace NestoAPI.Models.Comisiones
             }
             return etiqueta;
         }
-
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return ServicioComisionesAnualesComun.LeerResumenAnno(this, vendedor, anno);
+            return ServicioComisionesAnuales.LeerResumenAnno(this, vendedor, anno);
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)

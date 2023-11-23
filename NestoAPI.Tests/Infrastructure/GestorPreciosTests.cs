@@ -2075,11 +2075,14 @@ namespace NestoAPI.Tests.Infrastructure
             LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO();
             linea.Producto = "AA11";
             linea.AplicarDescuento = true;
-            linea.Cantidad = 1;
+            linea.Cantidad = 2;
             linea.PrecioUnitario = 10; // es el de ficha
+            linea.GrupoProducto = Constantes.Productos.GRUPO_COSMETICA;
             //linea.BaseImponible = 10;
             pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = new LineaPedidoVentaDTO();
+            lineaMuestra.GrupoProducto = Constantes.Productos.GRUPO_COSMETICA;
+            lineaMuestra.SubgrupoProducto = Constantes.Productos.SUBGRUPO_MUESTRAS;
             lineaMuestra.Producto = "MUESTRA";
             lineaMuestra.AplicarDescuento = true;
             lineaMuestra.Cantidad = 1;
@@ -2087,11 +2090,44 @@ namespace NestoAPI.Tests.Infrastructure
             lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
             //lineaMuestra.BaseImponible = 0;
             pedido.Lineas.Add(lineaMuestra);
+            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(lineaMuestra.Bruto);
 
             RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA");
 
             Assert.IsTrue(respuesta.ValidacionSuperada);
             Assert.AreEqual("El producto MUESTRA puede ir a ese precio porque es material promocional y no se supera el importe autorizado", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorMuestrasYMaterialPromocional_SiLosProductosSonAparatosNoEsValido()
+        {
+            // Este test es igual a GestorPrecios_ValidadorMuestrasYMaterialPromocional_SiLlevaUnaMuestraDeMenosValorDelPermitidoEsValido pero con aparatos en vez de cosmética
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO();
+            linea.Producto = "AA11";
+            linea.AplicarDescuento = true;
+            linea.Cantidad = 2;
+            linea.PrecioUnitario = 10; // es el de ficha
+            linea.GrupoProducto = Constantes.Productos.GRUPO_APARATOS;
+            //linea.BaseImponible = 10;
+            pedido.Lineas.Add(linea);
+            LineaPedidoVentaDTO lineaMuestra = new LineaPedidoVentaDTO();
+            lineaMuestra.GrupoProducto = Constantes.Productos.GRUPO_COSMETICA;
+            lineaMuestra.SubgrupoProducto = Constantes.Productos.SUBGRUPO_MUESTRAS;
+            lineaMuestra.Producto = "MUESTRA";
+            lineaMuestra.AplicarDescuento = true;
+            lineaMuestra.Cantidad = 1;
+            lineaMuestra.PrecioUnitario = 1; // es el de ficha
+            lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
+            //lineaMuestra.BaseImponible = 0;
+            pedido.Lineas.Add(lineaMuestra);
+            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(lineaMuestra.Bruto);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA");
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
         }
 
         [TestMethod]
@@ -2105,9 +2141,12 @@ namespace NestoAPI.Tests.Infrastructure
             linea.AplicarDescuento = true;
             linea.Cantidad = 1;
             linea.PrecioUnitario = 10; // es el de ficha
+            linea.GrupoProducto = Constantes.Productos.GRUPO_COSMETICA;
             //linea.BaseImponible = 10;
             pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = new LineaPedidoVentaDTO();
+            lineaMuestra.GrupoProducto = Constantes.Productos.GRUPO_COSMETICA;
+            lineaMuestra.SubgrupoProducto = Constantes.Productos.SUBGRUPO_MUESTRAS;
             lineaMuestra.Producto = "MUESTRA_2";
             lineaMuestra.AplicarDescuento = true;
             lineaMuestra.Cantidad = 1;
@@ -2115,8 +2154,7 @@ namespace NestoAPI.Tests.Infrastructure
             lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
             //lineaMuestra.BaseImponible = 0;
             pedido.Lineas.Add(lineaMuestra);
-
-            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido,"COS","MMP")).Returns(2);
+            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido,"COS","MMP")).Returns(lineaMuestra.Bruto);
 
             RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA_2");
 
@@ -2153,8 +2191,7 @@ namespace NestoAPI.Tests.Infrastructure
             lineaMuestra2.DescuentoLinea = 1M; // de regalo, 100% dto
             //lineaMuestra2.baseImponible = 0;
             pedido.Lineas.Add(lineaMuestra2);
-
-            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido,"COS","MMP")).Returns(3);
+            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido,"COS","MMP")).Returns(lineaMuestra.Bruto + lineaMuestra2.Bruto);
 
             RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA_2");
 
@@ -2172,7 +2209,7 @@ namespace NestoAPI.Tests.Infrastructure
             linea.Producto = "AA11";
             linea.AplicarDescuento = true;
             linea.Cantidad = 1;
-            linea.PrecioUnitario = 30; 
+            linea.PrecioUnitario = 80; 
             //linea.BaseImponible = 30;
             pedido.Lineas.Add(linea);
             LineaPedidoVentaDTO lineaMuestra = new LineaPedidoVentaDTO();
@@ -2191,6 +2228,7 @@ namespace NestoAPI.Tests.Infrastructure
             lineaMuestra2.DescuentoLinea = 1M; // de regalo, 100% dto
             //lineaMuestra2.baseImponible = 0;
             pedido.Lineas.Add(lineaMuestra2);
+            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(lineaMuestra.Bruto + lineaMuestra2.Bruto);
 
             RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA_2");
 
@@ -2227,8 +2265,7 @@ namespace NestoAPI.Tests.Infrastructure
             lineaMuestra2.DescuentoLinea = 1M; // de regalo, 100% dto
             //lineaMuestra2.baseImponible = 0;
             pedido.Lineas.Add(lineaMuestra2);
-
-            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido,"COS","MMP")).Returns(3);
+            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(lineaMuestra.Bruto + lineaMuestra2.Bruto);
 
             RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MUESTRA");
 
@@ -2259,6 +2296,7 @@ namespace NestoAPI.Tests.Infrastructure
             lineaMuestra.DescuentoLinea = 1M; // de regalo, 100% dto
             //lineaMuestra.BaseImponible = 0;
             pedido.Lineas.Add(lineaMuestra);
+            A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(lineaMuestra.Bruto);
 
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 

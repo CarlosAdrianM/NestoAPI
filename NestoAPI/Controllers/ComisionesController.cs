@@ -190,7 +190,7 @@ namespace NestoAPI.Controllers
             return comisiones;
         }
 
-        private IServicioComisionesAnuales ServicioVendedor(string vendedor, int anno)
+        private IComisionesAnuales ServicioVendedor(string vendedor, int anno)
         {
             var vendedoresPeluqueria = db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_PELUQUERIA).Select(v => v.Número.Trim());
             
@@ -198,46 +198,46 @@ namespace NestoAPI.Controllers
             {
                 if (anno == 2018)
                 {
-                    return new ServicioComisionesAnualesPeluqueria2018();
+                    return new ComisionesAnualesPeluqueria2018();
                 }
                 else if (anno == 2019)
                 {
-                    return new ServicioComisionesAnualesPeluqueria2019();
+                    return new ComisionesAnualesPeluqueria2019();
                 }
                 else if (anno == 2020)
                 {
-                    return new ServicioComisionesAnualesPeluqueria2020();
+                    return new ComisionesAnualesPeluqueria2020();
                 }
                 else if (anno == 2021 || anno == 2022 || anno == 2023)
                 {
-                    return new ServicioComisionesAnualesPeluqueria2021();
+                    return new ComisionesAnualesPeluqueria2021();
                 }
             }
 
             if (anno == 2018)
             {
-                return new ServicioComisionesAnualesEstetica2018();
+                return new ComisionesAnualesEstetica2018();
             } 
             else if (anno == 2019)
             {
-                return new ServicioComisionesAnualesEstetica2019();
+                return new ComisionesAnualesEstetica2019();
             }
             else if (anno == 2020)
             {
-                return new ServicioComisionesAnualesEstetica2020();
+                return new ComisionesAnualesEstetica2020();
             }
             else if (anno == 2021)
             {
-                return new ServicioComisionesAnualesEstetica2021();
+                return new ComisionesAnualesEstetica2021();
             }
             else if (anno == 2022 || anno == 2023)
             {
-                return new ServicioComisionesAnualesEstetica2022();
+                return new ComisionesAnualesEstetica2022();
             }
-            //else if (anno == 2024)
-            //{
-            //    return new ServicioComisionesAnualesEstetica2024();
-            //}
+            else if (anno == 2024)
+            {
+                return new ComisionesAnualesEstetica2024(new CalculadorProyecciones2019());
+            }
 
             throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");
         }

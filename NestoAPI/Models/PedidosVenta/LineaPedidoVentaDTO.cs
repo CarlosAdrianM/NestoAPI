@@ -17,11 +17,13 @@ namespace NestoAPI.Models.PedidosVenta
         public short estado { get; set; }
         public System.DateTime fechaEntrega { get; set; }
         public string formaVenta { get; set; }
+        public string GrupoProducto { get; set; }
         public string iva { get; set; }
         public Nullable<int> oferta { get; set; }
         public int picking { get; set; }
         //public decimal PrecioUnitario { get; set; } // era Nullable<decimal> 
         //public string Producto { get; set; }
+        public string SubgrupoProducto { get; set; }
         public string texto { get; set; }
         public Nullable<byte> tipoLinea { get; set; }
         public string usuario { get; set; }
