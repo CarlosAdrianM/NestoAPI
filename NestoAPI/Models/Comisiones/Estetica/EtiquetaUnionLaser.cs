@@ -1,18 +1,24 @@
 ﻿using NestoAPI.Infraestructure.Vendedores;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaUnionLaser : IEtiquetaComision
+    public class EtiquetaUnionLaser : IEtiquetaComision, ICloneable
     {
+        
         private const decimal TIPO_FIJO_UNIONLASER = .1M;
-
+        private readonly IServicioComisionesAnuales servicioComisiones;
         private NVEntities db = new NVEntities();
 
         private IQueryable<vstLinPedidoVtaComisione> consulta;
         private IQueryable<vstLinPedidoVtaComisione> consultaRenting;
+
+        public EtiquetaUnionLaser(IServicioComisionesAnuales servicioComisiones)
+        {
+            this.servicioComisiones = servicioComisiones;
+        }
+
 
         public string Nombre
         {
@@ -50,7 +56,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             decimal ventaRenting = consultaRenting.Select(l => (decimal)l.PrecioTarifa * PORCENTAJE_BASE_IMPONIBLE_RENTING).DefaultIfEmpty().Sum();
 
             CrearConsulta(vendedor);
-            decimal venta = ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            decimal venta = servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
             
             return venta + ventaRenting;
 
@@ -71,7 +77,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 CrearConsulta(vendedor);
             }
 
-            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         private void CrearConsulta (string vendedor)
@@ -109,6 +115,15 @@ namespace NestoAPI.Models.Comisiones.Estetica
         public decimal SetTipo(TramoComision tramo)
         {
             return TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
+        }
+
+        public object Clone()
+        {
+            return new EtiquetaUnionLaser(servicioComisiones)
+            {
+                Venta = this.Venta,
+                Tipo = this.Tipo
+            };
         }
     }
 }

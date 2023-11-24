@@ -19,35 +19,19 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 
         public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
             {
-                new EtiquetaGeneral(),
-                new EtiquetaLisap()
+                new EtiquetaGeneral(new ServicioComisionesAnualesComun()),
+                new EtiquetaLisap(new ServicioComisionesAnualesComun())
             };
 
-        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019();
+        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(new ServicioComisionesAnualesComun());
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
         {
             string etiqueta;
 
-            if (linea.Grupo != null && linea.Grupo.ToLower().Trim() == "otros aparatos")
-            {
-                etiqueta = "Otros Aparatos";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "uniónláser")
-            {
-                etiqueta = "Unión Láser";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "eva visnu")
-            {
-                etiqueta = "Eva Visnú";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "lisap")
+            if (linea.Familia != null && linea.Familia.ToLower().Trim() == "lisap")
             {
                 etiqueta = "Lisap";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "kach")
-            {
-                etiqueta = "Kach";
             }
             else
             {
@@ -58,7 +42,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return (new ServicioComisionesAnualesComun()).LeerResumenAnno(this, vendedor, anno);
+            return (new ServicioComisionesAnualesComun()).LeerResumenAnno(NuevasEtiquetas, vendedor, anno);
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)

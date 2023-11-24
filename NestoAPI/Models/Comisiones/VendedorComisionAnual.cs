@@ -9,7 +9,7 @@ namespace NestoAPI.Models.Comisiones
         
         const string GENERAL = "General";
 
-        private IComisionesAnuales servicio;
+        private IComisionesAnuales comisiones;
         private string vendedor;
         private int anno;
         private int mes;
@@ -17,30 +17,30 @@ namespace NestoAPI.Models.Comisiones
         private bool incluirPicking;
         private int mesesAnno = 12;
         
-        public VendedorComisionAnual(IComisionesAnuales servicio, string vendedor, int anno)
-            : this(servicio, vendedor, anno, DateTime.Today.Month)
+        public VendedorComisionAnual(IComisionesAnuales comisiones, string vendedor, int anno)
+            : this(comisiones, vendedor, anno, DateTime.Today.Month)
         {
         }
 
-        public VendedorComisionAnual(IComisionesAnuales servicio, string vendedor, int anno, int mes)
-            :this(servicio, vendedor, anno, mes, false)
+        public VendedorComisionAnual(IComisionesAnuales comisiones, string vendedor, int anno, int mes)
+            :this(comisiones, vendedor, anno, mes, false)
         {
         }
 
-        public VendedorComisionAnual(IComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes)
-            :this(servicio, vendedor, anno, mes, incluirAlbaranes, false)
+        public VendedorComisionAnual(IComisionesAnuales comisiones, string vendedor, int anno, int mes, bool incluirAlbaranes)
+            :this(comisiones, vendedor, anno, mes, incluirAlbaranes, false)
         {
         }
-        public VendedorComisionAnual(IComisionesAnuales servicio, string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
+        public VendedorComisionAnual(IComisionesAnuales comisiones, string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
-            this.servicio = servicio;
+            this.comisiones = comisiones;
             this.vendedor = vendedor;
             this.anno = anno;
             this.mes = mes;
             this.incluirAlbaranes = incluirAlbaranes;
             this.incluirPicking = incluirPicking;
 
-            Resumenes = servicio.LeerResumenAnno(vendedor, anno);
+            Resumenes = comisiones.LeerResumenAnno(vendedor, anno);
             if (Resumenes != null && Resumenes.Count>0)
             {
                 mesesAnno = 12 - Resumenes.Min(r => r.Mes) + 1;
@@ -57,10 +57,10 @@ namespace NestoAPI.Models.Comisiones
             {
                 decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
                 int meses = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Count();
-                ResumenMesActual.GeneralProyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(servicio, vendedor, anno, mes, ventaAcumulada, meses, mesesAnno);
-                ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
+                ResumenMesActual.GeneralProyeccion = comisiones.CalculadorProyecciones.CalcularProyeccion(comisiones.NuevasEtiquetas, vendedor, anno, mes, ventaAcumulada, meses, mesesAnno);
+                ICollection<TramoComision> tramosAnno = comisiones.LeerTramosComisionAnno(vendedor);
                 CalcularLimitesTramo(ResumenMesActual, tramosAnno);
-                ResumenMesActual.GeneralBajaSaltoMesSiguiente = servicio.CalculadorProyecciones.CalcularSiBajaDeSalto(servicio, vendedor, anno, mes, mesesAnno, ResumenMesActual, ventaAcumulada, meses, tramosAnno);
+                ResumenMesActual.GeneralBajaSaltoMesSiguiente = comisiones.CalculadorProyecciones.CalcularSiBajaDeSalto(comisiones.NuevasEtiquetas, vendedor, anno, mes, mesesAnno, ResumenMesActual, ventaAcumulada, meses, tramosAnno);
                 ResumenMesActual.GeneralVentaAcumulada = ventaAcumulada;
                 ResumenMesActual.GeneralComisionAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision);
                 ResumenMesActual.GeneralTipoConseguido = BuscarTramoComision(tramosAnno, ResumenMesActual.GeneralVentaAcumulada).Tipo;
@@ -77,22 +77,22 @@ namespace NestoAPI.Models.Comisiones
                 Vendedor = vendedor,
                 Anno = anno,
                 Mes = mes,
-                Etiquetas = servicio.NuevasEtiquetas
+                Etiquetas = comisiones.NuevasEtiquetas
             };
 
             foreach (IEtiquetaComision etiqueta in resumen.Etiquetas)
             {
-                etiqueta.Venta = servicio.Etiquetas.Single(e => e.Nombre == etiqueta.Nombre).LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, incluirPicking);
+                etiqueta.Venta = comisiones.Etiquetas.Single(e => e.Nombre == etiqueta.Nombre).LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, incluirPicking);
             }
 
             int meses = Resumenes.Count + 1; //+1 por el mes actual
             decimal ventaAcumulada = Resumenes.Where(r => r.Mes <= mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta) + resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta;
-            resumen.GeneralProyeccion = servicio.CalculadorProyecciones.CalcularProyeccion(servicio, vendedor, anno, mes, ventaAcumulada, meses, mesesAnno);
+            resumen.GeneralProyeccion = comisiones.CalculadorProyecciones.CalcularProyeccion(comisiones.NuevasEtiquetas, vendedor, anno, mes, ventaAcumulada, meses, mesesAnno);
 
-            ICollection<TramoComision> tramosMes = servicio.LeerTramosComisionMes(vendedor);
+            ICollection<TramoComision> tramosMes = comisiones.LeerTramosComisionMes(vendedor);
 
             TramoComision tramo = BuscarTramoComision(tramosMes, resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
-            ICollection<TramoComision> tramosAnno = servicio.LeerTramosComisionAnno(vendedor);
+            ICollection<TramoComision> tramosAnno = comisiones.LeerTramosComisionAnno(vendedor);
 
             //if (tramo != null && mes != 8)
             if (tramo != null)
@@ -123,12 +123,12 @@ namespace NestoAPI.Models.Comisiones
                     decimal mesesDecimales = (decimal)mesesAnno / meses;
                     resumen.GeneralFaltaParaSalto = tramo.Hasta == decimal.MaxValue ?
                         decimal.MaxValue :
-                        servicio.CalculadorProyecciones.CalcularFaltaParaSalto(ventaAcumulada, tramo.Hasta, mesesDecimales, resumen.GeneralProyeccion);
+                        comisiones.CalculadorProyecciones.CalcularFaltaParaSalto(ventaAcumulada, tramo.Hasta, mesesDecimales, resumen.GeneralProyeccion);
                 }
             }
 
             CalcularLimitesTramo(resumen, tramosAnno);
-            resumen.GeneralBajaSaltoMesSiguiente = servicio.CalculadorProyecciones.CalcularSiBajaDeSalto(servicio, vendedor, anno, mes, mesesAnno, resumen, ventaAcumulada, meses, tramosAnno);
+            resumen.GeneralBajaSaltoMesSiguiente = comisiones.CalculadorProyecciones.CalcularSiBajaDeSalto(comisiones.NuevasEtiquetas, vendedor, anno, mes, mesesAnno, resumen, ventaAcumulada, meses, tramosAnno);
 
             if (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision < 0)
             {

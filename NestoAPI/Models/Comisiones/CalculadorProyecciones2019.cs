@@ -7,13 +7,19 @@ namespace NestoAPI.Models.Comisiones
     public class CalculadorProyecciones2019 : ICalculadorProyecciones
     {
         const string GENERAL = "General";
+        private readonly IServicioComisionesAnuales servicioComisiones;
+
+        public CalculadorProyecciones2019(IServicioComisionesAnuales servicioComisiones)
+        {
+            this.servicioComisiones = servicioComisiones;
+        }
 
         public decimal CalcularFaltaParaSalto(decimal ventaAcumulada, decimal tramoHasta, decimal mesesDecimales, decimal proyeccion)
         {
             return tramoHasta - proyeccion;
         }
 
-        public decimal CalcularProyeccion(IComisionesAnuales servicio, string vendedor, int anno, int mes, decimal ventaAcumulada, int meses, int mesesAnno)
+        public decimal CalcularProyeccion(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno, int mes, decimal ventaAcumulada, int meses, int mesesAnno)
         {
             ICollection<ResumenComisionesMes> annoActual;
             decimal ventaActual;
@@ -21,7 +27,7 @@ namespace NestoAPI.Models.Comisiones
 
             if (ventaAcumulada == 0 && meses == 0)
             {
-                annoActual = servicio.LeerResumenAnno(vendedor, anno);
+                annoActual = servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno);
                 ventaActual = annoActual.Where(v => v.Mes <= mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
                 numerosMesesActual = annoActual.Where(v => v.Mes <= mes).Count();
             } else
@@ -30,7 +36,7 @@ namespace NestoAPI.Models.Comisiones
                 numerosMesesActual = meses;
             }
             
-            var annoAnterior = servicio.LeerResumenAnno(vendedor, anno - 1);
+            var annoAnterior = servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno - 1);
             var ventaAnterior = annoAnterior.Where(v => v.Mes > mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
 
             
@@ -48,13 +54,13 @@ namespace NestoAPI.Models.Comisiones
             return Math.Round(ventaActual + ventaAnterior, 2);
         }
 
-        public bool CalcularSiBajaDeSalto(IComisionesAnuales servicio, string vendedor, int anno, int mes, int mesesAnno, ResumenComisionesMes resumen, decimal ventaAcumulada, int meses, ICollection<TramoComision> tramosAnno)
+        public bool CalcularSiBajaDeSalto(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno, int mes, int mesesAnno, ResumenComisionesMes resumen, decimal ventaAcumulada, int meses, ICollection<TramoComision> tramosAnno)
         {
             if (meses == 12)
             {
                 return false;
             }
-            var ventasAnnoAnterior = servicio.LeerResumenAnno(vendedor, anno - 1);
+            var ventasAnnoAnterior = servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno - 1);
             var resumenVentasMesSiguienteAnnoAnterior = ventasAnnoAnterior.Where(v => v.Mes == mes + 1).SingleOrDefault();
             decimal ventasMesSiguienteAnnoAnterior;
             if (resumenVentasMesSiguienteAnnoAnterior != null)

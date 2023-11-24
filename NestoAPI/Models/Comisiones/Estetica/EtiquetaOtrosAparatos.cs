@@ -5,13 +5,18 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaOtrosAparatos : IEtiquetaComision
+    public class EtiquetaOtrosAparatos : IEtiquetaComision, ICloneable
     {
         private const decimal TIPO_FIJO_OTROSAPARATOS = .02M;
 
         private NVEntities db = new NVEntities();
-
         IQueryable<vstLinPedidoVtaComisione> consulta;
+        private IServicioComisionesAnuales servicioComisiones;
+
+        public EtiquetaOtrosAparatos(IServicioComisionesAnuales servicioComisiones)
+        {
+            this.servicioComisiones = servicioComisiones;
+        }
 
         public string Nombre
         {
@@ -45,7 +50,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
             CrearConsulta(vendedor);
 
-            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
         
         IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
@@ -58,7 +63,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 CrearConsulta(vendedor);
             }
 
-            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         private void CrearConsulta(string vendedor)
@@ -77,6 +82,16 @@ namespace NestoAPI.Models.Comisiones.Estetica
         public decimal SetTipo(TramoComision tramo)
         {
             return TIPO_FIJO_OTROSAPARATOS;
+        }
+
+        public object Clone()
+        {
+            // Crea una nueva instancia de EtiquetaGeneral y copia las propiedades
+            return new EtiquetaOtrosAparatos(servicioComisiones)
+            {
+                Venta = this.Venta,
+                Tipo = this.Tipo
+            };
         }
     }
 }

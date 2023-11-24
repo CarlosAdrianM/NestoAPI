@@ -8,24 +8,26 @@ namespace NestoAPI.Models.Comisiones
 {
     public class ComisionesAnualesEstetica2024 : IComisionesAnuales
     {
-        public ComisionesAnualesEstetica2024(ICalculadorProyecciones _calculadorProyecciones)
+        private readonly IServicioComisionesAnuales servicioComisiones;
+        public ComisionesAnualesEstetica2024(IServicioComisionesAnuales servicioComisiones)
         {
+            this.servicioComisiones = servicioComisiones;
             Etiquetas = NuevasEtiquetas;
-            CalculadorProyecciones = _calculadorProyecciones;
         }
 
         public ICollection<IEtiquetaComision> Etiquetas { get; set; }
 
         public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
         {
-            new EtiquetaGeneral(),
-            new EtiquetaUnionLaser(),
-            new EtiquetaFamiliasEspeciales(),
-            new EtiquetaOtrosAparatos()
+            new EtiquetaGeneral(servicioComisiones),
+            new EtiquetaUnionLaser(servicioComisiones),
+            new EtiquetaFamiliasEspeciales(servicioComisiones),
+            new EtiquetaOtrosAparatos(servicioComisiones)
         };
 
-        public ICalculadorProyecciones CalculadorProyecciones { get; set; }
-        public IServicioComisionesAnuales ServicioComisionesAnuales { get; set; }
+        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(servicioComisiones);
+
+
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
         {
@@ -51,7 +53,7 @@ namespace NestoAPI.Models.Comisiones
         }
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return ServicioComisionesAnuales.LeerResumenAnno(this, vendedor, anno);
+            return servicioComisiones.LeerResumenAnno(NuevasEtiquetas, vendedor, anno);
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)

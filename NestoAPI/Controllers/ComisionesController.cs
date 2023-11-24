@@ -210,7 +210,7 @@ namespace NestoAPI.Controllers
                 }
                 else if (anno == 2021 || anno == 2022 || anno == 2023)
                 {
-                    return new ComisionesAnualesPeluqueria2021();
+                    return new ComisionesAnualesPeluqueria2021(new ServicioComisionesAnualesComun());
                 }
             }
 
@@ -232,11 +232,11 @@ namespace NestoAPI.Controllers
             }
             else if (anno == 2022 || anno == 2023)
             {
-                return new ComisionesAnualesEstetica2022();
+                return new ComisionesAnualesEstetica2022(new ServicioComisionesAnualesComun());
             }
             else if (anno == 2024)
             {
-                return new ComisionesAnualesEstetica2024(new CalculadorProyecciones2019());
+                return new ComisionesAnualesEstetica2024(new ServicioComisionesAnualesComun());
             }
 
             throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");

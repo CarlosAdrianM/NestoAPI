@@ -9,14 +9,14 @@ namespace NestoAPI.Models.Comisiones
     {
         const string GENERAL = "General";
 
-        public static decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta, bool incluirPicking)
+        public decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta, bool incluirPicking)
         {
-            consulta = ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            consulta = ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
             decimal venta = consulta.Select(l => l.Base_Imponible).DefaultIfEmpty().Sum();
             return venta;
         }
 
-        public static IQueryable<vstLinPedidoVtaComisione> ConsultaVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta, bool incluirPicking)
+        public IQueryable<vstLinPedidoVtaComisione> ConsultaVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta, bool incluirPicking)
         {
             if (consulta == null)
             {
@@ -41,7 +41,7 @@ namespace NestoAPI.Models.Comisiones
             return consulta;
         }
 
-        public ICollection<ResumenComisionesMes> LeerResumenAnno(IComisionesAnuales comisiones, string vendedor, int anno)
+        public ICollection<ResumenComisionesMes> LeerResumenAnno(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno)
         {
             NVEntities db = new NVEntities();
             var resumenDb = db.ComisionesAnualesResumenMes
@@ -55,13 +55,20 @@ namespace NestoAPI.Models.Comisiones
             byte mesAnterior = resumenDb.First().Mes;
 
             ICollection<ResumenComisionesMes> resumenAnno = new Collection<ResumenComisionesMes>();
-            ResumenComisionesMes resumenMes = new ResumenComisionesMes
+            ResumenComisionesMes resumenMes;
+            try
             {
-                Vendedor = vendedor,
-                Anno = anno,
-                Mes = mesAnterior,
-                Etiquetas = comisiones.NuevasEtiquetas
-            };
+                resumenMes = new ResumenComisionesMes
+                {
+                    Vendedor = vendedor,
+                    Anno = anno,
+                    Mes = mesAnterior,
+                    Etiquetas = etiquetas.Select(etiqueta => (IEtiquetaComision)etiqueta.Clone()).ToList()
+                };
+            } catch (Exception ex)
+            {
+                throw ex;
+            }
             foreach (ComisionAnualResumenMes resumenMesDB in resumenDb)
             {
                 if (mesAnterior != resumenMesDB.Mes)
@@ -72,7 +79,8 @@ namespace NestoAPI.Models.Comisiones
                         Vendedor = resumenMesDB.Vendedor,
                         Anno = resumenMesDB.Anno,
                         Mes = resumenMesDB.Mes,
-                        Etiquetas = comisiones.NuevasEtiquetas
+                        Etiquetas = etiquetas.Select(etiqueta => (IEtiquetaComision)etiqueta.Clone()).ToList()
+                        //Etiquetas = new List<IEtiquetaComision>(etiquetas.ToList()) // si esto funciona se puede eliminar el campo NuevasEtiquetas y usar siempre el campo Etiquetas.ToList()
                     };
                     mesAnterior = resumenMesDB.Mes;
                 }

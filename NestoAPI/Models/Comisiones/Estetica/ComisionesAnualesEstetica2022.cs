@@ -7,27 +7,25 @@ namespace NestoAPI.Models.Comisiones
 {
     public class ComisionesAnualesEstetica2022 : IComisionesAnuales
     {
-        const string GENERAL = "General";
-        
-        private NVEntities db = new NVEntities();
-
-        public ComisionesAnualesEstetica2022()
+        private readonly IServicioComisionesAnuales servicioComisiones;
+        public ComisionesAnualesEstetica2022(IServicioComisionesAnuales servicioComisiones)
         {
-            Etiquetas = NuevasEtiquetas;
+            this.servicioComisiones = servicioComisiones;
+            Etiquetas = NuevasEtiquetas;            
         }
-        
+
         public ICollection<IEtiquetaComision> Etiquetas { get; set; }
 
         public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
             {
-                new EtiquetaGeneral(),
-                new EtiquetaUnionLaser(),
+                new EtiquetaGeneral(servicioComisiones),
+                new EtiquetaUnionLaser(servicioComisiones),
                 new EtiquetaEvaVisnu(),
-                new EtiquetaOtrosAparatos()
+                new EtiquetaOtrosAparatos(servicioComisiones)
             };
 
         // El cálculo de proyecciones de 2019 sigue perfecto para 2022
-        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019();
+        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(servicioComisiones);
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
         {
@@ -45,14 +43,6 @@ namespace NestoAPI.Models.Comisiones
             {
                 etiqueta = "Eva Visnú";
             }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "lisap")
-            {
-                etiqueta = "Lisap";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "kach")
-            {
-                etiqueta = "Kach";
-            }
             else
             {
                 etiqueta = "General";
@@ -62,7 +52,7 @@ namespace NestoAPI.Models.Comisiones
 
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return (new ServicioComisionesAnualesComun()).LeerResumenAnno(this, vendedor, anno);
+            return servicioComisiones.LeerResumenAnno(NuevasEtiquetas, vendedor, anno);
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)

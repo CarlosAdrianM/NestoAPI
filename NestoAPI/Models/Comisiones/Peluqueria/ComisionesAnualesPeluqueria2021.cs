@@ -6,45 +6,32 @@ using System.Collections.ObjectModel;
 namespace NestoAPI.Models.Comisiones.Peluqueria
 {
     public class ComisionesAnualesPeluqueria2021 : IComisionesAnuales
-    {
-        const string GENERAL = "General";
+    {        
+        private readonly IServicioComisionesAnuales servicioComisiones;
 
-        private NVEntities db = new NVEntities();
-
-        public ComisionesAnualesPeluqueria2021()
+        public ComisionesAnualesPeluqueria2021(IServicioComisionesAnuales servicioComisiones)
         {
-            Etiquetas = NuevasEtiquetas;
+            this.servicioComisiones = servicioComisiones;
+            Etiquetas = NuevasEtiquetas;            
         }
 
         public ICollection<IEtiquetaComision> Etiquetas { get; set; }
-
+        
         public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
             {
-                new EtiquetaGeneral(),
-                new EtiquetaLisap(),
-                new EtiquetaKach()
+                new EtiquetaGeneral(servicioComisiones),
+                new EtiquetaLisap(servicioComisiones),
+                new EtiquetaKach(servicioComisiones)
             };
 
         // El cálculo de proyecciones de 2019 sigue siendo perfecto para 2020
-        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019();
+        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(servicioComisiones);
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
         {
             string etiqueta;
 
-            if (linea.Grupo != null && linea.Grupo.ToLower().Trim() == "otros aparatos")
-            {
-                etiqueta = "Otros Aparatos";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "uniónláser")
-            {
-                etiqueta = "Unión Láser";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "eva visnu")
-            {
-                etiqueta = "Eva Visnú";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "lisap")
+            if (linea.Familia != null && linea.Familia.ToLower().Trim() == "lisap")
             {
                 etiqueta = "Lisap";
             }
@@ -61,7 +48,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 
         public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
         {
-            return (new ServicioComisionesAnualesComun()).LeerResumenAnno(this, vendedor, anno);
+            return servicioComisiones.LeerResumenAnno(NuevasEtiquetas, vendedor, anno);
         }
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)

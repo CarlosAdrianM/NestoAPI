@@ -1,19 +1,19 @@
 ﻿using NestoAPI.Infraestructure.Vendedores;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
     public class EtiquetaGeneral : IEtiquetaComision
     {
-        private NVEntities db = new NVEntities();
+        private NVEntities db = new NVEntities(); // para quitarlo habría que tratar las consultas como string
 
         IQueryable<vstLinPedidoVtaComisione> consulta;
+        private readonly IServicioComisionesAnuales servicioComisiones;
 
-        public EtiquetaGeneral()
+        public EtiquetaGeneral(IServicioComisionesAnuales servicioComisiones)
         {
-
+            this.servicioComisiones = servicioComisiones;
         }
 
         public string Nombre {
@@ -25,6 +25,8 @@ namespace NestoAPI.Models.Comisiones.Estetica
         public decimal Venta { get; set; }
         public decimal Tipo { get; set; }
         public decimal Comision { get; set; }
+        
+
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
@@ -41,7 +43,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     listaVendedores.Contains(l.Vendedor)
                 );
 
-            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         public decimal SetTipo(TramoComision tramo)
@@ -71,7 +73,18 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     listaVendedores.Contains(l.Vendedor)
                 );
 
-            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+        }
+
+        public object Clone()
+        {
+            // Crea una nueva instancia de EtiquetaGeneral y copia las propiedades
+            return new EtiquetaGeneral(servicioComisiones)
+            {
+                Venta = this.Venta,
+                Tipo = this.Tipo,
+                Comision = this.Comision
+            };
         }
     }
 }

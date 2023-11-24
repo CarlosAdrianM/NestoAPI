@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaEvaVisnu : IEtiquetaComision
+    public class EtiquetaEvaVisnu : IEtiquetaComision, ICloneable
     {
         private NVEntities db = new NVEntities();
 
@@ -42,7 +42,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
             CrearConsulta(vendedor);
 
-            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return (new ServicioComisionesAnualesComun()).CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
 
@@ -56,7 +56,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 CrearConsulta(vendedor);
             }
 
-            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return (new ServicioComisionesAnualesComun()).ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         private void CrearConsulta(string vendedor)
@@ -75,6 +75,15 @@ namespace NestoAPI.Models.Comisiones.Estetica
         public decimal SetTipo(TramoComision tramo)
         {
             return tramo.TipoExtra;
+        }
+
+        public object Clone()
+        {
+            return new EtiquetaEvaVisnu()
+            {
+                Venta = this.Venta,
+                Tipo = this.Tipo
+            };
         }
     }
 }

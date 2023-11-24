@@ -11,13 +11,14 @@ namespace NestoAPI.Models.Comisiones
             return Math.Round((tramoHasta / mesesDecimales) - ventaAcumulada, 2);
         }
 
-        public decimal CalcularProyeccion(IComisionesAnuales servicio, string vendedor, int anno, int mes, decimal ventaAcumulada, int meses, int mesesAnno)
+        public decimal CalcularProyeccion(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno, int mes, decimal ventaAcumulada, int meses, int mesesAnno)
         {
             return (ventaAcumulada / meses) * mesesAnno;
         }
 
-        public bool CalcularSiBajaDeSalto(IComisionesAnuales servicio, string vendedor, int anno, int mes, int mesesAnno, ResumenComisionesMes resumen, decimal ventaAcumulada, int meses, ICollection<TramoComision> tramosAnno)
+        public bool CalcularSiBajaDeSalto(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno, int mes, int mesesAnno, ResumenComisionesMes resumen, decimal ventaAcumulada, int meses, ICollection<TramoComision> tramosAnno)
         {
+            /*
             if (meses == 12)
             {
                 return false;
@@ -28,6 +29,9 @@ namespace NestoAPI.Models.Comisiones
             var tramoProyeccion = VendedorComisionAnual.BuscarTramoComision(tramosAnno, resumen.GeneralProyeccion);
             var tramoProyeccionMesSiguiente = VendedorComisionAnual.BuscarTramoComision(tramosAnno, proyeccionMesSiguiente);
             return (tramoProyeccion != tramoProyeccionMesSiguiente);
+            */
+            // 24/11/23 Por refactorización dejamos de tener acceso a la base de datos desde aquí, dejamos este método OBSOLETO
+            return false;
         }
     }
 }

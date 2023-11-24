@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Microsoft.Ajax.Utilities;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Globalization;
@@ -64,15 +65,14 @@ namespace NestoAPI.Models
                     string parametros = "?producto=" + productoStock;
                     HttpResponseMessage response = await client.GetAsync(parametros);
                 
-                
-                string rutaImagen = "";
-                if (response.IsSuccessStatusCode)
-                {
-                    rutaImagen = await response.Content.ReadAsStringAsync();
-                    rutaImagen = "http://" + rutaImagen;
-                }
+                    string rutaImagen = "";
+                    if (response.IsSuccessStatusCode)
+                    {
+                        rutaImagen = await response.Content.ReadAsStringAsync();
+                        rutaImagen = "http://" + rutaImagen;
+                    }
 
-                return rutaImagen;
+                    return rutaImagen;
                 }
                 catch (Exception)
                 {
@@ -170,7 +170,7 @@ namespace NestoAPI.Models
                 }
                 catch (Exception ex)
                 {
-                    throw ex;
+                    return 0;
                 }
 
                 return precioPublico;

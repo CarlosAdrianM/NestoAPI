@@ -4,11 +4,16 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaFamiliasEspeciales : IEtiquetaComision
+    public class EtiquetaFamiliasEspeciales : IEtiquetaComision, ICloneable
     {
         private NVEntities db = new NVEntities();
-
+        private IServicioComisionesAnuales servicioComisiones;
         private IQueryable<vstLinPedidoVtaComisione> consulta;
+
+        public EtiquetaFamiliasEspeciales(IServicioComisionesAnuales servicioComisiones)
+        {
+            this.servicioComisiones = servicioComisiones;
+        }
 
         public string Nombre
         {
@@ -42,7 +47,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
             CrearConsulta(vendedor);
 
-            return ServicioComisionesAnualesComun.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
 
@@ -56,7 +61,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 CrearConsulta(vendedor);
             }
 
-            return ServicioComisionesAnualesComun.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         private void CrearConsulta(string vendedor)
@@ -78,5 +83,14 @@ namespace NestoAPI.Models.Comisiones.Estetica
         }
 
         public static string[] FamiliasEspeciales = { "eva visnu", "santhilea", "max2origin", "mina", "apraise", "maderas", "diagmyskin", "faby", "cursos" };
+
+        public object Clone()
+        {
+            return new EtiquetaFamiliasEspeciales(servicioComisiones)
+            {
+                Venta = this.Venta,
+                Tipo = this.Tipo
+            };
+        }
     }
 }
