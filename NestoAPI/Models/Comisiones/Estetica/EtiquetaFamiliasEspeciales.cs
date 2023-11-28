@@ -1,18 +1,16 @@
-﻿using NestoAPI.Infraestructure.Vendedores;
-using System;
+﻿using System;
 using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
     public class EtiquetaFamiliasEspeciales : IEtiquetaComision, ICloneable
     {
-        private NVEntities db = new NVEntities();
-        private IServicioComisionesAnuales servicioComisiones;
+        private IServicioComisionesAnuales _servicioComisiones;
         private IQueryable<vstLinPedidoVtaComisione> consulta;
 
         public EtiquetaFamiliasEspeciales(IServicioComisionesAnuales servicioComisiones)
         {
-            this.servicioComisiones = servicioComisiones;
+            this._servicioComisiones = servicioComisiones;
         }
 
         public string Nombre
@@ -47,7 +45,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
             CrearConsulta(vendedor);
 
-            return servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return _servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
 
@@ -61,15 +59,14 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 CrearConsulta(vendedor);
             }
 
-            return servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return _servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         private void CrearConsulta(string vendedor)
         {
-            var servicioVendedores = new ServicioVendedores();
-            var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
+            var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
             
-            consulta = db.vstLinPedidoVtaComisiones
+            consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
                 .Where(l =>
                     FamiliasEspeciales.Contains(l.Familia.ToLower()) &&
                     !l.Grupo.ToLower().Equals("otros aparatos", StringComparison.OrdinalIgnoreCase) &&
@@ -86,7 +83,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         public object Clone()
         {
-            return new EtiquetaFamiliasEspeciales(servicioComisiones)
+            return new EtiquetaFamiliasEspeciales(_servicioComisiones)
             {
                 Venta = this.Venta,
                 Tipo = this.Tipo

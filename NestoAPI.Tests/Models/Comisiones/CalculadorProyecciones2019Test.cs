@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models.Comisiones;
 using NestoAPI.Models.Comisiones.Estetica;
 
@@ -134,8 +135,6 @@ namespace NestoAPI.Tests.Models.Comisiones
 
             Assert.AreEqual(136000, proyeccion); //11000*4+92000
         }
-
-        
 
         [TestMethod]
         public void CalculadorComisiones2019_CalcularProyeccion_SiElAnnoActualNoComienzaEnEneroSeHaceLaParteProporcional()
@@ -339,6 +338,16 @@ namespace NestoAPI.Tests.Models.Comisiones
             bool baja = calculador.CalcularSiBajaDeSalto(etiquetas, "VD", 2019, 1, 0, resumen, ventasMes, 0, tramos);
             
             Assert.IsTrue(baja);
+        }
+
+        [TestMethod]
+        public void CalculadorComisiones2019_CalcularProyeccion_SiEsJefeDeVentasSumaLasProyeccionesDeTodoSuEquipo()
+        {            
+            var servicio = A.Fake<IServicioComisionesAnuales>();
+            var comisiones = new ComisionesAnualesEstetica2024(servicio);
+
+
+
         }
                
 

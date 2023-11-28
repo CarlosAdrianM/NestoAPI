@@ -22,7 +22,7 @@ namespace NestoAPI.Models.Comisiones
             {
                 new EtiquetaGeneral(new ServicioComisionesAnualesComun()),
                 new EtiquetaUnionLaser(new ServicioComisionesAnualesComun()),
-                new EtiquetaEvaVisnu(),
+                new EtiquetaEvaVisnu(new ServicioComisionesAnualesComun()),
                 new EtiquetaOtrosAparatos(new ServicioComisionesAnualesComun())
             };
 

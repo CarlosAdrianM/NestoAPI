@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.Vendedores;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -8,6 +9,14 @@ namespace NestoAPI.Models.Comisiones
     public class ServicioComisionesAnualesComun : IServicioComisionesAnuales
     {
         const string GENERAL = "General";
+        private readonly ServicioVendedores _servicioVendedores;
+
+        public ServicioComisionesAnualesComun()
+        {
+            _servicioVendedores = new ServicioVendedores();
+        }
+
+        public NVEntities Db { get; } = new NVEntities();
 
         public decimal CalcularVentaFiltrada(bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta, ref IQueryable<vstLinPedidoVtaComisione> consulta, bool incluirPicking)
         {
@@ -44,8 +53,9 @@ namespace NestoAPI.Models.Comisiones
         public ICollection<ResumenComisionesMes> LeerResumenAnno(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno)
         {
             NVEntities db = new NVEntities();
+            var listaVendedores = ListaVendedores(vendedor);
             var resumenDb = db.ComisionesAnualesResumenMes
-                .Where(c => c.Vendedor == vendedor && c.Anno == anno).OrderBy(r => r.Mes);
+                .Where(c => listaVendedores.Contains(c.Vendedor) && c.Anno == anno).OrderBy(r => r.Mes);
 
             if (resumenDb == null || resumenDb.Count() == 0)
             {
@@ -88,8 +98,8 @@ namespace NestoAPI.Models.Comisiones
                 try
                 {
                     // si pasamos resumenMesDB por parámetro a la etiqueta y hacemos las asignaciones desde ahí, nos evitamos usar GENERAL
-                    resumenMes.Etiquetas.Where(e => e.Nombre == resumenMesDB.Etiqueta).Single().Venta = resumenMesDB.Venta;
-                    resumenMes.Etiquetas.Where(e => e.Nombre == resumenMesDB.Etiqueta).Single().Tipo = resumenMesDB.Tipo;
+                    resumenMes.Etiquetas.Where(e => e.Nombre == resumenMesDB.Etiqueta).Single().Venta += resumenMesDB.Venta;
+                    resumenMes.Etiquetas.Where(e => e.Nombre == resumenMesDB.Etiqueta).Single().Tipo += resumenMesDB.Tipo;
                     if (resumenMesDB.Etiqueta == GENERAL)
                     {
                         resumenMes.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = resumenMesDB.Comision;
@@ -104,6 +114,11 @@ namespace NestoAPI.Models.Comisiones
             resumenAnno.Add(resumenMes);
 
             return resumenAnno;
+        }
+
+        public List<string>ListaVendedores(string vendedor)
+        {
+            return _servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult().Select(v => v.vendedor).ToList();
         }
     }
 }

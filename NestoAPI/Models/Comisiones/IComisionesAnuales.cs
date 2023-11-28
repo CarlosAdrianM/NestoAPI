@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Models.Comisiones
 {
@@ -12,4 +13,12 @@ namespace NestoAPI.Models.Comisiones
         ICalculadorProyecciones CalculadorProyecciones { get; }
         string EtiquetaLinea(vstLinPedidoVtaComisione linea);
     }
+
+    //public static class ComisionesAnualesExtensions
+    //{
+    //    public static ICollection<IEtiquetaComision> NuevasEtiquetas(this IComisionesAnuales comisionesAnuales)
+    //    {
+    //        return comisionesAnuales.Etiquetas.Select(etiqueta => (IEtiquetaComision)etiqueta.Clone()).ToList();
+    //    }
+    //}
 }

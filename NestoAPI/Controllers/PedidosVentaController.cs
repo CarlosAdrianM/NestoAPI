@@ -19,10 +19,7 @@ using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models.PedidosVenta;
 using Newtonsoft.Json.Linq;
 using NestoAPI.Models.PedidosBase;
-using System.Web.Http.Results;
-using System.Runtime.CompilerServices;
 using NestoAPI.Infraestructure.Vendedores;
-using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Controllers
 {
@@ -548,16 +545,16 @@ namespace NestoAPI.Controllers
                         linea.Fecha_Entrega = lineaEncontrada.fechaEntrega;
                         modificado = true;
                     }
-                    if (linea.Grupo != lineaEncontrada.GrupoProducto)
-                    {
-                        linea.Grupo = lineaEncontrada.GrupoProducto;
-                        modificado = true;
-                    }
-                    if (linea.SubGrupo != lineaEncontrada.SubgrupoProducto)
-                    {
-                        linea.SubGrupo = lineaEncontrada.SubgrupoProducto;
-                        modificado = true;
-                    }
+                    //if (linea.Grupo != lineaEncontrada.GrupoProducto)
+                    //{
+                    //    linea.Grupo = lineaEncontrada.GrupoProducto;
+                    //    modificado = true;
+                    //}
+                    //if (linea.SubGrupo != lineaEncontrada.SubgrupoProducto)
+                    //{
+                    //    linea.SubGrupo = lineaEncontrada.SubgrupoProducto;
+                    //    modificado = true;
+                    //}
 
                     if (modificado)
                     {

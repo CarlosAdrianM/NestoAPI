@@ -1,45 +1,30 @@
-﻿using NestoAPI.Infraestructure.Vendedores;
-using System;
+﻿using System;
 using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaUnionLaser : IEtiquetaComision, ICloneable
+    public class EtiquetaUnionLaser : IEtiquetaComision
     {
         
         private const decimal TIPO_FIJO_UNIONLASER = .1M;
-        private readonly IServicioComisionesAnuales servicioComisiones;
-        private NVEntities db = new NVEntities();
+        private readonly IServicioComisionesAnuales _servicioComisiones;
 
         private IQueryable<vstLinPedidoVtaComisione> consulta;
         private IQueryable<vstLinPedidoVtaComisione> consultaRenting;
 
         public EtiquetaUnionLaser(IServicioComisionesAnuales servicioComisiones)
         {
-            this.servicioComisiones = servicioComisiones;
+            this._servicioComisiones = servicioComisiones;
         }
 
-
-        public string Nombre
-        {
-            get
-            {
-                return "Unión Láser";
-            }
-        }
+        public string Nombre => "Unión Láser";
 
         public decimal Venta { get; set; }
         public decimal Tipo { get; set; }
         public decimal Comision
         {
-            get
-            {
-                return Math.Round(Venta * Tipo, 2);
-            }
-            set
-            {
-                throw new Exception("La comisión de Unión Láser no se puede fijar manualmente");
-            }
+            get => Math.Round(Venta * Tipo, 2);
+            set => throw new Exception("La comisión de Unión Láser no se puede fijar manualmente");
         }
 
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
@@ -56,7 +41,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             decimal ventaRenting = consultaRenting.Select(l => (decimal)l.PrecioTarifa * PORCENTAJE_BASE_IMPONIBLE_RENTING).DefaultIfEmpty().Sum();
 
             CrearConsulta(vendedor);
-            decimal venta = servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            decimal venta = _servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
             
             return venta + ventaRenting;
 
@@ -77,15 +62,14 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 CrearConsulta(vendedor);
             }
 
-            return servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return _servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         private void CrearConsulta (string vendedor)
         {
-            var servicioVendedores = new ServicioVendedores();
-            var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
+            var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
             
-            consulta = db.vstLinPedidoVtaComisiones
+            consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
                 .Where(l =>
                     listaVendedores.Contains(l.Vendedor) &&
                     l.Familia.ToLower() == "unionlaser" &&
@@ -96,11 +80,10 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         private void CrearConsultaRenting(string vendedor, bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta)
         {
-            var facturasRenting = db.RentingFacturas.Select(r => r.Numero);
-            var servicioVendedores = new ServicioVendedores();
-            var listaVendedores = (servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult()).Select(v => v.vendedor);
+            var facturasRenting = _servicioComisiones.Db.RentingFacturas.Select(r => r.Numero);
+            var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
 
-            consultaRenting = db.vstLinPedidoVtaComisiones.Where(l => listaVendedores.Contains(l.Vendedor) && facturasRenting.Contains(l.Nº_Factura));
+            consultaRenting = _servicioComisiones.Db.vstLinPedidoVtaComisiones.Where(l => listaVendedores.Contains(l.Vendedor) && facturasRenting.Contains(l.Nº_Factura));
 
             if (incluirAlbaranes)
             {
@@ -112,18 +95,12 @@ namespace NestoAPI.Models.Comisiones.Estetica
             }
         }
 
-        public decimal SetTipo(TramoComision tramo)
-        {
-            return TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
-        }
+        public decimal SetTipo(TramoComision tramo) => TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
 
-        public object Clone()
+        public object Clone() => new EtiquetaUnionLaser(_servicioComisiones)
         {
-            return new EtiquetaUnionLaser(servicioComisiones)
-            {
-                Venta = this.Venta,
-                Tipo = this.Tipo
-            };
-        }
+            Venta = this.Venta,
+            Tipo = this.Tipo
+        };
     }
 }

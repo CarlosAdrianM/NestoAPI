@@ -5,35 +5,22 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 {
     public class EtiquetaLisap : IEtiquetaComision
     {
-        private NVEntities db = new NVEntities();
         private IQueryable<vstLinPedidoVtaComisione> consulta;
-        private readonly IServicioComisionesAnuales servicioComisiones;
+        private readonly IServicioComisionesAnuales _servicioComisiones;
 
         public EtiquetaLisap(IServicioComisionesAnuales servicioComisiones)
         {
-            this.servicioComisiones = servicioComisiones;
+            this._servicioComisiones = servicioComisiones;
         }
 
-        public string Nombre
-        {
-            get
-            {
-                return "Lisap";
-            }
-        }
+        public string Nombre => "Lisap";
 
         public decimal Venta { get; set; }
         public decimal Tipo { get; set; }
         public decimal Comision
         {
-            get
-            {
-                return Math.Round(Venta * Tipo, 2);
-            }
-            set
-            {
-                throw new Exception("La comisión de Lisap no se puede fijar manualmente");
-            }
+            get => Math.Round(Venta * Tipo, 2);
+            set => throw new Exception("La comisión de Lisap no se puede fijar manualmente");
         }
 
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
@@ -52,7 +39,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 
             CrearConsulta(vendedor);
 
-            return servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return _servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         public IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
@@ -65,31 +52,24 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
                 CrearConsulta(vendedor);
             }
 
-            return servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
+            return _servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
         private void CrearConsulta(string vendedor)
         {
-            consulta = db.vstLinPedidoVtaComisiones
+            consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
                 .Where(l =>
                     l.Familia.ToLower() == "lisap" &&
                     l.Vendedor == vendedor
                 );
         }
 
-        public decimal SetTipo(TramoComision tramo)
-        {
-            return tramo.TipoExtra;
-        }
+        public decimal SetTipo(TramoComision tramo) => tramo.TipoExtra;
 
-
-        public object Clone()
+        public object Clone() => new EtiquetaLisap(_servicioComisiones)
         {
-            return new EtiquetaLisap(servicioComisiones)
-            {
-                Venta = this.Venta,
-                Tipo = this.Tipo
-            };
-        }
+            Venta = this.Venta,
+            Tipo = this.Tipo
+        };
     }
 }

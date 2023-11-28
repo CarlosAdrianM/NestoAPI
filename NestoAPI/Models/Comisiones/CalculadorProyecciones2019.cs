@@ -7,11 +7,11 @@ namespace NestoAPI.Models.Comisiones
     public class CalculadorProyecciones2019 : ICalculadorProyecciones
     {
         const string GENERAL = "General";
-        private readonly IServicioComisionesAnuales servicioComisiones;
+        private readonly IServicioComisionesAnuales _servicioComisiones;
 
         public CalculadorProyecciones2019(IServicioComisionesAnuales servicioComisiones)
         {
-            this.servicioComisiones = servicioComisiones;
+            this._servicioComisiones = servicioComisiones;
         }
 
         public decimal CalcularFaltaParaSalto(decimal ventaAcumulada, decimal tramoHasta, decimal mesesDecimales, decimal proyeccion)
@@ -27,7 +27,7 @@ namespace NestoAPI.Models.Comisiones
 
             if (ventaAcumulada == 0 && meses == 0)
             {
-                annoActual = servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno);
+                annoActual = _servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno);
                 ventaActual = annoActual.Where(v => v.Mes <= mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
                 numerosMesesActual = annoActual.Where(v => v.Mes <= mes).Count();
             } else
@@ -36,7 +36,7 @@ namespace NestoAPI.Models.Comisiones
                 numerosMesesActual = meses;
             }
             
-            var annoAnterior = servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno - 1);
+            var annoAnterior = _servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno - 1);
             var ventaAnterior = annoAnterior.Where(v => v.Mes > mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta);
 
             
@@ -60,7 +60,7 @@ namespace NestoAPI.Models.Comisiones
             {
                 return false;
             }
-            var ventasAnnoAnterior = servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno - 1);
+            var ventasAnnoAnterior = _servicioComisiones.LeerResumenAnno(etiquetas, vendedor, anno - 1);
             var resumenVentasMesSiguienteAnnoAnterior = ventasAnnoAnterior.Where(v => v.Mes == mes + 1).SingleOrDefault();
             decimal ventasMesSiguienteAnnoAnterior;
             if (resumenVentasMesSiguienteAnnoAnterior != null)
