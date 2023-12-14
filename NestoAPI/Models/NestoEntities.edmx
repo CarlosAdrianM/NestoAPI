@@ -848,6 +848,19 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
+        <EntityType Name="Kits">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="NúmeroAsociado" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="NúmeroAsociado" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Cantidad" Type="smallint" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="LinPedidoCmp">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -3036,6 +3049,46 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_KITS_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="Kits" Type="Self.Kits" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Kits">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_KITS_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="Kits" Type="Self.Kits" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Kits">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_KITS_Productos1">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="Kits" Type="Self.Kits" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Kits">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NúmeroAsociado" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_LinPedidoCmp_CabFacturaCmp">
           <End Role="CabFacturaCmp" Type="Self.CabFacturaCmp" Multiplicity="0..1" />
           <End Role="LinPedidoCmp" Type="Self.LinPedidoCmp" Multiplicity="*" />
@@ -4110,6 +4163,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="Inmovilizados" EntityType="Self.Inmovilizados" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Inventarios" EntityType="Self.Inventarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="InventariosCuadre" EntityType="Self.InventariosCuadre" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Kits" EntityType="Self.Kits" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoCmp" EntityType="Self.LinPedidoCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
@@ -4612,6 +4666,18 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_InventariosCuadre_Productos" Association="Self.FK_InventariosCuadre_Productos">
             <End Role="Productos" EntitySet="Productos" />
             <End Role="InventariosCuadre" EntitySet="InventariosCuadre" />
+          </AssociationSet>
+          <AssociationSet Name="FK_KITS_Empresas" Association="Self.FK_KITS_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="Kits" EntitySet="Kits" />
+          </AssociationSet>
+          <AssociationSet Name="FK_KITS_Productos" Association="Self.FK_KITS_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="Kits" EntitySet="Kits" />
+          </AssociationSet>
+          <AssociationSet Name="FK_KITS_Productos1" Association="Self.FK_KITS_Productos1">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="Kits" EntitySet="Kits" />
           </AssociationSet>
           <AssociationSet Name="FK_LinPedidoCmp_CabFacturaCmp" Association="Self.FK_LinPedidoCmp_CabFacturaCmp">
             <End Role="CabFacturaCmp" EntitySet="CabFacturaCmp" />
@@ -5763,6 +5829,19 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="Vendedor" EntitySet="Vendedores" />
             <End Role="EquiposVenta" EntitySet="EquiposVentas" />
           </AssociationSet>
+          <EntitySet Name="Kits" EntityType="NVModel.Kit" />
+          <AssociationSet Name="FK_KITS_Empresas" Association="NVModel.FK_KITS_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="Kit" EntitySet="Kits" />
+          </AssociationSet>
+          <AssociationSet Name="FK_KITS_Productos" Association="NVModel.FK_KITS_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="Kit" EntitySet="Kits" />
+          </AssociationSet>
+          <AssociationSet Name="FK_KITS_Productos1" Association="NVModel.FK_KITS_Productos1">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="Kit" EntitySet="Kits" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -5919,6 +5998,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="CabPedidoCmps1" Relationship="NVModel.FK_CabPedidoCmp_Empresas1" FromRole="Empresa" ToRole="CabPedidoCmp" />
           <NavigationProperty Name="OfertasProveedores" Relationship="NVModel.FK_OfertasProveedores_Empresas" FromRole="Empresa" ToRole="OfertasProveedore" />
           <NavigationProperty Name="DiariosProductoes" Relationship="NVModel.FK_DiariosProducto_Empresas" FromRole="Empresa" ToRole="DiariosProducto" />
+          <NavigationProperty Name="Kits" Relationship="NVModel.FK_KITS_Empresas" FromRole="Empresa" ToRole="Kit" />
           </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -6323,6 +6403,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="RegaloImportePedidoes" Relationship="NVModel.FK_RegaloImportePedido_Productos" FromRole="Producto" ToRole="RegaloImportePedido" />
           <NavigationProperty Name="ClasificacionMasVendido" Relationship="NVModel.FK_ClasificacionMasVendidos_Productos" FromRole="Producto" ToRole="ClasificacionMasVendido" />
           <NavigationProperty Name="OfertasProveedores" Relationship="NVModel.FK_OfertasProveedores_Productos" FromRole="Producto" ToRole="OfertasProveedore" />
+          <NavigationProperty Name="Kits" Relationship="NVModel.FK_KITS_Productos" FromRole="Producto" ToRole="Kit" />
+          <NavigationProperty Name="Kits1" Relationship="NVModel.FK_KITS_Productos1" FromRole="Producto" ToRole="Kit" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -10154,6 +10236,62 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="Kit">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="NúmeroAsociado" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="NúmeroAsociado" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Cantidad" Type="Int16" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_KITS_Empresas" FromRole="Kit" ToRole="Empresa" />
+          <NavigationProperty Name="Producto" Relationship="NVModel.FK_KITS_Productos" FromRole="Kit" ToRole="Producto" />
+          <NavigationProperty Name="Producto1" Relationship="NVModel.FK_KITS_Productos1" FromRole="Kit" ToRole="Producto" />
+        </EntityType>
+        <Association Name="FK_KITS_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.Kit" Role="Kit" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Kit">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_KITS_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.Kit" Role="Kit" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Kit">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_KITS_Productos1">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.Kit" Role="Kit" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Kit">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="NúmeroAsociado" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -11681,6 +11819,18 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Kits">
+            <EntityTypeMapping TypeName="NVModel.Kit">
+              <MappingFragment StoreEntitySet="Kits">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
+                <ScalarProperty Name="NúmeroAsociado" ColumnName="NúmeroAsociado" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

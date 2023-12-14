@@ -376,6 +376,13 @@
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioPlantillaVenta.cs" />
     <Compile Include="Infraestructure\IServicioPrecios.cs" />
+    <Compile Include="Infraestructure\Kits\GestorKits.cs" />
+    <Compile Include="Infraestructure\Kits\GestorPreExtractoProducto.cs" />
+    <Compile Include="Infraestructure\Kits\GestorUbicaciones.cs" />
+    <Compile Include="Infraestructure\Kits\IProductoService.cs" />
+    <Compile Include="Infraestructure\Kits\IUbicacionService.cs" />
+    <Compile Include="Infraestructure\Kits\ProductoService.cs" />
+    <Compile Include="Infraestructure\Kits\UbicacionService.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
@@ -581,6 +588,11 @@
     <Compile Include="Models\InventarioCuadre.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Kit.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Kits\PreExtractoProductoDTO.cs" />
+    <Compile Include="Models\Kits\UbicacionProductoDTO.cs" />
     <Compile Include="Models\LinPedidoCmp.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

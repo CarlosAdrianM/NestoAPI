@@ -1,5 +1,4 @@
-﻿using Microsoft.Ajax.Utilities;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Globalization;
@@ -7,8 +6,6 @@ using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Xml;
-using System.Xml.Linq;
-using static System.Net.WebRequestMethods;
 
 namespace NestoAPI.Models
 {
@@ -16,6 +13,7 @@ namespace NestoAPI.Models
     {
         public ProductoDTO()
         {
+            ProductosKit = new List<ProductoKit>();
             Stocks = new List<StockProducto>();
         }
         public string Producto { get; set; }
@@ -32,6 +30,8 @@ namespace NestoAPI.Models
         public string UrlFoto { get; set; }
         public bool RoturaStockProveedor { get; set; }
         public int ClasificacionMasVendidos { get; set; }
+        
+        public ICollection<ProductoKit> ProductosKit { get; set; }
         public ICollection<StockProducto> Stocks { get; set; }
 
         public class StockProducto
@@ -176,5 +176,12 @@ namespace NestoAPI.Models
                 return precioPublico;
             }
         }
-    }    
+    }
+
+    public class ProductoKit
+    {
+        public string ProductoId { get; set; }
+        public int Cantidad { get; set; }
+    }
+
 }

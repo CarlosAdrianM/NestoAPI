@@ -12,12 +12,14 @@ using System.Web.Http.Description;
 using NestoAPI.Models;
 using NestoAPI.Infraestructure;
 using static NestoAPI.Models.Constantes;
+using NestoAPI.Infraestructure.Kits;
 
 namespace NestoAPI.Controllers
 {
     public class ProductosController : ApiController
     {
         private NVEntities db;
+        private readonly IProductoService productoService = new ProductoService();
 
         public ProductosController()
         {
@@ -123,7 +125,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ProductoDTO))]
         public async Task<IHttpActionResult> GetProducto(string empresa, string id, bool fichaCompleta)
         {
-            Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id).ConfigureAwait(false);
+            Producto producto = await db.Productos.Include(p => p.Kits).SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id).ConfigureAwait(false);
             if (producto == null)
             {
                 return NotFound();
@@ -145,20 +147,27 @@ namespace NestoAPI.Controllers
                 Subgrupo = producto.SubGruposProducto.Descripción?.Trim(),
                 RoturaStockProveedor = producto.RoturaStockProveedor
             };
-            
+
+            foreach (var kit in producto.Kits)
+            {
+                productoDTO.ProductosKit.Add(new ProductoKit {
+                    ProductoId = kit.NúmeroAsociado.Trim(),
+                    Cantidad = kit.Cantidad
+                });
+            }
             // Lo dejo medio-hardcoded porque no quiero que los vendedores vean otros almacenes
             if (!producto.Ficticio && fichaCompleta)
             {
-                productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
-                productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
-                productoDTO.Stocks.Add(CalcularStockProducto(id, Constantes.Almacenes.ALCOBENDAS));
+                productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
+                productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
+                productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Almacenes.ALCOBENDAS));
             }            
 
             return Ok(productoDTO);
         }
 
         // GET: api/Productos/5
-        public ICollection<ProductoDTO> GetProducto(string empresa, string filtroNombre, string filtroFamilia, string filtroSubgrupo, string almacen = "")
+        public async Task<ICollection<ProductoDTO>> GetProducto(string empresa, string filtroNombre, string filtroFamilia, string filtroSubgrupo, string almacen = "")
         {
             IQueryable<Producto> productos = db.Productos.Where(p => p.Empresa == empresa && p.Estado >= Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && p.Grupo != Constantes.Productos.GRUPO_MATERIAS_PRIMAS);
             if (filtroNombre != null && filtroNombre.Trim() != "")
@@ -174,7 +183,7 @@ namespace NestoAPI.Controllers
                 productos = productos.Where(p => p.SubGruposProducto.Descripción.Contains(filtroSubgrupo));
             }
 
-            var productosDTO = productos.Select(x=>new ProductoDTO
+            var productosDTO = await productos.Select(x=>new ProductoDTO
             {
                 Producto = x.Número.Trim(),
                 Nombre = x.Nombre.Trim(),
@@ -182,13 +191,13 @@ namespace NestoAPI.Controllers
                 Subgrupo = x.SubGruposProducto.Descripción.Trim(),
                 PrecioProfesional = (decimal)x.PVP,
                 Estado = (short)x.Estado
-            }).ToList();
+            }).ToListAsync();
 
             if (almacen != string.Empty)
             {
                 foreach (var productoDTO in productosDTO)
                 {
-                    productoDTO.Stocks.Add(CalcularStockProducto(productoDTO.Producto, almacen));
+                    productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoDTO.Producto, almacen));
                 }
             }
 
@@ -276,104 +285,115 @@ namespace NestoAPI.Controllers
         }
 
 
-
-        /*
-        // PUT: api/Productos/5
-        [ResponseType(typeof(void))]
-        public async Task<IHttpActionResult> PutProducto(string id, Producto producto)
+        [HttpPost]
+        [ResponseType(typeof(Task<int>))]
+        [Route("api/Productos/MontarKit")]
+        public async Task<IHttpActionResult> PostMontarKit([FromBody] dynamic data)
         {
-            if (!ModelState.IsValid)
+            // Verificar si las propiedades necesarias existen en el objeto dynamic
+            if (data == null || data.empresa == null || data.almacen == null || data.producto == null || data.cantidad == null || data.usuario == null)
             {
-                return BadRequest(ModelState);
+                return BadRequest("Parámetros no válidos");
             }
 
-            if (id != producto.Empresa)
+            // Asignar los valores correctos
+            string empresa = data.empresa;
+            string almacen = data.almacen;
+            string producto = data.producto;
+            int cantidad = data.cantidad;
+            string usuario = data.usuario;
+
+            IUbicacionService ubicacionService = new UbicacionService();
+            GestorKits gestorKits = new GestorKits(productoService, ubicacionService);
+            int traspaso = await gestorKits.MontarKit(empresa, almacen, producto, cantidad, usuario);
+            
+            return Ok(traspaso);
+        }
+
+            /*
+            // PUT: api/Productos/5
+            [ResponseType(typeof(void))]
+            public async Task<IHttpActionResult> PutProducto(string id, Producto producto)
             {
-                return BadRequest();
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+
+                if (id != producto.Empresa)
+                {
+                    return BadRequest();
+                }
+
+                db.Entry(producto).State = EntityState.Modified;
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                }
+                catch (DbUpdateConcurrencyException)
+                {
+                    if (!ProductoExists(id))
+                    {
+                        return NotFound();
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+
+                return StatusCode(HttpStatusCode.NoContent);
             }
 
-            db.Entry(producto).State = EntityState.Modified;
+            // POST: api/Productos
+            [ResponseType(typeof(Producto))]
+            public async Task<IHttpActionResult> PostProducto(Producto producto)
+            {
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
 
-            try
-            {
-                await db.SaveChangesAsync();
+                db.Productos.Add(producto);
+
+                try
+                {
+                    await db.SaveChangesAsync();
+                }
+                catch (DbUpdateException)
+                {
+                    if (ProductoExists(producto.Empresa))
+                    {
+                        return Conflict();
+                    }
+                    else
+                    {
+                        throw;
+                    }
+                }
+
+                return CreatedAtRoute("DefaultApi", new { id = producto.Empresa }, producto);
             }
-            catch (DbUpdateConcurrencyException)
+
+            // DELETE: api/Productos/5
+            [ResponseType(typeof(Producto))]
+            public async Task<IHttpActionResult> DeleteProducto(string id)
             {
-                if (!ProductoExists(id))
+                Producto producto = await db.Productos.FindAsync(id);
+                if (producto == null)
                 {
                     return NotFound();
                 }
-                else
-                {
-                    throw;
-                }
-            }
 
-            return StatusCode(HttpStatusCode.NoContent);
-        }
-
-        // POST: api/Productos
-        [ResponseType(typeof(Producto))]
-        public async Task<IHttpActionResult> PostProducto(Producto producto)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            db.Productos.Add(producto);
-
-            try
-            {
+                db.Productos.Remove(producto);
                 await db.SaveChangesAsync();
+
+                return Ok(producto);
             }
-            catch (DbUpdateException)
-            {
-                if (ProductoExists(producto.Empresa))
-                {
-                    return Conflict();
-                }
-                else
-                {
-                    throw;
-                }
-            }
+            */
 
-            return CreatedAtRoute("DefaultApi", new { id = producto.Empresa }, producto);
-        }
 
-        // DELETE: api/Productos/5
-        [ResponseType(typeof(Producto))]
-        public async Task<IHttpActionResult> DeleteProducto(string id)
-        {
-            Producto producto = await db.Productos.FindAsync(id);
-            if (producto == null)
-            {
-                return NotFound();
-            }
-
-            db.Productos.Remove(producto);
-            await db.SaveChangesAsync();
-
-            return Ok(producto);
-        }
-        */
-
-        private ProductoDTO.StockProducto CalcularStockProducto(string producto, string almacen)
-        {
-            ProductoDTO.StockProducto stockProducto = new ProductoDTO.StockProducto
-            {
-                Almacen = almacen,
-                Stock = db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
-                PendienteEntregar = db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
-                PendienteRecibir = db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && e.Enviado == true).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum(),
-                FechaEstimadaRecepcion = (DateTime)db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && ((e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && e.Enviado == true)).Select(e => e.FechaRecepción).DefaultIfEmpty(DateTime.MaxValue).Min(),
-                PendienteReposicion = db.PreExtrProductos.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum()
-            };
-
-            return stockProducto;
-        }
 
         // GET: api/Productos/5
         [ResponseType(typeof(ProductoDTO))]

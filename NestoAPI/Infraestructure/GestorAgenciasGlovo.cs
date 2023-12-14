@@ -44,7 +44,7 @@ namespace NestoAPI.Infraestructure
             }
 
 
-            if (!gestorStocks.HayStockDisponibleDeTodo(pedido))
+            if (!gestorStocks.HayStockDisponibleDeTodo(pedido) || !pedido.Lineas.Any())
             {
                 return null;
             }

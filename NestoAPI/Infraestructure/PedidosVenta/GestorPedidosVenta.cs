@@ -310,13 +310,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         // A las 11h de la mañana se cierra la ruta y los pedidos que se metan son ya para el día siguiente
-        internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta)
+        internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen = "")
         {
+            if (string.IsNullOrEmpty(almacen))
+            {
+                almacen = Constantes.Almacenes.ALGETE;
+            }
             DateTime fechaMinima;
 
-            if (ruta != Constantes.Pedidos.RUTA_GLOVO && GestorImportesMinimos.esRutaConPortes(ruta))
+            if (ruta != Constantes.Pedidos.RUTA_GLOVO && GestorImportesMinimos.esRutaConPortes(ruta) && almacen == Constantes.Almacenes.ALGETE)
             {
-                fechaMinima = DateTime.Now.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS ? DateTime.Today : DateTime.Today.AddDays(1);
+                var diasSiguienteRuta = DateTime.Today.DayOfWeek == DayOfWeek.Friday ? 3 : 1;
+                fechaMinima = DateTime.Now.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS ? DateTime.Today : DateTime.Today.AddDays(diasSiguienteRuta);
             }
             else
             {

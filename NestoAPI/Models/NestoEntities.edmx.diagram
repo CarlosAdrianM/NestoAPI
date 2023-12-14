@@ -256,6 +256,10 @@
         <EntityTypeShape EntityType="NVModel.EquipoVenta" Width="1.5" PointX="5.25" PointY="83.25" />
         <AssociationConnector Association="NVModel.FK_EquiposVenta_Vendedores" />
         <AssociationConnector Association="NVModel.FK_EquiposVenta_Vendedores1" />
+        <EntityTypeShape EntityType="NVModel.Kit" Width="1.5" PointX="19.875" PointY="53.5" />
+        <AssociationConnector Association="NVModel.FK_KITS_Empresas" />
+        <AssociationConnector Association="NVModel.FK_KITS_Productos" />
+        <AssociationConnector Association="NVModel.FK_KITS_Productos1" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

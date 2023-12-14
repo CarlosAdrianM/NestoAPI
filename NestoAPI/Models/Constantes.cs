@@ -79,6 +79,11 @@ namespace NestoAPI.Models
 
         }
 
+        public static class DiariosProducto
+        {
+            public const string MONTAR_KIT = "_MontarKit";
+        }
+
         public static class Empresas
         {
             public const string DELEGACION_POR_DEFECTO = "ALG";
@@ -207,6 +212,9 @@ namespace NestoAPI.Models
 
         public static class Ubicaciones
         {
+            //public const int ESTADO_A_INSERTAR = -100;
+            public const int ESTADO_A_MODIFICAR_CANTIDAD = -101;
+            public const int ESTADO_REGISTRO_MONTAR_KITS = -102;
             public const int UBICADO = 0;
             public const int PENDIENTE_UBICAR = 2;
             public const int RESERVADO_PICKING = 3;

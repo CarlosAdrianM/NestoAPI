@@ -126,7 +126,7 @@ namespace NestoAPI.Infraestructure
             // Si tiene varios plazos y se podría servir junto, ponemos en copia a administración
             if (mail.Body.Contains("¡¡¡ ATENCIÓN !!!"))
             {
-                if (pedido.Prepagos.Any() || db.PlazosPago.Where(f => f.Empresa == pedido.empresa && f.Número == pedido.formaPago && f.Nº_Plazos > 1).Any())
+                if (pedido.Prepagos.Any() || db.PlazosPago.Where(f => f.Empresa == pedido.empresa && f.Número == pedido.plazosPago && f.Nº_Plazos > 1).Any())
                 {
                     mail.CC.Add(Constantes.Correos.CORREO_ADMON);
                 }

@@ -1069,6 +1069,8 @@ namespace NestoAPI.Controllers
             return Ok(lineas);
         }
 
+
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)
@@ -1140,6 +1142,16 @@ namespace NestoAPI.Controllers
             
             return pedidoUnido;
         }
+
+        [HttpGet]
+        [ResponseType(typeof(DateTime))]
+        [Route("api/PedidosVenta/FechaAjustada")]
+        public IHttpActionResult CalcularFechaEntrega(DateTime fecha, string ruta, string almacen)
+        {
+            var fechaAjustada = gestor.FechaEntregaAjustada(fecha, ruta, almacen);
+            return Ok(fechaAjustada);
+        }
+
 
         private void errorPersonalizado(string mensajePersonalizado)
         {

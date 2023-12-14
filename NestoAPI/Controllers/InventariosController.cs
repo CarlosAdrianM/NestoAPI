@@ -98,6 +98,11 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            if (string.IsNullOrWhiteSpace(inventario.Empresa) || string.IsNullOrWhiteSpace(inventario.Número))
+            {
+                throw new Exception("Es obligatorio especificar el producto");
+            }
+
             //Producto producto = await db.Productos.SingleAsync(p => p.Empresa == inventario.Empresa && p.Número == inventario.Número);
             Producto producto = buscarProducto(inventario.Empresa, inventario.Número);
 
