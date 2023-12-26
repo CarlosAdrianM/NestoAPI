@@ -20,9 +20,9 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 
         public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
             {
-                new EtiquetaGeneral(new ServicioComisionesAnualesComun()),
-                new EtiquetaLisap(new ServicioComisionesAnualesComun()),
-                new EtiquetaKach(new ServicioComisionesAnualesComun())
+                new EtiquetaGeneral(new ServicioComisionesAnualesComun() as IServicioComisionesAnualesVenta),
+                new EtiquetaLisap(new ServicioComisionesAnualesComun() as IServicioComisionesAnualesVenta),
+                new EtiquetaKach(new ServicioComisionesAnualesComun() as IServicioComisionesAnualesVenta)
             };
 
         // El cálculo de proyecciones de 2019 sigue siendo perfecto para 2020

@@ -19,10 +19,11 @@ namespace NestoAPI.Models.Comisiones
 
         public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
         {
-            new EtiquetaGeneral(servicioComisiones),
-            new EtiquetaUnionLaser(servicioComisiones),
-            new EtiquetaFamiliasEspeciales(servicioComisiones),
-            new EtiquetaOtrosAparatos(servicioComisiones)
+            new EtiquetaGeneral(servicioComisiones as IServicioComisionesAnualesVenta),
+            new EtiquetaUnionLaser(servicioComisiones as IServicioComisionesAnualesVenta),
+            new EtiquetaFamiliasEspeciales(servicioComisiones as IServicioComisionesAnualesVenta),
+            new EtiquetaOtrasExclusivas(servicioComisiones as IServicioComisionesAnualesVenta),
+            new EtiquetaOtrosAparatos(servicioComisiones as IServicioComisionesAnualesVenta)
         };
 
         public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(servicioComisiones);
@@ -41,9 +42,17 @@ namespace NestoAPI.Models.Comisiones
             {
                 etiqueta = "Unión Láser";
             }
-            else if (linea.Familia != null && EtiquetaFamiliasEspeciales.FamiliasEspeciales.Contains(linea.Familia.ToLower().Trim()))
+            else if (linea.Familia != null && EtiquetaFamiliasEspecialesEstado9.FamiliasIncluidas.Contains(linea.Familia.ToLower().Trim()))
             {
-                etiqueta = "Especiales";
+                etiqueta = "Familias Especiales Estado 9";
+            }
+            else if (linea.Familia != null && EtiquetaFamiliasEspeciales.FamiliasIncluidas.Contains(linea.Familia.ToLower().Trim()))
+            {
+                etiqueta = "Familias Especiales";
+            }
+            else if (linea.Familia != null && EtiquetaOtrasExclusivas.FamiliasIncluidas.Contains(linea.Familia.ToLower().Trim()))
+            {
+                etiqueta = "Otras Exclusivas";
             }
             else
             {
@@ -178,113 +187,6 @@ namespace NestoAPI.Models.Comisiones
                     Desde = 371238.06M,
                     Hasta = decimal.MaxValue,
                     Tipo = .0925M,
-                    TipoExtra = .02M
-                }
-            };
-
-            Collection<TramoComision> tramosTelefono = new Collection<TramoComision>
-            {
-                new TramoComision
-                {
-                    Desde = 0M,
-                    Hasta = 47250M,
-                    Tipo = .0M,
-                    TipoExtra = .0M
-                },new TramoComision
-                {
-                    Desde = 47250.01M,
-                    Hasta = 101717.89M,
-                    Tipo = .006M,
-                    TipoExtra = .0005M
-                },new TramoComision
-                {
-                    Desde = 101717.90M,
-                    Hasta = 107100.01M,
-                    Tipo = .012M,
-                    TipoExtra = .001M
-                },
-                new TramoComision
-                {
-                    Desde = 107100.02M,
-                    Hasta = 127391.26M,
-                    Tipo = .0145M,
-                    TipoExtra = .002M
-                },
-                new TramoComision
-                {
-                    Desde = 127391.27M,
-                    Hasta = 140070.01M,
-                    Tipo = .0195M,
-                    TipoExtra = .003M
-                },
-                new TramoComision
-                {
-                    Desde = 140070.02M,
-                    Hasta = 152748.76M,
-                    Tipo = .0225M,
-                    TipoExtra = .004M
-                },
-                new TramoComision
-                {
-                    Desde = 152748.77M,
-                    Hasta = 160597.51M,
-                    Tipo = .0306M,
-                    TipoExtra = .005M
-                },
-                new TramoComision
-                {
-                    Desde = 160597.52M,
-                    Hasta = 169653.76M,
-                    Tipo = .033M,
-                    TipoExtra = .008M
-                },
-                new TramoComision
-                {
-                    Desde = 169653.77M,
-                    Hasta = 185351.26M,
-                    Tipo = .0355M,
-                    TipoExtra = .011M
-                },
-                new TramoComision
-                {
-                    Desde = 185351.27M,
-                    Hasta = 195615.01M,
-                    Tipo = .0370M,
-                    TipoExtra = .014M
-                },
-                new TramoComision
-                {
-                    Desde = 195615.02M,
-                    Hasta = 204671.26M,
-                    Tipo = .0395M,
-                    TipoExtra = .017M
-                },
-                new TramoComision
-                {
-                    Desde = 204671.27M,
-                    Hasta = 231065.57M,
-                    Tipo = .042M,
-                    TipoExtra = .02M
-                },
-                new TramoComision
-                {
-                    Desde = 231065.58M,
-                    Hasta = 255157.72M,
-                    Tipo = .045M,
-                    TipoExtra = .02M
-                },
-                new TramoComision
-                {
-                    Desde = 255157.73M,
-                    Hasta = 277059.67M,
-                    Tipo = .055M,
-                    TipoExtra = .02M
-                },
-                new TramoComision
-                {
-                    Desde = 277059.68M,
-                    Hasta = decimal.MaxValue,
-                    Tipo = .0671M,
                     TipoExtra = .02M
                 }
             };
@@ -505,10 +407,6 @@ namespace NestoAPI.Models.Comisiones
             if (vendedor == "DV" || vendedor == "JE" || vendedor == "RFG" || vendedor == "IM" || vendedor == "JGP" || vendedor == "MRM" || vendedor == "RAS")
             {
                 return tramosCalle;
-            }
-            else if (vendedor == "AGR" || vendedor == "MPP" || vendedor == "PA" || vendedor == "KCP") 
-            {
-                return tramosTelefono;
             }
             else if (vendedor == "AL" || vendedor == "CAM" || vendedor == "MR" || vendedor == "PI" || vendedor == "SC")
             {

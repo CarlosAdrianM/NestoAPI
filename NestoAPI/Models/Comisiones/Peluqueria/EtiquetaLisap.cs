@@ -6,9 +6,9 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
     public class EtiquetaLisap : IEtiquetaComision
     {
         private IQueryable<vstLinPedidoVtaComisione> consulta;
-        private readonly IServicioComisionesAnuales _servicioComisiones;
+        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
 
-        public EtiquetaLisap(IServicioComisionesAnuales servicioComisiones)
+        public EtiquetaLisap(IServicioComisionesAnualesVenta servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }

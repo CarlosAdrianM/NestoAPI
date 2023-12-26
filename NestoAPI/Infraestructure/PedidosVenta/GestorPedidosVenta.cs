@@ -261,7 +261,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Producto = linea.Producto,
                 Texto = linea.texto.Length > 50 ? linea.texto.Substring(0, 50) : linea.texto, // porque 50 es la longitud del campo
                 Cantidad = (short)linea.Cantidad,
-                Fecha_Entrega = FechaEntregaAjustada(linea.fechaEntrega.Date, ruta),
+                Fecha_Entrega = FechaEntregaAjustada(linea.fechaEntrega.Date, ruta, linea.almacen),
                 Precio = linea.PrecioUnitario,
                 PrecioTarifa = precioTarifa,
                 Coste = coste,
@@ -312,6 +312,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         // A las 11h de la mañana se cierra la ruta y los pedidos que se metan son ya para el día siguiente
         internal DateTime FechaEntregaAjustada(DateTime fecha, string ruta, string almacen = "")
         {
+            fecha = new DateTime(fecha.Year, fecha.Month, fecha.Day);
             if (string.IsNullOrEmpty(almacen))
             {
                 almacen = Constantes.Almacenes.ALGETE;

@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Web;
 
 namespace NestoAPI.Models.Picking
 {
@@ -17,7 +16,7 @@ namespace NestoAPI.Models.Picking
             {
                 int cantidadReservadaTienda = 0;
                 StockProducto stock = stocks.Where(s => s.Producto == linea.Producto).SingleOrDefault();
-                if (linea.Almacen == Constantes.Productos.ALMACEN_TIENDA && stock.StockTienda > 0)
+                if ((linea.Almacen == Constantes.Productos.ALMACEN_TIENDA || linea.Almacen == Constantes.Almacenes.ALCOBENDAS)&& stock.StockTienda > 0)
                 {
                     if (stock.StockTienda >= linea.Cantidad)
                     {

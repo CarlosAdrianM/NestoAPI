@@ -18,10 +18,10 @@ namespace NestoAPI.Models.Comisiones
 
         public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
             {
-                new EtiquetaGeneral(servicioComisiones),
-                new EtiquetaUnionLaser(servicioComisiones),
+                new EtiquetaGeneral(servicioComisiones as IServicioComisionesAnualesVenta),
+                new EtiquetaUnionLaser(servicioComisiones as IServicioComisionesAnualesVenta),
                 new EtiquetaEvaVisnu(new ServicioComisionesAnualesComun()),
-                new EtiquetaOtrosAparatos(servicioComisiones)
+                new EtiquetaOtrosAparatos(servicioComisiones as IServicioComisionesAnualesVenta)
             };
 
         // El cálculo de proyecciones de 2019 sigue perfecto para 2022

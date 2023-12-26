@@ -260,6 +260,7 @@
         <AssociationConnector Association="NVModel.FK_KITS_Empresas" />
         <AssociationConnector Association="NVModel.FK_KITS_Productos" />
         <AssociationConnector Association="NVModel.FK_KITS_Productos1" />
+        <EntityTypeShape EntityType="NVModel.PreContabilidad" Width="1.5" PointX="14.375" PointY="0.75" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

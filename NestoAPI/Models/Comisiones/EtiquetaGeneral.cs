@@ -6,9 +6,9 @@ namespace NestoAPI.Models.Comisiones.Estetica
     public class EtiquetaGeneral : IEtiquetaComision
     {
         IQueryable<vstLinPedidoVtaComisione> consulta;
-        private readonly IServicioComisionesAnuales _servicioComisiones;
+        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
 
-        public EtiquetaGeneral(IServicioComisionesAnuales servicioComisiones)
+        public EtiquetaGeneral(IServicioComisionesAnualesVenta servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }

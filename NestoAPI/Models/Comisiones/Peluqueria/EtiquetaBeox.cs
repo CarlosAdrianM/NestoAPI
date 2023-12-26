@@ -1,29 +1,28 @@
 ﻿using System;
 using System.Linq;
 
-namespace NestoAPI.Models.Comisiones.Estetica
+namespace NestoAPI.Models.Comisiones.Peluqueria
 {
-    public class EtiquetaOtrosAparatos : IEtiquetaComision, ICloneable
+    public class EtiquetaBeox : IEtiquetaComision
     {
-        private const decimal TIPO_FIJO_OTROSAPARATOS = .02M;
+        private IQueryable<vstLinPedidoVtaComisione> consulta;
+        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
 
-        IQueryable<vstLinPedidoVtaComisione> consulta;
-        private IServicioComisionesAnualesVenta _servicioComisiones;
-
-        public EtiquetaOtrosAparatos(IServicioComisionesAnualesVenta servicioComisiones)
+        public EtiquetaBeox(IServicioComisionesAnualesVenta servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }
 
-        public string Nombre => "Otros Aparatos";
+        public string Nombre => "Beox";
 
         public decimal Venta { get; set; }
         public decimal Tipo { get; set; }
         public decimal Comision
         {
             get => Math.Round(Venta * Tipo, 2);
-            set => throw new Exception("La comisión de Otros Aparatos no se puede fijar manualmente");
+            set => throw new Exception("La comisión de Beox no se puede fijar manualmente");
         }
+
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
@@ -33,12 +32,17 @@ namespace NestoAPI.Models.Comisiones.Estetica
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
 
+            if (fechaDesde < new DateTime(2018, 4, 1))
+            {
+                throw new Exception("Las comisiones anuales de peluquería entraron en vigor el 01/04/18");
+            }
+
             CrearConsulta(vendedor);
 
             return _servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
-        
-        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+
+        public IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -53,19 +57,16 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         private void CrearConsulta(string vendedor)
         {
-            var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
-
             consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
                 .Where(l =>
-                    listaVendedores.Contains(l.Vendedor) &&
-                    l.Grupo.ToLower() == "otros aparatos" &&
-                    l.EstadoFamilia == 0
+                    l.Familia.ToLower() == "beox" &&
+                    l.Vendedor == vendedor
                 );
         }
 
-        public decimal SetTipo(TramoComision tramo) => TIPO_FIJO_OTROSAPARATOS;
+        public decimal SetTipo(TramoComision tramo) => tramo.TipoExtra;
 
-        public object Clone() => new EtiquetaOtrosAparatos(_servicioComisiones)
+        public object Clone() => new EtiquetaLisap(_servicioComisiones)
         {
             Venta = this.Venta,
             Tipo = this.Tipo

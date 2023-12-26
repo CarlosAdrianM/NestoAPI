@@ -327,8 +327,10 @@
     <Compile Include="Controllers\PedidosCompraController.cs" />
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\PickingController.cs" />
+    <Compile Include="Controllers\PlanCuentasController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
+    <Compile Include="Controllers\PreContabilidadesController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />
     <Compile Include="Controllers\RecursosHumanosController.cs" />
@@ -349,6 +351,9 @@
     <Compile Include="Infraestructure\ApplicationUserManager.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
+    <Compile Include="Infraestructure\Contabilidad\ContabilidadService.cs" />
+    <Compile Include="Infraestructure\Contabilidad\GestorContabilidad.cs" />
+    <Compile Include="Infraestructure\Contabilidad\IContabilidadService.cs" />
     <Compile Include="Infraestructure\Depositos\GestorDepositos.cs" />
     <Compile Include="Infraestructure\Depositos\IServicioDeposito.cs" />
     <Compile Include="Infraestructure\Depositos\ServicioDeposito.cs" />
@@ -467,6 +472,7 @@
     </Compile>
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesTelefono2024.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaEvaVisnu.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaFamiliasEspeciales.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2022.cs" />
@@ -474,6 +480,8 @@
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2020.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2019.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2024.cs" />
+    <Compile Include="Models\Comisiones\Estetica\EtiquetaFamiliasEspecialesEstado9.cs" />
+    <Compile Include="Models\Comisiones\Estetica\EtiquetaOtrasExclusivas.cs" />
     <Compile Include="Models\Comisiones\EtiquetaGeneral.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaOtrosAparatos.cs" />
     <Compile Include="Models\Comisiones\Estetica\EtiquetaUnionLaser.cs" />
@@ -481,6 +489,8 @@
     <Compile Include="Models\Comisiones\IEtiquetaComision.cs" />
     <Compile Include="Models\Comisiones\IComisionesAnuales.cs" />
     <Compile Include="Models\Comisiones\IServicioComisionesAnuales.cs" />
+    <Compile Include="Models\Comisiones\Peluqueria\ComisionesAnualesPeluqueria2024.cs" />
+    <Compile Include="Models\Comisiones\Peluqueria\EtiquetaBeox.cs" />
     <Compile Include="Models\Comisiones\Peluqueria\EtiquetaKach.cs" />
     <Compile Include="Models\Comisiones\Peluqueria\EtiquetaLisap.cs" />
     <Compile Include="Models\Comisiones\Peluqueria\ComisionesAnualesPeluqueria2021.cs" />
@@ -496,6 +506,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Constantes.cs" />
+    <Compile Include="Models\Contabilidad\CuentaContableDTO.cs" />
     <Compile Include="Models\ContadorGlobal.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -692,6 +703,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\PlazoPago.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\PreContabilidad.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\PreExtrProducto.cs">

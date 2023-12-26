@@ -7,12 +7,12 @@ namespace NestoAPI.Models.Comisiones.Estetica
     {
         
         private const decimal TIPO_FIJO_UNIONLASER = .1M;
-        private readonly IServicioComisionesAnuales _servicioComisiones;
+        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
 
         private IQueryable<vstLinPedidoVtaComisione> consulta;
         private IQueryable<vstLinPedidoVtaComisione> consultaRenting;
 
-        public EtiquetaUnionLaser(IServicioComisionesAnuales servicioComisiones)
+        public EtiquetaUnionLaser(IServicioComisionesAnualesVenta servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }

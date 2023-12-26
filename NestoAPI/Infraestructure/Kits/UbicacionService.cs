@@ -19,7 +19,7 @@ namespace NestoAPI.Infraestructure.Kits
                 using (var transaction = db.Database.BeginTransaction())
                 {
                     var contador = db.ContadoresGlobales.Single();
-                    var traspaso = contador.TraspasoAlmacén++;
+                    var traspaso = ++contador.TraspasoAlmacén;
 
                     try
                     {
@@ -28,6 +28,7 @@ namespace NestoAPI.Infraestructure.Kits
 
                         foreach (var preExtracto in preExtractosUbicados)
                         {
+                            bool elAlmacenTieneControlDeUbicaciones = preExtracto.Almacen == Constantes.Almacenes.ALGETE;
                             foreach (var ubicacion in preExtracto.Ubicaciones)
                             {
                                 if (ubicacion.Estado == Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS)
@@ -54,7 +55,7 @@ namespace NestoAPI.Infraestructure.Kits
                                         Fecha_Modificación = DateTime.Now
                                     });
                                 }
-                                if (ubicacion.Id == 0)
+                                if (ubicacion.Id == 0 && elAlmacenTieneControlDeUbicaciones)
                                 {
                                     var nuevaUbicacion = new Ubicacion
                                     {
@@ -71,7 +72,7 @@ namespace NestoAPI.Infraestructure.Kits
                                     };
                                     db.Ubicaciones.Add(nuevaUbicacion);
                                 } 
-                                else if (ubicacion.Estado == Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS)
+                                else if (ubicacion.Estado == Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS && elAlmacenTieneControlDeUbicaciones)
                                 {
                                     var ubicacionModificada = db.Ubicaciones.Find(ubicacion.Id);
 
@@ -85,7 +86,7 @@ namespace NestoAPI.Infraestructure.Kits
                                         db.Entry(ubicacionModificada).Property(x => x.NºTraspaso).IsModified = true;
                                     }                                    
                                 }
-                                else if (ubicacion.Estado == Constantes.Ubicaciones.ESTADO_A_MODIFICAR_CANTIDAD)
+                                else if (ubicacion.Estado == Constantes.Ubicaciones.ESTADO_A_MODIFICAR_CANTIDAD && elAlmacenTieneControlDeUbicaciones)
                                 {
                                     // Obtener la entidad existente del contexto por su clave primaria
                                     var ubicacionModificada = db.Ubicaciones.Find(ubicacion.Id);

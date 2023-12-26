@@ -5,10 +5,10 @@ namespace NestoAPI.Models.Comisiones.Estetica
 {
     public class EtiquetaFamiliasEspeciales : IEtiquetaComision, ICloneable
     {
-        private IServicioComisionesAnuales _servicioComisiones;
+        private IServicioComisionesAnualesVenta _servicioComisiones;
         private IQueryable<vstLinPedidoVtaComisione> consulta;
 
-        public EtiquetaFamiliasEspeciales(IServicioComisionesAnuales servicioComisiones)
+        public EtiquetaFamiliasEspeciales(IServicioComisionesAnualesVenta servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }
@@ -17,7 +17,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
         {
             get
             {
-                return "Especiales";
+                return "Familias Especiales";
             }
         }
 
@@ -68,7 +68,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             
             consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
                 .Where(l =>
-                    FamiliasEspeciales.Contains(l.Familia.ToLower()) &&
+                    FamiliasIncluidas.Contains(l.Familia.ToLower()) &&
                     !l.Grupo.ToLower().Equals("otros aparatos", StringComparison.OrdinalIgnoreCase) &&
                     listaVendedores.Contains(l.Vendedor)
                 );
@@ -79,7 +79,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             return tramo.TipoExtra;
         }
 
-        public static string[] FamiliasEspeciales = { "eva visnu", "santhilea", "max2origin", "mina", "apraise", "maderas", "diagmyskin", "faby", "cursos" };
+        public static string[] FamiliasIncluidas = { "eva visnu", "santhilea", "max2origin", "mina", "apraise", "maderas", "diagmyskin", "faby", "cursos", "lisap" };
 
         public object Clone()
         {

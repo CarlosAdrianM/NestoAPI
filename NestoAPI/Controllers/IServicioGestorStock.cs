@@ -1,6 +1,6 @@
-﻿namespace NestoAPI.Controllers
-{
-    internal interface IServicioGestorStock
-    {
-    }
-}
+﻿//namespace NestoAPI.Controllers
+//{
+//    internal interface IServicioGestorStock
+//    {
+//    }
+//}

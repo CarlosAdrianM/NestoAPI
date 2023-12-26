@@ -1,5 +1,4 @@
-﻿using static NestoAPI.Models.Constantes;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace NestoAPI.Models
 {
@@ -76,7 +75,8 @@ namespace NestoAPI.Models
             public const string CUENTA_PORTES_GLOVO = "62400017";
             public const string CUENTA_PORTES_CEX = "62400005";
             public const string CUENTA_PORTES_ONTIME = "62400002";
-
+            public const short ESTADO_ACTIVA = 0;
+            public const short NIVEL_MAXIMO = 8;
         }
 
         public static class DiariosProducto

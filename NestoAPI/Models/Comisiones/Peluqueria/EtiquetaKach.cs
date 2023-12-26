@@ -7,9 +7,9 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
     {
         private IQueryable<vstLinPedidoVtaComisione> consulta;
 
-        private readonly IServicioComisionesAnuales _servicioComisiones;
+        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
 
-        public EtiquetaKach(IServicioComisionesAnuales servicioComisiones)
+        public EtiquetaKach(IServicioComisionesAnualesVenta servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }

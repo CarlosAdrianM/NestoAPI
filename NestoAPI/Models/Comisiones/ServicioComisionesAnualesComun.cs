@@ -6,7 +6,7 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ServicioComisionesAnualesComun : IServicioComisionesAnuales
+    public class ServicioComisionesAnualesComun : IServicioComisionesAnualesVenta
     {
         const string GENERAL = "General";
         private readonly ServicioVendedores _servicioVendedores;

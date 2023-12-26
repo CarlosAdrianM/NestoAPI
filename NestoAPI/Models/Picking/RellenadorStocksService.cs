@@ -19,7 +19,7 @@ namespace NestoAPI.Models.Picking
             {
                 Producto = s,
                 StockDisponible = db.ExtractosProducto.Where(e => e.Número == s && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO).Select(l => (int)l.Cantidad).DefaultIfEmpty(0).Sum(),
-                StockTienda = db.ExtractosProducto.Where(e => e.Número == s && e.Almacén == Constantes.Productos.ALMACEN_TIENDA).Select(l => (int)l.Cantidad).DefaultIfEmpty(0).Sum()
+                StockTienda = db.ExtractosProducto.Where(e => e.Número == s && (e.Almacén == Constantes.Productos.ALMACEN_TIENDA || e.Almacén == Constantes.Almacenes.ALCOBENDAS)).Select(l => (int)l.Cantidad).DefaultIfEmpty(0).Sum()
             }).ToList();
             return stocks;
         }

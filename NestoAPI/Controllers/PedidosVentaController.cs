@@ -481,7 +481,7 @@ namespace NestoAPI.Controllers
 
                 if (lineaEncontrada == null || (lineaEncontrada.Cantidad == 0 && linea.Cantidad != 0))
                 {
-                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
+                    if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén)))
                     {
                         errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking");
                     }
@@ -559,7 +559,7 @@ namespace NestoAPI.Controllers
                     if (modificado)
                     {
                         hayAlgunaLineaModificada = true;
-                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta)))
+                        if (linea.Picking != 0 || (algunaLineaTienePicking && DateTime.Today < this.gestor.FechaEntregaAjustada(linea.Fecha_Entrega, pedido.ruta, linea.Almacén)))
                         {
                             errorPersonalizado("No se puede modificar la línea " + linea.Nº_Orden.ToString() + " porque ya tiene picking");
                         }
@@ -788,7 +788,7 @@ namespace NestoAPI.Controllers
 
         public void ComprobarSiSePuedenInsertarLineas(PedidoVentaDTO pedido, bool algunaLineaTienePicking, LineaPedidoVentaDTO linea)
         {
-            if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta) <= DateTime.Today && DateTime.Now.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
+            if (algunaLineaTienePicking && gestor.FechaEntregaAjustada(linea.fechaEntrega, pedido.ruta, linea.almacen) <= DateTime.Today && DateTime.Now.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
             {
                 errorPersonalizado("No se pueden insertar líneas porque son más de las " + Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS.ToString() + "h. y tiene fecha de entrega " + linea.fechaEntrega.ToShortDateString());
             }
@@ -900,10 +900,10 @@ namespace NestoAPI.Controllers
                 {
                     linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
                 }
-                if (linea.almacen == Constantes.Productos.ALMACEN_TIENDA)
+                if (linea.almacen != Constantes.Productos.ALMACEN_POR_DEFECTO)
                 {
                     linea.vistoBueno = true;
-                    linea.fechaEntrega = DateTime.Today;
+                    //linea.fechaEntrega = DateTime.Today;
                 }
                 linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
                 //linea.BaseImponible = linPedido.Base_Imponible;
