@@ -1,31 +1,29 @@
 ﻿using NestoAPI.Models.Comisiones.Estetica;
+using NestoAPI.Models.Comisiones.Estetica.Etiquetas;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ComisionesAnualesEstetica2022 : IComisionesAnuales
+    public class ComisionesAnualesEstetica2022 : ComisionesAnualesBase, IComisionesAnuales
     {
-        private readonly IServicioComisionesAnuales servicioComisiones;
         public ComisionesAnualesEstetica2022(IServicioComisionesAnuales servicioComisiones)
+            : base(servicioComisiones)
         {
-            this.servicioComisiones = servicioComisiones;
-            Etiquetas = NuevasEtiquetas;            
+            
         }
-
-        public ICollection<IEtiquetaComision> Etiquetas { get; set; }
-
-        public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
+        
+        public override ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
             {
-                new EtiquetaGeneral(servicioComisiones as IServicioComisionesAnualesVenta),
-                new EtiquetaUnionLaser(servicioComisiones as IServicioComisionesAnualesVenta),
+                new EtiquetaGeneral(_servicio),
+                new EtiquetaUnionLaser(_servicio),
                 new EtiquetaEvaVisnu(new ServicioComisionesAnualesComun()),
-                new EtiquetaOtrosAparatos(servicioComisiones as IServicioComisionesAnualesVenta)
+                new EtiquetaOtrosAparatos(_servicio)
             };
 
         // El cálculo de proyecciones de 2019 sigue perfecto para 2022
-        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(servicioComisiones);
+        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(this);
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
         {
@@ -49,12 +47,7 @@ namespace NestoAPI.Models.Comisiones
             }
             return etiqueta;
         }
-
-        public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
-        {
-            return servicioComisiones.LeerResumenAnno(NuevasEtiquetas, vendedor, anno);
-        }
-
+        
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
         {
             vendedor = vendedor.ToUpper();

@@ -16,14 +16,15 @@ namespace NestoAPI.Tests.Models.Comisiones
         const string OTROS_APARATOS = "Otros Aparatos";
 
         IComisionesAnuales comisiones = A.Fake<IComisionesAnuales>();
-        IEtiquetaComision etiquetaGeneral = A.Fake<IEtiquetaComision>();
-        IEtiquetaComision etiquetaUnionLaser = A.Fake<IEtiquetaComision>();
-        IEtiquetaComision etiquetaEvaVisnu = A.Fake<IEtiquetaComision>();
-        IEtiquetaComision etiquetaOtrosAparatos = A.Fake<IEtiquetaComision>();
-        IEtiquetaComision etiquetaGeneral2 = A.Fake<IEtiquetaComision>();
-        IEtiquetaComision etiquetaUnionLaser2 = A.Fake<IEtiquetaComision>();
-        IEtiquetaComision etiquetaEvaVisnu2 = A.Fake<IEtiquetaComision>();
-        IEtiquetaComision etiquetaOtrosAparatos2 = A.Fake<IEtiquetaComision>();
+        IEtiquetaComisionVenta etiquetaGeneral = A.Fake<IEtiquetaComisionVenta>();
+        IEtiquetaComisionVenta etiquetaUnionLaser = A.Fake<IEtiquetaComisionVenta>();
+        IEtiquetaComisionVenta etiquetaEvaVisnu = A.Fake<IEtiquetaComisionVenta>();
+        IEtiquetaComisionVenta etiquetaOtrosAparatos = A.Fake<IEtiquetaComisionVenta>();
+        IEtiquetaComisionVenta etiquetaGeneral2 = A.Fake<IEtiquetaComisionVenta>();
+        IEtiquetaComisionVenta etiquetaUnionLaser2 = A.Fake<IEtiquetaComisionVenta>();
+        IEtiquetaComisionVenta etiquetaEvaVisnu2 = A.Fake<IEtiquetaComisionVenta>();
+        IEtiquetaComisionVenta etiquetaOtrosAparatos2 = A.Fake<IEtiquetaComisionVenta>();
+
 
         public VendedorComisionAnualTest()
         {
@@ -56,7 +57,8 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenEstaVacioLaProyeccionEsLaVentaPorDoce()
         {
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(1000);
+            IEtiquetaComisionVenta etiquetaGeneralLeida = comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta;
+            A.CallTo(() => etiquetaGeneralLeida.LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(1000);
             A.CallTo(() => comisiones.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
             {
                 new TramoComision
@@ -90,7 +92,8 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenEstaVacioPeroNoEstamosEnEneroLaProyeccionEsLaVentaProporcional()
         {
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(1000);
+            IEtiquetaComisionVenta etiquetaGeneralLeida = comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta;
+            A.CallTo(() => etiquetaGeneralLeida.LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(1000);
             A.CallTo(() => comisiones.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
             {
                 new TramoComision
@@ -124,7 +127,8 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenTieneUnMesLaProyeccionEsLaVentaAcumuladaPorSeis()
         {
-            IEtiquetaComision etiqueta = A.Fake<IEtiquetaComision>();
+            IEtiquetaComisionVenta etiquetaGeneralLeida = comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta;
+            IEtiquetaComisionVenta etiqueta = A.Fake<IEtiquetaComisionVenta>();
             A.CallTo(() => etiqueta.Nombre).Returns("General");
             Collection<IEtiquetaComision> etiquetas = new Collection<IEtiquetaComision>()
             {
@@ -136,12 +140,12 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Vendedor = "NV",
                 Etiquetas = etiquetas
             };
-            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 500;
+            (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta = 500;
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
             {
                 resumen
             };
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(1000);
+            A.CallTo(() => etiquetaGeneralLeida.LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(1000);
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
             A.CallTo(() => comisiones.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
             {
@@ -177,7 +181,7 @@ namespace NestoAPI.Tests.Models.Comisiones
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenNoEstaVacioPeroElMesEsAnteriorAlPrimeroDevuelveVacio()
         {
             //ESTO NO FUNCIONA, DEBERÍA FALLAR: PROBAR CON TAYSIR ENERO 2019, NO ESTABA Y DA COMISIONES
-            IEtiquetaComision etiqueta = A.Fake<IEtiquetaComision>();
+            IEtiquetaComisionVenta etiqueta = A.Fake<IEtiquetaComisionVenta>();
             A.CallTo(() => etiqueta.Nombre).Returns("General");
             Collection<IEtiquetaComision> etiquetas = new Collection<IEtiquetaComision>()
             {
@@ -189,12 +193,13 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Vendedor = "NV",
                 Etiquetas = etiquetas
             };
-            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 50000;
+            (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta  = 50000;
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
             {
                 resumen
             };
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 3, true, A<bool>.Ignored)).Returns(1000);
+            IEtiquetaComisionVenta etiquetaGeneralLeida = comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta;
+            A.CallTo(() => etiquetaGeneralLeida.LeerVentaMes("NV", 2018, 3, true, A<bool>.Ignored)).Returns(1000);
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
             A.CallTo(() => comisiones.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
             {
@@ -216,7 +221,7 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiElResumenTieneUnMesYNoEsEneroLaProyeccionEsLaParteProporcional()
         {
-            IEtiquetaComision etiqueta = A.Fake<IEtiquetaComision>();
+            IEtiquetaComisionVenta etiqueta = A.Fake<IEtiquetaComisionVenta>();
             A.CallTo(() => etiqueta.Nombre).Returns("General");
             Collection<IEtiquetaComision> etiquetas = new Collection<IEtiquetaComision>()
             {
@@ -229,12 +234,14 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Vendedor = "NV",
                 Etiquetas = etiquetas
             };
-            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 500;
+            (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta = 500;
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
             {
                 resumen
             };
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 3, true, A<bool>.Ignored)).Returns(1000);
+
+            IEtiquetaComisionVenta etiquetaGeneralLeida = comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta;
+            A.CallTo(() => etiquetaGeneralLeida.LeerVentaMes("NV", 2018, 3, true, A<bool>.Ignored)).Returns(1000);
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
             A.CallTo(() => comisiones.LeerTramosComisionAnno("NV")).Returns(new Collection<TramoComision>
             {
@@ -269,10 +276,10 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiLaVentaGeneralEsMenorAlPrimerTramoDelMesComisionaATipoDelPrimerTramo()
         {
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 7, true, A<bool>.Ignored)).Returns(1000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single().LeerVentaMes("NV", 2018, 7, true, A<bool>.Ignored)).Returns(10000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single().LeerVentaMes("NV", 2018, 7, true, A<bool>.Ignored)).Returns(100);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().LeerVentaMes("NV", 2018, 7, true, A<bool>.Ignored)).Returns(10);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 7, true, A<bool>.Ignored)).Returns(1000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 7, true, A<bool>.Ignored)).Returns(10000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 7, true, A<bool>.Ignored)).Returns(100);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 7, true, A<bool>.Ignored)).Returns(10);
             TramoComision tramoBueno = new TramoComision
             {
                 Desde = 0,
@@ -417,10 +424,10 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiLaVentaGeneralEsSuperiorAlMayorTramoDelMesComisionaATipoDeLosTramosAnuales()
         {
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(12001);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(12000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(200);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(50);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(12001);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(12000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(200);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(50);
             A.CallTo(() => comisiones.LeerTramosComisionMes("NV")).Returns(new Collection<TramoComision>
             {
                 new TramoComision
@@ -551,10 +558,10 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiHaCobradoComisionLosMesesAnterioresComisionaPorLaDiferencia()
         {
-            IEtiquetaComision etiquetaGeneralResumen = A.Fake<IEtiquetaComision>();
-            IEtiquetaComision etiquetaUnionLaserResumen = A.Fake<IEtiquetaComision>();
-            IEtiquetaComision etiquetaEvaVisnuResumen = A.Fake<IEtiquetaComision>();
-            IEtiquetaComision etiquetaOtrosAparatosResumen = A.Fake<IEtiquetaComision>();
+            IEtiquetaComisionVenta etiquetaGeneralResumen = A.Fake<IEtiquetaComisionVenta>();
+            IEtiquetaComisionVenta etiquetaUnionLaserResumen = A.Fake<IEtiquetaComisionVenta>();
+            IEtiquetaComisionVenta etiquetaEvaVisnuResumen = A.Fake<IEtiquetaComisionVenta>();
+            IEtiquetaComisionVenta etiquetaOtrosAparatosResumen = A.Fake<IEtiquetaComisionVenta>();
             A.CallTo(() => etiquetaGeneralResumen.Nombre).Returns("General");
             A.CallTo(() => etiquetaUnionLaserResumen.Nombre).Returns("Unión Láser");
             A.CallTo(() => etiquetaEvaVisnuResumen.Nombre).Returns("Eva Visnú");
@@ -572,7 +579,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Vendedor = "NV",
                 Etiquetas = etiquetasResumen
             };
-            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 19000;
+            (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta = 19000;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo = .1M;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 1900;
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
@@ -580,10 +587,10 @@ namespace NestoAPI.Tests.Models.Comisiones
                 resumen
             };
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(21000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(12000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(200);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(50);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(21000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(12000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(200);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(50);
             A.CallTo(() => comisiones.LeerTramosComisionMes("NV")).Returns(new Collection<TramoComision>
             {
                 new TramoComision
@@ -647,10 +654,10 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiHaCobradoComisionLosMesesAnterioresYBajaDeSaltoNoHayComisionNegativa()
         {
-            IEtiquetaComision etiquetaGeneralResumen = A.Fake<IEtiquetaComision>();
-            IEtiquetaComision etiquetaUnionLaserResumen = A.Fake<IEtiquetaComision>();
-            IEtiquetaComision etiquetaEvaVisnuResumen = A.Fake<IEtiquetaComision>();
-            IEtiquetaComision etiquetaOtrosAparatosResumen = A.Fake<IEtiquetaComision>();
+            IEtiquetaComisionVenta etiquetaGeneralResumen = A.Fake<IEtiquetaComisionVenta>();
+            IEtiquetaComisionVenta etiquetaUnionLaserResumen = A.Fake<IEtiquetaComisionVenta>();
+            IEtiquetaComisionVenta etiquetaEvaVisnuResumen = A.Fake<IEtiquetaComisionVenta>();
+            IEtiquetaComisionVenta etiquetaOtrosAparatosResumen = A.Fake<IEtiquetaComisionVenta>();
             A.CallTo(() => etiquetaGeneralResumen.Nombre).Returns("General");
             A.CallTo(() => etiquetaUnionLaserResumen.Nombre).Returns("Unión Láser");
             A.CallTo(() => etiquetaEvaVisnuResumen.Nombre).Returns("Eva Visnú");
@@ -669,7 +676,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Mes = 1,
                 Anno = 2018
             };
-            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 19500;
+            (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta = 19500;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo = .2M;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 3900;
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
@@ -678,10 +685,10 @@ namespace NestoAPI.Tests.Models.Comisiones
             };
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
 
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(13000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(12000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(200);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(50);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(13000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(12000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(200);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(50);
             A.CallTo(() => comisiones.LeerTramosComisionMes("NV")).Returns(new Collection<TramoComision>
             {
                 new TramoComision
@@ -754,7 +761,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Etiquetas = comisiones.Etiquetas
             }
 ;
-            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 19500;
+            (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta = 19500;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo = .2M;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 3900;
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
@@ -763,18 +770,18 @@ namespace NestoAPI.Tests.Models.Comisiones
             };
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
 
-            coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Venta = 2000;
+            (coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == UNION_LASER).Single() as IEtiquetaComisionVenta).Venta = 2000;
             coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Tipo = 0.07M;
-            coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Venta = 1500;
+            (coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single() as IEtiquetaComisionVenta).Venta = 1500;
             coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Tipo = .15M;
-            coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Venta = 300;
+            (coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single() as IEtiquetaComisionVenta).Venta = 300;
             coleccionResumenes.FirstOrDefault().Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Tipo = .03M;
 
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(13000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(12000);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(200);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single().LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(50);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(13000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Unión Láser").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(12000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Eva Visnú").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(200);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "Otros Aparatos").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 1, true, A<bool>.Ignored)).Returns(50);
             A.CallTo(() => comisiones.LeerTramosComisionMes("NV")).Returns(new Collection<TramoComision>
             {
                 new TramoComision
@@ -909,7 +916,7 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_LoQueFaltaParaSaltoSiHayDosMesesCalculaEntreSeis()
         {
-            IEtiquetaComision etiqueta = A.Fake<IEtiquetaComision>();
+            IEtiquetaComisionVenta etiqueta = A.Fake<IEtiquetaComisionVenta>();
             A.CallTo(() => etiqueta.Nombre).Returns("General");
             Collection<IEtiquetaComision> etiquetas = new Collection<IEtiquetaComision>()
             {
@@ -940,7 +947,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Vendedor = "NV",
                 Etiquetas = etiquetas
             };
-            resumenEne.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 10000; //son las mismas para todos los meses: 40000
+            (resumenEne.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta = 10000; //son las mismas para todos los meses: 40000
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
             {
                 resumenEne,
@@ -1088,7 +1095,7 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiLaVentaEsIgualAlTramoMaximoMensualEnTodosLosMesesNoBajaDeTramo()
         {
-            IEtiquetaComision etiquetaGeneralResumen = A.Fake<IEtiquetaComision>();
+            IEtiquetaComisionVenta etiquetaGeneralResumen = A.Fake<IEtiquetaComisionVenta>();
             
             A.CallTo(() => etiquetaGeneralResumen.Nombre).Returns("General");
             Collection<IEtiquetaComision> etiquetasResumen = new Collection<IEtiquetaComision>
@@ -1102,7 +1109,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Mes = 1,
                 Etiquetas = etiquetasResumen
             };
-            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 10000;
+            (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta = 10000;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo = .2M;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 2000;
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
@@ -1110,7 +1117,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 resumen
             };
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(10000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(10000);
             TramoComision tramoBuenoMes = new TramoComision
             {
                 Desde = 1500.01M,
@@ -1169,7 +1176,7 @@ namespace NestoAPI.Tests.Models.Comisiones
         [TestMethod]
         public void VendedorComisionAnual_CrearResumenMesActual_SiLaVentaEsElDobleDelTramoMaximoMensualEnDosMesesSiBajaDeTramo()
         {
-            IEtiquetaComision etiquetaGeneralResumen = A.Fake<IEtiquetaComision>();
+            IEtiquetaComisionVenta etiquetaGeneralResumen = A.Fake<IEtiquetaComisionVenta>();
 
             A.CallTo(() => etiquetaGeneralResumen.Nombre).Returns("General");
             Collection<IEtiquetaComision> etiquetasResumen = new Collection<IEtiquetaComision>
@@ -1183,7 +1190,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 Mes = 1,
                 Etiquetas = etiquetasResumen
             };
-            resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Venta = 20000;
+            (resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta = 20000;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Tipo = .1M;
             resumen.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = 2000;
             Collection<ResumenComisionesMes> coleccionResumenes = new Collection<ResumenComisionesMes>
@@ -1191,7 +1198,7 @@ namespace NestoAPI.Tests.Models.Comisiones
                 resumen
             };
             A.CallTo(() => comisiones.LeerResumenAnno("NV", 2018)).Returns(coleccionResumenes);
-            A.CallTo(() => comisiones.Etiquetas.Where(e => e.Nombre == "General").Single().LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(20000);
+            A.CallTo(() => (comisiones.Etiquetas.Where(e => e.Nombre == "General").Single() as IEtiquetaComisionVenta).LeerVentaMes("NV", 2018, 2, true, A<bool>.Ignored)).Returns(20000);
             TramoComision tramoBuenoMes = new TramoComision
             {
                 Desde = 1500.01M,

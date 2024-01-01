@@ -472,19 +472,25 @@
     </Compile>
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
+    <Compile Include="Models\Comisiones\ClienteVenta.cs" />
+    <Compile Include="Models\Comisiones\ComisionesAnualesBase.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesJefeVentas2024.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesTelefono2024.cs" />
-    <Compile Include="Models\Comisiones\Estetica\EtiquetaEvaVisnu.cs" />
-    <Compile Include="Models\Comisiones\Estetica\EtiquetaFamiliasEspeciales.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaClientesNuevos.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaClientesTramosMil.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaEvaVisnu.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaFamiliasEspeciales.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2022.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2021.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2020.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2019.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2024.cs" />
-    <Compile Include="Models\Comisiones\Estetica\EtiquetaFamiliasEspecialesEstado9.cs" />
-    <Compile Include="Models\Comisiones\Estetica\EtiquetaOtrasExclusivas.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaFamiliasEspecialesEstado9.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaOtrasExclusivas.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaUnionLaserJefeVentas.cs" />
     <Compile Include="Models\Comisiones\EtiquetaGeneral.cs" />
-    <Compile Include="Models\Comisiones\Estetica\EtiquetaOtrosAparatos.cs" />
-    <Compile Include="Models\Comisiones\Estetica\EtiquetaUnionLaser.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaOtrosAparatos.cs" />
+    <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaUnionLaser.cs" />
     <Compile Include="Models\Comisiones\ICalculadorProyecciones.cs" />
     <Compile Include="Models\Comisiones\IEtiquetaComision.cs" />
     <Compile Include="Models\Comisiones\IComisionesAnuales.cs" />
@@ -780,6 +786,9 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\VendedorCodigoPostalGrupoProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\VendedorLinPedidoVta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\VendedorPedidoGrupoProducto.cs">

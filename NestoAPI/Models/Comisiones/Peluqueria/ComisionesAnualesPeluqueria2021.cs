@@ -1,30 +1,28 @@
 ﻿using NestoAPI.Models.Comisiones.Estetica;
+using NestoAPI.Models.Comisiones.Estetica.Etiquetas;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones.Peluqueria
 {
-    public class ComisionesAnualesPeluqueria2021 : IComisionesAnuales
+    public class ComisionesAnualesPeluqueria2021 : ComisionesAnualesBase, IComisionesAnuales
     {        
-        private readonly IServicioComisionesAnuales servicioComisiones;
-
+    
         public ComisionesAnualesPeluqueria2021(IServicioComisionesAnuales servicioComisiones)
+            : base(servicioComisiones)
         {
-            this.servicioComisiones = servicioComisiones;
-            Etiquetas = NuevasEtiquetas;            
+            
         }
 
-        public ICollection<IEtiquetaComision> Etiquetas { get; set; }
-        
-        public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
-            {
-                new EtiquetaGeneral(servicioComisiones as IServicioComisionesAnualesVenta),
-                new EtiquetaLisap(servicioComisiones as IServicioComisionesAnualesVenta),
-                new EtiquetaKach(servicioComisiones as IServicioComisionesAnualesVenta)
-            };
+        public override ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
+        {
+            new EtiquetaGeneral(_servicio),
+            new EtiquetaLisap(_servicio),
+            new EtiquetaKach(_servicio)
+        };
 
         // El cálculo de proyecciones de 2019 sigue siendo perfecto para 2020
-        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(servicioComisiones);
+        public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(this);
 
         public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
         {
@@ -45,10 +43,10 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
             return etiqueta;
         }
 
-        public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
-        {
-            return servicioComisiones.LeerResumenAnno(NuevasEtiquetas, vendedor, anno);
-        }
+        //public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
+        //{
+        //    return _servicio.LeerResumenAnno(NuevasEtiquetas, vendedor, anno);
+        //}
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
         {

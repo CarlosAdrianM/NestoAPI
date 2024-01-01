@@ -1549,6 +1549,17 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
+        <EntityType Name="VendedorLinPedidoVta">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Pedido" Type="int" Nullable="false" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <!--Errores durante la generación:
 advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisiones' no tiene definida ninguna clave principal. Se ha inferido la clave y la definición se creado como una vista o tabla de solo lectura.-->
         <EntityType Name="vstLinPedidoVtaComisiones">
@@ -4161,6 +4172,38 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_VendedorLinPedidoVta_LinPedidoVta">
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Role="VendedorLinPedidoVta" Type="Self.VendedorLinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Nº Orden" />
+            </Principal>
+            <Dependent Role="VendedorLinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Pedido" />
+              <PropertyRef Name="Id" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedorLinPedidoVta_Vendedores">
+          <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="1" />
+          <End Role="VendedorLinPedidoVta" Type="Self.VendedorLinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedorLinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Function Name="prdAjustarDíasPagoCliente" Aggregate="false" BuiltIn="false" NiladicFunction="false" IsComposable="false" ParameterTypeSemantics="AllowImplicitConversion" Schema="dbo">
           <Parameter Name="Empresa" Type="char" Mode="In" />
           <Parameter Name="Cliente" Type="char" Mode="In" />
@@ -4238,6 +4281,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <EntitySet Name="VendedoresClienteGrupoProducto" EntityType="Self.VendedoresClienteGrupoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VendedoresCodigoPostalGrupoProducto" EntityType="Self.VendedoresCodigoPostalGrupoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VendedoresPedidoGrupoProducto" EntityType="Self.VendedoresPedidoGrupoProducto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="VendedorLinPedidoVta" EntityType="Self.VendedorLinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="RentingFacturas" EntityType="Self.RentingFacturas" store:Type="Tables" store:Schema="dbo">
             <DefiningQuery>SELECT 
     [RentingFacturas].[Numero] AS [Numero]
@@ -5015,6 +5059,14 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <AssociationSet Name="FK_VendedoresPedidoGrupoProducto_Vendedores" Association="Self.FK_VendedoresPedidoGrupoProducto_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="VendedoresPedidoGrupoProducto" EntitySet="VendedoresPedidoGrupoProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedorLinPedidoVta_LinPedidoVta" Association="Self.FK_VendedorLinPedidoVta_LinPedidoVta">
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+            <End Role="VendedorLinPedidoVta" EntitySet="VendedorLinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedorLinPedidoVta_Vendedores" Association="Self.FK_VendedorLinPedidoVta_Vendedores">
+            <End Role="Vendedores" EntitySet="Vendedores" />
+            <End Role="VendedorLinPedidoVta" EntitySet="VendedorLinPedidoVta" />
           </AssociationSet>
         </EntityContainer>
       </Schema></edmx:StorageModels>
@@ -5888,6 +5940,15 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
             <End Role="Kit" EntitySet="Kits" />
           </AssociationSet>
           <EntitySet Name="PreContabilidades" EntityType="NVModel.PreContabilidad" />
+          <EntitySet Name="VendedoresLinPedidoVta" EntityType="NVModel.VendedorLinPedidoVta" />
+          <AssociationSet Name="FK_VendedorLinPedidoVta_LinPedidoVta" Association="NVModel.FK_VendedorLinPedidoVta_LinPedidoVta">
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+            <End Role="VendedorLinPedidoVta" EntitySet="VendedoresLinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedorLinPedidoVta_Vendedores" Association="NVModel.FK_VendedorLinPedidoVta_Vendedores">
+            <End Role="Vendedor" EntitySet="Vendedores" />
+            <End Role="VendedorLinPedidoVta" EntitySet="VendedoresLinPedidoVta" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -6182,6 +6243,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="PedidosEspeciales" Relationship="NVModel.FK_PedidosEspeciales_LinPedidoVta" FromRole="LinPedidoVta" ToRole="PedidosEspeciale" />
           <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="CabFacturaVta" Relationship="NVModel.FK_LinPedidoVta_CabFacturaVta" FromRole="LinPedidoVta" ToRole="CabFacturaVta" />
+          <NavigationProperty Name="VendedorLinPedidoVtas" Relationship="NVModel.FK_VendedorLinPedidoVta_LinPedidoVta" FromRole="LinPedidoVta" ToRole="VendedorLinPedidoVta" />
         </EntityType>
         <Association Name="FK_LinPedidoVta_CabPedidoVta">
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1" />
@@ -8631,6 +8693,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Vendedores" FromRole="Vendedor" ToRole="CabFacturaVta" />
           <NavigationProperty Name="EquiposVentas" Relationship="NVModel.FK_EquiposVenta_Vendedores" FromRole="Vendedor" ToRole="EquiposVenta" />
           <NavigationProperty Name="EquiposVentas1" Relationship="NVModel.FK_EquiposVenta_Vendedores1" FromRole="Vendedor" ToRole="EquiposVenta" />
+          <NavigationProperty Name="VendedorLinPedidoVtas" Relationship="NVModel.FK_VendedorLinPedidoVta_Vendedores" FromRole="Vendedor" ToRole="VendedorLinPedidoVta" />
         </EntityType>
         <Association Name="FK_Clientes_Vendedores">
           <End Type="NVModel.Vendedor" Role="Vendedore" Multiplicity="0..1" />
@@ -10382,6 +10445,51 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
         </EntityType>
+        <EntityType Name="VendedorLinPedidoVta">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Pedido" Type="Int32" Nullable="false" />
+          <Property Name="Vendedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="LinPedidoVta" Relationship="NVModel.FK_VendedorLinPedidoVta_LinPedidoVta" FromRole="VendedorLinPedidoVta" ToRole="LinPedidoVta" />
+          <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_VendedorLinPedidoVta_Vendedores" FromRole="VendedorLinPedidoVta" ToRole="Vendedor" />
+        </EntityType>
+        <Association Name="FK_VendedorLinPedidoVta_LinPedidoVta">
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="1">
+            <OnDelete Action="Cascade" />
+          </End>
+          <End Type="NVModel.VendedorLinPedidoVta" Role="VendedorLinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+              <PropertyRef Name="Nº_Orden" />
+            </Principal>
+            <Dependent Role="VendedorLinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Pedido" />
+              <PropertyRef Name="Id" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedorLinPedidoVta_Vendedores">
+          <End Type="NVModel.Vendedor" Role="Vendedor" Multiplicity="1" />
+          <End Type="NVModel.VendedorLinPedidoVta" Role="VendedorLinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedorLinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -11965,6 +12073,18 @@ advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisionesDetalle' no 
                 <ScalarProperty Name="TipoApunte" ColumnName="TipoApunte" />
                 <ScalarProperty Name="Nº_Orden" ColumnName="Nº Orden" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="VendedoresLinPedidoVta">
+            <EntityTypeMapping TypeName="NVModel.VendedorLinPedidoVta">
+              <MappingFragment StoreEntitySet="VendedorLinPedidoVta">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="Pedido" ColumnName="Pedido" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

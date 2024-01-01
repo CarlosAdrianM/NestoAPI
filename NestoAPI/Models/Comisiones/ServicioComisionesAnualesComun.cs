@@ -1,4 +1,6 @@
 ﻿using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Models.Comisiones.Estetica;
+using NestoAPI.Models.Comisiones.Peluqueria;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -6,7 +8,7 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ServicioComisionesAnualesComun : IServicioComisionesAnualesVenta
+    public class ServicioComisionesAnualesComun : IServicioComisionesAnuales
     {
         const string GENERAL = "General";
         private readonly ServicioVendedores _servicioVendedores;
@@ -50,75 +52,166 @@ namespace NestoAPI.Models.Comisiones
             return consulta;
         }
 
-        public ICollection<ResumenComisionesMes> LeerResumenAnno(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno)
+        public List<ClienteVenta> LeerClientesConVenta(string vendedor, int anno, int mes)
         {
-            NVEntities db = new NVEntities();
-            var listaVendedores = ListaVendedores(vendedor);
-            var resumenDb = db.ComisionesAnualesResumenMes
-                .Where(c => listaVendedores.Contains(c.Vendedor) && c.Anno == anno).OrderBy(r => r.Mes);
+            var fechaDesde = VendedorComisionAnual.FechaDesde(anno, 1); // desde enero
+            var fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
 
-            if (resumenDb == null || resumenDb.Count() == 0)
+            using (var db = new NVEntities())
             {
-                return new Collection<ResumenComisionesMes>();
+                var query = from c in db.Clientes
+                            join l in db.LinPedidoVtas on new { c.Nº_Cliente, c.Contacto } equals new { l.Nº_Cliente, l.Contacto }
+                            join v in db.VendedoresLinPedidoVta on l.Nº_Orden equals v.Id
+                            where c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) &&
+                                  v.Vendedor == vendedor &&
+                                  l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta                                  
+                            group l by new { c.Nº_Cliente } into g
+                            select new ClienteVenta
+                            {
+                                Cliente = g.Key.Nº_Cliente,
+                                Venta = g.Sum(l => l.Base_Imponible)
+                            };
+
+                return query.ToList();
             }
+        }
 
-            byte mesAnterior = resumenDb.First().Mes;
+        public List<ClienteVenta> LeerClientesNuevosConVenta(string vendedor, int anno, int mes)
+        {
+            var fechaDesde = VendedorComisionAnual.FechaDesde(anno, 1); // desde enero
+            var fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
 
-            ICollection<ResumenComisionesMes> resumenAnno = new Collection<ResumenComisionesMes>();
-            ResumenComisionesMes resumenMes;
-            try
+            using (var db = new NVEntities())
             {
-                resumenMes = new ResumenComisionesMes
-                {
-                    Vendedor = vendedor,
-                    Anno = anno,
-                    Mes = mesAnterior,
-                    Etiquetas = etiquetas.Select(etiqueta => (IEtiquetaComision)etiqueta.Clone()).ToList()
-                };
-            } catch (Exception ex)
-            {
-                throw ex;
+                var query = from c in db.Clientes
+                            join l in db.LinPedidoVtas on new { c.Nº_Cliente, c.Contacto } equals new { l.Nº_Cliente, l.Contacto }
+                            join v in db.VendedoresLinPedidoVta on l.Nº_Orden equals v.Id
+                            where c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && 
+                                  v.Vendedor == vendedor &&
+                                  l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta &&
+                                  !(db.LinPedidoVtas.Any(l2 => l2.Nº_Cliente == l.Nº_Cliente && l2.Fecha_Factura < fechaDesde))
+                            group l by new { c.Nº_Cliente } into g
+                            select new ClienteVenta
+                            {
+                                Cliente = g.Key.Nº_Cliente,
+                                Venta = g.Sum(l => l.Base_Imponible)
+                            };
+
+                return query.ToList();
             }
-            foreach (ComisionAnualResumenMes resumenMesDB in resumenDb)
+        }
+
+        public List<ComisionAnualResumenMes> LeerComisionesAnualesResumenMes(List<string> listaVendedores, int anno)
+        {
+            using (var db = new NVEntities())
             {
-                if (mesAnterior != resumenMesDB.Mes)
-                {
-                    resumenAnno.Add(resumenMes);
-                    resumenMes = new ResumenComisionesMes
-                    {
-                        Vendedor = resumenMesDB.Vendedor,
-                        Anno = resumenMesDB.Anno,
-                        Mes = resumenMesDB.Mes,
-                        Etiquetas = etiquetas.Select(etiqueta => (IEtiquetaComision)etiqueta.Clone()).ToList()
-                        //Etiquetas = new List<IEtiquetaComision>(etiquetas.ToList()) // si esto funciona se puede eliminar el campo NuevasEtiquetas y usar siempre el campo Etiquetas.ToList()
-                    };
-                    mesAnterior = resumenMesDB.Mes;
-                }
-
-                try
-                {
-                    // si pasamos resumenMesDB por parámetro a la etiqueta y hacemos las asignaciones desde ahí, nos evitamos usar GENERAL
-                    resumenMes.Etiquetas.Where(e => e.Nombre == resumenMesDB.Etiqueta).Single().Venta += resumenMesDB.Venta;
-                    resumenMes.Etiquetas.Where(e => e.Nombre == resumenMesDB.Etiqueta).Single().Tipo += resumenMesDB.Tipo;
-                    if (resumenMesDB.Etiqueta == GENERAL)
-                    {
-                        resumenMes.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision = resumenMesDB.Comision;
-                    }
-                }
-                catch
-                {
-                    Console.WriteLine("Etiqueta no válida en la tabla de resúmenes de comisiones del vendedor " + resumenMesDB.Vendedor);
-                }
-
+                return db.ComisionesAnualesResumenMes
+                .Where(c => listaVendedores.Contains(c.Vendedor) && c.Anno == anno).OrderBy(r => r.Mes).ToList();
             }
-            resumenAnno.Add(resumenMes);
-
-            return resumenAnno;
         }
 
         public List<string>ListaVendedores(string vendedor)
         {
             return _servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult().Select(v => v.vendedor).ToList();
+        }
+
+        public static IComisionesAnuales ComisionesVendedor(string vendedor, int anno)
+        {
+            using (var db = new NVEntities())
+            {
+                var vendedoresPeluqueria = db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_PELUQUERIA).Select(v => v.Número.Trim());
+
+                if (vendedoresPeluqueria.Contains(vendedor))
+                {
+                    if (anno == 2018)
+                    {
+                        return new ComisionesAnualesPeluqueria2018();
+                    }
+                    else if (anno == 2019)
+                    {
+                        return new ComisionesAnualesPeluqueria2019();
+                    }
+                    else if (anno == 2020)
+                    {
+                        return new ComisionesAnualesPeluqueria2020();
+                    }
+                    else if (anno == 2021 || anno == 2022 || anno == 2023)
+                    {
+                        return new ComisionesAnualesPeluqueria2021(new ServicioComisionesAnualesComun());
+                    }
+                    else if (anno == 2024)
+                    {
+                        return new ComisionesAnualesPeluqueria2024(new ServicioComisionesAnualesComun());
+                    }
+                }
+
+                var vendedoresTelefono = db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO).Select(v => v.Número.Trim());
+
+                if (vendedoresTelefono.Contains(vendedor))
+                {
+                    if (anno == 2018)
+                    {
+                        return new ComisionesAnualesEstetica2018();
+                    }
+                    else if (anno == 2019)
+                    {
+                        return new ComisionesAnualesEstetica2019();
+                    }
+                    else if (anno == 2020)
+                    {
+                        return new ComisionesAnualesEstetica2020();
+                    }
+                    else if (anno == 2021)
+                    {
+                        return new ComisionesAnualesEstetica2021();
+                    }
+                    else if (anno == 2022 || anno == 2023)
+                    {
+                        return new ComisionesAnualesEstetica2022(new ServicioComisionesAnualesComun());
+                    }
+                    else if (anno == 2024)
+                    {
+                        return new ComisionesAnualesTelefono2024(new ServicioComisionesAnualesComun());
+                    }
+                }
+
+                var jefesVentas = db.EquiposVentas.Where(e => e.Superior == vendedor && e.FechaDesde <= new DateTime(anno, 1, 1)).Select(e => e.Superior).Distinct().ToList();
+
+                if (jefesVentas.Contains(vendedor))
+                {
+                    if (anno == 2024)
+                    {
+                        return new ComisionesAnualesJefeVentas2024(new ServicioComisionesAnualesComun());
+                    }
+                }
+
+                if (anno == 2018)
+                {
+                    return new ComisionesAnualesEstetica2018();
+                }
+                else if (anno == 2019)
+                {
+                    return new ComisionesAnualesEstetica2019();
+                }
+                else if (anno == 2020)
+                {
+                    return new ComisionesAnualesEstetica2020();
+                }
+                else if (anno == 2021)
+                {
+                    return new ComisionesAnualesEstetica2021();
+                }
+                else if (anno == 2022 || anno == 2023)
+                {
+                    return new ComisionesAnualesEstetica2022(new ServicioComisionesAnualesComun());
+                }
+                else if (anno == 2024)
+                {
+                    return new ComisionesAnualesEstetica2024(new ServicioComisionesAnualesComun());
+                }
+
+                throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");
+            }
         }
     }
 }

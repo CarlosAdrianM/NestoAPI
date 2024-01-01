@@ -11,15 +11,15 @@ namespace NestoAPI.Infraestructure.Contabilidad
 {
     public class ContabilidadService : IContabilidadService
     {
-        public async Task<int> ContabilizarDiario(string empresa, string diario)
+        public async Task<int> ContabilizarDiario(string empresa, string diario, string usuario)
         {
             using (var db = new NVEntities())
             {
-                return await ContabilizarDiario(db, empresa, diario);
+                return await ContabilizarDiario(db, empresa, diario, usuario);
             }
         }
 
-        public async Task<int> ContabilizarDiario(NVEntities db, string empresa, string diario)
+        public async Task<int> ContabilizarDiario(NVEntities db, string empresa, string diario, string usuario)
         {
             var empresaParametro = new SqlParameter("@Empresa", SqlDbType.Char, 3)
             {
@@ -29,6 +29,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
             var diarioParametro = new SqlParameter("@Diario", SqlDbType.Char, 10)
             {
                 Value = diario
+            };
+            var usuarioParametro = new SqlParameter("@Diario", SqlDbType.Char, 30)
+            {
+                Value = usuario
             };
             //var resultadoProcedimiento = await db.Database.ExecuteSqlCommandAsync("EXEC prdContabilizar @Empresa, @Diario", empresaParametro, diarioParametro);
             //return resultadoProcedimiento;
@@ -41,7 +45,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
             try
             {
                 // Ejecutar el procedimiento almacenado y capturar el valor de retorno
-                var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdContabilizar @Empresa, @Diario", resultadoParametro, empresaParametro, diarioParametro);
+                var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdContabilizar @Empresa, @Diario, @Usuario", resultadoParametro, empresaParametro, diarioParametro, usuarioParametro);
                 // Obtener el valor de retorno del parámetro
                 var resultadoProcedimiento = (int)resultadoParametro.Value;
                 return resultadoProcedimiento;
@@ -84,7 +88,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
                     try
                     {
                         await CrearLineas(db, lineas);
-                        var resultado = await ContabilizarDiario(db, lineas[0].Empresa, lineas[0].Diario);
+                        var resultado = await ContabilizarDiario(db, lineas[0].Empresa, lineas[0].Diario, lineas[0].Usuario);
                         if (resultado > 0)
                         {
                             transaction.Commit();                            

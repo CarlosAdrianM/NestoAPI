@@ -3,12 +3,12 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Peluqueria
 {
-    public class EtiquetaBeox : IEtiquetaComision
+    public class EtiquetaBeox : IEtiquetaComisionVenta
     {
         private IQueryable<vstLinPedidoVtaComisione> consulta;
-        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
+        private readonly IServicioComisionesAnuales _servicioComisiones;
 
-        public EtiquetaBeox(IServicioComisionesAnualesVenta servicioComisiones)
+        public EtiquetaBeox(IServicioComisionesAnuales servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }
@@ -22,7 +22,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
             get => Math.Round(Venta * Tipo, 2);
             set => throw new Exception("La comisión de Beox no se puede fijar manualmente");
         }
-
+        public bool EsComisionAcumulada => false;
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
@@ -66,7 +66,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
 
         public decimal SetTipo(TramoComision tramo) => tramo.TipoExtra;
 
-        public object Clone() => new EtiquetaLisap(_servicioComisiones)
+        public object Clone() => new EtiquetaBeox(_servicioComisiones)
         {
             Venta = this.Venta,
             Tipo = this.Tipo

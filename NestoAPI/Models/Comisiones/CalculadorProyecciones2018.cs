@@ -11,12 +11,12 @@ namespace NestoAPI.Models.Comisiones
             return Math.Round((tramoHasta / mesesDecimales) - ventaAcumulada, 2);
         }
 
-        public decimal CalcularProyeccion(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno, int mes, decimal ventaAcumulada, int meses, int mesesAnno)
+        public decimal CalcularProyeccion(string vendedor, int anno, int mes, decimal ventaAcumulada, int meses, int mesesAnno)
         {
             return (ventaAcumulada / meses) * mesesAnno;
         }
 
-        public bool CalcularSiBajaDeSalto(ICollection<IEtiquetaComision> etiquetas, string vendedor, int anno, int mes, int mesesAnno, ResumenComisionesMes resumen, decimal ventaAcumulada, int meses, ICollection<TramoComision> tramosAnno)
+        public bool CalcularSiBajaDeSalto(string vendedor, int anno, int mes, int mesesAnno, ResumenComisionesMes resumen, decimal ventaAcumulada, int meses, ICollection<TramoComision> tramosAnno)
         {
             /*
             if (meses == 12)

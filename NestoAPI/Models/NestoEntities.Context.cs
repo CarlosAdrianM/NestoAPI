@@ -99,6 +99,7 @@ namespace NestoAPI.Models
         public virtual DbSet<EquipoVenta> EquiposVentas { get; set; }
         public virtual DbSet<Kit> Kits { get; set; }
         public virtual DbSet<PreContabilidad> PreContabilidades { get; set; }
+        public virtual DbSet<VendedorLinPedidoVta> VendedoresLinPedidoVta { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

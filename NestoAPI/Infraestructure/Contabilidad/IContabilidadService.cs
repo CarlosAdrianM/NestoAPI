@@ -9,8 +9,8 @@ namespace NestoAPI.Infraestructure.Contabilidad
 {
     public interface IContabilidadService
     {       
-        Task<int> ContabilizarDiario(string empresa, string diario);
-        Task<int> ContabilizarDiario(NVEntities db, string empresa, string diario);
+        Task<int> ContabilizarDiario(string empresa, string diario, string usuario);
+        Task<int> ContabilizarDiario(NVEntities db, string empresa, string diario, string usuario);
         Task<int> CrearLineas(List<PreContabilidad> lineas);
         Task<int> CrearLineas(NVEntities db, List<PreContabilidad> lineas);
         Task<int> CrearLineasYContabilizarDiario(List<PreContabilidad> lineas);

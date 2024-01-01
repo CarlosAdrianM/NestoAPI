@@ -5,20 +5,15 @@ using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ComisionesAnualesEstetica2018 : IComisionesAnuales
-    {
-        const string GENERAL = "General";
-        
-        private NVEntities db = new NVEntities();
-
+    public class ComisionesAnualesEstetica2018 : ComisionesAnualesBase, IComisionesAnuales
+    {        
         public ComisionesAnualesEstetica2018()
+            :base(new ServicioComisionesAnualesComun())
         {
-            Etiquetas = NuevasEtiquetas;
+            
         }
         
-        public ICollection<IEtiquetaComision> Etiquetas { get; set; }
-
-        public ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
+        public override ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
             {
                 new EtiquetaGeneral(new ServicioComisionesAnualesComun()),
                 new EtiquetaUnionLaser(new ServicioComisionesAnualesComun()),
@@ -50,12 +45,7 @@ namespace NestoAPI.Models.Comisiones
             }
             return etiqueta;
         }
-
-        public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
-        {
-            return (new ServicioComisionesAnualesComun()).LeerResumenAnno(NuevasEtiquetas, vendedor, anno);
-        }
-
+                
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
         {
             vendedor = vendedor.ToUpper();

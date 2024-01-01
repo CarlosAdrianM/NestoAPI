@@ -9,6 +9,7 @@ namespace NestoAPI.Infraestructure.Vendedores
 {
     public class ServicioVendedores : IServicioVendedores
     {
+        public DateTime Fecha { get; set; } = DateTime.Today; //new DateTime(2024, 1, 1); 
         public async Task<List<VendedorDTO>> VendedoresEquipo(string empresa, string vendedor)
         {
             using (NVEntities db = new NVEntities())
@@ -18,7 +19,7 @@ namespace NestoAPI.Infraestructure.Vendedores
                     throw new ArgumentNullException("La empresa no puede ser nula");
                 }
                 var vendedoresEquipo = await db.EquiposVentas
-                    .Where(v => v.Empresa.Trim() == empresa.Trim() && v.Superior.Trim().ToLower() == vendedor.Trim().ToLower() && (v.FechaDesde == null || v.FechaDesde <= DateTime.Today) && (v.FechaHasta == null || v.FechaHasta >= DateTime.Today))
+                    .Where(v => v.Empresa.Trim() == empresa.Trim() && v.Superior.Trim().ToLower() == vendedor.Trim().ToLower() && (v.FechaDesde == null || v.FechaDesde <= Fecha) && (v.FechaHasta == null || v.FechaHasta >= Fecha))
                     .ToListAsync()
                     .ConfigureAwait(false);
 

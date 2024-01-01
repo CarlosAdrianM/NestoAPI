@@ -3,12 +3,12 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaGeneral : IEtiquetaComision
+    public class EtiquetaGeneral : IEtiquetaComisionVenta
     {
         IQueryable<vstLinPedidoVtaComisione> consulta;
-        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
+        private readonly IServicioComisionesAnuales _servicioComisiones;
 
-        public EtiquetaGeneral(IServicioComisionesAnualesVenta servicioComisiones)
+        public EtiquetaGeneral(IServicioComisionesAnuales servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }
@@ -18,8 +18,8 @@ namespace NestoAPI.Models.Comisiones.Estetica
         public decimal Venta { get; set; }
         public decimal Tipo { get; set; }
         public decimal Comision { get; set; }
-        
 
+        public bool EsComisionAcumulada => true;
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
@@ -49,7 +49,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 );
         }
 
-        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComisionVenta.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);

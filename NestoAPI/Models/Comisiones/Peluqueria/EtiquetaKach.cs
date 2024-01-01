@@ -3,13 +3,13 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Peluqueria
 {
-    public class EtiquetaKach : IEtiquetaComision
+    public class EtiquetaKach : IEtiquetaComisionVenta
     {
         private IQueryable<vstLinPedidoVtaComisione> consulta;
 
-        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
+        private readonly IServicioComisionesAnuales _servicioComisiones;
 
-        public EtiquetaKach(IServicioComisionesAnualesVenta servicioComisiones)
+        public EtiquetaKach(IServicioComisionesAnuales servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }
@@ -22,6 +22,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
             get => Math.Round(Venta * Tipo, 2);
             set => throw new Exception("La comisión de Kach no se puede fijar manualmente");
         }
+        public bool EsComisionAcumulada => false;
 
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {

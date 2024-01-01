@@ -3,16 +3,16 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaUnionLaser : IEtiquetaComision
+    public class EtiquetaUnionLaser : IEtiquetaComisionVenta
     {
         
-        private const decimal TIPO_FIJO_UNIONLASER = .1M;
-        private readonly IServicioComisionesAnualesVenta _servicioComisiones;
+        protected const decimal TIPO_FIJO_UNIONLASER = .1M;
+        private readonly IServicioComisionesAnuales _servicioComisiones;
 
         private IQueryable<vstLinPedidoVtaComisione> consulta;
         private IQueryable<vstLinPedidoVtaComisione> consultaRenting;
 
-        public EtiquetaUnionLaser(IServicioComisionesAnualesVenta servicioComisiones)
+        public EtiquetaUnionLaser(IServicioComisionesAnuales servicioComisiones)
         {
             this._servicioComisiones = servicioComisiones;
         }
@@ -26,7 +26,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             get => Math.Round(Venta * Tipo, 2);
             set => throw new Exception("La comisión de Unión Láser no se puede fijar manualmente");
         }
-
+        public bool EsComisionAcumulada => false;
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
@@ -40,14 +40,14 @@ namespace NestoAPI.Models.Comisiones.Estetica
             CrearConsultaRenting(vendedor, incluirAlbaranes, fechaDesde, fechaHasta);
             decimal ventaRenting = consultaRenting.Select(l => (decimal)l.PrecioTarifa * PORCENTAJE_BASE_IMPONIBLE_RENTING).DefaultIfEmpty().Sum();
 
-            CrearConsulta(vendedor);
+            CrearConsulta(vendedor, fechaDesde);
             decimal venta = _servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
             
             return venta + ventaRenting;
 
         }
 
-        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComision.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComisionVenta.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -59,13 +59,13 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
             if (consulta == null)
             {
-                CrearConsulta(vendedor);
+                CrearConsulta(vendedor, fechaDesde);
             }
 
             return _servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
-        private void CrearConsulta (string vendedor)
+        private void CrearConsulta (string vendedor, DateTime fecha)
         {
             var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
             
@@ -95,7 +95,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             }
         }
 
-        public decimal SetTipo(TramoComision tramo) => TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
+        public virtual decimal SetTipo(TramoComision tramo) => TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
 
         public object Clone() => new EtiquetaUnionLaser(_servicioComisiones)
         {

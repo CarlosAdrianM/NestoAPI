@@ -261,6 +261,9 @@
         <AssociationConnector Association="NVModel.FK_KITS_Productos" />
         <AssociationConnector Association="NVModel.FK_KITS_Productos1" />
         <EntityTypeShape EntityType="NVModel.PreContabilidad" Width="1.5" PointX="14.375" PointY="0.75" />
+        <EntityTypeShape EntityType="NVModel.VendedorLinPedidoVta" Width="1.5" PointX="10.125" PointY="65.125" />
+        <AssociationConnector Association="NVModel.FK_VendedorLinPedidoVta_LinPedidoVta" />
+        <AssociationConnector Association="NVModel.FK_VendedorLinPedidoVta_Vendedores" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
