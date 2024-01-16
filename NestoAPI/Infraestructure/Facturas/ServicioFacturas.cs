@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
+using System.Net;
 using System.Net.Mail;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
@@ -236,6 +237,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 string contrasenna = ConfigurationManager.AppSettings["office365password"];
                 client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
                 client.Host = "smtp.office365.com";
+                client.TargetName = "STARTTLS/smtp.office365.com"; // Añadir esta línea para especificar el nombre del objetivo para STARTTLS
+                // Configurar TLS 1.2 explícitamente
+                ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
                 try
                 {

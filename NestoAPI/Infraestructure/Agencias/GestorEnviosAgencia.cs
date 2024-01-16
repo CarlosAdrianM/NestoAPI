@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Mail;
 using System.Text;
 using System.Threading.Tasks;
@@ -17,7 +18,8 @@ namespace NestoAPI.Infraestructure.Agencias
     {
         public async Task EnviarCorreoEntregaAgencia(EnviosAgencia envio)
         {
-            if (envio == null || string.IsNullOrWhiteSpace(envio.Email)) {
+            if (envio == null || string.IsNullOrWhiteSpace(envio.Email))
+            {
                 return;
             }
 
@@ -57,10 +59,17 @@ namespace NestoAPI.Infraestructure.Agencias
                 mail.To.Add(new MailAddress(Constantes.Correos.LOGISTICA));
                 mail.Subject = String.Format("[ERROR: {0}] Pedido entregado a la agencia ({1}/{2})", envio.Email, envio.Cliente.Trim(), envio.Pedido.ToString());
             }
-            
+
             mail.Body = (await GenerarCorreoHTML(envio)).ToString();
             mail.IsBodyHtml = true;
             mail.Attachments.Add(attachment);
+            SmtpClient client = CrearClienteSMTP();
+            client.Send(mail);
+            mail.Dispose();
+        }
+
+        private static SmtpClient CrearClienteSMTP()
+        {
             SmtpClient client = new SmtpClient();
             client.Port = 587;
             client.EnableSsl = true;
@@ -69,8 +78,10 @@ namespace NestoAPI.Infraestructure.Agencias
             string contrasenna = ConfigurationManager.AppSettings["office365password"];
             client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
             client.Host = "smtp.office365.com";
-            client.Send(mail);
-            mail.Dispose();
+            client.TargetName = "STARTTLS/smtp.office365.com"; // Añadir esta línea para especificar el nombre del objetivo para STARTTLS
+            // Configurar TLS 1.2 explícitamente
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+            return client;
         }
 
         private async Task<StringBuilder> GenerarCorreoHTML(EnviosAgencia envio)

@@ -10,6 +10,39 @@ namespace NestoAPI.Infraestructure.Vendedores
     public class ServicioVendedores : IServicioVendedores
     {
         public DateTime Fecha { get; set; } = DateTime.Today; //new DateTime(2024, 1, 1); 
+
+        public async Task<VendedorDTO> JefeEquipo(string empresa, string vendedor)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                if (string.IsNullOrEmpty(empresa))
+                {
+                    throw new ArgumentNullException("La empresa no puede ser nula");
+                }
+                var jefeEquipo = await db.EquiposVentas
+                    .Where(v => v.Empresa.Trim() == empresa.Trim() && v.Vendedor.Trim().ToLower() == vendedor.Trim().ToLower() 
+                        && (v.FechaDesde == null || v.FechaDesde <= Fecha) && (v.FechaHasta == null || v.FechaHasta >= Fecha))
+                    .SingleOrDefaultAsync()
+                    .ConfigureAwait(false);
+                
+                if (jefeEquipo is null)
+                {
+                    return null;
+                }
+
+                return await db.Vendedores
+                    .Where(v => v.Empresa.Trim() == empresa.Trim() && v.Número.Trim().ToLower() == jefeEquipo.Superior)
+                    .Select(p => new VendedorDTO
+                    {
+                        vendedor = p.Número.Trim(),
+                        nombre = p.Descripción.Trim(),
+                        estado = (int)p.Estado
+                    })
+                    .SingleAsync()
+                    .ConfigureAwait(false);
+            }
+        }
+
         public async Task<List<VendedorDTO>> VendedoresEquipo(string empresa, string vendedor)
         {
             using (NVEntities db = new NVEntities())
@@ -52,6 +85,13 @@ namespace NestoAPI.Infraestructure.Vendedores
 
                 return vendedores;
             }
+        }
+
+        public async Task<List<string>> VendedoresEquipoString(string empresa, string vendedor)
+        {
+            var vendedores = await VendedoresEquipo(empresa, vendedor).ConfigureAwait(false);
+            var vendedoresString = vendedores.Select(v => v.vendedor).ToList();
+            return vendedoresString;
         }
     }
 }

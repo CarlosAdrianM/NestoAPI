@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Configuration;
@@ -11,7 +12,11 @@ namespace NestoAPI.Infraestructure
 {
     public class GestorPresupuestos
     {
+        // Carlos 10/01/24: esto hay que refactorizarlo para poder hacerle tests
+        // deben entrar ambos campos por inyección de dependencias
         private NVEntities db = new NVEntities();
+        private readonly IServicioVendedores servicioVendedores = new ServicioVendedores();
+
         private PedidoVentaDTO pedido;
         private readonly string TEXTO_PEDIDO;
         
@@ -65,7 +70,14 @@ namespace NestoAPI.Infraestructure
             if (tieneLineasNoPeluqueria)
             {
                 mail.To.Add(new MailAddress(correoVendedor.ToLower()));
-                nombreVendedorCabecera = vendedor.Descripción?.Trim(); ;
+                nombreVendedorCabecera = vendedor.Descripción?.Trim();
+                var jefeVentas = await servicioVendedores.JefeEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido.vendedor);
+                if (!(jefeVentas is null))
+                {
+                    var jefeVentasVendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Número == jefeVentas.vendedor);
+                    var correoJefeVentas = jefeVentasVendedor.Mail != null ? jefeVentasVendedor.Mail.Trim() : Constantes.Correos.INFORMATICA;
+                    mail.CC.Add(new MailAddress(correoJefeVentas.ToLower()));
+                }
             }
 
             // Miramos si ponemos copia al vendedor de peluquería

@@ -20,8 +20,7 @@ namespace NestoAPI.Models.Comisiones
             new EtiquetaGeneral(_servicio),
             new EtiquetaUnionLaserJefeVentas(_servicio),
             new EtiquetaFamiliasEspeciales(_servicio),
-            new EtiquetaOtrasExclusivas(_servicio),
-            new EtiquetaOtrosAparatos(_servicio)
+            new EtiquetaOtrasExclusivas(_servicio)
         };
 
         public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(this);
@@ -30,11 +29,7 @@ namespace NestoAPI.Models.Comisiones
         {
             string etiqueta;
 
-            if (linea.Grupo != null && linea.Grupo.ToLower().Trim() == "otros aparatos")
-            {
-                etiqueta = "Otros Aparatos";
-            }
-            else if (linea.Familia != null && linea.Familia.ToLower().Trim() == "uniónláser")
+            if (linea.Familia != null && linea.Familia.ToLower().Trim() == "uniónláser")
             {
                 etiqueta = "Unión Láser";
             }

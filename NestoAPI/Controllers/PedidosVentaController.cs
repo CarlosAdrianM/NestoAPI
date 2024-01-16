@@ -210,6 +210,9 @@ namespace NestoAPI.Controllers
 
         public IQueryable<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor, int estado)
         {
+            IServicioVendedores servicioVendedores = new ServicioVendedores();
+            var vendedoresEquipo = servicioVendedores.VendedoresEquipoString(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).ConfigureAwait(false).GetAwaiter().GetResult();
+
             IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
                                                        join v in db.VendedoresPedidosGruposProductos
 
@@ -220,7 +223,7 @@ namespace NestoAPI.Controllers
                                                        //This is how you actually turn the join into a left-join
                                                        from jointRecord in jointData.DefaultIfEmpty()
 
-                                                       where (vendedor == "" || vendedor == null || c.Vendedor == vendedor || jointRecord.Vendedor == vendedor)
+                                                       where (vendedor == "" || vendedor == null || vendedoresEquipo.Contains(c.Vendedor) || vendedoresEquipo.Contains(jointRecord.Vendedor))
                                                        select c;
 
             IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor

@@ -4,6 +4,7 @@ using System.Configuration;
 using System.Data;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net.Mail;
@@ -522,7 +523,7 @@ namespace NestoAPI.Infraestructure.Facturas
             string mailAnterior = string.Empty;
             MailMessage mail = new MailMessage();
             foreach (var fra in facturasCorreo)
-            {                
+            {
                 if (fra.Correo != mailAnterior)
                 {
                     if (!string.IsNullOrEmpty(mailAnterior))
@@ -535,24 +536,25 @@ namespace NestoAPI.Infraestructure.Facturas
                     try
                     {
                         serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
-                    } 
+                    }
                     catch
                     {
                         mail = new MailMessage();
                         mailAnterior = string.Empty;
                         continue;
                     }
-                    try { 
+                    try
+                    {
                         mail = new MailMessage(serieFactura.CorreoDesdeFactura.Address, fra.Correo);
                         mail.Subject = "Facturación nº ";
-                    } 
+                    }
                     catch
                     {
                         mail.From = new MailAddress(serieFactura.CorreoDesdeFactura.Address);
                         mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
                         mail.Subject = String.Format("[ERROR: {0}] Facturación nº ", fra.Correo);
                     }
-                    
+
                     mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
                     mail.Bcc.Add(new MailAddress("monicaprado@nuevavision.es"));
 
@@ -561,20 +563,12 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
                 mail.Subject += fra.Factura + ", ";
                 var facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura);
-                Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), fra.Factura+".pdf");
+                Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), fra.Factura + ".pdf");
                 mail.Attachments.Add(attachment);
             }
             mail.Subject = mail.Subject.Trim().TrimEnd(',');
             listaCorreos.Add(mail);
-
-            SmtpClient client = new SmtpClient();
-            client.Port = 587;
-            client.EnableSsl = true;
-            client.DeliveryMethod = SmtpDeliveryMethod.Network;
-            client.UseDefaultCredentials = false;
-            string contrasenna = ConfigurationManager.AppSettings["office365password"];
-            client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
-            client.Host = "smtp.office365.com";
+            SmtpClient client = CrearClienteSMTP();
 
             foreach (var correo in listaCorreos)
             {
@@ -603,6 +597,24 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return facturasCorreo;
         }
+
+        private static SmtpClient CrearClienteSMTP()
+        {
+            SmtpClient client = new SmtpClient();
+            client.Port = 587;
+            client.EnableSsl = true;
+            client.DeliveryMethod = SmtpDeliveryMethod.Network;
+            client.UseDefaultCredentials = false;
+            string contrasenna = ConfigurationManager.AppSettings["office365password"];
+            client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
+            client.Host = "smtp.office365.com";
+            client.TargetName = "STARTTLS/smtp.office365.com"; // Añadir esta línea para especificar el nombre del objetivo para STARTTLS
+
+            // Configurar TLS 1.2 explícitamente
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+            return client;
+        }
+
         public List<ClienteCorreoFactura> EnviarFacturasTrimestrePorCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)
         {
             List<ClienteCorreoFactura> clientesCorreo = servicio.LeerClientesCorreo(firstDayOfQuarter, lastDayOfQuarter);

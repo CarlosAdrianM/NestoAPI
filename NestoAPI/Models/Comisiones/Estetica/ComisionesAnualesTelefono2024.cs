@@ -48,8 +48,6 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
         {
-            vendedor = vendedor.ToUpper();
-
             Collection<TramoComision> tramosTelefono = new Collection<TramoComision>
             {
                 new TramoComision
@@ -156,15 +154,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     TipoExtra = .02M
                 }
             };
-
-
-            // Aquí usamos cadenas mágicas porque son los que YA han firmado las condiciones 
-            if (vendedor == "AGR" || vendedor == "MPP" || vendedor == "PA" || vendedor == "KCP")
-            {
-                return tramosTelefono;
-            }
-            
-            throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");
+            return tramosTelefono;            
         }
 
         public ICollection<TramoComision> LeerTramosComisionMes(string vendedor)

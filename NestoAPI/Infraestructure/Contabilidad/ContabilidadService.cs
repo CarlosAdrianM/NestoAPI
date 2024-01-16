@@ -30,7 +30,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
             {
                 Value = diario
             };
-            var usuarioParametro = new SqlParameter("@Diario", SqlDbType.Char, 30)
+            var usuarioParametro = new SqlParameter("@Usuario", SqlDbType.Char, 30)
             {
                 Value = usuario
             };
