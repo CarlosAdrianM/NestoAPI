@@ -8,6 +8,7 @@ namespace NestoAPI.Models.Picking
     public class GestorImportesMinimos
     {
         public const decimal IMPORTE_MINIMO = 60;
+        public const decimal IMPORTE_MINIMO_URGENTE = 100;
         public const decimal IMPORTE_SIN_PORTES = 150;
         public const decimal IMPORTE_MINIMO_TIENDA_ONLINE = 30;
         public const decimal IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL = 10;

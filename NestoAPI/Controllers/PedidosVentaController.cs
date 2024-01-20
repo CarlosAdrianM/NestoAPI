@@ -933,21 +933,22 @@ namespace NestoAPI.Controllers
             // Carlos: 18/01/19: insertamos en la agencia si es necesario
             if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
             {
-                ServicioAgencias servicio = new ServicioAgencias();
-                RespuestaAgencia respuestaMaps = await servicio.LeerDireccionPedidoGoogleMaps(pedido);
+                IServicioAgencias servicioAgencias = new ServicioAgencias();
+                string codigoPostal = servicioAgencias.LeerCodigoPostal(pedido);
+                RespuestaAgencia respuestaMaps = GestorAgenciasGlovo.PortesPorCodigoPostal(codigoPostal);
 
-                if (pedido.Lineas.Sum(b => b.BaseImponible) < GestorImportesMinimos.IMPORTE_MINIMO)
+                if (pedido.Lineas.Sum(b => b.BaseImponible) < GestorImportesMinimos.IMPORTE_MINIMO_URGENTE)
                 {
                     LineaPedidoVentaDTO lineaPortes = new LineaPedidoVentaDTO
                     {
                         tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
-                        almacen = Constantes.Productos.ALMACEN_TIENDA,
+                        almacen = pedido.Lineas.FirstOrDefault().almacen,
                         Producto = Constantes.Cuentas.CUENTA_PORTES_GLOVO,
                         Cantidad = 1,
                         delegacion = pedido.Lineas.FirstOrDefault().delegacion,
                         formaVenta = pedido.Lineas.FirstOrDefault().formaVenta,
                         estado = Constantes.EstadosLineaVenta.EN_CURSO,
-                        texto = "Portes Glovo",
+                        texto = "Portes entrega en 2 horas",
                         PrecioUnitario = respuestaMaps.Coste,
                         iva = pedido.iva,
                         vistoBueno = true,

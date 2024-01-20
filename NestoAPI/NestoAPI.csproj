@@ -305,6 +305,7 @@
     <Compile Include="Areas\HelpPage\XmlDocumentationProvider.cs" />
     <Compile Include="Controllers\AccountsController.cs" />
     <Compile Include="Controllers\AgenciasLlamadasWebController.cs" />
+    <Compile Include="Controllers\BancosController.cs" />
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
@@ -424,6 +425,7 @@
     <Compile Include="Models\AgenciaTransporte.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\ApuntesBanco\ApunteBancarioDTO.cs" />
     <Compile Include="Models\Banco.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

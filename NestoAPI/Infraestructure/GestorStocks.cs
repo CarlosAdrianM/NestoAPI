@@ -21,19 +21,27 @@ namespace NestoAPI.Infraestructure
 
         public bool HayStockDisponibleDeTodo(PedidoVentaDTO pedido)
         {
+            // Carlos lo dejo por si en algún sitio se llama sin el almacén
+            // pero en próximas refactorizaciones se puede quitar
+            return HayStockDisponibleDeTodo(pedido, Constantes.Almacenes.REINA);
+        }
+
+        public bool HayStockDisponibleDeTodo(PedidoVentaDTO pedido, string almacen)
+        {
             if (pedido.Lineas == null || pedido.Lineas.Count == 0)
             {
                 return true;
             }
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
             {
-                int stock = servicio.Stock(linea.Producto, Constantes.Almacenes.REINA);
+                int stock = servicio.Stock(linea.Producto, almacen);
                 if (stock < linea.Cantidad)
                 {
                     return false;
                 }
 
-                if (stock - servicio.UnidadesPendientesEntregarAlmacen(linea.Producto, Constantes.Almacenes.REINA) < linea.Cantidad) {
+                if (stock - servicio.UnidadesPendientesEntregarAlmacen(linea.Producto, almacen) < linea.Cantidad)
+                {
                     return false;
                 }
 

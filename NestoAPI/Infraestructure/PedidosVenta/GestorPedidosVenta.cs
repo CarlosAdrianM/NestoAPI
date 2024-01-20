@@ -321,7 +321,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             if (ruta != Constantes.Pedidos.RUTA_GLOVO && GestorImportesMinimos.esRutaConPortes(ruta) && almacen == Constantes.Almacenes.ALGETE)
             {
-                var diasSiguienteRuta = DateTime.Today.DayOfWeek == DayOfWeek.Friday ? 3 : 1;
+                var diaActual = DateTime.Today.DayOfWeek;
+                var diasSiguienteRuta = (diaActual == DayOfWeek.Friday) ? 3 : (diaActual == DayOfWeek.Saturday) ? 2 : 1;
                 fechaMinima = DateTime.Now.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS ? DateTime.Today : DateTime.Today.AddDays(diasSiguienteRuta);
             }
             else

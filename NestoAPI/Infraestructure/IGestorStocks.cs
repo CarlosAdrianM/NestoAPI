@@ -6,6 +6,7 @@ namespace NestoAPI.Infraestructure
     public interface IGestorStocks
     {
         bool HayStockDisponibleDeTodo(PedidoVentaDTO pedido);
+        bool HayStockDisponibleDeTodo(PedidoVentaDTO pedido, string almacen);
 
         int Stock(string producto);
         int Stock(string producto, string almacen);

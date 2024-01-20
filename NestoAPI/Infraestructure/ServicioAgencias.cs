@@ -50,88 +50,88 @@ namespace NestoAPI.Infraestructure
             return respuesta;
         }
 
-        private async Task<decimal> CalcularPortes(double longitud, double latitud, string direccion)
-        {
-            // Create a New HttpClient object and dispose it when done, so the app doesn't leak resources
-            using (HttpClient client = new HttpClient())
-            {
-                // Call asynchronous network methods in a try/catch block to handle exceptions
-                try
-                {
-                    System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-                    string urlGlovo = "https://api.glovoapp.com/b2b/orders/estimate";
-                    string apiKey = ConfigurationManager.AppSettings["GlovoApiKey"];
-                    string apiSecret = ConfigurationManager.AppSettings["GlovoApiSecret"];
-                    Address direccionOrigen = new Address
-                    {
-                        lat = 40.4204877,
-                        lon = -3.7005278,
-                        type = "PICKUP",
-                        label = "Calle Reina, 5, 28004 Madrid, España"
-                    };
-                    Address direccionDestino = new Address
-                    {
-                        lat = latitud,
-                        lon = longitud,
-                        type = "DELIVERY",
-                        label = direccion
-                    };
+        //private async Task<decimal> CalcularPortes(double longitud, double latitud, string direccion)
+        //{
+        //    // Create a New HttpClient object and dispose it when done, so the app doesn't leak resources
+        //    using (HttpClient client = new HttpClient())
+        //    {
+        //        // Call asynchronous network methods in a try/catch block to handle exceptions
+        //        try
+        //        {
+        //            System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+        //            string urlGlovo = "https://api.glovoapp.com/b2b/orders/estimate";
+        //            string apiKey = ConfigurationManager.AppSettings["GlovoApiKey"];
+        //            string apiSecret = ConfigurationManager.AppSettings["GlovoApiSecret"];
+        //            Address direccionOrigen = new Address
+        //            {
+        //                lat = 40.4204877,
+        //                lon = -3.7005278,
+        //                type = "PICKUP",
+        //                label = "Calle Reina, 5, 28004 Madrid, España"
+        //            };
+        //            Address direccionDestino = new Address
+        //            {
+        //                lat = latitud,
+        //                lon = longitud,
+        //                type = "DELIVERY",
+        //                label = direccion
+        //            };
 
-                    EstimateOrder estimacion = new EstimateOrder
-                    {
-                        scheduleTime = null,
-                        description = "Portes Pedido",
-                        addresses = new List<Address>
-                        {
-                            direccionOrigen,
-                            direccionDestino
-                        }
-                    };
+        //            EstimateOrder estimacion = new EstimateOrder
+        //            {
+        //                scheduleTime = null,
+        //                description = "Portes Pedido",
+        //                addresses = new List<Address>
+        //                {
+        //                    direccionOrigen,
+        //                    direccionDestino
+        //                }
+        //            };
 
-                    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
-                    "Basic",
-                    Convert.ToBase64String(
-                        System.Text.ASCIIEncoding.ASCII.GetBytes(
-                            string.Format("{0}:{1}", apiKey, apiSecret)
-                            )));
-                    client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));//ACCEPT header
+        //            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+        //            "Basic",
+        //            Convert.ToBase64String(
+        //                System.Text.ASCIIEncoding.ASCII.GetBytes(
+        //                    string.Format("{0}:{1}", apiKey, apiSecret)
+        //                    )));
+        //            client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));//ACCEPT header
 
-                    HttpContent content = new StringContent(JsonConvert.SerializeObject(estimacion), Encoding.UTF8, "application/json");
-                    //HttpContent content = new StringContent(JsonConvert.SerializeObject(estimacion));
-                    //content.Headers.ContentType = new MediaTypeWithQualityHeaderValue("application/json");
+        //            HttpContent content = new StringContent(JsonConvert.SerializeObject(estimacion), Encoding.UTF8, "application/json");
+        //            //HttpContent content = new StringContent(JsonConvert.SerializeObject(estimacion));
+        //            //content.Headers.ContentType = new MediaTypeWithQualityHeaderValue("application/json");
 
-                    HttpResponseMessage response = await client.PostAsync(urlGlovo, content);
-                    if (response.IsSuccessStatusCode)
-                    {
-                        var resultByte = await response.Content.ReadAsByteArrayAsync();
-                        string result = System.Text.Encoding.UTF8.GetString(resultByte);
-                        JObject resultJson = JsonConvert.DeserializeObject<JObject>(result);
-                        string portes = resultJson["total"]["amount"].ToString();
-                        decimal portesDecimal;
-                        if (decimal.TryParse(portes,out portesDecimal))
-                        {
-                            return portesDecimal / 100M;
-                        }
-                    }
-                    else
-                    {
-                        Console.WriteLine(string.Format("The request failed with status code: {0}", response.StatusCode));
+        //            HttpResponseMessage response = await client.PostAsync(urlGlovo, content);
+        //            if (response.IsSuccessStatusCode)
+        //            {
+        //                var resultByte = await response.Content.ReadAsByteArrayAsync();
+        //                string result = System.Text.Encoding.UTF8.GetString(resultByte);
+        //                JObject resultJson = JsonConvert.DeserializeObject<JObject>(result);
+        //                string portes = resultJson["total"]["amount"].ToString();
+        //                decimal portesDecimal;
+        //                if (decimal.TryParse(portes,out portesDecimal))
+        //                {
+        //                    return portesDecimal / 100M;
+        //                }
+        //            }
+        //            else
+        //            {
+        //                Console.WriteLine(string.Format("The request failed with status code: {0}", response.StatusCode));
 
-                        // Print the headers - they include the requert ID and the timestamp, which are useful for debugging the failure
-                        Console.WriteLine(response.Headers.ToString());
+        //                // Print the headers - they include the requert ID and the timestamp, which are useful for debugging the failure
+        //                Console.WriteLine(response.Headers.ToString());
 
-                        string responseContent = await response.Content.ReadAsStringAsync();
-                        Console.WriteLine(responseContent);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    return decimal.MaxValue;
-                }
-            }
+        //                string responseContent = await response.Content.ReadAsStringAsync();
+        //                Console.WriteLine(responseContent);
+        //            }
+        //        }
+        //        catch (Exception ex)
+        //        {
+        //            return decimal.MaxValue;
+        //        }
+        //    }
 
-            return decimal.MaxValue;
-        }
+        //    return decimal.MaxValue;
+        //}
 
         public DateTime HoraActual()
         {
@@ -206,7 +206,8 @@ namespace NestoAPI.Infraestructure
                         direccionFormateada = direccionFormateada + ", " + codigoPostal;
                     }
 
-                    decimal portes = await CalcularPortes(longitud, latitud, direccionFormateada);
+                    //decimal portes = await CalcularPortes(longitud, latitud, direccionFormateada);
+                    decimal portes = 0; // refactorizar, esto ya no tiene sentido. Hay que quitar la agencia Glovo de aquí
 
                     RespuestaAgencia respuesta = new RespuestaAgencia
                     {
@@ -226,21 +227,21 @@ namespace NestoAPI.Infraestructure
         }
     }
 
-    class Address
-    {
-        public double lat { get; set; }
-        public double lon { get; set; }
-        public string type { get; set; }
-        public string label { get; set; }
-        public string details { get; set; }
-        public string contactPhone { get; set; }
-        public string contactPerson { get; set; }
-    }
+    //class Address
+    //{
+    //    public double lat { get; set; }
+    //    public double lon { get; set; }
+    //    public string type { get; set; }
+    //    public string label { get; set; }
+    //    public string details { get; set; }
+    //    public string contactPhone { get; set; }
+    //    public string contactPerson { get; set; }
+    //}
 
-    class EstimateOrder
-    {
-        public int? scheduleTime { get; set; }
-        public string description { get; set; }
-        public List<Address> addresses { get; set; }
-    }
+    //class EstimateOrder
+    //{
+    //    public int? scheduleTime { get; set; }
+    //    public string description { get; set; }
+    //    public List<Address> addresses { get; set; }
+    //}
 }
