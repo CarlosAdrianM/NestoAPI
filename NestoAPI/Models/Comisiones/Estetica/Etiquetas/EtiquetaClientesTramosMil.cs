@@ -47,8 +47,10 @@ namespace NestoAPI.Models.Comisiones.Estetica.Etiquetas
                 .Sum();
 
             // Aquí hay que restar las que ya hemos pagado de meses anteriores
-
-            return totalClientes;
+            var listaVendedores = _servicio.ListaVendedores(vendedor);
+            var comisionesAnno = _servicio.LeerComisionesAnualesResumenMes(listaVendedores, anno);
+            var yaHanComisionado = (int)comisionesAnno.Where(c => c.Etiqueta == Nombre && c.Mes < mes).Sum(c => c.Venta); // en la tabla la columna se llama Venta aunque sea Recuento
+            return totalClientes - yaHanComisionado;
         }
 
         public decimal SetTipo(TramoComision tramo) => 4.0M; // 5 euros por cliente nuevo

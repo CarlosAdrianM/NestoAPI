@@ -14,7 +14,6 @@ namespace NestoAPI.Models.PedidosCompra
         public int Id { get; set; }
         public int Estado { get; set; }
         public string TipoLinea { get; set; }
-        //public string Producto { get; set; }
         public string Texto { get; set; }
         public DateTime FechaRecepcion { get; set; }
         private int _cantidad;
@@ -53,7 +52,6 @@ namespace NestoAPI.Models.PedidosCompra
             get => DescuentoEntidad; 
             set => DescuentoEntidad = value; 
         }
-        //public decimal PorcentajeIva { get; set; }
         public string CodigoIvaProducto { get; set; }
         public int StockMaximo { get; set; }
         public int PendienteEntregar { get; set; }
@@ -64,6 +62,10 @@ namespace NestoAPI.Models.PedidosCompra
         public string Subgrupo { get; set; }
         public decimal PrecioTarifa { get; set; }
         public int EstadoProducto { get; set; }
+        public string Delegacion { get; set; }
+        public string CentroCoste { get; set; }
+        public string Departamento { get; set; }
+        public bool Enviado { get; set; }
 
 
 

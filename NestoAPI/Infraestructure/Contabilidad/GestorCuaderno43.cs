@@ -1,36 +1,13 @@
-﻿using NestoAPI.Models;
-using NestoAPI.Models.ApuntesBanco;
-using NestoAPI.Models.Bancos;
+﻿using NestoAPI.Models.ApuntesBanco;
 using System;
 using System.Collections.Generic;
-using System.Data.Entity;
 using System.IO;
-using System.Linq;
 using System.Threading.Tasks;
-using System.Web.Http.Results;
 
 namespace NestoAPI.Infraestructure.Contabilidad
 {
-    public class GestorContabilidad
+    internal static class GestorCuaderno43
     {
-        private readonly IContabilidadService _servicio;
-
-        public GestorContabilidad(IContabilidadService servicio)
-        {
-            this._servicio = servicio;
-        }
-        public async Task<int> CrearLineasDiario(List<PreContabilidad> lineas)
-        {
-            return await _servicio.CrearLineas(lineas);
-        }
-
-        public async Task<int> CrearLineasDiarioYContabilizar(List<PreContabilidad> lineas)
-        {
-            // test: si hay varios diarios en lineas hay que dar error
-            // lo mismo si hay varias empresas
-
-            return await _servicio.CrearLineasYContabilizarDiario(lineas);
-        }
 
         public static async Task<ContenidoCuaderno43> LeerCuaderno43(string contenido)
         {
@@ -112,32 +89,6 @@ namespace NestoAPI.Infraestructure.Contabilidad
             return registroCabecera;
         }
 
-        private static ApunteBancarioDTO AsignarValoresRegistroPrincipalMovimientos(string linea, StringReader reader)
-        {
-            ApunteBancarioDTO apunteBancario = new ApunteBancarioDTO();
-            apunteBancario.CodigoRegistroPrincipal = linea.Substring(0, 2);
-            apunteBancario.ClaveOficinaOrigen = linea.Substring(6, 4);
-            apunteBancario.FechaOperacion = ParsearFecha(linea.Substring(10, 6)); // Asumiendo un formato específico de fecha
-            apunteBancario.FechaValor = ParsearFecha(linea.Substring(16, 6));   // Asumiendo un formato específico de fecha
-            apunteBancario.ConceptoComun = linea.Substring(22, 2);
-            apunteBancario.TextoConceptoComun = ObtenerTextoConceptoComun(apunteBancario.ConceptoComun);
-            apunteBancario.ConceptoPropio = linea.Substring(24, 3);
-            apunteBancario.ClaveDebeOHaberMovimiento = linea.Substring(27, 1);
-            apunteBancario.ImporteMovimiento = Convert.ToDecimal(linea.Substring(28, 14)) / 100; // Ajustar según formato y posición del punto decimal
-            apunteBancario.NumeroDocumento = linea.Substring(42, 10);
-            apunteBancario.Referencia1 = linea.Substring(52, 12);
-            apunteBancario.Referencia2 = linea.Substring(64, 16);
-
-            // Registros Complementarios de Concepto (Hasta un máximo de 5)
-            apunteBancario.RegistrosConcepto = new List<ConceptoComplementario>();
-
-
-            // Registro Complementario de Información de Equivalencia de Importe (Opcional)
-            apunteBancario.ImporteEquivalencia = new EquivalenciaDivisas();
-
-            return apunteBancario;
-        }
-
         private static ConceptoComplementario AsignarValoresRegistroComplementarioConcepto(string linea)
         {
             ConceptoComplementario registroConcepto = new ConceptoComplementario();
@@ -149,7 +100,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
             if (linea.Length > 42)
             {
                 // Asumiendo que los siguientes 38 caracteres son el segundo campo de concepto
-                registroConcepto.Concepto2 = linea.Substring(42, 38);
+                registroConcepto.Concepto += linea.Substring(42, 38);
             }
 
             return registroConcepto;
@@ -197,19 +148,33 @@ namespace NestoAPI.Infraestructure.Contabilidad
             return registroFinFichero;
         }
 
-
-        private static DateTime ParsearFecha(string fecha)
+        private static ApunteBancarioDTO AsignarValoresRegistroPrincipalMovimientos(string linea, StringReader reader)
         {
-            // Asumiendo un formato específico de fecha en el cuaderno 43, ajustar según sea necesario
-            int anio = Convert.ToInt32(fecha.Substring(0, 2));
-            int mes = Convert.ToInt32(fecha.Substring(2, 2));
-            int dia = Convert.ToInt32(fecha.Substring(4, 2));
+            ApunteBancarioDTO apunteBancario = new ApunteBancarioDTO();
+            apunteBancario.CodigoRegistroPrincipal = linea.Substring(0, 2);
+            apunteBancario.ClaveOficinaOrigen = linea.Substring(6, 4);
+            apunteBancario.FechaOperacion = ParsearFecha(linea.Substring(10, 6)); // Asumiendo un formato específico de fecha
+            apunteBancario.FechaValor = ParsearFecha(linea.Substring(16, 6));   // Asumiendo un formato específico de fecha
+            apunteBancario.ConceptoComun = linea.Substring(22, 2);
+            apunteBancario.TextoConceptoComun = ObtenerTextoConceptoComun(apunteBancario.ConceptoComun);
+            apunteBancario.ConceptoPropio = linea.Substring(24, 3);
+            apunteBancario.ClaveDebeOHaberMovimiento = linea.Substring(27, 1);
+            apunteBancario.ImporteMovimiento = Convert.ToDecimal(linea.Substring(28, 14)) / 100; // Ajustar según formato y posición del punto decimal
+            apunteBancario.NumeroDocumento = linea.Substring(42, 10);
+            apunteBancario.Referencia1 = linea.Substring(52, 12);
+            apunteBancario.Referencia2 = linea.Substring(64, 16);
 
-            // Puedes ajustar el formato y la cultura según tus necesidades
-            return new DateTime(2000 + anio, mes, dia);
+            // Registros Complementarios de Concepto (Hasta un máximo de 5)
+            apunteBancario.RegistrosConcepto = new List<ConceptoComplementario>();
+
+
+            // Registro Complementario de Información de Equivalencia de Importe (Opcional)
+            apunteBancario.ImporteEquivalencia = new EquivalenciaDivisas();
+
+            return apunteBancario;
         }
 
-        public static string ObtenerTextoConceptoComun(string codigoConcepto)
+        private static string ObtenerTextoConceptoComun(string codigoConcepto)
         {
             switch (codigoConcepto)
             {
@@ -256,114 +221,16 @@ namespace NestoAPI.Infraestructure.Contabilidad
             }
         }
 
-        public async Task<bool> PersistirCuaderno43(ContenidoCuaderno43 apuntes)
+
+        private static DateTime ParsearFecha(string fecha)
         {
-            return await _servicio.PersistirCuaderno43(apuntes);
-        }
+            // Asumiendo un formato específico de fecha en el cuaderno 43, ajustar según sea necesario
+            int anio = Convert.ToInt32(fecha.Substring(0, 2));
+            int mes = Convert.ToInt32(fecha.Substring(2, 2));
+            int dia = Convert.ToInt32(fecha.Substring(4, 2));
 
-        internal static async Task<int> PuntearApuntes(int? apunteBancoId, int? apunteContabilidadId, decimal importePunteo, string simboloPunteo, int? grupoPunteo, string usuario)
-        {
-            using (var db = new NVEntities())
-            {
-                decimal importeBanco = 0;
-                Models.Contabilidad movimientoContabilidad;
-                decimal importeContabilidad = 0;
-                decimal importeYaPunteadoBanco;
-                decimal importeYaPunteadoContabilidad;
-                if (grupoPunteo == null || apunteBancoId != null)
-                {
-                    importeBanco = (await db.ApuntesBancarios.SingleAsync(a => a.Id == apunteBancoId)).ImporteMovimiento;
-                }
-                if (grupoPunteo == null || apunteContabilidadId != null)
-                {
-                    movimientoContabilidad = await db.Contabilidades.SingleAsync(c => c.Nº_Orden == apunteContabilidadId);
-                    importeContabilidad = movimientoContabilidad.Debe - movimientoContabilidad.Haber;
-                }
-
-                /*
-                // Ajustar los importes restando el importe ya punteado
-                importeYaPunteadoBanco = ObtenerImportePunteoBanco(apunteBancoId, db);
-                importeYaPunteadoContabilidad = ObtenerImportePunteoContabilidad(apunteContabilidadId, db);
-
-                importeBanco -= importeYaPunteadoBanco;
-                importeContabilidad -= importeYaPunteadoContabilidad;
-                
-                var importePunteo = importeBanco > importeContabilidad ? importeContabilidad : importeBanco;
-
-                if (importePunteo == 0)
-                {
-                    throw new Exception("No se puede puntear porque alguno de los movimientos ya está completamente punteado");
-                }
-                */
-
-                var punteo = new ConciliacionBancariaPunteo
-                {
-                    ApunteBancoId = apunteBancoId,
-                    ApunteContabilidadId = apunteContabilidadId,
-                    ImportePunteado = importePunteo,
-                    SimboloPunteo = simboloPunteo,
-                    GrupoPunteo = grupoPunteo,
-                    Usuario = usuario,
-                    FechaCreacion = DateTime.Now
-                };
-
-                db.ConciliacionesBancariasPunteos.Add(punteo);
-                await db.SaveChangesAsync();
-                return punteo.Id;
-            }
-        }
-
-        private static decimal ObtenerImportePunteoBanco(int? apunteId, NVEntities db)
-        {
-            // Obtener la suma de importes punteados en las liquidaciones anteriores
-            var importePunteadoAnterior = db.ConciliacionesBancariasPunteos
-                .Where(p => p.ApunteBancoId == apunteId)
-                .Select(p => p.ImportePunteado)
-                .DefaultIfEmpty(0)
-                .Sum();
-
-            return importePunteadoAnterior;
-        }
-
-        private static decimal ObtenerImportePunteoContabilidad(int? apunteId, NVEntities db)
-        {
-            // Obtener la suma de importes punteados en las liquidaciones anteriores
-            var importePunteadoAnterior = db.ConciliacionesBancariasPunteos
-                .Where(p => p.ApunteContabilidadId == apunteId)
-                .Select(p => p.ImportePunteado)
-                .DefaultIfEmpty(0)
-                .Sum();
-
-            return importePunteadoAnterior;
-        }
-
-        internal static List<MovimientoTPVDTO> LeerMovimientosTPV(string contenido, string usuario)
-        {
-            List<MovimientoTPVDTO> movimientos = new List<MovimientoTPVDTO>();
-
-            // Suponiendo que 'contenido' es un string con varias líneas
-            string[] lineasDelArchivo = contenido.Split(new[] { Environment.NewLine }, StringSplitOptions.None);
-
-            foreach (var line in lineasDelArchivo)
-            {
-                if (line.StartsWith("20"))
-                {
-                    MovimientoTPVDTO movimiento = MovimientoTPVDTO.ParseFromLine(line);
-                    movimiento.Usuario = usuario;
-                    movimientos.Add(movimiento);
-                }
-            }
-            return movimientos;
-        }
-
-        internal async Task<bool> PersistirMovimientosTPV(List<MovimientoTPVDTO> movimientosTPV)
-        {
-            return await _servicio.PersistirMovimientosTPV(movimientosTPV);
-        }
-
-        internal async Task ContabilizarComisionesTarjetas(List<MovimientoTPVDTO> movimientosTPV)
-        {
-            await _servicio.ContabilizarComisionesTarjetas(movimientosTPV);
+            // Puedes ajustar el formato y la cultura según tus necesidades
+            return new DateTime(2000 + anio, mes, dia);
         }
     }
 }

@@ -27,7 +27,7 @@ namespace NestoAPI.Models.Comisiones
 
             if (ventaAcumulada == 0 && meses == 0)
             {
-                annoActual = _comisiones.LeerResumenAnno(vendedor, anno);
+                annoActual = _comisiones.LeerResumenAnno(vendedor, anno, true);
                 ventaActual = annoActual.Where(v => v.Mes <= mes).Sum(r => (r.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta);
                 numerosMesesActual = annoActual.Where(v => v.Mes <= mes).Count();
             } else
@@ -36,7 +36,7 @@ namespace NestoAPI.Models.Comisiones
                 numerosMesesActual = meses;
             }
             
-            var annoAnterior = _comisiones.LeerResumenAnno(vendedor, anno - 1);
+            var annoAnterior = _comisiones.LeerResumenAnno(vendedor, anno - 1, true);
             var ventaAnterior = annoAnterior.Where(v => v.Mes > mes).Sum(r => (r.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta);
 
             

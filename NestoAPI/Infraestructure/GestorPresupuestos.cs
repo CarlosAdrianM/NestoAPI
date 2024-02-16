@@ -128,7 +128,8 @@ namespace NestoAPI.Infraestructure
             }
             if (pedido.ruta == Constantes.Pedidos.RUTA_GLOVO)
             {
-                mail.Subject = "[GLOVO] " + mail.Subject;
+                mail.Subject = "[Entrega en 2h] " + mail.Subject;
+                mail.Priority = MailPriority.High;
             }
             // Si falta la foto ponemos copia a tienda online
             if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") || mail.Body.Contains("-home_default/.jpg"))
@@ -138,6 +139,7 @@ namespace NestoAPI.Infraestructure
             // Si tiene varios plazos y se podría servir junto, ponemos en copia a administración
             if (mail.Body.Contains("¡¡¡ ATENCIÓN !!!"))
             {
+                mail.Priority = MailPriority.High;
                 if (pedido.Prepagos.Any() || db.PlazosPago.Where(f => f.Empresa == pedido.empresa && f.Número == pedido.plazosPago && f.Nº_Plazos > 1).Any())
                 {
                     mail.CC.Add(Constantes.Correos.CORREO_ADMON);
@@ -157,6 +159,17 @@ namespace NestoAPI.Infraestructure
         private async Task<StringBuilder> GenerarTablaHTML(PedidoVentaDTO pedido, string tipoCorreo)
         {
             StringBuilder s = new StringBuilder();
+
+            // Estilo general del correo
+            s.AppendLine("<style>");
+            s.AppendLine("  body { font-family: 'Arial', sans-serif; }");
+            s.AppendLine("  h1 { color: #333; }");
+            s.AppendLine("  table { border-collapse: collapse; width: 100%; }");
+            s.AppendLine("  th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }");
+            s.AppendLine("  th { background-color: #f2f2f2; }");
+            s.AppendLine("  tr:nth-child(even) { background-color: #f9f9f9; }");
+            s.AppendLine("  tr:hover { background-color: #f5f5f5; }");
+            s.AppendLine("</style>");
 
             s.AppendLine(string.Format("<H1>{0} {1} {2}</H1>", tipoCorreo, TEXTO_PEDIDO, pedido.numero));
 

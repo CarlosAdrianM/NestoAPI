@@ -184,6 +184,10 @@ namespace NestoAPI.Controllers
             {
                 throw;
             }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
 
             return Ok(comisiones);
         }

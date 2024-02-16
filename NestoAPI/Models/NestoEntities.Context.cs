@@ -74,7 +74,6 @@ namespace NestoAPI.Models
         public virtual DbSet<OfertaCombinada> OfertasCombinadas { get; set; }
         public virtual DbSet<OfertaCombinadaDetalle> OfertasCombinadasDetalles { get; set; }
         public virtual DbSet<ComisionAnualDetalle> ComisionesAnualesDetalles { get; set; }
-        public virtual DbSet<ComisionAnualResumenMes> ComisionesAnualesResumenMes { get; set; }
         public virtual DbSet<RentingFactura> RentingFacturas { get; set; }
         public virtual DbSet<vstLinPedidoVtaComisionesDetalle> vstLinPedidoVtaComisionesDetalles { get; set; }
         public virtual DbSet<vstLinPedidoVtaComisione> vstLinPedidoVtaComisiones { get; set; }
@@ -100,6 +99,14 @@ namespace NestoAPI.Models
         public virtual DbSet<Kit> Kits { get; set; }
         public virtual DbSet<PreContabilidad> PreContabilidades { get; set; }
         public virtual DbSet<VendedorLinPedidoVta> VendedoresLinPedidoVta { get; set; }
+        public virtual DbSet<Contabilidad> Contabilidades { get; set; }
+        public virtual DbSet<ApunteBancario> ApuntesBancarios { get; set; }
+        public virtual DbSet<FicheroCuaderno43> FicherosCuaderno43 { get; set; }
+        public virtual DbSet<RegistroComplementarioConcepto> RegistrosComplementariosConceptos { get; set; }
+        public virtual DbSet<RegistroComplementarioEquivalencia> RegistrosComplementariosEquivalencias { get; set; }
+        public virtual DbSet<ComisionAnualResumenMes> ComisionesAnualesResumenMes { get; set; }
+        public virtual DbSet<MovimientoTPV> MovimientosTPV { get; set; }
+        public virtual DbSet<ConciliacionBancariaPunteo> ConciliacionesBancariasPunteos { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

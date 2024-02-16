@@ -1,8 +1,20 @@
-﻿using System;
+﻿using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Models.ApuntesBanco
 {
+    public class ContenidoCuaderno43
+    {
+        public ContenidoCuaderno43() {
+            Apuntes = new List<ApunteBancarioDTO>();
+        }
+        public RegistroCabeceraCuenta Cabecera { get; set; }
+        public List<ApunteBancarioDTO> Apuntes { get; set; }
+        public RegistroFinalCuenta FinalCuenta { get; set; }
+        public RegistroFinalFichero FinalFichero { get; set; }
+        public string Usuario { get; set; }
+    }
     public class ApunteBancarioDTO
     {
         public int Id { get; set; }
@@ -20,23 +32,29 @@ namespace NestoAPI.Models.ApuntesBanco
         public string Referencia1 { get; set; }
         public string Referencia2 { get; set; }
 
+
+        // Campos que no persistimos
+        public string TextoConceptoComun { get; set; }
+        public EstadoPunteo EstadoPunteo { get; set; }
+        public decimal ImporteConSigno { get => ClaveDebeOHaberMovimiento == "2" ? ImporteMovimiento : -ImporteMovimiento;  }
+
         // Registros Complementarios de Concepto (Hasta un máximo de 5)
-        public List<RegistroComplementarioConcepto> RegistrosConcepto { get; set; }
+        public List<ConceptoComplementario> RegistrosConcepto { get; set; }
 
         // Registro Complementario de Información de Equivalencia de Importe (Opcional)
-        public RegistroComplementarioEquivalencia ImporteEquivalencia { get; set; }
+        public EquivalenciaDivisas ImporteEquivalencia { get; set; }
 
     }
 
-
-    public class RegistroComplementarioConcepto
+    public class ConceptoComplementario
     {
         public string CodigoRegistroConcepto { get; set; }
         public string CodigoDatoConcepto { get; set; }
         public string Concepto { get; set; }
+        public string Concepto2 { get; set; }
     }
 
-    public class RegistroComplementarioEquivalencia
+    public class EquivalenciaDivisas
     {
         public string CodigoRegistroEquivalencia { get; set; }
         public string CodigoDatoEquivalencia { get; set; }
@@ -86,5 +104,35 @@ namespace NestoAPI.Models.ApuntesBanco
         public string Nueves { get; set; }
         public int NumeroRegistros { get; set; }
         public string CampoLibreFinFichero { get; set; }
+    }
+
+    public class ContabilidadDTO
+    {
+        [JsonProperty("Nº_Orden")]
+        public int Id { get; set; }
+        public string Empresa { get; set; }
+        [JsonProperty("Nº_Cuenta")]
+        public string Cuenta { get; set; }
+        public string Concepto { get; set; }
+        public decimal Debe { get; set; }
+        public decimal Haber { get; set; }
+        public decimal Importe => Debe - Haber;
+        public DateTime Fecha { get; set; }
+        [JsonProperty("Nº_Documento")]
+        public string Documento { get; set; }
+        public int Asiento { get; set; }
+        public string Diario { get; set; }
+        public string Delegacion { get; set; }
+        public string FormaVenta { get; set; }
+        public string Departamento { get; set; }
+        public string CentroCoste { get; set; }
+        public EstadoPunteo EstadoPunteo { get; set; }
+    }
+
+    public enum EstadoPunteo
+    {
+        SinPuntear = 0,
+        CompletamentePunteado,
+        ParcialmentePunteado
     }
 }

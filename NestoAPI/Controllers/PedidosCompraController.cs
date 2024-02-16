@@ -9,11 +9,13 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
+using System.Transactions;
 using System.Web.Http;
 using System.Web.Http.Cors;
 using System.Web.Http.Description;
 using Nesto.Modulos.PedidoCompra.Models;
 using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using NestoAPI.Models.PedidosBase;
@@ -23,15 +25,17 @@ namespace NestoAPI.Controllers
 {
     public class PedidosCompraController : ApiController
     {
-        private readonly IServicioFacturas servicio;
-        private readonly IGestorFacturas gestor;
+        private readonly IServicioFacturas _servicioFacturas;
+        private readonly IGestorFacturas _gestor;
+        private readonly IPedidosCompraService _servicio;
 
         private NVEntities db = new NVEntities();
 
         public PedidosCompraController()
         {
-            servicio = new ServicioFacturas();
-            gestor = new GestorFacturas(servicio);
+            _servicioFacturas = new ServicioFacturas();
+            _gestor = new GestorFacturas(_servicioFacturas);
+            _servicio = new PedidosCompraService();
         }
         /*
         // GET: api/PedidosCompra
@@ -456,40 +460,60 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales
-            ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
-            if (pedido.Id == 0)
-            {
-                contador.PedidosCmp++;
-                pedido.Id = contador.PedidosCmp;
-            }
-
-            CabPedidoCmp cabecera = pedido.ToCabPedidoCmp();
-
-            db.CabPedidosCmp.Add(cabecera);
-
-            try
-            {
-                await db.SaveChangesAsync();
-            }
-            catch (DbUpdateException)
-            {
-                if (CabPedidoCmpExists(cabecera.Empresa, cabecera.Número))
-                {
-                    return Conflict();
-                }
-                else
-                {
-                    throw;
-                }
-            }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
+            var cabecera = await _servicio.CrearPedido(pedido, db);
 
             return Ok(cabecera.Número);
             //return CreatedAtRoute("DefaultApi", new { empresa = cabFacturaCmp.Empresa, id = cabFacturaCmp.Número }, cabFacturaCmp);
+        }
+
+        [HttpPost]
+        [EnableCors(origins: "*", headers: "*", methods: "*", SupportsCredentials = true)]
+        [Route("api/PedidosCompra/CrearAlbaranYFactura")]
+        [ResponseType(typeof(CrearFacturaCmpResponse))]
+        public async Task<IHttpActionResult> CrearAlbaranYFactura(CrearFacturaCmpRequest request)
+        {
+            if (request == null)
+            {
+                return null;
+            }
+
+            using (var db = new NVEntities())
+            {
+                using (var transaction = db.Database.BeginTransaction())
+                {
+                    try
+                    {
+                        CabPedidoCmp pedido = await _servicio.CrearPedido(request.Pedido, db);
+                        var fechaFactura = (DateTime)pedido.Fecha;
+                        CrearFacturaCmpResponse respuesta = await _servicio.CrearAlbaranYFactura(pedido.Número, fechaFactura, db);
+                        if (request.CrearPago)
+                        {
+                            respuesta.Exito = false;
+                            respuesta.AsientoPago = await _servicio.CrearPagoFactura(request, respuesta, db);
+                            if (respuesta.AsientoPago > 0)
+                            {
+                                respuesta.Exito = true;
+                            };
+                        }
+
+                        if (respuesta.Exito)
+                        {
+                            transaction.Commit();
+                        }
+                        else
+                        {
+                            transaction.Rollback();
+                        }
+
+                        return Ok(respuesta);
+                    }
+                    catch (Exception ex)
+                    {
+                        transaction.Rollback();
+                        throw new Exception("No se ha podido crear la factura de compra", ex);
+                    }
+                }
+            }                                    
         }
 
         /*

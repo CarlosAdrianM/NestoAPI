@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
+using NestoAPI.Models.PedidosCompra;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,6 +27,6 @@ namespace NestoAPI.Infraestructure.Facturas
         string ComponerIban(string empresa, string cliente, string contacto, string ccc);
         List<ClienteCorreoFactura> LeerClientesCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter);
         IEnumerable<FacturaCorreo> LeerFacturasCliente(string cliente, string contacto, DateTime firstDayOfQuarter, DateTime lastDayOfQuarter);
-        bool EnviarCorreoSMTP(MailMessage mail);
+        bool EnviarCorreoSMTP(MailMessage mail);        
     }
 }

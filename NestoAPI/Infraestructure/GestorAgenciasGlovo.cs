@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Microsoft.ApplicationInsights;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using NestoAPI.Models.RecursosHumanos;
 
 namespace NestoAPI.Infraestructure
 {
@@ -25,7 +26,14 @@ namespace NestoAPI.Infraestructure
             if (!codigoPostal.StartsWith("28"))
             {
                 return null;
-            }            
+            }
+
+            var almacenPedido = pedido?.Lineas?.First().almacen;
+            if (GestorFestivos.EsFestivo(hora, almacenPedido))
+            {
+                return null;
+            }
+
             RespuestaAgencia respuestaAgencia = PortesPorCodigoPostal(codigoPostal);
             if (respuestaAgencia == null || string.IsNullOrEmpty(respuestaAgencia.Almacen))
             {
@@ -53,7 +61,14 @@ namespace NestoAPI.Infraestructure
 
             TelemetryClient telemetry = new TelemetryClient();
             telemetry.Context.User.Id = pedido.Usuario;
-            telemetry.TrackEvent("OfrecidoGlovo");
+            if (respuestaAgencia.CondicionesPagoValidas)
+            {
+                telemetry.TrackEvent("OfrecidoGlovo");
+            }
+            else
+            {
+                telemetry.TrackEvent("EntregaUrgenteSinPrepago");
+            }
 
             return respuestaAgencia;
         }
@@ -62,7 +77,7 @@ namespace NestoAPI.Infraestructure
         {
             // de momento lo hacemos así pero hay que refactorizar esto con diferentes clases cuando ya esté todo estable
 
-            string[] codigosPostalesShopopop = { "28100", "28109", "28108", "28701", "28702", "28703", "28708", "28029", "28033", "28034", "28036", "28042", "28049", "28050", "28055" };
+            string[] codigosPostalesShopopop = { "28100", "28109", "28108", "28701", "28702", "28703", "28708", "28033", "28034", "28043", "28049", "28050", "28055" };
             string[] codigosPostalesRams = { "28001", "28002", "28003", "28004", "28005", "28006", "28007", "28008", "28009", "28010", "28012", "28013", "28014", "28015", "28016", "28020", "28028", "28029", "28036", "28039", "28040", "28045", "28046" };
 
             if (codigosPostalesShopopop.Contains(codigoPostal))
@@ -70,7 +85,7 @@ namespace NestoAPI.Infraestructure
                 return new RespuestaAgencia
                 {
                     Almacen = Constantes.Almacenes.ALCOBENDAS,
-                    Coste = 6.6M
+                    Coste = 7.9M
                 };
             }
 

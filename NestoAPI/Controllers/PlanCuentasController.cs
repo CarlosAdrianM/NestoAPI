@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
-using NestoAPI.Models.Contabilidad;
+using NestoAPI.Models.Cajas;
 
 namespace NestoAPI.Controllers
 {

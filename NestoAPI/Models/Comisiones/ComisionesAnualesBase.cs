@@ -20,11 +20,23 @@ namespace NestoAPI.Models.Comisiones
         public virtual ICollection<IEtiquetaComision> Etiquetas { get; private set; }
         public virtual ICollection<IEtiquetaComision> NuevasEtiquetas { get; private set; } // debería ser init cuando actualicemos a C# 9
 
-        public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno)
+        public ICollection<ResumenComisionesMes> LeerResumenAnno(string vendedor, int anno, bool todoElEquipo = false)
         {
             var etiquetas = NuevasEtiquetas;
+            // Carlos 01/02/24: estoy comprobando el jefe de ventas en el mes pasado y no parece que
+            // tenga sentido que lea todos los vendedores, por lo que quito la lista de vendedores y dejo solo el vendedor del jefe de ventas
+            //var listaVendedores = _servicio.ListaVendedores(vendedor);
 
-            var listaVendedores = _servicio.ListaVendedores(vendedor);
+            var listaVendedores = new List<string>();
+            if (todoElEquipo)
+            {
+                listaVendedores = _servicio.ListaVendedores(vendedor);
+            }
+            else
+            {
+                listaVendedores = new List<string> { vendedor };
+            }
+
             List<ComisionAnualResumenMes> resumenDb = _servicio.LeerComisionesAnualesResumenMes(listaVendedores, anno);
 
             if (resumenDb == null || !resumenDb.Any())
@@ -72,6 +84,10 @@ namespace NestoAPI.Models.Comisiones
                     if (etiquetaComision is IEtiquetaComisionVenta)
                     {
                         (etiquetaComision as IEtiquetaComisionVenta).Venta += resumenMesDB.Venta;
+                    }
+                    else if (etiquetaComision is IEtiquetaComisionClientes)
+                    {
+                        (etiquetaComision as IEtiquetaComisionClientes).Recuento += (int)resumenMesDB.Venta;
                     }
                     else
                     {

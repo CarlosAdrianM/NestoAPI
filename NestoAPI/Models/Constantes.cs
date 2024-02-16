@@ -71,12 +71,18 @@ namespace NestoAPI.Models
 
         public static class Cuentas
         {
+            public const string COMISIONES_BANCO_COBRO_TPV = "62600008";
             public const string CUENTA_PORTES_VENTA_GENERAL = "75900000";
             public const string CUENTA_PORTES_GLOVO = "62400017";
             public const string CUENTA_PORTES_CEX = "62400005";
             public const string CUENTA_PORTES_ONTIME = "62400002";
             public const short ESTADO_ACTIVA = 0;
             public const short NIVEL_MAXIMO = 8;
+        }
+
+        public static class DiariosContables
+        {
+            public const string COMISIONES_BANCO = "_ComisBanc";
         }
 
         public static class DiariosProducto
@@ -190,6 +196,9 @@ namespace NestoAPI.Models
         }
         public static class TiposExtractoCliente
         {
+            public const string SIN_ESPECIFICAR = "0";
+            public const string FACTURA = "1";
+            public const string CARTERA = "2";
             public const string PAGO = "3";
             public const string IMPAGADO = "4";
         }
@@ -249,6 +258,20 @@ namespace NestoAPI.Models
             {
                 public const string TIPO_VISITA_PRESENCIAL = "V";
                 public const string TIPO_VISITA_TELEFONICA = "T";
+            }
+        }
+
+        public static class Contabilidad
+        {
+            public static class Diarios {
+                public const string DIARIO_CIERRE = "_ASIENTCIE";
+            }
+
+            public static class TiposCuenta
+            {
+                public const string CUENTA_CONTABLE = "1";
+                public const string CLIENTE = "2";
+                public const string PROVEEDOR = "3";
             }
         }
     }

@@ -268,6 +268,7 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="App_Data\" />
+    <Folder Include="Models\ApuntesBanco\" />
     <Folder Include="Views\Accounts\" />
   </ItemGroup>
   <ItemGroup>
@@ -311,6 +312,7 @@
     <Compile Include="Controllers\ClientesController.cs" />
     <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
+    <Compile Include="Controllers\ContabilidadesController.cs" />
     <Compile Include="Controllers\ControlesStockController.cs" />
     <Compile Include="Controllers\DepositosController.cs" />
     <Compile Include="Controllers\DiariosProductosController.cs" />
@@ -354,6 +356,7 @@
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\Contabilidad\ContabilidadService.cs" />
     <Compile Include="Infraestructure\Contabilidad\GestorContabilidad.cs" />
+    <Compile Include="Infraestructure\Contabilidad\GestorCuaderno43.cs" />
     <Compile Include="Infraestructure\Contabilidad\IContabilidadService.cs" />
     <Compile Include="Infraestructure\Depositos\GestorDepositos.cs" />
     <Compile Include="Infraestructure\Depositos\IServicioDeposito.cs" />
@@ -389,6 +392,8 @@
     <Compile Include="Infraestructure\Kits\IUbicacionService.cs" />
     <Compile Include="Infraestructure\Kits\ProductoService.cs" />
     <Compile Include="Infraestructure\Kits\UbicacionService.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\IPedidosCompraService.cs" />
+    <Compile Include="Infraestructure\PedidosCompra\PedidosCompraService.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
@@ -425,10 +430,14 @@
     <Compile Include="Models\AgenciaTransporte.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
-    <Compile Include="Models\ApuntesBanco\ApunteBancarioDTO.cs" />
+    <Compile Include="Models\ApunteBancario.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Bancos\ApunteBancarioDTO.cs" />
     <Compile Include="Models\Banco.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Bancos\MovimientoTPVDTO.cs" />
     <Compile Include="Models\CabFacturaCmp.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -510,11 +519,17 @@
     <Compile Include="Models\Comisiones\ServicioComisionesAnualesComun.cs" />
     <Compile Include="Models\Comisiones\TramoComision.cs" />
     <Compile Include="Models\Comisiones\VendedorComisionAnual.cs" />
+    <Compile Include="Models\ConciliacionBancariaPunteo.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\CondPagoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Constantes.cs" />
-    <Compile Include="Models\Contabilidad\CuentaContableDTO.cs" />
+    <Compile Include="Models\Contabilidad.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Cajas\CuentaContableDTO.cs" />
     <Compile Include="Models\ContadorGlobal.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -592,6 +607,9 @@
     <Compile Include="Models\Familia.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\FicheroCuaderno43.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\FormaPago.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -620,6 +638,9 @@
     </Compile>
     <Compile Include="Models\ModelFactory.cs" />
     <Compile Include="Models\Modificacion.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\MovimientoTPV.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\NestoDTO.cs" />
@@ -659,6 +680,8 @@
     <Compile Include="Models\PedidosBase\LineaPedidoBase.cs" />
     <Compile Include="Models\PedidosBase\ParametrosIvaBase.cs" />
     <Compile Include="Models\PedidosBase\PedidoBase.cs" />
+    <Compile Include="Models\PedidosCompra\CrearFacturaCmpRequest.cs" />
+    <Compile Include="Models\PedidosCompra\CrearFacturaCmpResponse.cs" />
     <Compile Include="Models\PedidosCompra\DescuentoCantidadCompra.cs" />
     <Compile Include="Models\PedidosCompra\LineaPedidoCompraDTO.cs" />
     <Compile Include="Models\PedidosCompra\OfertaCompra.cs" />
@@ -759,6 +782,12 @@
     <Compile Include="Models\RecursosHumanos\TipoAccion.cs" />
     <Compile Include="Models\RecursosHumanos\Vacaciones.cs" />
     <Compile Include="Models\RegaloImportePedido.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\RegistroComplementarioConcepto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\RegistroComplementarioEquivalencia.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\RentingFactura.cs">

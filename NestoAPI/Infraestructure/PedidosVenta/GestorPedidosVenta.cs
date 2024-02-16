@@ -3,6 +3,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.Picking;
+using NestoAPI.Models.RecursosHumanos;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -330,7 +331,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 fechaMinima = DateTime.Today;
             }
 
-            return fechaMinima < fecha ? fecha : fechaMinima;
+            var fechaDevolver = fechaMinima < fecha ? fecha : fechaMinima;
+
+            while (GestorFestivos.EsFestivo(fechaDevolver, almacen))
+            {
+                fechaDevolver = fechaDevolver.AddDays(1);
+            }
+
+            return fechaDevolver;
         }
 
         internal static async Task<PedidoVentaDTO> LeerPedido(string empresa, int numero)

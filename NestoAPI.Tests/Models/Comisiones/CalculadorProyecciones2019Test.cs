@@ -41,8 +41,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             var calculador = new CalculadorProyecciones2019(comisiones);
             
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(CrearVentasAnnoPasado());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(CrearVentasAnnoPasado());
 
             var proyeccion = calculador.CalcularProyeccion("VD", 2019, 1, 0, 0, 0);
 
@@ -56,8 +56,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             var calculador = new CalculadorProyecciones2019(comisiones);
             
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(CrearVentasAnnoPasado());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(CrearVentasAnnoPasado());
 
             var proyeccion = calculador.CalcularProyeccion("VD", 2019, 2, 0, 0, 0);
 
@@ -71,8 +71,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             var calculador = new CalculadorProyecciones2019(comisiones);
             
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(CrearVentasAnnoPasado());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(CrearVentasAnnoPasado());
 
             var proyeccion = calculador.CalcularProyeccion("VD", 2019, 12, 0, 0, 0);
 
@@ -86,14 +86,14 @@ namespace NestoAPI.Tests.Models.Comisiones
             var calculador = new CalculadorProyecciones2019(comisiones);
             
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(CrearVentasAnnoActual());
             var ventasAnnoPasado = CrearVentasAnnoPasado();
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             // quedan 92000 de venta de mayo en adelante
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(ventasAnnoPasado);
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(ventasAnnoPasado);
 
             var proyeccion = calculador.CalcularProyeccion("VD", 2019, 3, 0, 0, 0);
 
@@ -106,14 +106,14 @@ namespace NestoAPI.Tests.Models.Comisiones
             var comisiones = A.Fake<IComisionesAnuales>();
             var calculador = new CalculadorProyecciones2019(comisiones);
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(CrearVentasAnnoActual());
             var ventasAnnoPasado = CrearVentasAnnoPasado();
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             // quedan 92000 de venta de mayo en adelante
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(ventasAnnoPasado);
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(ventasAnnoPasado);
 
             var proyeccion = calculador.CalcularProyeccion("VD", 2019, 1, 0, 0, 0);
 
@@ -138,7 +138,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             ventasAnnoActual.Remove(ventasAnnoActual.ElementAt(0));
             ventasAnnoActual.Remove(ventasAnnoActual.ElementAt(0));
             ventasAnnoActual.Remove(ventasAnnoActual.ElementAt(0));
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(ventasAnnoActual);
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(ventasAnnoActual);
 
             var proyeccion = calculador.CalcularProyeccion("VD", 2019, 9, 0, 0, 0);
 
@@ -158,7 +158,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             ventasAnnoActual.Remove(ventasAnnoActual.ElementAt(0));
             ventasAnnoActual.Remove(ventasAnnoActual.ElementAt(0));
             ventasAnnoActual.Remove(ventasAnnoActual.ElementAt(0));
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(ventasAnnoActual);
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(ventasAnnoActual);
 
             var proyeccion = calculador.CalcularProyeccion("VD", 2019, 6, 0, 0, 0);
 
@@ -174,7 +174,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
             var ventasAnnoActual = CrearVentasAnnoActual();
             // las ventas de enero a junio son 74600 (media de 12433.33)
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(ventasAnnoActual);
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(ventasAnnoActual);
 
             var ventasAnnoPasado = CrearVentasAnnoPasado();
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
@@ -189,7 +189,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             ventasAnnoPasado.Remove(ventasAnnoPasado.ElementAt(0));
             // quedan 10000 de venta de diciembre
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(ventasAnnoPasado);
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(ventasAnnoPasado);
 
             var proyeccion = calculador.CalcularProyeccion("VD", 2019, 6, 0, 0, 0);
 
@@ -202,8 +202,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             var comisiones = A.Fake<IComisionesAnuales>();
             var calculador = new CalculadorProyecciones2019(comisiones);
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(CrearVentasAnnoPasado());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(CrearVentasAnnoPasado());
             var tramos = new List<TramoComision> {
                 new TramoComision
                 {
@@ -237,8 +237,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             var comisiones = A.Fake<IComisionesAnuales>();
             var calculador = new CalculadorProyecciones2019(comisiones);
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(CrearVentasAnnoPasado());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(CrearVentasAnnoPasado());
             var tramos = new List<TramoComision> {
                 new TramoComision
                 {
@@ -271,11 +271,11 @@ namespace NestoAPI.Tests.Models.Comisiones
             var comisiones = A.Fake<IComisionesAnuales>();
             var calculador = new CalculadorProyecciones2019(comisiones);
             //A.CallTo(() => servicio.CalculadorProyecciones).Returns(calculador);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019)).Returns(CrearVentasAnnoActual());
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2019, true)).Returns(CrearVentasAnnoActual());
             var ventasAnnoPasado = CrearVentasAnnoPasado();
             var tramoFebrero = ventasAnnoPasado.Where(v => v.Mes == 2).Single();
             ventasAnnoPasado.Remove(tramoFebrero);
-            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018)).Returns(ventasAnnoPasado);
+            A.CallTo(() => comisiones.LeerResumenAnno("VD", 2018, true)).Returns(ventasAnnoPasado);
             var tramos = new List<TramoComision> {
                 new TramoComision
                 {

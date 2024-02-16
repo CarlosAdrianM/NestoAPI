@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
@@ -83,21 +84,32 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-
-            List<PreContabilidad> lineas = parametros.lineas.ToObject<List<PreContabilidad>>();
-            bool contabilizar = parametros.contabilizar;
-
-            int asiento;
-            if (contabilizar)
+            try
             {
-                asiento = await gestorContabilidad.CrearLineasDiarioYContabilizar(lineas);
-            }
-            else
-            {
-                asiento = await gestorContabilidad.CrearLineasDiario(lineas);
-            }
+                List<PreContabilidad> lineas = parametros.lineas.ToObject<List<PreContabilidad>>();
+                bool contabilizar = parametros.contabilizar;
 
-            return Ok(asiento);
+                if (lineas is null || !lineas.Any())
+                {
+                    return BadRequest(ModelState);
+                }
+
+                int asiento;
+                if (contabilizar)
+                {
+                    asiento = await gestorContabilidad.CrearLineasDiarioYContabilizar(lineas);
+                }
+                else
+                {
+                    asiento = await gestorContabilidad.CrearLineasDiario(lineas);
+                }
+
+                return Ok(asiento);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("No se pudo contabilizar", ex);
+            }
         }
 
         // DELETE: api/PreContabilidades/5

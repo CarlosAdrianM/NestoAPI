@@ -1,4 +1,4 @@
-﻿namespace NestoAPI.Models.Contabilidad
+﻿namespace NestoAPI.Models.Cajas
 {
     public class CuentaContableDTO
     {
