@@ -140,6 +140,12 @@ namespace NestoAPI.Models
             public const string RECIBO_BANCARIO = "RCB";
         }
 
+        public static class FormasVenta
+        {
+            public const string AMAZON = "STK";
+            public const string TIENDA_ONLINE = "WEB";
+        }
+
         public static class NivelRiesgoPagos
         {
             public const short NO_TIENE_DEUDA = 1;

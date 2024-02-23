@@ -10,6 +10,8 @@ using Newtonsoft.Json.Linq;
 using System.Configuration;
 using RedsysAPIPrj;
 using Microsoft.VisualBasic;
+using Microsoft.ApplicationInsights;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -101,6 +103,9 @@ namespace NestoAPI.Infraestructure
                 }
             }
 
+            TelemetryClient telemetry = new TelemetryClient();
+            telemetry.TrackEvent("EnvioPagoTarjeta");
+            
             return reclamacion;
         }
     }

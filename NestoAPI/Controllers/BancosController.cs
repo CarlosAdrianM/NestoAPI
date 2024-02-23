@@ -218,6 +218,26 @@ namespace NestoAPI.Controllers
             return Ok(movimientos);
         }
 
+        [HttpGet]
+        [Route("api/Bancos/PagoPendienteUnico")]
+        [ResponseType(typeof(ExtractoProveedorDTO))]
+        public async Task<IHttpActionResult> PagoPendienteUnico(string proveedor, decimal importe)
+        {
+            var servicio = new ContabilidadService();
+            var pagoPendiente = await servicio.PagoPendienteUnico(proveedor, importe);
+            return Ok(pagoPendiente);            
+        }
+
+        [HttpGet]
+        [Route("api/Bancos/LeerProveedorPorNombre")]
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> LeerProveedorPorNombre(string nombreProveedor)
+        {
+            var servicio = new ContabilidadService();
+            var proveedor = await servicio.LeerProveedorPorNombre(nombreProveedor);
+            return Ok(proveedor);
+        }
+
         [HttpPost]
         [Route("api/Bancos/PuntearApuntes")]
         [ResponseType(typeof(ContenidoCuaderno43))]

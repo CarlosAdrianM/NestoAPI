@@ -132,7 +132,10 @@ namespace NestoAPI.Infraestructure
                 mail.Priority = MailPriority.High;
             }
             // Si falta la foto ponemos copia a tienda online
-            if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") || mail.Body.Contains("-home_default/.jpg"))
+            if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") || 
+                mail.Body.Contains("-home_default/.jpg") ||
+                pedido.Lineas.First().formaVenta == Constantes.FormasVenta.AMAZON || 
+                pedido.Lineas.First().formaVenta == Constantes.FormasVenta.TIENDA_ONLINE)
             {
                 mail.CC.Add(Constantes.Correos.TIENDA_ONLINE);
             }

@@ -13,6 +13,7 @@ using NestoAPI.Models;
 using NestoAPI.Infraestructure;
 using static NestoAPI.Models.Constantes;
 using NestoAPI.Infraestructure.Kits;
+using NestoAPI.Infraestructure.Vendedores;
 
 namespace NestoAPI.Controllers
 {
@@ -67,8 +68,14 @@ namespace NestoAPI.Controllers
             var lineasVenta = db.LinPedidoVtas.Include("Cliente").Where(l => l.Empresa == empresa && l.Producto == id);
             if (lineasVenta != null && !string.IsNullOrWhiteSpace(vendedor))
             {
-                lineasVenta = lineasVenta.Where(l => l.Cliente.Vendedor == vendedor || 
-                    (l.Cliente.VendedoresClienteGrupoProductoes.FirstOrDefault() != null && l.Cliente.VendedoresClienteGrupoProductoes.FirstOrDefault().Vendedor == vendedor)
+                IServicioVendedores _servicioVendedores = new ServicioVendedores();
+                var listaVendedores = (await _servicioVendedores.VendedoresEquipo(empresa, vendedor)).Select(v => v.vendedor);
+                lineasVenta = lineasVenta
+                    .Where(l => listaVendedores.Contains(l.Cliente.Vendedor) || 
+                        (l.Cliente.VendedoresClienteGrupoProductoes
+                            .FirstOrDefault() != null && 
+                         listaVendedores.Contains(l.Cliente.VendedoresClienteGrupoProductoes
+                            .FirstOrDefault().Vendedor))
                 );
             }
             

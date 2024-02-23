@@ -20,6 +20,7 @@ using NestoAPI.Models.PedidosVenta;
 using Newtonsoft.Json.Linq;
 using NestoAPI.Models.PedidosBase;
 using NestoAPI.Infraestructure.Vendedores;
+using System.Drawing.Drawing2D;
 
 namespace NestoAPI.Controllers
 {
@@ -954,6 +955,11 @@ namespace NestoAPI.Controllers
                         vistoBueno = true,
                         usuario = pedido.Lineas.FirstOrDefault().usuario
                     };
+                    if (pedido.ParametrosIva.Any())
+                    {
+                        lineaPortes.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == lineaPortes.iva?.Trim()).PorcentajeIvaProducto;
+                        lineaPortes.PorcentajeRecargoEquivalencia = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == lineaPortes.iva?.Trim()).PorcentajeRecargoEquivalencia;
+                    }
                     linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
                     //lineaPortes.BaseImponible = linPedido.Base_Imponible;
                     //lineaPortes.Total = linPedido.Total;

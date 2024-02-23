@@ -13,6 +13,7 @@ using NestoAPI.Models;
 using System.Data.Entity.Core.Objects;
 using NestoAPI.Models.Rapports;
 using NestoAPI.Infraestructure.Rapports;
+using NestoAPI.Infraestructure.Vendedores;
 
 namespace NestoAPI.Controllers
 {
@@ -117,7 +118,9 @@ namespace NestoAPI.Controllers
                 
             if (!string.IsNullOrEmpty(vendedor))
             {
-                resultado = resultado.Include(s => s.Cliente).Where(s => s.Cliente.Vendedor == vendedor);
+                IServicioVendedores _servicioVendedores = new ServicioVendedores(); // habría que inyectarlo
+                var listaVendedores = _servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult().Select(l => l.vendedor).ToList();
+                resultado = resultado.Include(s => s.Cliente).Where(s => listaVendedores.Contains(s.Cliente.Vendedor));
             }
 
             return resultado.Select(s => new SeguimientoClienteDTO

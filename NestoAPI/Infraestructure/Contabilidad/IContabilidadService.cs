@@ -16,6 +16,8 @@ namespace NestoAPI.Infraestructure.Contabilidad
         Task<int> CrearLineas(NVEntities db, List<PreContabilidad> lineas);
         Task<int> CrearLineasYContabilizarDiario(List<PreContabilidad> lineas);
         Task<int> CrearLineasYContabilizarDiario(List<PreContabilidad> lineas, NVEntities db);
+        Task<string> LeerProveedorPorNombre(string nombreProveedor);
+        Task<ExtractoProveedorDTO> PagoPendienteUnico(string proveedor, decimal importe);
         Task<bool> PersistirCuaderno43(ContenidoCuaderno43 contenido);
         Task<bool> PersistirMovimientosTPV(List<MovimientoTPVDTO> movimientosTPV);
         Task<int> NumeroRecibosRemesa(int remesa);

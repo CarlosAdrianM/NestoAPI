@@ -61,6 +61,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
         {            
             foreach (var linea in lineas)
             {
+                if (linea.FechaVto == null || linea.FechaVto == DateTime.MinValue)
+                {
+                    linea.FechaVto = new DateTime(linea.Fecha.Year, linea.Fecha.Month, linea.Fecha.Day);
+                }
                 linea.Fecha_Modificación = DateTime.Now;
                 db.PreContabilidades.Add(linea);
             }
@@ -407,6 +411,51 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 var recibos = db.ExtractosCliente.Where(e => e.TipoApunte == Constantes.TiposExtractoCliente.PAGO && e.Remesa == remesa);
                 var numeroRecibos = await recibos.CountAsync();
                 return numeroRecibos;
+            }
+        }
+
+        public async Task<string> LeerProveedorPorNombre(string nombreProveedor)
+        {
+            using (var db = new NVEntities())
+            {
+                // nombreProveedor = LimpiarNombreProveedor(nombreProveedor); // quitar SL, SA, etc...
+                var proveedor = (await db.Proveedores.SingleOrDefaultAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Nombre.Contains(nombreProveedor)))?.Número;
+                if (string.IsNullOrEmpty(proveedor))
+                {
+                    return string.Empty;
+                }
+                else
+                {
+                    return proveedor.Trim();
+                }
+            }
+        }
+
+        public async Task<ExtractoProveedorDTO> PagoPendienteUnico(string proveedor, decimal importe)
+        {
+            using (var db = new NVEntities())
+            {
+                var pagoPendiente = await db.ExtractosProveedor
+                    .AsNoTracking()
+                    .Where(e =>
+                        e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                        e.Número == proveedor &&
+                        e.ImportePdte == importe
+                    )
+                    .Select(e => new ExtractoProveedorDTO
+                    {
+                        Id = e.NºOrden,
+                        Empresa = e.Empresa.Trim(),
+                        Proveedor = e.Número.Trim(),
+                        Contacto = e.Contacto.Trim(),
+                        Documento = e.NºDocumento.Trim(),
+                        DocumentoProveedor = e.NºDocumentoProv.Trim(),
+                        Delegacion = e.Delegación.Trim(),
+                        FormaVenta = e.FormaVenta.Trim()
+                    })
+                    .SingleOrDefaultAsync();
+                
+                return pagoPendiente;
             }
         }
     }

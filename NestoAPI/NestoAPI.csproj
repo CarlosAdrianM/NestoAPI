@@ -437,6 +437,7 @@
     <Compile Include="Models\Banco.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Bancos\ExtractoProveedorDTO.cs" />
     <Compile Include="Models\Bancos\MovimientoTPVDTO.cs" />
     <Compile Include="Models\CabFacturaCmp.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
