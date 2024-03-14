@@ -10,5 +10,7 @@
         public string DocumentoProveedor { get; set; }
         public string Delegacion { get; set; }
         public string FormaVenta { get; set; }
+        public decimal Importe { get; set; }
+        public decimal ImportePendiente { get; set; }
     }
 }

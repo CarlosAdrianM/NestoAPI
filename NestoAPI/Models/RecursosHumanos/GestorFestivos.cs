@@ -229,6 +229,7 @@ namespace NestoAPI.Models.RecursosHumanos
                 Fiesta = "San Isidro",
                 TipoFestivo = TipoFestivo.Alcobendas
             },
+            /*
             new Festivo()
             {
                 Fecha = new DateTime(2024, 9, 13),
@@ -241,6 +242,7 @@ namespace NestoAPI.Models.RecursosHumanos
                 Fiesta = "Fiestas de Algete (lunes)",
                 TipoFestivo = TipoFestivo.Algete
             },
+            */
             new Festivo()
             {
                 Fecha = new DateTime(2024, 12, 24),

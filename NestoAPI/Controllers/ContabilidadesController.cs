@@ -11,6 +11,7 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
+using NestoAPI.Models.Cajas;
 
 namespace NestoAPI.Controllers
 {
@@ -157,6 +158,48 @@ namespace NestoAPI.Controllers
             {
                 throw ex;
             }
+        }
+
+        [HttpGet]
+        [Route("api/Contabilidades/LeerCuentasPorConcepto")]
+        [ResponseType(typeof(List<ContabilidadDTO>))]
+        public async Task<IHttpActionResult> LeerCuentasPorConcepto(string empresa, string concepto, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            try
+            {
+                var consultaInicial = db.Contabilidades
+                .Where(c => c.Empresa == empresa && c.Concepto.Contains(concepto) &&
+                        c.Fecha >= fechaDesde && c.Fecha <= fechaHasta && c.Nº_Cuenta.StartsWith("6") &&
+                        !db.ExtractosProveedor.Any(e => e.Empresa == c.Empresa && e.Asiento == c.Asiento)
+                );
+
+                var resultado = await consultaInicial
+                    .GroupBy(c => new
+                    {
+                        Cuenta = c.Nº_Cuenta.Trim(),
+                        Delegacion = c.Delegación,
+                        Departamento = c.Departamento,
+                        CentroCoste = c.CentroCoste
+                    })
+                    .Select(group => new ContabilidadDTO
+                    {
+                        Cuenta = group.Key.Cuenta,
+                        Delegacion = group.Key.Delegacion,
+                        Departamento = group.Key.Departamento,
+                        CentroCoste = group.Key.CentroCoste,
+                        FormaVenta = consultaInicial
+                            .OrderByDescending(g => g.Fecha)
+                            .FirstOrDefault().FormaVenta
+                    })
+                    .ToListAsync();
+
+                return Ok(resultado);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            
         }
 
         // PUT: api/Contabilidades/5

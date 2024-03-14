@@ -147,12 +147,12 @@ namespace NestoAPI.Models.Bancos
                     throw new Exception("Tipo de operación erróneo. Los valores permitidos son '010' y '110'.");
                 }
 
-                if (movimiento.TipoOperacion == "110") // devolución
-                {
-                    movimiento.ImporteOperacion = -movimiento.ImporteOperacion;
-                    movimiento.ImporteComision = -movimiento.ImporteComision;
-                    movimiento.ImporteAbono = -movimiento.ImporteAbono;
-                }
+                //if (movimiento.TipoOperacion == "110") // devolución
+                //{
+                //    movimiento.ImporteOperacion = -movimiento.ImporteOperacion;
+                //    movimiento.ImporteComision = -movimiento.ImporteComision;
+                //    movimiento.ImporteAbono = -movimiento.ImporteAbono;
+                //}
 
                 return movimiento;
             } 

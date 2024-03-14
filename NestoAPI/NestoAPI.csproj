@@ -318,6 +318,7 @@
     <Compile Include="Controllers\DiariosProductosController.cs" />
     <Compile Include="Controllers\EmpresasController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
+    <Compile Include="Controllers\ExtractoProveedoresController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
     <Compile Include="Controllers\FacturasController.cs" />
     <Compile Include="Controllers\FormasPagoController.cs" />

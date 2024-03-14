@@ -105,6 +105,8 @@ namespace NestoAPI.Models
         public string ruta { get; set; }
         public string estado { get; set; }
         public string formaPago { get; set; }
+        public string formaVenta { get; set; }
+        public string delegacion { get; set; }
         public string usuario { get; set; }
     }
     public class FormaPagoDTO

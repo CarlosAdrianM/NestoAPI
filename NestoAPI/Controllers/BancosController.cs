@@ -14,6 +14,7 @@ using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
 using NestoAPI.Models.Bancos;
+using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Controllers
 {
@@ -208,6 +209,17 @@ namespace NestoAPI.Controllers
             return Ok(movimientosTPV);
         }
 
+
+        [HttpGet]
+        [Route("api/Bancos/LeerPrepagoPendientePorImporte")]
+        [ResponseType(typeof(List<Prepago>))]
+        public async Task<IHttpActionResult> LeerPrepagoPendientePorImporte(decimal importe)
+        {
+            var prepagos = db.Prepagos.Where(p => p.Factura == null && p.Importe == importe);            
+            return Ok(prepagos);
+        }
+
+
         [HttpGet]
         [Route("api/Bancos/LeerMovimientosTPV")]
         [ResponseType(typeof(List<MovimientoTPVDTO>))]
@@ -219,16 +231,6 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
-        [Route("api/Bancos/PagoPendienteUnico")]
-        [ResponseType(typeof(ExtractoProveedorDTO))]
-        public async Task<IHttpActionResult> PagoPendienteUnico(string proveedor, decimal importe)
-        {
-            var servicio = new ContabilidadService();
-            var pagoPendiente = await servicio.PagoPendienteUnico(proveedor, importe);
-            return Ok(pagoPendiente);            
-        }
-
-        [HttpGet]
         [Route("api/Bancos/LeerProveedorPorNombre")]
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> LeerProveedorPorNombre(string nombreProveedor)
@@ -236,6 +238,16 @@ namespace NestoAPI.Controllers
             var servicio = new ContabilidadService();
             var proveedor = await servicio.LeerProveedorPorNombre(nombreProveedor);
             return Ok(proveedor);
+        }
+
+        [HttpGet]
+        [Route("api/Bancos/PagoPendienteUnico")]
+        [ResponseType(typeof(ExtractoProveedorDTO))]
+        public async Task<IHttpActionResult> PagoPendienteUnico(string proveedor, decimal importe)
+        {
+            var servicio = new ContabilidadService();
+            var pagoPendiente = await servicio.PagoPendienteUnico(proveedor, importe);
+            return Ok(pagoPendiente);
         }
 
         [HttpPost]

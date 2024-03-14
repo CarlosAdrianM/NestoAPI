@@ -36,23 +36,26 @@ namespace NestoAPI.Controllers
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,
-                    empresa = extractoEncontrado.Empresa,
+                    empresa = extractoEncontrado.Empresa.Trim(),
                     asiento = extractoEncontrado.Asiento,
-                    cliente = extractoEncontrado.Número,
-                    contacto = extractoEncontrado.Contacto,
+                    cliente = extractoEncontrado.Número.Trim(),
+                    contacto = extractoEncontrado.Contacto.Trim(),
                     fecha = extractoEncontrado.Fecha,
-                    tipo = extractoEncontrado.TipoApunte,
-                    documento = extractoEncontrado.Nº_Documento,
-                    efecto = extractoEncontrado.Efecto,
-                    concepto = extractoEncontrado.Concepto,
+                    tipo = extractoEncontrado.TipoApunte.Trim(),
+                    documento = extractoEncontrado.Nº_Documento.Trim(),
+                    efecto = extractoEncontrado.Efecto.Trim(),
+                    concepto = extractoEncontrado.Concepto.Trim(),
                     importe = extractoEncontrado.Importe,
                     importePendiente = extractoEncontrado.ImportePdte,
-                    vendedor = extractoEncontrado.Vendedor,
+                    vendedor = extractoEncontrado.Vendedor.Trim(),
                     vencimiento = extractoEncontrado.FechaVto ?? extractoEncontrado.Fecha,
-                    ccc = extractoEncontrado.CCC,
-                    ruta = extractoEncontrado.Ruta,
-                    estado = extractoEncontrado.Estado,
-                    formaPago = extractoEncontrado.FormaPago
+                    ccc = extractoEncontrado.CCC.Trim(),
+                    ruta = extractoEncontrado.Ruta.Trim(),
+                    estado = extractoEncontrado.Estado.Trim(),
+                    formaPago = extractoEncontrado.FormaPago.Trim(),
+                    delegacion = extractoEncontrado.Delegación.Trim(),
+                    formaVenta = extractoEncontrado.FormaVenta.Trim(),
+                    usuario = extractoEncontrado.Usuario.Trim()
                 }).ToList();
             return extracto.AsQueryable();
         }
@@ -156,6 +159,45 @@ namespace NestoAPI.Controllers
 
             return Ok(extractoCliente);
         }
+
+        /*
+        // GET: api/ExtractosCliente/5
+        [ResponseType(typeof(List<ExtractoClienteDTO>))]
+        public async Task<IHttpActionResult> GetExtractoCliente(string empresa, int asiento)
+        {
+            List<ExtractoClienteDTO> extractoCliente = await db.ExtractosCliente
+                .Where(e => e.Empresa == empresa && e.Asiento == asiento)
+                .Select(e => new ExtractoClienteDTO
+                {
+                    id = e.Nº_Orden,
+                    empresa = e.Empresa,
+                    asiento = e.Asiento,
+                    cliente = e.Número,
+                    contacto = e.Contacto,
+                    fecha = e.Fecha,
+                    tipo = e.TipoApunte,
+                    documento = e.Nº_Documento,
+                    efecto = e.Efecto,
+                    concepto = e.Concepto,
+                    importe = e.Importe,
+                    importePendiente = e.ImportePdte,
+                    vendedor = e.Vendedor,
+                    vencimiento = e.FechaVto ?? e.Fecha,
+                    ccc = e.CCC,
+                    ruta = e.Ruta,
+                    estado = e.Estado,
+                    formaPago = e.FormaPago
+                })
+                .ToListAsync();
+
+            if (extractoCliente == null || !extractoCliente.Any())
+            {
+                return NotFound();
+            }
+
+            return Ok(extractoCliente);
+        }
+        */
 
         [HttpGet]
         [Route("api/ExtractosCliente/EnviarCorreoDomiciliacionDia")]
