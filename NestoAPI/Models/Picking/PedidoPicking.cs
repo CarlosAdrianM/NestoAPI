@@ -94,6 +94,11 @@ namespace NestoAPI.Models.Picking
 
         public bool hayQueSumarPortes()
         {
+            if (EsTiendaOnline)
+            {
+                return false;
+            }
+
             bool yaLlevaPortes = this.Lineas.Any(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE && l.Producto != null && l.Producto.StartsWith(PREFIJO_PORTES));
 
             if (yaLlevaPortes || EsProductoYaFacturado)
