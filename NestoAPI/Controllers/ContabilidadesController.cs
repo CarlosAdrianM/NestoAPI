@@ -67,7 +67,8 @@ namespace NestoAPI.Controllers
                         Delegacion = c.Delegación,
                         FormaVenta = c.FormaVenta,
                         Departamento = c.Departamento,
-                        CentroCoste = c.CentroCoste
+                        CentroCoste = c.CentroCoste,
+                        Usuario = c.Usuario.Trim()
                     })
                     .ToListAsync();
 
@@ -94,16 +95,32 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetContabilidad(string empresa, string cuenta, DateTime fecha)
         {
             var fechaDiaSiguiente = new DateTime(fecha.Year, fecha.Month, fecha.Day).AddDays(1);
-            var fechaUltimoCierre = await db.Contabilidades
-                .Where(c => c.Empresa == empresa && c.Diario == Constantes.Contabilidad.Diarios.DIARIO_CIERRE)
-                .Select(c => DbFunctions.TruncateTime(c.Fecha)) // para que no coja la hora, minutos, ni segundos
-                .MaxAsync();
+            
 
             try
             {
-                var saldo = await db.Contabilidades
-                .Where(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Fecha >= fechaUltimoCierre && c.Fecha < fechaDiaSiguiente)
-                .SumAsync(c => c.Debe - c.Haber);
+                IQueryable<Contabilidad> contabilidadEmpresa;
+
+                if (string.IsNullOrEmpty(empresa))
+                {
+                    contabilidadEmpresa = db.Contabilidades;
+                }
+                else
+                {
+                    contabilidadEmpresa = db.Contabilidades
+                    .Where(c => c.Empresa == empresa);
+                }
+
+                var fechaUltimoCierre = await contabilidadEmpresa
+                .Where(c => c.Diario == Constantes.Contabilidad.Diarios.DIARIO_CIERRE)
+                .Select(c => DbFunctions.TruncateTime(c.Fecha)) // para que no coja la hora, minutos, ni segundos
+                .MaxAsync();
+
+                var saldo = await contabilidadEmpresa
+                    .Where(c => c.Nº_Cuenta == cuenta && c.Fecha >= fechaUltimoCierre && c.Fecha < fechaDiaSiguiente)
+                    .Select(c => c.Debe - c.Haber)
+                    .DefaultIfEmpty()
+                    .SumAsync();
 
                 return Ok(saldo);
             }
@@ -120,9 +137,21 @@ namespace NestoAPI.Controllers
             var fechaHastaMenor = fechaHasta.AddDays(1);
             try
             {
+                IQueryable<Contabilidad> contabilidadEmpresa;
+
+                if (string.IsNullOrEmpty(empresa))
+                {
+                    contabilidadEmpresa = db.Contabilidades;
+                }
+                else
+                {
+                    contabilidadEmpresa = db.Contabilidades
+                    .Where(c => c.Empresa == empresa);
+                }
+
                 // Realizar la consulta y proyección
-                List<ContabilidadDTO> apuntesDTO = await db.Contabilidades
-                    .Where(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Fecha >= fechaDesde && c.Fecha < fechaHastaMenor)
+                List<ContabilidadDTO> apuntesDTO = await contabilidadEmpresa
+                    .Where(c => c.Nº_Cuenta == cuenta && c.Fecha >= fechaDesde && c.Fecha < fechaHastaMenor)
                     .Select(c => new ContabilidadDTO
                     {
                         Id = c.Nº_Orden,
@@ -138,7 +167,8 @@ namespace NestoAPI.Controllers
                         Delegacion = c.Delegación,
                         FormaVenta = c.FormaVenta,
                         Departamento = c.Departamento,
-                        CentroCoste = c.CentroCoste
+                        CentroCoste = c.CentroCoste,
+                        Usuario = c.Usuario.Trim()
                     })
                     .ToListAsync();
 

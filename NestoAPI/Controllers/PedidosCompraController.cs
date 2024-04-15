@@ -485,7 +485,7 @@ namespace NestoAPI.Controllers
                     {
                         CabPedidoCmp pedido = await _servicio.CrearPedido(request.Pedido, db);
                         var fechaFactura = (DateTime)pedido.Fecha;
-                        CrearFacturaCmpResponse respuesta = await _servicio.CrearAlbaranYFactura(pedido.Número, fechaFactura, db);
+                        CrearFacturaCmpResponse respuesta = await _servicio.CrearAlbaranYFactura(pedido.Número, fechaFactura, db, pedido.Usuario);
                         if (request.CrearPago)
                         {
                             respuesta.Exito = false;

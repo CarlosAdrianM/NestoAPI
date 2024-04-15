@@ -13,7 +13,7 @@ namespace NestoAPI.Infraestructure.PedidosCompra
 {
     public class PedidosCompraService : IPedidosCompraService
     {
-        public async Task<int> CrearAlbaran(int pedidoId, NVEntities db)
+        public async Task<int> CrearAlbaran(int pedidoId, NVEntities db, string usuario = null)
         {
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
             DateTime fechaRecepcion = DateTime.Now;
@@ -44,12 +44,12 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             {
                 Value = contabiliza
             };
-            /*
+            
             var usuarioParametro = new SqlParameter("@Usuario", SqlDbType.Char, 30)
             {
                 Value = usuario
             };
-            */
+            
 
             var resultadoParametro = new SqlParameter
             {
@@ -60,8 +60,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             try
             {
                 // Ejecutar el procedimiento almacenado y capturar el valor de retorno
-                var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdCrearAlbaránCmp @Empresa, @Pedido, @FechaRecepción, @ImporteMínimo, @Contabiliza",
-                    resultadoParametro, empresaParametro, pedidoParametro, fechaRecepcionParametro, importeMinimoParametro, contabilizaParametro);
+                var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdCrearAlbaránCmp @Empresa, @Pedido, @FechaRecepción, @ImporteMínimo, @Contabiliza, @Usuario",
+                    resultadoParametro, empresaParametro, pedidoParametro, fechaRecepcionParametro, importeMinimoParametro, contabilizaParametro, usuarioParametro);
                 // Obtener el valor de retorno del parámetro
                 var numeroAlbaran = (int)resultadoParametro.Value;
                 return numeroAlbaran;
@@ -72,20 +72,20 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             }
         }
 
-        public async Task<CrearFacturaCmpResponse> CrearAlbaranYFactura(int pedidoId, DateTime fecha, NVEntities db)
+        public async Task<CrearFacturaCmpResponse> CrearAlbaranYFactura(int pedidoId, DateTime fecha, NVEntities db, string usuario = null)
         {
-            int albaran = await CrearAlbaran(pedidoId, db);
+            int albaran = await CrearAlbaran(pedidoId, db, usuario);
             if (albaran == 0)
             {
                 throw new Exception("No se ha podido crear el albarán");
             }
 
-            CrearFacturaCmpResponse factura = await CrearFactura(pedidoId, fecha, db);
+            CrearFacturaCmpResponse factura = await CrearFactura(pedidoId, fecha, db, usuario);
 
             return factura;
         }
 
-        public async Task<CrearFacturaCmpResponse> CrearFactura(int pedidoId, DateTime fecha, NVEntities db)
+        public async Task<CrearFacturaCmpResponse> CrearFactura(int pedidoId, DateTime fecha, NVEntities db, string usuario = null)
         {
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
             string numFactura = string.Empty;
@@ -111,6 +111,11 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                 Value = numFactura
             };
 
+            var usuarioParametro = new SqlParameter("@Usuario", SqlDbType.Char, 30)
+            {
+                Value = usuario
+            };
+
             var resultadoParametro = new SqlParameter
             {
                 ParameterName = "@Resultado",
@@ -121,8 +126,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             try
             {
                 // Ejecutar el procedimiento almacenado y capturar el valor de retorno
-                var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdCrearFacturaCmp @Empresa, @Pedido, @Fecha, @NumFactura",
-                    resultadoParametro, empresaParametro, pedidoParametro, fechaParametro, numFacturaParametro);
+                var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdCrearFacturaCmp @Empresa, @Pedido, @Fecha, @NumFactura, @Usuario",
+                    resultadoParametro, empresaParametro, pedidoParametro, fechaParametro, numFacturaParametro, usuarioParametro);
 
                 // Obtener el valor de retorno del parámetro
                 var resultadoProcedimiento = (int)resultadoParametro.Value;

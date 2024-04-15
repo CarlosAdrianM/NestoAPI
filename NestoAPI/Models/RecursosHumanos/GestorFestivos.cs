@@ -110,6 +110,12 @@ namespace NestoAPI.Models.RecursosHumanos
         {
             var fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
 
+            // Los sábados y los domingos no trabajamos
+            if (fechaSinHora.DayOfWeek == DayOfWeek.Saturday || fechaSinHora.DayOfWeek == DayOfWeek.Sunday)
+            {
+                return true;
+            }
+
             // Buscar en la lista Fiestas si hay algún elemento que coincida con la fecha y el tipo de festivo
             var festivoEncontrado = Fiestas.Any(f => f.Fecha == fechaSinHora && f.TipoFestivo == TipoFestivo.Todas);
             if (festivoEncontrado)

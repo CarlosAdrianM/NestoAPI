@@ -1,6 +1,8 @@
-﻿using System;
+﻿using NestoAPI.Models.RecursosHumanos;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Models.Picking
 {
@@ -117,17 +119,14 @@ namespace NestoAPI.Models.Picking
                 return fechaSinHora;
             }
 
-            // Si es después de las 11h devolvemos el siguiente día laboral
-            // Ahora mismo no tiene en cuenta los festivos, pero habrá que contemplarlos en el futuro
-            if (fechaConHora.DayOfWeek == DayOfWeek.Friday)
+            // Si es después de las 11h devolvemos el siguiente día laboral            
+            var fechaDevolver = fechaSinHora.AddDays(1);
+            while (GestorFestivos.EsFestivo(fechaDevolver, Constantes.Almacenes.ALGETE))
             {
-                return fechaSinHora.AddDays(3);
+                fechaDevolver = fechaDevolver.AddDays(1);
             }
 
-            return fechaSinHora.AddDays(1);
-        }
-        
-    }
-
-    
+            return fechaDevolver;
+        }        
+    }        
 }

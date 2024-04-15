@@ -127,6 +127,7 @@ namespace NestoAPI.Models.ApuntesBanco
         public string Departamento { get; set; }
         public string CentroCoste { get; set; }
         public EstadoPunteo EstadoPunteo { get; set; }
+        public string Usuario { get; set; }
     }
 
     public enum EstadoPunteo
