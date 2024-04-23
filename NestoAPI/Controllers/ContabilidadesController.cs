@@ -155,9 +155,9 @@ namespace NestoAPI.Controllers
                     .Select(c => new ContabilidadDTO
                     {
                         Id = c.Nº_Orden,
-                        Empresa = c.Empresa,
-                        Cuenta = c.Nº_Cuenta,
-                        Concepto = c.Concepto,
+                        Empresa = c.Empresa.Trim(),
+                        Cuenta = c.Nº_Cuenta.Trim(),
+                        Concepto = c.Concepto.Trim(),
                         Debe = c.Debe,
                         Haber = c.Haber,
                         Fecha = c.Fecha,

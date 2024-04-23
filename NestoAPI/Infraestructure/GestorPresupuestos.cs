@@ -303,7 +303,7 @@ namespace NestoAPI.Infraestructure
             {
                 string textoServirMantener = string.Empty;
                 string colorServirJunto = "black";
-                if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto && !pedido.servirJunto)
+                if (!faltaStockDeAlgo && tieneQueVenirAlgunProducto && !pedido.servirJunto && pedido.periodoFacturacion != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !pedido.mantenerJunto)
                 {
                     colorServirJunto = "red";
                     textoServirMantener += "¡¡¡ ATENCIÓN !!!";
@@ -351,7 +351,18 @@ namespace NestoAPI.Infraestructure
             s.AppendLine("</tbody>");
             s.AppendLine("</table>");
 
-            if (pedido.crearEfectosManualmente && pedido.Efectos.Any())
+            if (pedido.periodoFacturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
+            {
+                s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+                s.AppendLine("<thead align = \"center\">");
+                s.Append("<tr><th>Periodo de facturación</th>");
+                s.AppendLine("</thead>");
+                s.AppendLine("<tbody align = \"right\">");
+                s.Append("<tr><td style=\"text-align:center\">FIN DE MES</td>");
+                s.AppendLine("</tbody>");
+                s.AppendLine("</table>");
+            }
+            else if (pedido.crearEfectosManualmente && pedido.Efectos.Any())
             {
                 s.AppendLine("<table border=\"1\" style=\"width:100%\">");
                 s.AppendLine("<thead align = \"center\">");

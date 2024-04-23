@@ -390,6 +390,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
                         Nº_Documento = $"TPV_{fechaIngreso.ToString("ddMMyy")}",
                         Haber = sumaComisiones,
                         Asiento_Automático = true,
+                        Delegación = "ALG",
                         Usuario = movimientosTPV.First().Usuario,
                         Fecha_Modificación = DateTime.Now
                     };

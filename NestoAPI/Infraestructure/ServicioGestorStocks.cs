@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Web;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -38,6 +39,9 @@ namespace NestoAPI.Infraestructure
                 .Select(e => (int)e.Cantidad)
                 .DefaultIfEmpty(0)
                 .Sum(c => c);
+            int pendienteReposicion = db.PreExtrProductos
+                .Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) &&
+                    e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
             int pendientes = db.LinPedidoVtas
                 .Where(l =>
                     l.Producto == producto && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE 
@@ -45,7 +49,7 @@ namespace NestoAPI.Infraestructure
                 .Select(e => (int)e.Cantidad)
                 .DefaultIfEmpty(0)
                 .Sum(c => c);
-            return stock - pendientes;
+            return stock - pendientes + pendienteReposicion;
         }
 
         public int UnidadesPendientesEntregar(string producto)
