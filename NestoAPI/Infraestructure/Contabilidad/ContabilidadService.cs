@@ -326,6 +326,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
                     foreach (var movimiento in movimientos)
                     {
                         movimiento.TextoModoCaptura = MovimientoTPVDTO.GetModoCapturaDescription(movimiento.ModoCaptura);
+                        movimiento.UsuarioTerminal = ObtenerUsuarioTerminal(movimiento.Terminal);
                     }
 
                     return movimientos;
@@ -336,6 +337,25 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 }
 
             }
+        }
+        private Dictionary<string, string> TerminalesUsuarios = new Dictionary<string, string>()
+        {
+            { "91900804273", "Paloma" },
+            { "91900804275", "Elena" },
+            { "26617120788", "Laura Camacho" },
+            { "00346609775", "Kelma" },
+            { "00132951570", "Web" },
+            { "00232951570", "Paygold" },
+            { "00025537534", "Pilar" },
+            { "51570001329", "Bizum" },
+        };
+        private string ObtenerUsuarioTerminal(string terminal)
+        {
+            if (TerminalesUsuarios.TryGetValue(terminal, out string usuario))
+            {
+                return usuario;
+            }
+            return string.Empty; // O un valor predeterminado si prefieres
         }
 
         public async Task ContabilizarComisionesTarjetas(List<MovimientoTPVDTO> movimientosTPV)

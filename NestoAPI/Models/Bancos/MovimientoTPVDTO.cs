@@ -85,6 +85,7 @@ namespace NestoAPI.Models.Bancos
         public string Sesion { get; set; }
         public DateTime FechaCaptura { get; set; }
         public string Terminal { get; set; }
+        public string UsuarioTerminal { get; set; }
         public DateTime FechaOperacion { get; set; }
         public string HoraOperacion { get; set; }
         public string TipoOperacion { get; set; }
