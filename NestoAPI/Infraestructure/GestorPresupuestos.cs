@@ -246,40 +246,33 @@ namespace NestoAPI.Infraestructure
 
             bool faltaStockDeAlgo = false;
             bool tieneQueVenirAlgunProducto = false;
+            ServicioGestorStocks servicioGestorStocks = new ServicioGestorStocks();
+            GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
             {
-                string colorCantidad = "black";
+                string colorCantidad;
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
-                {
-                    ServicioGestorStocks servicioGestorStocks = new ServicioGestorStocks();
-                    GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
-                    int stockAlmacen = gestorStocks.Stock(linea.Producto, linea.almacen);
-                    int pendientesEntregar = gestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, linea.almacen);
-                    if (stockAlmacen - pendientesEntregar >= 0)
-                    {
-                        colorCantidad = "green";
-                    }
-                    else
-                    {
-                        int cantidadDisponible = gestorStocks.UnidadesDisponiblesTodosLosAlmacenes(linea.Producto);
-                        if (cantidadDisponible >= 0)
-                        {
-                            tieneQueVenirAlgunProducto = true;
-                            colorCantidad = "DeepPink";
-                        }
-                        else
-                        {
-                            faltaStockDeAlgo = true;
-                            colorCantidad = "red";
-                        }
-                    }
+                {                    
+                    colorCantidad = gestorStocks.ColorStock(linea.Producto, linea.almacen);
                 }
-                s.Append("<tr style=\"color: "+ colorCantidad +";\">");
+                else
+                {
+                    colorCantidad = "black";
+                }
+                if (colorCantidad == "DeepPink")
+                {
+                    tieneQueVenirAlgunProducto = true;
+                } else if (colorCantidad == "red")
+                {
+                    faltaStockDeAlgo = true;
+                }
+                s.Append("<tr style=\"color: " + colorCantidad + ";\">");
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
                     string rutaImagen = await ProductoDTO.RutaImagen(linea.Producto).ConfigureAwait(false);
                     s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"><img src=\"" + rutaImagen + "\" style=\"max-height:100%; max-width:100%\"></td>");
-                } else
+                }
+                else
                 {
                     s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"></td>");
                 }
@@ -288,12 +281,13 @@ namespace NestoAPI.Infraestructure
                 {
                     string rutaEnlace = await ProductoDTO.RutaEnlace(linea.Producto).ConfigureAwait(false);
                     rutaEnlace += "&utm_medium=correopedido";
-                    s.Append("<td><a href=\""+rutaEnlace+"\">" + linea.texto + "</a></td>");
-                } else
+                    s.Append("<td><a href=\"" + rutaEnlace + "\">" + linea.texto + "</a></td>");
+                }
+                else
                 {
                     s.Append("<td>" + linea.texto + "</td>");
                 }
-                s.Append("<td>" + linea.Cantidad.ToString() + "</td>");  
+                s.Append("<td>" + linea.Cantidad.ToString() + "</td>");
                 s.Append("<td style=\"text-align:right\">" + linea.PrecioUnitario.ToString("C") + "</td>");
                 s.Append("<td style=\"text-align:right\">" + linea.DescuentoLinea.ToString("P") + "</td>");
                 s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
@@ -400,6 +394,7 @@ namespace NestoAPI.Infraestructure
 
             return s;
         }
+
         public void Rellenar(int numeroPedido)
         {
             // cargar el pedido completo a partir del número

@@ -171,6 +171,8 @@ namespace NestoAPI.Models
         private NVEntities db;
         public ProductoPlantillaDTO() { }
 
+        // TO DO: cambiar db por gestorStocks
+
         public ProductoPlantillaDTO(string producto, NVEntities db)
         {
             this.producto = producto;
@@ -313,6 +315,7 @@ namespace NestoAPI.Models
         public int cantidadDisponible { get; set; }
         public int cantidadPendienteRecibir { get; set; }
         public string urlImagen { get; set; }
+        public int StockDisponibleTodosLosAlmacenes { get; set; }
     }
     public class Mod347DTO
     {

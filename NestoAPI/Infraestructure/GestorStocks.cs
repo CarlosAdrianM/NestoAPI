@@ -75,5 +75,30 @@ namespace NestoAPI.Infraestructure
         {
             return servicio.UnidadesPendientesEntregarAlmacen(producto, almacen);
         }
+
+        public string ColorStock(string producto, string almacen)
+        {
+            int stockAlmacen = Stock(producto, almacen);
+            int pendientesEntregar = UnidadesPendientesEntregarAlmacen(producto, almacen);
+            string colorCantidad;
+            if (stockAlmacen - pendientesEntregar >= 0)
+            {
+                colorCantidad = "green";
+            }
+            else
+            {
+                int cantidadDisponible = UnidadesDisponiblesTodosLosAlmacenes(producto);
+                if (cantidadDisponible >= 0)
+                {
+                    colorCantidad = "DeepPink";
+                }
+                else
+                {
+                    colorCantidad = "red";
+                }
+            }
+
+            return colorCantidad;
+        }
     }
 }

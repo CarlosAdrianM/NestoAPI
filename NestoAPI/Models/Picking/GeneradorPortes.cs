@@ -24,18 +24,22 @@ namespace NestoAPI.Models.Picking
         {
             String cuenta;
             decimal portes;
-
-            if (pedido.CodigoPostal.StartsWith("28") || pedido.CodigoPostal.StartsWith("19") || pedido.CodigoPostal == "45223" || pedido.CodigoPostal == "45224")
+            
+            if (pedido.CodigoPostal.StartsWith("28") || pedido.CodigoPostal.StartsWith("19") || pedido.CodigoPostal.StartsWith("45"))
             {
-                portes = 3;
+                portes = Constantes.Portes.PROVINCIAL;
                 cuenta = Constantes.Cuentas.CUENTA_PORTES_ONTIME;
             } else
             {
-                portes = 6;
+                portes = Constantes.Portes.PENINSULAR;
                 cuenta = Constantes.Cuentas.CUENTA_PORTES_CEX;
             }
 
+            // if (es contrarrembolso)
+            // portes += Constantes.Portes.INCREMENTO_REEMBOLSO;
+
             // Si ya tiene portes, no los volvemos a añadir
+            // PERO HABRÍA QUE COMPROBAR SI HAN CAMBIADO, POR EL CÓDIGO POSTAL O POR LA FORMA DE PAGO
             LinPedidoVta lineaPortes = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == pedido.Empresa && l.Número == pedido.Id && l.Producto != null && l.Producto.Trim() == cuenta && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO);
             if (lineaPortes != null)
             {

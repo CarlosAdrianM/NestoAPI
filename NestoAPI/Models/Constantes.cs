@@ -168,6 +168,13 @@ namespace NestoAPI.Models
             public const string PREPAGO = "PRE";
         }
 
+        public static class Portes
+        {
+            public const decimal PROVINCIAL = 3M;
+            public const decimal PENINSULAR = 6M;
+            public const decimal INCREMENTO_REEMBOLSO = 3M;
+        }
+
         public static class Productos
         {
             public const string ALMACEN_POR_DEFECTO = "ALG";

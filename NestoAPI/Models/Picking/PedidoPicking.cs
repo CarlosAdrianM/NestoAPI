@@ -21,6 +21,7 @@ namespace NestoAPI.Models.Picking
         public PedidoPicking(IRellenadorPrepagosService rellenadorPrepagosService)
         {
             this.rellenadorPrepagos = rellenadorPrepagosService;
+            Lineas = new List<LineaPedidoPicking>();
         }
                 
         public string Empresa { get; set; }
@@ -37,6 +38,7 @@ namespace NestoAPI.Models.Picking
         public string PlazosPago { get; set; }
         public bool Borrar { get; set; }
         public bool RetenidoPorPrepago { get; private set; }
+        public bool EsContrareembolso { get; set; }
         public string Usuario { get; set; }
         public List<PrepagoDTO> Prepagos { get; set; }
         public List<ExtractoClienteDTO> ExtractosPendientes { get; set; }

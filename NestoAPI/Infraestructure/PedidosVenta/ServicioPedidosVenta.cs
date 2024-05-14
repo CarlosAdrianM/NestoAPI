@@ -187,5 +187,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == empresa && p.Número == numeroProducto).SingleOrDefault();
             return producto.Familia1.TipoExclusiva;
         }
+
+        internal List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return db.LinPedidoVtas
+                    .Where(l => l.Número == pedido && l.Estado == Constantes.EstadosLineaVenta.PENDIENTE)
+                    .ToList();
+            }
+        }
+
+        internal List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return db.LinPedidoVtas
+                        .Where(l => l.Número == pedido && l.Picking != 0 && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO)
+                        .ToList();
+            }
+        }
     }
 }

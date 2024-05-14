@@ -1162,6 +1162,14 @@ namespace NestoAPI.Controllers
             return Ok(fechaAjustada);
         }
 
+        [HttpGet]
+        [ResponseType(typeof(decimal))]
+        [Route("api/PedidosVenta/ImporteReembolso")]
+        public IHttpActionResult ImporteReembolso(string empresa, int pedido)
+        {
+            var importeReembolso = gestor.ImporteReembolso(empresa, pedido);
+            return Ok(importeReembolso);
+        }
 
         private void errorPersonalizado(string mensajePersonalizado)
         {

@@ -485,6 +485,59 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return pedido;
             }
         }
+
+        internal decimal ImporteReembolso(string empresa, int pedido)
+        {
+            var pedidoBD = servicio.LeerCabPedidoVta(empresa, pedido);
+
+            // Miramos la deuda que tenga en su extracto.
+            // Esa deuda la tiene que pagar independientemente de la forma de pago
+            decimal importeDeuda = 0; // calcularDeuda()
+
+            // Miramos los casos en los que no hay contra reembolso
+            if (pedidoBD == null ||
+                pedidoBD.CCC != null ||
+                pedidoBD.Periodo_Facturacion == "FDM" ||
+                (pedidoBD.Forma_Pago == "CNF" ||
+                 pedidoBD.Forma_Pago == "TRN" ||
+                 pedidoBD.Forma_Pago == "CHC" ||
+                 pedidoBD.Forma_Pago == "TAR") ||
+                pedidoBD.NotaEntrega ||
+                (!string.IsNullOrWhiteSpace(pedidoBD.PlazosPago) && pedidoBD.PlazosPago.Trim() == "PRE"))
+            {
+                return importeDeuda;
+            }
+
+            if (pedidoBD.MantenerJunto)
+            {
+                List<LinPedidoVta> lineasSinFacturar;
+                lineasSinFacturar = servicio.CargarLineasPedidoPendientes(pedido);
+                if (lineasSinFacturar.Any())
+                {
+                    return importeDeuda;
+                }
+            }
+
+            // Para el resto de los casos ponemos el importe correcto
+            List<LinPedidoVta> lineas;
+            lineas = servicio.CargarLineasPedidoSinPicking(pedido);
+            if (lineas == null || !lineas.Any())
+            {
+                return importeDeuda;
+            }
+
+            decimal importeFinal = lineas.Sum(l => l.Total) + importeDeuda;
+            importeFinal = Math.Round(importeFinal, 2, MidpointRounding.AwayFromZero);
+
+            // Evitamos los reembolsos negativos
+            if (importeFinal < 0)
+            {
+                importeFinal = 0;
+            }
+
+            return importeFinal;
+        }
+
         internal async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, int numeroPedidoAmpliacion)
         {
             PedidoVentaDTO pedidoOriginal = await LeerPedido(empresa, numeroPedidoOriginal).ConfigureAwait(false);

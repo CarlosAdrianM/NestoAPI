@@ -205,6 +205,9 @@ namespace NestoAPI.Controllers
             datosStock.cantidadDisponible = productoNuevo.CantidadDisponible(almacen);
             datosStock.cantidadPendienteRecibir = productoNuevo.CantidadPendienteRecibir();
 
+            GestorStocks gestorStocks = new GestorStocks(new ServicioGestorStocks());
+            datosStock.StockDisponibleTodosLosAlmacenes = gestorStocks.UnidadesDisponiblesTodosLosAlmacenes(productoStock);
+
             // Cargamos la imagen del producto
             datosStock.urlImagen = await ProductoDTO.RutaImagen(productoStock);
 

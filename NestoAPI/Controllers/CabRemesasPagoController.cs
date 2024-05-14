@@ -143,6 +143,10 @@ namespace NestoAPI.Controllers
 
                 try {
                     numeroRegistrosFactura++;
+                    if (proveedor.CCCProveedore is null)
+                    {
+                        throw new Exception($"El proveedor {proveedor.Número.Trim()} no tiene un CCC asociado");
+                    }
                     string ibanNoResidente = proveedor.CCCProveedore.IbanNoResidente != null ? proveedor.CCCProveedore.IbanNoResidente.Trim() : string.Empty;
                     string idProveedor = string.IsNullOrEmpty(ibanNoResidente) ? efecto.CIF_NIF.Trim() : proveedor.Número.Trim();
                     string codigoPais = string.IsNullOrEmpty(ibanNoResidente) ? "ES" : proveedor.CCCProveedore.Swift.Substring(4, 2);
