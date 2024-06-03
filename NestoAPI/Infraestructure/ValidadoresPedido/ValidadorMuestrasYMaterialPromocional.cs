@@ -24,6 +24,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                         + " no puede ir a ese precio porque no es material promocional o se supera el importe autorizado"
             };
 
+            // Comprobar que no se regalen muestras de Multivit de Ainhoa si no compra el producto
+            if (ContieneMuestrasMultivitAinhoaPeroNoLlevaElProducto(pedido))
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    ProductoId = numeroProducto,
+                    Motivo = $"El producto {numeroProducto} no puede ir a ese precio porque no se ha comprado el producto MULTIVIT"
+                };
+            }
+
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
             if (producto.SubGrupo == Constantes.Productos.SUBGRUPO_MUESTRAS && producto.Grupo == Constantes.Productos.GRUPO_COSMETICA)
             {
@@ -48,6 +59,27 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             return respuesta;
+        }
+
+        private bool ContieneMuestrasMultivitAinhoaPeroNoLlevaElProducto(PedidoVentaDTO pedido)
+        {
+            var productosEspecificos = new List<string> { "43826", "43827", "43829", "43830", "43834", "43835", "43836" };
+            bool contieneProductoEspecifico = pedido.Lineas.Any(l => productosEspecificos.Contains(l.Producto));
+
+            if (contieneProductoEspecifico)
+            {
+                bool condicionNoCumplida = !pedido.Lineas.Any(l =>
+                    l.texto.StartsWith("MULTIVIT") &&
+                    l.SubgrupoProducto != "MMP"
+                );
+
+                if (condicionNoCumplida)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
     }
 }

@@ -164,6 +164,7 @@ namespace NestoAPI.Infraestructure
             }
             var posicionNumero = direccion.IndexOf(numeroCalleFormateada);
             //Si posicionNumero es -1, buscar el número anterior (porque tiene dos)
+            // También puede ser porque no tenga ninguno
             if (posicionNumero == -1)
             {
                 posicionComaFormateada = direccionFormateada.Substring(0, posicionComaFormateada).LastIndexOf(", ");
@@ -171,6 +172,13 @@ namespace NestoAPI.Infraestructure
                 {
                     numeroCalleFormateada = direccionFormateada.Substring(posicionComaFormateada + 2, direccionFormateada.Length - numeroCalleFormateada.Length - posicionComaFormateada - 4);
                     posicionNumero = direccion.IndexOf(numeroCalleFormateada);
+                }
+                else
+                {
+                    string sinNumero = "S/N";
+                    direccionFormateada = direccionFormateada.Replace(numeroCalleFormateada, sinNumero);
+                    numeroCalleFormateada = sinNumero;
+                    posicionNumero = direccion.IndexOf(numeroCalleFormateada);                    
                 }
             }
             var inicioDireccion = direccion.Substring(0, posicionNumero + numeroCalleFormateada.Length);
@@ -180,7 +188,7 @@ namespace NestoAPI.Infraestructure
                 finalDireccion = string.Empty;
             }
 
-            if (posicionNumero == -1)
+            if (posicionNumero == -1 && direccionFormateada.ToUpper() != direccion.ToUpper())
             {
                 direccion = direccionFormateada + "-" + direccion;
             }
