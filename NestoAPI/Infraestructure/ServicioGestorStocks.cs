@@ -1,9 +1,5 @@
 ﻿using NestoAPI.Models;
-using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Web;
-using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -18,7 +14,8 @@ namespace NestoAPI.Infraestructure
 
         public int Stock(string producto)
         {
-            int stockExtracto = db.ExtractosProducto.Where(e => e.Número == producto)
+            int stockExtracto = db.ExtractosProducto
+                .Where(e => e.Número == producto && Constantes.Sedes.ListaSedes.Contains(e.Almacén))
                 .Select(e => (int)e.Cantidad)
                 .DefaultIfEmpty(0)
                 .Sum(c => c);
@@ -27,7 +24,8 @@ namespace NestoAPI.Infraestructure
         }
         public int Stock(string producto, string almacen)
         {
-            return db.ExtractosProducto.Where(e => e.Almacén == almacen && e.Número == producto)
+            return db.ExtractosProducto
+                .Where(e => e.Almacén == almacen && e.Número == producto)
                 .Select(e => (int)e.Cantidad)
                 .DefaultIfEmpty(0)
                 .Sum(c => c);
@@ -35,13 +33,17 @@ namespace NestoAPI.Infraestructure
 
         public int UnidadesDisponiblesTodosLosAlmacenes(string producto)
         {
-            int stock = db.ExtractosProducto.Where(e => e.Número == producto)
+            int stock = db.ExtractosProducto
+                .Where(e => e.Número == producto && Constantes.Sedes.ListaSedes.Contains(e.Almacén))
                 .Select(e => (int)e.Cantidad)
                 .DefaultIfEmpty(0)
                 .Sum(c => c);
             int pendienteReposicion = db.PreExtrProductos
                 .Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) &&
-                    e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+                    e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0)
+                .Select(e => (int)e.Cantidad)
+                .DefaultIfEmpty(0)
+                .Sum();
             int pendientes = db.LinPedidoVtas
                 .Where(l =>
                     l.Producto == producto && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE 

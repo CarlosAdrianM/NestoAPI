@@ -9,6 +9,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
+using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
 using NestoAPI.Models.Cajas;
@@ -41,6 +42,48 @@ namespace NestoAPI.Controllers
             }
 
             return Ok(contabilidad);
+        }
+
+        // GET: api/Contabilidades/5
+        [ResponseType(typeof(List<ContabilidadDTO>))]
+        public async Task<IHttpActionResult> GetContabilidad(string cuenta, bool punteado)
+        {
+            try
+            {
+                // Realizar la consulta y proyección
+                List<ContabilidadDTO> apuntesDTO = await db.Contabilidades
+                    .Where(c => c.Nº_Cuenta == cuenta && c.Punteado == punteado)
+                    .Select(c => new ContabilidadDTO
+                    {
+                        Id = c.Nº_Orden,
+                        Empresa = c.Empresa,
+                        Cuenta = c.Nº_Cuenta,
+                        Concepto = c.Concepto,
+                        Debe = c.Debe,
+                        Haber = c.Haber,
+                        Fecha = c.Fecha,
+                        Documento = c.Nº_Documento,
+                        Asiento = (int)c.Asiento,
+                        Diario = c.Diario,
+                        Delegacion = c.Delegación,
+                        FormaVenta = c.FormaVenta,
+                        Departamento = c.Departamento,
+                        CentroCoste = c.CentroCoste,
+                        Usuario = c.Usuario.Trim()
+                    })
+                    .ToListAsync();
+
+                if (apuntesDTO == null)
+                {
+                    return NotFound();
+                }
+
+                return Ok(apuntesDTO);
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
         }
 
         // GET: api/Contabilidades/5
@@ -312,6 +355,26 @@ namespace NestoAPI.Controllers
 
             return Ok(contabilidad);
         }
+
+
+        // POST: api/Contabilidades
+        [HttpPost]
+        [Route("api/Contabilidades/PuntearPorImporte")]
+        [ResponseType(typeof(bool))]
+        public async Task<IHttpActionResult> PuntearPorImporte([FromBody] dynamic datosPunteo)
+        {
+            string empresa = datosPunteo.Empresa;
+            string cuenta = datosPunteo.Cuenta;
+            decimal importe = datosPunteo.Importe;
+
+            var _servicio = new ContabilidadService();
+            var _gestor = new GestorContabilidad(_servicio);
+
+            bool resultado = await _gestor.PuntearPorImporte(empresa, cuenta, importe);
+
+            return Ok(resultado);
+        }
+
 
         // Método auxiliar para obtener el estado de punteo
         private EstadoPunteo ObtenerEstadoPunteo(int contabilidadId, decimal importeContabilidad)

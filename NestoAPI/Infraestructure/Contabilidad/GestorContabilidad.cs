@@ -313,6 +313,11 @@ namespace NestoAPI.Infraestructure.Contabilidad
             }
         }
 
+        public async Task<bool> PuntearPorImporte(string empresa, string cuenta, decimal importe)
+        {
+            return await _servicio.PuntearPorImporte(empresa, cuenta, importe);
+        }
+
         private static decimal ObtenerImportePunteoBanco(int? apunteId, NVEntities db)
         {
             // Obtener la suma de importes punteados en las liquidaciones anteriores

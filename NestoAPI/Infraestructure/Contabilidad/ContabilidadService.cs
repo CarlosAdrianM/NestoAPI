@@ -481,5 +481,27 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 return pagoPendiente;
             }
         }
+
+        public async Task<bool> PuntearPorImporte(string empresa, string cuenta, decimal importe)
+        {
+            try
+            {
+                using (var db = new NVEntities())
+                {
+                    var movimientoSinPuntearDebe = await db.Contabilidades
+                        .SingleAsync(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Debe == importe && c.Punteado == false);
+                    var movimientoSinPuntearHaber = await db.Contabilidades
+                        .SingleAsync(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Haber == importe && c.Punteado == false);
+                    movimientoSinPuntearDebe.Punteado = true;
+                    movimientoSinPuntearHaber.Punteado = true;
+                    int movimientosModificados = await db.SaveChangesAsync();
+                    return movimientosModificados == 2; // Comprobamos que se hayan punteado los dos
+                }                
+            }
+            catch
+            {
+                return false;
+            }
+        }
     }
 }

@@ -170,9 +170,9 @@ namespace NestoAPI.Models
 
         public static class Portes
         {
-            public const decimal PROVINCIAL = 3M;
-            public const decimal PENINSULAR = 6M;
-            public const decimal INCREMENTO_REEMBOLSO = 3M;
+            public const decimal PROVINCIAL = 3.5M;
+            public const decimal PENINSULAR = 7M;
+            public const decimal INCREMENTO_REEMBOLSO = 0M;
         }
 
         public static class Productos
