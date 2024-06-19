@@ -482,26 +482,87 @@ namespace NestoAPI.Infraestructure.Contabilidad
             }
         }
 
+        //public async Task<bool> PuntearPorImporte(string empresa, string cuenta, decimal importe)
+        //{
+        //    try
+        //    {
+        //        using (var db = new NVEntities())
+        //        {
+        //            var movimientoSinPuntearDebe = await db.Contabilidades
+        //                .SingleAsync(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Debe == importe && c.Punteado == false);
+        //            var movimientoSinPuntearHaber = await db.Contabilidades
+        //                .SingleAsync(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Haber == importe && c.Punteado == false);
+        //            movimientoSinPuntearDebe.Punteado = true;
+        //            movimientoSinPuntearHaber.Punteado = true;
+        //            int movimientosModificados = await db.SaveChangesAsync();
+        //            return movimientosModificados == 2; // Comprobamos que se hayan punteado los dos
+        //        }                
+        //    }
+        //    catch
+        //    {
+        //        return false;
+        //    }
+        //}
+
         public async Task<bool> PuntearPorImporte(string empresa, string cuenta, decimal importe)
         {
             try
             {
                 using (var db = new NVEntities())
                 {
-                    var movimientoSinPuntearDebe = await db.Contabilidades
-                        .SingleAsync(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Debe == importe && c.Punteado == false);
-                    var movimientoSinPuntearHaber = await db.Contabilidades
-                        .SingleAsync(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Haber == importe && c.Punteado == false);
-                    movimientoSinPuntearDebe.Punteado = true;
-                    movimientoSinPuntearHaber.Punteado = true;
-                    int movimientosModificados = await db.SaveChangesAsync();
-                    return movimientosModificados == 2; // Comprobamos que se hayan punteado los dos
-                }                
+                    using (var transaction = db.Database.BeginTransaction())
+                    {
+                        try
+                        {
+                            var movimientoSinPuntearDebe = await db.Contabilidades
+                                .SingleAsync(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Debe == importe && c.Punteado == false);
+                            var movimientoSinPuntearHaber = await db.Contabilidades
+                                .SingleAsync(c => c.Empresa == empresa && c.Nº_Cuenta == cuenta && c.Haber == importe && c.Punteado == false);
+
+                            // Crear el comando para el primer movimiento
+                            var commandDebe = db.Database.Connection.CreateCommand();
+                            commandDebe.CommandText = "EXEC [dbo].[prdPuntearContabilidad] @NºOrden, @Punteado";
+                            commandDebe.Parameters.Add(new SqlParameter("@NºOrden", movimientoSinPuntearDebe.Nº_Orden));
+                            commandDebe.Parameters.Add(new SqlParameter("@Punteado", true));
+
+                            // Crear el comando para el segundo movimiento
+                            var commandHaber = db.Database.Connection.CreateCommand();
+                            commandHaber.CommandText = "EXEC [dbo].[prdPuntearContabilidad] @NºOrden, @Punteado";
+                            commandHaber.Parameters.Add(new SqlParameter("@NºOrden", movimientoSinPuntearHaber.Nº_Orden));
+                            commandHaber.Parameters.Add(new SqlParameter("@Punteado", true));
+
+                            // Abrir la conexión si no está abierta
+                            if (db.Database.Connection.State != ConnectionState.Open)
+                            {
+                                await db.Database.Connection.OpenAsync();
+                            }
+
+                            // Ejecutar los comandos dentro de la transacción
+                            commandDebe.Transaction = transaction.UnderlyingTransaction;
+                            await commandDebe.ExecuteNonQueryAsync();
+
+                            commandHaber.Transaction = transaction.UnderlyingTransaction;
+                            await commandHaber.ExecuteNonQueryAsync();
+
+                            // Confirmar la transacción
+                            transaction.Commit();
+                            return true;
+                        }
+                        catch
+                        {
+                            // Revertir la transacción en caso de error
+                            transaction.Rollback();
+                            return false;
+                        }
+                    }
+                }
             }
             catch
             {
                 return false;
             }
         }
+
+
     }
 }
