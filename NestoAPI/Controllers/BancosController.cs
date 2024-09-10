@@ -231,6 +231,16 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
+        [Route("api/Bancos/LeerProveedorPorNif")]
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> LeerProveedorPorNif(string nifProveedor)
+        {
+            var servicio = new ContabilidadService();
+            var proveedor = await servicio.LeerProveedorPorNif(nifProveedor);
+            return Ok(proveedor);
+        }
+
+        [HttpGet]
         [Route("api/Bancos/LeerProveedorPorNombre")]
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> LeerProveedorPorNombre(string nombreProveedor)

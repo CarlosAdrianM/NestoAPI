@@ -238,6 +238,31 @@ namespace NestoAPI.Models.Comisiones
                 }
             };
 
+            // Crear los tramos trimestrales con la lógica de Desde = Hasta anterior + 0.01
+            Collection<TramoComision> tramosCalleTrimestral = new Collection<TramoComision>();
+
+            decimal hastaAnterior = 0M; // Inicializamos el primer valor de "Hasta" como 0
+
+            foreach (var tramo in tramosCalle)
+            {
+                // Calculamos el nuevo tramo
+                var nuevoTramo = new TramoComision
+                {
+                    Desde = hastaAnterior == 0M ? 0M : hastaAnterior + 0.01M, // Desde es Hasta anterior + 0.01 (excepto el primer registro)
+                    Hasta = tramo.Hasta == decimal.MaxValue
+                        ? decimal.MaxValue // Si es decimal.MaxValue, lo dejamos tal cual
+                        : Math.Round(tramo.Hasta / 4, 2),  // Si no, lo dividimos por 4
+                    Tipo = tramo.Tipo, // No cambiamos el tipo
+                    TipoExtra = tramo.TipoExtra // No cambiamos el tipo extra
+                };
+
+                // Añadimos el nuevo tramo a la colección
+                tramosCalleTrimestral.Add(nuevoTramo);
+
+                // Actualizamos "hastaAnterior" con el valor "Hasta" del nuevo tramo
+                hastaAnterior = nuevoTramo.Hasta;
+            }
+
             Collection<TramoComision> tramosMinivendedores = new Collection<TramoComision>
             {
                 new TramoComision
@@ -330,6 +355,10 @@ namespace NestoAPI.Models.Comisiones
             if (vendedor == "DV" || vendedor == "JE" || vendedor == "RFG" || vendedor == "IM" || vendedor == "JGP" || vendedor == "MRM" || vendedor == "RAS")
             {
                 return tramosCalle;
+            }
+            else if (vendedor == "MBV")
+            {
+                return tramosCalleTrimestral;
             }
             else if (vendedor == "AL" || vendedor == "CAM" || vendedor == "MR" || vendedor == "PI" || vendedor == "SC" || vendedor == "LC")
             {

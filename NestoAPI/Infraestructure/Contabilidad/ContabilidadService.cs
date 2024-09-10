@@ -239,7 +239,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
             using (var db = new NVEntities())
             {
                 var fechaFichero = movimientosTPV.First().FechaOperacion;
-                if (db.MovimientosTPV.Any(c => c.FechaOperacion == fechaFichero))
+                if (db.MovimientosTPV.Any(c => c.FechaCaptura == fechaFichero))
                 {
                     throw new Exception($"Ya se ha contabilizado el fichero de tarjetas del día {fechaFichero.ToShortDateString()}");
                 }
@@ -437,6 +437,23 @@ namespace NestoAPI.Infraestructure.Contabilidad
             }
         }
 
+
+        public async Task<string> LeerProveedorPorNif(string nifProveedor)
+        {
+            using (var db = new NVEntities())
+            {                
+                var proveedor = (await db.Proveedores.SingleOrDefaultAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.CIF_NIF.Contains(nifProveedor)))?.Número;
+                if (string.IsNullOrEmpty(proveedor))
+                {
+                    return string.Empty;
+                }
+                else
+                {
+                    return proveedor.Trim();
+                }
+            }
+        }
+
         public async Task<string> LeerProveedorPorNombre(string nombreProveedor)
         {
             using (var db = new NVEntities())
@@ -562,7 +579,6 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 return false;
             }
         }
-
 
     }
 }

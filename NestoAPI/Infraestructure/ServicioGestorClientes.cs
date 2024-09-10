@@ -169,7 +169,14 @@ namespace NestoAPI.Infraestructure
             string host = @"https://www1.agenciatributaria.gob.es/wlpl/BURT-JDIT/ws/VNifV2SOAP";
 
             X509Certificate2Collection certificates = new X509Certificate2Collection();
-            certificates.Import(certName, password, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
+            try
+            {
+                certificates.Import(certName, password, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
 
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             ServicePointManager.ServerCertificateValidationCallback = (a, b, c, d) => true;
