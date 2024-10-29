@@ -330,13 +330,13 @@ namespace NestoAPI.Controllers
                     TipoLinea = Constantes.TiposLineaCompra.PRODUCTO,
                     Texto = x.prod.Nombre.Trim(),
                     Multiplos = x.ctrl.FirstOrDefault() != null ? x.ctrl.FirstOrDefault().Múltiplos : 1,
-                    PrecioTarifa = (decimal)x.prod.PVP,
+                    PrecioTarifa = (decimal)((x.prod.PVP) ?? 0),
                     EstadoProducto = (int)x.prod.Estado,
                     Descuentos = descuentosProducto.Where(d => d.Nº_Producto == x.prod.Número).Select(d => new DescuentoCantidadCompra
                     {
                         CantidadMinima = d.CantidadMínima,
                         Descuento = d.Descuento,
-                        Precio = d.Precio == null ? (decimal)x.prod.PVP : (decimal)d.Precio
+                        Precio = (decimal)(d.Precio ?? (decimal?)x.prod.PVP ?? 0)
                     }),
                     Ofertas = ofertas.Where(d => d.Producto == x.prod.Número).Select(d => new OfertaCompra
                     {

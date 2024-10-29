@@ -66,6 +66,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
                     linea.FechaVto = new DateTime(linea.Fecha.Year, linea.Fecha.Month, linea.Fecha.Day);
                 }
                 linea.Fecha_Modificación = DateTime.Now;
+                if (linea.Concepto != null && linea.Concepto.Length > 50)
+                {
+                    linea.Concepto = linea.Concepto.Substring(0, 50);
+                }
                 db.PreContabilidades.Add(linea);
             }
             try

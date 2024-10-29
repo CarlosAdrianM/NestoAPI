@@ -8,6 +8,11 @@ using NestoAPI.Models.Clientes;
 using System.Globalization;
 using Microsoft.Reporting.WebForms;
 using System.Net.Http;
+using System.Data.SqlClient;
+using System.IO;
+using Microsoft.ML;
+using System.Data.Entity;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -1074,5 +1079,202 @@ namespace NestoAPI.Infraestructure
 
             return mandato;
         }
-    }
+
+        public async Task<List<ClienteProbabilidadVenta>> BuscarClientesPorProbabilidadVenta(string vendedor, int numeroClientes)
+        {
+            var mlContext = new MLContext();
+
+            ITransformer model;
+            using (var fileStream = new FileStream(AppDomain.CurrentDomain.BaseDirectory + "\\ModelsIA\\modelo_llamadas.zip", FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                model = mlContext.Model.Load(fileStream, out var modelInputSchema);
+            }
+
+            List<ClienteInteraccion> clientes = ObtenerClientes(vendedor);
+
+            // Convertir clientes a IDataView para aplicar el modelo de ML
+            IDataView clientesData = mlContext.Data.LoadFromEnumerable(clientes);
+
+            // Predecir usando el modelo de ML
+            var predictions = model.Transform(clientesData);
+
+            // Extraer resultados de predicción
+            var predictionResults = mlContext.Data.CreateEnumerable<PrediccionModelo>(predictions, reuseRowObject: false);
+
+            // Seleccionar mejores clientes basados en la probabilidad
+            var mejoresClientes = predictionResults
+                .Select((pred, index) => new { Cliente = clientes[index], Probabilidad = pred.Probability })
+                .OrderByDescending(c => c.Probabilidad)
+                .Take(numeroClientes)
+                .ToList();
+
+            // Preparar lista de clientes con probabilidad de venta
+            List<ClienteProbabilidadVenta> clientesProbabilidadVenta = new List<ClienteProbabilidadVenta>();
+
+            // Recorrer cada cliente y obtener datos adicionales de la base de datos
+            foreach (var item in mejoresClientes)
+            {
+                // Dividir el ClienteId para obtener Cliente y Contacto
+                string[] clienteParts = item.Cliente.ClienteId.Split('/');
+                string clienteId = clienteParts[0];   // Cliente
+                string contacto = clienteParts.Length > 1 ? clienteParts[1] : string.Empty; // Contacto
+
+                // Obtener datos del cliente desde la base de datos (similar al método GetCliente)
+                var clienteEncontrado = await servicio.BuscarCliente(Constantes.Empresas.EMPRESA_POR_DEFECTO, clienteId, contacto);
+
+                if (clienteEncontrado != null)
+                {
+                    // Crear un ClienteProbabilidadVenta y asignar la probabilidad
+                    ClienteProbabilidadVenta clienteProbabilidad = new ClienteProbabilidadVenta
+                    {
+                        albaranValorado = clienteEncontrado.AlbaranValorado,
+                        cadena = clienteEncontrado.Cadena?.Trim(),
+                        ccc = clienteEncontrado.CCC?.Trim(),
+                        cifNif = clienteEncontrado.CIF_NIF?.Trim(),
+                        cliente = clienteEncontrado.Nº_Cliente.Trim(),
+                        clientePrincipal = clienteEncontrado.ClientePrincipal,
+                        codigoPostal = clienteEncontrado.CodPostal?.Trim(),
+                        comentarioPicking = clienteEncontrado.ComentarioPicking,
+                        comentarioRuta = clienteEncontrado.ComentarioRuta,
+                        comentarios = clienteEncontrado.Comentarios,
+                        contacto = clienteEncontrado.Contacto.Trim(),
+                        copiasAlbaran = clienteEncontrado.NºCopiasAlbarán,
+                        copiasFactura = clienteEncontrado.NºCopiasFactura,
+                        direccion = clienteEncontrado.Dirección?.Trim(),
+                        empresa = clienteEncontrado.Empresa.Trim(),
+                        estado = clienteEncontrado.Estado,
+                        grupo = clienteEncontrado.Grupo,
+                        iva = clienteEncontrado.IVA,
+                        mantenerJunto = clienteEncontrado.MantenerJunto,
+                        noComisiona = clienteEncontrado.NoComisiona,
+                        nombre = clienteEncontrado.Nombre?.Trim(),
+                        periodoFacturacion = clienteEncontrado.PeriodoFacturación,
+                        poblacion = clienteEncontrado.Población?.Trim(),
+                        provincia = clienteEncontrado.Provincia?.Trim(),
+                        ruta = clienteEncontrado.Ruta,
+                        servirJunto = clienteEncontrado.ServirJunto,
+                        telefono = clienteEncontrado.Teléfono,
+                        vendedor = clienteEncontrado.Vendedor,
+                        web = clienteEncontrado.Web,                        
+                        Probabilidad = item.Probabilidad,
+                        DiasDesdeUltimaInteraccion = (int)item.Cliente.DiasDesdeUltimaInteraccion,
+                        DiasDesdeUltimoPedido = (int)item.Cliente.DiasDesdeUltimoPedido
+                    };
+
+                    // Agregar el cliente a la lista final
+                    clientesProbabilidadVenta.Add(clienteProbabilidad);
+                }
+            }
+
+            return clientesProbabilidadVenta;
+        }
+
+
+
+        static List<ClienteInteraccion> ObtenerClientes(string vendedor)
+        {
+            string query = $@"
+            WITH cte_fechas AS (
+                SELECT 
+                    GETDATE() AS FechaHoy, 
+                    DATEADD(yy, -1, GETDATE()) AS FechaHace12Meses, 
+                    DATEADD(yy, -5, GETDATE()) AS FechaHace5Años
+            ),
+            cte_clientes AS (
+                SELECT 
+                    TRIM([nº cliente]) + '/' + TRIM(contacto) AS ClienteId, 
+		            [nº Cliente] Cliente,
+		            Contacto,
+                    Nombre AS NombreCliente
+                FROM 
+                    Clientes c
+                WHERE 
+                    empresa = '1' 
+                    AND estado >= 0 
+                    AND Estado != 7 
+                    AND vendedor = '{vendedor}'
+            ),
+            cte_interacciones AS (
+                SELECT 
+                    Número Cliente,
+		            Contacto,
+                    DATEADD(HOUR, -1, Fecha) AS FechaInteraccion, 
+                    CASE Tipo 
+                        WHEN 'T' THEN 'Llamada' 
+                        WHEN 'V' THEN 'Visita' 
+                        WHEN 'W' THEN 'WhatsApp' 
+                    END AS TipoInteraccion
+                FROM 
+                    SeguimientoCliente
+                WHERE 
+                    Fecha >= (SELECT FechaHace5Años FROM cte_fechas) 
+                    AND Estado = 0 
+            ),
+            cte_pedidos AS (
+                SELECT 
+		            c.[Nº Cliente] Cliente,
+		            c.Contacto,
+                    c.Número AS PedidoId, 
+                    CASE 
+                        WHEN c.[Periodo Facturacion] = 'FDM' THEN l.[Fecha Modificacion] 
+                        ELSE c.[Fecha Modificación] 
+                    END AS FechaPedido
+                FROM 
+                    CabPedidoVta c 
+                INNER JOIN 
+                    LinPedidoVta l ON c.empresa = l.empresa AND c.número = l.número
+                WHERE 
+                    TipoLinea = 1 and Estado >= -1
+                    AND [base imponible] > 0 
+                    AND c.Fecha >= (SELECT FechaHace5Años FROM cte_fechas)
+            )
+            SELECT 
+                c.ClienteId,
+                'Llamada' AS TipoInteraccion, 
+                DATEPART(WEEKDAY, (SELECT FechaHoy FROM cte_fechas)) AS DiaDeLaSemana,
+                CASE WHEN DATEPART(HOUR, (SELECT FechaHoy FROM cte_fechas)) > 14 THEN 1 ELSE 0 END AS EsPorLaTarde,
+                ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaInteraccion) FROM cte_interacciones i WHERE i.Cliente = c.Cliente and i.Contacto = c.Contacto), (SELECT FechaHoy FROM cte_fechas)), 9999) AS DiasDesdeUltimaInteraccion,
+                ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaPedido) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto), (SELECT FechaHoy FROM cte_fechas)), 9999) AS DiasDesdeUltimoPedido,
+                ISNULL((SELECT COUNT(*) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= (SELECT FechaHace12Meses FROM cte_fechas)), 0) AS PedidosUltimos12Meses,
+                0 AS target
+            FROM 
+                cte_clientes c
+            ORDER BY 
+                c.ClienteId;
+            ";
+
+            using (var context = new NVEntities()) 
+            {
+                var connectionString = context.Database.Connection.ConnectionString;
+
+                using (SqlConnection connection = new SqlConnection(connectionString))
+                {
+                    SqlCommand command = new SqlCommand(query, connection);
+                    connection.Open();
+                    SqlDataReader reader = command.ExecuteReader();
+
+                    List<ClienteInteraccion> clientes = new List<ClienteInteraccion>();
+
+                    while (reader.Read())
+                    {
+                        clientes.Add(new ClienteInteraccion
+                        {
+                            ClienteId = reader["ClienteId"].ToString(),
+                            TipoInteraccion = reader["TipoInteraccion"].ToString(),
+                            DiaDeLaSemana = Convert.ToSingle(reader["DiaDeLaSemana"]),
+                            EsPorLaTarde = Convert.ToSingle(reader["EsPorLaTarde"]),
+                            DiasDesdeUltimaInteraccion = Convert.ToSingle(reader["DiasDesdeUltimaInteraccion"]),
+                            DiasDesdeUltimoPedido = Convert.ToSingle(reader["DiasDesdeUltimoPedido"]),
+                            PedidosUltimos12Meses = Convert.ToSingle(reader["PedidosUltimos12Meses"]),
+                            Target = Convert.ToBoolean(reader["target"])
+                        });
+                    }
+
+                    var clientesFiltrados = clientes.Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido != 0).ToList();
+
+                    return clientesFiltrados;
+                }
+            }           
+        }
+    }    
 }

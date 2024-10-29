@@ -147,7 +147,7 @@ namespace NestoAPI.Models.RecursosHumanos
             },
             new Festivo()
             {
-                Fecha = new DateTime(2024, 6, 1),
+                Fecha = new DateTime(2024, 1, 6),
                 Fiesta = "Epifanía del Señor",
                 TipoFestivo = TipoFestivo.Todas
             },
@@ -258,6 +258,128 @@ namespace NestoAPI.Models.RecursosHumanos
             new Festivo()
             {
                 Fecha = new DateTime(2024, 12, 31),
+                Fiesta = "Nochevieja",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            // 2025
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 1, 1),
+                Fiesta = "Año nuevo",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 1, 6),
+                Fiesta = "Epifanía del Señor",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 4, 17),
+                Fiesta = "Jueves Santo",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 4, 18),
+                Fiesta = "Viernes Santo",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 5, 1),
+                Fiesta = "Día del trabajo",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 5, 2),
+                Fiesta = "Día de la Comunidad de Madrid",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 7, 25),
+                Fiesta = "Santiago Apostol",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 8, 15),
+                Fiesta = "Asunción de la Virgen",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 1, 11),
+                Fiesta = "Día de Todos los Santos",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 12, 6),
+                Fiesta = "Día de la Constitución Española",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 12, 8),
+                Fiesta = "Inmaculada Concepción",
+                TipoFestivo = TipoFestivo.Todas
+            },new Festivo()
+            {
+                Fecha = new DateTime(2025, 12, 25),
+                Fiesta = "Navidad",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 5, 15),
+                Fiesta = "San Isidro Labrador",
+                TipoFestivo = TipoFestivo.Madrid
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 11, 10),
+                Fiesta = "Nuestra Señora de la Almudena",
+                TipoFestivo = TipoFestivo.Madrid
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 1, 24),
+                Fiesta = "Nuestra Señora de la Paz",
+                TipoFestivo = TipoFestivo.Alcobendas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 5, 15),
+                Fiesta = "San Isidro",
+                TipoFestivo = TipoFestivo.Alcobendas
+            },
+            /*
+            new Festivo()
+            {
+                Fecha = new DateTime(2024, 9, 13),
+                Fiesta = "Fiestas de Algete (viernes)",
+                TipoFestivo = TipoFestivo.Algete
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2024, 9, 16),
+                Fiesta = "Fiestas de Algete (lunes)",
+                TipoFestivo = TipoFestivo.Algete
+            },
+            */
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 12, 24),
+                Fiesta = "Nochebuena",
+                TipoFestivo = TipoFestivo.Todas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 12, 31),
                 Fiesta = "Nochevieja",
                 TipoFestivo = TipoFestivo.Todas
             }

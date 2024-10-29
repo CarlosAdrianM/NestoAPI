@@ -180,16 +180,26 @@ namespace NestoAPI.Infraestructure.Facturas
             var clientes = (from f in db.CabFacturaVtas
                             join c in db.Clientes
                             on new { f.Empresa, f.Nº_Cliente, f.Contacto } equals new { c.Empresa, c.Nº_Cliente, c.Contacto }
-                            where f.Fecha >= firstDayOfQuarter && f.Fecha <= lastDayOfQuarter && c.PersonasContactoClientes.Where(c => c.CorreoElectrónico != null).Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
+                            where f.Fecha >= firstDayOfQuarter && f.Fecha <= lastDayOfQuarter &&
+                                  c.PersonasContactoClientes.Where(c => c.CorreoElectrónico != null)
+                                                            .Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO ||
+                                                                      p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURAS_TRIMESTRE_POR_CORREO)
                             select new { Cliente = c.Nº_Cliente, Contacto = f.Contacto, Correos = c.PersonasContactoClientes.Where(p => p.CorreoElectrónico != null) })
                             .ToList()
-                           .Select(f => new ClienteCorreoFactura
-                           {
-                               Cliente = f.Cliente,
-                               Contacto = f.Contacto,
-                               Correo = string.Join(", ", f.Correos.Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO).Select(c => c.CorreoElectrónico.Trim()))
-                           })
-                           .OrderBy(p => p.Correo);
+                            .Select(f => new ClienteCorreoFactura
+                            {
+                                Cliente = f.Cliente,
+                                Contacto = f.Contacto,
+                                Correo = string.Join(", ", f.Correos
+                                    // Primero intentamos obtener el correo del cargo trimestral
+                                    .Where(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURAS_TRIMESTRE_POR_CORREO)
+                                    .Select(c => c.CorreoElectrónico.Trim())
+                                    // Si no hay correos del cargo trimestral, usamos el correo del cargo regular
+                                    .DefaultIfEmpty(f.Correos.FirstOrDefault(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)?.CorreoElectrónico?.Trim())
+                                )
+                            })
+                            .OrderBy(p => p.Correo);
+
 
             IEnumerable<ClienteCorreoFactura> filteredList = clientes.Distinct();
 

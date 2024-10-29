@@ -47,6 +47,7 @@ namespace NestoAPI.Models
             {
                 public const short ESTADO_POR_DEFECTO = 0;
                 public const short CARGO_FACTURA_POR_CORREO = 22;
+                public const short CARGO_FACTURAS_TRIMESTRE_POR_CORREO = 28;
                 public const short CARGO_COBROS = 1;
             }
 

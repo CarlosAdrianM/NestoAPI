@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models.RecursosHumanos;
+﻿using NestoAPI.Models.Facturas;
+using NestoAPI.Models.RecursosHumanos;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -202,6 +203,14 @@ namespace NestoAPI.Controllers
             });
 
             return Ok(gestorEmpleados.listaEmpleados);
+        }
+
+        [HttpGet]
+        [Route("api/RecursosHumanos/EsFestivo")]
+        public bool EsFestivo(DateTime fecha, string delegacion)
+        {
+            var esFestivo = GestorFestivos.EsFestivo(fecha, delegacion);
+            return esFestivo;
         }
 
         private bool fechasSonCorrectas(DateTime fechaInicial, DateTime fechaFinal)

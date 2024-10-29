@@ -126,6 +126,7 @@ namespace NestoAPI.Models
         public string unidadMedida { get; set; }
         public string familia { get; set; }
         public string subGrupo { get; set; }
+        public string codigoBarras { get; set; }
         public Nullable<short> estado { get; set; }
         public bool yaFacturado { get; set; }
         public int cantidadVendida { get; set; }

@@ -192,7 +192,6 @@ namespace NestoAPI.Controllers
             return clientes.AsQueryable();
         }
 
-
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string filtro)
         {
@@ -246,7 +245,20 @@ namespace NestoAPI.Controllers
 
             return clientes.AsQueryable();
         }
-        
+
+        [HttpGet]
+        [Route("api/Clientes/GetClientesProbabilidadVenta")]
+        // GET: http://localhost:53364/api/Clientes/GetClientesProbabilidadVenta?vendedor=CAM&numeroClientes=10
+        [ResponseType(typeof(List<ClienteProbabilidadVenta>))]
+        public async Task<IHttpActionResult> GetClientesProbabilidadVenta(string vendedor, int numeroClientes)
+        {
+            GestorClientes gestor = new GestorClientes();
+            List<ClienteProbabilidadVenta> respuesta = await gestor.BuscarClientesPorProbabilidadVenta(vendedor, numeroClientes);
+
+            return Ok(respuesta);
+        }
+
+
         // GET: api/Clientes/5
         [ResponseType(typeof(ClienteDTO))]
         public async Task<IHttpActionResult> GetCliente(string empresa, string cliente, string contacto)
@@ -396,6 +408,7 @@ namespace NestoAPI.Controllers
             if (clienteDB.Vendedor != null && cliente.vendedor != null && clienteDB.Vendedor.Trim() != cliente.vendedor.Trim())
             {
                 clienteDB.Vendedor = cliente.vendedor;
+                clienteDB.Estado = cliente.estado;
                 clienteDB.Usuario = cliente.usuario;
             }
                         
