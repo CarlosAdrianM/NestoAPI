@@ -14,6 +14,6 @@ namespace NestoAPI.Infraestructure
         Task<Cliente> PrepararClienteCrear(ClienteCrear clienteCrear, NVEntities db);
         Task<Cliente> PrepararClienteModificar(ClienteCrear clienteModificar, NVEntities db);
         Task<List<Cliente>> DejarDeVisitar(NVEntities db, ClienteCrear cliente);
-        Task<List<ClienteProbabilidadVenta>> BuscarClientesPorProbabilidadVenta(string vendedor, int numeroClientes);
+        Task<List<ClienteProbabilidadVenta>> BuscarClientesPorProbabilidadVenta(string vendedor, int numeroClientes, string tipoInteraccion);
     }
 }

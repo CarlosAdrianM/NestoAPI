@@ -1080,7 +1080,7 @@ namespace NestoAPI.Infraestructure
             return mandato;
         }
 
-        public async Task<List<ClienteProbabilidadVenta>> BuscarClientesPorProbabilidadVenta(string vendedor, int numeroClientes)
+        public async Task<List<ClienteProbabilidadVenta>> BuscarClientesPorProbabilidadVenta(string vendedor, int numeroClientes, string tipoInteraccion)
         {
             var mlContext = new MLContext();
 
@@ -1090,7 +1090,7 @@ namespace NestoAPI.Infraestructure
                 model = mlContext.Model.Load(fileStream, out var modelInputSchema);
             }
 
-            List<ClienteInteraccion> clientes = ObtenerClientes(vendedor);
+            List<ClienteInteraccion> clientes = ObtenerClientes(vendedor, tipoInteraccion);
 
             // Convertir clientes a IDataView para aplicar el modelo de ML
             IDataView clientesData = mlContext.Data.LoadFromEnumerable(clientes);
@@ -1171,12 +1171,24 @@ namespace NestoAPI.Infraestructure
 
 
 
-        static List<ClienteInteraccion> ObtenerClientes(string vendedor)
+        static List<ClienteInteraccion> ObtenerClientes(string vendedor, string tipoInteraccion)
         {
+            if (string.IsNullOrEmpty(tipoInteraccion) || tipoInteraccion == "Teléfono")
+            {
+                tipoInteraccion = "Llamada";
+            }
             string query = $@"
+            select row_number() over (partition by l.[nº cliente], l.contacto order by sum(cantidad) desc) rn, L.[Nº Cliente] Cliente, L.Contacto, L.Grupo + Subgrupo GrupoSubgrupo, sum(Cantidad) Ventas
+            into #Gruposubgrupo
+            from LinPedidoVta l inner join Clientes c
+            on l.[Nº Cliente] = c.[Nº Cliente] and l.Contacto = c.Contacto
+            where c.Vendedor = '{vendedor}' AND [Fecha Factura] >= DATEADD(year, -5, getdate()) and SubGrupo != 'MMP' and L.Estado = 4
+            group by l.[Nº Cliente], l.Contacto, DATEPART(month, [Fecha Factura]), DATEPART(YEAR, [Fecha Factura]), l.Grupo + Subgrupo;
+
             WITH cte_fechas AS (
                 SELECT 
                     GETDATE() AS FechaHoy, 
+                    DATEADD(month, -11, GETDATE()) AS FechaHace11Meses,
                     DATEADD(yy, -1, GETDATE()) AS FechaHace12Meses, 
                     DATEADD(yy, -5, GETDATE()) AS FechaHace5Años
             ),
@@ -1208,7 +1220,7 @@ namespace NestoAPI.Infraestructure
                     SeguimientoCliente
                 WHERE 
                     Fecha >= (SELECT FechaHace5Años FROM cte_fechas) 
-                    AND Estado = 0 
+                    AND Estado = 0 AND Pedido = 0
             ),
             cte_pedidos AS (
                 SELECT 
@@ -1224,18 +1236,22 @@ namespace NestoAPI.Infraestructure
                 INNER JOIN 
                     LinPedidoVta l ON c.empresa = l.empresa AND c.número = l.número
                 WHERE 
-                    TipoLinea = 1 and Estado >= -1
+                    TipoLinea = 1 and Estado >= -1 AND c.NotaEntrega = 0
                     AND [base imponible] > 0 
                     AND c.Fecha >= (SELECT FechaHace5Años FROM cte_fechas)
             )
             SELECT 
                 c.ClienteId,
-                'Llamada' AS TipoInteraccion, 
+                '{tipoInteraccion}' AS TipoInteraccion, 
+                DATEPART(MONTH, (SELECT FechaHoy FROM cte_fechas)) AS MesActual,
                 DATEPART(WEEKDAY, (SELECT FechaHoy FROM cte_fechas)) AS DiaDeLaSemana,
                 CASE WHEN DATEPART(HOUR, (SELECT FechaHoy FROM cte_fechas)) > 14 THEN 1 ELSE 0 END AS EsPorLaTarde,
                 ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaInteraccion) FROM cte_interacciones i WHERE i.Cliente = c.Cliente and i.Contacto = c.Contacto), (SELECT FechaHoy FROM cte_fechas)), 9999) AS DiasDesdeUltimaInteraccion,
                 ISNULL(DATEDIFF(DAY, (SELECT MAX(FechaPedido) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto), (SELECT FechaHoy FROM cte_fechas)), 9999) AS DiasDesdeUltimoPedido,
-                ISNULL((SELECT COUNT(*) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= (SELECT FechaHace12Meses FROM cte_fechas)), 0) AS PedidosUltimos12Meses,
+                isnull((SELECT ISNULL(365 / NULLIF(COUNT(DISTINCT CAST(FechaPedido AS date)), 0), 0) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= (SELECT FechaHace12Meses FROM cte_fechas)), 0) AS FrecuenciaPedidosUltimoAnno,
+                ISNULL((SELECT COUNT(*) FROM cte_interacciones p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaInteraccion >= (SELECT FechaHace12Meses FROM cte_fechas)), 0) AS InteraccionesUltimos12Meses,
+                isnull((SELECT COUNT(distinct(cast(FechaPedido as DATE))) FROM cte_pedidos p WHERE p.Cliente = c.Cliente and p.Contacto = c.Contacto AND p.FechaPedido >= (SELECT FechaHace12Meses FROM cte_fechas) AND p.FechaPedido < (SELECT FechaHace11Meses FROM cte_fechas)), 0) AS PedidosMesAnnoAnterior,
+                isnull((select GrupoSubgrupo from #grupoSubgrupo g where rn = 1 and g.Cliente = c.Cliente and g.Contacto= c.Contacto), 'NADA') GrupoSubgrupoMasVendido,
                 0 AS target
             FROM 
                 cte_clientes c
@@ -1257,20 +1273,32 @@ namespace NestoAPI.Infraestructure
 
                     while (reader.Read())
                     {
-                        clientes.Add(new ClienteInteraccion
+                        try
                         {
-                            ClienteId = reader["ClienteId"].ToString(),
-                            TipoInteraccion = reader["TipoInteraccion"].ToString(),
-                            DiaDeLaSemana = Convert.ToSingle(reader["DiaDeLaSemana"]),
-                            EsPorLaTarde = Convert.ToSingle(reader["EsPorLaTarde"]),
-                            DiasDesdeUltimaInteraccion = Convert.ToSingle(reader["DiasDesdeUltimaInteraccion"]),
-                            DiasDesdeUltimoPedido = Convert.ToSingle(reader["DiasDesdeUltimoPedido"]),
-                            PedidosUltimos12Meses = Convert.ToSingle(reader["PedidosUltimos12Meses"]),
-                            Target = Convert.ToBoolean(reader["target"])
-                        });
+                            clientes.Add(new ClienteInteraccion
+                            {
+                                ClienteId = reader["ClienteId"].ToString(),
+                                TipoInteraccion = reader["TipoInteraccion"].ToString(),
+                                MesActual = reader["MesActual"].ToString(),
+                                DiaDeLaSemana = reader["DiaDeLaSemana"].ToString(),
+                                GrupoSubgrupoMasVendido = reader["GrupoSubgrupoMasVendido"].ToString(),
+                                EsPorLaTarde = Convert.ToSingle(reader["EsPorLaTarde"]),
+                                DiasDesdeUltimaInteraccion = Convert.ToSingle(reader["DiasDesdeUltimaInteraccion"]),
+                                DiasDesdeUltimoPedido = Convert.ToSingle(reader["DiasDesdeUltimoPedido"]),
+                                FrecuenciaPedidosUltimoAnno = Convert.ToSingle(reader["FrecuenciaPedidosUltimoAnno"]),
+                                InteraccionesUltimos12Meses = Convert.ToSingle(reader["InteraccionesUltimos12Meses"]),
+                                PedidosMesAnnoAnterior = Convert.ToSingle(reader["PedidosMesAnnoAnterior"]),
+                                Target = Convert.ToBoolean(reader["target"])
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            throw new Exception("No se pudo leer los datos del modele", ex);
+                        }
+                        
                     }
 
-                    var clientesFiltrados = clientes.Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido != 0).ToList();
+                    var clientesFiltrados = clientes.Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido >= 6).ToList();
 
                     return clientesFiltrados;
                 }
