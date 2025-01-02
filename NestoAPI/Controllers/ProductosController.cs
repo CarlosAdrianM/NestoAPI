@@ -152,7 +152,8 @@ namespace NestoAPI.Controllers
                 Estado = (short)producto.Estado,
                 Grupo = producto.Grupo,
                 Subgrupo = producto.SubGruposProducto.Descripción?.Trim(),
-                RoturaStockProveedor = producto.RoturaStockProveedor
+                RoturaStockProveedor = producto.RoturaStockProveedor,
+                CodigoBarras = producto.CodBarras?.Trim()
             };
 
             foreach (var kit in producto.Kits)

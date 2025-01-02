@@ -209,7 +209,6 @@ namespace NestoAPI.Controllers
             IServicioCorreoElectronico servicioCorreo = new ServicioCorreoElectronico();
             GestorDomiciliaciones gestor = new GestorDomiciliaciones(servicio, servicioCorreo);
             var fechaMovimientos = DateTime.Today;
-            fechaMovimientos = DateTime.Today.AddDays(-3);
 
             IEnumerable<EfectoDomiciliado> respuesta = gestor.EnviarCorreoDomiciliacion(fechaMovimientos);
 

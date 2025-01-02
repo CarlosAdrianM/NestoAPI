@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
@@ -7,10 +8,12 @@ namespace NestoAPI.Models.Comisiones.Estetica
     {
         private IServicioComisionesAnuales _servicioComisiones;
         private IQueryable<vstLinPedidoVtaComisione> consulta;
+        private string[] _familiasIncluidas;
 
-        public EtiquetaOtrasExclusivas(IServicioComisionesAnuales servicioComisiones)
+        public EtiquetaOtrasExclusivas(IServicioComisionesAnuales servicioComisiones, string[] familiasIncluidas)
         {
-            this._servicioComisiones = servicioComisiones;
+            _servicioComisiones = servicioComisiones;
+            _familiasIncluidas = familiasIncluidas;
         }
 
         public string Nombre => "Otras Exclusivas";
@@ -28,7 +31,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 throw new Exception("La comisión de las otras exclusivas no se puede fijar manualmente");
             }
         }
-        public bool EsComisionAcumulada => false;
+        public bool EsComisionAcumulada => false;        
 
         public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
@@ -56,18 +59,25 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
             return _servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
-
+        private Expression<Func<vstLinPedidoVtaComisione, bool>> PredicadoFiltro()
+        {
+            return l => _familiasIncluidas.Contains(l.Familia.ToLower()) &&
+                        !l.Grupo.ToLower().Equals("otros aparatos", StringComparison.OrdinalIgnoreCase);
+        }
         private void CrearConsulta(string vendedor, DateTime fecha)
         {
             var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
 
             consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
-                .Where(l =>
-                    FamiliasIncluidas.Contains(l.Familia.ToLower()) &&
-                    !l.Grupo.ToLower().Equals("otros aparatos", StringComparison.OrdinalIgnoreCase) &&
-                    listaVendedores.Contains(l.Vendedor)
-                );
+                .Where(l => listaVendedores.Contains(l.Vendedor))
+                .Where(PredicadoFiltro());
         }
+
+        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        {
+            var filtro = PredicadoFiltro().Compile();
+            return filtro(linea);
+        }        
 
         public decimal SetTipo(TramoComision tramo)
         {
@@ -76,11 +86,9 @@ namespace NestoAPI.Models.Comisiones.Estetica
             return resultado;
         }
 
-        public static string[] FamiliasIncluidas = { "anubismed", "anubis", "belclinic", "cazcarra", "cv", "maystar" };
-
         public object Clone()
         {
-            return new EtiquetaOtrasExclusivas(_servicioComisiones)
+            return new EtiquetaOtrasExclusivas(_servicioComisiones, _familiasIncluidas)
             {
                 Venta = this.Venta,
                 Tipo = this.Tipo

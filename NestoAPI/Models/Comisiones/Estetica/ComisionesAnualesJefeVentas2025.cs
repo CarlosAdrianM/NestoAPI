@@ -5,11 +5,11 @@ using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ComisionesAnualesJefeVentas2024 : ComisionesAnualesBase, IComisionesAnuales
+    public class ComisionesAnualesJefeVentas2025 : ComisionesAnualesBase, IComisionesAnuales
     {
-        private string[] _familiasEspeciales = { "eva visnu", "santhilea", "max2origin", "mina", "apraise", "maderas", "diagmyskin", "faby", "cursos", "lisap" };
-        private string[] _otrasExclusivas = { "anubismed", "anubis", "belclinic", "cazcarra", "cv", "maystar" };
-        public ComisionesAnualesJefeVentas2024(IServicioComisionesAnuales servicioComisiones)
+        private string[] _familiasEspeciales = { "cursos", "eva visnu", "apraise", "faby", "maderas", "max2origin", "mina" };
+        private string[] _otrasExclusivas = { "anubismed", "anubis", "belclinic", "cazcarra", "cv", "maystar", "oda" };
+        public ComisionesAnualesJefeVentas2025(IServicioComisionesAnuales servicioComisiones)
             : base(servicioComisiones)
         {
 
@@ -152,13 +152,7 @@ namespace NestoAPI.Models.Comisiones
                 }
             };
 
-            // Aquí usamos cadenas mágicas porque son los que YA han firmado las condiciones 
-            if (vendedor == "ASH")
-            {
-                return tramosJefeDeVentas;
-            }
-
-            throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");
+            return tramosJefeDeVentas;
         }
 
         public ICollection<TramoComision> LeerTramosComisionMes(string vendedor)

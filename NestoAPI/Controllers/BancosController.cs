@@ -123,7 +123,7 @@ namespace NestoAPI.Controllers
                                     .Sum() != 0 ? EstadoPunteo.ParcialmentePunteado : EstadoPunteo.SinPuntear;
                 }
 
-                return Ok(apuntesBancariosDTO);
+                return Ok(apuntesBancariosDTO.OrderBy(a => a.FechaOperacion).ThenBy(a => a.Id));
             }
             catch (Exception ex)
             {

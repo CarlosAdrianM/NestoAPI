@@ -18,6 +18,7 @@ namespace NestoAPI.Models.Comisiones
 
     public interface IEtiquetaComisionVenta : IEtiquetaComision
     {
+        bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea);
         decimal Venta { get; set; }
         decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes);
         decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking);

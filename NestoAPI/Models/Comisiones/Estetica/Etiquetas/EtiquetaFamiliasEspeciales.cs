@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
@@ -7,10 +8,12 @@ namespace NestoAPI.Models.Comisiones.Estetica
     {
         protected IServicioComisionesAnuales _servicioComisiones;
         protected IQueryable<vstLinPedidoVtaComisione> consulta;
+        private string[] _familiasIncluidas;
 
-        public EtiquetaFamiliasEspeciales(IServicioComisionesAnuales servicioComisiones)
+        public EtiquetaFamiliasEspeciales(IServicioComisionesAnuales servicioComisiones, string[] familiasIncluidas)
         {
-            this._servicioComisiones = servicioComisiones;
+            _servicioComisiones = servicioComisiones;
+            _familiasIncluidas = familiasIncluidas;
         }
 
         public string Nombre
@@ -63,28 +66,35 @@ namespace NestoAPI.Models.Comisiones.Estetica
             return _servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
+        private Expression<Func<vstLinPedidoVtaComisione, bool>> PredicadoFiltro()
+        {
+            return l => _familiasIncluidas.Contains(l.Familia.ToLower()) &&
+                        !l.Grupo.ToLower().Equals("otros aparatos", StringComparison.OrdinalIgnoreCase);
+        }
+
         private void CrearConsulta(string vendedor, DateTime fecha)
         {
             var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
-            
+
             consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
-                .Where(l =>
-                    FamiliasIncluidas.Contains(l.Familia.ToLower()) &&
-                    !l.Grupo.ToLower().Equals("otros aparatos", StringComparison.OrdinalIgnoreCase) &&
-                    listaVendedores.Contains(l.Vendedor)
-                );
+                .Where(l => listaVendedores.Contains(l.Vendedor))
+                .Where(PredicadoFiltro());
         }
+
+        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        {
+            var filtro = PredicadoFiltro().Compile();
+            return filtro(linea);
+        }        
 
         public decimal SetTipo(TramoComision tramo)
         {
             return tramo.TipoExtra;
         }
 
-        public static string[] FamiliasIncluidas = { "eva visnu", "santhilea", "max2origin", "mina", "apraise", "maderas", "diagmyskin", "faby", "cursos", "lisap" };
-
         public object Clone()
         {
-            return new EtiquetaFamiliasEspeciales(_servicioComisiones)
+            return new EtiquetaFamiliasEspeciales(_servicioComisiones, _familiasIncluidas)
             {
                 Venta = this.Venta,
                 Tipo = this.Tipo

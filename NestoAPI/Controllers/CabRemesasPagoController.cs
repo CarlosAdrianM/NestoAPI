@@ -292,6 +292,10 @@ namespace NestoAPI.Controllers
                         throw new Exception("El proveedor " + proveedor.Número.Trim() + " no tiene persona de contacto de confirming (cargo 15)");
                     }
                     correo = proveedor.PersonasContactoProveedors.Single(p => p.Cargo == 15).CorreoElectrónico;
+                    if (correo is null)
+                    {
+                        throw new Exception($"No hay ningún correo para confirming en el proveedor {proveedor.Número.Trim()}");
+                    }
                     lineaFichero += correo.PadRight(36).Substring(0,36);            // Correo electrónico del proveedor: F1
                     lineaFichero += new String(' ', 7);                             // Libre: F2
                     insertarLinea(ref lineaFichero, ref sb);

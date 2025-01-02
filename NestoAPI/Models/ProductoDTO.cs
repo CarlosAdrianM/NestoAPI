@@ -30,6 +30,7 @@ namespace NestoAPI.Models
         public string UrlFoto { get; set; }
         public bool RoturaStockProveedor { get; set; }
         public int ClasificacionMasVendidos { get; set; }
+        public string CodigoBarras { get; set; }
         
         public ICollection<ProductoKit> ProductosKit { get; set; }
         public ICollection<StockProducto> Stocks { get; set; }
@@ -69,7 +70,7 @@ namespace NestoAPI.Models
                     if (response.IsSuccessStatusCode)
                     {
                         rutaImagen = await response.Content.ReadAsStringAsync();
-                        rutaImagen = "http://" + rutaImagen;
+                        rutaImagen = "https://" + rutaImagen;
                     }
 
                     return rutaImagen;

@@ -22,7 +22,7 @@ namespace NestoAPI.Controllers
 
             if (annoActual == anno && mesActual == mes)
             {
-                IComisionesAnuales comisiones = ServicioComisionesAnualesComun.ComisionesVendedor(vendedor, anno);
+                IComisionesAnuales comisiones = ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno);
                 var etiquetaServicio = comisiones.Etiquetas.Single(s => s.Nombre == etiqueta) as IEtiquetaComisionVenta;
                 var detalleComisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta, incluirPicking).ToList();
                 return detalleComisiones.Select(c=>

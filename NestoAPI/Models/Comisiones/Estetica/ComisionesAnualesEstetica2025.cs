@@ -1,16 +1,15 @@
 ﻿using NestoAPI.Models.Comisiones.Estetica;
 using NestoAPI.Models.Comisiones.Estetica.Etiquetas;
-using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 
 namespace NestoAPI.Models.Comisiones
 {
-    public class ComisionesAnualesEstetica2024 : ComisionesAnualesBase, IComisionesAnuales
+    public class ComisionesAnualesEstetica2025 : ComisionesAnualesBase, IComisionesAnuales
     {
-        private string[] _familiasEspeciales = { "eva visnu", "santhilea", "max2origin", "mina", "apraise", "maderas", "diagmyskin", "faby", "cursos", "lisap" };
-        private string[] _otrasExclusivas = { "anubismed", "anubis", "belclinic", "cazcarra", "cv", "maystar" };
-        public ComisionesAnualesEstetica2024(IServicioComisionesAnuales servicioComisiones)
+        private string[] _familiasEspeciales = { "cursos", "eva visnu", "apraise", "faby", "maderas", "max2origin", "mina" };
+        private string[] _otrasExclusivas = { "anubismed", "anubis", "belclinic", "cazcarra", "cv", "maystar", "oda" };
+        public ComisionesAnualesEstetica2025(IServicioComisionesAnuales servicioComisiones)
             : base(servicioComisiones)
         {
             
@@ -203,7 +202,7 @@ namespace NestoAPI.Models.Comisiones
                     TipoExtra = .03M
                 }
             };
-
+            /*
             // Crear los tramos trimestrales con la lógica de Desde = Hasta anterior + 0.01
             Collection<TramoComision> tramosCalleTrimestral = new Collection<TramoComision>();
 
@@ -228,110 +227,10 @@ namespace NestoAPI.Models.Comisiones
                 // Actualizamos "hastaAnterior" con el valor "Hasta" del nuevo tramo
                 hastaAnterior = nuevoTramo.Hasta;
             }
-
-            Collection<TramoComision> tramosMinivendedores = new Collection<TramoComision>
-            {
-                new TramoComision
-                {
-                    Desde = 0M,
-                    Hasta = 5250M,
-                    Tipo = .0M,
-                    TipoExtra = .00M
-                },
-                new TramoComision
-                {
-                    Desde = 5250.01M,
-                    Hasta = 10500M,
-                    Tipo = .029M,
-                    TipoExtra = .0005M
-                },
-                new TramoComision
-                {
-                    Desde = 10500.01M,
-                    Hasta = 15750M,
-                    Tipo = .03M,
-                    TipoExtra = .001M
-                },
-                new TramoComision
-                {
-                    Desde = 15750.01M,
-                    Hasta = 21000M,
-                    Tipo = .035M,
-                    TipoExtra = .002M
-                },
-                new TramoComision
-                {
-                    Desde = 21000.01M,
-                    Hasta = 36750M,
-                    Tipo = .045M,
-                    TipoExtra = .003M
-                },
-                new TramoComision
-                {
-                    Desde = 36750.01M,
-                    Hasta = 47250M,
-                    Tipo = .055M,
-                    TipoExtra = .004M
-                },
-                new TramoComision
-                {
-                    Desde = 47250.01M,
-                    Hasta = 57750M,
-                    Tipo = .0671M,
-                    TipoExtra = .005M
-                },
-                new TramoComision
-                {
-                    Desde = 57750.01M,
-                    Hasta = 68250M,
-                    Tipo = .072M,
-                    TipoExtra = .008M
-                },
-                new TramoComision
-                {
-                    Desde = 68250.01M,
-                    Hasta = 78750M,
-                    Tipo = .077M,
-                    TipoExtra = .011M
-                },
-                new TramoComision
-                {
-                    Desde = 78750.01M,
-                    Hasta = 89250M,
-                    Tipo = .08M,
-                    TipoExtra = .014M
-                },
-                new TramoComision
-                {
-                    Desde = 89250.01M,
-                    Hasta = 99750M,
-                    Tipo = .085M,
-                    TipoExtra = .017M
-                },
-                new TramoComision
-                {
-                    Desde = 99750.01M,
-                    Hasta = decimal.MaxValue,
-                    Tipo = .0925M,
-                    TipoExtra = .02M
-                }
-            };            
-
-            // Aquí usamos cadenas mágicas porque son los que YA han firmado las condiciones 
-            if (vendedor == "DV" || vendedor == "JE" || vendedor == "RFG" || vendedor == "IM" || vendedor == "JGP" || vendedor == "MRM" || vendedor == "RAS")
-            {
-                return tramosCalle;
-            }
-            else if (vendedor == "MBV")
-            {
-                return tramosCalleTrimestral;
-            }
-            else if (vendedor == "AL" || vendedor == "CAM" || vendedor == "MR" || vendedor == "PI" || vendedor == "SC" || vendedor == "LC")
-            {
-                return tramosMinivendedores;
-            }
-
-            throw new Exception("El vendedor " + vendedor + " no comisiona por este esquema");
+            */
+                        
+            return tramosCalle;
+            
         }
 
         public ICollection<TramoComision> LeerTramosComisionMes(string vendedor)

@@ -1,12 +1,13 @@
 ﻿using System;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
     public class EtiquetaUnionLaser : IEtiquetaComisionVenta
     {
         
-        protected const decimal TIPO_FIJO_UNIONLASER = .1M;
+        private decimal _tipoFijoUnionLaser;
         private readonly IServicioComisionesAnuales _servicioComisiones;
 
         private IQueryable<vstLinPedidoVtaComisione> consulta;
@@ -14,7 +15,13 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         public EtiquetaUnionLaser(IServicioComisionesAnuales servicioComisiones)
         {
-            this._servicioComisiones = servicioComisiones;
+            _servicioComisiones = servicioComisiones;
+            _tipoFijoUnionLaser = 0.1M;
+        }
+        public EtiquetaUnionLaser(IServicioComisionesAnuales servicioComisiones, decimal tipoFijoUnionLaser)
+        {
+            _servicioComisiones = servicioComisiones;
+            _tipoFijoUnionLaser = tipoFijoUnionLaser;
         }
 
         public string Nombre => "Unión Láser";
@@ -65,17 +72,25 @@ namespace NestoAPI.Models.Comisiones.Estetica
             return _servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
-        private void CrearConsulta (string vendedor, DateTime fecha)
+        private Expression<Func<vstLinPedidoVtaComisione, bool>> PredicadoFiltro()
+        {
+            return l => l.Familia.ToLower() == "unionlaser" &&
+                        l.Grupo.ToLower() != "otros aparatos";
+        }
+        private void CrearConsulta(string vendedor, DateTime fecha)
         {
             var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
-            
+
             consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
-                .Where(l =>
-                    listaVendedores.Contains(l.Vendedor) &&
-                    l.Familia.ToLower() == "unionlaser" &&
-                    l.Grupo.ToLower() != "otros aparatos"
-                )
+                .Where(l => listaVendedores.Contains(l.Vendedor))
+                .Where(PredicadoFiltro())
                 .Except(consultaRenting);
+        }
+
+        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        {
+            var filtro = PredicadoFiltro().Compile();
+            return filtro(linea);
         }
 
         private void CrearConsultaRenting(string vendedor, bool incluirAlbaranes, DateTime fechaDesde, DateTime fechaHasta)
@@ -95,9 +110,9 @@ namespace NestoAPI.Models.Comisiones.Estetica
             }
         }
 
-        public virtual decimal SetTipo(TramoComision tramo) => TIPO_FIJO_UNIONLASER + tramo.TipoExtra;
+        public virtual decimal SetTipo(TramoComision tramo) => _tipoFijoUnionLaser + tramo.TipoExtra;
 
-        public object Clone() => new EtiquetaUnionLaser(_servicioComisiones)
+        public object Clone() => new EtiquetaUnionLaser(_servicioComisiones, _tipoFijoUnionLaser)
         {
             Venta = this.Venta,
             Tipo = this.Tipo

@@ -8,6 +8,7 @@ namespace NestoAPI.Models.Comisiones
     {
         
         const string GENERAL = "General";
+        const string UNION_LASER = "Unión Láser";
 
         private readonly IComisionesAnuales comisiones;
         private string vendedor;
@@ -64,12 +65,24 @@ namespace NestoAPI.Models.Comisiones
                 ResumenMesActual.GeneralBajaSaltoMesSiguiente = comisiones.CalculadorProyecciones.CalcularSiBajaDeSalto(vendedor, anno, mes, mesesAnno, ResumenMesActual, ventaAcumulada, meses, tramosAnno);
                 ResumenMesActual.GeneralVentaAcumulada = ventaAcumulada;
                 ResumenMesActual.GeneralComisionAcumulada = Resumenes.Where(r => r.Mes <= ResumenMesActual.Mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision);
-                ResumenMesActual.GeneralTipoConseguido = BuscarTramoComision(tramosAnno, ResumenMesActual.GeneralVentaAcumulada).Tipo;
+                ResumenMesActual.GeneralTipoConseguido = BuscarTramoComision(tramosAnno, ResumenMesActual.GeneralVentaAcumulada).Tipo;                
             }
+            ResumenMesActual.TotalComisionAcumulada = TotalComisionesAcumuladas;
+            ResumenMesActual.TotalVentaAcumulada = TotalVentasAcumuladas;
         }
 
         public ICollection<ResumenComisionesMes> Resumenes { get; private set; }
         public ResumenComisionesMes ResumenMesActual { get; private set; }
+
+        public decimal TotalVentasAcumuladas =>
+            Resumenes.Sum(r => r.Etiquetas.OfType<IEtiquetaComisionVenta>()
+                .Where(i => i.Nombre == GENERAL || i.Nombre == UNION_LASER)
+                .Sum(e => e.Venta)) +
+            (ResumenMesActual?.Etiquetas.OfType<IEtiquetaComisionVenta>()
+                .Where(i => i.Nombre == GENERAL || i.Nombre == UNION_LASER)
+                .Sum(e => e.Venta) ?? 0);
+        public decimal TotalComisionesAcumuladas => Resumenes.Sum(r => r.Etiquetas.Sum(e => e.Comision)) +
+                       (ResumenMesActual?.Etiquetas.Sum(e => e.Comision) ?? 0);
 
         private ResumenComisionesMes CrearResumenMesActual(bool incluirAlbaranes, bool incluirPicking)
         {
@@ -152,7 +165,7 @@ namespace NestoAPI.Models.Comisiones
             resumen.GeneralVentaAcumulada = ventaAcumulada;
             resumen.GeneralComisionAcumulada = Resumenes.Where(r => r.Mes <= mes).Sum(r => r.Etiquetas.Where(e => e.Nombre == GENERAL).Single().Comision) + etiquetaGeneral.Comision;
             var tramoEncontrado = BuscarTramoComision(tramosAnno, resumen.GeneralVentaAcumulada);
-            resumen.GeneralTipoConseguido = tramoEncontrado != null ? tramoEncontrado.Tipo : 0;
+            resumen.GeneralTipoConseguido = tramoEncontrado != null ? tramoEncontrado.Tipo : 0;            
 
             return resumen;
         }

@@ -24,10 +24,12 @@ namespace NestoAPI.Models.Comisiones
             ICollection<ResumenComisionesMes> annoActual;
             decimal ventaActual;
             int numerosMesesActual;
+            bool todoElEquipo = anno < 2025;
+
 
             if (ventaAcumulada == 0 && meses == 0)
             {
-                annoActual = _comisiones.LeerResumenAnno(vendedor, anno, true);
+                annoActual = _comisiones.LeerResumenAnno(vendedor, anno, todoElEquipo);
                 ventaActual = annoActual.Where(v => v.Mes <= mes).Sum(r => (r.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta);
                 numerosMesesActual = annoActual.Where(v => v.Mes <= mes).Count();
             } else
@@ -36,7 +38,7 @@ namespace NestoAPI.Models.Comisiones
                 numerosMesesActual = meses;
             }
             
-            var annoAnterior = _comisiones.LeerResumenAnno(vendedor, anno - 1, true);
+            var annoAnterior = _comisiones.LeerResumenAnno(vendedor, anno - 1, todoElEquipo);
             var ventaAnterior = annoAnterior.Where(v => v.Mes > mes).Sum(r => (r.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta);
 
             

@@ -109,5 +109,24 @@ namespace NestoAPI.Models.Comisiones
 
             return resumenAnno;
         }
+
+        public string EtiquetaLinea(vstLinPedidoVtaComisione linea)
+        {
+            if (linea is null || linea.Familia is null)
+            {
+                return GENERAL;
+            }
+            var etiquetasVenta = NuevasEtiquetas.OfType<IEtiquetaComisionVenta>();
+
+            foreach (var etiqueta in etiquetasVenta.Where(e => e.Nombre != GENERAL).Reverse())
+            {
+                if (etiqueta.PerteneceALaEtiqueta(linea))
+                {
+                    return etiqueta.Nombre;
+                }
+            }
+
+            return GENERAL;
+        }
     }
 }

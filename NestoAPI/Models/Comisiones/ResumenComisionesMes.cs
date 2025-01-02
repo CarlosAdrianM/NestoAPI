@@ -45,5 +45,9 @@ namespace NestoAPI.Models.Comisiones
                 return Math.Round(Etiquetas.Sum(e => e.Comision), 2);
             }
         }
+
+        public decimal TotalVentaAcumulada { get; set; }
+        public decimal TotalComisionAcumulada { get; set; }
+        public decimal TotalTipoAcumulado => TotalVentaAcumulada == 0 ? 0 : Math.Round(TotalComisionAcumulada / TotalVentaAcumulada, 4, MidpointRounding.AwayFromZero);
     }
 }

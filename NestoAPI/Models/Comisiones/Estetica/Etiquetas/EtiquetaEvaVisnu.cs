@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Linq.Expressions;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
@@ -51,16 +52,24 @@ namespace NestoAPI.Models.Comisiones.Estetica
             return _servicioComisiones.ConsultaVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
+        private Expression<Func<vstLinPedidoVtaComisione, bool>> PredicadoFiltro()
+        {
+            return l => (l.Familia.ToLower() == "eva visnu" || l.Empresa == "4") &&
+                         l.Grupo.ToLower() != "otros aparatos";
+        }
         private void CrearConsulta(string vendedor)
         {
             var listaVendedores = _servicioComisiones.ListaVendedores(vendedor);
 
             consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
-                .Where(l =>
-                    (l.Familia.ToLower() == "eva visnu" || l.Empresa == "4") &&
-                    l.Grupo.ToLower() != "otros aparatos" &&
-                    listaVendedores.Contains(l.Vendedor)
-                );
+                .Where(l => listaVendedores.Contains(l.Vendedor))
+                .Where(PredicadoFiltro());
+        }
+
+        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        {
+            var filtro = PredicadoFiltro().Compile();
+            return filtro(linea);
         }
 
         public decimal SetTipo(TramoComision tramo) => tramo.TipoExtra;
