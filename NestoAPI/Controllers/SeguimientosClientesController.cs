@@ -14,6 +14,9 @@ using System.Data.Entity.Core.Objects;
 using NestoAPI.Models.Rapports;
 using NestoAPI.Infraestructure.Rapports;
 using NestoAPI.Infraestructure.Vendedores;
+using Newtonsoft.Json;
+using System.Text;
+using System.Configuration;
 
 namespace NestoAPI.Controllers
 {
@@ -169,7 +172,87 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        [HttpGet]
+        [Route("api/SeguimientosClientes/Resumen")]
+        public async Task<IHttpActionResult> GetResumenSeguimientosClientes(string empresa, string cliente, string contacto)
+        {
+            // Obtiene los 100 comentarios y fechas de los seguimientos más recientes
+            var seguimientos = db.SeguimientosClientes
+                .Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto)
+                .Select(s => new { s.Fecha, s.Comentarios, s.Pedido })
+                .OrderByDescending(s => s.Fecha)  // Ordenar por fecha descendente
+                .Take(100)                        // Tomar solo los 100 más recientes
+                .OrderBy(s => s.Fecha)            // Reordenar por fecha ascendente para mantener el orden cronológico
+                .ToList();
 
+            if (!seguimientos.Any())
+            {
+                return NotFound();
+            }
+
+            // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
+            var textoEntrada = "Resumen de seguimientos de un cliente. Los siguientes son los comentarios organizados por fecha:\n\n";
+            foreach (var seguimiento in seguimientos)
+            {
+                var pedidoTexto = seguimiento.Pedido ? "Sí" : "No";
+                textoEntrada += $"Fecha: {seguimiento.Fecha.ToString("yyyy-MM-dd HH:mm:ss")}\nComentario: {seguimiento.Comentarios}\nTerminó en pedido: {pedidoTexto}\n\n";
+            }
+
+            // Llama a OpenAI para obtener el resumen
+            var resumen = await GenerarResumenOpenAIAsync(textoEntrada);
+
+            if (string.IsNullOrEmpty(resumen))
+            {
+                return StatusCode(HttpStatusCode.InternalServerError);
+            }
+
+            return Ok(new { Resumen = resumen });
+        }
+
+
+        private async Task<string> GenerarResumenOpenAIAsync(string textoEntrada)
+        {
+            string apiKey = ConfigurationManager.AppSettings["OpenAIKey"];
+            string endpoint = "https://api.openai.com/v1/chat/completions";
+
+            using (var httpClient = new HttpClient())
+            {
+                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+
+                var payload = new
+                {
+                    model = "gpt-3.5-turbo",
+                    messages = new[]
+                    {
+                        new {
+                            role = "system",
+                            content = "Eres un asistente que analiza comentarios de clientes y extrae información comercial útil. Identifica detalles como las marcas que utiliza el cliente, los tratamientos que realiza, los productos que le interesan, y cualquier otra preferencia relevante. Organiza el resumen de forma clara para que sea útil en una interacción comercial."
+                        },
+                        new {
+                            role = "user",
+                            content = textoEntrada
+                        }
+                    },
+                    max_tokens = 500,
+                    temperature = 0.4
+                };
+
+
+
+                var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+
+                var response = await httpClient.PostAsync(endpoint, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
+                    return responseJson?.choices[0]?.message?.content?.ToString();
+                }
+
+                return null;
+            }
+        }
 
         /*
         // GET: api/SeguimientosClientes/5
