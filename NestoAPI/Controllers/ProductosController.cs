@@ -2,16 +2,13 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
-using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
 using NestoAPI.Infraestructure;
-using static NestoAPI.Models.Constantes;
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.Vendedores;
 
@@ -290,6 +287,28 @@ namespace NestoAPI.Controllers
             })).ConfigureAwait(false);
 
             return Content(HttpStatusCode.OK, productosDTO.ToList(), Configuration.Formatters.JsonFormatter);
+        }
+
+
+        // GET: api/Productos/Relacionados/5
+        [ResponseType(typeof(List<SubgrupoProductoDTO>))]
+        [Route("api/Productos/Subgrupos")]
+        public async Task<IHttpActionResult> GetSubgrupos()
+        {
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            // Obtener el producto base
+            var subgrupos = db.SubGruposProductoes
+                .Where(s => s.Empresa == empresa)
+                .OrderBy(s => s.Grupo)
+                .ThenBy(s => s.Descripción)
+                .Select(s => new SubgrupoProductoDTO
+                {
+                    Grupo = s.Grupo.Trim(),
+                    Subgrupo = s.Número.Trim(),
+                    Nombre = s.Descripción.Trim()
+                });
+
+            return Content(HttpStatusCode.OK, subgrupos.ToList(), Configuration.Formatters.JsonFormatter);
         }
 
 

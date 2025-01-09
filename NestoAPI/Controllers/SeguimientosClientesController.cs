@@ -10,24 +10,28 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
-using System.Data.Entity.Core.Objects;
 using NestoAPI.Models.Rapports;
 using NestoAPI.Infraestructure.Rapports;
 using NestoAPI.Infraestructure.Vendedores;
 using Newtonsoft.Json;
 using System.Text;
 using System.Configuration;
+using NestoAPI.Infraestructure;
+using System.Net.Mail;
+using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Controllers
 {
     public class SeguimientosClientesController : ApiController
     {
         private NVEntities db = new NVEntities();
+        private IServicioCorreoElectronico _servicioCorreoElectronico;
 
         // Carlos 13/03/17: lo pongo para desactivar el Lazy Loading
         public SeguimientosClientesController()
         {
             db.Configuration.LazyLoadingEnabled = false;
+            _servicioCorreoElectronico = new ServicioCorreoElectronico();
         }
 
         // GET: api/SeguimientosClientes
@@ -209,13 +213,172 @@ namespace NestoAPI.Controllers
             return Ok(new { Resumen = resumen });
         }
 
+        [HttpGet]
+        [Route("api/SeguimientosClientes/Resumen")]
+        public async Task<IHttpActionResult> GetResumenSeguimientosClientes(string empresa, DateTime fecha)
+        {          
+            var vendedoresPresenciales = db.EquiposVentas.Where(v => v.Superior == Constantes.Vendedores.JEFE_DE_VENTAS).Select(v => v.Vendedor).ToArray();           
+            var resumenPresenciales = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.JEFE_VENTAS, false);
+            var resumenResto = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.CORREO_DIRECCION, true);
+            return Ok(new { Resumen = resumenPresenciales + "\n" + resumenResto });
+        }
+
+        [HttpGet]
+        [Route("api/SeguimientosClientes/ResumenSemanal")]
+        public async Task<IHttpActionResult> GetResumenSemanalSeguimientosClientes(string empresa, DateTime fecha)
+        {
+            var fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
+            var fechaSemanaAnterior = fechaSinHora.AddDays(-7);
+            var vendedoresPresenciales = db.EquiposVentas.Where(v => v.Superior == Constantes.Vendedores.JEFE_DE_VENTAS).Select(v => v.Vendedor.Trim()).ToArray();
+            string resumenConjunto = string.Empty;
+            var vendedoresConRapport = db.SeguimientosClientes
+                .Where(s => s.Empresa == empresa && s.Fecha >= fechaSemanaAnterior && s.Fecha < fechaSinHora && s.Vendedor != null)
+                .Select(s => s.Vendedor.Trim())
+                .Distinct()
+                .ToArray();
+
+            foreach (var vendedor in vendedoresConRapport)
+            {
+                var correo = db.Vendedores.SingleOrDefault(v => v.Empresa == empresa && v.Número == vendedor).Mail.Trim();
+                var copia = vendedoresPresenciales.Contains(vendedor) ? Constantes.Correos.JEFE_VENTAS : Constantes.Correos.CORREO_DIRECCION;
+                var resumen = await EnviarCorreoResumenRapportsSemana(empresa, fechaSemanaAnterior, fechaSinHora, vendedor, correo, copia);
+                resumenConjunto += resumen + "\n";
+            }
+
+            return Ok(new { Resumen = resumenConjunto });
+        }
+
+        private async Task<string> EnviarCorreoResumenRapportsDia(string empresa, DateTime fecha, string[] vendedores, string correo, bool resto)
+        {
+            // Resto discrimina entre si vendedores[] son los que enviamos o los que no enviamos
+
+            var fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
+            var fechaDiaSiguiente = fechaSinHora.AddDays(1);
+
+            var seguimientos = db.SeguimientosClientes
+                .Where(s => s.Empresa == empresa &&
+                            s.Fecha >= fechaSinHora &&
+                            s.Fecha < fechaDiaSiguiente &&
+                            s.Estado == 0 &&
+                            s.Número != null &&
+                            (resto ? !vendedores.Contains(s.Vendedor) : vendedores.Contains(s.Vendedor)))
+                .Select(s => new { s.Vendedor, s.Número, s.Contacto, s.Comentarios, s.Pedido, s.Tipo })
+                .ToList();
+
+
+            if (!seguimientos.Any())
+            {
+                return string.Empty;
+            }
+
+            // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
+            var textoEntrada = $"Resumen de seguimientos del día {fecha}. Los siguientes son los comentarios:\n\n";
+            foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
+            {
+                var pedidoTexto = seguimiento.Pedido ? "Sí" : "No";
+                switch (seguimiento.Tipo.Trim())
+                {
+                    case "V":
+                        textoEntrada += "Tipo: Visita\n";
+                        break;
+                    case "T":
+                        textoEntrada += "Tipo: Teléfono\n";
+                        break;
+                    case "W":
+                        textoEntrada += "Tipo: WhatsApp\n";
+                        break;
+                    default:
+                        textoEntrada += "Tipo: Desconocido\n";
+                        break;
+                }
+                textoEntrada += $"Vendedor: {seguimiento.Vendedor}\nCliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()} \nComentario: {seguimiento.Comentarios.Trim()}\nTerminó en pedido: {pedidoTexto}\n\n";
+            }
+
+            // Llama a OpenAI para obtener el resumen
+            var resumen = await GenerarResumenFechaOpenAIAsync(textoEntrada);
+
+            if (string.IsNullOrEmpty(resumen))
+            {
+                return string.Empty;
+            }
+
+            var grupo = resto ? "resto" : "presenciales";
+
+            var mail = new MailMessage();
+            mail.From = new MailAddress("nesto@nuevavision.es");
+            mail.To.Add(correo);
+            mail.CC.Add(Constantes.Correos.CORREO_DIRECCION);
+            mail.Subject = $"Resumen de seguimientos día {fechaSinHora.ToShortDateString()} ({grupo})";
+            mail.Body = resumen;
+            mail.IsBodyHtml = true;
+            _servicioCorreoElectronico.EnviarCorreoSMTP(mail);
+
+            return resumen;
+        }
+
+        private async Task<string> EnviarCorreoResumenRapportsSemana(string empresa, DateTime fechaInicio, DateTime fechaFin, string vendedor, string correo, string copia)
+        {            
+            var seguimientos = db.SeguimientosClientes
+                .Where(s => s.Empresa == empresa &&
+                            s.Fecha >= fechaInicio &&
+                            s.Fecha < fechaFin &&
+                            s.Número != null &&
+                            s.Vendedor == vendedor)
+                .Select(s => new { s.Vendedor, s.Número, s.Contacto, s.Comentarios })
+                .ToList();
+
+
+            if (!seguimientos.Any())
+            {
+                return string.Empty;
+            }
+
+            // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
+            var textoEntrada = $"Resumen de seguimientos del {fechaInicio} al {fechaFin}. Los siguientes son los comentarios:\n\n";
+            foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
+            {
+                textoEntrada += $"Vendedor: {seguimiento.Vendedor}\nCliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()} \nComentario: {seguimiento.Comentarios.Trim()}\n\n";
+            }
+
+            // Llama a OpenAI para obtener el resumen
+            var resumen = await GenerarResumenSemanaOpenAIAsync(textoEntrada);
+
+            if (string.IsNullOrEmpty(resumen))
+            {
+                return string.Empty;
+            }            
+
+            var mail = new MailMessage();
+            mail.From = new MailAddress("nesto@nuevavision.es");
+            mail.To.Add(correo); 
+            mail.CC.Add(copia); 
+            if (copia != Constantes.Correos.CORREO_DIRECCION)
+            {
+                mail.CC.Add(Constantes.Correos.CORREO_DIRECCION); 
+            }
+            mail.Subject = $"Resumen de seguimientos semanal del {fechaInicio.ToShortDateString()} al {fechaFin.ToShortDateString()}";
+            mail.Body = resumen;
+            mail.IsBodyHtml = true;
+            _servicioCorreoElectronico.EnviarCorreoSMTP(mail);
+
+            return resumen;
+        }
 
         private async Task<string> GenerarResumenOpenAIAsync(string textoEntrada)
         {
             string apiKey = ConfigurationManager.AppSettings["OpenAIKey"];
             string endpoint = "https://api.openai.com/v1/chat/completions";
 
-            using (var httpClient = new HttpClient())
+
+
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
+            HttpClientHandler handler = new HttpClientHandler
+            {
+                UseProxy = false // Cambiar según sea necesario
+            };
+
+            using (HttpClient httpClient = new HttpClient(handler))
             {
                 httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
 
@@ -248,6 +411,137 @@ namespace NestoAPI.Controllers
                     var responseString = await response.Content.ReadAsStringAsync();
                     var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
                     return responseJson?.choices[0]?.message?.content?.ToString();
+                }
+
+                return null;
+            }
+        }
+        private async Task<string> GenerarResumenFechaOpenAIAsync(string textoEntrada)
+        {
+            string apiKey = ConfigurationManager.AppSettings["OpenAIKey"];
+            string endpoint = "https://api.openai.com/v1/chat/completions";
+
+
+
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
+            HttpClientHandler handler = new HttpClientHandler
+            {
+                UseProxy = false // Cambiar según sea necesario
+            };
+
+            using (HttpClient httpClient = new HttpClient(handler))
+            {
+                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+
+                var payload = new
+                {
+                    model = "gpt-3.5-turbo",
+                    messages = new[]
+                    {
+                        new {
+                            role = "system",
+                            content = "Eres un experto en ventas a nivel mundial, como Og Mandino o Chet Holmes, que analiza los comentarios de clientes que los vendedores de una empresa distribuidora de productos de estética y peluquería meten a su sistema informático para informar y ayudar al jefe de ventas. En primer lugar lee todos y cada uno de los comentarios y muestra al jefe de ventas la información que extraigas de esos comentarios que consideres más importante intentando que haya comentarios de casi todos los vendedores (indicando el cliente y asegúrandote que tu comentario coincide con el cliente que muestras). A continuación identifica posibles ventas que necesitan ayuda para ser cerradas y comentarios más interesantes a nivel comercial, con al menos un comentario por cada vendedor (asegúrate que el cliente coincide con el comentario). Añade tendencias que se repiten en varios clientes. Añade ambién consejos para que el jefe de ventas trasmita a algunos vendedores determinados (indicando para qué vendedor es el consejo y explicando qué clientes han provocado que se le de ese consejo). Añade también productos, eventos, cursos o marcas que se repitan entre varios vendedores. El resultado lo devuelves formateado en HTML para que sea visualmente atractivo y debe ser una lectura de no menos de dos minutos."
+                        },
+                        new {
+                            role = "user",
+                            content = textoEntrada
+                        }
+                    },
+                    max_tokens = 3000,
+                    temperature = 0.6
+                };
+
+
+
+                var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+
+                var response = await httpClient.PostAsync(endpoint, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
+                    return responseJson?.choices[0]?.message?.content?.ToString();
+                }
+                else
+                {
+                    string errorContent = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"Error: {response.StatusCode}");
+                    Console.WriteLine($"Detalles del error: {errorContent}");
+                }
+
+                return null;
+            }
+        }
+        private async Task<string> GenerarResumenSemanaOpenAIAsync(string textoEntrada)
+        {
+            string apiKey = ConfigurationManager.AppSettings["OpenAIKey"];
+            string endpoint = "https://api.openai.com/v1/chat/completions";
+
+
+
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
+            HttpClientHandler handler = new HttpClientHandler
+            {
+                UseProxy = false // Cambiar según sea necesario
+            };
+
+            using (HttpClient httpClient = new HttpClient(handler))
+            {
+                httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {apiKey}");
+
+                var payload = new
+                {
+                    model = "gpt-3.5-turbo",
+                    messages = new[]
+                    {
+                        new {
+                            role = "system",
+                            content = @"Eres un asistente que analiza los comentarios de clientes que los vendedores de una empresa distribuidora de productos de estética y peluquería meten a su sistema informático. 
+                Tu tarea es ayudar a identificar:
+                1. **Tareas pendientes**: Busca en los comentarios acciones que el vendedor menciona como necesarias, pero que no indica haber completado aún (por ejemplo: ""recordar"", ""enviar"", ""mandar muestras"", ""solicitar catálogo""). Excluye acciones que claramente ya se han realizado (como ""ya ofrecí"", ""ya entregué"", etc.).
+                2. **Oportunidades de venta**: Detecta posibles ventas que podrían cerrarse con una acción comercial adicional.
+                Devuelve el resultado mostrando:
+                - Una lista de tareas pendientes (asegurándote de mencionar siempre el cliente relacionado).
+                - Una lista de oportunidades de venta.               
+
+                Asegúrate de que las tareas y las oportunidades estén claramente separadas y organizadas para que sean fáciles de leer.
+
+                Incluye también cualquier otra información que creas que es suficientemente importante como para aparecer en el resumen semanal. 
+
+                Añade al final una puntuación de la calidad de los comentarios que mete este vendedor, mostrando de 1 a 5 estrellas, siendo una estrella comentarios muy breves o repetitivos y 5 estrellas comentarios largos con información detallada y útil o con tareas para recordarle. Un valor de referencia podría ser un comentario de 30 palabras estaría en torno a las 3 estrellas (menos de 10 palabras no puede tener más de 1 estrella). Si tiene más de 3 estrellas, contiene información comercial y algún recordatorio, ya sería de 4 o 5 estrellas. Si tiene menos de 30 palabras y se repite en muchos clientes lo mismo o muy parecido, serían 1 o 2 estrellas.
+
+                El mensaje resultante es importante que lo devuelvas en HTML para poner en el cuerpo de un correo, con un diseño atractivo"
+                        },
+                        new {
+                            role = "user",
+                            content = textoEntrada
+                        }
+                    },
+                    max_tokens = 3000,
+                    temperature = 0.4 // Menor temperatura para respuestas más precisas
+                };
+
+
+
+
+                var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+
+                var response = await httpClient.PostAsync(endpoint, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
+                    return responseJson?.choices[0]?.message?.content?.ToString();
+                }
+                else
+                {
+                    string errorContent = await response.Content.ReadAsStringAsync();
+                    Console.WriteLine($"Error: {response.StatusCode}");
+                    Console.WriteLine($"Detalles del error: {errorContent}");
                 }
 
                 return null;

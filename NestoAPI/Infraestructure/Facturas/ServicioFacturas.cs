@@ -262,5 +262,11 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
             }
         }
+
+        public List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido)
+        {
+            var efectos = db.EfectosPedidosVentas.Where(e => e.Empresa == empresa && e.Pedido == pedido).OrderBy(e => e.FechaVencimiento).ToList();
+            return efectos;
+        }
     }
 }

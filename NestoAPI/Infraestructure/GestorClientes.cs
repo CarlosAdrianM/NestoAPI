@@ -1080,7 +1080,7 @@ namespace NestoAPI.Infraestructure
             return mandato;
         }
 
-        public async Task<List<ClienteProbabilidadVenta>> BuscarClientesPorProbabilidadVenta(string vendedor, int numeroClientes, string tipoInteraccion)
+        public async Task<List<ClienteProbabilidadVenta>> BuscarClientesPorProbabilidadVenta(string vendedor, int numeroClientes, string tipoInteraccion, string grupoSubgrupo = "")
         {
             var mlContext = new MLContext();
 
@@ -1091,6 +1091,14 @@ namespace NestoAPI.Infraestructure
             }
 
             List<ClienteInteraccion> clientes = ObtenerClientes(vendedor, tipoInteraccion);
+
+            if (!string.IsNullOrEmpty(grupoSubgrupo))
+            {
+                foreach (var cliente in clientes)
+                {
+                    cliente.GrupoSubgrupoMasVendido = grupoSubgrupo;
+                }
+            }
 
             // Convertir clientes a IDataView para aplicar el modelo de ML
             IDataView clientesData = mlContext.Data.LoadFromEnumerable(clientes);

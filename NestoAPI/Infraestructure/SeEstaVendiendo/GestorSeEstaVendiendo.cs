@@ -4,7 +4,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Web;
 
 namespace NestoAPI.Infraestructure.SeEstaVendiendo
 {
@@ -28,7 +27,7 @@ namespace NestoAPI.Infraestructure.SeEstaVendiendo
                             Producto = producto,
                             Cuenta = suma.Count()
                         }
-                    ).OrderByDescending(c => c.Cuenta).Take(5).Select(c => c.Producto.Trim()).ToList();
+                    ).OrderByDescending(c => c.Cuenta).Take(10).Select(c => c.Producto.Trim()).ToList();
 
                 
                 foreach (var producto in vendidos)

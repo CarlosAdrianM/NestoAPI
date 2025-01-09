@@ -140,6 +140,11 @@ namespace NestoAPI.Tests.Models.Comisiones
             throw new NotImplementedException();
         }
 
+        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        {
+            throw new NotImplementedException();
+        }
+
         public decimal SetTipo(TramoComision tramo)
         {
             return tramo.Tipo;
@@ -182,6 +187,11 @@ namespace NestoAPI.Tests.Models.Comisiones
         }
 
         public IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
         {
             throw new NotImplementedException();
         }

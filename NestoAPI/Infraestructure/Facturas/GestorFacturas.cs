@@ -345,9 +345,11 @@ namespace NestoAPI.Infraestructure.Facturas
 
             List<VendedorFactura> vendedores = servicio.CargarVendedoresPedido(empresa, pedido);
             PlazoPago plazoPago = servicio.CargarPlazosPago(empresa, cabPedido.PlazosPago);
-            
-            List<VencimientoFactura> vencimientos = CalcularVencimientos(importeTotal, plazoPago, cabPedido.Forma_Pago, 
-                cabPedido.CCC, (DateTime)cabPedido.Primer_Vencimiento);
+            List<EfectoPedidoVenta> efectos = servicio.CargarEfectosPedido(empresa, pedido);
+            List<VencimientoFactura> vencimientos = efectos != null && efectos.Any() ? 
+                CalcularVencimientos(efectos) : 
+                CalcularVencimientos(importeTotal, plazoPago, cabPedido.Forma_Pago, 
+                    cabPedido.CCC, (DateTime)cabPedido.Primer_Vencimiento);
             if (vencimientos.Sum(v => v.Importe) != importeTotal)
             {
                 throw new Exception("No cuadran los vencimientos con el total de la factura");
@@ -405,6 +407,25 @@ namespace NestoAPI.Infraestructure.Facturas
 
             return factura;
         }
+
+        public static List<VencimientoFactura> CalcularVencimientos(List<EfectoPedidoVenta> efectos)
+        {
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
+            foreach (var efecto in efectos)
+            {
+                VencimientoFactura vencimiento = new VencimientoFactura
+                {
+                    CCC = efecto.CCC,
+                    Importe = efecto.Importe,
+                    ImportePendiente = efecto.Importe,
+                    FormaPago = efecto.FormaPago,
+                    Vencimiento = efecto.FechaVencimiento
+                };
+                vencimientos.Add(vencimiento);
+            }
+            return vencimientos;
+        }
+
         public static List<VencimientoFactura> CalcularVencimientos(decimal importe, PlazoPago plazoPago, string formaPago, string ccc, DateTime primerVencimiento)
         {
             if (plazoPago == null || plazoPago.Nº_Plazos < 1)

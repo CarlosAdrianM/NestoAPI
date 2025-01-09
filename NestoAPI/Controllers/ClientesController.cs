@@ -250,10 +250,10 @@ namespace NestoAPI.Controllers
         [Route("api/Clientes/GetClientesProbabilidadVenta")]
         // GET: http://localhost:53364/api/Clientes/GetClientesProbabilidadVenta?vendedor=CAM&numeroClientes=10
         [ResponseType(typeof(List<ClienteProbabilidadVenta>))]
-        public async Task<IHttpActionResult> GetClientesProbabilidadVenta(string vendedor, int numeroClientes = 20, string tipoInteraccion = "")
+        public async Task<IHttpActionResult> GetClientesProbabilidadVenta(string vendedor, int numeroClientes = 20, string tipoInteraccion = "", string grupoSubgrupo = "")
         {
             GestorClientes gestor = new GestorClientes();
-            List<ClienteProbabilidadVenta> respuesta = await gestor.BuscarClientesPorProbabilidadVenta(vendedor, numeroClientes, tipoInteraccion);
+            List<ClienteProbabilidadVenta> respuesta = await gestor.BuscarClientesPorProbabilidadVenta(vendedor, numeroClientes, tipoInteraccion, grupoSubgrupo);
 
             return Ok(respuesta);
         }

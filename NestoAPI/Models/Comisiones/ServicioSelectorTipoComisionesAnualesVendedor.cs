@@ -36,6 +36,10 @@ namespace NestoAPI.Models.Comisiones
                     {
                         return new ComisionesAnualesPeluqueria2024(new ServicioComisionesAnualesComun());
                     }
+                    else if (anno == 2025)
+                    {
+                        return new ComisionesAnualesPeluqueria2025(new ServicioComisionesAnualesComun());
+                    }
                 }
 
                 var vendedoresTelefono = db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO).Select(v => v.Número.Trim());

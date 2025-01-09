@@ -65,6 +65,7 @@ namespace NestoAPI.Models
             public const string CORREO_DIRECCION = "direccion@nuevavision.es";
             public const string TIENDA_ALCOBENDAS = "alcobendas@nuevavision.es";
             public const string INFORMATICA = "carlosadrian@nuevavision.es";
+            public const string JEFE_VENTAS = "albertosancho@nuevavision.es";
             public const string LOGISTICA = "logistica@nuevavision.es";
             public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
             public const string TIENDA_REINA = "tienda@nuevavision.es";            
@@ -263,7 +264,8 @@ namespace NestoAPI.Models
             public const int ESTADO_VENDEDOR_TELEFONICO = 9;
             public const int ESTADO_VENDEDOR_PELUQUERIA = 4;
             public const int ESTADO_VENDEDOR_PARA_ANULAR = 99;
-            public const string VENDEDOR_GENERAL = "NV";
+            public const string JEFE_DE_VENTAS = "ASH";
+            public const string VENDEDOR_GENERAL = "NV";            
         }
 
         public static class SeguimientosCliente

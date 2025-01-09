@@ -31,7 +31,7 @@ namespace NestoAPI.Models
         public bool RoturaStockProveedor { get; set; }
         public int ClasificacionMasVendidos { get; set; }
         public string CodigoBarras { get; set; }
-        
+
         public ICollection<ProductoKit> ProductosKit { get; set; }
         public ICollection<StockProducto> Stocks { get; set; }
 
@@ -65,7 +65,7 @@ namespace NestoAPI.Models
                 {
                     string parametros = "?producto=" + productoStock;
                     HttpResponseMessage response = await client.GetAsync(parametros);
-                
+
                     string rutaImagen = "";
                     if (response.IsSuccessStatusCode)
                     {
@@ -148,8 +148,8 @@ namespace NestoAPI.Models
                         {
                             string responseContent = await responseProducto.Content.ReadAsStringAsync().ConfigureAwait(false);
                             XmlDocument xmlDocProducto = new XmlDocument();
-                            xmlDocProducto.LoadXml(responseContent);                           
-                                                        
+                            xmlDocProducto.LoadXml(responseContent);
+
                             XmlNode priceNode = xmlDocProducto.SelectSingleNode("//final_price");
                             if (priceNode != null)
                             {
@@ -161,7 +161,7 @@ namespace NestoAPI.Models
                             else
                             {
                                 Console.WriteLine("No se encontró el precio en el XML");
-                            }                            
+                            }
                         }
                         else
                         {
@@ -185,4 +185,11 @@ namespace NestoAPI.Models
         public int Cantidad { get; set; }
     }
 
+    public class SubgrupoProductoDTO
+    {
+        public string Grupo { get; set; }
+        public string Subgrupo { get; set; }
+        public string Nombre { get; set; }
+        public string GrupoSubgrupo => Grupo + Subgrupo;
+    }
 }
