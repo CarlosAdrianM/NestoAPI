@@ -196,3 +196,5 @@ ModelManifest.xml
 /.vs/NestoAPI/v15/sqlite3/storage.ide-wal
 /NestoAPI/Infraestructure/Certificados/cert_cam_nv.cer
 /.vs/NestoAPI
+/NestoAPI/Secrets
+/NestoAPI/protos/google
