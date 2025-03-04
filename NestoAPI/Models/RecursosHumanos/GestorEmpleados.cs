@@ -24,7 +24,7 @@ namespace NestoAPI.Models.RecursosHumanos
             foreach(Empleado empleado in listaEmpleados)
             {
                 empleado.Acciones = gestorAcciones.Acciones?.Where(a => a.EmpleadoId == empleado.Id).ToList();
-                empleado.Festivos = gestorFestivos.ListaFestivos.Where(f => f.TipoFestivo == empleado.FiestasLocales || f.TipoFestivo == TipoFestivo.Todas).ToList();
+                empleado.Festivos = gestorFestivos.ListaFestivos.Where(f => f.TipoFestivo == empleado.FiestasLocales || f.TipoFestivo == TipoFestivo.Nacional).ToList();
             }
         }
 

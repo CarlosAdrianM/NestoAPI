@@ -44,16 +44,16 @@ namespace NestoAPI.Migrations
 
             var user = new ApplicationUser()
             {
-                UserName = "Mamen",
-                Email = "mariadelcarmenbachiller@nuevavision.es",
+                UserName = "Daniel",
+                Email = "daniellopez@nuevavision.es",
                 EmailConfirmed = true,
-                FirstName = "María del Carmen",
-                LastName = "Bachiller",
+                FirstName = "Daniel",
+                LastName = "López",
                 Level = 1,
                 JoinDate = DateTime.Now
             };
 
-            manager.Create(user, "Alcala.2024");
+            manager.Create(user, "Camarena.2025");
 
             
             if (roleManager.Roles.Count() == 0)

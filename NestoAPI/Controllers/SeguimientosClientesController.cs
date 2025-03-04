@@ -324,7 +324,9 @@ namespace NestoAPI.Controllers
                             s.Fecha < fechaFin &&
                             s.Número != null &&
                             s.Vendedor == vendedor)
-                .Select(s => new { s.Vendedor, s.Número, s.Contacto, s.Comentarios })
+                .Select(s => new { s.Vendedor, s.Número, s.Contacto, s.Comentarios, s.Fecha_Modificación })
+                .OrderBy(s => s.Vendedor)
+                .ThenBy(s => s.Fecha_Modificación)
                 .ToList();
 
 
@@ -337,7 +339,7 @@ namespace NestoAPI.Controllers
             var textoEntrada = $"Resumen de seguimientos del {fechaInicio} al {fechaFin}. Los siguientes son los comentarios:\n\n";
             foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
             {
-                textoEntrada += $"Vendedor: {seguimiento.Vendedor}\nCliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()} \nComentario: {seguimiento.Comentarios.Trim()}\n\n";
+                textoEntrada += $"Vendedor: {seguimiento.Vendedor}\nCliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()} \nComentario: {seguimiento.Comentarios.Trim()}\nFecha y hora: {seguimiento.Fecha_Modificación}\n\n";
             }
 
             // Llama a OpenAI para obtener el resumen
@@ -350,11 +352,11 @@ namespace NestoAPI.Controllers
 
             var mail = new MailMessage();
             mail.From = new MailAddress("nesto@nuevavision.es");
-            mail.To.Add(correo); 
-            mail.CC.Add(copia); 
+            mail.To.Add(correo);
+            mail.CC.Add(copia);
             if (copia != Constantes.Correos.CORREO_DIRECCION)
             {
-                mail.CC.Add(Constantes.Correos.CORREO_DIRECCION); 
+                mail.CC.Add(Constantes.Correos.CORREO_DIRECCION);
             }
             mail.Subject = $"Resumen de seguimientos semanal del {fechaInicio.ToShortDateString()} al {fechaFin.ToShortDateString()}";
             mail.Body = resumen;
@@ -494,7 +496,50 @@ namespace NestoAPI.Controllers
 
                 var payload = new
                 {
-                    model = "gpt-3.5-turbo",
+                    model = "gpt-4o-mini",
+                    messages = new[]
+                    {
+        new {
+            role = "system",
+            content = @"Eres un asistente que analiza los comentarios de clientes que los vendedores de una empresa distribuidora de productos de estética y peluquería registran en su sistema informático inmediatamente después de cada visita o llamada.
+Tu tarea es ayudar a identificar:
+1. **Tareas pendientes**: Busca en los comentarios acciones que el vendedor menciona como necesarias pero que aún no se han completado (por ejemplo: 'recordar', 'enviar', 'mandar muestras', 'solicitar catálogo'). Excluye aquellas acciones que indican que ya se realizaron (como 'ya ofrecí', 'ya entregué', etc.).
+2. **Oportunidades de venta**: Detecta posibles ventas que podrían cerrarse con una acción comercial adicional.
+
+Devuelve el resultado mostrando:
+- Una lista de tareas pendientes (asegurándote de mencionar siempre el cliente relacionado).
+- Una lista de oportunidades de venta.
+- Un resumen adicional con cualquier otra información relevante para el seguimiento semanal.
+
+Además, evalúa la calidad de los comentarios teniendo en cuenta:
+- La longitud y el nivel de detalle (se valoran más los comentarios largos y detallados; los comentarios breves, de menos de 30 palabras, se consideran de menor calidad).
+- La claridad en la información comercial y la mención de marcas de productos o tratamientos estéticos o de peluquería que realiza. 
+- La información detallada sobre futuras oportunidades de venta 
+- **La puntualidad en el registro**: Analiza las marcas de tiempo de cada comentario para determinar si se han registrado en el momento de la visita.
+    - Si, en un mismo día, el primer comentario se registra al inicio de la jornada (por ejemplo, alrededor de las 9:00) y el último se registra hacia el final (por ejemplo, cerca de las 19:00) – o, al menos, si la diferencia entre el primer y el último comentario es de varias horas (por ejemplo, 4 horas o más) –, indica que el vendedor registra en tiempo real y aumenta la puntuación.
+    - Si la diferencia entre el primer y el último comentario de un día es muy corta (por ejemplo, menos de 1 hora, o con un promedio inferior a 5-10 minutos entre registros), se penaliza la puntuación, ya que se asume que se ingresaron en bloque al final de la jornada.
+- Representa la puntuación de calidad con de 1 a 5 iconos de estrellas (evitando usar 3 estrellas para evitar ambigüedad; utiliza 2 o 4 según corresponda).
+- Añade una breve explicación justificando la puntuación, y explicando al vendedor cómo debería meter los comentarios para mejorar la puntuación en futuros análisis.
+
+Nota: La jornada laboral se considera de 9:00 a 19:00.
+
+El mensaje resultante es importante que lo devuelvas en HTML para poner en el cuerpo de un correo, con un diseño atractivo"
+        },
+        new {
+            role = "user",
+            content = textoEntrada
+        }
+    },
+                    max_tokens = 3000,
+                    temperature = 0.4
+                };
+
+
+
+                /*
+                var payload = new
+                {
+                    model = "gpt-4o-mini",
                     messages = new[]
                     {
                         new {
@@ -511,7 +556,18 @@ namespace NestoAPI.Controllers
 
                 Incluye también cualquier otra información que creas que es suficientemente importante como para aparecer en el resumen semanal. 
 
-                Añade al final una puntuación de la calidad de los comentarios que mete este vendedor, mostrando de 1 a 5 estrellas, siendo una estrella comentarios muy breves o repetitivos y 5 estrellas comentarios largos con información detallada y útil o con tareas para recordarle. Un valor de referencia podría ser un comentario de 30 palabras estaría en torno a las 3 estrellas (menos de 10 palabras no puede tener más de 1 estrella). Si tiene más de 3 estrellas, contiene información comercial y algún recordatorio, ya sería de 4 o 5 estrellas. Si tiene menos de 30 palabras y se repite en muchos clientes lo mismo o muy parecido, serían 1 o 2 estrellas.
+                Añade al final una puntuación de la calidad de los comentarios que mete este vendedor, mostrando de 1 a 5 iconos de estrellas (completas o solo contorno), tomando los siguientes criterios para valorar:
+                - Valoramos poco los comentarios muy breves o repetitivos y mucho los comentarios largos con información detallada y útil o con bastantes tareas para recordarle. Un valor de referencia podría ser tomar como breve un comentario de menos de 40 palabras.
+                - Sube también la puntuación si contiene información comercial detallada y algún recordatorio claro                
+                - No penalices en esta puntuación el no poder contactar a los clientes, ya que no suele ser culpa del vendedor.
+                - Lo más importante para la puntuación es que el comentario se registre según se acaba la visita o llamada. Si se hace al final del día o al día siguiente, baja la puntuación. Si se hace en el momento, sube la puntuación.
+                - La jornada de trabajo es aproximadamente de 9h a 19h.
+                - Calcula el tiempo entre el primer y el último comentario del día. Si es menos de una hora, baja la puntuación. Si es más de una hora, sube la puntuación.
+                
+                Si has puesto 3 estrellas, cámbialo por 2 o por 4 porque 3 queda ambiguo, no se sabe si está bien o mal. 
+
+                Añade una breve explicación de por qué no le has dado más estrellas o como conseguir más con los comentarios de la semana que viene. 
+                Si has penalizado por no hacer los comentarios en el momento, añade una explicación que detalle el tiempo medio entre los comentarios.
 
                 El mensaje resultante es importante que lo devuelvas en HTML para poner en el cuerpo de un correo, con un diseño atractivo"
                         },
@@ -523,7 +579,7 @@ namespace NestoAPI.Controllers
                     max_tokens = 3000,
                     temperature = 0.4 // Menor temperatura para respuestas más precisas
                 };
-
+                */
 
 
 

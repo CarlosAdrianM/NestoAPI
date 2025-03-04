@@ -84,6 +84,22 @@
           <Property Name="CuentaGastosRecibo" Type="char" MaxLength="10" />
           <Property Name="ImporteComisiónMáxImpagado" Type="money" Nullable="false" />
         </EntityType>
+        <EntityType Name="CabAlbaránVta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="int" Nullable="false" />
+          <Property Name="Nº Cliente" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Fecha" Type="datetime" />
+          <Property Name="PeriodoFacturación" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="MotivoDevolución" Type="char" MaxLength="3" />
+          <Property Name="CodigoPostal" Type="char" MaxLength="15" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="CabFacturaCmp">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -685,6 +701,7 @@
           <Property Name="ImporteGasto" Type="money" Nullable="false" />
           <Property Name="FechaRetornoRecibido" Type="date" />
           <Property Name="ImporteAsegurado" Type="money" Nullable="false" />
+          <Property Name="Peso" Type="decimal" Precision="5" Scale="2" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
@@ -1822,6 +1839,34 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="AgenciasTransporte">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Ruta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabAlbaránVta_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="1" />
+          <End Role="CabAlbaránVta" Type="Self.CabAlbaránVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabAlbaránVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabAlbaránVta_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="CabAlbaránVta" Type="Self.CabAlbaránVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabAlbaránVta">
+              <PropertyRef Name="Empresa" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -4407,6 +4452,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="AgenciasTransporte" EntityType="Self.AgenciasTransporte" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ApuntesBancarios" EntityType="Self.ApuntesBancarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Bancos" EntityType="Self.Bancos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="CabAlbaránVta" EntityType="Self.CabAlbaránVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaVta" EntityType="Self.CabFacturaVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoCmp" EntityType="Self.CabPedidoCmp" Schema="dbo" store:Type="Tables" />
@@ -4553,6 +4599,14 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_AgenciasTransporte_Rutas" Association="Self.FK_AgenciasTransporte_Rutas">
             <End Role="Rutas" EntitySet="Rutas" />
             <End Role="AgenciasTransporte" EntitySet="AgenciasTransporte" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabAlbaránVta_Clientes" Association="Self.FK_CabAlbaránVta_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="CabAlbaránVta" EntitySet="CabAlbaránVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabAlbaránVta_Empresas" Association="Self.FK_CabAlbaránVta_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="CabAlbaránVta" EntitySet="CabAlbaránVta" />
           </AssociationSet>
           <AssociationSet Name="FK_CabFacturaCmp_Empresas" Association="Self.FK_CabFacturaCmp_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -5341,6 +5395,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="AgenciasTransporte" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte" FromRole="EnviosAgencia" ToRole="AgenciasTransporte" />
           <NavigationProperty Name="AgenciasTransporte1" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte1" FromRole="EnviosAgencia" ToRole="AgenciasTransporte" />
           <Property Name="ImporteAsegurado" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Peso" Type="Decimal" Nullable="false" Precision="5" Scale="2" />
         </EntityType>
         <EntityContainer Name="NVEntities" annotation:LazyLoadingEnabled="true">
           <EntitySet Name="EnviosAgencias" EntityType="Self.EnviosAgencia" />
@@ -5998,37 +6053,37 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Empresa" EntitySet="Empresas" />
             <End Role="PersonasContactoCliente" EntitySet="PersonasContactoClientes" />
           </AssociationSet>
-          <EntitySet Name="CabFacturaVtas" EntityType="NVModel.CabFacturaVta" />
+          <EntitySet Name="CabsFacturasVtas" EntityType="NVModel.CabFacturaVta" />
           <AssociationSet Name="FK_CabFacturaVta_CCC" Association="NVModel.FK_CabFacturaVta_CCC">
             <End Role="CCC" EntitySet="CCCs" />
-            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="CabFacturaVta" EntitySet="CabsFacturasVtas" />
           </AssociationSet>
           <AssociationSet Name="FK_CabFacturaVta_Clientes" Association="NVModel.FK_CabFacturaVta_Clientes">
             <End Role="Cliente" EntitySet="Clientes" />
-            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="CabFacturaVta" EntitySet="CabsFacturasVtas" />
           </AssociationSet>
           <AssociationSet Name="FK_CabFacturaVta_Empresas" Association="NVModel.FK_CabFacturaVta_Empresas">
             <End Role="Empresa" EntitySet="Empresas" />
-            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="CabFacturaVta" EntitySet="CabsFacturasVtas" />
           </AssociationSet>
           <AssociationSet Name="FK_CabFacturaVta_Empresas1" Association="NVModel.FK_CabFacturaVta_Empresas1">
             <End Role="Empresa" EntitySet="Empresas" />
-            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="CabFacturaVta" EntitySet="CabsFacturasVtas" />
           </AssociationSet>
           <AssociationSet Name="FK_CabFacturaVta_FormasPago" Association="NVModel.FK_CabFacturaVta_FormasPago">
             <End Role="FormaPago" EntitySet="FormasPago" />
-            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="CabFacturaVta" EntitySet="CabsFacturasVtas" />
           </AssociationSet>
           <AssociationSet Name="FK_CabFacturaVta_PlazosPago" Association="NVModel.FK_CabFacturaVta_PlazosPago">
             <End Role="PlazoPago" EntitySet="PlazosPago" />
-            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="CabFacturaVta" EntitySet="CabsFacturasVtas" />
           </AssociationSet>
           <AssociationSet Name="FK_CabFacturaVta_Vendedores" Association="NVModel.FK_CabFacturaVta_Vendedores">
             <End Role="Vendedor" EntitySet="Vendedores" />
-            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="CabFacturaVta" EntitySet="CabsFacturasVtas" />
           </AssociationSet>
           <AssociationSet Name="FK_LinPedidoVta_CabFacturaVta" Association="NVModel.FK_LinPedidoVta_CabFacturaVta">
-            <End Role="CabFacturaVta" EntitySet="CabFacturaVtas" />
+            <End Role="CabFacturaVta" EntitySet="CabsFacturasVtas" />
             <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
           </AssociationSet>
           <EntitySet Name="AgenciasTransportes" EntityType="NVModel.AgenciaTransporte" />
@@ -6194,6 +6249,15 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="ApunteBancario" EntitySet="ApuntesBancarios" />
             <End Role="ConciliacionBancariaPunteo" EntitySet="ConciliacionesBancariasPunteos" />
           </AssociationSet>
+          <EntitySet Name="CabsAlbaranesVtas" EntityType="NVModel.CabAlbaranVta" />
+          <AssociationSet Name="FK_CabAlbaránVta_Clientes" Association="NVModel.FK_CabAlbaránVta_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="CabAlbaránVta" EntitySet="CabsAlbaranesVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabAlbaránVta_Empresas" Association="NVModel.FK_CabAlbaránVta_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="CabAlbaránVta" EntitySet="CabsAlbaranesVtas" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -6351,6 +6415,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="OfertasProveedores" Relationship="NVModel.FK_OfertasProveedores_Empresas" FromRole="Empresa" ToRole="OfertasProveedore" />
           <NavigationProperty Name="DiariosProductoes" Relationship="NVModel.FK_DiariosProducto_Empresas" FromRole="Empresa" ToRole="DiariosProducto" />
           <NavigationProperty Name="Kits" Relationship="NVModel.FK_KITS_Empresas" FromRole="Empresa" ToRole="Kit" />
+          <NavigationProperty Name="CabAlbaránVta" Relationship="NVModel.FK_CabAlbaránVta_Empresas" FromRole="Empresa" ToRole="CabAlbaránVta" />
           </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -6591,6 +6656,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="PersonasContactoClientes" Relationship="NVModel.FK_PersonasContactoCliente_Clientes" FromRole="Cliente" ToRole="PersonasContactoCliente" />
           <NavigationProperty Name="PersonasContactoClientes1" Relationship="NVModel.FK_PersonasContactoCliente_Clientes1" FromRole="Cliente" ToRole="PersonasContactoCliente" />
           <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Clientes" FromRole="Cliente" ToRole="CabFacturaVta" />
+          <NavigationProperty Name="CabAlbaránVta" Relationship="NVModel.FK_CabAlbaránVta_Clientes" FromRole="Cliente" ToRole="CabAlbaránVta" />
           </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -10933,6 +10999,52 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="CabAlbaranVta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="Int32" Nullable="false" />
+          <Property Name="Nº_Cliente" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha" Type="DateTime" Precision="3" />
+          <Property Name="PeriodoFacturación" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="MotivoDevolución" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CodigoPostal" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Cliente" Relationship="NVModel.FK_CabAlbaránVta_Clientes" FromRole="CabAlbaránVta" ToRole="Cliente" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CabAlbaránVta_Empresas" FromRole="CabAlbaránVta" ToRole="Empresa" />
+        </EntityType>
+        <Association Name="FK_CabAlbaránVta_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
+          <End Type="NVModel.CabAlbaranVta" Role="CabAlbaránVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabAlbaránVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabAlbaránVta_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.CabAlbaranVta" Role="CabAlbaránVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabAlbaránVta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -10942,6 +11054,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="EnviosAgencias">
             <EntityTypeMapping TypeName="NVModel.EnviosAgencia">
               <MappingFragment StoreEntitySet="EnviosAgencia">
+                <ScalarProperty Name="Peso" ColumnName="Peso" />
                 <ScalarProperty Name="ImporteAsegurado" ColumnName="ImporteAsegurado" />
                 <ScalarProperty Name="RowVersion" ColumnName="RowVersion" />
                 <ScalarProperty Name="FechaEntrega" ColumnName="FechaEntrega" />
@@ -12230,7 +12343,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
-          <EntitySetMapping Name="CabFacturaVtas">
+          <EntitySetMapping Name="CabsFacturasVtas">
             <EntityTypeMapping TypeName="NVModel.CabFacturaVta">
               <MappingFragment StoreEntitySet="CabFacturaVta">
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
@@ -12660,6 +12773,22 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="ApunteContabilidadId" ColumnName="ApunteContabilidadId" />
                 <ScalarProperty Name="ApunteBancoId" ColumnName="ApunteBancoId" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="CabsAlbaranesVtas">
+            <EntityTypeMapping TypeName="NVModel.CabAlbaranVta">
+              <MappingFragment StoreEntitySet="CabAlbaránVta">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="CodigoPostal" ColumnName="CodigoPostal" />
+                <ScalarProperty Name="MotivoDevolución" ColumnName="MotivoDevolución" />
+                <ScalarProperty Name="PeriodoFacturación" ColumnName="PeriodoFacturación" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

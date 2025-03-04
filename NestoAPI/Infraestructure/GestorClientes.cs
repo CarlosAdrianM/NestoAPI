@@ -13,6 +13,13 @@ using System.IO;
 using Microsoft.ML;
 using System.Data.Entity;
 using static NestoAPI.Models.Constantes;
+using System.ComponentModel.DataAnnotations;
+using System.Data.Entity.Infrastructure;
+using System.Data.Entity.Validation;
+using NestoAPI.Infraestructure.Sincronizacion;
+using NestoAPI.Models.Sincronizacion;
+using Newtonsoft.Json;
+using Microsoft.Ajax.Utilities;
 
 namespace NestoAPI.Infraestructure
 {
@@ -20,17 +27,13 @@ namespace NestoAPI.Infraestructure
     {
         readonly IServicioGestorClientes servicio;
         readonly IServicioAgencias servicioAgencias;
+        private readonly SincronizacionEventWrapper _sincronizacionEventWrapper;
 
-        public GestorClientes()
-        {
-            servicio = new ServicioGestorClientes();
-            servicioAgencias = new ServicioAgencias();
-        }
-
-        public GestorClientes(IServicioGestorClientes servicio, IServicioAgencias servicioAgencias)
+        public GestorClientes(IServicioGestorClientes servicio, IServicioAgencias servicioAgencias, SincronizacionEventWrapper sincronizacionEventWrapper)
         {
             this.servicio = servicio;
             this.servicioAgencias = servicioAgencias;
+            _sincronizacionEventWrapper = sincronizacionEventWrapper;
         }
 
         public async Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono)
@@ -483,7 +486,7 @@ namespace NestoAPI.Infraestructure
             return clienteCrear;
         }
 
-        internal async Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email)
+        public async Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email)
         {
             return await servicio.BuscarClientePorEmail(email);
         }
@@ -707,8 +710,8 @@ namespace NestoAPI.Infraestructure
             clienteDB.ComentarioRuta = clienteModificar.ComentariosRuta;
 
             if (clienteDB.CondPagoClientes != null && clienteDB.CondPagoClientes.Count > 0 && (
-                clienteDB.CondPagoClientes.First().PlazosPago.Trim() != clienteModificar.PlazosPago.Trim() ||
-                clienteDB.CondPagoClientes.First().FormaPago.Trim() != clienteModificar.FormaPago.Trim()))
+                clienteDB.CondPagoClientes.OrderBy(c => c.ImporteMínimo).First().PlazosPago.Trim() != clienteModificar.PlazosPago.Trim() ||
+                clienteDB.CondPagoClientes.OrderBy(c => c.ImporteMínimo).First().FormaPago.Trim() != clienteModificar.FormaPago.Trim()))
             {
                 CondPagoCliente condPagoNueva = new CondPagoCliente
                 {
@@ -719,7 +722,7 @@ namespace NestoAPI.Infraestructure
                     FormaPago = clienteModificar.FormaPago,
                     ImporteMínimo = 0
                 };
-                CondPagoCliente condPagoActual = clienteDB.CondPagoClientes.First();
+                CondPagoCliente condPagoActual = clienteDB.CondPagoClientes.OrderBy(c => c.ImporteMínimo).First();
                 clienteDB.CondPagoClientes.Remove(condPagoActual);
                 clienteDB.CondPagoClientes.Add(condPagoNueva);
             }
@@ -1211,7 +1214,7 @@ namespace NestoAPI.Infraestructure
                 WHERE 
                     empresa = '1' 
                     AND estado >= 0 
-                    AND Estado != 7 
+                    AND Estado not in (7, 67)
                     AND vendedor = '{vendedor}'
             ),
             cte_interacciones AS (
@@ -1312,5 +1315,132 @@ namespace NestoAPI.Infraestructure
                 }
             }           
         }
-    }    
+
+        public async Task<Cliente> ModificarCliente(ClienteCrear clienteCrear, NVEntities db)
+        {
+            Cliente cliente = new Cliente();
+            try
+            {
+                cliente = await PrepararClienteModificar(clienteCrear, db);
+                db.Entry(cliente).State = EntityState.Modified;
+
+                await db.SaveChangesAsync();
+                if (cliente.CCCs.Count != 0 && cliente.CCC == null)
+                {
+                    cliente.CCC1 = cliente.CCCs.FirstOrDefault();
+                    await db.SaveChangesAsync();
+                }
+
+                // Publicar evento de sincronización
+                await PublicarClienteSincronizar(cliente);
+
+                return cliente;
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!ClienteExists(db, cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto))
+                {
+                    throw new NotFoundException();
+                }
+                throw;
+            }
+            catch (Exception ex)
+            {
+                throw ex;
+            }
+        }
+
+        public async Task<Cliente> CrearCliente(ClienteCrear clienteCrear, NVEntities db)
+        {
+            Cliente cliente = new Cliente();
+            try
+            {
+                ContadorGlobal contador;
+                if (!clienteCrear.EsContacto)
+                {
+                    contador = db.ContadoresGlobales.SingleOrDefault();
+                    clienteCrear.Cliente = contador.Clientes++.ToString();
+                }
+
+                if (clienteCrear.Empresa == null)
+                {
+                    clienteCrear.Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+                }
+
+                cliente = await PrepararClienteCrear(clienteCrear, db);
+                db.Clientes.Add(cliente);
+
+                await db.SaveChangesAsync();
+                if (cliente.CCCs.Count != 0 && cliente.CCC == null)
+                {
+                    cliente.CCC1 = cliente.CCCs.FirstOrDefault();
+                    await db.SaveChangesAsync();
+                }
+
+                await PublicarClienteSincronizar(cliente);
+
+                return cliente;
+            }
+            catch (DbUpdateException)
+            {
+                if (ClienteExists(db, cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto))
+                {
+                    throw new ConflictException();
+                }
+                throw;
+            }
+            catch (DbEntityValidationException ex)
+            {
+                var error = ex.EntityValidationErrors
+                    .FirstOrDefault()?.ValidationErrors
+                    .FirstOrDefault();
+
+                if (error != null)
+                {
+                    throw new ValidationException(error.ErrorMessage);
+                }
+                throw;
+            }
+        }
+
+        public async Task PublicarClienteSincronizar(Cliente cliente)
+        {
+            var personasContacto = cliente.PersonasContactoClientes
+                .Where(p => p.Empresa.Trim() == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado >= 0)
+                .Select(p => new { Id = p.Número?.Trim(), Nombre = p.Nombre?.Trim(), CorreoElectronico = p.CorreoElectrónico?.Trim(), Telefonos = p.Teléfono?.Trim(), Cargo = p.Cargo }) 
+                .ToList(); // Convertir la lista a un tipo que se pueda serializar
+
+            // Publicar evento de sincronización
+            var message = new
+            {
+                Nif = cliente.CIF_NIF?.Trim(),
+                Cliente = cliente.Nº_Cliente?.Trim(),
+                Contacto = cliente.Contacto?.Trim(),
+                ClientePrincipal = cliente.ClientePrincipal,
+                Nombre = cliente.Nombre?.Trim(),
+                Direccion = cliente.Dirección?.Trim(),
+                CodigoPostal = cliente.CodPostal?.Trim(),
+                Poblacion = cliente.Población?.Trim(),
+                Provincia = cliente.Provincia?.Trim(),
+                Telefono = cliente.Teléfono?.Trim(),
+                Comentarios = cliente.Comentarios?.Trim(),
+                Vendedor = cliente.Vendedor?.Trim(),
+                PersonasContacto = personasContacto,
+                Tabla = "Clientes",
+                Source = "Nesto"
+            };
+
+            string jsonMessage = JsonConvert.SerializeObject(message);
+
+            await _sincronizacionEventWrapper.PublishSincronizacionEventAsync("sincronizacion-tablas", jsonMessage);
+        }
+
+        private bool ClienteExists(NVEntities db, string empresa, string numCliente, string contacto)
+        {
+            return db.Clientes.Count(e => e.Empresa == empresa && e.Nº_Cliente == numCliente && e.Contacto == contacto) > 0;
+        }
+    }
 }
+
+public class NotFoundException : Exception { }
+public class ConflictException : Exception { }

@@ -19,56 +19,56 @@ namespace NestoAPI.Models.RecursosHumanos
             {
                 Fecha = new DateTime(2017, 5, 1),
                 Fiesta = "Fiesta del Trabajo",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             };
             ListaFestivos.Add(festivo1);
             Festivo festivo2 = new Festivo()
             {
                 Fecha = new DateTime(2017, 5, 2),
                 Fiesta = "Fiesta de la Comunidad de Madrid",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             };
             ListaFestivos.Add(festivo2);
             Festivo festivo3 = new Festivo()
             {
                 Fecha = new DateTime(2017, 8, 15),
                 Fiesta = "Asunción de la Virgen",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             };
             ListaFestivos.Add(festivo3);
             Festivo festivo4 = new Festivo()
             {
                 Fecha = new DateTime(2017, 10, 12),
                 Fiesta = "Fiesta Nacional",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             };
             ListaFestivos.Add(festivo4);
             Festivo festivo5 = new Festivo()
             {
                 Fecha = new DateTime(2017, 11, 1),
                 Fiesta = "Todos los Santos",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             };
             ListaFestivos.Add(festivo5);
             Festivo festivo6 = new Festivo()
             {
                 Fecha = new DateTime(2017, 12, 6),
                 Fiesta = "Día de la Constitución",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             };
             ListaFestivos.Add(festivo6);
             Festivo festivo7 = new Festivo()
             {
                 Fecha = new DateTime(2017, 12, 8),
                 Fiesta = "Día de la Inmaculada Concepción",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             };
             ListaFestivos.Add(festivo7);
             Festivo festivo8 = new Festivo()
             {
                 Fecha = new DateTime(2017, 12, 25),
                 Fiesta = "Natividad del Señor",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             };
             ListaFestivos.Add(festivo8);
             /*
@@ -117,7 +117,7 @@ namespace NestoAPI.Models.RecursosHumanos
             }
 
             // Buscar en la lista Fiestas si hay algún elemento que coincida con la fecha y el tipo de festivo
-            var festivoEncontrado = Fiestas.Any(f => f.Fecha == fechaSinHora && f.TipoFestivo == TipoFestivo.Todas);
+            var festivoEncontrado = Fiestas.Any(f => f.Fecha == fechaSinHora && f.TipoFestivo == TipoFestivo.Nacional);
             if (festivoEncontrado)
             {
                 return true;
@@ -127,11 +127,11 @@ namespace NestoAPI.Models.RecursosHumanos
             switch (delegacion)
             {
                 case Constantes.Almacenes.ALGETE:
-                    return Fiestas.Any(f => f.Fecha == fechaSinHora && f.TipoFestivo == TipoFestivo.Algete);
+                    return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Algete || f.TipoFestivo == TipoFestivo.Empresa));
                 case Constantes.Almacenes.ALCOBENDAS:
-                    return Fiestas.Any(f => f.Fecha == fechaSinHora && f.TipoFestivo == TipoFestivo.Alcobendas);
+                    return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Alcobendas || f.TipoFestivo == TipoFestivo.Empresa));
                 case Constantes.Almacenes.REINA:
-                    return Fiestas.Any(f => f.Fecha == fechaSinHora && f.TipoFestivo == TipoFestivo.Madrid);
+                    return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Madrid || f.TipoFestivo == TipoFestivo.Empresa));
                 default:
                     return false;
             }
@@ -139,77 +139,78 @@ namespace NestoAPI.Models.RecursosHumanos
 
         private static List<Festivo> Fiestas = new List<Festivo>
         {
+            #region 2024
             new Festivo()
             {
                 Fecha = new DateTime(2024, 1, 1),
                 Fiesta = "Año nuevo",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 1, 6),
                 Fiesta = "Epifanía del Señor",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 3, 28),
                 Fiesta = "Jueves Santo",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 3, 29),
                 Fiesta = "Viernes Santo",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 5, 1),
                 Fiesta = "Día del trabajo",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 5, 2),
                 Fiesta = "Día de la Comunidad de Madrid",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 7, 25),
                 Fiesta = "Santiago Apostol",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 8, 15),
                 Fiesta = "Asunción de la Virgen",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 10, 12),
                 Fiesta = "Fiesta Nacional Española",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 1, 11),
                 Fiesta = "Día de Todos los Santos",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 12, 6),
                 Fiesta = "Día de la Constitución Española",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 12, 25),
                 Fiesta = "Navidad",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
@@ -253,85 +254,87 @@ namespace NestoAPI.Models.RecursosHumanos
             {
                 Fecha = new DateTime(2024, 12, 24),
                 Fiesta = "Nochebuena",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2024, 12, 31),
                 Fiesta = "Nochevieja",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
+            #endregion 2024
+
             // 2025
             new Festivo()
             {
                 Fecha = new DateTime(2025, 1, 1),
                 Fiesta = "Año nuevo",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 1, 6),
                 Fiesta = "Epifanía del Señor",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 4, 17),
                 Fiesta = "Jueves Santo",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 4, 18),
                 Fiesta = "Viernes Santo",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 5, 1),
                 Fiesta = "Día del trabajo",
-                TipoFestivo = TipoFestivo.Todas
-            },
-            new Festivo()
-            {
-                Fecha = new DateTime(2025, 5, 2),
-                Fiesta = "Día de la Comunidad de Madrid",
-                TipoFestivo = TipoFestivo.Todas
-            },
-            new Festivo()
-            {
-                Fecha = new DateTime(2025, 7, 25),
-                Fiesta = "Santiago Apostol",
-                TipoFestivo = TipoFestivo.Todas
-            },
+                TipoFestivo = TipoFestivo.Nacional
+            },            
             new Festivo()
             {
                 Fecha = new DateTime(2025, 8, 15),
                 Fiesta = "Asunción de la Virgen",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 1, 11),
                 Fiesta = "Día de Todos los Santos",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 12, 6),
                 Fiesta = "Día de la Constitución Española",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 12, 8),
                 Fiesta = "Inmaculada Concepción",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
             },new Festivo()
             {
                 Fecha = new DateTime(2025, 12, 25),
                 Fiesta = "Navidad",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 5, 2),
+                Fiesta = "Día de la Comunidad de Madrid",
+                TipoFestivo = TipoFestivo.Autonómica
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 7, 25),
+                Fiesta = "Santiago Apostol",
+                TipoFestivo = TipoFestivo.Autonómica
             },
             new Festivo()
             {
@@ -347,6 +350,18 @@ namespace NestoAPI.Models.RecursosHumanos
             },
             new Festivo()
             {
+                Fecha = new DateTime(2025, 9, 12),
+                Fiesta = "Fiestas de Algete (viernes)",
+                TipoFestivo = TipoFestivo.Algete
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2025, 9, 15),
+                Fiesta = "Fiestas de Algete (lunes)",
+                TipoFestivo = TipoFestivo.Algete
+            },
+            new Festivo()
+            {
                 Fecha = new DateTime(2025, 1, 24),
                 Fiesta = "Nuestra Señora de la Paz",
                 TipoFestivo = TipoFestivo.Alcobendas
@@ -357,31 +372,17 @@ namespace NestoAPI.Models.RecursosHumanos
                 Fiesta = "San Isidro",
                 TipoFestivo = TipoFestivo.Alcobendas
             },
-            /*
-            new Festivo()
-            {
-                Fecha = new DateTime(2024, 9, 13),
-                Fiesta = "Fiestas de Algete (viernes)",
-                TipoFestivo = TipoFestivo.Algete
-            },
-            new Festivo()
-            {
-                Fecha = new DateTime(2024, 9, 16),
-                Fiesta = "Fiestas de Algete (lunes)",
-                TipoFestivo = TipoFestivo.Algete
-            },
-            */
             new Festivo()
             {
                 Fecha = new DateTime(2025, 12, 24),
                 Fiesta = "Nochebuena",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Empresa
             },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 12, 31),
                 Fiesta = "Nochevieja",
-                TipoFestivo = TipoFestivo.Todas
+                TipoFestivo = TipoFestivo.Empresa
             }
         };
     }

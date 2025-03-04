@@ -42,6 +42,7 @@ namespace NestoAPI.Models
         public string usuario { get; set; }
 
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
+        public virtual ICollection<PersonaContactoDTO> PersonasContacto { get; set; }
     }
     public class ClienteProductoDTO
     {
@@ -147,6 +148,7 @@ namespace NestoAPI.Models
         [EmailAddress]
         public string CorreoElectronico { get; set; }
         public bool FacturacionElectronica { get; set; }
+        public string Telefono { get; set; }
     }
     public class PlazoPagoDTO
     {

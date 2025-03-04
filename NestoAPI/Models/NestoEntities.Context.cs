@@ -83,7 +83,7 @@ namespace NestoAPI.Models
         public virtual DbSet<CodigoPostal> CodigosPostales { get; set; }
         public virtual DbSet<VendedorCodigoPostalGrupoProducto> VendedoresCodigoPostalGruposProductos { get; set; }
         public virtual DbSet<PersonaContactoCliente> PersonasContactoClientes { get; set; }
-        public virtual DbSet<CabFacturaVta> CabFacturaVtas { get; set; }
+        public virtual DbSet<CabFacturaVta> CabsFacturasVtas { get; set; }
         public virtual DbSet<AgenciaTransporte> AgenciasTransportes { get; set; }
         public virtual DbSet<Prepago> Prepagos { get; set; }
         public virtual DbSet<RegaloImportePedido> RegalosImportePedido { get; set; }
@@ -107,6 +107,7 @@ namespace NestoAPI.Models
         public virtual DbSet<ComisionAnualResumenMes> ComisionesAnualesResumenMes { get; set; }
         public virtual DbSet<MovimientoTPV> MovimientosTPV { get; set; }
         public virtual DbSet<ConciliacionBancariaPunteo> ConciliacionesBancariasPunteos { get; set; }
+        public virtual DbSet<CabAlbaranVta> CabsAlbaranesVtas { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

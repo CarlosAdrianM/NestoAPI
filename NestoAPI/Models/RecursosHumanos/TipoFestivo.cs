@@ -2,7 +2,9 @@
 {
     public enum TipoFestivo
     {
-        Todas,
+        Empresa,
+        Nacional,
+        Autonómica,
         Alcobendas,
         Algete,
         Madrid

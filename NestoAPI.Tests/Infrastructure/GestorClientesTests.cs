@@ -1,11 +1,14 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
+using NestoAPI.Models.Sincronizacion;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using System.Text;
 using System.Threading.Tasks;
 using static NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes;
@@ -29,12 +32,32 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => servicioAgencia.LeerDireccionGoogleMaps(A<string>.Ignored, A<string>.Ignored)).Returns(respuestaAgencia);
         }
 
+        private GestorClientes CrearGestorClientes(IServicioGestorClientes servicio, IServicioAgencias servicioAgencias)
+        {            
+            ISincronizacionEventPublisher _publisher = A.Fake<ISincronizacionEventPublisher>();
+            SincronizacionEventWrapper _sincronizacionEventWrapper = new SincronizacionEventWrapper(_publisher);
+
+            return new GestorClientes(servicio, servicioAgencias, _sincronizacionEventWrapper);
+        }
+
+        private GestorClientes CrearGestorClientes(IServicioGestorClientes servicio)
+        {
+            IServicioAgencias _servicioAgencias = A.Fake<IServicioAgencias>();
+            return CrearGestorClientes(servicio, _servicioAgencias);
+        }
+
+        private GestorClientes CrearGestorClientes()
+        {
+            IServicioGestorClientes _servicio = A.Fake<IServicioGestorClientes>();
+            return CrearGestorClientes(_servicio);
+        }
+
 
         [TestMethod]
         [ExpectedException(typeof(ArgumentException))]
         public async Task GestorClientes_ComprobarNifNombre_SiElNombreEstaVacioDaError()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             _ = await gestor.ComprobarNifNombre("", "");
         }
@@ -42,7 +65,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_ComprobarNifNombre_SiElNifEstaVacioElEstadoEsCinco()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             RespuestaNifNombreCliente respuesta = gestor.ComprobarNifNombre("", "Cliente Nuevo").Result;
 
@@ -60,7 +83,7 @@ namespace NestoAPI.Tests.Infrastructure
                 cifNif = "12345678A"
             };
             A.CallTo(() => servicio.BuscarClientePorNif("12345678A")).Returns(cliente);
-            GestorClientes gestor = new GestorClientes(servicio, null);
+            GestorClientes gestor = CrearGestorClientes(servicio);
 
             RespuestaNifNombreCliente respuesta = gestor.ComprobarNifNombre("12345678A", "Cliente Nuevo").Result;
 
@@ -84,7 +107,7 @@ namespace NestoAPI.Tests.Infrastructure
                 NifValidado = true
             };
             A.CallTo(() => servicio.ComprobarNifNombre("12345678A", "Cliente Nuevo")).Returns(respuestaAEAT);
-            GestorClientes gestor = new GestorClientes(servicio, null);
+            GestorClientes gestor = CrearGestorClientes(servicio);
 
             RespuestaNifNombreCliente respuesta = gestor.ComprobarNifNombre("12345678-A", "Cliente Nuevo").Result;
 
@@ -99,7 +122,7 @@ namespace NestoAPI.Tests.Infrastructure
         [ExpectedException(typeof(ArgumentException))]
         public async Task GestorClientes_ComprobarDatosGenerales_SiLaDireccionEstaVaciaDaError()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             _ = await gestor.ComprobarDatosGenerales("", "28004", "915311923");
         }
@@ -108,7 +131,7 @@ namespace NestoAPI.Tests.Infrastructure
         [ExpectedException(typeof(ArgumentException))]
         public async Task GestorClientes_ComprobarDatosGenerales_SiElCodigoPostalEstaVacioDaError()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             _ = await gestor.ComprobarDatosGenerales("RUE DEL PERCEBE, 13", "", "915311923");
         }
@@ -126,7 +149,7 @@ namespace NestoAPI.Tests.Infrastructure
             };
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
             
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales("C/ REINA, 5", "28110", "915311923");
 
@@ -144,7 +167,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C/ reina, 5", "28110", "915311923");
 
@@ -157,7 +180,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" CALLE reina, 5", "28110", "915311923");
 
@@ -170,7 +193,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" CALLE de la reina, 5", "28110", "915311923");
 
@@ -183,7 +206,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C / reina, 5", "28110", "915311923");
 
@@ -196,7 +219,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina, 5", "28110", "915311923");
 
@@ -209,7 +232,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina,5", "28110", "915311923");
 
@@ -222,7 +245,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5", "28110", "915311923");
 
@@ -235,7 +258,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             var respuestaFake = new RespuestaDatosGeneralesClientes();
             A.CallTo(() => servicio.CogerDatosCodigoPostal("28110")).Returns(respuestaFake);
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "915311923");
 
@@ -256,7 +279,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Nombre = "Prueba"
             };
             A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "915311923");
 
@@ -278,7 +301,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Nombre = "Prueba"
             };
             A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "916281914/915311923");
 
@@ -309,7 +332,7 @@ namespace NestoAPI.Tests.Infrastructure
             };
             A.CallTo(() => servicio.ClientesMismoTelefono("916281914")).Returns(new List<ClienteTelefonoLookup> { clienteFake2 });
 
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "916281914/915311923");
 
@@ -333,7 +356,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Nombre = "Prueba"
             };
             A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "915311923/915311923");
 
@@ -355,7 +378,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Nombre = "Prueba"
             };
             A.CallTo(() => servicio.ClientesMismoTelefono("915311923")).Returns(new List<ClienteTelefonoLookup> { clienteFake });
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
 
             var respuesta = await gestor.ComprobarDatosGenerales(" C /reina 5 - 1º2", "28110", "(91)628.1914915(31) 19-23");
 
@@ -363,11 +386,10 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(clienteFake, respuesta.ClientesMismoTelefono.First());
         }
 
-
         [TestMethod]
         public void GestorClientes_ComprobarDatosBancoGenerales_SiElIbanNoEsNuloPeroTieneElValorNullLoTratamosComoNulo()
         {
-            var gestor = new GestorClientes();
+            var gestor = CrearGestorClientes();
             var respuestaFake = new RespuestaDatosBancoCliente();
 
             var respuesta = gestor.ComprobarDatosBanco("EFC", "CONTADO", "NULL");
@@ -377,11 +399,10 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(respuesta.IbanValido);
         }
 
-
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SiNoHayComaBuscamosElPrimerNumero()
         {   
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
                 "alameda, 18 - 1º2", 
@@ -394,7 +415,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SiHayEspacioDetrasDelSimboloDePrimeroLoQuitamos()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
                 "C/ DE LA FLORIDA, 18 - PORTAL C, 2º 1",
@@ -407,7 +428,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SiPoneSBarraNLoTratamosComoSinNumero()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
                 "PL. ARATOCA, S/N",
@@ -420,7 +441,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SustituyeAbreviaturaEnMitad()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
                 "alameda, 18 - Urbanización Nuestra Señora del Pilar",
@@ -433,7 +454,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SustituyeAbreviaturaAlFinal()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
                 "alameda, 18 - duplicado",
@@ -446,7 +467,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_QuitaElDelAntesDeLaCalle()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
                 "capitan fco. sanchez 1",
@@ -461,7 +482,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SiGoogleDevuelveElCodigoPostalLoPonemosDeDireccion()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
                 "C/ BRETAL, 195",
@@ -474,7 +495,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_LimpiarDireccion_SiNoHayEspacioLoPonemos()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarDireccion(
                 "reina5",
@@ -487,7 +508,7 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void GestorClientes_LimpiarTelefono_SeQuitanEspaciosEnBlanco()
         {
-            GestorClientes gestor = new GestorClientes();
+            GestorClientes gestor = CrearGestorClientes();
 
             string respuesta = gestor.LimpiarTelefono("925 337 754    618538006 AA+///12345-678. 9");
 
@@ -499,7 +520,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             Cliente clienteDevuelto = new Cliente
             {
                 Empresa = "1  ",
@@ -542,7 +563,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             Cliente clienteDevuelto = new Cliente
             {
                 Empresa = "1  ",
@@ -574,7 +595,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             Cliente clienteDevuelto = new Cliente
             {
                 Empresa = "1  ",
@@ -605,7 +626,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             Cliente clienteDevuelto = new Cliente
             {
                 Empresa = "1  ",
@@ -640,7 +661,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             Cliente clienteDevuelto = new Cliente
             {
                 Empresa = "1  ",
@@ -678,7 +699,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ICollection<PersonaContactoDTO> personasContactoNuevas = new List<PersonaContactoDTO>
             {
                 new PersonaContactoDTO
@@ -719,7 +740,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ICollection<PersonaContactoDTO> personasContactoNuevas = new List<PersonaContactoDTO>
             {
                 new PersonaContactoDTO
@@ -772,7 +793,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ICollection<PersonaContactoDTO> personasContactoNuevas = new List<PersonaContactoDTO>
             {
                 new PersonaContactoDTO
@@ -816,7 +837,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.Nif = "1234A";
             Cliente clienteExistente = A.Fake<Cliente>();
@@ -836,7 +857,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.FormaPago = "EFC";
             clienteCrear.Iban = "NULL XXXX 7890 1234 5678 9012";
@@ -854,7 +875,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.Contacto = "0";
             clienteCrear.FormaPago = "RCB";
@@ -882,7 +903,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.Contacto = "0";
             clienteCrear.FormaPago = "RCB";
@@ -910,28 +931,67 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("3", clienteNuevo.CCC);
         }
 
-        //[TestMethod]
-        //[ExpectedException(typeof(AggregateException),
-        //"El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.")]
-        //public void GestorClientes_PrepararClienteModificar_SiLaFormaDePagoEsReciboDaError()
-        //{
-        //    IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
-        //    IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-        //    GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
-        //    ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
-        //    clienteCrear.FormaPago = "RCB";
-        //    clienteCrear.Iban = "NULL XXXX 7890 1234 5678 9012";
-        //    NVEntities db = A.Fake<NVEntities>();
-
-        //    Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
-        //}
-
         [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_SiTieneDiferentesCondicionesDePagoPorImporteCogemosSoloLaPrimera()
+        {
+            IServicioGestorClientes _servicio = A.Fake<IServicioGestorClientes>();            
+            ClienteCrear _clienteCrear = new ClienteCrear
+            {
+                FormaPago = "EFC",
+                PlazosPago = "CONTADO",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+            A.CallTo(() => _servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).
+                Returns(new Cliente
+                {
+                    CondPagoClientes = new HashSet<CondPagoCliente>
+                    {
+                        new CondPagoCliente // Daba error cuando se creaba primero la del importe mínimo más alto
+                        {
+                            FormaPago = "RCB",
+                            PlazosPago = "1/30",
+                            ImporteMínimo = 100
+                        },
+                        new CondPagoCliente
+                        {
+                            FormaPago = "EFC",
+                            PlazosPago = "CONTADO",
+                            ImporteMínimo = 0
+                        }
+                    }
+                });
+            GestorClientes _gestor = CrearGestorClientes(_servicio);
+
+            Cliente clienteNuevo = _gestor.PrepararClienteModificar(_clienteCrear, db).Result;
+
+            Assert.AreEqual(2, clienteNuevo.CondPagoClientes.Count());
+            Assert.AreEqual("EFC", clienteNuevo.CondPagoClientes.OrderBy(c => c.ImporteMínimo).First().FormaPago);
+            Assert.AreEqual("RCB", clienteNuevo.CondPagoClientes.OrderBy(c => c.ImporteMínimo).Last().FormaPago);
+        }
+
+            //[TestMethod]
+            //[ExpectedException(typeof(AggregateException),
+            //"El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.")]
+            //public void GestorClientes_PrepararClienteModificar_SiLaFormaDePagoEsReciboDaError()
+            //{
+            //    IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            //    IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            //    GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            //    ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            //    clienteCrear.FormaPago = "RCB";
+            //    clienteCrear.Iban = "NULL XXXX 7890 1234 5678 9012";
+            //    NVEntities db = A.Fake<NVEntities>();
+
+            //    Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+            //}
+
+            [TestMethod]
         public void GestorClientes_PrepararClienteCrear_SiNoTieneEsteticaYHayVendedorDePeluqueriaCreaElVendedorDePeluqueria()
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.VendedorEstetica = "JE";
             clienteCrear.VendedorPeluqueria = "AH";
@@ -951,7 +1011,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.VendedorEstetica = "JE";
             clienteCrear.VendedorPeluqueria = null;
@@ -971,7 +1031,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.FormaPago = "EFC";
             clienteCrear.Iban = "NULL XXXX 7890 1234 5678 9012";
@@ -988,7 +1048,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.FormaPago = "RCB";
             clienteCrear.Iban = "XX12 3456 7890 1234 5678 9012";
@@ -1005,7 +1065,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
-            GestorClientes gestor = new GestorClientes(servicio, servicioAgencia);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
             clienteCrear.Nif = "";
             NVEntities db = A.Fake<NVEntities>();
@@ -1029,7 +1089,7 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     "YO"
                 });
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear {
                 Empresa = "1",
                 Cliente = "1000",
@@ -1069,7 +1129,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1111,7 +1171,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1153,7 +1213,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1195,7 +1255,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1237,7 +1297,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1314,7 +1374,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1369,7 +1429,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1462,7 +1522,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1561,7 +1621,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1659,7 +1719,7 @@ namespace NestoAPI.Tests.Infrastructure
                     }
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1720,7 +1780,7 @@ namespace NestoAPI.Tests.Infrastructure
                     Comentarios = "solo estética"
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1767,7 +1827,7 @@ namespace NestoAPI.Tests.Infrastructure
                     Comentarios = "Sólo estética"
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",
@@ -1813,7 +1873,7 @@ namespace NestoAPI.Tests.Infrastructure
                     Comentarios = "Es solo peluqueria"
                 }
             );
-            IGestorClientes gestor = new GestorClientes(servicio, servicioAgencias);
+            IGestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
             ClienteCrear cliente = new ClienteCrear
             {
                 Empresa = "1",

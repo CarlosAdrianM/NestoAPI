@@ -347,7 +347,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
             { "91900804273", "Paloma" },
             { "91900804275", "Elena" },
             { "26617120788", "Laura Camacho" },
-            { "00346609775", "Kelma" },
+            { "00346609775", "Patricia" },
             { "00132951570", "Web" },
             { "00232951570", "Paygold" },
             { "00025537534", "Pilar" },

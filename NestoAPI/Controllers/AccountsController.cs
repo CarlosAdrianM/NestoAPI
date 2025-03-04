@@ -142,7 +142,7 @@ namespace NestoAPI.Controllers
             var token = await AppUserManager.GeneratePasswordResetTokenAsync(user.Id).ConfigureAwait(false);
             var passwordResetLink = Url.Link("Default", new { Controller="Home", Action="ResetPassword", email = correo, token = token });
             MailMessage mail = new MailMessage(new MailAddress("nesto@nuevavision.es"), new MailAddress(correo));
-            mail.Body = "<a>"+passwordResetLink.ToString()+"</a>";
+            mail.Body = $"<a href=\"{passwordResetLink.ToString()}\">Haz clic aquí para restablecer tu contraseña</a>";
             mail.Subject = "Recuperación de contraseña NestoApp";
             mail.IsBodyHtml = true;
 

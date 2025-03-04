@@ -100,5 +100,31 @@ namespace NestoAPI.Controllers
 
             return Ok(respuesta.ToList());
         }
+
+
+        [HttpPost]
+        [Route("api/Facturas/CrearFactura")]
+        public async Task<IHttpActionResult> CrearFactura([FromBody] dynamic parametros)
+        {
+            string empresa = parametros.Empresa;
+            int pedido = parametros.Pedido;
+            if (empresa == null)
+            {
+                return BadRequest("No se ha especificado la empresa");
+            }
+            if (pedido == 0)
+            {
+                return BadRequest("No se ha especificado el pedido");
+            }
+            try
+            {
+                string factura = await gestor.CrearFactura(empresa, pedido);
+                return Ok(factura);
+            }
+            catch (System.Exception ex)
+            {
+                return InternalServerError(ex);
+            }
+        }
     }
 }

@@ -1,4 +1,7 @@
-﻿using System.Web.Http;
+﻿using Microsoft.Extensions.DependencyInjection;
+using System;
+using System.Net.Http.Formatting;
+using System.Web.Http;
 
 
 namespace NestoAPI
@@ -7,8 +10,9 @@ namespace NestoAPI
     {
         public static void Register(HttpConfiguration config)
         {
-            // Configuración y servicios de API web
-            
+            // Verificar la configuración global de Web API
+            config.Formatters.Clear();  // Limpiar todos los formatters
+            config.Formatters.Add(new JsonMediaTypeFormatter());  // Añadir solo el JSON formatter
 
             // Rutas de API web
             config.MapHttpAttributeRoutes();
@@ -31,7 +35,7 @@ namespace NestoAPI
             //origins: "*",
             //headers: "*",
             //methods: "*");
-            //config.EnableCors(cors);
+            //config.EnableCors(cors);            
 
             GlobalConfiguration.Configuration.IncludeErrorDetailPolicy = IncludeErrorDetailPolicy.Always;
         }

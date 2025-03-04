@@ -12,27 +12,30 @@ using System.Web.Http.Description;
 using NestoAPI.Models;
 using NestoAPI.Infraestructure;
 using NestoAPI.Models.Clientes;
-using System.Data.Entity.Validation;
-using NestoAPI.Models.Facturas;
 using System.Net.Http.Headers;
-using System.Numerics;
-using System.Web.Http.Results;
 using NestoAPI.Infraestructure.Vendedores;
+using System.ComponentModel.DataAnnotations;
 
 namespace NestoAPI.Controllers
 {
-    
+
     public class ClientesController : ApiController
     {
         private IServicioVendedores servicioVendedores { get; }
         private NVEntities db = new NVEntities();
-
+        private IGestorClientes _gestorClientes;
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
-        public ClientesController()
+        public ClientesController(IGestorClientes gestorClientes, IServicioVendedores servicioVendedores)
         {
             db.Configuration.LazyLoadingEnabled = false;
-            servicioVendedores = new ServicioVendedores();
+            this.servicioVendedores = servicioVendedores;
+            _gestorClientes = gestorClientes;
         }
+
+        //public ClientesController() : this(null, null)
+        //{
+        //}
+
 
         // GET: api/Clientes
         public async Task<IQueryable<ClienteDTO>> GetClientes(string empresa, string vendedor, string filtro)
@@ -252,8 +255,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<ClienteProbabilidadVenta>))]
         public async Task<IHttpActionResult> GetClientesProbabilidadVenta(string vendedor, int numeroClientes = 20, string tipoInteraccion = "", string grupoSubgrupo = "")
         {
-            GestorClientes gestor = new GestorClientes();
-            List<ClienteProbabilidadVenta> respuesta = await gestor.BuscarClientesPorProbabilidadVenta(vendedor, numeroClientes, tipoInteraccion, grupoSubgrupo);
+            List<ClienteProbabilidadVenta> respuesta = await _gestorClientes.BuscarClientesPorProbabilidadVenta(vendedor, numeroClientes, tipoInteraccion, grupoSubgrupo);
 
             return Ok(respuesta);
         }
@@ -331,8 +333,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ClienteCrear))]
         public async Task<IHttpActionResult> GetClienteCrear(string empresa, string cliente, string contacto)
         {
-            GestorClientes gestor = new GestorClientes();
-            ClienteCrear respuesta = await gestor.ConstruirClienteCrear(empresa, cliente, contacto);
+            ClienteCrear respuesta = await _gestorClientes.ConstruirClienteCrear(empresa, cliente, contacto);
 
             return Ok(respuesta);
         }
@@ -343,8 +344,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(RespuestaNifNombreCliente))]
         public async Task<IHttpActionResult> ComprobarNifNombre(string nif, string nombre)
         {
-            GestorClientes gestor = new GestorClientes();
-            RespuestaNifNombreCliente respuesta = await gestor.ComprobarNifNombre(nif, nombre);
+            RespuestaNifNombreCliente respuesta = await _gestorClientes.ComprobarNifNombre(nif, nombre);
 
             return Ok(respuesta);
         }
@@ -355,8 +355,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(RespuestaDatosGeneralesClientes))]
         public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono)
         {
-            GestorClientes gestor = new GestorClientes();
-            RespuestaDatosGeneralesClientes respuesta = await gestor.ComprobarDatosGenerales(direccion, codigoPostal, telefono);
+            RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono);
 
             return Ok(respuesta);
         }
@@ -367,8 +366,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ClienteTelefonoLookup))]
         public async Task<IHttpActionResult> GetClientePorEmail(string email)
         {
-            GestorClientes gestor = new GestorClientes();
-            ClienteTelefonoLookup respuesta = await gestor.BuscarClientePorEmail(email);
+            ClienteTelefonoLookup respuesta = await _gestorClientes.BuscarClientePorEmail(email);
 
             return Ok(respuesta);
         }
@@ -379,8 +377,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(RespuestaDatosBancoCliente))]
         public IHttpActionResult ComprobarDatosBanco(string formaPago, string plazosPago, string iban)
         {
-            GestorClientes gestor = new GestorClientes();
-            RespuestaDatosBancoCliente respuesta = gestor.ComprobarDatosBanco(formaPago, plazosPago, iban);
+            RespuestaDatosBancoCliente respuesta = _gestorClientes.ComprobarDatosBanco(formaPago, plazosPago, iban);
 
             return Ok(respuesta);
         }
@@ -450,11 +447,10 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            GestorClientes gestor = new GestorClientes();            
 
             try
             {
-                List<Cliente> clientesDB = await gestor.DejarDeVisitar(db, cliente);
+                List<Cliente> clientesDB = await _gestorClientes.DejarDeVisitar(db, cliente);
                 foreach (var clienteDB in clientesDB)
                 {
                     db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
@@ -488,40 +484,20 @@ namespace NestoAPI.Controllers
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
-            }                      
-
-            //IServicioGestorClientes servicio = new ServicioGestorClientes();
-            IGestorClientes gestor = new GestorClientes();
-            Cliente cliente = await gestor.PrepararClienteModificar(clienteCrear, db);         
-            
+            }
+                
 
             try
             {
-                db.Entry(cliente).State = System.Data.Entity.EntityState.Modified;
-                await db.SaveChangesAsync();
-                if (cliente.CCCs.Count != 0 && cliente.CCC == null)
-                {
-                    cliente.CCC1 = cliente.CCCs.FirstOrDefault();
-                    await db.SaveChangesAsync();
-                }
+                var cliente = await _gestorClientes.ModificarCliente(clienteCrear, db);
+                return CreatedAtRoute("DefaultApi",
+                    new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },
+                    cliente);
             }
-            catch (DbUpdateConcurrencyException)
+            catch (NotFoundException)
             {
-                if (!ClienteExists(cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
+                return NotFound();
             }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
-
-            return CreatedAtRoute("DefaultApi", new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto }, cliente);
         }
 
 
@@ -530,63 +506,23 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostCliente(ClienteCrear clienteCrear)
         {
             if (!ModelState.IsValid)
-            {
                 return BadRequest(ModelState);
-            }
-
-            ContadorGlobal contador;
-            if (!clienteCrear.EsContacto)
-            {
-                contador = db.ContadoresGlobales.SingleOrDefault();
-                clienteCrear.Cliente = contador.Clientes++.ToString();
-            }
-
-            if (clienteCrear.Empresa == null)
-            {
-                clienteCrear.Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
-            }
-
-            IGestorClientes gestor = new GestorClientes();
-            Cliente cliente = await gestor.PrepararClienteCrear(clienteCrear, db);
-            db.Clientes.Add(cliente);
 
             try
             {
-                await db.SaveChangesAsync();
-                if (cliente.CCCs.Count != 0 && cliente.CCC == null)
-                {
-                    cliente.CCC1 = cliente.CCCs.FirstOrDefault();
-                    await db.SaveChangesAsync();
-                }
+                var cliente = await _gestorClientes.CrearCliente(clienteCrear, db);
+                return CreatedAtRoute("DefaultApi",
+                    new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },
+                    cliente);
             }
-            catch (DbUpdateException ex)
+            catch (ConflictException)
             {
-                if (ClienteExists(cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto))
-                {
-                    return Conflict();
-                }
-                else
-                {
-                    throw ex;
-                }
+                return Conflict();
             }
-            catch (DbEntityValidationException ex)
+            catch (ValidationException ex)
             {
-                if (ex.EntityValidationErrors.Any())
-                {
-                    throw new Exception(ex.EntityValidationErrors.First().ValidationErrors.First().ErrorMessage);
-                }
-                else
-                {
-                    throw ex;
-                }
+                return BadRequest(ex.Message);
             }
-            catch (Exception ex)
-            {
-                Console.Write(ex.ToString());
-            }
-
-            return CreatedAtRoute("DefaultApi", new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto }, cliente);
         }
 
         //// POST: api/Clientes
@@ -640,8 +576,7 @@ namespace NestoAPI.Controllers
         //http://localhost:53364/api/Clientes/MandatoPDF?empresa=1&cliente=1&contacto=1&ccc=1
         public async Task<HttpResponseMessage> GetMandato(string empresa, string cliente, string contacto, string ccc)
         {
-            GestorClientes gestor = new GestorClientes();
-            Mandato mandato = await gestor.LeerMandato(empresa, cliente, contacto, ccc).ConfigureAwait(true);
+            Mandato mandato = await _gestorClientes.LeerMandato(empresa, cliente, contacto, ccc).ConfigureAwait(true);
             if (!mandato.Iban.EsValido)
             {
                 throw new Exception($"El IBAN {mandato.Iban.Formateado} no es válido");
@@ -650,7 +585,7 @@ namespace NestoAPI.Controllers
 
             var result = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = gestor.MandatoEnPDF(mandatos)
+                Content = _gestorClientes.MandatoEnPDF(mandatos)
             };
             //result.Content.Headers.ContentDisposition =
             //    new ContentDispositionHeaderValue("attachment")
@@ -662,6 +597,54 @@ namespace NestoAPI.Controllers
 
             return result;
         }
+
+
+        [HttpGet]
+        [Route("api/Clientes/Sync")]
+        [ResponseType(typeof(bool))]
+        public async Task<IHttpActionResult> GetClientesSync(string vendedor)
+        {
+            List<Cliente> clientes = await db.Clientes
+                .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Vendedor == vendedor && c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL)
+                .OrderBy(c => c.Nº_Cliente)
+                .ThenByDescending(c => c.ClientePrincipal)
+                .ThenBy(c => c.Contacto)
+                .Include(c => c.PersonasContactoClientes1)
+                .ToListAsync();
+
+            bool todosOK = true;
+            int batchSize = 50; // Tamaño del lote
+            int totalClientes = clientes.Count;
+            int delayMs = 5000; // Pausa de 5 segundos entre lotes
+
+            // Procesar por lotes de 50
+            for (int i = 0; i < totalClientes; i += batchSize)
+            {
+                var lote = clientes.Skip(i).Take(batchSize).ToList();
+
+                foreach (Cliente cliente in lote)
+                {
+                    try
+                    {
+                        await _gestorClientes.PublicarClienteSincronizar(cliente);
+                    }
+                    catch
+                    {
+                        todosOK = false;
+                    }
+                }
+
+                // Esperar antes de procesar el siguiente lote (si no es el último)
+                if (i + batchSize < totalClientes)
+                {
+                    await Task.Delay(delayMs);
+                }
+            }
+
+            return Ok(todosOK);
+        }
+
+
 
         protected override void Dispose(bool disposing)
         {

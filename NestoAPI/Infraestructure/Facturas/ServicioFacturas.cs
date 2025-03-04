@@ -1,9 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data.SqlClient;
+using System.Data;
 using System.Linq;
 using System.Net;
 using System.Net.Mail;
+using System.Threading.Tasks;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Facturas;
@@ -16,7 +19,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public CabFacturaVta CargarCabFactura(string empresa, string numeroFactura)
         {
-            return db.CabFacturaVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroFactura);
+            return db.CabsFacturasVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroFactura);
         }
 
         public CabPedidoVta CargarCabPedido(string empresa, int numeroPedido)
@@ -116,7 +119,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public IEnumerable<FacturaCorreo> LeerFacturasDia(DateTime dia)
         {
-            var facturas = (from f in db.CabFacturaVtas
+            var facturas = (from f in db.CabsFacturasVtas
                            join c in db.Clientes
                            on new { f.Empresa, f.Nº_Cliente, f.Contacto } equals new { c.Empresa, c.Nº_Cliente, c.Contacto }
                            where f.Fecha == dia && c.PersonasContactoClientes.Where(c => c.CorreoElectrónico != null).Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
@@ -177,7 +180,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public List<ClienteCorreoFactura> LeerClientesCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)
         {
-            var clientes = (from f in db.CabFacturaVtas
+            var clientes = (from f in db.CabsFacturasVtas
                             join c in db.Clientes
                             on new { f.Empresa, f.Nº_Cliente, f.Contacto } equals new { c.Empresa, c.Nº_Cliente, c.Contacto }
                             where f.Fecha >= firstDayOfQuarter && f.Fecha <= lastDayOfQuarter &&
@@ -208,7 +211,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public IEnumerable<FacturaCorreo> LeerFacturasCliente(string cliente, string contacto, DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)
         {
-            var facturas = (from f in db.CabFacturaVtas
+            var facturas = (from f in db.CabsFacturasVtas
                             join c in db.Clientes
                             on new { f.Empresa, f.Nº_Cliente, f.Contacto } equals new { c.Empresa, c.Nº_Cliente, c.Contacto }
                             where c.Nº_Cliente == cliente && c.Contacto == contacto && f.Fecha >= firstDayOfQuarter && f.Fecha <= lastDayOfQuarter && c.PersonasContactoClientes.Where(c => c.CorreoElectrónico != null).Any(p => p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO)
@@ -267,6 +270,47 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             var efectos = db.EfectosPedidosVentas.Where(e => e.Empresa == empresa && e.Pedido == pedido).OrderBy(e => e.FechaVencimiento).ToList();
             return efectos;
+        }
+
+        public async Task<string> CrearFactura(string empresa, int pedido)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char)
+                {
+                    Value = empresa
+                };
+                SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int)
+                {
+                    Value = pedido
+                };
+                SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime)
+                {
+                    Value = DateTime.Today // De momento dejamos siempre la de hoy
+                };
+
+                var numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) // Tipo y tamaño corregidos
+                {
+                    Direction = ParameterDirection.Output
+                };
+
+                try
+                {
+                    // Ejecutar el procedimiento almacenado
+                    await db.Database.ExecuteSqlCommandAsync(
+                        "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT",
+                        empresaParam, pedidoParam, fechaEntregaParam, numFactura
+                    );
+
+                    // Obtener el valor de retorno del parámetro
+                    var resultadoProcedimiento = numFactura.Value.ToString().Trim();
+                    return resultadoProcedimiento;
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception("Error al crear la factura", ex);
+                }
+            };
         }
     }
 }

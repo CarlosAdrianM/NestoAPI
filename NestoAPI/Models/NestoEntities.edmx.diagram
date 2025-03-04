@@ -276,6 +276,9 @@
         <EntityTypeShape EntityType="NVModel.MovimientoTPV" Width="1.5" PointX="0.75" PointY="14.75" />
         <EntityTypeShape EntityType="NVModel.ConciliacionBancariaPunteo" Width="1.5" PointX="18.875" PointY="17.75" />
         <AssociationConnector Association="NVModel.FK__Conciliac__Apunt__4EEA3535" />
+        <EntityTypeShape EntityType="NVModel.CabAlbaranVta" Width="1.5" PointX="20.25" PointY="57.25" />
+        <AssociationConnector Association="NVModel.FK_CabAlbaránVta_Clientes" />
+        <AssociationConnector Association="NVModel.FK_CabAlbaránVta_Empresas" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
