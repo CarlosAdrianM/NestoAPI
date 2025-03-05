@@ -843,11 +843,11 @@ namespace NestoAPI.Infraestructure.Facturas
             }
         }
 
-        public async Task<string> CrearFactura(string empresa, int pedido)
+        public async Task<string> CrearFactura(string empresa, int pedido, string usuario)
         {
             try
             {
-                string factura = await servicio.CrearFactura(empresa, pedido);
+                string factura = await servicio.CrearFactura(empresa, pedido, usuario);
                 return factura;
             }
             catch (Exception ex)

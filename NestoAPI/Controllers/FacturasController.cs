@@ -108,6 +108,7 @@ namespace NestoAPI.Controllers
         {
             string empresa = parametros.Empresa;
             int pedido = parametros.Pedido;
+            string usuario = parametros.Usuario;
             if (empresa == null)
             {
                 return BadRequest("No se ha especificado la empresa");
@@ -118,7 +119,7 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                string factura = await gestor.CrearFactura(empresa, pedido);
+                string factura = await gestor.CrearFactura(empresa, pedido, usuario);
                 return Ok(factura);
             }
             catch (System.Exception ex)

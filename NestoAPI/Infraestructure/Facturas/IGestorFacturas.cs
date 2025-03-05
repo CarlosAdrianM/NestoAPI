@@ -20,6 +20,6 @@ namespace NestoAPI.Infraestructure.Facturas
         List<TotalFactura> TotalesFactura(Factura factura);
         List<VencimientoFactura> VencimientosFactura(Factura factura);
         List<VendedorFactura> VendedoresFactura(Factura factura);
-        Task<string> CrearFactura(string empresa, int pedido);
+        Task<string> CrearFactura(string empresa, int pedido, string usuario);
     }
 }

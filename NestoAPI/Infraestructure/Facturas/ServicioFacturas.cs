@@ -272,7 +272,7 @@ namespace NestoAPI.Infraestructure.Facturas
             return efectos;
         }
 
-        public async Task<string> CrearFactura(string empresa, int pedido)
+        public async Task<string> CrearFactura(string empresa, int pedido, string usuario)
         {
             using (NVEntities db = new NVEntities())
             {
@@ -288,6 +288,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     Value = DateTime.Today // De momento dejamos siempre la de hoy
                 };
+                SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char)
+                {
+                    Value = usuario
+                };
 
                 var numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) // Tipo y tamaño corregidos
                 {
@@ -298,8 +302,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     // Ejecutar el procedimiento almacenado
                     await db.Database.ExecuteSqlCommandAsync(
-                        "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT",
-                        empresaParam, pedidoParam, fechaEntregaParam, numFactura
+                        "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
+                        empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
                     );
 
                     // Obtener el valor de retorno del parámetro

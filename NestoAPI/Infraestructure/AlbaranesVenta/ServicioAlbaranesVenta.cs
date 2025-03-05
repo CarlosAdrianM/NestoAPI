@@ -8,7 +8,7 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
 {
     public class ServicioAlbaranesVenta : IServicioAlbaranesVenta
     {
-        public async Task<int> CrearAlbaran(string empresa, int pedido)
+        public async Task<int> CrearAlbaran(string empresa, int pedido, string usuario)
         {            
             using (NVEntities db = new NVEntities())
             {
@@ -28,6 +28,10 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
                 {
                     Value = 0 // De momento ponemos siempre que sea cero
                 };
+                SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char)
+                {
+                    Value = usuario
+                };
                 var resultadoParametro = new SqlParameter
                 {
                     ParameterName = "@Resultado",
@@ -38,7 +42,7 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
                 try
                 {
                     // Ejecutar el procedimiento almacenado y capturar el valor de retorno
-                    var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdCrearAlbaránVta @Empresa, @Pedido, @FechaEntrega, @ImporteMinimo", resultadoParametro, empresaParam, pedidoParam, fechaEntregaParam, importeMinimoParam);
+                    var resultadoDirecto = await db.Database.ExecuteSqlCommandAsync("EXEC @Resultado = prdCrearAlbaránVta @Empresa, @Pedido, @FechaEntrega, @ImporteMinimo, @Usuario", resultadoParametro, empresaParam, pedidoParam, fechaEntregaParam, importeMinimoParam, usuarioParam);
                     // Obtener el valor de retorno del parámetro
                     var resultadoProcedimiento = (int)resultadoParametro.Value;
                     return resultadoProcedimiento;

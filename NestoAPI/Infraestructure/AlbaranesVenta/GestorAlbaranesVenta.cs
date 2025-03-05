@@ -11,11 +11,11 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
         {
             _servicio = servicio;
         }
-        public async Task<int> CrearAlbaran(string empresa, int pedido)
+        public async Task<int> CrearAlbaran(string empresa, int pedido, string usuario)
         {
             try
             {
-                int albaran = await _servicio.CrearAlbaran(empresa, pedido);
+                int albaran = await _servicio.CrearAlbaran(empresa, pedido, usuario);
                 return albaran;
             }
             catch (Exception ex)

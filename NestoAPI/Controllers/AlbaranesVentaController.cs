@@ -21,6 +21,7 @@ namespace NestoAPI.Controllers
         {
             string empresa = parametros.Empresa;
             int pedido = parametros.Pedido;
+            string usuario = parametros.Usuario;
             if (empresa == null)
             {
                 return BadRequest("No se ha especificado la empresa");
@@ -31,7 +32,7 @@ namespace NestoAPI.Controllers
             }
             try
             {
-                int albaran = await _gestor.CrearAlbaran(empresa, pedido);
+                int albaran = await _gestor.CrearAlbaran(empresa, pedido, usuario);
                 return Ok(albaran);
             }
             catch (System.Exception ex)

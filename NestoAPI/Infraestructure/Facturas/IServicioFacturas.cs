@@ -1,9 +1,7 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
-using NestoAPI.Models.PedidosCompra;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net.Mail;
 using System.Threading.Tasks;
 
@@ -29,6 +27,6 @@ namespace NestoAPI.Infraestructure.Facturas
         IEnumerable<FacturaCorreo> LeerFacturasCliente(string cliente, string contacto, DateTime firstDayOfQuarter, DateTime lastDayOfQuarter);
         bool EnviarCorreoSMTP(MailMessage mail);
         List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido);
-        Task<string> CrearFactura(string empresa, int pedido);
+        Task<string> CrearFactura(string empresa, int pedido, string usuario);
     }
 }
