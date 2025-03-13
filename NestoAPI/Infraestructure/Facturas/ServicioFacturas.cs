@@ -276,6 +276,11 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             using (NVEntities db = new NVEntities())
             {
+                var cabPedido = db.CabPedidoVtas.Single(p => p.Empresa == empresa && p.Número == pedido);
+                if (cabPedido.Periodo_Facturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
+                {
+                    return cabPedido.Periodo_Facturacion;
+                }
                 SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char)
                 {
                     Value = empresa

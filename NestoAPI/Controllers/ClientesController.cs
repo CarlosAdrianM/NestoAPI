@@ -15,6 +15,7 @@ using NestoAPI.Models.Clientes;
 using System.Net.Http.Headers;
 using NestoAPI.Infraestructure.Vendedores;
 using System.ComponentModel.DataAnnotations;
+using System.Data.SqlClient;
 
 namespace NestoAPI.Controllers
 {
@@ -372,6 +373,17 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
+        [Route("api/Clientes/GetClientePorEmailNif")]
+        // GET: api/Clientes/5
+        [ResponseType(typeof(ClienteDTO))]
+        public async Task<IHttpActionResult> GetClientePorEmailNif(string email, string nif)
+        {
+            ClienteDTO respuesta = await _gestorClientes.BuscarClientePorEmailNif(email, nif);
+
+            return Ok(respuesta);
+        }
+
+        [HttpGet]
         [Route("api/Clientes/ComprobarDatosBanco")]
         // GET: api/Clientes/5
         [ResponseType(typeof(RespuestaDatosBancoCliente))]
@@ -644,7 +656,71 @@ namespace NestoAPI.Controllers
             return Ok(todosOK);
         }
 
+        [HttpGet]
+        [Route("api/Clientes/Sync")]
+        [ResponseType(typeof(bool))]
+        public async Task<IHttpActionResult> GetClientesSync()
+        {
+            bool todosOK = true;
+            int batchSize = 50; // Tamaño del lote
+            int delayMs = 5000; // Pausa de 5 segundos entre lotes
 
+            // Obtenemos los registros de Nesto_sync que necesitan sincronización
+            var clientesParaSincronizar = await db.Database.SqlQuery<string>(
+                "SELECT ModificadoId FROM Nesto_sync WHERE Tabla = 'Clientes' AND Sincronizado IS NULL"
+            ).ToListAsync();
+
+            int totalClientes = clientesParaSincronizar.Count;
+
+            // Procesar por lotes de 50
+            for (int i = 0; i < totalClientes; i += batchSize)
+            {
+                var loteIds = clientesParaSincronizar.Skip(i).Take(batchSize).ToList();
+
+                foreach (string clienteId in loteIds)
+                {
+                    try
+                    {
+                        // Buscar el cliente en la base de datos
+                        List<Cliente> clientes = await db.Clientes
+                            .Where(c => c.Nº_Cliente == clienteId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL)
+                            .OrderBy(c => c.Nº_Cliente)
+                            .ThenByDescending(c => c.ClientePrincipal)
+                            .ThenBy(c => c.Contacto)
+                            .Include(c => c.PersonasContactoClientes1)
+                            .ToListAsync();
+
+                        if (clientes != null && clientes.Any())
+                        {
+                            foreach (Cliente cliente in clientes)
+                            {
+                                await _gestorClientes.PublicarClienteSincronizar(cliente);
+                            }
+
+                            // Actualizar el campo Sincronizado en Nesto_sync
+                            await db.Database.ExecuteSqlCommandAsync(
+                                "UPDATE Nesto_sync SET Sincronizado = @now WHERE Tabla = 'Clientes' AND ModificadoId = @clienteId",
+                                new SqlParameter("@now", DateTime.Now),
+                                new SqlParameter("@clienteId", clienteId)
+                            );
+                        }
+                    }
+                    catch
+                    {
+                        todosOK = false;
+                        // Opcionalmente, podrías registrar el error
+                    }
+                }
+
+                // Esperar antes de procesar el siguiente lote (si no es el último)
+                if (i + batchSize < totalClientes)
+                {
+                    await Task.Delay(delayMs);
+                }
+            }
+
+            return Ok(todosOK);
+        }
 
         protected override void Dispose(bool disposing)
         {

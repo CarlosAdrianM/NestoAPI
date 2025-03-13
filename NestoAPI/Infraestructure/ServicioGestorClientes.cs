@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models;
+﻿using Google.Api.Gax.Grpc;
+using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using System;
 using System.Collections.Generic;
@@ -434,6 +435,39 @@ namespace NestoAPI.Infraestructure
             {
                 var cpDB = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == codigoPostal).ConfigureAwait(false);
                 return cpDB;
+            }
+        }
+
+        public async Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                Cliente cliente = await db.Clientes
+                    .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.CIF_NIF == nif && c.PersonasContactoClientes.Any(p => p.CorreoElectrónico == email))
+                    .Include(c => c.PersonasContactoClientes)
+                    .Include(c => c.Vendedore)
+                    .OrderByDescending(c => c.ClientePrincipal)
+                    .FirstOrDefaultAsync()
+                    .ConfigureAwait(false);
+
+                if (cliente == null)
+                {
+                    return new ClienteDTO();
+                }
+
+                return new ClienteDTO
+                {
+                    empresa = cliente.Empresa.Trim(),
+                    cliente = cliente.Nº_Cliente.Trim(),
+                    contacto = cliente.Contacto.Trim(),
+                    cifNif = cliente.CIF_NIF.Trim(),
+                    nombre = cliente.Nombre.Trim(),
+                    direccion = cliente.Dirección.Trim(),
+                    telefono = cliente.Teléfono.Trim(),
+                    poblacion = cliente.Población.Trim(),
+                    provincia = cliente.Provincia.Trim(),
+                    vendedor = cliente.Vendedore.Descripción.Trim()
+                };                
             }
         }
     }

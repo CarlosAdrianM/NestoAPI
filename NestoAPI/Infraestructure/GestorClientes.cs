@@ -1439,6 +1439,11 @@ namespace NestoAPI.Infraestructure
         {
             return db.Clientes.Count(e => e.Empresa == empresa && e.Nº_Cliente == numCliente && e.Contacto == contacto) > 0;
         }
+
+        public async Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif)
+        {
+            return await servicio.BuscarClientePorEmailNif(email, nif);
+        }
     }
 }
 

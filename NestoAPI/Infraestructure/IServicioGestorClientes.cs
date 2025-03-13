@@ -31,6 +31,7 @@ namespace NestoAPI.Infraestructure
         DateTime Hoy();
         Task<List<Cliente>> BuscarContactos(NVEntities db, string empresa, string cliente, string contacto);
         Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email);
+        Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif);
         Task<SeguimientoCliente> BuscarSeguimiento(string empresa, string cliente, string contacto);
         Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, Iban iban);
         Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, string contacto, Iban iban);
