@@ -1425,6 +1425,7 @@ namespace NestoAPI.Infraestructure
                 Telefono = cliente.Teléfono?.Trim(),
                 Comentarios = cliente.Comentarios?.Trim(),
                 Vendedor = cliente.Vendedor?.Trim(),
+                Estado = cliente.Estado,
                 PersonasContacto = personasContacto,
                 Tabla = "Clientes",
                 Source = "Nesto"

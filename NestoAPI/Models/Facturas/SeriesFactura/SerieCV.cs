@@ -10,6 +10,8 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
 
         public List<NotaFactura> Notas => new List<NotaFactura>
             {
+                new NotaFactura{ Nota = "Operación exenta de IVA según el artículo 20.1.9º de la Ley 37/1992 del Impuesto sobre el Valor Añadido." },
+                new NotaFactura{ Nota = "" },
                 new NotaFactura{ Nota = "LA ASISTENCIA A CLASE ESTÁ SUPEDITADA A ENCONTRARSE AL CORRIENTE DE PAGO." }
             };
 

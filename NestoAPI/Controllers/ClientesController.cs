@@ -683,7 +683,7 @@ namespace NestoAPI.Controllers
                     {
                         // Buscar el cliente en la base de datos
                         List<Cliente> clientes = await db.Clientes
-                            .Where(c => c.Nº_Cliente == clienteId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL)
+                            .Where(c => c.Nº_Cliente == clienteId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
                             .OrderBy(c => c.Nº_Cliente)
                             .ThenByDescending(c => c.ClientePrincipal)
                             .ThenBy(c => c.Contacto)

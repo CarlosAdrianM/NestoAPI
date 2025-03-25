@@ -9,6 +9,7 @@ namespace NestoAPI.Models.ApuntesBanco
         public ContenidoCuaderno43() {
             Apuntes = new List<ApunteBancarioDTO>();
         }
+        public string BancoId { get; set; }
         public RegistroCabeceraCuenta Cabecera { get; set; }
         public List<ApunteBancarioDTO> Apuntes { get; set; }
         public RegistroFinalCuenta FinalCuenta { get; set; }

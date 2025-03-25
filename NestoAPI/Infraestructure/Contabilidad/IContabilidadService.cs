@@ -25,6 +25,5 @@ namespace NestoAPI.Infraestructure.Contabilidad
         Task<int> NumeroRecibosRemesa(int remesa);
         Task<decimal> SaldoFinal(string entidad, string oficina, string cuenta, DateTime fecha);
         Task<decimal> SaldoInicial(string entidad, string oficina, string cuenta, DateTime fecha);
-        
     }
 }

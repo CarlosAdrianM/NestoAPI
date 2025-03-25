@@ -1,5 +1,4 @@
-﻿using Google.Api.Gax.Grpc;
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using System;
 using System.Collections.Generic;
@@ -12,7 +11,6 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
-using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure
 {
@@ -20,11 +18,11 @@ namespace NestoAPI.Infraestructure
     {
         public async Task<ClienteDTO> BuscarClientePorNif(string nif)
         {
-            using (var db = new NVEntities())
+            using (NVEntities db = new NVEntities())
             {
                 try
                 {
-                    var nifSinCero = nif.TrimStart('0');
+                    string nifSinCero = nif.TrimStart('0');
                     Cliente cliente = await db.Clientes.FirstOrDefaultAsync(
                     c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.ClientePrincipal == true && c.CIF_NIF != null &&
                     (c.CIF_NIF == nif || c.CIF_NIF == nifSinCero)
@@ -66,8 +64,8 @@ namespace NestoAPI.Infraestructure
                 <soapenv:Body>
                     <vnif:VNifV2Ent>
                         <vnif:Contribuyente>
-                            <vnif:Nif> " +nif+ @" </vnif:Nif>
-                            <vnif:Nombre> " +nombre+ @" </vnif:Nombre>
+                            <vnif:Nif> " + nif + @" </vnif:Nif>
+                            <vnif:Nombre> " + nombre + @" </vnif:Nombre>
                         </vnif:Contribuyente>
                     </vnif:VNifV2Ent>
                 </soapenv:Body>
@@ -98,16 +96,16 @@ namespace NestoAPI.Infraestructure
                     string soapResult = rd.ReadToEnd();
                     XmlDocument xml = new XmlDocument();
                     xml.LoadXml(soapResult);
-                    var nsmgr = new XmlNamespaceManager(xml.NameTable);
+                    XmlNamespaceManager nsmgr = new XmlNamespaceManager(xml.NameTable);
                     nsmgr.AddNamespace("VNifV2Sal", "http://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/burt/jdit/ws/VNifV2Sal.xsd");
-                    var contribuyente = xml.DocumentElement.FirstChild.FirstChild.FirstChild;
+                    XmlNode contribuyente = xml.DocumentElement.FirstChild.FirstChild.FirstChild;
                     nifDevuelto = contribuyente.SelectSingleNode("VNifV2Sal:Nif", nsmgr).InnerText;
                     nombreDevuelto = contribuyente.SelectSingleNode("VNifV2Sal:Nombre", nsmgr).InnerText;
                     resultadoDevuelto = contribuyente.SelectSingleNode("VNifV2Sal:Resultado", nsmgr).InnerText;
                 }
             }
 
-            if (resultadoDevuelto.ToUpper()=="IDENTIFICADO-BAJA")
+            if (resultadoDevuelto.ToUpper() == "IDENTIFICADO-BAJA")
             {
                 nombreDevuelto = "¡EMPRESA DE BAJA! " + nombreDevuelto;
             }
@@ -117,10 +115,11 @@ namespace NestoAPI.Infraestructure
                 nombreDevuelto = nombreDevuelto.Substring(0, 50);
             }
 
-            return new RespuestaNifNombreCliente {
+            return new RespuestaNifNombreCliente
+            {
                 NifFormateado = nifDevuelto?.Trim(),
                 NombreFormateado = nombreDevuelto?.Trim(),
-                NifValidado = resultadoDevuelto?.ToUpper() == "IDENTIFICADO" || 
+                NifValidado = resultadoDevuelto?.ToUpper() == "IDENTIFICADO" ||
                 resultadoDevuelto?.ToUpper() == "NO IDENTIFICADO-SIMILAR" ||
                 resultadoDevuelto?.ToUpper() == "IDENTIFICADO-BAJA"
             };
@@ -137,7 +136,7 @@ namespace NestoAPI.Infraestructure
                     throw new ArgumentException("No existe el código postal " + codigoPostal + " en la base de datos");
                 }
 
-                var respuesta = new RespuestaDatosGeneralesClientes
+                RespuestaDatosGeneralesClientes respuesta = new RespuestaDatosGeneralesClientes
                 {
                     CodigoPostal = codigoPostal,
                     Poblacion = cp.Descripción?.Trim(),
@@ -204,7 +203,7 @@ namespace NestoAPI.Infraestructure
                 contador++;
                 existe = await db.Clientes.SingleOrDefaultAsync(e => e.Empresa == empresa && e.Nº_Cliente == cliente && e.Contacto == contador.ToString()) != null;
             }
-            
+
             return contador.ToString();
         }
 
@@ -280,13 +279,14 @@ namespace NestoAPI.Infraestructure
             NVEntities db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
 
-            var clientes = await db.Clientes.Where(c => c.Teléfono.Contains(telefono)).Take(5).Select(c => new ClienteTelefonoLookup {
+            List<ClienteTelefonoLookup> clientes = await db.Clientes.Where(c => c.Teléfono.Contains(telefono)).Take(5).Select(c => new ClienteTelefonoLookup
+            {
                 Empresa = c.Empresa.Trim(),
                 Cliente = c.Nº_Cliente.Trim(),
                 Contacto = c.Contacto.Trim(),
                 Nombre = c.Nombre != null ? c.Nombre.Trim() : ""
             }).ToListAsync();
-            var personas = await db.PersonasContactoClientes.Where(c => c.Teléfono.Contains(telefono)).Take(5).Select(c => new ClienteTelefonoLookup
+            List<ClienteTelefonoLookup> personas = await db.PersonasContactoClientes.Where(c => c.Teléfono.Contains(telefono)).Take(5).Select(c => new ClienteTelefonoLookup
             {
                 Empresa = c.Empresa.Trim(),
                 Cliente = c.NºCliente.Trim(),
@@ -295,7 +295,7 @@ namespace NestoAPI.Infraestructure
             }).ToListAsync();
 
             clientes.AddRange(personas);
-            var todos = clientes.Distinct().ToList();
+            List<ClienteTelefonoLookup> todos = clientes.Distinct().ToList();
 
             return todos;
         }
@@ -354,7 +354,7 @@ namespace NestoAPI.Infraestructure
         }
         public async Task<List<Cliente>> BuscarContactos(NVEntities db, string empresa, string cliente, string contacto)
         {
-            return await db.Clientes.Include(v=> v.VendedoresClienteGrupoProductoes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto != contacto &&
+            return await db.Clientes.Include(v => v.VendedoresClienteGrupoProductoes).Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto != contacto &&
                 c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL).ToListAsync();
         }
 
@@ -378,20 +378,20 @@ namespace NestoAPI.Infraestructure
         {
             using (NVEntities db = new NVEntities())
             {
-                var seguimiento = await db.SeguimientosClientes.Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto).OrderByDescending(s => s.NºOrden).FirstOrDefaultAsync().ConfigureAwait(false);
+                SeguimientoCliente seguimiento = await db.SeguimientosClientes.Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto).OrderByDescending(s => s.NºOrden).FirstOrDefaultAsync().ConfigureAwait(false);
                 return seguimiento;
             }
         }
 
         public async Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, Iban iban)
         {
-            var ibanEncontrado = await db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Entidad == iban.Entidad && c.Oficina == iban.Oficina && c.Nº_Cuenta == iban.NumeroCuenta).OrderByDescending(c => c.Fecha_Modificación).FirstOrDefaultAsync().ConfigureAwait(false);
+            CCC ibanEncontrado = await db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Entidad == iban.Entidad && c.Oficina == iban.Oficina && c.Nº_Cuenta == iban.NumeroCuenta).OrderByDescending(c => c.Fecha_Modificación).FirstOrDefaultAsync().ConfigureAwait(false);
             return ibanEncontrado;
         }
 
         public async Task<CCC> BuscarIban(NVEntities db, string empresa, string cliente, string contacto, Iban iban)
         {
-            var ibanEncontrado = await db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto == contacto && c.Entidad == iban.Entidad && c.Oficina == iban.Oficina && c.Nº_Cuenta == iban.NumeroCuenta).OrderByDescending(c => c.Fecha_Modificación).FirstOrDefaultAsync().ConfigureAwait(false);
+            CCC ibanEncontrado = await db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto == contacto && c.Entidad == iban.Entidad && c.Oficina == iban.Oficina && c.Nº_Cuenta == iban.NumeroCuenta).OrderByDescending(c => c.Fecha_Modificación).FirstOrDefaultAsync().ConfigureAwait(false);
             return ibanEncontrado;
         }
 
@@ -400,11 +400,7 @@ namespace NestoAPI.Infraestructure
             using (NVEntities db = new NVEntities())
             {
                 string mayorCCC = await db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente).OrderByDescending(c => c.Número).Select(c => c.Número).FirstOrDefaultAsync().ConfigureAwait(false);
-                if (int.TryParse(mayorCCC, out int mayor))
-                {
-                    return mayor;
-                }
-                return 0;
+                return int.TryParse(mayorCCC, out int mayor) ? mayor : 0;
             }
         }
 
@@ -412,9 +408,9 @@ namespace NestoAPI.Infraestructure
         {
             using (NVEntities db = new NVEntities())
             {
-                db.CCCs.Add(nuevoCCC);
+                _ = db.CCCs.Add(nuevoCCC);
                 int grabado = await db.SaveChangesAsync().ConfigureAwait(false);
-                return (grabado > 0);
+                return grabado > 0;
             }
         }
 
@@ -425,7 +421,7 @@ namespace NestoAPI.Infraestructure
                 CCC cccRecuperar = await db.CCCs.SingleAsync(c => c.Empresa == cccEncontrado.Empresa && c.Cliente == cccEncontrado.Cliente && c.Contacto == cccEncontrado.Contacto && c.Número == cccEncontrado.Número).ConfigureAwait(false);
                 cccRecuperar.Estado = 0; // sin mandato
                 int modificado = await db.SaveChangesAsync().ConfigureAwait(false);
-                return (modificado > 0);
+                return modificado > 0;
             }
         }
 
@@ -433,7 +429,7 @@ namespace NestoAPI.Infraestructure
         {
             using (NVEntities db = new NVEntities())
             {
-                var cpDB = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == codigoPostal).ConfigureAwait(false);
+                CodigoPostal cpDB = await db.CodigosPostales.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == codigoPostal).ConfigureAwait(false);
                 return cpDB;
             }
         }
@@ -450,24 +446,30 @@ namespace NestoAPI.Infraestructure
                     .FirstOrDefaultAsync()
                     .ConfigureAwait(false);
 
-                if (cliente == null)
-                {
-                    return new ClienteDTO();
-                }
-
-                return new ClienteDTO
-                {
-                    empresa = cliente.Empresa.Trim(),
-                    cliente = cliente.Nº_Cliente.Trim(),
-                    contacto = cliente.Contacto.Trim(),
-                    cifNif = cliente.CIF_NIF.Trim(),
-                    nombre = cliente.Nombre.Trim(),
-                    direccion = cliente.Dirección.Trim(),
-                    telefono = cliente.Teléfono.Trim(),
-                    poblacion = cliente.Población.Trim(),
-                    provincia = cliente.Provincia.Trim(),
-                    vendedor = cliente.Vendedore.Descripción.Trim()
-                };                
+                return cliente == null
+                    ? new ClienteDTO()
+                    : new ClienteDTO
+                    {
+                        empresa = cliente.Empresa.Trim(),
+                        cliente = cliente.Nº_Cliente.Trim(),
+                        contacto = cliente.Contacto.Trim(),
+                        clientePrincipal = cliente.ClientePrincipal,
+                        cifNif = cliente.CIF_NIF.Trim(),
+                        nombre = cliente.Nombre.Trim(),
+                        direccion = cliente.Dirección.Trim(),
+                        telefono = cliente.Teléfono.Trim(),
+                        poblacion = cliente.Población.Trim(),
+                        codigoPostal = cliente.CodPostal.Trim(),
+                        estado = cliente.Estado,
+                        provincia = cliente.Provincia.Trim(),
+                        vendedor = cliente.Vendedore.Descripción.Trim(),
+                        PersonasContacto = cliente.PersonasContactoClientes.Select(p => new PersonaContactoDTO
+                        {
+                            Nombre = p.Nombre.Trim(),
+                            CorreoElectronico = p.CorreoElectrónico.Trim(),
+                            FacturacionElectronica = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
+                        }).ToList()
+                    };
             }
         }
     }

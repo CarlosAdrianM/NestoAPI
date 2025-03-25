@@ -1,28 +1,24 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data;
-using System.Data.Entity;
-using System.Data.Entity.Core.Objects;
-using System.Data.Entity.Infrastructure;
-using System.Linq;
-using System.Net;
-using System.Net.Http;
-using System.Threading.Tasks;
-using System.Web.Http;
-using System.Web.Http.Description;
-using NestoAPI.Infraestructure.Contabilidad;
+﻿using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
 using NestoAPI.Models.Bancos;
-using NestoAPI.Models.PedidosVenta;
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.Entity;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Web.Http;
+using System.Web.Http.Description;
 
 namespace NestoAPI.Controllers
 {
     public class BancosController : ApiController
     {
-        private NVEntities db = new NVEntities();
-        
-        public BancosController() {
+        private readonly NVEntities db = new NVEntities();
+
+        public BancosController()
+        {
             db.Configuration.LazyLoadingEnabled = false;
         }
 
@@ -37,12 +33,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetBanco(string empresa, string codigoBanco)
         {
             Banco banco = await db.Bancos.SingleAsync(b => b.Empresa == empresa && b.Número == codigoBanco);
-            if (banco == null)
-            {
-                return NotFound();
-            }
-
-            return Ok(banco);
+            return banco == null ? NotFound() : (IHttpActionResult)Ok(banco);
         }
 
         // GET: api/Bancos/5
@@ -50,19 +41,14 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetBanco(string entidad, string oficina, string cuenta)
         {
             Banco banco = await db.Bancos.SingleAsync(b => b.Entidad == entidad && b.Sucursal == oficina && b.Nº_Cuenta == cuenta);
-            if (banco == null)
-            {
-                return NotFound();
-            }
-
-            return Ok(banco);
+            return banco == null ? NotFound() : (IHttpActionResult)Ok(banco);
         }
 
         // GET: api/Banco/5
         [ResponseType(typeof(List<ApunteBancarioDTO>))]
         public async Task<IHttpActionResult> GetBanco(string empresa, string codigoBanco, DateTime fechaDesde, DateTime fechaHasta)
         {
-            var fechaHastaMenor = fechaHasta.AddDays(1);
+            DateTime fechaHastaMenor = fechaHasta.AddDays(1);
             try
             {
                 Banco banco = db.Bancos.Where(b => b.Empresa == empresa && b.Número == codigoBanco).Single();
@@ -88,7 +74,7 @@ namespace NestoAPI.Controllers
                         ImporteMovimiento = a.ImporteMovimiento,
                         NumeroDocumento = a.NumeroDocumento,
                         Referencia1 = a.Referencia1,
-                        Referencia2 = a.Referencia2,                        
+                        Referencia2 = a.Referencia2,
                         // Mapeo de relaciones
                         RegistrosConcepto = a.RegistroComplementarioConceptoes.Select(rc => new ConceptoComplementario
                         {
@@ -108,7 +94,7 @@ namespace NestoAPI.Controllers
                 List<ApunteBancarioDTO> apuntesBancariosDTO = await apuntesQuery.ToListAsync();
 
                 // Realizar la conversión después de obtener los resultados
-                foreach (var apunte in apuntesBancariosDTO)
+                foreach (ApunteBancarioDTO apunte in apuntesBancariosDTO)
                 {
                     apunte.TextoConceptoComun = GestorContabilidad.ObtenerTextoConceptoComun(apunte.ConceptoComun);
                     apunte.EstadoPunteo = db.ConciliacionesBancariasPunteos
@@ -167,7 +153,7 @@ namespace NestoAPI.Controllers
             return StatusCode(HttpStatusCode.NoContent);
         }
         */
-        
+
 
         // POST: api/Bancos/CargarFichero
         [HttpPost]
@@ -178,13 +164,19 @@ namespace NestoAPI.Controllers
             // Acceder a los datos del tipo anónimo
             string contenido = contenidoUsuario.Contenido;
             string usuario = contenidoUsuario.Usuario;
-
-            var apuntes = await GestorContabilidad.LeerCuaderno43(contenido);
-            apuntes.Usuario = usuario;
-            var servicio = new ContabilidadService();
-            var gestorContabilidad = new GestorContabilidad(servicio);
-            await gestorContabilidad.PersistirCuaderno43(apuntes);
-            return Ok(apuntes);
+            try
+            {
+                ContenidoCuaderno43 apuntes = await GestorContabilidad.LeerCuaderno43(contenido);
+                apuntes.Usuario = usuario;
+                ContabilidadService servicio = new ContabilidadService();
+                GestorContabilidad gestorContabilidad = new GestorContabilidad(servicio);
+                _ = await gestorContabilidad.PersistirCuaderno43(apuntes);
+                return Ok(apuntes);
+            }
+            catch (Exception ex)
+            {
+                throw new Exception("Error al cargar el fichero de movimientos", ex);
+            }
         }
 
         // POST: api/Bancos/CargarFichero
@@ -197,12 +189,12 @@ namespace NestoAPI.Controllers
             string contenido = contenidoUsuario.Contenido;
             string usuario = contenidoUsuario.Usuario;
 
-            var movimientosTPV = GestorContabilidad.LeerMovimientosTPV(contenido, usuario);
+            List<MovimientoTPVDTO> movimientosTPV = GestorContabilidad.LeerMovimientosTPV(contenido, usuario);
             if (movimientosTPV != null && movimientosTPV.Any())
             {
-                var servicio = new ContabilidadService();
-                var gestorContabilidad = new GestorContabilidad(servicio);
-                await gestorContabilidad.PersistirMovimientosTPV(movimientosTPV);
+                ContabilidadService servicio = new ContabilidadService();
+                GestorContabilidad gestorContabilidad = new GestorContabilidad(servicio);
+                _ = await gestorContabilidad.PersistirMovimientosTPV(movimientosTPV);
                 await gestorContabilidad.ContabilizarComisionesTarjetas(movimientosTPV);
             }
 
@@ -215,7 +207,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<Prepago>))]
         public async Task<IHttpActionResult> LeerPrepagoPendientePorImporte(decimal importe)
         {
-            var prepagos = db.Prepagos.Where(p => p.Factura == null && p.Importe == importe);            
+            IQueryable<Prepago> prepagos = db.Prepagos.Where(p => p.Factura == null && p.Importe == importe);
             return Ok(prepagos);
         }
 
@@ -225,8 +217,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<MovimientoTPVDTO>))]
         public async Task<IHttpActionResult> LeerMovimientosTPV(DateTime fechaCaptura, string tipoDatafono)
         {
-            var servicio = new ContabilidadService();
-            var movimientos = await servicio.LeerMovimientosTPV(fechaCaptura, tipoDatafono);
+            ContabilidadService servicio = new ContabilidadService();
+            List<MovimientoTPVDTO> movimientos = await servicio.LeerMovimientosTPV(fechaCaptura, tipoDatafono);
             return Ok(movimientos);
         }
 
@@ -235,8 +227,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> LeerProveedorPorNif(string nifProveedor)
         {
-            var servicio = new ContabilidadService();
-            var proveedor = await servicio.LeerProveedorPorNif(nifProveedor);
+            ContabilidadService servicio = new ContabilidadService();
+            string proveedor = await servicio.LeerProveedorPorNif(nifProveedor);
             return Ok(proveedor);
         }
 
@@ -245,8 +237,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> LeerProveedorPorNombre(string nombreProveedor)
         {
-            var servicio = new ContabilidadService();
-            var proveedor = await servicio.LeerProveedorPorNombre(nombreProveedor);
+            ContabilidadService servicio = new ContabilidadService();
+            string proveedor = await servicio.LeerProveedorPorNombre(nombreProveedor);
             return Ok(proveedor);
         }
 
@@ -255,8 +247,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ExtractoProveedorDTO))]
         public async Task<IHttpActionResult> PagoPendienteUnico(string proveedor, decimal importe)
         {
-            var servicio = new ContabilidadService();
-            var pagoPendiente = await servicio.PagoPendienteUnico(proveedor, importe);
+            ContabilidadService servicio = new ContabilidadService();
+            ExtractoProveedorDTO pagoPendiente = await servicio.PagoPendienteUnico(proveedor, importe);
             return Ok(pagoPendiente);
         }
 
@@ -273,7 +265,7 @@ namespace NestoAPI.Controllers
             int? grupoPunteo = datosPunteo.GrupoPunteo;
             string usuario = datosPunteo.Usuario;
 
-            var punteo = await GestorContabilidad.PuntearApuntes(apunteBancoId, apunteContabilidadId, importePunteo, simboloPunteo, grupoPunteo, usuario);
+            int punteo = await GestorContabilidad.PuntearApuntes(apunteBancoId, apunteContabilidadId, importePunteo, simboloPunteo, grupoPunteo, usuario);
             return Ok(punteo);
         }
 
@@ -282,8 +274,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(int))]
         public async Task<IHttpActionResult> NumeroRecibosRemesa(int remesa)
         {
-            var servicio = new ContabilidadService();
-            var numeroRecibos = await servicio.NumeroRecibosRemesa(remesa);
+            ContabilidadService servicio = new ContabilidadService();
+            int numeroRecibos = await servicio.NumeroRecibosRemesa(remesa);
             return Ok(numeroRecibos);
         }
 
@@ -292,8 +284,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(decimal))]
         public async Task<IHttpActionResult> SaldoFinal(string entidad, string oficina, string cuenta, DateTime fecha)
         {
-            var servicio = new ContabilidadService();
-            var saldo = await servicio.SaldoFinal(entidad, oficina, cuenta, fecha);
+            ContabilidadService servicio = new ContabilidadService();
+            decimal saldo = await servicio.SaldoFinal(entidad, oficina, cuenta, fecha);
             return Ok(saldo);
         }
 
@@ -302,8 +294,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(decimal))]
         public async Task<IHttpActionResult> SaldoInicial(string entidad, string oficina, string cuenta, DateTime fecha)
         {
-            var servicio = new ContabilidadService();
-            var saldo = await servicio.SaldoInicial(entidad, oficina, cuenta, fecha);
+            ContabilidadService servicio = new ContabilidadService();
+            decimal saldo = await servicio.SaldoInicial(entidad, oficina, cuenta, fecha);
             return Ok(saldo);
         }
 

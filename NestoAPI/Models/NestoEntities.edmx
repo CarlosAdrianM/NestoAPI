@@ -38,6 +38,8 @@
             <PropertyRef Name="Id" />
           </Key>
           <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="BancoId" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="FicheroCuaderno43Id" Type="int" Nullable="false" />
           <Property Name="ClaveOficinaOrigen" Type="nvarchar" MaxLength="4" Nullable="false" />
           <Property Name="FechaOperacion" Type="datetime" Nullable="false" />
@@ -163,7 +165,7 @@
           <Property Name="PlazosPago" Type="char" MaxLength="10" />
           <Property Name="PrimerVencimiento" Type="datetime" />
           <Property Name="IVA" Type="char" MaxLength="3" />
-          <Property Name="Comentarios" Type="text" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="PeriodoFacturación" Type="char" MaxLength="3" />
           <Property Name="NºDocumentoProv" Type="char" MaxLength="20" />
           <Property Name="Agrupada" Type="bit" Nullable="false" />
@@ -310,7 +312,7 @@
           <Property Name="Teléfono" Type="char" MaxLength="29" />
           <Property Name="Fax" Type="char" MaxLength="29" />
           <Property Name="Vendedor" Type="char" MaxLength="3" />
-          <Property Name="Comentarios" Type="text" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="CodPostal" Type="char" MaxLength="15" />
           <Property Name="CIF/NIF" Type="char" MaxLength="9" />
           <Property Name="Provincia" Type="char" MaxLength="30" />
@@ -631,7 +633,7 @@
           <Property Name="ProveedorIRPF" Type="char" MaxLength="10" />
           <Property Name="ContactoProveedorIRPF" Type="char" MaxLength="3" />
           <Property Name="PorcentajeFacturadoNoEntregadoParaPedidoCmpAuto" Type="decimal" Precision="5" Scale="2" Nullable="false" />
-          <Property Name="TextoFactura" Type="text" />
+          <Property Name="TextoFactura" Type="nvarchar(max)" />
           <Property Name="StockAntiguo" Type="int" Nullable="false" />
           <Property Name="EstadoProductoRegalo" Type="int" />
           <Property Name="InformeAlbaran" Type="char" MaxLength="50" />
@@ -1244,7 +1246,7 @@
           <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Nombre" Type="char" MaxLength="50" />
           <Property Name="Cargo" Type="smallint" Nullable="false" />
-          <Property Name="Comentarios" Type="text" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="Teléfono" Type="char" MaxLength="29" />
           <Property Name="Fax" Type="char" MaxLength="29" />
           <Property Name="CorreoElectrónico" Type="char" MaxLength="50" />
@@ -1267,7 +1269,7 @@
           <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Nombre" Type="char" MaxLength="50" />
           <Property Name="Cargo" Type="smallint" Nullable="false" />
-          <Property Name="Comentarios" Type="text" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="Fax" Type="char" MaxLength="29" />
           <Property Name="Teléfono" Type="char" MaxLength="29" />
           <Property Name="CorreoElectrónico" Type="char" MaxLength="50" />
@@ -1421,7 +1423,7 @@
           <Property Name="PVP" Type="money" />
           <Property Name="IVA Soportado" Type="char" MaxLength="3" />
           <Property Name="IVA Repercutido" Type="char" MaxLength="3" />
-          <Property Name="Comentarios" Type="text" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="Estado" Type="smallint" />
           <Property Name="CodBarras" Type="char" MaxLength="13" />
           <Property Name="Aplicar Dto" Type="bit" Nullable="false" />
@@ -1445,7 +1447,7 @@
           <Property Name="ProductosPorCaja" Type="int" Nullable="false" />
           <Property Name="CantidadMinimaPedido" Type="int" Nullable="false" />
           <Property Name="Revisado" Type="bit" Nullable="false" />
-          <Property Name="ComentariosFactura" Type="text" />
+          <Property Name="ComentariosFactura" Type="nvarchar(max)" />
           <Property Name="NecesitaNumSerie" Type="bit" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
@@ -1465,7 +1467,7 @@
           <Property Name="Población" Type="char" MaxLength="50" />
           <Property Name="Teléfono" Type="char" MaxLength="29" />
           <Property Name="Fax" Type="char" MaxLength="29" />
-          <Property Name="Comentarios" Type="text" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="CodPostal" Type="char" MaxLength="15" />
           <Property Name="CIF/NIF" Type="char" MaxLength="9" />
           <Property Name="Provincia" Type="char" MaxLength="50" />
@@ -1839,6 +1841,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="AgenciasTransporte">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Ruta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ApuntesBancarios_Bancos">
+          <End Role="Bancos" Type="Self.Bancos" Multiplicity="1" />
+          <End Role="ApuntesBancarios" Type="Self.ApuntesBancarios" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Bancos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ApuntesBancarios">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="BancoId" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -4600,6 +4616,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Rutas" EntitySet="Rutas" />
             <End Role="AgenciasTransporte" EntitySet="AgenciasTransporte" />
           </AssociationSet>
+          <AssociationSet Name="FK_ApuntesBancarios_Bancos" Association="Self.FK_ApuntesBancarios_Bancos">
+            <End Role="Bancos" EntitySet="Bancos" />
+            <End Role="ApuntesBancarios" EntitySet="ApuntesBancarios" />
+          </AssociationSet>
           <AssociationSet Name="FK_CabAlbaránVta_Clientes" Association="Self.FK_CabAlbaránVta_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
             <End Role="CabAlbaránVta" EntitySet="CabAlbaránVta" />
@@ -6258,6 +6278,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Empresa" EntitySet="Empresas" />
             <End Role="CabAlbaránVta" EntitySet="CabsAlbaranesVtas" />
           </AssociationSet>
+          <AssociationSet Name="FK_ApuntesBancarios_Bancos" Association="NVModel.FK_ApuntesBancarios_Bancos">
+            <End Role="Banco" EntitySet="Bancos" />
+            <End Role="ApunteBancario" EntitySet="ApuntesBancarios" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -6317,7 +6341,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="ProveedorIRPF" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="ContactoProveedorIRPF" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="PorcentajeFacturadoNoEntregadoParaPedidoCmpAuto" Type="Decimal" Nullable="false" Precision="5" Scale="2" />
-          <Property Name="TextoFactura" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="TextoFactura" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="StockAntiguo" Type="Int32" Nullable="false" />
           <Property Name="EstadoProductoRegalo" Type="Int32" />
           <Property Name="InformeAlbaran" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
@@ -6597,7 +6621,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
           <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
           <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="CodPostal" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
           <Property Name="CIF_NIF" Type="String" MaxLength="9" FixedLength="true" Unicode="false" />
           <Property Name="Provincia" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
@@ -6778,7 +6802,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="PVP" Type="Decimal" Precision="19" Scale="4" />
           <Property Name="IVA_Soportado" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="IVA_Repercutido" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="Estado" Type="Int16" />
           <Property Name="CodBarras" Type="String" MaxLength="13" FixedLength="true" Unicode="false" />
           <Property Name="Aplicar_Dto" Type="Boolean" Nullable="false" />
@@ -6802,7 +6826,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="ProductosPorCaja" Type="Int32" Nullable="false" />
           <Property Name="CantidadMinimaPedido" Type="Int32" Nullable="false" />
           <Property Name="Revisado" Type="Boolean" Nullable="false" />
-          <Property Name="ComentariosFactura" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="ComentariosFactura" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="NecesitaNumSerie" Type="Boolean" Nullable="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
@@ -7613,6 +7637,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="TieneIva" Type="Boolean" Nullable="false" />
           <Property Name="CuentaGastosRecibo" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="ImporteComisiónMáxImpagado" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <NavigationProperty Name="ApuntesBancarios" Relationship="NVModel.FK_ApuntesBancarios_Bancos" FromRole="Banco" ToRole="ApunteBancario" />
         </EntityType>
         <EntityType Name="CCCProveedor">
           <Key>
@@ -7649,7 +7674,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
           <Property Name="Cargo" Type="Int16" Nullable="false" />
-          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
           <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
           <Property Name="CorreoElectrónico" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
@@ -7676,7 +7701,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Población" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
           <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
           <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
-          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="CodPostal" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
           <Property Name="CIF_NIF" Type="String" MaxLength="9" FixedLength="true" Unicode="false" />
           <Property Name="Provincia" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
@@ -9874,7 +9899,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
           <Property Name="Cargo" Type="Int16" Nullable="false" />
-          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="Teléfono" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
           <Property Name="Fax" Type="String" MaxLength="29" FixedLength="true" Unicode="false" />
           <Property Name="CorreoElectrónico" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
@@ -10278,7 +10303,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="PlazosPago" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="PrimerVencimiento" Type="DateTime" Precision="3" />
           <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="PeriodoFacturación" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="NºDocumentoProv" Type="String" MaxLength="20" FixedLength="true" Unicode="false" />
           <Property Name="Agrupada" Type="Boolean" Nullable="false" />
@@ -10851,6 +10876,9 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="RegistroComplementarioConceptoes" Relationship="NVModel.FK__RegistroC__Apunt__623213D3" FromRole="ApuntesBancario" ToRole="RegistroComplementarioConcepto" />
           <NavigationProperty Name="RegistroComplementarioEquivalencias" Relationship="NVModel.FK__RegistroC__Apunt__66F6C8F0" FromRole="ApuntesBancario" ToRole="RegistroComplementarioEquivalencia" />
           <NavigationProperty Name="ConciliacionBancariaPunteos" Relationship="NVModel.FK__Conciliac__Apunt__4EEA3535" FromRole="ApunteBancario" ToRole="ConciliacionBancariaPunteo" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="BancoId" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <NavigationProperty Name="Banco" Relationship="NVModel.FK_ApuntesBancarios_Bancos" FromRole="ApunteBancario" ToRole="Banco" />
         </EntityType>
         <EntityType Name="FicheroCuaderno43">
           <Key>
@@ -11042,6 +11070,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Principal>
             <Dependent Role="CabAlbaránVta">
               <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ApuntesBancarios_Bancos">
+          <End Type="NVModel.Banco" Role="Banco" Multiplicity="1" />
+          <End Type="NVModel.ApunteBancario" Role="ApunteBancario" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Banco">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ApunteBancario">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="BancoId" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -12658,6 +12700,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="ApuntesBancarios">
             <EntityTypeMapping TypeName="NVModel.ApunteBancario">
               <MappingFragment StoreEntitySet="ApuntesBancarios">
+                <ScalarProperty Name="BancoId" ColumnName="BancoId" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Referencia2" ColumnName="Referencia2" />

@@ -1,24 +1,22 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Models;
+using NestoAPI.Models.ApuntesBanco;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
-using NestoAPI.Infraestructure.Contabilidad;
-using NestoAPI.Models;
-using NestoAPI.Models.ApuntesBanco;
-using NestoAPI.Models.Cajas;
 
 namespace NestoAPI.Controllers
 {
     public class ContabilidadesController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db = new NVEntities();
 
         public ContabilidadesController()
         {
@@ -36,12 +34,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetContabilidad(string id)
         {
             Contabilidad contabilidad = await db.Contabilidades.FindAsync(id);
-            if (contabilidad == null)
-            {
-                return NotFound();
-            }
-
-            return Ok(contabilidad);
+            return contabilidad == null ? NotFound() : (IHttpActionResult)Ok(contabilidad);
         }
 
         // GET: api/Contabilidades/5
@@ -73,12 +66,7 @@ namespace NestoAPI.Controllers
                     })
                     .ToListAsync();
 
-                if (apuntesDTO == null)
-                {
-                    return NotFound();
-                }
-
-                return Ok(apuntesDTO);
+                return apuntesDTO == null ? NotFound() : (IHttpActionResult)Ok(apuntesDTO);
             }
             catch (Exception ex)
             {
@@ -137,29 +125,21 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(decimal))]
         public async Task<IHttpActionResult> GetContabilidad(string empresa, string cuenta, DateTime fecha)
         {
-            var fechaDiaSiguiente = new DateTime(fecha.Year, fecha.Month, fecha.Day).AddDays(1);
-            
+            DateTime fechaDiaSiguiente = new DateTime(fecha.Year, fecha.Month, fecha.Day).AddDays(1);
+
 
             try
             {
-                IQueryable<Contabilidad> contabilidadEmpresa;
-
-                if (string.IsNullOrEmpty(empresa))
-                {
-                    contabilidadEmpresa = db.Contabilidades;
-                }
-                else
-                {
-                    contabilidadEmpresa = db.Contabilidades
+                IQueryable<Contabilidad> contabilidadEmpresa = string.IsNullOrEmpty(empresa)
+                    ? db.Contabilidades
+                    : db.Contabilidades
                     .Where(c => c.Empresa == empresa);
-                }
-
-                var fechaUltimoCierre = await contabilidadEmpresa
-                .Where(c => c.Diario == Constantes.Contabilidad.Diarios.DIARIO_CIERRE)
+                DateTime? fechaUltimoCierre = await contabilidadEmpresa
+                .Where(c => c.Diario == Constantes.Contabilidad.Diarios.DIARIO_CIERRE && c.Fecha <= fecha)
                 .Select(c => DbFunctions.TruncateTime(c.Fecha)) // para que no coja la hora, minutos, ni segundos
                 .MaxAsync();
 
-                var saldo = await contabilidadEmpresa
+                decimal saldo = await contabilidadEmpresa
                     .Where(c => c.Nº_Cuenta == cuenta && c.Fecha >= fechaUltimoCierre && c.Fecha < fechaDiaSiguiente)
                     .Select(c => c.Debe - c.Haber)
                     .DefaultIfEmpty()
@@ -177,20 +157,13 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<ContabilidadDTO>))]
         public async Task<IHttpActionResult> GetContabilidad(string empresa, string cuenta, DateTime fechaDesde, DateTime fechaHasta)
         {
-            var fechaHastaMenor = fechaHasta.AddDays(1);
+            DateTime fechaHastaMenor = fechaHasta.AddDays(1);
             try
             {
-                IQueryable<Contabilidad> contabilidadEmpresa;
-
-                if (string.IsNullOrEmpty(empresa))
-                {
-                    contabilidadEmpresa = db.Contabilidades;
-                }
-                else
-                {
-                    contabilidadEmpresa = db.Contabilidades
+                IQueryable<Contabilidad> contabilidadEmpresa = string.IsNullOrEmpty(empresa)
+                    ? db.Contabilidades
+                    : db.Contabilidades
                     .Where(c => c.Empresa == empresa);
-                }
 
                 // Realizar la consulta y proyección
                 List<ContabilidadDTO> apuntesDTO = await contabilidadEmpresa
@@ -220,7 +193,7 @@ namespace NestoAPI.Controllers
                     return NotFound();
                 }
 
-                foreach (var apunte in apuntesDTO)
+                foreach (ContabilidadDTO apunte in apuntesDTO)
                 {
                     apunte.EstadoPunteo = ObtenerEstadoPunteo(apunte.Id, apunte.Debe - apunte.Haber);
                 }
@@ -240,19 +213,19 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                var consultaInicial = db.Contabilidades
+                IQueryable<Contabilidad> consultaInicial = db.Contabilidades
                 .Where(c => c.Empresa == empresa && c.Concepto.Contains(concepto) &&
                         c.Fecha >= fechaDesde && c.Fecha <= fechaHasta && c.Nº_Cuenta.StartsWith("6") &&
                         !db.ExtractosProveedor.Any(e => e.Empresa == c.Empresa && e.Asiento == c.Asiento)
                 );
 
-                var resultado = await consultaInicial
+                List<ContabilidadDTO> resultado = await consultaInicial
                     .GroupBy(c => new
                     {
                         Cuenta = c.Nº_Cuenta.Trim(),
                         Delegacion = c.Delegación,
-                        Departamento = c.Departamento,
-                        CentroCoste = c.CentroCoste
+                        c.Departamento,
+                        c.CentroCoste
                     })
                     .Select(group => new ContabilidadDTO
                     {
@@ -272,7 +245,7 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ex.Message);
             }
-            
+
         }
 
         // PUT: api/Contabilidades/5
@@ -293,7 +266,7 @@ namespace NestoAPI.Controllers
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -319,11 +292,11 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            db.Contabilidades.Add(contabilidad);
+            _ = db.Contabilidades.Add(contabilidad);
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateException)
             {
@@ -350,8 +323,8 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            db.Contabilidades.Remove(contabilidad);
-            await db.SaveChangesAsync();
+            _ = db.Contabilidades.Remove(contabilidad);
+            _ = await db.SaveChangesAsync();
 
             return Ok(contabilidad);
         }
@@ -367,8 +340,8 @@ namespace NestoAPI.Controllers
             string cuenta = datosPunteo.Cuenta;
             decimal importe = datosPunteo.Importe;
 
-            var _servicio = new ContabilidadService();
-            var _gestor = new GestorContabilidad(_servicio);
+            ContabilidadService _servicio = new ContabilidadService();
+            GestorContabilidad _gestor = new GestorContabilidad(_servicio);
 
             bool resultado = await _gestor.PuntearPorImporte(empresa, cuenta, importe);
 
@@ -382,7 +355,7 @@ namespace NestoAPI.Controllers
             // Lógica para determinar el estado de punteo según tus criterios
             // Puedes utilizar consultas a la base de datos o lógica en memoria según sea necesario
             // Aquí proporciono un ejemplo simple para ilustrar el concepto, ajusta según tus necesidades.
-            var totalPunteado = db.ConciliacionesBancariasPunteos
+            decimal totalPunteado = db.ConciliacionesBancariasPunteos
                 .Where(p => p.ApunteContabilidadId == contabilidadId)
                 .Select(p => p.ImportePunteado)
                 .DefaultIfEmpty(0)

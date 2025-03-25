@@ -14,6 +14,11 @@ namespace NestoAPI.Models
     
     public partial class Banco
     {
+        public Banco()
+        {
+            this.ApuntesBancarios = new HashSet<ApunteBancario>();
+        }
+    
         public string Empresa { get; set; }
         public string Número { get; set; }
         public string Descripción { get; set; }
@@ -40,5 +45,7 @@ namespace NestoAPI.Models
         public bool TieneIva { get; set; }
         public string CuentaGastosRecibo { get; set; }
         public decimal ImporteComisiónMáxImpagado { get; set; }
+    
+        public virtual ICollection<ApunteBancario> ApuntesBancarios { get; set; }
     }
 }

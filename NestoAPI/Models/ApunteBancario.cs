@@ -35,10 +35,13 @@ namespace NestoAPI.Models
         public string Referencia2 { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaCreacion { get; set; }
+        public string Empresa { get; set; }
+        public string BancoId { get; set; }
     
         public virtual FicheroCuaderno43 FicheroCuaderno43 { get; set; }
         public virtual ICollection<RegistroComplementarioConcepto> RegistroComplementarioConceptoes { get; set; }
         public virtual ICollection<RegistroComplementarioEquivalencia> RegistroComplementarioEquivalencias { get; set; }
         public virtual ICollection<ConciliacionBancariaPunteo> ConciliacionBancariaPunteos { get; set; }
+        public virtual Banco Banco { get; set; }
     }
 }

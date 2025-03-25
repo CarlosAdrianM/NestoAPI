@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using NestoAPI.Models.ApuntesBanco;
 using System.Data.Entity;
 using NestoAPI.Models.Bancos;
+using NestoAPI.Controllers;
 
 namespace NestoAPI.Infraestructure.Contabilidad
 {
@@ -131,11 +132,6 @@ namespace NestoAPI.Infraestructure.Contabilidad
         {
             using (var db = new NVEntities())
             {
-                var fechaFichero = contenido.Apuntes.First().FechaOperacion;
-                if (db.ApuntesBancarios.Any(c => c.FechaOperacion == fechaFichero))
-                {
-                    throw new Exception($"Ya se ha contabilizado el fichero del día {fechaFichero.ToShortDateString()}");
-                }
                 try
                 {
                     var fichero = new FicheroCuaderno43();
@@ -166,6 +162,12 @@ namespace NestoAPI.Infraestructure.Contabilidad
                     fichero.Usuario = contenido.Usuario; 
                     fichero.FechaCreacion = DateTime.Now; // Fecha actual                    
 
+                    var banco = await db.Bancos.SingleAsync(b => b.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && b.Entidad == fichero.ClaveEntidad && b.Sucursal == fichero.ClaveOficina && b.Nº_Cuenta == fichero.NumeroCuenta);
+                    var fechaFichero = contenido.Apuntes.First().FechaOperacion;
+                    if (db.ApuntesBancarios.Any(c => c.FechaOperacion == fechaFichero && c.Empresa == banco.Empresa && c.BancoId == banco.Número))
+                    {
+                        throw new Exception($"Ya se ha contabilizado el fichero del día {fechaFichero.ToShortDateString()}");
+                    }
                     // Iterar sobre cada ApunteBancarioDTO en la lista contenido.Apuntes
                     foreach (var apunteDto in contenido.Apuntes)
                     {
@@ -173,6 +175,8 @@ namespace NestoAPI.Infraestructure.Contabilidad
                         var apunteBancario = new ApunteBancario();
 
                         // Asignar valores de ApunteBancarioDTO a ApunteBancario
+                        apunteBancario.Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+                        apunteBancario.BancoId = banco.Número;
                         apunteBancario.ClaveOficinaOrigen = apunteDto.ClaveOficinaOrigen;
                         apunteBancario.FechaOperacion = apunteDto.FechaOperacion;
                         apunteBancario.FechaValor = apunteDto.FechaValor;

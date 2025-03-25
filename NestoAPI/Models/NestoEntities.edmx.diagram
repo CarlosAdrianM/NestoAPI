@@ -279,6 +279,7 @@
         <EntityTypeShape EntityType="NVModel.CabAlbaranVta" Width="1.5" PointX="20.25" PointY="57.25" />
         <AssociationConnector Association="NVModel.FK_CabAlbaránVta_Clientes" />
         <AssociationConnector Association="NVModel.FK_CabAlbaránVta_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ApuntesBancarios_Bancos" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
