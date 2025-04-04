@@ -465,8 +465,8 @@ namespace NestoAPI.Infraestructure
                         vendedor = cliente.Vendedore.Descripción.Trim(),
                         PersonasContacto = cliente.PersonasContactoClientes.Select(p => new PersonaContactoDTO
                         {
-                            Nombre = p.Nombre.Trim(),
-                            CorreoElectronico = p.CorreoElectrónico.Trim(),
+                            Nombre = p.Nombre?.Trim(),
+                            CorreoElectronico = p.CorreoElectrónico?.Trim(),
                             FacturacionElectronica = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
                         }).ToList()
                     };

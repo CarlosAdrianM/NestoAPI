@@ -1,31 +1,30 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Rapports;
+using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Models;
+using NestoAPI.Models.Rapports;
+using Newtonsoft.Json;
+using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Mail;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
-using NestoAPI.Models;
-using NestoAPI.Models.Rapports;
-using NestoAPI.Infraestructure.Rapports;
-using NestoAPI.Infraestructure.Vendedores;
-using Newtonsoft.Json;
-using System.Text;
-using System.Configuration;
-using NestoAPI.Infraestructure;
-using System.Net.Mail;
-using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Controllers
 {
     public class SeguimientosClientesController : ApiController
     {
-        private NVEntities db = new NVEntities();
-        private IServicioCorreoElectronico _servicioCorreoElectronico;
+        private readonly NVEntities db = new NVEntities();
+        private readonly IServicioCorreoElectronico _servicioCorreoElectronico;
 
         // Carlos 13/03/17: lo pongo para desactivar el Lazy Loading
         public SeguimientosClientesController()
@@ -41,7 +40,8 @@ namespace NestoAPI.Controllers
             return db.SeguimientosClientes
                 .Include(s => s.Cliente)
                 .Where(s => s.Empresa == empresa && s.Número == cliente && s.Contacto == contacto && s.Fecha >= fechaDesde)
-                .Select(s => new SeguimientoClienteDTO {
+                .Select(s => new SeguimientoClienteDTO
+                {
                     Aparatos = s.Aparatos,
                     Aviso = s.Aviso,
                     Cliente = s.Número.Trim(),
@@ -61,7 +61,7 @@ namespace NestoAPI.Controllers
                     Usuario = s.Usuario,
                     Vendedor = s.Vendedor
                 })
-                .OrderByDescending(s=> s.Id);
+                .OrderByDescending(s => s.Id);
         }
 
         // GET: api/SeguimientosClientes
@@ -74,19 +74,15 @@ namespace NestoAPI.Controllers
 
             if (vendedor != null)
             {
-                if (vendedor.Length <= 3)
-                {
-                    seguimientos = db.SeguimientosClientes.Where(s => s.Vendedor == vendedor);
-                }
-                else
-                {
-                    seguimientos = db.SeguimientosClientes.Where(s => s.Usuario == vendedor);
-                }
-            } else
+                seguimientos = vendedor.Length <= 3
+                    ? db.SeguimientosClientes.Where(s => s.Vendedor == vendedor)
+                    : db.SeguimientosClientes.Where(s => s.Usuario == vendedor);
+            }
+            else
             {
                 seguimientos = db.SeguimientosClientes;
             }
-            
+
 
             return seguimientos
                 .Include(s => s.Cliente)
@@ -119,14 +115,14 @@ namespace NestoAPI.Controllers
         public IQueryable<SeguimientoClienteDTO> GetSeguimientosClientes(string vendedor, string filtro)
         {
             DateTime fechaDesde = DateTime.Today.AddYears(-3);
-            var resultado = db.SeguimientosClientes
+            IQueryable<SeguimientoCliente> resultado = db.SeguimientosClientes
                 .Include(s => s.Cliente)
                 .Where(s => s.Comentarios.Contains(filtro));
-                
+
             if (!string.IsNullOrEmpty(vendedor))
             {
                 IServicioVendedores _servicioVendedores = new ServicioVendedores(); // habría que inyectarlo
-                var listaVendedores = _servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult().Select(l => l.vendedor).ToList();
+                List<string> listaVendedores = _servicioVendedores.VendedoresEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor).GetAwaiter().GetResult().Select(l => l.vendedor).ToList();
                 resultado = resultado.Include(s => s.Cliente).Where(s => listaVendedores.Contains(s.Cliente.Vendedor));
             }
 
@@ -195,31 +191,26 @@ namespace NestoAPI.Controllers
             }
 
             // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
-            var textoEntrada = "Resumen de seguimientos de un cliente. Los siguientes son los comentarios organizados por fecha:\n\n";
+            string textoEntrada = "Resumen de seguimientos de un cliente. Los siguientes son los comentarios organizados por fecha:\n\n";
             foreach (var seguimiento in seguimientos)
             {
-                var pedidoTexto = seguimiento.Pedido ? "Sí" : "No";
-                textoEntrada += $"Fecha: {seguimiento.Fecha.ToString("yyyy-MM-dd HH:mm:ss")}\nComentario: {seguimiento.Comentarios}\nTerminó en pedido: {pedidoTexto}\n\n";
+                string pedidoTexto = seguimiento.Pedido ? "Sí" : "No";
+                textoEntrada += $"Fecha: {seguimiento.Fecha:yyyy-MM-dd HH:mm:ss}\nComentario: {seguimiento.Comentarios}\nTerminó en pedido: {pedidoTexto}\n\n";
             }
 
             // Llama a OpenAI para obtener el resumen
-            var resumen = await GenerarResumenOpenAIAsync(textoEntrada);
+            string resumen = await GenerarResumenOpenAIAsync(textoEntrada);
 
-            if (string.IsNullOrEmpty(resumen))
-            {
-                return StatusCode(HttpStatusCode.InternalServerError);
-            }
-
-            return Ok(new { Resumen = resumen });
+            return string.IsNullOrEmpty(resumen) ? StatusCode(HttpStatusCode.InternalServerError) : (IHttpActionResult)Ok(new { Resumen = resumen });
         }
 
         [HttpGet]
         [Route("api/SeguimientosClientes/Resumen")]
         public async Task<IHttpActionResult> GetResumenSeguimientosClientes(string empresa, DateTime fecha)
-        {          
-            var vendedoresPresenciales = db.EquiposVentas.Where(v => v.Superior == Constantes.Vendedores.JEFE_DE_VENTAS).Select(v => v.Vendedor).ToArray();           
-            var resumenPresenciales = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.JEFE_VENTAS, false);
-            var resumenResto = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.CORREO_DIRECCION, true);
+        {
+            string[] vendedoresPresenciales = db.EquiposVentas.Where(v => v.Superior == Constantes.Vendedores.JEFE_DE_VENTAS).Select(v => v.Vendedor).ToArray();
+            string resumenPresenciales = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.JEFE_VENTAS, false);
+            string resumenResto = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.CORREO_DIRECCION, true);
             return Ok(new { Resumen = resumenPresenciales + "\n" + resumenResto });
         }
 
@@ -227,21 +218,21 @@ namespace NestoAPI.Controllers
         [Route("api/SeguimientosClientes/ResumenSemanal")]
         public async Task<IHttpActionResult> GetResumenSemanalSeguimientosClientes(string empresa, DateTime fecha)
         {
-            var fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
-            var fechaSemanaAnterior = fechaSinHora.AddDays(-7);
-            var vendedoresPresenciales = db.EquiposVentas.Where(v => v.Superior == Constantes.Vendedores.JEFE_DE_VENTAS).Select(v => v.Vendedor.Trim()).ToArray();
+            DateTime fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
+            DateTime fechaSemanaAnterior = fechaSinHora.AddDays(-7);
+            string[] vendedoresPresenciales = db.EquiposVentas.Where(v => v.Superior == Constantes.Vendedores.JEFE_DE_VENTAS).Select(v => v.Vendedor.Trim()).ToArray();
             string resumenConjunto = string.Empty;
-            var vendedoresConRapport = db.SeguimientosClientes
+            string[] vendedoresConRapport = db.SeguimientosClientes
                 .Where(s => s.Empresa == empresa && s.Fecha >= fechaSemanaAnterior && s.Fecha < fechaSinHora && s.Vendedor != null)
                 .Select(s => s.Vendedor.Trim())
                 .Distinct()
                 .ToArray();
 
-            foreach (var vendedor in vendedoresConRapport)
+            foreach (string vendedor in vendedoresConRapport)
             {
-                var correo = db.Vendedores.SingleOrDefault(v => v.Empresa == empresa && v.Número == vendedor).Mail.Trim();
-                var copia = vendedoresPresenciales.Contains(vendedor) ? Constantes.Correos.JEFE_VENTAS : Constantes.Correos.CORREO_DIRECCION;
-                var resumen = await EnviarCorreoResumenRapportsSemana(empresa, fechaSemanaAnterior, fechaSinHora, vendedor, correo, copia);
+                string correo = db.Vendedores.SingleOrDefault(v => v.Empresa == empresa && v.Número == vendedor).Mail.Trim();
+                string copia = vendedoresPresenciales.Contains(vendedor) ? Constantes.Correos.JEFE_VENTAS : Constantes.Correos.CORREO_DIRECCION;
+                string resumen = await EnviarCorreoResumenRapportsSemana(empresa, fechaSemanaAnterior, fechaSinHora, vendedor, correo, copia);
                 resumenConjunto += resumen + "\n";
             }
 
@@ -252,8 +243,8 @@ namespace NestoAPI.Controllers
         {
             // Resto discrimina entre si vendedores[] son los que enviamos o los que no enviamos
 
-            var fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
-            var fechaDiaSiguiente = fechaSinHora.AddDays(1);
+            DateTime fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
+            DateTime fechaDiaSiguiente = fechaSinHora.AddDays(1);
 
             var seguimientos = db.SeguimientosClientes
                 .Where(s => s.Empresa == empresa &&
@@ -272,10 +263,10 @@ namespace NestoAPI.Controllers
             }
 
             // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
-            var textoEntrada = $"Resumen de seguimientos del día {fecha}. Los siguientes son los comentarios:\n\n";
+            string textoEntrada = $"Resumen de seguimientos del día {fecha}. Los siguientes son los comentarios:\n\n";
             foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
             {
-                var pedidoTexto = seguimiento.Pedido ? "Sí" : "No";
+                string pedidoTexto = seguimiento.Pedido ? "Sí" : "No";
                 switch (seguimiento.Tipo.Trim())
                 {
                     case "V":
@@ -295,29 +286,31 @@ namespace NestoAPI.Controllers
             }
 
             // Llama a OpenAI para obtener el resumen
-            var resumen = await GenerarResumenFechaOpenAIAsync(textoEntrada);
+            string resumen = await GenerarResumenFechaOpenAIAsync(textoEntrada);
 
             if (string.IsNullOrEmpty(resumen))
             {
                 return string.Empty;
             }
 
-            var grupo = resto ? "resto" : "presenciales";
+            string grupo = resto ? "resto" : "presenciales";
 
-            var mail = new MailMessage();
-            mail.From = new MailAddress("nesto@nuevavision.es");
+            MailMessage mail = new MailMessage
+            {
+                From = new MailAddress("nesto@nuevavision.es")
+            };
             mail.To.Add(correo);
             mail.CC.Add(Constantes.Correos.CORREO_DIRECCION);
             mail.Subject = $"Resumen de seguimientos día {fechaSinHora.ToShortDateString()} ({grupo})";
             mail.Body = resumen;
             mail.IsBodyHtml = true;
-            _servicioCorreoElectronico.EnviarCorreoSMTP(mail);
+            _ = _servicioCorreoElectronico.EnviarCorreoSMTP(mail);
 
             return resumen;
         }
 
         private async Task<string> EnviarCorreoResumenRapportsSemana(string empresa, DateTime fechaInicio, DateTime fechaFin, string vendedor, string correo, string copia)
-        {            
+        {
             var seguimientos = db.SeguimientosClientes
                 .Where(s => s.Empresa == empresa &&
                             s.Fecha >= fechaInicio &&
@@ -336,22 +329,24 @@ namespace NestoAPI.Controllers
             }
 
             // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
-            var textoEntrada = $"Resumen de seguimientos del {fechaInicio} al {fechaFin}. Los siguientes son los comentarios:\n\n";
+            string textoEntrada = $"Resumen de seguimientos del {fechaInicio} al {fechaFin}. Los siguientes son los comentarios:\n\n";
             foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
             {
                 textoEntrada += $"Vendedor: {seguimiento.Vendedor}\nCliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()} \nComentario: {seguimiento.Comentarios.Trim()}\nFecha y hora: {seguimiento.Fecha_Modificación}\n\n";
             }
 
             // Llama a OpenAI para obtener el resumen
-            var resumen = await GenerarResumenSemanaOpenAIAsync(textoEntrada);
+            string resumen = await GenerarResumenSemanaOpenAIAsync(textoEntrada);
 
             if (string.IsNullOrEmpty(resumen))
             {
                 return string.Empty;
-            }            
+            }
 
-            var mail = new MailMessage();
-            mail.From = new MailAddress("nesto@nuevavision.es");
+            MailMessage mail = new MailMessage
+            {
+                From = new MailAddress("nesto@nuevavision.es")
+            };
             mail.To.Add(correo);
             mail.CC.Add(copia);
             if (copia != Constantes.Correos.CORREO_DIRECCION)
@@ -361,7 +356,7 @@ namespace NestoAPI.Controllers
             mail.Subject = $"Resumen de seguimientos semanal del {fechaInicio.ToShortDateString()} al {fechaFin.ToShortDateString()}";
             mail.Body = resumen;
             mail.IsBodyHtml = true;
-            _servicioCorreoElectronico.EnviarCorreoSMTP(mail);
+            _ = _servicioCorreoElectronico.EnviarCorreoSMTP(mail);
 
             return resumen;
         }
@@ -404,14 +399,14 @@ namespace NestoAPI.Controllers
 
 
 
-                var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                StringContent content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
-                var response = await httpClient.PostAsync(endpoint, content);
+                HttpResponseMessage response = await httpClient.PostAsync(endpoint, content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var responseString = await response.Content.ReadAsStringAsync();
-                    var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
+                    string responseString = await response.Content.ReadAsStringAsync();
+                    dynamic responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
                     return responseJson?.choices[0]?.message?.content?.ToString();
                 }
 
@@ -456,14 +451,14 @@ namespace NestoAPI.Controllers
 
 
 
-                var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                StringContent content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
-                var response = await httpClient.PostAsync(endpoint, content);
+                HttpResponseMessage response = await httpClient.PostAsync(endpoint, content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var responseString = await response.Content.ReadAsStringAsync();
-                    var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
+                    string responseString = await response.Content.ReadAsStringAsync();
+                    dynamic responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
                     return responseJson?.choices[0]?.message?.content?.ToString();
                 }
                 else
@@ -515,10 +510,10 @@ Además, evalúa la calidad de los comentarios teniendo en cuenta:
 - La longitud y el nivel de detalle (se valoran más los comentarios largos y detallados; los comentarios breves, de menos de 30 palabras, se consideran de menor calidad).
 - La claridad en la información comercial y la mención de marcas de productos o tratamientos estéticos o de peluquería que realiza. 
 - La información detallada sobre futuras oportunidades de venta 
-- **La puntualidad en el registro**: Analiza las marcas de tiempo de cada comentario para determinar si se han registrado en el momento de la visita.
+- **La puntualidad en el registro**: este punto solo es válido para visitas presenciales, pero no para teléfono o WhatsApp (para teléfono o WhatsApp ignoramos la puntualidad en el registro completamente). Analiza las marcas de tiempo de cada comentario para determinar si se han registrado en el momento de la visita.
     - Si, en un mismo día, el primer comentario se registra al inicio de la jornada (por ejemplo, alrededor de las 9:00) y el último se registra hacia el final (por ejemplo, cerca de las 19:00) – o, al menos, si la diferencia entre el primer y el último comentario es de varias horas (por ejemplo, 4 horas o más) –, indica que el vendedor registra en tiempo real y aumenta la puntuación.
     - Si la diferencia entre el primer y el último comentario de un día es muy corta (por ejemplo, menos de 1 hora, o con un promedio inferior a 5-10 minutos entre registros), se penaliza la puntuación, ya que se asume que se ingresaron en bloque al final de la jornada.
-- Representa la puntuación de calidad con de 1 a 5 iconos de estrellas (evitando usar 3 estrellas para evitar ambigüedad; utiliza 2 o 4 según corresponda).
+- Representa la puntuación de calidad con de 1 a 5 iconos de estrellas (evitando usar 3 estrellas para evitar ambigüedad; utiliza 2 o 4 según corresponda). Nunca daremos más de dos estrellas si las visitas que no sean teléfono o whatapp no se registran en el momento.
 - Añade una breve explicación justificando la puntuación, y explicando al vendedor cómo debería meter los comentarios para mejorar la puntuación en futuros análisis.
 
 Nota: La jornada laboral se considera de 9:00 a 19:00.
@@ -583,14 +578,14 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
 
 
 
-                var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+                StringContent content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
 
-                var response = await httpClient.PostAsync(endpoint, content);
+                HttpResponseMessage response = await httpClient.PostAsync(endpoint, content);
 
                 if (response.IsSuccessStatusCode)
                 {
-                    var responseString = await response.Content.ReadAsStringAsync();
-                    var responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
+                    string responseString = await response.Content.ReadAsStringAsync();
+                    dynamic responseJson = JsonConvert.DeserializeObject<dynamic>(responseString);
                     return responseJson?.choices[0]?.message?.content?.ToString();
                 }
                 else
@@ -643,7 +638,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             if (seguimientoCliente.Empresa?.Trim() != seguimientoClienteDTO.Empresa?.Trim())
             {
                 seguimientoCliente.Empresa = seguimientoClienteDTO.Empresa;
-            }            
+            }
             seguimientoCliente.Estado = (short)seguimientoClienteDTO.Estado;
             seguimientoCliente.Fecha = seguimientoClienteDTO.Fecha;
             seguimientoCliente.GestiónAparatos = seguimientoClienteDTO.GestionAparatos;
@@ -658,7 +653,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -674,7 +669,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
 
             return StatusCode(HttpStatusCode.NoContent);
         }
-        
+
 
         // POST: api/SeguimientosClientes
         [ResponseType(typeof(SeguimientoCliente))]
@@ -687,7 +682,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
 
             DateTime fechaDesde = new DateTime(seguimientoClienteDTO.Fecha.Year, seguimientoClienteDTO.Fecha.Month, seguimientoClienteDTO.Fecha.Day);
             DateTime fechaHasta = fechaDesde.AddDays(1);
-            if (seguimientoClienteDTO.Estado != SeguimientoClienteDTO.EstadoSeguimientoDTO.Gestion_Administrativa && db.SeguimientosClientes.Where(s => s.Fecha >= fechaDesde && 
+            if (seguimientoClienteDTO.Estado != SeguimientoClienteDTO.EstadoSeguimientoDTO.Gestion_Administrativa && db.SeguimientosClientes.Where(s => s.Fecha >= fechaDesde &&
                 s.Fecha < fechaHasta && s.Número == seguimientoClienteDTO.Cliente &&
                 s.Contacto == seguimientoClienteDTO.Contacto &&
                 s.Usuario.ToLower() == seguimientoClienteDTO.Usuario.ToLower()).Any())
@@ -720,13 +715,9 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 Usuario = seguimientoClienteDTO.Usuario
             };
 
-            if (seguimientoClienteDTO.Vendedor == vendedorFicha || seguimientoClienteDTO.Vendedor == vendedorPeluqueria)
-            {
-                seguimientoCliente.Vendedor = seguimientoClienteDTO.Vendedor;
-            } else
-            {
-                seguimientoCliente.Vendedor = null;
-            }
+            seguimientoCliente.Vendedor = seguimientoClienteDTO.Vendedor == vendedorFicha || seguimientoClienteDTO.Vendedor == vendedorPeluqueria
+                ? seguimientoClienteDTO.Vendedor
+                : null;
 
             if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloPeluqueria && vendedorFicha != vendedorPeluqueria)
             {
@@ -743,18 +734,18 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             {
                 // poner vendedor general en peluquería
                 VendedorClienteGrupoProducto clienteGrupo = db.VendedoresClientesGruposProductos.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto && c.GrupoProducto == "PEL");
-                if (clienteGrupo != null && clienteGrupo.Vendedor !=null && clienteGrupo.Vendedor.Trim() != Constantes.Vendedores.VENDEDOR_GENERAL)
+                if (clienteGrupo != null && clienteGrupo.Vendedor != null && clienteGrupo.Vendedor.Trim() != Constantes.Vendedores.VENDEDOR_GENERAL)
                 {
                     clienteGrupo.Usuario = seguimientoCliente.Usuario;
                     clienteGrupo.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
                 }
             }
-                        
-            db.SeguimientosClientes.Add(seguimientoCliente);
+
+            _ = db.SeguimientosClientes.Add(seguimientoCliente);
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateException)
             {

@@ -1,4 +1,8 @@
-﻿using System;
+﻿using Microsoft.Reporting.WebForms;
+using NestoAPI.Models;
+using NestoAPI.Models.Clientes;
+using NestoAPI.Models.Facturas;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Data;
@@ -10,16 +14,12 @@ using System.Net.Http.Headers;
 using System.Net.Mail;
 using System.Text;
 using System.Threading.Tasks;
-using Microsoft.Reporting.WebForms;
-using NestoAPI.Models;
-using NestoAPI.Models.Clientes;
-using NestoAPI.Models.Facturas;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
     public class GestorFacturas : IGestorFacturas
     {
-        IServicioFacturas servicio;
+        private readonly IServicioFacturas servicio;
         public GestorFacturas()
         {
             servicio = new ServicioFacturas();
@@ -42,12 +42,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public ByteArrayContent FacturasEnPDF(List<Factura> facturas)
         {
-            Warning[] warnings;
-            string mimeType;
-            string[] streamids;
-            string encoding;
-            string filenameExtension;
-            
+
             ReportViewer viewer = new ReportViewer();
             viewer.LocalReport.ReportPath = facturas.FirstOrDefault().RutaInforme;
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Facturas", facturas));
@@ -59,15 +54,14 @@ namespace NestoAPI.Infraestructure.Facturas
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Totales", facturas.FirstOrDefault().Totales));
 
             viewer.LocalReport.Refresh();
-
-            var bytes = viewer.LocalReport.Render("PDF", null, out mimeType, out encoding, out filenameExtension, out streamids, out warnings);
+            byte[] bytes = viewer.LocalReport.Render("PDF", null, out _, out _, out _, out _, out _);
 
             //https://stackoverflow.com/questions/29643043/crystalreports-reportdocument-memory-leak-with-database-connections
             viewer.LocalReport.Dispose();
             viewer.Dispose();
 
             return new ByteArrayContent(bytes);
-        }        
+        }
 
         public Factura LeerFactura(string empresa, string numeroFactura)
         {
@@ -76,16 +70,7 @@ namespace NestoAPI.Infraestructure.Facturas
             LinPedidoVta primeraLinea = cabFactura.LinPedidoVtas.FirstOrDefault();
             ISerieFactura serieFactura = LeerSerie(cabFactura.Serie);
 
-            CabPedidoVta cabPedido;
-            if (primeraLinea != null)
-            {
-                cabPedido = servicio.CargarCabPedido(empresa, primeraLinea.Número);
-            }
-            else
-            {
-                cabPedido = null;
-            }
-
+            CabPedidoVta cabPedido = primeraLinea != null ? servicio.CargarCabPedido(empresa, primeraLinea.Número) : null;
             Cliente clienteEntrega = servicio.CargarCliente(cabFactura.Empresa, cabFactura.Nº_Cliente, cabFactura.Contacto);
             Cliente clienteRazonSocial = clienteEntrega;
             if (!clienteRazonSocial.ClientePrincipal)
@@ -119,7 +104,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     PrecioUnitario = linea.Precio,
                     Producto = linea.Producto?.Trim(),
                     Pedido = linea.Número,
-                    Estado = linea.Estado, 
+                    Estado = linea.Estado,
                     Picking = linea.Picking ?? 0
                 };
 
@@ -138,7 +123,7 @@ namespace NestoAPI.Infraestructure.Facturas
             var gruposTotal = cabFactura.LinPedidoVtas.GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE });
             foreach (var grupoTotal in gruposTotal)
             {
-                var lineasGrupo = cabFactura.LinPedidoVtas.Where(l => l.PorcentajeIVA == grupoTotal.Key.PorcentajeIVA && l.PorcentajeRE == grupoTotal.Key.PorcentajeRE);
+                IEnumerable<LinPedidoVta> lineasGrupo = cabFactura.LinPedidoVtas.Where(l => l.PorcentajeIVA == grupoTotal.Key.PorcentajeIVA && l.PorcentajeRE == grupoTotal.Key.PorcentajeRE);
                 TotalFactura total = new TotalFactura
                 {
                     BaseImponible = lineasGrupo.Sum(l => l.Base_Imponible),
@@ -198,32 +183,21 @@ namespace NestoAPI.Infraestructure.Facturas
                 throw new Exception("No cuadran los vencimientos con el total de la factura");
             }
 
-            foreach (var vencimiento in vencimientos)
+            foreach (VencimientoFactura vencimiento in vencimientos)
             {
                 if (vencimiento.CCC != null && vencimiento.CCC.Trim() != "")
                 {
                     continue;
                 }
 
-                if (vencimiento.FormaPago == "TRN" || vencimiento.FormaPago == "CNF")
-                {
-                    vencimiento.Iban = servicio.CuentaBancoEmpresa(empresa);
-                }
-                else
-                {
-                    vencimiento.Iban = "<<< No Procede >>>";
-                }
+                vencimiento.Iban = vencimiento.FormaPago == "TRN" || vencimiento.FormaPago == "CNF" ? servicio.CuentaBancoEmpresa(empresa) : "<<< No Procede >>>";
             }
 
             string tipoDocumento = string.Empty;
 
-            if (totales.Sum(t => t.BaseImponible) >= 0)
-            {
-                tipoDocumento = Constantes.Facturas.TiposDocumento.FACTURA;
-            } else
-            {
-                tipoDocumento = Constantes.Facturas.TiposDocumento.FACTURA_RECTIFICATIVA;
-            }
+            tipoDocumento = totales.Sum(t => t.BaseImponible) >= 0
+                ? Constantes.Facturas.TiposDocumento.FACTURA
+                : Constantes.Facturas.TiposDocumento.FACTURA_RECTIFICATIVA;
 
 
             Factura factura = new Factura
@@ -278,20 +252,9 @@ namespace NestoAPI.Infraestructure.Facturas
             };
 
 
-            string tipoDocumento;
-            if (cabPedido.LinPedidoVtas.Any(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO))
-            {
-                tipoDocumento = Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA;
-            }
-            else if (cabPedido.NotaEntrega)
-            {
-                tipoDocumento = Constantes.Facturas.TiposDocumento.NOTA_ENTREGA;
-            }
-            else
-            {
-                tipoDocumento = Constantes.Facturas.TiposDocumento.PEDIDO;
-            }
-
+            string tipoDocumento = cabPedido.LinPedidoVtas.Any(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO)
+                ? Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA
+                : cabPedido.NotaEntrega ? Constantes.Facturas.TiposDocumento.NOTA_ENTREGA : Constantes.Facturas.TiposDocumento.PEDIDO;
             bool ponerPrecios = tipoDocumento == Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA || (!cabPedido.NotaEntrega && clienteEntrega.AlbaranValorado);
 
             List<LineaFactura> lineas = new List<LineaFactura>();
@@ -299,7 +262,7 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 LineaFactura lineaNueva = new LineaFactura
                 {
-                    Albaran =  linea.Nº_Albarán != null ? (int)linea.Nº_Albarán : 0,
+                    Albaran = linea.Nº_Albarán != null ? (int)linea.Nº_Albarán : 0,
                     FechaAlbaran = linea.Fecha_Albarán != null ? (DateTime)linea.Fecha_Albarán : DateTime.MinValue,
                     Cantidad = linea.Cantidad,
                     Descripcion = linea.Texto?.Trim(),
@@ -329,7 +292,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 var gruposTotal = cabPedido.LinPedidoVtas.GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE });
                 foreach (var grupoTotal in gruposTotal)
                 {
-                    var lineasGrupo = cabPedido.LinPedidoVtas.Where(l => l.PorcentajeIVA == grupoTotal.Key.PorcentajeIVA && l.PorcentajeRE == grupoTotal.Key.PorcentajeRE);
+                    IEnumerable<LinPedidoVta> lineasGrupo = cabPedido.LinPedidoVtas.Where(l => l.PorcentajeIVA == grupoTotal.Key.PorcentajeIVA && l.PorcentajeRE == grupoTotal.Key.PorcentajeRE);
                     TotalFactura total = new TotalFactura
                     {
                         BaseImponible = lineasGrupo.Sum(l => l.Base_Imponible),
@@ -346,16 +309,16 @@ namespace NestoAPI.Infraestructure.Facturas
             List<VendedorFactura> vendedores = servicio.CargarVendedoresPedido(empresa, pedido);
             PlazoPago plazoPago = servicio.CargarPlazosPago(empresa, cabPedido.PlazosPago);
             List<EfectoPedidoVenta> efectos = servicio.CargarEfectosPedido(empresa, pedido);
-            List<VencimientoFactura> vencimientos = efectos != null && efectos.Any() ? 
-                CalcularVencimientos(efectos) : 
-                CalcularVencimientos(importeTotal, plazoPago, cabPedido.Forma_Pago, 
+            List<VencimientoFactura> vencimientos = efectos != null && efectos.Any() ?
+                CalcularVencimientos(efectos) :
+                CalcularVencimientos(importeTotal, plazoPago, cabPedido.Forma_Pago,
                     cabPedido.CCC, (DateTime)cabPedido.Primer_Vencimiento);
             if (vencimientos.Sum(v => v.Importe) != importeTotal)
             {
                 throw new Exception("No cuadran los vencimientos con el total de la factura");
             }
 
-            foreach (var vencimiento in vencimientos)
+            foreach (VencimientoFactura vencimiento in vencimientos)
             {
                 if (!string.IsNullOrWhiteSpace(vencimiento.CCC))
                 {
@@ -364,14 +327,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     continue;
                 }
 
-                if (vencimiento.FormaPago == "TRN" || vencimiento.FormaPago == "CNF")
-                {
-                    vencimiento.Iban = servicio.CuentaBancoEmpresa(empresa);
-                }
-                else
-                {
-                    vencimiento.Iban = "<<< No Procede >>>";
-                }
+                vencimiento.Iban = vencimiento.FormaPago == "TRN" || vencimiento.FormaPago == "CNF" ? servicio.CuentaBancoEmpresa(empresa) : "<<< No Procede >>>";
             }
             Factura factura = new Factura
             {
@@ -411,7 +367,7 @@ namespace NestoAPI.Infraestructure.Facturas
         public static List<VencimientoFactura> CalcularVencimientos(List<EfectoPedidoVenta> efectos)
         {
             List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
-            foreach (var efecto in efectos)
+            foreach (EfectoPedidoVenta efecto in efectos)
             {
                 VencimientoFactura vencimiento = new VencimientoFactura
                 {
@@ -436,14 +392,7 @@ namespace NestoAPI.Infraestructure.Facturas
             decimal importePorAplicar = importe;
             for (int i = 0; i < plazoPago.Nº_Plazos; i++)
             {
-                decimal importeVencimiento;
-                if (i == plazoPago.Nº_Plazos -1 ) //último vencimiento
-                {
-                    importeVencimiento = importePorAplicar;
-                } else
-                {
-                    importeVencimiento = Math.Round(importe / plazoPago.Nº_Plazos, 2, MidpointRounding.AwayFromZero);
-                }
+                decimal importeVencimiento = i == plazoPago.Nº_Plazos - 1 ? importePorAplicar : Math.Round(importe / plazoPago.Nº_Plazos, 2, MidpointRounding.AwayFromZero);
                 VencimientoFactura vencimiento = new VencimientoFactura
                 {
                     CCC = ccc,
@@ -514,36 +463,31 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             List<Factura> facturas = new List<Factura>();
 
-            foreach (var factura in numerosFactura)
+            foreach (FacturaLookup factura in numerosFactura)
             {
                 try
                 {
-                    Factura nuevaFactura;
-                    if (Int32.TryParse(factura.Factura, out int numeroPedido))
-                    {
-                        nuevaFactura = LeerPedido(factura.Empresa, numeroPedido);
-                    }
-                    else
-                    {
-                        nuevaFactura = LeerFactura(factura.Empresa, factura.Factura);
-                    }
+                    Factura nuevaFactura = int.TryParse(factura.Factura, out int numeroPedido)
+                        ? LeerPedido(factura.Empresa, numeroPedido)
+                        : LeerFactura(factura.Empresa, factura.Factura);
                     facturas.Add(nuevaFactura);
-                } catch
+                }
+                catch
                 {
                     continue;
                 }
-                
+
             }
 
             return facturas;
-        }                
+        }
         public async Task<IEnumerable<FacturaCorreo>> EnviarFacturasPorCorreo(DateTime dia)
         {
-            var facturasCorreo = servicio.LeerFacturasDia(dia);
-            var listaCorreos = new List<MailMessage>();
+            IEnumerable<FacturaCorreo> facturasCorreo = servicio.LeerFacturasDia(dia);
+            List<MailMessage> listaCorreos = new List<MailMessage>();
             string mailAnterior = string.Empty;
             MailMessage mail = new MailMessage();
-            foreach (var fra in facturasCorreo)
+            foreach (FacturaCorreo fra in facturasCorreo)
             {
                 if (fra.Correo != mailAnterior)
                 {
@@ -566,24 +510,26 @@ namespace NestoAPI.Infraestructure.Facturas
                     }
                     try
                     {
-                        mail = new MailMessage(serieFactura.CorreoDesdeFactura.Address, fra.Correo);
-                        mail.Subject = "Facturación nº ";
+                        mail = new MailMessage(serieFactura.CorreoDesdeFactura.Address, fra.Correo)
+                        {
+                            Subject = "Facturación nº "
+                        };
                     }
                     catch
                     {
                         mail.From = new MailAddress(serieFactura.CorreoDesdeFactura.Address);
                         mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
-                        mail.Subject = String.Format("[ERROR: {0}] Facturación nº ", fra.Correo);
+                        mail.Subject = string.Format("[ERROR: {0}] Facturación nº ", fra.Correo);
                     }
 
                     mail.Bcc.Add(new MailAddress("carlosadrian@nuevavision.es"));
-                    mail.Bcc.Add(new MailAddress("monicaprado@nuevavision.es"));
+                    mail.Bcc.Add(new MailAddress("lauramagan@nuevavision.es"));
 
                     mail.Body = (await GenerarCorreoHTML(fra)).ToString();
                     mail.IsBodyHtml = true;
                 }
                 mail.Subject += fra.Factura + ", ";
-                var facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura);
+                ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura);
                 Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), fra.Factura + ".pdf");
                 mail.Attachments.Add(attachment);
             }
@@ -591,7 +537,7 @@ namespace NestoAPI.Infraestructure.Facturas
             listaCorreos.Add(mail);
             SmtpClient client = CrearClienteSMTP();
 
-            foreach (var correo in listaCorreos)
+            foreach (MailMessage correo in listaCorreos)
             {
                 //A veces no conecta a la primera, por lo que reintentamos 2s después
                 try
@@ -621,11 +567,13 @@ namespace NestoAPI.Infraestructure.Facturas
 
         private static SmtpClient CrearClienteSMTP()
         {
-            SmtpClient client = new SmtpClient();
-            client.Port = 587;
-            client.EnableSsl = true;
-            client.DeliveryMethod = SmtpDeliveryMethod.Network;
-            client.UseDefaultCredentials = false;
+            SmtpClient client = new SmtpClient
+            {
+                Port = 587,
+                EnableSsl = true,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false
+            };
             string contrasenna = ConfigurationManager.AppSettings["office365password"];
             client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
             client.Host = "smtp.office365.com";
@@ -639,13 +587,13 @@ namespace NestoAPI.Infraestructure.Facturas
         public List<ClienteCorreoFactura> EnviarFacturasTrimestrePorCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)
         {
             List<ClienteCorreoFactura> clientesCorreo = servicio.LeerClientesCorreo(firstDayOfQuarter, lastDayOfQuarter);
-            
+
             //bool antesDelError = true;
             int contador = 0;
-            
-            foreach (var cliente in clientesCorreo)
+
+            foreach (ClienteCorreoFactura cliente in clientesCorreo)
             {
-                
+
                 contador++;
                 //if (cliente.Cliente.Trim() == "17765" && cliente.Contacto.Trim() == "0")
                 //{
@@ -656,25 +604,26 @@ namespace NestoAPI.Infraestructure.Facturas
                 //{
                 //    continue;
                 //}
-                
+
                 IEnumerable<FacturaCorreo> facturasCorreo = servicio.LeerFacturasCliente(cliente.Cliente, cliente.Contacto, firstDayOfQuarter, lastDayOfQuarter);
 
                 List<Attachment> facturasAdjuntas = new List<Attachment>();
-                foreach (var fra in facturasCorreo)
+                foreach (FacturaCorreo fra in facturasCorreo)
                 {
                     try
                     {
                         using (ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura))
                         {
-                            var facturaBytes = facturaPdf.ReadAsByteArrayAsync().Result;
+                            byte[] facturaBytes = facturaPdf.ReadAsByteArrayAsync().Result;
                             Attachment attachment = new Attachment(new MemoryStream(facturaBytes), fra.Factura + ".pdf");
                             facturasAdjuntas.Add(attachment);
                         }
-                    } catch
+                    }
+                    catch
                     {
                         continue;
                     }
-                    
+
                 }
 
                 using (MailMessage mail = new MailMessage())
@@ -682,14 +631,14 @@ namespace NestoAPI.Infraestructure.Facturas
                     try
                     {
                         mail.To.Add(cliente.Correo);
-                        mail.Subject = string.Format("Facturas del trimestre del {0} al {1} (cliente {2}/{3})", 
+                        mail.Subject = string.Format("Facturas del trimestre del {0} al {1} (cliente {2}/{3})",
                             firstDayOfQuarter.ToString("d"), lastDayOfQuarter.ToString("d"), cliente.Cliente.Trim(), cliente.Contacto.Trim());
                         mail.Bcc.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
                         ISerieFactura serieFactura = LeerSerie(facturasCorreo.First().Factura.Substring(0, 2));
                         mail.From = new MailAddress(serieFactura.CorreoDesdeFactura.Address);
                         mail.Body = GenerarCorreoTrimestreHTML(serieFactura);
                         mail.IsBodyHtml = true;
-                        foreach(var adjunta in facturasAdjuntas)
+                        foreach (Attachment adjunta in facturasAdjuntas)
                         {
                             mail.Attachments.Add(adjunta);
                         }
@@ -697,7 +646,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     catch
                     {
                         mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
-                        mail.Subject = String.Format("[ERROR: {0}] Facturas del trimestre", cliente.Correo);
+                        mail.Subject = string.Format("[ERROR: {0}] Facturas del trimestre", cliente.Correo);
                     }
 
                     bool exito = servicio.EnviarCorreoSMTP(mail);
@@ -707,7 +656,7 @@ namespace NestoAPI.Infraestructure.Facturas
                         mail.To.Clear();
                         mail.To.Add(Constantes.Correos.CORREO_ADMON);
                         System.Threading.Thread.Sleep(1000);
-                        servicio.EnviarCorreoSMTP(mail);
+                        _ = servicio.EnviarCorreoSMTP(mail);
                     }
                     mail.Dispose();
                 }
@@ -721,19 +670,26 @@ namespace NestoAPI.Infraestructure.Facturas
             ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
             StringBuilder s = new StringBuilder();
 
-            s.AppendLine("<p>Adjunto le enviamos su facturación del día.</p>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<p>La factura se ha generado hoy mismo, por lo que <strong>es lógico que aún no haya recibido los productos</strong>, pero se la adelantamos para que pueda llevar los controles pertinentes.</p>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<p>¿Qué es la factura electrónica?</p>");
-            s.AppendLine("<ul><li>Una factura electrónica es, ante todo, una factura. Es decir, tiene los mismos efectos legales que una factura en papel.</li>");
-            s.AppendLine("<li>Recordemos que una factura es un justificante de la entrega de bienes o la prestación de servicios.</li>");
-            s.AppendLine("<li>Una factura electrónica es una factura que se expide y recibe en formato electrónico.</li>");
-            s.AppendLine("<li>La factura electrónica, por tanto, es una alternativa legal a la factura tradicional en papel.</li></ul>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<p style=\"color: green;\">Nuestro compromiso con la protección del medio ambiente es firme, por lo que agradecemos que nos ayude a conseguirlo con la eliminación de las facturas en papel.</p>");
-            s.AppendLine("<br/>");
-            s.AppendLine(serieFactura.FirmaCorreo);
+            _ = s.AppendLine("<p>Adjunto le enviamos su facturación del día.</p>");
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine("<p>La factura se ha generado hoy mismo, por lo que <strong>es lógico que aún no haya recibido los productos</strong>, pero se la adelantamos para que pueda llevar los controles pertinentes.</p>");
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine("<p>¿Qué es la factura electrónica?</p>");
+            _ = s.AppendLine("<ul><li>Una factura electrónica es, ante todo, una factura. Es decir, tiene los mismos efectos legales que una factura en papel.</li>");
+            _ = s.AppendLine("<li>Recordemos que una factura es un justificante de la entrega de bienes o la prestación de servicios.</li>");
+            _ = s.AppendLine("<li>Una factura electrónica es una factura que se expide y recibe en formato electrónico.</li>");
+            _ = s.AppendLine("<li>La factura electrónica, por tanto, es una alternativa legal a la factura tradicional en papel.</li></ul>");
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine("<p style=\"color: green;\">Nuestro compromiso con la protección del medio ambiente es firme, por lo que agradecemos que nos ayude a conseguirlo con la eliminación de las facturas en papel.</p>");
+            _ = s.AppendLine("<br/>");
+            // Sección para la descarga de la app
+            _ = s.AppendLine("<p><strong>Ahora también puede descargar sus facturas desde nuestra aplicación en su móvil.</strong></p>");
+            _ = s.AppendLine("<p>Descárguela ahora desde Google Play:</p>");
+            _ = s.AppendLine("<a href=\"https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas\" target=\"_blank\">");
+            _ = s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" alt=\"Disponible en Google Play\" style=\"width: 150px; height: auto;\" />");
+            _ = s.AppendLine("</a>");
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine(serieFactura.FirmaCorreo);
 
             return s;
         }
@@ -742,18 +698,25 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             StringBuilder s = new StringBuilder();
 
-            s.AppendLine("<p>Estimado cliente:</p>");
-            s.AppendLine("<p>Adjunto le enviamos todas sus facturas del trimestre para que se las pueda hacer llegar a su gestoría y facilitarle al máximo el trámite trimestral de impuestos.</p>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<p>¿Qué es la factura electrónica?</p>");
-            s.AppendLine("<ul><li>Una factura electrónica es, ante todo, una factura. Es decir, tiene los mismos efectos legales que una factura en papel.</li>");
-            s.AppendLine("<li>Recordemos que una factura es un justificante de la entrega de bienes o la prestación de servicios.</li>");
-            s.AppendLine("<li>Una factura electrónica es una factura que se expide y recibe en formato electrónico.</li>");
-            s.AppendLine("<li>La factura electrónica, por tanto, es una alternativa legal a la factura tradicional en papel.</li></ul>");
-            s.AppendLine("<br/>");
-            s.AppendLine("<p style=\"color: green;\">Nuestro compromiso con la protección del medio ambiente es firme, por lo que agradecemos que nos ayude a conseguirlo con la eliminación de las facturas en papel.</p>");
-            s.AppendLine("<br/>");
-            s.AppendLine(serieFactura.FirmaCorreo);
+            _ = s.AppendLine("<p>Estimado cliente:</p>");
+            _ = s.AppendLine("<p>Adjunto le enviamos todas sus facturas del trimestre para que se las pueda hacer llegar a su gestoría y facilitarle al máximo el trámite trimestral de impuestos.</p>");
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine("<p>¿Qué es la factura electrónica?</p>");
+            _ = s.AppendLine("<ul><li>Una factura electrónica es, ante todo, una factura. Es decir, tiene los mismos efectos legales que una factura en papel.</li>");
+            _ = s.AppendLine("<li>Recordemos que una factura es un justificante de la entrega de bienes o la prestación de servicios.</li>");
+            _ = s.AppendLine("<li>Una factura electrónica es una factura que se expide y recibe en formato electrónico.</li>");
+            _ = s.AppendLine("<li>La factura electrónica, por tanto, es una alternativa legal a la factura tradicional en papel.</li></ul>");
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine("<p style=\"color: green;\">Nuestro compromiso con la protección del medio ambiente es firme, por lo que agradecemos que nos ayude a conseguirlo con la eliminación de las facturas en papel.</p>");
+            _ = s.AppendLine("<br/>");
+            // Sección para la descarga de la app
+            _ = s.AppendLine("<p><strong>Ahora también puede descargar sus facturas desde nuestra aplicación en su móvil.</strong></p>");
+            _ = s.AppendLine("<p>Descárguela ahora desde Google Play:</p>");
+            _ = s.AppendLine("<a href=\"https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas\" target=\"_blank\">");
+            _ = s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" alt=\"Disponible en Google Play\" style=\"width: 150px; height: auto;\" />");
+            _ = s.AppendLine("</a>");
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine(serieFactura.FirmaCorreo);
 
             return s.ToString();
         }
@@ -784,12 +747,12 @@ namespace NestoAPI.Infraestructure.Facturas
             return factura.Vendedores;
         }
 
-        static async Task<string> LeerProductosRecomendados()
+        private static async Task<string> LeerProductosRecomendados()
         {
             // ESTÁ SIN USAR. 
             // TODO: PONER LOS PRODUCTOS RECOMENDADOS EN EL HTML DEL CORREO DE LA FACTURA
             // OJO, SOLO PARA FACTURA DE NV
-            using (var client = new HttpClient())
+            using (HttpClient client = new HttpClient())
             {
                 var scoreRequest = new
                 {
