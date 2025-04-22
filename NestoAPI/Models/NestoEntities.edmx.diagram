@@ -280,6 +280,9 @@
         <AssociationConnector Association="NVModel.FK_CabAlbaránVta_Clientes" />
         <AssociationConnector Association="NVModel.FK_CabAlbaránVta_Empresas" />
         <AssociationConnector Association="NVModel.FK_ApuntesBancarios_Bancos" />
+        <EntityTypeShape EntityType="NVModel.Video" Width="1.5" PointX="16.375" PointY="1" />
+        <EntityTypeShape EntityType="NVModel.VideoProducto" Width="1.5" PointX="18.625" PointY="1.125" />
+        <AssociationConnector Association="NVModel.FK_VideosProductos_Videos" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

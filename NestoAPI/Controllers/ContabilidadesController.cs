@@ -23,11 +23,11 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
         }
 
-        // GET: api/Contabilidades
-        public IQueryable<Contabilidad> GetContabilidades()
-        {
-            return db.Contabilidades;
-        }
+        //// GET: api/Contabilidades
+        //public IQueryable<Contabilidad> GetContabilidades()
+        //{
+        //    return db.Contabilidades;
+        //}
 
         // GET: api/Contabilidades/5
         [ResponseType(typeof(Contabilidad))]
@@ -45,7 +45,7 @@ namespace NestoAPI.Controllers
             {
                 // Realizar la consulta y proyección
                 List<ContabilidadDTO> apuntesDTO = await db.Contabilidades
-                    .Where(c => c.Nº_Cuenta == cuenta && c.Punteado == punteado)
+                    .Where(c => c.Nº_Cuenta == cuenta && c.Punteado == punteado && c.Diario != "_ASIENTCIE")
                     .Select(c => new ContabilidadDTO
                     {
                         Id = c.Nº_Orden,
@@ -167,7 +167,7 @@ namespace NestoAPI.Controllers
 
                 // Realizar la consulta y proyección
                 List<ContabilidadDTO> apuntesDTO = await contabilidadEmpresa
-                    .Where(c => c.Nº_Cuenta == cuenta && c.Fecha >= fechaDesde && c.Fecha < fechaHastaMenor)
+                    .Where(c => c.Nº_Cuenta == cuenta && c.Fecha >= fechaDesde && c.Fecha < fechaHastaMenor && c.Diario != "_ASIENTCIE")
                     .Select(c => new ContabilidadDTO
                     {
                         Id = c.Nº_Orden,

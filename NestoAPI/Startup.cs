@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNet.Identity.Owin;
-using Microsoft.Extensions.DependencyInjection;
+﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Owin;
 using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.DataHandler.Encoder;
@@ -10,20 +9,17 @@ using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Infraestructure.Videos;
 using NestoAPI.Models.Sincronizacion;
 using NestoAPI.Providers;
 using Newtonsoft.Json.Serialization;
 using Owin;
 using System;
-using System.Collections.Generic;
 using System.Configuration;
 using System.Data.Entity;
 using System.Linq;
 using System.Net.Http.Formatting;
-using System.Text;
-using System.Threading.Tasks;
 using System.Web.Http;
-using System.Web.Mvc;
 
 namespace NestoAPI
 {
@@ -32,12 +28,12 @@ namespace NestoAPI
 
         public void Configuration(IAppBuilder app)
         {
-            app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
+            _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
 
             HttpConfiguration httpConfig = new HttpConfiguration();
 
             // Configurar el contenedor de dependencias
-            var serviceProvider = ConfigureServices();
+            IServiceProvider serviceProvider = ConfigureServices();
             // Configurar el DependencyResolver
             httpConfig.DependencyResolver = new DependencyResolver(serviceProvider);
 
@@ -57,15 +53,15 @@ namespace NestoAPI
 
             ConfigureWebApi(httpConfig);
 
-            app.UseWebApi(httpConfig);
+            _ = app.UseWebApi(httpConfig);
         }
 
         private void ConfigureOAuthTokenGeneration(IAppBuilder app)
         {
             // Configure the db context and user manager to use a single instance per request
-            app.CreatePerOwinContext(ApplicationDbContext.Create);
-            app.CreatePerOwinContext<ApplicationUserManager>(ApplicationUserManager.Create);
-            app.CreatePerOwinContext<ApplicationRoleManager>(ApplicationRoleManager.Create);
+            _ = app.CreatePerOwinContext(ApplicationDbContext.Create);
+            _ = app.CreatePerOwinContext<ApplicationUserManager>(ApplicationUserManager.Create);
+            _ = app.CreatePerOwinContext<ApplicationRoleManager>(ApplicationRoleManager.Create);
 
             OAuthAuthorizationServerOptions OAuthServerOptions = new OAuthAuthorizationServerOptions()
             {
@@ -79,19 +75,19 @@ namespace NestoAPI
             };
 
             // OAuth 2.0 Bearer Access Token Generation
-            app.UseOAuthAuthorizationServer(OAuthServerOptions);
+            _ = app.UseOAuthAuthorizationServer(OAuthServerOptions);
         }
 
         private void ConfigureOAuthTokenConsumption(IAppBuilder app)
         {
 
             //var issuer = "http://localhost:53364";
-            var issuer = "carlos";
+            string issuer = "carlos";
             string audienceId = ConfigurationManager.AppSettings["as:AudienceId"];
             byte[] audienceSecret = TextEncodings.Base64Url.Decode(ConfigurationManager.AppSettings["as:AudienceSecret"]);
 
             // Api controllers with an [Authorize] attribute will be validated with JWT
-            app.UseJwtBearerAuthentication(
+            _ = app.UseJwtBearerAuthentication(
                 new JwtBearerAuthenticationOptions
                 {
                     AuthenticationMode = AuthenticationMode.Active,
@@ -104,24 +100,26 @@ namespace NestoAPI
 
         private IServiceProvider ConfigureServices()
         {
-            var services = new ServiceCollection();
-        
+            ServiceCollection services = new ServiceCollection();
+
             // Registrar tus dependencias aquí
-            services.AddScoped<IGestorClientes, GestorClientes>();
-            services.AddScoped<IServicioGestorClientes, ServicioGestorClientes>();
-            services.AddScoped<IServicioAgencias, ServicioAgencias>();
-            services.AddScoped<ISincronizacionEventPublisher, GooglePubSubEventPublisher>();
-            services.AddScoped<SincronizacionEventWrapper>();
-            services.AddScoped<IServicioVendedores, ServicioVendedores>();
-            services.AddScoped<ClientesController>();
-            services.AddScoped<IGestorAlbaranesVenta, GestorAlbaranesVenta>();
-            services.AddScoped<IServicioAlbaranesVenta, ServicioAlbaranesVenta>();
+            _ = services.AddScoped<IGestorClientes, GestorClientes>();
+            _ = services.AddScoped<IServicioGestorClientes, ServicioGestorClientes>();
+            _ = services.AddScoped<IServicioAgencias, ServicioAgencias>();
+            _ = services.AddScoped<ISincronizacionEventPublisher, GooglePubSubEventPublisher>();
+            _ = services.AddScoped<SincronizacionEventWrapper>();
+            _ = services.AddScoped<IServicioVendedores, ServicioVendedores>();
+            _ = services.AddScoped<ClientesController>();
+            _ = services.AddScoped<IGestorAlbaranesVenta, GestorAlbaranesVenta>();
+            _ = services.AddScoped<IServicioAlbaranesVenta, ServicioAlbaranesVenta>();
+            _ = services.AddScoped<IServicioVideos, ServicioVideos>();
+            _ = services.AddScoped<IServicioCorreoElectronico, ServicioCorreoElectronico>();
 
             // Registrar el contexto de la base de datos
-            services.AddScoped<DbContext>(_ => new ApplicationDbContext());
+            _ = services.AddScoped<DbContext>(_ => new ApplicationDbContext());
 
             // Registrar los controladores de Web API
-            services.AddControllersAsServices(typeof(Startup).Assembly);
+            _ = services.AddControllersAsServices(typeof(Startup).Assembly);
 
             // Construir el proveedor de servicios
             return services.BuildServiceProvider();
@@ -132,12 +130,12 @@ namespace NestoAPI
             //config.MapHttpAttributeRoutes();
 
             config.IncludeErrorDetailPolicy = IncludeErrorDetailPolicy.Always;
-            
-            var jsonFormatter = config.Formatters.OfType<JsonMediaTypeFormatter>().First();
+
+            JsonMediaTypeFormatter jsonFormatter = config.Formatters.OfType<JsonMediaTypeFormatter>().First();
             jsonFormatter.SerializerSettings.ContractResolver = new DefaultContractResolver();
 
             //Elimino que el sistema devuelva en XML, sólo trabajaremos con JSON
-            config.Formatters.Remove(GlobalConfiguration.Configuration.Formatters.XmlFormatter);
+            _ = config.Formatters.Remove(GlobalConfiguration.Configuration.Formatters.XmlFormatter);
         }
     }
 }

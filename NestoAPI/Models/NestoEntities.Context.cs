@@ -108,6 +108,8 @@ namespace NestoAPI.Models
         public virtual DbSet<MovimientoTPV> MovimientosTPV { get; set; }
         public virtual DbSet<ConciliacionBancariaPunteo> ConciliacionesBancariasPunteos { get; set; }
         public virtual DbSet<CabAlbaranVta> CabsAlbaranesVtas { get; set; }
+        public virtual DbSet<Video> Videos { get; set; }
+        public virtual DbSet<VideoProducto> VideosProductos { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

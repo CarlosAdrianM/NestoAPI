@@ -1,14 +1,11 @@
 ﻿using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.DataHandler.Encoder;
+using NestoAPI.Models;
 using System;
-using System.Collections.Generic;
 using System.Configuration;
-using System.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using Thinktecture.IdentityModel.Tokens;
+using System.Web;
 
 namespace NestoAPI.Providers
 {
@@ -29,24 +26,50 @@ namespace NestoAPI.Providers
                 throw new ArgumentNullException("data");
             }
 
+            _ = HttpContext.Current;
+
+            //// Verificamos si viene de NestoTiendas mediante un header específico
+            //if (context != null &&
+            //    context.Request.Headers["X-App-Type"] == "NestoTiendas" &&
+            //    data.Identity is ClaimsIdentity identity)
+            //{
+            //    // Obtenemos el ID del usuario/cliente
+            //    Claim userIdClaim = identity.FindFirst(ClaimTypes.NameIdentifier);
+            //    if (userIdClaim != null)
+            //    {
+            //        string userId = userIdClaim.Value;
+
+            //        // Verificamos si tiene compras recientes
+            //        bool hasRecentPurchases = ClienteHelper.ClienteConComprasRecientes(userId);
+
+            //        // Añadimos el claim solo si viene de NestoTiendas
+            //        Claim existingClaim = identity.FindFirst("HasRecentPurchases");
+            //        if (existingClaim != null)
+            //        {
+            //            identity.RemoveClaim(existingClaim);
+            //        }
+            //        identity.AddClaim(new Claim("HasRecentPurchases", hasRecentPurchases.ToString()));
+            //    }
+            //}
+
             string audienceId = ConfigurationManager.AppSettings["as:AudienceId"];
 
             string symmetricKeyAsBase64 = ConfigurationManager.AppSettings["as:AudienceSecret"];
 
-            var keyByteArray = TextEncodings.Base64Url.Decode(symmetricKeyAsBase64);
-            var securityKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(keyByteArray);
-            var signingKey = new Microsoft.IdentityModel.Tokens.SigningCredentials(
+            byte[] keyByteArray = TextEncodings.Base64Url.Decode(symmetricKeyAsBase64);
+            Microsoft.IdentityModel.Tokens.SymmetricSecurityKey securityKey = new Microsoft.IdentityModel.Tokens.SymmetricSecurityKey(keyByteArray);
+            Microsoft.IdentityModel.Tokens.SigningCredentials signingKey = new Microsoft.IdentityModel.Tokens.SigningCredentials(
                         securityKey, Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256Signature);
 
-            var issued = data.Properties.IssuedUtc;
+            DateTimeOffset? issued = data.Properties.IssuedUtc;
 
-            var expires = data.Properties.ExpiresUtc;
+            DateTimeOffset? expires = data.Properties.ExpiresUtc;
 
-            var token = new JwtSecurityToken(_issuer, audienceId, data.Identity.Claims, issued.Value.UtcDateTime, expires.Value.UtcDateTime, signingKey);
+            JwtSecurityToken token = new JwtSecurityToken(_issuer, audienceId, data.Identity.Claims, issued.Value.UtcDateTime, expires.Value.UtcDateTime, signingKey);
 
-            var handler = new JwtSecurityTokenHandler();
+            JwtSecurityTokenHandler handler = new JwtSecurityTokenHandler();
 
-            var jwt = handler.WriteToken(token);
+            string jwt = handler.WriteToken(token);
 
             return jwt;
         }
@@ -55,5 +78,32 @@ namespace NestoAPI.Providers
         {
             throw new NotImplementedException();
         }
+
+        private bool CheckClientRecentPurchases(string clienteId)
+        {
+            // Implementa la lógica para verificar si el cliente tiene compras en los últimos 365 días
+            // Esto dependerá de tu modelo de datos y base de datos
+            try
+            {
+                using (NVEntities db = new NVEntities()) // Asume que usas Entity Framework, ajusta según tu caso
+                {
+                    // Verifica si hay al menos una compra en los últimos 365 días
+                    DateTime fechaLimite = DateTime.Now.AddDays(-365);
+
+                    // Esta consulta debe ajustarse según tu modelo de datos
+                    bool tieneCompras = db.ExtractosCliente
+                        .Any(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                        p.TipoApunte == Constantes.ExtractosCliente.TiposApunte.FACTURA && p.Número == clienteId && p.Importe >= 0 && p.Fecha >= fechaLimite);
+
+                    return tieneCompras;
+                }
+            }
+            catch
+            {
+                // En caso de error, por defecto no mostramos los videos nuevos
+                return false;
+            }
+        }
+
     }
 }

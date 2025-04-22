@@ -192,8 +192,8 @@
           <Property Name="Primer Vencimiento" Type="datetime" />
           <Property Name="IVA" Type="char" MaxLength="3" />
           <Property Name="Vendedor" Type="char" MaxLength="3" />
-          <Property Name="Comentarios" Type="text" />
-          <Property Name="ComentarioPicking" Type="text" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
+          <Property Name="ComentarioPicking" Type="nvarchar(max)" />
           <Property Name="Periodo Facturacion" Type="char" MaxLength="3" />
           <Property Name="Ruta" Type="char" MaxLength="3" />
           <Property Name="Serie" Type="char" MaxLength="3" />
@@ -1582,7 +1582,7 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="DatosBanco" Type="bit" Nullable="false" />
           <Property Name="GestiónAparatos" Type="bit" Nullable="false" />
           <Property Name="PrimeraVisita" Type="bit" Nullable="false" />
-          <Property Name="Comentarios" Type="text" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="Estado" Type="smallint" Nullable="false" />
           <Property Name="NumOrdenExtracto" Type="int" />
           <Property Name="Cosmetica" Type="bit" Nullable="false" />
@@ -1704,6 +1704,30 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="Videos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="VideoId" Type="nvarchar" MaxLength="100" />
+          <Property Name="Transcripcion" Type="nvarchar(max)" />
+          <Property Name="Descripcion" Type="nvarchar(max)" />
+          <Property Name="Titulo" Type="varchar" MaxLength="255" />
+          <Property Name="FechaPublicacion" Type="datetime" />
+          <Property Name="Protocolo" Type="nvarchar(max)" />
+          <Property Name="EsUnProtocolo" Type="bit" Nullable="false" />
+        </EntityType>
+        <EntityType Name="VideosProductos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="VideoId" Type="int" Nullable="false" />
+          <Property Name="NombreProducto" Type="nvarchar" MaxLength="255" />
+          <Property Name="Referencia" Type="nvarchar" MaxLength="100" />
+          <Property Name="Enlace" Type="nvarchar" MaxLength="500" />
+          <Property Name="TiempoAparicion" Type="nvarchar" MaxLength="50" />
         </EntityType>
         <!--Errores durante la generación:
 advertencia 6002: La tabla o vista 'NV.dbo.vstLinPedidoVtaComisiones' no tiene definida ninguna clave principal. Se ha inferido la clave y la definición se creado como una vista o tabla de solo lectura.-->
@@ -4456,6 +4480,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_VideosProductos_Videos">
+          <End Role="Videos" Type="Self.Videos" Multiplicity="1" />
+          <End Role="VideosProductos" Type="Self.VideosProductos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Videos">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="VideosProductos">
+              <PropertyRef Name="VideoId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Function Name="prdAjustarDíasPagoCliente" Aggregate="false" BuiltIn="false" NiladicFunction="false" IsComposable="false" ParameterTypeSemantics="AllowImplicitConversion" Schema="dbo">
           <Parameter Name="Empresa" Type="char" Mode="In" />
           <Parameter Name="Cliente" Type="char" Mode="In" />
@@ -4542,6 +4578,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="VendedoresCodigoPostalGrupoProducto" EntityType="Self.VendedoresCodigoPostalGrupoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VendedoresPedidoGrupoProducto" EntityType="Self.VendedoresPedidoGrupoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VendedorLinPedidoVta" EntityType="Self.VendedorLinPedidoVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Videos" EntityType="Self.Videos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="VideosProductos" EntityType="Self.VideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="RentingFacturas" EntityType="Self.RentingFacturas" store:Type="Tables" store:Schema="dbo">
             <DefiningQuery>SELECT 
     [RentingFacturas].[Numero] AS [Numero]
@@ -5359,6 +5397,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_VendedorLinPedidoVta_Vendedores" Association="Self.FK_VendedorLinPedidoVta_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="VendedorLinPedidoVta" EntitySet="VendedorLinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VideosProductos_Videos" Association="Self.FK_VideosProductos_Videos">
+            <End Role="Videos" EntitySet="Videos" />
+            <End Role="VideosProductos" EntitySet="VideosProductos" />
           </AssociationSet>
         </EntityContainer>
       </Schema></edmx:StorageModels>
@@ -6282,6 +6324,12 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Banco" EntitySet="Bancos" />
             <End Role="ApunteBancario" EntitySet="ApuntesBancarios" />
           </AssociationSet>
+          <EntitySet Name="Videos" EntityType="NVModel.Video" />
+          <EntitySet Name="VideosProductos" EntityType="NVModel.VideoProducto" />
+          <AssociationSet Name="FK_VideosProductos_Videos" Association="NVModel.FK_VideosProductos_Videos">
+            <End Role="Video" EntitySet="Videos" />
+            <End Role="VideosProducto" EntitySet="VideosProductos" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -6480,8 +6528,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Primer_Vencimiento" Type="DateTime" Precision="3" />
           <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
-          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
-          <Property Name="ComentarioPicking" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="ComentarioPicking" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="Periodo_Facturacion" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Ruta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Serie" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
@@ -9175,7 +9223,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="DatosBanco" Type="Boolean" Nullable="false" />
           <Property Name="GestiónAparatos" Type="Boolean" Nullable="false" />
           <Property Name="PrimeraVisita" Type="Boolean" Nullable="false" />
-          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="Estado" Type="Int16" Nullable="false" />
           <Property Name="NumOrdenExtracto" Type="Int32" />
           <Property Name="Cosmetica" Type="Boolean" Nullable="false" />
@@ -11087,6 +11135,44 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="Video">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="VideoId" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="Transcripcion" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Descripcion" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Titulo" Type="String" MaxLength="255" FixedLength="false" Unicode="false" />
+          <Property Name="FechaPublicacion" Type="DateTime" Precision="3" />
+          <Property Name="Protocolo" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="EsUnProtocolo" Type="Boolean" Nullable="false" />
+          <NavigationProperty Name="VideosProductos" Relationship="NVModel.FK_VideosProductos_Videos" FromRole="Video" ToRole="VideosProducto" />
+        </EntityType>
+        <EntityType Name="VideoProducto">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="VideoId" Type="Int32" Nullable="false" />
+          <Property Name="NombreProducto" Type="String" MaxLength="255" FixedLength="false" Unicode="true" />
+          <Property Name="Referencia" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="Enlace" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
+          <Property Name="TiempoAparicion" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <NavigationProperty Name="Video" Relationship="NVModel.FK_VideosProductos_Videos" FromRole="VideosProducto" ToRole="Video" />
+        </EntityType>
+        <Association Name="FK_VideosProductos_Videos">
+          <End Type="NVModel.Video" Role="Video" Multiplicity="1" />
+          <End Type="NVModel.VideoProducto" Role="VideosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Video">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="VideosProducto">
+              <PropertyRef Name="VideoId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -12833,6 +12919,32 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Nº_Cliente" ColumnName="Nº Cliente" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Videos">
+            <EntityTypeMapping TypeName="NVModel.Video">
+              <MappingFragment StoreEntitySet="Videos">
+                <ScalarProperty Name="EsUnProtocolo" ColumnName="EsUnProtocolo" />
+                <ScalarProperty Name="Protocolo" ColumnName="Protocolo" />
+                <ScalarProperty Name="FechaPublicacion" ColumnName="FechaPublicacion" />
+                <ScalarProperty Name="Titulo" ColumnName="Titulo" />
+                <ScalarProperty Name="Descripcion" ColumnName="Descripcion" />
+                <ScalarProperty Name="Transcripcion" ColumnName="Transcripcion" />
+                <ScalarProperty Name="VideoId" ColumnName="VideoId" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="VideosProductos">
+            <EntityTypeMapping TypeName="NVModel.VideoProducto">
+              <MappingFragment StoreEntitySet="VideosProductos">
+                <ScalarProperty Name="TiempoAparicion" ColumnName="TiempoAparicion" />
+                <ScalarProperty Name="Enlace" ColumnName="Enlace" />
+                <ScalarProperty Name="Referencia" ColumnName="Referencia" />
+                <ScalarProperty Name="NombreProducto" ColumnName="NombreProducto" />
+                <ScalarProperty Name="VideoId" ColumnName="VideoId" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

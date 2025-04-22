@@ -1,21 +1,21 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Models;
+using NestoAPI.Models.Clientes;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
+using System.Data.SqlClient;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
-using NestoAPI.Models;
-using NestoAPI.Infraestructure;
-using NestoAPI.Models.Clientes;
-using System.Net.Http.Headers;
-using NestoAPI.Infraestructure.Vendedores;
-using System.ComponentModel.DataAnnotations;
-using System.Data.SqlClient;
 
 namespace NestoAPI.Controllers
 {
@@ -23,8 +23,8 @@ namespace NestoAPI.Controllers
     public class ClientesController : ApiController
     {
         private IServicioVendedores servicioVendedores { get; }
-        private NVEntities db = new NVEntities();
-        private IGestorClientes _gestorClientes;
+        private readonly NVEntities db = new NVEntities();
+        private readonly IGestorClientes _gestorClientes;
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
         public ClientesController(IGestorClientes gestorClientes, IServicioVendedores servicioVendedores)
         {
@@ -71,11 +71,11 @@ namespace NestoAPI.Controllers
                 //    throw new Exception(mensajeError);
                 //}
                 vendedoresLista = listaVendedores.Select(v => v.vendedor).ToList();
-                
+
             }
             IQueryable<Cliente> clientesVendedor = from c in db.Clientes
                                                    join v in db.VendedoresClientesGruposProductos
-                                                   
+
                                                    //This is how you join by multiple values
                                                    on new { empresa = c.Empresa, cliente = c.Nº_Cliente, contacto = c.Contacto } equals new { empresa = v.Empresa, cliente = v.Cliente, contacto = v.Contacto }
                                                    into jointData
@@ -83,14 +83,14 @@ namespace NestoAPI.Controllers
                                                    //This is how you actually turn the join into a left-join
                                                    from jointRecord in jointData.DefaultIfEmpty()
 
-                                                   //where vendedor == "" || vendedor == null || (c.Empresa == empresa && (c.Vendedor == vendedor || jointRecord.Vendedor == vendedor))
-                                                   where (vendedor == "" || vendedor == null || vendedoresLista.Contains(c.Vendedor) || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor)))
+                                                       //where vendedor == "" || vendedor == null || (c.Empresa == empresa && (c.Vendedor == vendedor || jointRecord.Vendedor == vendedor))
+                                                   where vendedor == "" || vendedor == null || vendedoresLista.Contains(c.Vendedor) || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor))
                                                    select c;
 
             IQueryable<Cliente> clientesTabla = db.Clientes
-                .Where(c => 
-                (c.Empresa == empresa && c.Estado >= 0 && 
-                ( 
+                .Where(c =>
+                c.Empresa == empresa && c.Estado >= 0 &&
+                (
                     c.Nº_Cliente.Equals(filtro) ||
                     c.Nombre.Contains(filtro) ||
                     c.Dirección.Contains(filtro) ||
@@ -98,43 +98,44 @@ namespace NestoAPI.Controllers
                     c.CIF_NIF.Contains(filtro) ||
                     c.Población.Contains(filtro) ||
                     c.Comentarios.Contains(filtro)
-                )))
+                ))
                 .Select(c => c);
 
             IQueryable<ClienteDTO> clientes = from c in clientesTabla
-                                  where c.Clientes11.Any(s => clientesVendedor.Contains(s))
-                                  select new ClienteDTO
-                                  {
-                                      albaranValorado = c.AlbaranValorado,
-                                      cadena = c.Cadena.Trim(),
-                                      ccc = c.CCC.Trim(),
-                                      cifNif = c.CIF_NIF.Trim(),
-                                      cliente = c.Nº_Cliente.Trim(),
-                                      clientePrincipal = c.ClientePrincipal,
-                                      codigoPostal = c.CodPostal.Trim(),
-                                      comentarioPicking = c.ComentarioPicking.Trim(),
-                                      comentarioRuta = c.ComentarioRuta.Trim(),
-                                      comentarios = c.Comentarios,
-                                      contacto = c.Contacto.Trim(),
-                                      copiasAlbaran = c.NºCopiasAlbarán,
-                                      copiasFactura = c.NºCopiasFactura,
-                                      direccion = c.Dirección.Trim(),
-                                      empresa = c.Empresa.Trim(),
-                                      estado = c.Estado,
-                                      grupo = c.Grupo.Trim(),
-                                      iva = c.IVA.Trim(),
-                                      mantenerJunto = c.MantenerJunto,
-                                      noComisiona = c.NoComisiona,
-                                      nombre = c.Nombre.Trim(),
-                                      periodoFacturacion = c.PeriodoFacturación.Trim(),
-                                      poblacion = c.Población.Trim(),
-                                      provincia = c.Provincia.Trim(),
-                                      ruta = c.Ruta.Trim(),
-                                      servirJunto = c.ServirJunto,
-                                      telefono = c.Teléfono.Trim(),
-                                      vendedor = c.Vendedor.Trim(),
-                                      web = c.Web.Trim()
-                                  };
+                                                  //where c.Clientes1.Any(s => clientesVendedor.Contains(s))
+                                              where clientesVendedor.Contains(c)
+                                              select new ClienteDTO
+                                              {
+                                                  albaranValorado = c.AlbaranValorado,
+                                                  cadena = c.Cadena.Trim(),
+                                                  ccc = c.CCC.Trim(),
+                                                  cifNif = c.CIF_NIF.Trim(),
+                                                  cliente = c.Nº_Cliente.Trim(),
+                                                  clientePrincipal = c.ClientePrincipal,
+                                                  codigoPostal = c.CodPostal.Trim(),
+                                                  comentarioPicking = c.ComentarioPicking.Trim(),
+                                                  comentarioRuta = c.ComentarioRuta.Trim(),
+                                                  comentarios = c.Comentarios,
+                                                  contacto = c.Contacto.Trim(),
+                                                  copiasAlbaran = c.NºCopiasAlbarán,
+                                                  copiasFactura = c.NºCopiasFactura,
+                                                  direccion = c.Dirección.Trim(),
+                                                  empresa = c.Empresa.Trim(),
+                                                  estado = c.Estado,
+                                                  grupo = c.Grupo.Trim(),
+                                                  iva = c.IVA.Trim(),
+                                                  mantenerJunto = c.MantenerJunto,
+                                                  noComisiona = c.NoComisiona,
+                                                  nombre = c.Nombre.Trim(),
+                                                  periodoFacturacion = c.PeriodoFacturación.Trim(),
+                                                  poblacion = c.Población.Trim(),
+                                                  provincia = c.Provincia.Trim(),
+                                                  ruta = c.Ruta.Trim(),
+                                                  servirJunto = c.ServirJunto,
+                                                  telefono = c.Teléfono.Trim(),
+                                                  vendedor = c.Vendedor.Trim(),
+                                                  web = c.Web.Trim()
+                                              };
 
             return clientes.OrderByDescending(o => o.cliente.Equals(filtro));
         }
@@ -148,7 +149,7 @@ namespace NestoAPI.Controllers
             }
 
             List<ClienteDTO> clientes = db.Clientes
-                .Where(c => (c.Empresa == empresa && c.Estado >= 0 &&
+                .Where(c => c.Empresa == empresa && c.Estado >= 0 &&
                 (
                     c.Nº_Cliente.Equals(filtro) ||
                     c.Nombre.Contains(filtro) ||
@@ -157,7 +158,7 @@ namespace NestoAPI.Controllers
                     c.CIF_NIF.Contains(filtro) ||
                     c.Población.Contains(filtro) ||
                     c.Comentarios.Contains(filtro)
-                )))
+                ))
                 .Select(clienteEncontrado => new ClienteDTO
                 {
                     albaranValorado = clienteEncontrado.AlbaranValorado,
@@ -200,12 +201,13 @@ namespace NestoAPI.Controllers
         public IQueryable<ClienteDTO> GetClientes(string filtro)
         {
 
-            if (filtro.Length<4) {
+            if (filtro.Length < 4)
+            {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }
 
             List<ClienteDTO> clientes = db.Clientes
-                .Where(c => (c.Estado >= 0 &&
+                .Where(c => c.Estado >= 0 &&
                 (
                     c.Nombre.Contains(filtro) ||
                     c.Dirección.Contains(filtro) ||
@@ -213,7 +215,7 @@ namespace NestoAPI.Controllers
                     c.CIF_NIF.Contains(filtro) ||
                     c.Población.Contains(filtro) ||
                     c.Comentarios.Contains(filtro)
-                )))
+                ))
                 .Select(clienteEncontrado => new ClienteDTO
                 {
                     albaranValorado = clienteEncontrado.AlbaranValorado,
@@ -266,17 +268,9 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ClienteDTO))]
         public async Task<IHttpActionResult> GetCliente(string empresa, string cliente, string contacto)
         {
-            Cliente clienteEncontrado;
-
-            if (contacto != null && contacto.Trim() != "")
-            {
-                clienteEncontrado = await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto select c).SingleOrDefaultAsync();
-            } else
-            {
-                clienteEncontrado = await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal select c).SingleOrDefaultAsync();
-            }
-            
-            
+            Cliente clienteEncontrado = contacto != null && contacto.Trim() != ""
+                ? await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto select c).SingleOrDefaultAsync()
+                : await (from c in db.Clientes where c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal select c).SingleOrDefaultAsync();
             if (clienteEncontrado == null)
             {
                 return NotFound();
@@ -294,12 +288,12 @@ namespace NestoAPI.Controllers
             ClienteDTO clienteDTO = new ClienteDTO
             {
                 albaranValorado = clienteEncontrado.AlbaranValorado,
-                cadena= clienteEncontrado.Cadena,
+                cadena = clienteEncontrado.Cadena,
                 ccc = clienteEncontrado.CCC,
                 cifNif = clienteEncontrado.CIF_NIF,
                 cliente = clienteEncontrado.Nº_Cliente.Trim(),
                 clientePrincipal = clienteEncontrado.ClientePrincipal,
-                codigoPostal= clienteEncontrado.CodPostal,
+                codigoPostal = clienteEncontrado.CodPostal,
                 comentarioPicking = clienteEncontrado.ComentarioPicking,
                 comentarioRuta = clienteEncontrado.ComentarioRuta,
                 comentarios = clienteEncontrado.Comentarios,
@@ -312,7 +306,7 @@ namespace NestoAPI.Controllers
                 grupo = clienteEncontrado.Grupo,
                 iva = clienteEncontrado.IVA,
                 mantenerJunto = clienteEncontrado.MantenerJunto,
-                noComisiona= clienteEncontrado.NoComisiona,
+                noComisiona = clienteEncontrado.NoComisiona,
                 nombre = clienteEncontrado.Nombre,
                 periodoFacturacion = clienteEncontrado.PeriodoFacturación,
                 poblacion = clienteEncontrado.Población,
@@ -321,7 +315,7 @@ namespace NestoAPI.Controllers
                 servirJunto = clienteEncontrado.ServirJunto,
                 telefono = clienteEncontrado.Teléfono,
                 vendedor = clienteEncontrado.Vendedor,
-                web = clienteEncontrado.Web ,
+                web = clienteEncontrado.Web,
                 VendedoresGrupoProducto = vendedoresGrupoProducto
             };
 
@@ -420,7 +414,7 @@ namespace NestoAPI.Controllers
                 clienteDB.Estado = cliente.estado;
                 clienteDB.Usuario = cliente.usuario;
             }
-                        
+
             db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
 
             // Carlos 02/03/17: gestionamos el vendedor por grupo de producto
@@ -428,7 +422,7 @@ namespace NestoAPI.Controllers
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -440,7 +434,8 @@ namespace NestoAPI.Controllers
                 {
                     throw;
                 }
-            } catch (Exception ex)
+            }
+            catch (Exception ex)
             {
                 throw new Exception("No se ha podido actualizar el cliente", ex);
             }
@@ -463,12 +458,12 @@ namespace NestoAPI.Controllers
             try
             {
                 List<Cliente> clientesDB = await _gestorClientes.DejarDeVisitar(db, cliente);
-                foreach (var clienteDB in clientesDB)
+                foreach (Cliente clienteDB in clientesDB)
                 {
                     db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
                 }
 
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -497,11 +492,11 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-                
+
 
             try
             {
-                var cliente = await _gestorClientes.ModificarCliente(clienteCrear, db);
+                Cliente cliente = await _gestorClientes.ModificarCliente(clienteCrear, db);
                 return CreatedAtRoute("DefaultApi",
                     new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },
                     cliente);
@@ -518,11 +513,13 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostCliente(ClienteCrear clienteCrear)
         {
             if (!ModelState.IsValid)
+            {
                 return BadRequest(ModelState);
+            }
 
             try
             {
-                var cliente = await _gestorClientes.CrearCliente(clienteCrear, db);
+                Cliente cliente = await _gestorClientes.CrearCliente(clienteCrear, db);
                 return CreatedAtRoute("DefaultApi",
                     new { cliente.Empresa, cliente.Nº_Cliente, cliente.Contacto },
                     cliente);
@@ -595,7 +592,7 @@ namespace NestoAPI.Controllers
             }
             List<Mandato> mandatos = new List<Mandato> { mandato };
 
-            var result = new HttpResponseMessage(HttpStatusCode.OK)
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = _gestorClientes.MandatoEnPDF(mandatos)
             };
@@ -632,7 +629,7 @@ namespace NestoAPI.Controllers
             // Procesar por lotes de 50
             for (int i = 0; i < totalClientes; i += batchSize)
             {
-                var lote = clientes.Skip(i).Take(batchSize).ToList();
+                List<Cliente> lote = clientes.Skip(i).Take(batchSize).ToList();
 
                 foreach (Cliente cliente in lote)
                 {
@@ -666,7 +663,7 @@ namespace NestoAPI.Controllers
             int delayMs = 5000; // Pausa de 5 segundos entre lotes
 
             // Obtenemos los registros de Nesto_sync que necesitan sincronización
-            var clientesParaSincronizar = await db.Database.SqlQuery<string>(
+            List<string> clientesParaSincronizar = await db.Database.SqlQuery<string>(
                 "SELECT ModificadoId FROM Nesto_sync WHERE Tabla = 'Clientes' AND Sincronizado IS NULL"
             ).ToListAsync();
 
@@ -675,7 +672,7 @@ namespace NestoAPI.Controllers
             // Procesar por lotes de 50
             for (int i = 0; i < totalClientes; i += batchSize)
             {
-                var loteIds = clientesParaSincronizar.Skip(i).Take(batchSize).ToList();
+                List<string> loteIds = clientesParaSincronizar.Skip(i).Take(batchSize).ToList();
 
                 foreach (string clienteId in loteIds)
                 {
@@ -698,7 +695,7 @@ namespace NestoAPI.Controllers
                             }
 
                             // Actualizar el campo Sincronizado en Nesto_sync
-                            await db.Database.ExecuteSqlCommandAsync(
+                            _ = await db.Database.ExecuteSqlCommandAsync(
                                 "UPDATE Nesto_sync SET Sincronizado = @now WHERE Tabla = 'Clientes' AND ModificadoId = @clienteId",
                                 new SqlParameter("@now", DateTime.Now),
                                 new SqlParameter("@clienteId", clienteId)
@@ -734,7 +731,7 @@ namespace NestoAPI.Controllers
 
         private bool ClienteExists(string empresa, string numCliente, string contacto)
         {
-            return db.Clientes.Count(e => e.Empresa == empresa && e.Nº_Cliente == numCliente && e.Contacto ==contacto) > 0;
+            return db.Clientes.Count(e => e.Empresa == empresa && e.Nº_Cliente == numCliente && e.Contacto == contacto) > 0;
         }
     }
 }

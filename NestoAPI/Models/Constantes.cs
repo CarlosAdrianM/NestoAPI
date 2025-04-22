@@ -68,7 +68,7 @@ namespace NestoAPI.Models
             public const string JEFE_VENTAS = "albertosancho@nuevavision.es";
             public const string LOGISTICA = "logistica@nuevavision.es";
             public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
-            public const string TIENDA_REINA = "tienda@nuevavision.es";            
+            public const string TIENDA_REINA = "tienda@nuevavision.es";
         }
 
         public static class Cuentas
@@ -119,6 +119,7 @@ namespace NestoAPI.Models
             }
             public static class TiposApunte
             {
+                public const string FACTURA = "1";
                 public const string PAGO = "3";
                 public const string IMPAGADO = "4";
             }
@@ -265,7 +266,7 @@ namespace NestoAPI.Models
             public const int ESTADO_VENDEDOR_PELUQUERIA = 4;
             public const int ESTADO_VENDEDOR_PARA_ANULAR = 99;
             public const string JEFE_DE_VENTAS = "ASH";
-            public const string VENDEDOR_GENERAL = "NV";            
+            public const string VENDEDOR_GENERAL = "NV";
         }
 
         public static class SeguimientosCliente
@@ -279,7 +280,8 @@ namespace NestoAPI.Models
 
         public static class Contabilidad
         {
-            public static class Diarios {
+            public static class Diarios
+            {
                 public const string DIARIO_CIERRE = "_ASIENTCIE";
             }
 

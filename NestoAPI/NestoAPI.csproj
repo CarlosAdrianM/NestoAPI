@@ -425,6 +425,7 @@
     <Compile Include="Controllers\AccountsController.cs" />
     <Compile Include="Controllers\AgenciasLlamadasWebController.cs" />
     <Compile Include="Controllers\AlbaranesVentaController.cs" />
+    <Compile Include="Controllers\AuthController.cs" />
     <Compile Include="Controllers\BancosController.cs" />
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
@@ -445,6 +446,8 @@
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
+    <Compile Include="Controllers\TokenRefreshController.cs" />
+    <Compile Include="Controllers\VideosController.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\GestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IServicioAlbaranesVenta.cs" />
     <Compile Include="Controllers\IServicioGestorStock.cs" />
@@ -479,6 +482,7 @@
     <Compile Include="Infraestructure\ApplicationRoleManager.cs" />
     <Compile Include="Infraestructure\ApplicationUser.cs" />
     <Compile Include="Infraestructure\ApplicationUserManager.cs" />
+    <Compile Include="Infraestructure\ClienteHelper.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\Contabilidad\ContabilidadService.cs" />
@@ -546,6 +550,9 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegalosTiendaOnline.cs" />
     <Compile Include="Infraestructure\Vendedores\IServicioVendedores.cs" />
     <Compile Include="Infraestructure\Vendedores\ServicioVendedores.cs" />
+    <Compile Include="Infraestructure\Videos\GestorVideos.cs" />
+    <Compile Include="Infraestructure\Videos\IServicioVideos.cs" />
+    <Compile Include="Infraestructure\Videos\ServicioVideos.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.Designer.cs">
       <DependentUpon>201603171731031_InitialCreate.cs</DependentUpon>
@@ -966,6 +973,15 @@
     <Compile Include="Models\VendedorPedidoGrupoProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Video.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\VideoProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Videos\ProductoVideoModel.cs" />
+    <Compile Include="Models\Videos\VideoLookupModel.cs" />
+    <Compile Include="Models\Videos\VideoModel.cs" />
     <Compile Include="Models\vstLinPedidoVtaComisione.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

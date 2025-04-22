@@ -1,7 +1,7 @@
-﻿using System;
-using System.Linq;
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using System;
+using System.Linq;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
 {
@@ -24,7 +24,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             if (!pedido.Lineas.All(l => l.formaVenta == "WEB"))
             {
                 return respuesta;
-            } 
+            }
             else if (EstamosDeBlackFriday())
             {
                 return new RespuestaValidacion
@@ -37,7 +37,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             if (!pedido.Lineas.Any(l => l.Producto == numeroProducto && l.texto.StartsWith("PRESENTE:")) && !EstamosDeBlackFriday())
             {
-                var producto = servicio.BuscarProducto(numeroProducto);
+                Producto producto = servicio.BuscarProducto(numeroProducto);
                 if (producto.Estado <= 2)
                 {
                     return respuesta;
@@ -54,8 +54,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
         private bool EstamosDeBlackFriday()
         {
-            DateTime comienzaBlackFriday = new DateTime(2024, 5, 20);
-            DateTime terminaBlackFriday = new DateTime(2024, 5, 25);
+            DateTime comienzaBlackFriday = new DateTime(2025, 4, 22);
+            DateTime terminaBlackFriday = new DateTime(2025, 4, 29);
             return DateTime.Today >= comienzaBlackFriday && DateTime.Today <= terminaBlackFriday;
         }
     }
