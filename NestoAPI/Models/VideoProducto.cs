@@ -20,6 +20,8 @@ namespace NestoAPI.Models
         public string Referencia { get; set; }
         public string Enlace { get; set; }
         public string TiempoAparicion { get; set; }
+        public string EnlaceTienda { get; set; }
+        public string EnlaceVideo { get; set; }
     
         public virtual Video Video { get; set; }
     }

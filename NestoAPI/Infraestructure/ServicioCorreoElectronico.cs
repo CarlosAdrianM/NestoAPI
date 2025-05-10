@@ -1,14 +1,18 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Microsoft.Extensions.Logging;
+using System;
 using System.Configuration;
-using System.Linq;
 using System.Net.Mail;
-using System.Web;
 
 namespace NestoAPI.Infraestructure
 {
     public class ServicioCorreoElectronico : IServicioCorreoElectronico
     {
+        private readonly ILogger<ServicioCorreoElectronico> _logger;
+
+        public ServicioCorreoElectronico(ILogger<ServicioCorreoElectronico> logger)
+        {
+            _logger = logger;
+        }
         public bool EnviarCorreoSMTP(MailMessage mail)
         {
             using (SmtpClient client = new SmtpClient())
@@ -26,8 +30,9 @@ namespace NestoAPI.Infraestructure
                     client.Send(mail);
                     return true;
                 }
-                catch
+                catch (Exception ex)
                 {
+                    _logger.LogError(ex, "Error al enviar el correo electrónico.");
                     return false;
                 }
             }

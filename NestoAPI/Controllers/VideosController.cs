@@ -100,7 +100,8 @@ namespace NestoAPI.Controllers
                         Id = vp.Id,
                         NombreProducto = vp.NombreProducto,
                         Referencia = vp.Referencia,
-                        EnlaceTienda = vp.Enlace,
+                        EnlaceTienda = vp.EnlaceTienda,
+                        EnlaceVideo = vp.EnlaceVideo,
                         TiempoAparicion = vp.TiempoAparicion
                     }).ToList()
                 };

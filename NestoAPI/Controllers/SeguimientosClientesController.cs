@@ -27,10 +27,10 @@ namespace NestoAPI.Controllers
         private readonly IServicioCorreoElectronico _servicioCorreoElectronico;
 
         // Carlos 13/03/17: lo pongo para desactivar el Lazy Loading
-        public SeguimientosClientesController()
+        public SeguimientosClientesController(IServicioCorreoElectronico servicioCorreoElectronico)
         {
             db.Configuration.LazyLoadingEnabled = false;
-            _servicioCorreoElectronico = new ServicioCorreoElectronico();
+            _servicioCorreoElectronico = servicioCorreoElectronico;
         }
 
         // GET: api/SeguimientosClientes
@@ -70,20 +70,11 @@ namespace NestoAPI.Controllers
             DateTime fechaDesde = new DateTime(fecha.Year, fecha.Month, fecha.Day);
             DateTime fechaHasta = fechaDesde.AddDays(1);
 
-            IQueryable<SeguimientoCliente> seguimientos;
-
-            if (vendedor != null)
-            {
-                seguimientos = vendedor.Length <= 3
+            IQueryable<SeguimientoCliente> seguimientos = vendedor != null
+                ? vendedor.Length <= 3
                     ? db.SeguimientosClientes.Where(s => s.Vendedor == vendedor)
-                    : db.SeguimientosClientes.Where(s => s.Usuario == vendedor);
-            }
-            else
-            {
-                seguimientos = db.SeguimientosClientes;
-            }
-
-
+                    : db.SeguimientosClientes.Where(s => s.Usuario == vendedor)
+                : db.SeguimientosClientes;
             return seguimientos
                 .Include(s => s.Cliente)
                 .Where(s => s.Fecha >= fechaDesde && s.Fecha < fechaHasta)
@@ -510,10 +501,11 @@ Además, evalúa la calidad de los comentarios teniendo en cuenta:
 - La longitud y el nivel de detalle (se valoran más los comentarios largos y detallados; los comentarios breves, de menos de 30 palabras, se consideran de menor calidad).
 - La claridad en la información comercial y la mención de marcas de productos o tratamientos estéticos o de peluquería que realiza. 
 - La información detallada sobre futuras oportunidades de venta 
-- **La puntualidad en el registro**: este punto solo es válido para visitas presenciales, pero no para teléfono o WhatsApp (para teléfono o WhatsApp ignoramos la puntualidad en el registro completamente). Analiza las marcas de tiempo de cada comentario para determinar si se han registrado en el momento de la visita.
-    - Si, en un mismo día, el primer comentario se registra al inicio de la jornada (por ejemplo, alrededor de las 9:00) y el último se registra hacia el final (por ejemplo, cerca de las 19:00) – o, al menos, si la diferencia entre el primer y el último comentario es de varias horas (por ejemplo, 4 horas o más) –, indica que el vendedor registra en tiempo real y aumenta la puntuación.
-    - Si la diferencia entre el primer y el último comentario de un día es muy corta (por ejemplo, menos de 1 hora, o con un promedio inferior a 5-10 minutos entre registros), se penaliza la puntuación, ya que se asume que se ingresaron en bloque al final de la jornada.
-- Representa la puntuación de calidad con de 1 a 5 iconos de estrellas (evitando usar 3 estrellas para evitar ambigüedad; utiliza 2 o 4 según corresponda). Nunca daremos más de dos estrellas si las visitas que no sean teléfono o whatapp no se registran en el momento.
+- **La puntualidad en el registro**: este punto solo es válido para seguimientos del tipo 'Visita', pero no para 'Teléfono' o 'WhatsApp' (para teléfono o WhatsApp ignoramos la puntualidad en el registro completamente). Analiza las marcas de tiempo de cada comentario para determinar si se han registrado en el momento de la visita.
+    - Si, en un mismo día, el primer comentario con tipo 'Visita! se registra al inicio de la jornada (por ejemplo, alrededor de las 9:00) y el último se registra hacia el final (por ejemplo, cerca de las 19:00) – o, al menos, si la diferencia entre el primer y el último comentario de tipo 'Visita' es de varias horas (por ejemplo, 4 horas o más) –, indica que el vendedor registra en tiempo real y aumenta la puntuación.
+    - Si la diferencia entre el primer y el último comentario 'Visita' de un día es muy corta (por ejemplo, menos de 1 hora, o con un promedio inferior a 5-10 minutos entre registros), se penaliza la puntuación, ya que se asume que se ingresaron en bloque al final de la jornada.
+    - Si no hay comentarios de tipo 'Visita' no tengas en cuenta la puntualidad en el registro para valorar la calidad de los comentarios.
+- Representa la puntuación de calidad con de 1 a 5 iconos de estrellas (evitando usar 3 estrellas para evitar ambigüedad; utiliza 2 o 4 según corresponda). Nunca daremos más de dos estrellas si las visitas que no sean teléfono o whatapp no se registran en el momento (si no hay comentarios del tipo 'Visita' ignora este punto).
 - Añade una breve explicación justificando la puntuación, y explicando al vendedor cómo debería meter los comentarios para mejorar la puntuación en futuros análisis.
 
 Nota: La jornada laboral se considera de 9:00 a 19:00.
@@ -712,12 +704,11 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 PrimeraVisita = seguimientoClienteDTO.PrimeraVisita,
                 Tipo = seguimientoClienteDTO.Tipo,
                 NumOrdenExtracto = seguimientoClienteDTO.NumOrdenExtracto,
-                Usuario = seguimientoClienteDTO.Usuario
+                Usuario = seguimientoClienteDTO.Usuario,
+                Vendedor = seguimientoClienteDTO.Vendedor == vendedorFicha || seguimientoClienteDTO.Vendedor == vendedorPeluqueria
+                    ? seguimientoClienteDTO.Vendedor
+                    : null
             };
-
-            seguimientoCliente.Vendedor = seguimientoClienteDTO.Vendedor == vendedorFicha || seguimientoClienteDTO.Vendedor == vendedorPeluqueria
-                ? seguimientoClienteDTO.Vendedor
-                : null;
 
             if (seguimientoClienteDTO.TipoCentro == SeguimientoClienteDTO.TiposCentro.SoloPeluqueria && vendedorFicha != vendedorPeluqueria)
             {

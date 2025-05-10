@@ -1,31 +1,32 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Domiciliaciones;
+using NestoAPI.Models;
+using NestoAPI.Models.Domiciliaciones;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Net.Mail;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
-using NestoAPI.Infraestructure;
-using NestoAPI.Infraestructure.Domiciliaciones;
-using NestoAPI.Models;
-using NestoAPI.Models.Domiciliaciones;
 
 namespace NestoAPI.Controllers
 {
     public class ExtractosClienteController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db = new NVEntities();
+        private readonly IServicioCorreoElectronico _servicioCorreo;
 
         // Carlos 25/01/16: lo pongo para desactivar el Lazy Loading
-        public ExtractosClienteController()
+        public ExtractosClienteController(IServicioCorreoElectronico servicioCorreo)
         {
             db.Configuration.LazyLoadingEnabled = false;
+            _servicioCorreo = servicioCorreo;
         }
 
 
@@ -63,7 +64,7 @@ namespace NestoAPI.Controllers
         // GET: api/ExtractosCliente
         public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string empresa, string cliente, string tipoApunte, DateTime fechaDesde, DateTime fechaHasta)
         {
-            var extracto = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == tipoApunte && e.Fecha >= fechaDesde && e.Fecha <= fechaHasta).OrderBy(e => e.Fecha)
+            IQueryable<ExtractoClienteDTO> extracto = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == tipoApunte && e.Fecha >= fechaDesde && e.Fecha <= fechaHasta).OrderBy(e => e.Fecha)
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,
@@ -96,7 +97,7 @@ namespace NestoAPI.Controllers
             Mod347DTO modelo = new Mod347DTO();
 
             Cliente clienteComprobacion = await db.Clientes.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true);
-            if (clienteComprobacion.CIF_NIF != null  && clienteComprobacion.CIF_NIF.Trim() != NIF.Trim())
+            if (clienteComprobacion.CIF_NIF != null && clienteComprobacion.CIF_NIF.Trim() != NIF.Trim())
             {
                 throw new Exception("El NIF no es correcto");
             }
@@ -135,12 +136,12 @@ namespace NestoAPI.Controllers
 
 
             modelo.trimestre = new decimal[4];
-            for (int i=0; i<=3; i++)
+            for (int i = 0; i <= 3; i++)
             {
-                modelo.trimestre[i] = extracto.Where(e => (e.fecha.Month + 2) / 3 == i+1).Sum(e => e.importe);
+                modelo.trimestre[i] = extracto.Where(e => (e.fecha.Month + 2) / 3 == i + 1).Sum(e => e.importe);
             }
-            
-            
+
+
             modelo.MovimientosMayor = extracto;
 
             return Ok(modelo);
@@ -152,12 +153,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetExtractoCliente(int id)
         {
             ExtractoCliente extractoCliente = await db.ExtractosCliente.FindAsync(id);
-            if (extractoCliente == null)
-            {
-                return NotFound();
-            }
-
-            return Ok(extractoCliente);
+            return extractoCliente == null ? NotFound() : (IHttpActionResult)Ok(extractoCliente);
         }
 
         /*
@@ -206,16 +202,15 @@ namespace NestoAPI.Controllers
         public IHttpActionResult EnviarCorreoDomiciliacionDia()
         {
             IServicioDomiciliaciones servicio = new ServicioDomiciliaciones();
-            IServicioCorreoElectronico servicioCorreo = new ServicioCorreoElectronico();
-            GestorDomiciliaciones gestor = new GestorDomiciliaciones(servicio, servicioCorreo);
-            var fechaMovimientos = DateTime.Today;
+            GestorDomiciliaciones gestor = new GestorDomiciliaciones(servicio, _servicioCorreo);
+            DateTime fechaMovimientos = DateTime.Today;
 
             IEnumerable<EfectoDomiciliado> respuesta = gestor.EnviarCorreoDomiciliacion(fechaMovimientos);
 
             return Ok(respuesta.ToList());
         }
 
-            
+
         // PUT: api/ExtractosCliente/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutExtractoCliente(ExtractoClienteDTO extractoCliente)
@@ -232,7 +227,7 @@ namespace NestoAPI.Controllers
 
             ExtractoCliente extractoActual = db.ExtractosCliente.Single(e => e.Nº_Orden == extractoCliente.id);
             bool enviarCorreoDelCambio = false;
-            var correo = new MailMessage();
+            MailMessage correo = new MailMessage();
             bool hayCambios = false;
 
             if (extractoActual.FechaVto != extractoCliente.vencimiento)
@@ -254,13 +249,13 @@ namespace NestoAPI.Controllers
                 {
                     enviarCorreoDelCambio = true;
                 }
-                
+
                 try
                 {
                     correo.From = new MailAddress(Constantes.Correos.CORREO_ADMON, "NUEVA VISIÓN (Administración)");
-                    var seguimientos = db.SeguimientosClientes.Where(s => s.NumOrdenExtracto == extractoActual.Nº_Orden);
+                    IQueryable<SeguimientoCliente> seguimientos = db.SeguimientosClientes.Where(s => s.NumOrdenExtracto == extractoActual.Nº_Orden);
                     IQueryable<ParametroUsuario> correosPara = db.ParametrosUsuario.Where(p => p.Empresa == extractoActual.Empresa && seguimientos.Where(s => s.Usuario != extractoCliente.usuario).Select(s => s.Usuario.Substring(s.Usuario.IndexOf("\\") + 1).Trim()).Contains(p.Usuario) && p.Clave == "CorreoDefecto");
-                    foreach (var correoPara in correosPara.Select(c => c.Valor).Distinct())
+                    foreach (string correoPara in correosPara.Select(c => c.Valor).Distinct())
                     {
                         correo.To.Add(correoPara);
                     }
@@ -274,7 +269,7 @@ namespace NestoAPI.Controllers
                     correo.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
                     correo.Subject = $"[ERROR {extractoActual.Número.Trim()}] Cambio de estado retenido en extracto cliente";
                 }
-                
+
                 extractoActual.Estado = string.IsNullOrWhiteSpace(extractoCliente.estado) ? null : extractoCliente.estado.ToUpper();
             }
 
@@ -292,11 +287,10 @@ namespace NestoAPI.Controllers
 
             try
             {
-                await db.SaveChangesAsync().ConfigureAwait(false);
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
                 if (enviarCorreoDelCambio)
                 {
-                    IServicioCorreoElectronico servicioCorreo = new ServicioCorreoElectronico();
-                    servicioCorreo.EnviarCorreoSMTP(correo);
+                    _ = _servicioCorreo.EnviarCorreoSMTP(correo);
                 }
             }
             catch (DbUpdateConcurrencyException)
@@ -322,49 +316,49 @@ namespace NestoAPI.Controllers
         {
             StringBuilder s = new StringBuilder();
 
-            s.AppendLine("<!DOCTYPE html>");
-            s.AppendLine("<html lang='es'>");
-            s.AppendLine("<head>");
-            s.AppendLine("<meta http-equiv='Content-Type' content='text/html; charset=utf-8' />");
-            s.AppendLine("<meta name='viewport' content='width=device-width'>");
-            s.AppendLine("<title>Cambio de estado</title>");
-            s.AppendLine("<style></style>");
-            s.AppendLine("</head>");
+            _ = s.AppendLine("<!DOCTYPE html>");
+            _ = s.AppendLine("<html lang='es'>");
+            _ = s.AppendLine("<head>");
+            _ = s.AppendLine("<meta http-equiv='Content-Type' content='text/html; charset=utf-8' />");
+            _ = s.AppendLine("<meta name='viewport' content='width=device-width'>");
+            _ = s.AppendLine("<title>Cambio de estado</title>");
+            _ = s.AppendLine("<style></style>");
+            _ = s.AppendLine("</head>");
 
-            s.AppendLine("<body>");
+            _ = s.AppendLine("<body>");
 
             //<!-- Header --> 
-            s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
-            s.AppendLine("<tr>");
-            s.AppendLine("<td width=\"50%\" align='left'><img src=\"http://www.productosdeesteticaypeluqueriaprofesional.com/logofra.jpg\"></td>");
-            s.AppendLine("</tr>");
-            s.AppendLine("</table>");
+            _ = s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
+            _ = s.AppendLine("<tr>");
+            _ = s.AppendLine("<td width=\"50%\" align='left'><img src=\"http://www.productosdeesteticaypeluqueriaprofesional.com/logofra.jpg\"></td>");
+            _ = s.AppendLine("</tr>");
+            _ = s.AppendLine("</table>");
 
             //<!-- Body --> 
-            s.AppendLine("<p>Se ha modificado un estado retenido.</p>");
-            s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
-            s.AppendLine("<tr>");
-            s.AppendLine("<td align='left' style='border: 1px solid black;color:#333;padding:3px'>Datos de los efectos</td>");
-            s.AppendLine("</tr>");
-            foreach (var seg in seguimientos.OrderBy(e => e.NºOrden))
+            _ = s.AppendLine("<p>Se ha modificado un estado retenido.</p>");
+            _ = s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
+            _ = s.AppendLine("<tr>");
+            _ = s.AppendLine("<td align='left' style='border: 1px solid black;color:#333;padding:3px'>Datos de los efectos</td>");
+            _ = s.AppendLine("</tr>");
+            foreach (SeguimientoCliente seg in seguimientos.OrderBy(e => e.NºOrden))
             {
-                s.AppendLine("<tr>");
-                s.AppendLine("<td style='border: 1px solid black;color:#333;padding:3px'>");
-                s.AppendLine("<ul>");
-                s.AppendLine("<li>Fecha: " + seg.Fecha_Modificación.ToString() + "</li>");
-                s.AppendLine($"<li>{seg.Comentarios}</li>");
-                s.AppendLine("</ul>");
-                s.AppendLine("</td>");
-                s.AppendLine("</tr>");
+                _ = s.AppendLine("<tr>");
+                _ = s.AppendLine("<td style='border: 1px solid black;color:#333;padding:3px'>");
+                _ = s.AppendLine("<ul>");
+                _ = s.AppendLine("<li>Fecha: " + seg.Fecha_Modificación.ToString() + "</li>");
+                _ = s.AppendLine($"<li>{seg.Comentarios}</li>");
+                _ = s.AppendLine("</ul>");
+                _ = s.AppendLine("</td>");
+                _ = s.AppendLine("</tr>");
             }
-            s.AppendLine("</table>");
-            
+            _ = s.AppendLine("</table>");
+
 
             //<!-- Footer -->
-            s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
-            s.AppendLine("</table>");
+            _ = s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
+            _ = s.AppendLine("</table>");
             //s.AppendLine("</div>");
-            s.AppendLine("</body>");
+            _ = s.AppendLine("</body>");
 
 
             return s.ToString();

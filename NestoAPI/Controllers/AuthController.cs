@@ -31,7 +31,7 @@ public class AuthController : ApiController
     }
 
     [HttpPost]
-    [Route("auth/request-code")]
+    [Route("api/auth/request-code")]
     public async Task<IHttpActionResult> RequestCodeAsync(ClientValidationRequest request)
     {
         string email = request.Email;
@@ -103,7 +103,7 @@ public class AuthController : ApiController
     }
 
     [HttpPost]
-    [Route("auth/validate-code")]
+    [Route("api/auth/validate-code")]
     public async Task<IHttpActionResult> ValidateCodeAsync([FromBody] CodigoValidacionModel model)
     {
         if (string.IsNullOrWhiteSpace(model.Email) ||
@@ -148,7 +148,7 @@ public class AuthController : ApiController
 
 
     [HttpPost]
-    [Route("auth/token")]
+    [Route("api/auth/token")]
     public async Task<IHttpActionResult> GetToken(CodigoValidacionRequest request)
     {
         string expectedPayloadPrefix = $"{request.Code}:{request.Email}:{request.NIF}:";
@@ -177,7 +177,7 @@ public class AuthController : ApiController
 
 
     [HttpPost]
-    [Route("auth/refreshToken")]
+    [Route("api/auth/refreshToken")]
     public async Task<IHttpActionResult> RefreshToken()
     {
         if (Request.Headers.Authorization == null || string.IsNullOrEmpty(Request.Headers.Authorization.Parameter))

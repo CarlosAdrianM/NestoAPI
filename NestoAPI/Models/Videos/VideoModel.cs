@@ -7,7 +7,7 @@ namespace NestoAPI.Models.Videos
     {
         public VideoModel()
         {
-            if (Productos == null)
+            if (Productos != null)
             {
                 foreach (ProductoVideoModel producto in Productos)
                 {

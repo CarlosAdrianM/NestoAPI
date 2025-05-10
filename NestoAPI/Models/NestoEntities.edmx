@@ -1726,7 +1726,8 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="VideoId" Type="int" Nullable="false" />
           <Property Name="NombreProducto" Type="nvarchar" MaxLength="255" />
           <Property Name="Referencia" Type="nvarchar" MaxLength="100" />
-          <Property Name="Enlace" Type="nvarchar" MaxLength="500" />
+          <Property Name="EnlaceTienda" Type="nvarchar" MaxLength="500" />
+          <Property Name="EnlaceVideo" Type="nvarchar" MaxLength="500" />
           <Property Name="TiempoAparicion" Type="nvarchar" MaxLength="50" />
         </EntityType>
         <!--Errores durante la generación:
@@ -11156,10 +11157,11 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
           <Property Name="VideoId" Type="Int32" Nullable="false" />
           <Property Name="NombreProducto" Type="String" MaxLength="255" FixedLength="false" Unicode="true" />
-          <Property Name="Referencia" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
-          <Property Name="Enlace" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
+          <Property Name="Referencia" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />          
           <Property Name="TiempoAparicion" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
           <NavigationProperty Name="Video" Relationship="NVModel.FK_VideosProductos_Videos" FromRole="VideosProducto" ToRole="Video" />
+          <Property Name="EnlaceTienda" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
+          <Property Name="EnlaceVideo" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
         </EntityType>
         <Association Name="FK_VideosProductos_Videos">
           <End Type="NVModel.Video" Role="Video" Multiplicity="1" />
@@ -12939,8 +12941,9 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="VideosProductos">
             <EntityTypeMapping TypeName="NVModel.VideoProducto">
               <MappingFragment StoreEntitySet="VideosProductos">
+                <ScalarProperty Name="EnlaceVideo" ColumnName="EnlaceVideo" />
+                <ScalarProperty Name="EnlaceTienda" ColumnName="EnlaceTienda" />
                 <ScalarProperty Name="TiempoAparicion" ColumnName="TiempoAparicion" />
-                <ScalarProperty Name="Enlace" ColumnName="Enlace" />
                 <ScalarProperty Name="Referencia" ColumnName="Referencia" />
                 <ScalarProperty Name="NombreProducto" ColumnName="NombreProducto" />
                 <ScalarProperty Name="VideoId" ColumnName="VideoId" />

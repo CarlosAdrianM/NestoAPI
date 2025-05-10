@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Owin;
 using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.DataHandler.Encoder;
@@ -101,6 +102,13 @@ namespace NestoAPI
         private IServiceProvider ConfigureServices()
         {
             ServiceCollection services = new ServiceCollection();
+
+            // Añadir logging
+            _ = services.AddLogging(configure =>
+            {
+                _ = configure.AddEventLog(); // Opcionalmente, o AddEventLog en servidor
+                _ = configure.AddDebug();   // Para ver en salida de VS
+            });
 
             // Registrar tus dependencias aquí
             _ = services.AddScoped<IGestorClientes, GestorClientes>();
