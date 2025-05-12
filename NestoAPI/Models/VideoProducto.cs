@@ -18,7 +18,6 @@ namespace NestoAPI.Models
         public int VideoId { get; set; }
         public string NombreProducto { get; set; }
         public string Referencia { get; set; }
-        public string Enlace { get; set; }
         public string TiempoAparicion { get; set; }
         public string EnlaceTienda { get; set; }
         public string EnlaceVideo { get; set; }

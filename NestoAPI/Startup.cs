@@ -122,6 +122,7 @@ namespace NestoAPI
             _ = services.AddScoped<IServicioAlbaranesVenta, ServicioAlbaranesVenta>();
             _ = services.AddScoped<IServicioVideos, ServicioVideos>();
             _ = services.AddScoped<IServicioCorreoElectronico, ServicioCorreoElectronico>();
+            _ = services.AddScoped<IServicioPlantillaVenta, ServicioPlantillaVenta>();
 
             // Registrar el contexto de la base de datos
             _ = services.AddScoped<DbContext>(_ => new ApplicationDbContext());

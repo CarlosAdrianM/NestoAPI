@@ -1,4 +1,6 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Models;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -6,37 +8,36 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
-using NestoAPI.Models;
-using NestoAPI.Infraestructure;
 
 namespace NestoAPI.Controllers
 {
+    [RoutePrefix("api/PlantillaVentas")]
     public class PlantillaVentasController : ApiController
     {
-        private NVEntities db = new NVEntities();
-        private readonly IServicioPlantillaVenta servicio;
-        
+        private readonly NVEntities db = new NVEntities();
+        private readonly IServicioPlantillaVenta _servicio;
+
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
-        public PlantillaVentasController()
+        public PlantillaVentasController(IServicioPlantillaVenta servicio)
         {
             db.Configuration.LazyLoadingEnabled = false;
-            servicio = new ServicioPlantillaVenta();
+            _servicio = servicio;
         }
 
         // GET: api/PlantillaVentas
         //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
         public IQueryable<LineaPlantillaVenta> GetPlantillaVentas(string empresa, string cliente)
-        {   
+        {
             Empresa empresaBuscada = db.Empresas.Where(e => e.Número == empresa).SingleOrDefault();
             if (empresaBuscada.IVA_por_defecto == null)
             {
                 throw new Exception("Empresa no válida");
             }
 
-            var clienteCompleto = db.Clientes.Single(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal);
+            Cliente clienteCompleto = db.Clientes.Single(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal);
 
             IQueryable<LineaPlantillaVenta> lineasPlantilla = db.LinPedidoVtas
-                .Join(db.Productos.Include(nameof(ClasificacionMasVendido)).Where(p => p.Empresa == empresa).Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { producto = l.Producto }, p => new { producto = p.Número }, (l, p) => new { p.Empresa, l.Nº_Cliente, l.TipoLinea, producto = p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, codigoBarras = p.CodBarras, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = (p.Aplicar_Dto || l.Nº_Cliente == Constantes.ClientesEspeciales.EL_EDEN || clienteCompleto.Estado == Constantes.Clientes.Estados.DISTRIBUIDOR), estadoLinea = l.Estado, grupo = p.Grupo, p.ClasificacionMasVendido }) // ojo, paso el estado del producto, no el de la línea
+                .Join(db.Productos.Include(nameof(ClasificacionMasVendido)).Where(p => p.Empresa == empresa).Include(f => f.Familia).Include(sb => sb.SubGrupo), l => new { producto = l.Producto }, p => new { producto = p.Número }, (l, p) => new { p.Empresa, l.Nº_Cliente, l.TipoLinea, producto = p.Número, p.Estado, p.Nombre, p.Tamaño, p.UnidadMedida, nombreFamilia = p.Familia1.Descripción, nombreSubGrupo = p.SubGruposProducto.Descripción, codigoBarras = p.CodBarras, l.Cantidad, l.Fecha_Albarán, p.Ficticio, p.IVA_Repercutido, p.PVP, aplicarDescuento = p.Aplicar_Dto || l.Nº_Cliente == Constantes.ClientesEspeciales.EL_EDEN || clienteCompleto.Estado == Constantes.Clientes.Estados.DISTRIBUIDOR, estadoLinea = l.Estado, grupo = p.Grupo, p.ClasificacionMasVendido }) // ojo, paso el estado del producto, no el de la línea
                 .Where(l => (l.Empresa == empresa || l.Empresa == empresaBuscada.IVA_por_defecto) && l.Nº_Cliente == cliente && l.TipoLinea == 1 && !l.Ficticio && l.Estado >= 0 && l.estadoLinea == 4 && l.Fecha_Albarán >= DbFunctions.AddYears(DateTime.Today, -2) && l.grupo != Constantes.Productos.GRUPO_MATERIAS_PRIMAS) // ojo, es el estado del producto
                 .GroupBy(g => new { g.producto, g.Nombre, g.Tamaño, g.UnidadMedida, g.nombreFamilia, g.Estado, g.nombreSubGrupo, g.codigoBarras, g.IVA_Repercutido, g.PVP, g.aplicarDescuento, g.ClasificacionMasVendido })
                 .Select(x => new LineaPlantillaVenta
@@ -60,17 +61,17 @@ namespace NestoAPI.Controllers
                 .OrderBy(p => p.estado != 0)
                 .ThenByDescending(g => g.fechaUltimaVenta)
                 .ThenBy(p => p.clasificacionMasVendidos);
-                        
+
             return lineasPlantilla;
         }
-        
+
         // GET: api/PlantillaVentasBuscarProducto
         //public IQueryable<LinPedidoVta> GetLinPedidoVtas()
         // Devuelve un listado de productos, filtrado por un concepto (para buscar productos que no ha comprado nunca)
         [HttpGet]
         public IQueryable<LineaPlantillaVenta> GetBuscarProducto(string empresa, string filtroProducto)
         {
-            if (filtroProducto == null || filtroProducto.Length<3)
+            if (filtroProducto == null || filtroProducto.Length < 3)
             {
                 throw new Exception("El filtro de productos debe tener al menos 3 caracteres de largo");
             }
@@ -104,19 +105,32 @@ namespace NestoAPI.Controllers
                     fechaUltimaVenta = DateTime.MinValue,
                     aplicarDescuento = x.Key.aplicarDescuento,
                     iva = x.Key.iva,
-                    precio = (decimal?)x.Key.precio ?? 0,
+                    precio = x.Key.precio ?? 0,
                     clasificacionMasVendidos = x.Key.clasificacion != null ? x.Key.clasificacion.Posicion : 0
                 });
-                
+
 
             return lineasPlantilla;
+        }
+
+        [HttpGet]
+        [Route("Buscar")]
+        public async Task<IHttpActionResult> GetBuscarProductoContextual(string q)
+        {
+            if (string.IsNullOrWhiteSpace(q))
+            {
+                return BadRequest("Debe proporcionar un filtro de búsqueda.");
+            }
+            var lineasPlantilla = await _servicio.BusquedaContextual(q);
+
+            return Ok(lineasPlantilla);
         }
 
         // Devuelve las posibles direcciones de entrega del pedido
         [HttpGet]
         public IQueryable<DireccionesEntregaClienteDTO> GetDireccionesEntrega(string empresa, string clienteDirecciones)
         {
-            var result = GetDireccionesEntrega(empresa, clienteDirecciones, 0);
+            IQueryable<DireccionesEntregaClienteDTO> result = GetDireccionesEntrega(empresa, clienteDirecciones, 0);
             return result;
         }
         // Devuelve las posibles direcciones de entrega del pedido
@@ -124,11 +138,11 @@ namespace NestoAPI.Controllers
         public IQueryable<DireccionesEntregaClienteDTO> GetDireccionesEntrega(string empresa, string clienteDirecciones, decimal totalPedido)
         {
             Cliente clienteDireccionPorDefecto = db.Clientes
-                .Where(c => (c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones && c.ClientePrincipal))
+                .Where(c => c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones && c.ClientePrincipal)
                 .SingleOrDefault();
-            
+
             IQueryable<DireccionesEntregaClienteDTO> clientes = db.Clientes
-                .Where(c => (c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones))
+                .Where(c => c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones)
                 .Select(clienteEncontrado => new DireccionesEntregaClienteDTO
                 {
                     clientePrincipal = clienteEncontrado.ClientePrincipal,
@@ -158,7 +172,7 @@ namespace NestoAPI.Controllers
                     nif = clienteEncontrado.CIF_NIF != null ? clienteEncontrado.CIF_NIF.Trim() : string.Empty,
                 });
 
-            
+
 
             return clientes.OrderBy(c => c.contacto);
         }
@@ -173,8 +187,8 @@ namespace NestoAPI.Controllers
             }
 
             List<UltimasVentasProductoClienteDTO> ventas = db.LinPedidoVtas
-                .Where(c => ((c.Empresa == empresa || c.Empresa == empresaBuscada.IVA_por_defecto) && c.Nº_Cliente == clienteUltimasVentas && c.Producto == productoUltimasVentas && c.Fecha_Albarán != null))
-                .Select(ventasEncontradas=> new UltimasVentasProductoClienteDTO
+                .Where(c => (c.Empresa == empresa || c.Empresa == empresaBuscada.IVA_por_defecto) && c.Nº_Cliente == clienteUltimasVentas && c.Producto == productoUltimasVentas && c.Fecha_Albarán != null)
+                .Select(ventasEncontradas => new UltimasVentasProductoClienteDTO
                 {
                     fecha = (DateTime)ventasEncontradas.Fecha_Albarán,
                     cantidad = (short)ventasEncontradas.Cantidad,
@@ -186,10 +200,10 @@ namespace NestoAPI.Controllers
                 .OrderByDescending(f => f.fecha)
                 .Take(10)
                 .ToList();
-            
+
             return ventas.AsQueryable();
         }
-        
+
         [HttpGet]
         [ResponseType(typeof(StockProductoPlantillaDTO))]
         public async Task<IHttpActionResult> GetCargarStock(string empresa, string almacen, string productoStock)
@@ -227,7 +241,7 @@ namespace NestoAPI.Controllers
             {
                 throw new Exception("Empresa no válida");
             }
-            
+
             PrecioProductoDTO datosPrecio = new PrecioProductoDTO();
             Producto producto = await db.Productos.Where(p => p.Empresa == empresa && p.Número == productoPrecio).SingleOrDefaultAsync();
             if (producto.Estado < 0)
@@ -247,7 +261,7 @@ namespace NestoAPI.Controllers
                 cantidad = cantidad,
                 aplicarDescuento = aplicarDescuento
             };
-            
+
             GestorPrecios.calcularDescuentoProducto(precio);
             datosPrecio.precio = precio.precioCalculado;
             datosPrecio.descuento = precio.descuentoCalculado;
@@ -296,13 +310,13 @@ namespace NestoAPI.Controllers
 
             return Ok(datosPrecio);
         }
-        
+
         // Devuelve los numeros de los pedidos que tiene pendientes este cliente
         [HttpGet]
         public List<int> GetPedidosPendientes(string empresa, string clientePendientes)
         {
-            var pedidos = db.LinPedidoVtas
-                .Where(c => (c.Empresa == empresa && c.Estado >= -1 && c.Estado <= 1 && c.Nº_Cliente == clientePendientes))
+            IQueryable<int> pedidos = db.LinPedidoVtas
+                .Where(c => c.Empresa == empresa && c.Estado >= -1 && c.Estado <= 1 && c.Nº_Cliente == clientePendientes)
                 .Select(l => l.Número)
                 .Distinct();
 
@@ -317,15 +331,8 @@ namespace NestoAPI.Controllers
             {
                 return new List<LineaPlantillaVenta>();
             }
-            var resultado = PonerStockLineas(param);
-            if (param.Ordenar)
-            {
-                return resultado.OrderByDescending(l => l.cantidadDisponible).ToList();
-            }
-            else
-            {
-                return resultado;
-            }
+            List<LineaPlantillaVenta> resultado = PonerStockLineas(param);
+            return param.Ordenar ? resultado.OrderByDescending(l => l.cantidadDisponible).ToList() : resultado;
         }
 
         private List<LineaPlantillaVenta> PonerStockLineas(PonerStockParam param)
@@ -334,7 +341,7 @@ namespace NestoAPI.Controllers
             {
                 return new List<LineaPlantillaVenta>();
             }
-            foreach (var linea in param.Lineas)
+            foreach (LineaPlantillaVenta linea in param.Lineas)
             {
                 ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(linea.producto, db);
                 linea.cantidadDisponible = (short)productoNuevo.CantidadDisponible(param.Almacen);
@@ -350,8 +357,8 @@ namespace NestoAPI.Controllers
         {
             string cliente = parametro.Item1;
             List<LineaPlantillaVenta> lineas = parametro.Item2;
-            var productosBonificables = servicio.CargarProductosBonificables();
-            var productosYaComprados = servicio.CargarProductosYaComprados(cliente);
+            HashSet<string> productosBonificables = _servicio.CargarProductosBonificables();
+            HashSet<string> productosYaComprados = _servicio.CargarProductosYaComprados(cliente);
             productosYaComprados.UnionWith(lineas.Select(l => l.producto).ToHashSet());
             productosBonificables.ExceptWith(productosYaComprados);
             List<LineaPlantillaVenta> lineasBonificables = productosBonificables.Select(i => new LineaPlantillaVenta { producto = i, estado = 1 }).ToList();

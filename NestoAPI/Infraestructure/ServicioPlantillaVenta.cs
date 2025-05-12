@@ -1,13 +1,91 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.Buscador;
+using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
 using System.Linq;
-using System.Web;
+using System.Threading.Tasks;
+using static NestoAPI.Infraestructure.Buscador.LuceneBuscador;
 
 namespace NestoAPI.Infraestructure
 {
     public class ServicioPlantillaVenta : IServicioPlantillaVenta
     {
+        public async Task<List<LineaPlantillaVenta>> BusquedaContextual(string filtroProducto)
+        {
+            List<ProductoResultadoBusqueda> resultadosLucene = LuceneBuscador.BuscarProductos(filtroProducto);
+
+            if (!resultadosLucene.Any())
+            {
+                return new List<LineaPlantillaVenta>();
+            }
+
+            var ids = resultadosLucene.Select(r => r.Id).ToList();
+
+            using (var db = new NVEntities())
+            {
+                var productosQuery =
+                    db.Productos
+                      .Where(p => ids.Contains(p.Número)
+                               && p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                               && p.Estado >= 0
+                               && !p.Ficticio
+                               && p.Grupo != Constantes.Productos.GRUPO_MATERIAS_PRIMAS)
+                      .Join(db.SubGruposProductoes, p => new { p.Empresa, grupo = p.Grupo, numero = p.SubGrupo }, s => new { s.Empresa, grupo = s.Grupo, numero = s.Número },
+                          (p, s) => new { p, s })
+                      .Join(db.ProveedoresProductoes, ps => new { empresa = ps.p.Empresa, producto = ps.p.Número }, r => new { empresa = r.Empresa, producto = r.Nº_Producto },
+                          (ps, r) => new { ps.p, ps.s, r })
+                      .GroupBy(x => new
+                      {
+                          x.p.Número,
+                          x.p.Nombre,
+                          x.p.Tamaño,
+                          x.p.UnidadMedida,
+                          nombreFamilia = x.p.Familia1 != null ? x.p.Familia1.Descripción : "",
+                          estadoFamilia = x.p.Familia1 != null ? x.p.Familia1.Estado : 0,
+                          x.p.Estado,
+                          nombreSubGrupo = x.s.Descripción,
+                          x.p.Aplicar_Dto,
+                          x.p.PVP,
+                          x.p.IVA_Repercutido,
+                          clasificacion = x.p.ClasificacionMasVendido,
+                          codigoBarras = x.p.CodBarras
+                      })
+                      .Select(x => new LineaPlantillaVenta
+                      {
+                          producto = x.Key.Número.Trim(),
+                          texto = x.Key.Nombre.Trim(),
+                          tamanno = x.Key.Tamaño,
+                          unidadMedida = x.Key.UnidadMedida,
+                          familia = x.Key.nombreFamilia.Trim(),
+                          estado = x.Key.Estado,
+                          subGrupo = x.Key.nombreSubGrupo.Trim(),
+                          codigoBarras = x.Key.codigoBarras != null ? x.Key.codigoBarras.Trim() : "",
+                          cantidadVendida = 0,
+                          cantidadAbonada = 0,
+                          fechaUltimaVenta = DateTime.MinValue,
+                          aplicarDescuento = x.Key.Aplicar_Dto,
+                          iva = x.Key.IVA_Repercutido,
+                          precio = x.Key.PVP ?? 0,
+                          clasificacionMasVendidos = x.Key.clasificacion != null ? x.Key.clasificacion.Posicion : 0
+                      });
+
+                var resultados = await productosQuery.ToListAsync();
+
+                // 👉 Reordenar según el orden original de Lucene
+                var diccionarioOrden = ids
+                    .Select((id, index) => new { id, index })
+                    .ToDictionary(x => x.id.Trim(), x => x.index);
+
+                var ordenados = resultados
+                    .OrderBy(r => diccionarioOrden.ContainsKey(r.producto) ? diccionarioOrden[r.producto] : int.MaxValue)
+                    .ToList();
+
+                return ordenados;
+            }
+        }
+
+
         public HashSet<string> CargarProductosBonificables()
         {
             return new HashSet<string>
@@ -76,7 +154,7 @@ namespace NestoAPI.Infraestructure
                 catch (Exception e)
                 {
                     throw new Exception("No se han pedido leer los productos ya comprados", e);
-                }                
+                }
             }
         }
     }

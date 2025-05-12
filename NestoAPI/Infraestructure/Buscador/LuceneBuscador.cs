@@ -9,6 +9,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.SqlClient;
 using System.IO;
+using System.Linq;
 
 
 namespace NestoAPI.Infraestructure.Buscador
@@ -76,7 +77,9 @@ namespace NestoAPI.Infraestructure.Buscador
                     DefaultOperator = Operator.OR
                 };
 
-                Query query = parser.Parse(q);
+                string escapedQuery = QueryParser.Escape(q);
+                Query query = parser.Parse(escapedQuery);
+
 
                 if (!string.IsNullOrEmpty(tipo))
                 {
@@ -105,6 +108,9 @@ namespace NestoAPI.Infraestructure.Buscador
                 return resultados;
             }
         }
+
+
+
 
 
         private static string QuitarHtml(string html)
@@ -201,5 +207,38 @@ namespace NestoAPI.Infraestructure.Buscador
             }
         }
 
+        public static List<ProductoResultadoBusqueda> BuscarProductos(string textoBusqueda)
+        {
+            List<dynamic> resultadosGenericos = Buscar(textoBusqueda, "producto");
+            return resultadosGenericos
+                .Select(r =>
+                {
+                    return new ProductoResultadoBusqueda { Id = r.Id };
+                })
+                .ToList();
+        }
+
+        public static List<VideoResultadoBusqueda> BuscarVideos(string textoBusqueda)
+        {
+            List<dynamic> resultadosGenericos = Buscar(textoBusqueda, "video");
+            return resultadosGenericos
+                .Select(r =>
+                {
+                    int.TryParse(r.Id, out int id); // Si falla, id será 0 (mejor que explotar)
+                    return new VideoResultadoBusqueda { Id = id };
+                })
+                .Where(r => r.Id != 0) // Por si acaso hubo errores de conversión
+                .ToList();
+        }
+
+        public class ProductoResultadoBusqueda
+        {
+            public string Id { get; set; }
+        }
+
+        public class VideoResultadoBusqueda
+        {
+            public int Id { get; set; }
+        }
     }
 }

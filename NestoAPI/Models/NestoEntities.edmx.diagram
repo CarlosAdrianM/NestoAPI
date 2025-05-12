@@ -4,7 +4,7 @@
   <edmx:Designer xmlns="http://schemas.microsoft.com/ado/2009/11/edmx">
     <!-- Diagram content (shape and connector positions) -->
     <edmx:Diagrams>
-      <Diagram DiagramId="b0f9c70bf1124b14bb8400d17c716cb1" Name="Diagram1" ZoomLevel="62">
+      <Diagram DiagramId="b0f9c70bf1124b14bb8400d17c716cb1" Name="Diagram1" ZoomLevel="58">
         <EntityTypeShape EntityType="NVModel.EnviosAgencia" Width="1.5" PointX="0.75" PointY="0.75" IsExpanded="true" />
         <EntityTypeShape EntityType="NVModel.Empresa" Width="1.5" PointX="0.75" PointY="31.75" />
         <AssociationConnector Association="NVModel.FK_Empresas_Empresas" />
