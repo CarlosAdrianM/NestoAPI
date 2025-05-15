@@ -302,28 +302,74 @@ namespace NestoAPI.Controllers
 
         private async Task<string> EnviarCorreoResumenRapportsSemana(string empresa, DateTime fechaInicio, DateTime fechaFin, string vendedor, string correo, string copia)
         {
+            // Obtenemos los seguimientos
             var seguimientos = db.SeguimientosClientes
                 .Where(s => s.Empresa == empresa &&
                             s.Fecha >= fechaInicio &&
                             s.Fecha < fechaFin &&
                             s.Número != null &&
                             s.Vendedor == vendedor)
-                .Select(s => new { s.Vendedor, s.Número, s.Contacto, s.Comentarios, s.Fecha_Modificación })
                 .OrderBy(s => s.Vendedor)
                 .ThenBy(s => s.Fecha_Modificación)
                 .ToList();
-
 
             if (!seguimientos.Any())
             {
                 return string.Empty;
             }
 
-            // Crea el texto de entrada para OpenAI, incluyendo la fecha con cada comentario
+            // Diccionario para almacenar el último seguimiento de visita presencial de cada vendedor
+            var ultimaVisitaPresencial = new Dictionary<string, DateTime>();
+
             string textoEntrada = $"Resumen de seguimientos del {fechaInicio} al {fechaFin}. Los siguientes son los comentarios:\n\n";
+
             foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
             {
-                textoEntrada += $"Vendedor: {seguimiento.Vendedor}\nCliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()} \nComentario: {seguimiento.Comentarios.Trim()}\nFecha y hora: {seguimiento.Fecha_Modificación}\n\n";
+                bool tiempoReal = true; // Por defecto asumimos que es en tiempo real
+
+                // Solo evaluamos si es visita presencial (tipo "V")
+                if (seguimiento.Tipo == "V")
+                {
+                    // Verificamos si ya tenemos una visita presencial anterior del mismo vendedor
+                    if (ultimaVisitaPresencial.TryGetValue(seguimiento.Vendedor, out var fechaAnterior))
+                    {
+                        // Calculamos el tiempo entre esta visita y la anterior
+                        TimeSpan tiempoEntreVisitas = seguimiento.Fecha_Modificación - fechaAnterior;
+
+                        // Si hay menos de 20 minutos entre visitas presenciales, marcamos como sospechoso
+                        if (tiempoEntreVisitas.TotalMinutes < 20)
+                        {
+                            tiempoReal = false;
+                        }
+
+                        // Si son más de las 20h o antes de las 9h, marcamos como sospechoso
+                        if (seguimiento.Fecha_Modificación.Hour < 9 || seguimiento.Fecha_Modificación.Hour > 20)
+                        {
+                            tiempoReal = false;
+                        }
+                    }
+
+                    // Actualizamos la última visita presencial de este vendedor
+                    ultimaVisitaPresencial[seguimiento.Vendedor] = seguimiento.Fecha_Modificación;
+                }
+
+                // Convertimos el tipo de visita a texto completo (compatible con C# 7.3)
+                string tipoVisitaCompleto;
+                if (seguimiento.Tipo == "V")
+                {
+                    tipoVisitaCompleto = "Visita";
+                }
+                else
+                {
+                    tipoVisitaCompleto = seguimiento.Tipo == "T" ? "Teléfono" : seguimiento.Tipo == "W" ? "WhatsApp" : seguimiento.Tipo;
+                }
+
+                textoEntrada += $"Vendedor: {seguimiento.Vendedor}\n" +
+                                $"Cliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()}\n" +
+                                $"Tipo Visita: {tipoVisitaCompleto}\n" +
+                                $"Comentario: {seguimiento.Comentarios.Trim()}\n" +
+                                $"Fecha y hora: {seguimiento.Fecha_Modificación}\n" +
+                                $"TiempoReal: {tiempoReal}\n\n";
             }
 
             // Llama a OpenAI para obtener el resumen
@@ -501,14 +547,9 @@ Además, evalúa la calidad de los comentarios teniendo en cuenta:
 - La longitud y el nivel de detalle (se valoran más los comentarios largos y detallados; los comentarios breves, de menos de 30 palabras, se consideran de menor calidad).
 - La claridad en la información comercial y la mención de marcas de productos o tratamientos estéticos o de peluquería que realiza. 
 - La información detallada sobre futuras oportunidades de venta 
-- **La puntualidad en el registro**: este punto solo es válido para seguimientos del tipo 'Visita', pero no para 'Teléfono' o 'WhatsApp' (para teléfono o WhatsApp ignoramos la puntualidad en el registro completamente). Analiza las marcas de tiempo de cada comentario para determinar si se han registrado en el momento de la visita.
-    - Si, en un mismo día, el primer comentario con tipo 'Visita! se registra al inicio de la jornada (por ejemplo, alrededor de las 9:00) y el último se registra hacia el final (por ejemplo, cerca de las 19:00) – o, al menos, si la diferencia entre el primer y el último comentario de tipo 'Visita' es de varias horas (por ejemplo, 4 horas o más) –, indica que el vendedor registra en tiempo real y aumenta la puntuación.
-    - Si la diferencia entre el primer y el último comentario 'Visita' de un día es muy corta (por ejemplo, menos de 1 hora, o con un promedio inferior a 5-10 minutos entre registros), se penaliza la puntuación, ya que se asume que se ingresaron en bloque al final de la jornada.
-    - Si no hay comentarios de tipo 'Visita' no tengas en cuenta la puntualidad en el registro para valorar la calidad de los comentarios.
-- Representa la puntuación de calidad con de 1 a 5 iconos de estrellas (evitando usar 3 estrellas para evitar ambigüedad; utiliza 2 o 4 según corresponda). Nunca daremos más de dos estrellas si las visitas que no sean teléfono o whatapp no se registran en el momento (si no hay comentarios del tipo 'Visita' ignora este punto).
+- **La puntualidad en el registro**: si tiene comentarios que no están registrados en tiempo real, baja la puntuación. Si la mayoría son en tiempo real, sube la puntuación. Si la mayoría de los seguimientos no están en tiempo real, no daremos más de 2 estrellas.
+- Representa la puntuación de calidad con de 1 a 5 iconos de estrellas.
 - Añade una breve explicación justificando la puntuación, y explicando al vendedor cómo debería meter los comentarios para mejorar la puntuación en futuros análisis.
-
-Nota: La jornada laboral se considera de 9:00 a 19:00.
 
 El mensaje resultante es importante que lo devuelvas en HTML para poner en el cuerpo de un correo, con un diseño atractivo"
         },

@@ -112,14 +112,18 @@ namespace NestoAPI.Controllers
 
         [HttpGet]
         [Route("Buscar")]
-        public async Task<IHttpActionResult> Buscar(string q, bool tieneComprasRecientes = false)
+        public async Task<IHttpActionResult> Buscar(
+            [FromUri] string q,
+            [FromUri] int skip = 0,
+            [FromUri] int take = 20,
+            [FromUri] bool tieneComprasRecientes = false)
         {
             if (string.IsNullOrWhiteSpace(q))
             {
                 return BadRequest("Debe proporcionar una consulta.");
             }
 
-            List<VideoLookupModel> resultados = await _servicioVideos.BuscarVideos(q, tieneComprasRecientes);
+            List<VideoLookupModel> resultados = await _servicioVideos.BuscarVideos(q, tieneComprasRecientes, skip, take);
             return Ok(resultados);
         }
     }

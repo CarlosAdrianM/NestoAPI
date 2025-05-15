@@ -29,15 +29,18 @@ namespace NestoAPI.Infraestructure.Buscador
             {
                 writer.DeleteAll();
 
-                List<(string Id, string Nombre, string DescripcionBreve, string DescripcionLarga)> productos = ObtenerProductos();
-                foreach ((string Id, string Nombre, string DescripcionBreve, string DescripcionLarga) in productos)
+                List<ResultadoBusqueda> productos = ObtenerProductos();
+
+                foreach (var producto in productos)
                 {
                     Document doc = new Document
                     {
                         new StringField("Tipo", "producto", Field.Store.YES),
-                        new StringField("Id", Id, Field.Store.YES),
-                        new TextField("Nombre", Nombre, Field.Store.YES) { Boost = 4.0f },
-                        new TextField("TextoCompleto", $"{Nombre} {DescripcionBreve} {QuitarHtml(DescripcionLarga)}", Field.Store.NO)
+                        new StringField("Id", producto.Id, Field.Store.YES),
+                        new TextField("Nombre", producto.Nombre, Field.Store.YES) { Boost = 4.0f },
+                        new TextField("Familia", producto.Familia ?? "", Field.Store.YES) { Boost = 3.0f },
+                        new TextField("Subgrupo", producto.Subgrupo ?? "", Field.Store.YES) { Boost = 3.0f },
+                        new TextField("TextoCompleto", $"{producto.Nombre} {producto.Familia} {producto.Subgrupo} {producto.DescripcionBreve} {QuitarHtml(producto.DescripcionLarga)}", Field.Store.NO),
                     };
                     writer.AddDocument(doc);
                 }
@@ -61,8 +64,7 @@ namespace NestoAPI.Infraestructure.Buscador
             }
         }
 
-
-        public static List<dynamic> Buscar(string q, string tipo = null)
+        public static List<dynamic> Buscar(string q, string tipo = null, int skip = 0, int take = 20)
         {
             SpanishInsensitiveAnalyzer analyzer = new SpanishInsensitiveAnalyzer(AppLuceneVersion);
 
@@ -74,12 +76,11 @@ namespace NestoAPI.Infraestructure.Buscador
                 string[] campos = new[] { "TextoCompleto", "Nombre", "Protocolo" };
                 MultiFieldQueryParser parser = new MultiFieldQueryParser(AppLuceneVersion, campos, analyzer)
                 {
-                    DefaultOperator = Operator.OR
+                    DefaultOperator = Operator.AND
                 };
 
                 string escapedQuery = QueryParser.Escape(q);
                 Query query = parser.Parse(escapedQuery);
-
 
                 if (!string.IsNullOrEmpty(tipo))
                 {
@@ -91,10 +92,11 @@ namespace NestoAPI.Infraestructure.Buscador
             };
                 }
 
-                ScoreDoc[] hits = searcher.Search(query, 20).ScoreDocs;
+                ScoreDoc[] hits = searcher.Search(query, skip + take).ScoreDocs;
+
                 List<dynamic> resultados = new List<dynamic>();
 
-                foreach (ScoreDoc hit in hits)
+                foreach (ScoreDoc hit in hits.Skip(skip).Take(take))
                 {
                     Document doc = searcher.Doc(hit.Doc);
                     resultados.Add(new
@@ -109,10 +111,6 @@ namespace NestoAPI.Infraestructure.Buscador
             }
         }
 
-
-
-
-
         private static string QuitarHtml(string html)
         {
             return System.Text.RegularExpressions.Regex.Replace(html ?? "", "<.*?>", " ");
@@ -123,9 +121,9 @@ namespace NestoAPI.Infraestructure.Buscador
             return System.Text.RegularExpressions.Regex.Replace(texto ?? "", "\\d{1,2}:\\d{2}", "");
         }
 
-        private static List<(string Id, string Nombre, string DescripcionBreve, string DescripcionLarga)> ObtenerProductos()
+        private static List<ResultadoBusqueda> ObtenerProductos()
         {
-            List<(string Id, string Nombre, string DescripcionBreve, string DescripcionLarga)> resultado = new List<(string Id, string Nombre, string DescripcionBreve, string DescripcionLarga)>();
+            var resultado = new List<ResultadoBusqueda>();
 
             using (NVEntities db = new NVEntities())
             {
@@ -139,12 +137,16 @@ namespace NestoAPI.Infraestructure.Buscador
                             ISNULL(NULLIF(LTRIM(RTRIM(pp.Nombre)), ''), LTRIM(RTRIM(p.Nombre))) AS Nombre,
                             ISNULL(pp.DescripciónBreve, '') AS DescripcionBreve,
                             ISNULL(pp.Descripción, '') AS DescripcionLarga,
-	                        ISNULL(rtrim(f.Descripción), '') AS Familia
+                            ISNULL(rtrim(f.Descripción), '') AS Familia,
+	                        ISNULL(rtrim(s.Descripción), '') AS Subgrupo
                         FROM Productos p INNER JOIN Familias f
                         on f.Empresa = p.Empresa and f.Número = p.Familia
+                        INNER JOIN SubGruposProducto s
+                        on s.Empresa = p.Empresa and s.Grupo = p.Grupo and s.Número = p.SubGrupo
                         LEFT JOIN PrestashopProductos pp 
                             ON p.Empresa = pp.Empresa AND p.Número = pp.Número
-                        WHERE p.Empresa = '1' and p.Estado >= 0 and p.Grupo != 'MTP' and p.Subgrupo != 'MMP'", conexion))
+                        WHERE p.Empresa = '1' and p.Estado >= 0 and p.Grupo != 'MTP' and p.Subgrupo != 'MMP'
+                        ", conexion))
                     {
                         conexion.Open();
                         using (SqlDataReader lector = comando.ExecuteReader())
@@ -156,13 +158,18 @@ namespace NestoAPI.Infraestructure.Buscador
                                 string descripcionBreve = lector.IsDBNull(2) ? "" : lector.GetString(2);
                                 string descripcionLarga = lector.IsDBNull(3) ? "" : lector.GetString(3);
                                 string familia = lector.IsDBNull(4) ? "" : lector.GetString(4);
+                                string subgrupo = lector.IsDBNull(5) ? "" : lector.GetString(5);
 
-                                if (!string.IsNullOrEmpty(familia) && familia != "Genéricos")
+                                resultado.Add(new ResultadoBusqueda
                                 {
-                                    nombre += " de " + familia;
-                                }
-
-                                resultado.Add((id.Trim(), nombre, descripcionBreve, descripcionLarga));
+                                    Tipo = "producto",
+                                    Id = id.Trim(),
+                                    Nombre = nombre,
+                                    Familia = familia,
+                                    Subgrupo = subgrupo,
+                                    DescripcionBreve = descripcionBreve,
+                                    DescripcionLarga = descripcionLarga
+                                });
                             }
 
                             return resultado;
@@ -218,9 +225,9 @@ namespace NestoAPI.Infraestructure.Buscador
                 .ToList();
         }
 
-        public static List<VideoResultadoBusqueda> BuscarVideos(string textoBusqueda)
+        public static List<VideoResultadoBusqueda> BuscarVideos(string textoBusqueda, int skip = 0, int take = 20)
         {
-            List<dynamic> resultadosGenericos = Buscar(textoBusqueda, "video");
+            List<dynamic> resultadosGenericos = Buscar(textoBusqueda, "video", skip, take);
             return resultadosGenericos
                 .Select(r =>
                 {
@@ -230,6 +237,18 @@ namespace NestoAPI.Infraestructure.Buscador
                 .Where(r => r.Id != 0) // Por si acaso hubo errores de conversión
                 .ToList();
         }
+
+        public class ResultadoBusqueda
+        {
+            public string Tipo { get; set; }
+            public string Id { get; set; }
+            public string Nombre { get; set; }
+            public string Subgrupo { get; set; }
+            public string Familia { get; set; }
+            public string DescripcionBreve { get; set; }
+            public string DescripcionLarga { get; set; }
+        }
+
 
         public class ProductoResultadoBusqueda
         {

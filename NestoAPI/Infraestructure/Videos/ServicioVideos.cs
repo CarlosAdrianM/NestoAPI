@@ -74,9 +74,9 @@ namespace NestoAPI.Infraestructure.Videos
             }
         }
 
-        public Task<List<VideoLookupModel>> BuscarVideos(string query, bool tieneComprasRecientes)
+        public Task<List<VideoLookupModel>> BuscarVideos(string query, bool tieneComprasRecientes, int skip = 0, int take = 20)
         {
-            List<VideoResultadoBusqueda> resultadosLucene = LuceneBuscador.BuscarVideos(query);
+            List<VideoResultadoBusqueda> resultadosLucene = LuceneBuscador.BuscarVideos(query, skip, take);
             List<int> ids = resultadosLucene.Select(r => r.Id).ToList();
 
             return GetVideos(ids, tieneComprasRecientes);

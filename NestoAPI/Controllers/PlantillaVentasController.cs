@@ -324,7 +324,7 @@ namespace NestoAPI.Controllers
         }
 
         [HttpPost]
-        [Route("api/PlantillaVentas/PonerStock")]
+        [Route("PonerStock")]
         public List<LineaPlantillaVenta> PonerStock(PonerStockParam param)
         {
             if (param == null)
@@ -351,7 +351,7 @@ namespace NestoAPI.Controllers
         }
 
         [HttpPost]
-        [Route("api/PlantillaVentas/ProductosBonificables")]
+        [Route("ProductosBonificables")]
         [ResponseType(typeof(List<LineaPlantillaVenta>))]
         public async Task<IHttpActionResult> GetCargarProductosBonificables((string, List<LineaPlantillaVenta>) parametro)
         {
