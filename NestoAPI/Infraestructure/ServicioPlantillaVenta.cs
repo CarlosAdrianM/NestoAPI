@@ -11,9 +11,9 @@ namespace NestoAPI.Infraestructure
 {
     public class ServicioPlantillaVenta : IServicioPlantillaVenta
     {
-        public async Task<List<LineaPlantillaVenta>> BusquedaContextual(string filtroProducto)
+        public async Task<List<LineaPlantillaVenta>> BusquedaContextual(string filtroProducto, bool usarBusquedaConAND = false)
         {
-            List<ProductoResultadoBusqueda> resultadosLucene = LuceneBuscador.BuscarProductos(filtroProducto);
+            List<ProductoResultadoBusqueda> resultadosLucene = LuceneBuscador.BuscarProductos(filtroProducto, usarBusquedaConAND);
 
             if (!resultadosLucene.Any())
             {

@@ -6,7 +6,7 @@ namespace NestoAPI.Infraestructure
 {
     public interface IServicioPlantillaVenta
     {
-        Task<List<LineaPlantillaVenta>> BusquedaContextual(string filtroProducto);
+        Task<List<LineaPlantillaVenta>> BusquedaContextual(string filtroProducto, bool usarBusquedaConAND = false);
         HashSet<string> CargarProductosBonificables();
         HashSet<string> CargarProductosYaComprados(string cliente);
     }

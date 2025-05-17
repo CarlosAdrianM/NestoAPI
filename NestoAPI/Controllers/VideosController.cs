@@ -115,12 +115,23 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> Buscar(
             [FromUri] string q,
             [FromUri] int skip = 0,
-            [FromUri] int take = 20,
-            [FromUri] bool tieneComprasRecientes = false)
+            [FromUri] int take = 20)
         {
             if (string.IsNullOrWhiteSpace(q))
             {
                 return BadRequest("Debe proporcionar una consulta.");
+            }
+
+            bool tieneComprasRecientes = false;
+
+            // Verificar si el usuario está autenticado y tiene el claim
+            if (User.Identity.IsAuthenticated && User.Identity is ClaimsIdentity identity)
+            {
+                Claim purchasesClaim = identity.FindFirst("HasRecentPurchases");
+                if (purchasesClaim != null)
+                {
+                    _ = bool.TryParse(purchasesClaim.Value, out tieneComprasRecientes);
+                }
             }
 
             List<VideoLookupModel> resultados = await _servicioVideos.BuscarVideos(q, tieneComprasRecientes, skip, take);

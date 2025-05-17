@@ -115,13 +115,13 @@ namespace NestoAPI.Controllers
 
         [HttpGet]
         [Route("Buscar")]
-        public async Task<IHttpActionResult> GetBuscarProductoContextual(string q)
+        public async Task<IHttpActionResult> GetBuscarProductoContextual(string q, bool usarBusquedaConAND = false)
         {
             if (string.IsNullOrWhiteSpace(q))
             {
                 return BadRequest("Debe proporcionar un filtro de búsqueda.");
             }
-            var lineasPlantilla = await _servicio.BusquedaContextual(q);
+            var lineasPlantilla = await _servicio.BusquedaContextual(q, usarBusquedaConAND);
 
             return Ok(lineasPlantilla);
         }

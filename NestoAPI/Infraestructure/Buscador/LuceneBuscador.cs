@@ -64,7 +64,19 @@ namespace NestoAPI.Infraestructure.Buscador
             }
         }
 
-        public static List<dynamic> Buscar(string q, string tipo = null, int skip = 0, int take = 20)
+        public static List<dynamic> Buscar(string q, string tipo = null, int skip = 0, int take = 20, bool usarOperadorAND = false)
+        {
+            return Buscar(new ParametrosBusqueda
+            {
+                Query = q,
+                Tipo = tipo,
+                Skip = skip,
+                Take = take,
+                Operador = usarOperadorAND ? OperadorBusqueda.AND : OperadorBusqueda.OR
+            });
+        }
+
+        public static List<dynamic> Buscar(ParametrosBusqueda parametros)
         {
             SpanishInsensitiveAnalyzer analyzer = new SpanishInsensitiveAnalyzer(AppLuceneVersion);
 
@@ -76,27 +88,27 @@ namespace NestoAPI.Infraestructure.Buscador
                 string[] campos = new[] { "TextoCompleto", "Nombre", "Protocolo" };
                 MultiFieldQueryParser parser = new MultiFieldQueryParser(AppLuceneVersion, campos, analyzer)
                 {
-                    DefaultOperator = Operator.AND
+                    DefaultOperator = parametros.Operador == OperadorBusqueda.AND ? Operator.AND : Operator.OR
                 };
 
-                string escapedQuery = QueryParser.Escape(q);
+                string escapedQuery = QueryParser.Escape(parametros.Query);
                 Query query = parser.Parse(escapedQuery);
 
-                if (!string.IsNullOrEmpty(tipo))
+                if (!string.IsNullOrEmpty(parametros.Tipo))
                 {
-                    TermQuery filtro = new TermQuery(new Term("Tipo", tipo.ToLower()));
+                    TermQuery filtro = new TermQuery(new Term("Tipo", parametros.Tipo.ToLower()));
                     query = new BooleanQuery
-            {
-                { query, Occur.MUST },
-                { filtro, Occur.MUST }
-            };
+                    {
+                        { query, Occur.MUST },
+                        { filtro, Occur.MUST }
+                    };
                 }
 
-                ScoreDoc[] hits = searcher.Search(query, skip + take).ScoreDocs;
+                ScoreDoc[] hits = searcher.Search(query, parametros.Skip + parametros.Take).ScoreDocs;
 
                 List<dynamic> resultados = new List<dynamic>();
 
-                foreach (ScoreDoc hit in hits.Skip(skip).Take(take))
+                foreach (ScoreDoc hit in hits.Skip(parametros.Skip).Take(parametros.Take))
                 {
                     Document doc = searcher.Doc(hit.Doc);
                     resultados.Add(new
@@ -214,9 +226,14 @@ namespace NestoAPI.Infraestructure.Buscador
             }
         }
 
-        public static List<ProductoResultadoBusqueda> BuscarProductos(string textoBusqueda)
+        public static List<ProductoResultadoBusqueda> BuscarProductos(string textoBusqueda, bool usarBusquedaConAND = false)
         {
-            List<dynamic> resultadosGenericos = Buscar(textoBusqueda, "producto");
+            List<dynamic> resultadosGenericos = Buscar(new ParametrosBusqueda
+            {
+                Query = textoBusqueda,
+                Tipo = "producto",
+                Operador = usarBusquedaConAND ? OperadorBusqueda.AND : OperadorBusqueda.OR
+            });
             return resultadosGenericos
                 .Select(r =>
                 {
@@ -258,6 +275,21 @@ namespace NestoAPI.Infraestructure.Buscador
         public class VideoResultadoBusqueda
         {
             public int Id { get; set; }
+        }
+
+        public enum OperadorBusqueda
+        {
+            AND,
+            OR
+        }
+
+        public class ParametrosBusqueda
+        {
+            public string Query { get; set; }
+            public string Tipo { get; set; }
+            public int Skip { get; set; } = 0;
+            public int Take { get; set; } = 20;
+            public OperadorBusqueda Operador { get; set; } = OperadorBusqueda.OR;
         }
     }
 }
