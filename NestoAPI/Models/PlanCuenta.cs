@@ -32,6 +32,15 @@ namespace NestoAPI.Models
             this.ParámetrosIVA3 = new HashSet<ParametroIVA>();
             this.Prepagos = new HashSet<Prepago>();
             this.Contabilidads = new HashSet<Contabilidad>();
+            this.GruposProductoes = new HashSet<GruposProducto>();
+            this.GruposProductoes1 = new HashSet<GruposProducto>();
+            this.GruposProductoes2 = new HashSet<GruposProducto>();
+            this.GruposProductoes3 = new HashSet<GruposProducto>();
+            this.GruposProductoes4 = new HashSet<GruposProducto>();
+            this.GruposProductoes5 = new HashSet<GruposProducto>();
+            this.GruposProductoes6 = new HashSet<GruposProducto>();
+            this.GruposProductoes7 = new HashSet<GruposProducto>();
+            this.GruposProductoes8 = new HashSet<GruposProducto>();
         }
     
         public string Empresa { get; set; }
@@ -62,5 +71,14 @@ namespace NestoAPI.Models
         public virtual ICollection<ParametroIVA> ParámetrosIVA3 { get; set; }
         public virtual ICollection<Prepago> Prepagos { get; set; }
         public virtual ICollection<Contabilidad> Contabilidads { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes1 { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes2 { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes3 { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes4 { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes5 { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes6 { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes7 { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes8 { get; set; }
     }
 }

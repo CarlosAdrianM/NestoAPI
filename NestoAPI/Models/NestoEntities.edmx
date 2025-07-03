@@ -892,6 +892,29 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="GruposProducto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Descripción" Type="char" MaxLength="50" />
+          <Property Name="CtaVentas" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="CtaAbonosVta" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="CtaCompras" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="CtaAbonosCmp" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="CtaExistencias" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="CtaVariación" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="CtaDepreciación" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="CtaDescuentos" Type="char" MaxLength="10" />
+          <Property Name="CtaDescuentosCmp" Type="char" MaxLength="10" />
+          <Property Name="%Bonificación" Type="decimal" Precision="5" Scale="4" Nullable="false" />
+          <Property Name="ProductoBonificación" Type="char" MaxLength="15" />
+          <Property Name="AplicarDto" Type="bit" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="Inmovilizados">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -2481,6 +2504,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_DescuentosProducto_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="0..1" />
+          <End Role="DescuentosProducto" Type="Self.DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoProducto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_DescuentosProducto_Productos">
           <End Role="Productos" Type="Self.Productos" Multiplicity="0..1" />
           <End Role="DescuentosProducto" Type="Self.DescuentosProducto" Multiplicity="*" />
@@ -3125,6 +3162,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_ExtractoProducto_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="1" />
+          <End Role="ExtractoProducto" Type="Self.ExtractoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_ExtractoProducto_Productos">
           <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
           <End Role="ExtractoProducto" Type="Self.ExtractoProducto" Multiplicity="*" />
@@ -3273,6 +3324,158 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_GruposProducto_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaVentas" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas1">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaAbonosVta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas2">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaCompras" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas3">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaAbonosCmp" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas4">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaExistencias" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas5">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaVariación" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas6">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaDepreciación" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas7">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaDescuentos" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas8">
+          <End Role="PlanCuentas" Type="Self.PlanCuentas" Multiplicity="0..1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuentas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaDescuentosCmp" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="0..1" />
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="ProductoBonificación" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Inmovilizados_CentrosCoste">
           <End Role="CentrosCoste" Type="Self.CentrosCoste" Multiplicity="1" />
           <End Role="Inmovilizados" Type="Self.Inmovilizados" Multiplicity="*" />
@@ -3336,6 +3539,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="Inventarios">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Inventarios_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="1" />
+          <End Role="Inventarios" Type="Self.Inventarios" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Inventarios">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -3586,6 +3803,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="LinPedidoVta">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Forma Venta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="0..1" />
+          <End Role="LinPedidoVta" Type="Self.LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -4035,6 +4266,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_PreExtrProducto_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="1" />
+          <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_PreExtrProducto_Productos">
           <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
           <End Role="PreExtrProducto" Type="Self.PreExtrProducto" Multiplicity="*" />
@@ -4134,6 +4379,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="Productos">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Familia" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="0..1" />
+          <End Role="Productos" Type="Self.Productos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -4333,6 +4592,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_SubGruposProducto_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="1" />
+          <End Role="SubGruposProducto" Type="Self.SubGruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="SubGruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Vendedores_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="*" />
@@ -4377,6 +4650,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_VendedoresClienteGrupoProducto_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="1" />
+          <End Role="VendedoresClienteGrupoProducto" Type="Self.VendedoresClienteGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedoresClienteGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoProducto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_VendedoresClienteGrupoProducto_Vendedores">
           <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="1" />
           <End Role="VendedoresClienteGrupoProducto" Type="Self.VendedoresClienteGrupoProducto" Multiplicity="*" />
@@ -4402,6 +4689,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="VendedoresCodigoPostalGrupoProducto">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="CodigoPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedoresCodigoPostalGrupoProducto_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="1" />
+          <End Role="VendedoresCodigoPostalGrupoProducto" Type="Self.VendedoresCodigoPostalGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedoresCodigoPostalGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoProducto" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -4432,6 +4733,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="VendedoresPedidoGrupoProducto">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Pedido" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedoresPedidoGrupoProducto_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="1" />
+          <End Role="VendedoresPedidoGrupoProducto" Type="Self.VendedoresPedidoGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedoresPedidoGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoProducto" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -4541,6 +4856,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="FicheroCuaderno43" EntityType="Self.FicheroCuaderno43" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasVenta" EntityType="Self.FormasVenta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="GruposProducto" EntityType="Self.GruposProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Inmovilizados" EntityType="Self.Inmovilizados" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Inventarios" EntityType="Self.Inventarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="InventariosCuadre" EntityType="Self.InventariosCuadre" Schema="dbo" store:Type="Tables" />
@@ -4827,6 +5143,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Familias" EntitySet="Familias" />
             <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
           </AssociationSet>
+          <AssociationSet Name="FK_DescuentosProducto_GruposProducto" Association="Self.FK_DescuentosProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_DescuentosProducto_Productos" Association="Self.FK_DescuentosProducto_Productos">
             <End Role="Productos" EntitySet="Productos" />
             <End Role="DescuentosProducto" EntitySet="DescuentosProducto" />
@@ -5011,6 +5331,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="FormasVenta" EntitySet="FormasVenta" />
             <End Role="ExtractoProducto" EntitySet="ExtractoProducto" />
           </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProducto_GruposProducto" Association="Self.FK_ExtractoProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+            <End Role="ExtractoProducto" EntitySet="ExtractoProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_ExtractoProducto_Productos" Association="Self.FK_ExtractoProducto_Productos">
             <End Role="Productos" EntitySet="Productos" />
             <End Role="ExtractoProducto" EntitySet="ExtractoProducto" />
@@ -5055,6 +5379,50 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="FormasVenta" EntitySet="FormasVenta" />
           </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_Empresas" Association="Self.FK_GruposProducto_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas" Association="Self.FK_GruposProducto_PlanCuentas">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas1" Association="Self.FK_GruposProducto_PlanCuentas1">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas2" Association="Self.FK_GruposProducto_PlanCuentas2">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas3" Association="Self.FK_GruposProducto_PlanCuentas3">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas4" Association="Self.FK_GruposProducto_PlanCuentas4">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas5" Association="Self.FK_GruposProducto_PlanCuentas5">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas6" Association="Self.FK_GruposProducto_PlanCuentas6">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas7" Association="Self.FK_GruposProducto_PlanCuentas7">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas8" Association="Self.FK_GruposProducto_PlanCuentas8">
+            <End Role="PlanCuentas" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_Productos" Association="Self.FK_GruposProducto_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_Inmovilizados_CentrosCoste" Association="Self.FK_Inmovilizados_CentrosCoste">
             <End Role="CentrosCoste" EntitySet="CentrosCoste" />
             <End Role="Inmovilizados" EntitySet="Inmovilizados" />
@@ -5073,6 +5441,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </AssociationSet>
           <AssociationSet Name="FK_Inventarios_Familias" Association="Self.FK_Inventarios_Familias">
             <End Role="Familias" EntitySet="Familias" />
+            <End Role="Inventarios" EntitySet="Inventarios" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Inventarios_GruposProducto" Association="Self.FK_Inventarios_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
             <End Role="Inventarios" EntitySet="Inventarios" />
           </AssociationSet>
           <AssociationSet Name="FK_Inventarios_SubGruposProducto" Association="Self.FK_Inventarios_SubGruposProducto">
@@ -5145,6 +5517,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </AssociationSet>
           <AssociationSet Name="FK_LinPedidoVta_FormasVenta" Association="Self.FK_LinPedidoVta_FormasVenta">
             <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_GruposProducto" Association="Self.FK_LinPedidoVta_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
             <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
           </AssociationSet>
           <AssociationSet Name="FK_LinPedidoVta_SubGruposProducto" Association="Self.FK_LinPedidoVta_SubGruposProducto">
@@ -5275,6 +5651,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="FormasVenta" EntitySet="FormasVenta" />
             <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
           </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_GruposProducto" Association="Self.FK_PreExtrProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_PreExtrProducto_Productos" Association="Self.FK_PreExtrProducto_Productos">
             <End Role="Productos" EntitySet="Productos" />
             <End Role="PreExtrProducto" EntitySet="PreExtrProducto" />
@@ -5301,6 +5681,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </AssociationSet>
           <AssociationSet Name="FK_Productos_Familias" Association="Self.FK_Productos_Familias">
             <End Role="Familias" EntitySet="Familias" />
+            <End Role="Productos" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_GruposProducto" Association="Self.FK_Productos_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
             <End Role="Productos" EntitySet="Productos" />
           </AssociationSet>
           <AssociationSet Name="FK_Productos_Productos" Association="Self.FK_Productos_Productos">
@@ -5359,6 +5743,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="SeguimientoCliente" EntitySet="SeguimientoCliente" />
           </AssociationSet>
+          <AssociationSet Name="FK_SubGruposProducto_GruposProducto" Association="Self.FK_SubGruposProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+            <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_Vendedores_Empresas" Association="Self.FK_Vendedores_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="Vendedores" EntitySet="Vendedores" />
@@ -5371,6 +5759,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Clientes" EntitySet="Clientes" />
             <End Role="VendedoresClienteGrupoProducto" EntitySet="VendedoresClienteGrupoProducto" />
           </AssociationSet>
+          <AssociationSet Name="FK_VendedoresClienteGrupoProducto_GruposProducto" Association="Self.FK_VendedoresClienteGrupoProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+            <End Role="VendedoresClienteGrupoProducto" EntitySet="VendedoresClienteGrupoProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_VendedoresClienteGrupoProducto_Vendedores" Association="Self.FK_VendedoresClienteGrupoProducto_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="VendedoresClienteGrupoProducto" EntitySet="VendedoresClienteGrupoProducto" />
@@ -5379,12 +5771,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="CódigosPostales" EntitySet="CódigosPostales" />
             <End Role="VendedoresCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGrupoProducto" />
           </AssociationSet>
+          <AssociationSet Name="FK_VendedoresCodigoPostalGrupoProducto_GruposProducto" Association="Self.FK_VendedoresCodigoPostalGrupoProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+            <End Role="VendedoresCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGrupoProducto" />
+          </AssociationSet>
           <AssociationSet Name="FK_VendedoresCodigoPostalGrupoProducto_Vendedores" Association="Self.FK_VendedoresCodigoPostalGrupoProducto_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="VendedoresCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGrupoProducto" />
           </AssociationSet>
           <AssociationSet Name="FK_VendedoresPedidoGrupoProducto_CabPedidoVta" Association="Self.FK_VendedoresPedidoGrupoProducto_CabPedidoVta">
             <End Role="CabPedidoVta" EntitySet="CabPedidoVta" />
+            <End Role="VendedoresPedidoGrupoProducto" EntitySet="VendedoresPedidoGrupoProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedoresPedidoGrupoProducto_GruposProducto" Association="Self.FK_VendedoresPedidoGrupoProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
             <End Role="VendedoresPedidoGrupoProducto" EntitySet="VendedoresPedidoGrupoProducto" />
           </AssociationSet>
           <AssociationSet Name="FK_VendedoresPedidoGrupoProducto_Vendedores" Association="Self.FK_VendedoresPedidoGrupoProducto_Vendedores">
@@ -6331,6 +6731,91 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Video" EntitySet="Videos" />
             <End Role="VideosProducto" EntitySet="VideosProductos" />
           </AssociationSet>
+          <EntitySet Name="GruposProductoes" EntityType="NVModel.GruposProducto" />
+          <AssociationSet Name="FK_DescuentosProducto_GruposProducto" Association="NVModel.FK_DescuentosProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="DescuentosProducto" EntitySet="DescuentosProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_Empresas" Association="NVModel.FK_GruposProducto_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoProducto_GruposProducto" Association="NVModel.FK_ExtractoProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="ExtractoProducto" EntitySet="ExtractosProducto" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas" Association="NVModel.FK_GruposProducto_PlanCuentas">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas1" Association="NVModel.FK_GruposProducto_PlanCuentas1">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas2" Association="NVModel.FK_GruposProducto_PlanCuentas2">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas3" Association="NVModel.FK_GruposProducto_PlanCuentas3">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas4" Association="NVModel.FK_GruposProducto_PlanCuentas4">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas5" Association="NVModel.FK_GruposProducto_PlanCuentas5">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas6" Association="NVModel.FK_GruposProducto_PlanCuentas6">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas7" Association="NVModel.FK_GruposProducto_PlanCuentas7">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_PlanCuentas8" Association="NVModel.FK_GruposProducto_PlanCuentas8">
+            <End Role="PlanCuenta" EntitySet="PlanCuentas" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_GruposProducto_Productos" Association="NVModel.FK_GruposProducto_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Inventarios_GruposProducto" Association="NVModel.FK_Inventarios_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="Inventario" EntitySet="Inventarios" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LinPedidoVta_GruposProducto" Association="NVModel.FK_LinPedidoVta_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="LinPedidoVta" EntitySet="LinPedidoVtas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PreExtrProducto_GruposProducto" Association="NVModel.FK_PreExtrProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="PreExtrProducto" EntitySet="PreExtrProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Productos_GruposProducto" Association="NVModel.FK_Productos_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="Producto" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_SubGruposProducto_GruposProducto" Association="NVModel.FK_SubGruposProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="SubGruposProducto" EntitySet="SubGruposProductoes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedoresClienteGrupoProducto_GruposProducto" Association="NVModel.FK_VendedoresClienteGrupoProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="VendedorClienteGrupoProducto" EntitySet="VendedoresClientesGruposProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedoresCodigoPostalGrupoProducto_GruposProducto" Association="NVModel.FK_VendedoresCodigoPostalGrupoProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="VendedorCodigoPostalGrupoProducto" EntitySet="VendedoresCodigoPostalGruposProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_VendedoresPedidoGrupoProducto_GruposProducto" Association="NVModel.FK_VendedoresPedidoGrupoProducto_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="VendedorPedidoGrupoProducto" EntitySet="VendedoresPedidosGruposProductos" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -6489,6 +6974,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="DiariosProductoes" Relationship="NVModel.FK_DiariosProducto_Empresas" FromRole="Empresa" ToRole="DiariosProducto" />
           <NavigationProperty Name="Kits" Relationship="NVModel.FK_KITS_Empresas" FromRole="Empresa" ToRole="Kit" />
           <NavigationProperty Name="CabAlbaránVta" Relationship="NVModel.FK_CabAlbaránVta_Empresas" FromRole="Empresa" ToRole="CabAlbaránVta" />
+          <NavigationProperty Name="GruposProductoes" Relationship="NVModel.FK_GruposProducto_Empresas" FromRole="Empresa" ToRole="GruposProducto" />
           </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -6627,6 +7113,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="RowVersion" Type="Binary" Nullable="false" MaxLength="8" FixedLength="true" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="CabFacturaVta" Relationship="NVModel.FK_LinPedidoVta_CabFacturaVta" FromRole="LinPedidoVta" ToRole="CabFacturaVta" />
           <NavigationProperty Name="VendedorLinPedidoVtas" Relationship="NVModel.FK_VendedorLinPedidoVta_LinPedidoVta" FromRole="LinPedidoVta" ToRole="VendedorLinPedidoVta" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_LinPedidoVta_GruposProducto" FromRole="LinPedidoVta" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_LinPedidoVta_CabPedidoVta">
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1" />
@@ -6897,6 +7384,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="OfertasProveedores" Relationship="NVModel.FK_OfertasProveedores_Productos" FromRole="Producto" ToRole="OfertasProveedore" />
           <NavigationProperty Name="Kits" Relationship="NVModel.FK_KITS_Productos" FromRole="Producto" ToRole="Kit" />
           <NavigationProperty Name="Kits1" Relationship="NVModel.FK_KITS_Productos1" FromRole="Producto" ToRole="Kit" />
+          <NavigationProperty Name="GruposProductoes" Relationship="NVModel.FK_GruposProducto_Productos" FromRole="Producto" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_Productos_GruposProducto" FromRole="Producto" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -6959,6 +7448,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_SubGruposProducto" FromRole="SubGruposProducto" ToRole="LinPedidoVta" />
           <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_SubGruposProducto" FromRole="SubGruposProducto" ToRole="Producto" />
           <NavigationProperty Name="Inventarios" Relationship="NVModel.FK_Inventarios_SubGruposProducto" FromRole="SubGruposProducto" ToRole="Inventario" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_SubGruposProducto_GruposProducto" FromRole="SubGruposProducto" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_Familias_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -7094,6 +7584,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_DescuentosProducto_Productos" FromRole="DescuentosProducto" ToRole="Producto" />
           <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_DescuentosProducto_Proveedores" FromRole="DescuentosProducto" ToRole="Proveedore" />
           <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_DescuentosProducto_GruposProducto" FromRole="DescuentosProducto" ToRole="GruposProducto" />
         </EntityType>
         <EntityType Name="DíasPagoClientes">
           <Key>
@@ -7526,6 +8017,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="CentrosCoste" Relationship="NVModel.FK_ExtractoProducto_CentrosCoste" FromRole="ExtractoProducto" ToRole="CentrosCoste" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_ExtractoProducto_Vendedores" FromRole="ExtractoProducto" ToRole="Vendedore" />
           <NavigationProperty Name="DiariosProducto" Relationship="NVModel.FK_ExtractoProducto_DiariosProducto" FromRole="ExtractoProducto" ToRole="DiariosProducto" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_ExtractoProducto_GruposProducto" FromRole="ExtractoProducto" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_ExtractoProducto_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -8163,6 +8655,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Familia1" Relationship="NVModel.FK_Inventarios_Familias" FromRole="Inventario" ToRole="Familia" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_Inventario_Productos" FromRole="Inventario" ToRole="Producto" />
           <NavigationProperty Name="SubGruposProducto" Relationship="NVModel.FK_Inventarios_SubGruposProducto" FromRole="Inventario" ToRole="SubGruposProducto" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_Inventarios_GruposProducto" FromRole="Inventario" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_Inventario_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -8632,6 +9125,15 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="ParámetrosIVA3" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas3" FromRole="PlanCuenta" ToRole="ParametroIVA" />
           <NavigationProperty Name="Prepagos" Relationship="NVModel.FK_Prepagos_PlanCuentas" FromRole="PlanCuenta" ToRole="Prepago" />
           <NavigationProperty Name="Contabilidads" Relationship="NVModel.FK_Contabilidad_PlanCuentas" FromRole="PlanCuenta" ToRole="Contabilidad" />
+          <NavigationProperty Name="GruposProductoes" Relationship="NVModel.FK_GruposProducto_PlanCuentas" FromRole="PlanCuenta" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProductoes1" Relationship="NVModel.FK_GruposProducto_PlanCuentas1" FromRole="PlanCuenta" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProductoes2" Relationship="NVModel.FK_GruposProducto_PlanCuentas2" FromRole="PlanCuenta" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProductoes3" Relationship="NVModel.FK_GruposProducto_PlanCuentas3" FromRole="PlanCuenta" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProductoes4" Relationship="NVModel.FK_GruposProducto_PlanCuentas4" FromRole="PlanCuenta" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProductoes5" Relationship="NVModel.FK_GruposProducto_PlanCuentas5" FromRole="PlanCuenta" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProductoes6" Relationship="NVModel.FK_GruposProducto_PlanCuentas6" FromRole="PlanCuenta" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProductoes7" Relationship="NVModel.FK_GruposProducto_PlanCuentas7" FromRole="PlanCuenta" ToRole="GruposProducto" />
+          <NavigationProperty Name="GruposProductoes8" Relationship="NVModel.FK_GruposProducto_PlanCuentas8" FromRole="PlanCuenta" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_Empresas_PlanCuentas">
           <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
@@ -9000,6 +9502,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Clientes" FromRole="VendedoresClienteGrupoProducto" ToRole="Cliente" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_Vendedores" FromRole="VendedorClienteGrupoProducto" ToRole="Vendedore" />
           <Property Name="Estado" Type="Int16" Nullable="false" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_GruposProducto" FromRole="VendedorClienteGrupoProducto" ToRole="GruposProducto" />
         </EntityType>
         <EntityType Name="VendedorPedidoGrupoProducto">
           <Key>
@@ -9014,6 +9517,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="CabPedidoVta" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_CabPedidoVta" FromRole="VendedoresPedidoGrupoProducto" ToRole="CabPedidoVta" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_Vendedores" FromRole="VendedorPedidoGrupoProducto" ToRole="Vendedore" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_GruposProducto" FromRole="VendedorPedidoGrupoProducto" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_VendedoresPedidoGrupoProducto_CabPedidoVta">
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="1">
@@ -9681,6 +10185,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_PreExtrProducto_Proveedores" FromRole="PreExtrProducto" ToRole="Proveedor" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_PreExtrProducto_Vendedores" FromRole="PreExtrProducto" ToRole="Vendedor" />
           <NavigationProperty Name="DiariosProducto" Relationship="NVModel.FK_PreExtrProducto_DiariosProducto" FromRole="PreExtrProducto" ToRole="DiariosProducto" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_PreExtrProducto_GruposProducto" FromRole="PreExtrProducto" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_PreExtrProducto_CentrosCoste">
           <End Type="NVModel.CentrosCoste" Role="CentrosCoste" Multiplicity="0..1" />
@@ -9906,6 +10411,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
           <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales" FromRole="VendedoresCodigoPostalGrupoProducto" ToRole="CodigoPostal" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_Vendedores" FromRole="VendedoresCodigoPostalGrupoProducto" ToRole="Vendedor" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_GruposProducto" FromRole="VendedorCodigoPostalGrupoProducto" ToRole="GruposProducto" />
         </EntityType>
         <Association Name="FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales">
           <End Type="NVModel.CodigoPostal" Role="CodigoPostal" Multiplicity="1" />
@@ -11172,6 +11678,342 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Principal>
             <Dependent Role="VideosProducto">
               <PropertyRef Name="VideoId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="GruposProducto">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Descripción" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="CtaVentas" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaAbonosVta" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaCompras" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaAbonosCmp" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaExistencias" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaVariación" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDepreciación" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDescuentos" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="CtaDescuentosCmp" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="C_Bonificación" Type="Decimal" Nullable="false" Precision="5" Scale="4" />
+          <Property Name="ProductoBonificación" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="AplicarDto" Type="Boolean" Nullable="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="DescuentosProductoes" Relationship="NVModel.FK_DescuentosProducto_GruposProducto" FromRole="GruposProducto" ToRole="DescuentosProducto" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_GruposProducto_Empresas" FromRole="GruposProducto" ToRole="Empresa" />
+          <NavigationProperty Name="ExtractoProductoes" Relationship="NVModel.FK_ExtractoProducto_GruposProducto" FromRole="GruposProducto" ToRole="ExtractoProducto" />
+          <NavigationProperty Name="PlanCuenta" Relationship="NVModel.FK_GruposProducto_PlanCuentas" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta1" Relationship="NVModel.FK_GruposProducto_PlanCuentas1" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta2" Relationship="NVModel.FK_GruposProducto_PlanCuentas2" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta3" Relationship="NVModel.FK_GruposProducto_PlanCuentas3" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta4" Relationship="NVModel.FK_GruposProducto_PlanCuentas4" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta5" Relationship="NVModel.FK_GruposProducto_PlanCuentas5" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta6" Relationship="NVModel.FK_GruposProducto_PlanCuentas6" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta7" Relationship="NVModel.FK_GruposProducto_PlanCuentas7" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="PlanCuenta8" Relationship="NVModel.FK_GruposProducto_PlanCuentas8" FromRole="GruposProducto" ToRole="PlanCuenta" />
+          <NavigationProperty Name="Producto" Relationship="NVModel.FK_GruposProducto_Productos" FromRole="GruposProducto" ToRole="Producto" />
+          <NavigationProperty Name="Inventarios" Relationship="NVModel.FK_Inventarios_GruposProducto" FromRole="GruposProducto" ToRole="Inventario" />
+          <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_GruposProducto" FromRole="GruposProducto" ToRole="LinPedidoVta" />
+          <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_GruposProducto" FromRole="GruposProducto" ToRole="PreExtrProducto" />
+          <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_GruposProducto" FromRole="GruposProducto" ToRole="Producto" />
+          <NavigationProperty Name="SubGruposProductoes" Relationship="NVModel.FK_SubGruposProducto_GruposProducto" FromRole="GruposProducto" ToRole="SubGruposProducto" />
+          <NavigationProperty Name="VendedoresClienteGrupoProductoes" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_GruposProducto" FromRole="GruposProducto" ToRole="VendedorClienteGrupoProducto" />
+          <NavigationProperty Name="VendedoresCodigoPostalGrupoProductoes" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_GruposProducto" FromRole="GruposProducto" ToRole="VendedorCodigoPostalGrupoProducto" />
+          <NavigationProperty Name="VendedoresPedidoGrupoProductoes" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_GruposProducto" FromRole="GruposProducto" ToRole="VendedorPedidoGrupoProducto" />
+        </EntityType>
+        <Association Name="FK_DescuentosProducto_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="0..1" />
+          <End Type="NVModel.DescuentosProducto" Role="DescuentosProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="DescuentosProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoProducto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoProducto_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="1" />
+          <End Type="NVModel.ExtractoProducto" Role="ExtractoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaVentas" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas1">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaAbonosVta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas2">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaCompras" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas3">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaAbonosCmp" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas4">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaExistencias" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas5">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaVariación" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas6">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaDepreciación" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas7">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaDescuentos" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_PlanCuentas8">
+          <End Type="NVModel.PlanCuenta" Role="PlanCuenta" Multiplicity="0..1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PlanCuenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cuenta" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CtaDescuentosCmp" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_GruposProducto_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="0..1" />
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="ProductoBonificación" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Inventarios_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="1" />
+          <End Type="NVModel.Inventario" Role="Inventario" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Inventario">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LinPedidoVta_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="0..1" />
+          <End Type="NVModel.LinPedidoVta" Role="LinPedidoVta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LinPedidoVta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_PreExtrProducto_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="1" />
+          <End Type="NVModel.PreExtrProducto" Role="PreExtrProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="PreExtrProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_Productos_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="0..1" />
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_SubGruposProducto_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="1" />
+          <End Type="NVModel.SubGruposProducto" Role="SubGruposProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="SubGruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedoresClienteGrupoProducto_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="1" />
+          <End Type="NVModel.VendedorClienteGrupoProducto" Role="VendedorClienteGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedorClienteGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoProducto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedoresCodigoPostalGrupoProducto_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="1" />
+          <End Type="NVModel.VendedorCodigoPostalGrupoProducto" Role="VendedorCodigoPostalGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedorCodigoPostalGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoProducto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_VendedoresPedidoGrupoProducto_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="1" />
+          <End Type="NVModel.VendedorPedidoGrupoProducto" Role="VendedorPedidoGrupoProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="VendedorPedidoGrupoProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoProducto" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -12948,6 +13790,29 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="NombreProducto" ColumnName="NombreProducto" />
                 <ScalarProperty Name="VideoId" ColumnName="VideoId" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="GruposProductoes">
+            <EntityTypeMapping TypeName="NVModel.GruposProducto">
+              <MappingFragment StoreEntitySet="GruposProducto">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="AplicarDto" ColumnName="AplicarDto" />
+                <ScalarProperty Name="ProductoBonificación" ColumnName="ProductoBonificación" />
+                <ScalarProperty Name="C_Bonificación" ColumnName="%Bonificación" />
+                <ScalarProperty Name="CtaDescuentosCmp" ColumnName="CtaDescuentosCmp" />
+                <ScalarProperty Name="CtaDescuentos" ColumnName="CtaDescuentos" />
+                <ScalarProperty Name="CtaDepreciación" ColumnName="CtaDepreciación" />
+                <ScalarProperty Name="CtaVariación" ColumnName="CtaVariación" />
+                <ScalarProperty Name="CtaExistencias" ColumnName="CtaExistencias" />
+                <ScalarProperty Name="CtaAbonosCmp" ColumnName="CtaAbonosCmp" />
+                <ScalarProperty Name="CtaCompras" ColumnName="CtaCompras" />
+                <ScalarProperty Name="CtaAbonosVta" ColumnName="CtaAbonosVta" />
+                <ScalarProperty Name="CtaVentas" ColumnName="CtaVentas" />
+                <ScalarProperty Name="Descripción" ColumnName="Descripción" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

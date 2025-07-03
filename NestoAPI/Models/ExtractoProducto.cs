@@ -51,5 +51,6 @@ namespace NestoAPI.Models
         public virtual CentrosCoste CentrosCoste { get; set; }
         public virtual Vendedor Vendedore { get; set; }
         public virtual DiarioProducto DiariosProducto { get; set; }
+        public virtual GruposProducto GruposProducto { get; set; }
     }
 }

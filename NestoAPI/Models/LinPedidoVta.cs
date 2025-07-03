@@ -86,5 +86,6 @@ namespace NestoAPI.Models
         public virtual ICollection<PedidosEspeciale> PedidosEspeciales { get; set; }
         public virtual CabFacturaVta CabFacturaVta { get; set; }
         public virtual ICollection<VendedorLinPedidoVta> VendedorLinPedidoVtas { get; set; }
+        public virtual GruposProducto GruposProducto { get; set; }
     }
 }

@@ -31,5 +31,6 @@ namespace NestoAPI.Models
         public virtual ICollection<LinPedidoVta> LinPedidoVtas { get; set; }
         public virtual ICollection<Producto> Productos { get; set; }
         public virtual ICollection<Inventario> Inventarios { get; set; }
+        public virtual GruposProducto GruposProducto { get; set; }
     }
 }

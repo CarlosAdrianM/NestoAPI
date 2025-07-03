@@ -21,7 +21,7 @@
         <AssociationConnector Association="NVModel.FK_Clientes_Empresas" />
         <AssociationConnector Association="NVModel.FK_EnviosAgencia_Clientes" />
         <AssociationConnector Association="NVModel.FK_LinPedidoVta_Clientes" />
-        <EntityTypeShape EntityType="NVModel.Producto" Width="1.5" PointX="4.625" PointY="47.75" />
+        <EntityTypeShape EntityType="NVModel.Producto" Width="1.5" PointX="23.125" PointY="46.75" />
         <AssociationConnector Association="NVModel.FK_Productos_Empresas" />
         <AssociationConnector Association="NVModel.FK_Productos_Productos" />
         <EntityTypeShape EntityType="NVModel.Familia" Width="1.5" PointX="0.75" PointY="47.625" />

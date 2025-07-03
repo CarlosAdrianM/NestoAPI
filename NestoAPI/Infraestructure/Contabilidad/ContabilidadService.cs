@@ -72,6 +72,30 @@ namespace NestoAPI.Infraestructure.Contabilidad
                     linea.Concepto = linea.Concepto.Substring(0, 50);
                 }
                 _ = db.PreContabilidades.Add(linea);
+
+                // Ejecutar prdCopiarCliente si corresponde
+                if (linea.Empresa != Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                    linea.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE)
+                {
+                    SqlParameter empresaOrigenParam = new SqlParameter("@EmpresaOrigen", SqlDbType.Char, 3)
+                    {
+                        Value = Constantes.Empresas.EMPRESA_POR_DEFECTO
+                    };
+
+                    SqlParameter empresaDestinoParam = new SqlParameter("@EmpresaDestino", SqlDbType.Char, 3)
+                    {
+                        Value = linea.Empresa
+                    };
+
+                    SqlParameter numClienteParam = new SqlParameter("@NumCliente", SqlDbType.Char, 10)
+                    {
+                        Value = linea.Nº_Cuenta
+                    };
+
+                    _ = await db.Database.ExecuteSqlCommandAsync(
+                        "EXEC prdCopiarCliente @EmpresaOrigen, @EmpresaDestino, @NumCliente",
+                        empresaOrigenParam, empresaDestinoParam, numClienteParam);
+                }
             }
             try
             {
@@ -328,8 +352,35 @@ namespace NestoAPI.Infraestructure.Contabilidad
             {
                 try
                 {
-                    List<MovimientoTPVDTO> movimientos = await db.MovimientosTPV
-                        .Where(m => m.FechaCaptura == fechaCaptura && m.ModoCaptura == tipoDatafono)
+                    //List<MovimientoTPVDTO> movimientos = await db.MovimientosTPV
+                    //    .Where(m => m.FechaCaptura == fechaCaptura && m.ModoCaptura == tipoDatafono)
+                    //    .Select(m => new MovimientoTPVDTO
+                    //    {
+                    //        ModoCaptura = m.ModoCaptura,
+                    //        Sesion = m.Sesion,
+                    //        Terminal = m.Terminal,
+                    //        FechaCaptura = m.FechaCaptura,
+                    //        FechaOperacion = m.FechaOperacion,
+                    //        ImporteOperacion = m.ImporteOperacion,
+                    //        ImporteComision = m.ImporteComision,
+                    //        ImporteAbono = m.ImporteAbono,
+                    //        CodigoMoneda = m.CodigoMoneda,
+                    //        Comentarios = m.Comentarios,
+                    //        FechaCreacion = m.FechaCreacion,
+                    //        Usuario = m.Usuario
+                    //    })
+                    //    .ToListAsync()
+                    //    .ConfigureAwait(false);
+
+                    var movimientosQuery = db.MovimientosTPV
+                        .Where(m => m.FechaCaptura == fechaCaptura)
+                        .Where(m =>
+                            tipoDatafono == "3"
+                                ? m.Terminal.EndsWith("32951570") && m.Terminal.Length >= 11
+                                : !m.Terminal.EndsWith("32951570") || m.Terminal.Length < 11
+                        );
+
+                    var movimientos = await movimientosQuery
                         .Select(m => new MovimientoTPVDTO
                         {
                             ModoCaptura = m.ModoCaptura,

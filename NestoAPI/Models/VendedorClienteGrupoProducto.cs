@@ -26,5 +26,6 @@ namespace NestoAPI.Models
     
         public virtual Cliente Cliente1 { get; set; }
         public virtual Vendedor Vendedore { get; set; }
+        public virtual GruposProducto GruposProducto { get; set; }
     }
 }

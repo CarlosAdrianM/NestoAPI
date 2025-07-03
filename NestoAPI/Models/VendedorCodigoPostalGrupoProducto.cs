@@ -24,5 +24,6 @@ namespace NestoAPI.Models
     
         public virtual CodigoPostal CódigosPostales { get; set; }
         public virtual Vendedor Vendedore { get; set; }
+        public virtual GruposProducto GruposProducto { get; set; }
     }
 }

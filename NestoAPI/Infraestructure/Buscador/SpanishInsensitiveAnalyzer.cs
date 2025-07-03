@@ -56,11 +56,11 @@ namespace NestoAPI.Infraestructure.Buscador
 
             var sinonimos = new[]
             {
-                new[] { "láser", "depilación láser", "fotodepilación" },
+                new[] { "láser", "depilación láser", "fotodepilación", "foto depilación", "diodo", "ipl" },
                 new[] { "radiofrecuencia", "rf", "radio frecuencia" },
                 new[] { "hidrafacial", "hydrafacial", "hidra facial", "hydra facial" },
                 new[] { "dermapen", "skinpen", "derma pen", "skin pen", "microneedling", "micropunciones" },
-                new[] { "ampolla", "vial", "ampolleta" },
+                new[] { "ampolla", "vial", "ampolleta", "cóctel", "cocktail", "concentrado" },
                 new[] { "pelo", "cabello" },
                 new[] { "calentador", "fundidor", "olla" },
                 new[] { "rubor", "colorete" },
@@ -68,7 +68,7 @@ namespace NestoAPI.Infraestructure.Buscador
                 new[] { "esmalte", "pintauñas", "pinta uñas" },
                 new[] { "bobina", "rollo" },
                 new[] { "aluminio", "papel plata" },
-                new[] { "serum", "suero" },
+                new[] { "serum", "suero", "booster", "fluido" },
                 new[] { "pañuelos faciales", "tissues", "kleenex" },
             };
 

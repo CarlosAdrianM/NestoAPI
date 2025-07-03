@@ -480,6 +480,7 @@
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
     <Compile Include="Controllers\TokenRefreshController.cs" />
+    <Compile Include="Controllers\VentasClienteController.cs" />
     <Compile Include="Controllers\VideosController.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\GestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IServicioAlbaranesVenta.cs" />
@@ -585,6 +586,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegalosTiendaOnline.cs" />
     <Compile Include="Infraestructure\Vendedores\IServicioVendedores.cs" />
     <Compile Include="Infraestructure\Vendedores\ServicioVendedores.cs" />
+    <Compile Include="Infraestructure\Ventas\GestorVentasCliente.cs" />
     <Compile Include="Infraestructure\Videos\GestorVideos.cs" />
     <Compile Include="Infraestructure\Videos\IServicioVideos.cs" />
     <Compile Include="Infraestructure\Videos\ServicioVideos.cs" />
@@ -798,6 +800,9 @@
     <Compile Include="Models\FormaVenta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\GruposProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\Inmovilizado.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -1009,6 +1014,8 @@
     <Compile Include="Models\VendedorPedidoGrupoProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Ventas\ComparativaVentaDto.cs" />
+    <Compile Include="Models\Ventas\ComparativaVentasResponseDto.cs" />
     <Compile Include="Models\Video.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

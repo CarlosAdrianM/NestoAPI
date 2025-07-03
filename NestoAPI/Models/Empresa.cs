@@ -67,6 +67,7 @@ namespace NestoAPI.Models
             this.DiariosProductoes = new HashSet<DiarioProducto>();
             this.Kits = new HashSet<Kit>();
             this.CabAlbaránVta = new HashSet<CabAlbaranVta>();
+            this.GruposProductoes = new HashSet<GruposProducto>();
         }
     
         public string Número { get; set; }
@@ -223,5 +224,6 @@ namespace NestoAPI.Models
         public virtual ICollection<DiarioProducto> DiariosProductoes { get; set; }
         public virtual ICollection<Kit> Kits { get; set; }
         public virtual ICollection<CabAlbaranVta> CabAlbaránVta { get; set; }
+        public virtual ICollection<GruposProducto> GruposProductoes { get; set; }
     }
 }

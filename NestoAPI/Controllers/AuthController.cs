@@ -9,11 +9,13 @@ using System.Configuration;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
 using System.Net.Mail;
+using System.Runtime.Caching;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
+
 
 public class AuthController : ApiController
 {
@@ -21,8 +23,7 @@ public class AuthController : ApiController
     private readonly IGestorClientes _gestorClientes;
     private readonly IServicioCorreoElectronico _servicioCorreo;
     private const int ExpirationMinutes = 10;
-    private static readonly Dictionary<string, CodigoValidacionTemporal> codigosEnMemoria = new Dictionary<string, CodigoValidacionTemporal>();
-
+    private static readonly MemoryCache cache = MemoryCache.Default;
 
     public AuthController(IGestorClientes gestorClientes, IServicioCorreoElectronico servicioCorreo)
     {
@@ -61,13 +62,15 @@ public class AuthController : ApiController
         string tokenForValidation = Convert.ToBase64String(tokenBytes);
 
         // Guardar en caché
-        codigosEnMemoria[tokenForValidation] = new CodigoValidacionTemporal
+        var datos = new CodigoValidacionTemporal
         {
             Codigo = codigo,
             Expira = DateTime.UtcNow.AddMinutes(10),
             Email = email,
             NIF = nif
         };
+
+        cache.Set(tokenForValidation, datos, DateTimeOffset.UtcNow.AddMinutes(10));
 
 
         string mensajeHtml = $@"
@@ -114,9 +117,9 @@ public class AuthController : ApiController
         }
 
         // Buscamos por clave el token recibido
-        if (!codigosEnMemoria.TryGetValue(model.Token, out CodigoValidacionTemporal entry))
+        if (!(cache.Get(model.Token) is CodigoValidacionTemporal entry))
         {
-            return Unauthorized(); // Token no encontrado
+            return Unauthorized(); // Token no encontrado o expirado
         }
 
         // Verificamos que coincidan email y código
@@ -127,7 +130,7 @@ public class AuthController : ApiController
         }
 
         // Opcional: eliminar el código para que solo se use una vez
-        _ = codigosEnMemoria.Remove(model.Token);
+        _ = cache.Remove(model.Token);
 
         // Recuperamos el NIF del entry y volvemos a buscar el cliente para obtener el valor correcto
         string nif = entry.NIF;
