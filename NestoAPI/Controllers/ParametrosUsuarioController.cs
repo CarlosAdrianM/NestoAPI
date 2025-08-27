@@ -1,15 +1,12 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Data;
+﻿using NestoAPI.Models;
+using System;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
-using NestoAPI.Models;
 
 namespace NestoAPI.Controllers
 {
@@ -21,7 +18,7 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
         }
 
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db = new NVEntities();
 
         /*
         // GET: api/ParametrosUsuario
@@ -54,21 +51,22 @@ namespace NestoAPI.Controllers
                     Usuario2 = usuario,
                     Fecha_Modificación = DateTime.Now
                 };
-                db.ParametrosUsuario.Add(parametroInsertar);
+                _ = db.ParametrosUsuario.Add(parametroInsertar);
                 try
                 {
-                    await db.SaveChangesAsync();
-                } catch (Exception ex)
+                    _ = await db.SaveChangesAsync();
+                }
+                catch (Exception ex)
                 {
                     throw ex;
                 }
-                
+
                 return Ok(parametroUsuario.Valor);
             }
 
             // No debería suceder nunca, porque siempre existe el usuario por defecto
             return NotFound();
-            
+
         }
 
         public string Leer(string empresa, string usuario, string clave)
@@ -86,12 +84,13 @@ namespace NestoAPI.Controllers
             {
                 parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuarioParametro && p.Clave == clave);
                 return parametroUsuario?.Valor?.Trim();
-            };
+            }
+            ;
 
             return "";
         }
 
-        
+
         // PUT: api/ParametrosUsuario/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutParametroUsuario(ParametroUsuario parametro)
@@ -100,12 +99,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            
+
             db.Entry(parametro).State = EntityState.Modified;
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {

@@ -1,22 +1,21 @@
-﻿using System;
+﻿using NestoAPI.Models;
+using NestoAPI.Models.Productos;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
-using NestoAPI.Models;
-using NestoAPI.Models.Productos;
 
 namespace NestoAPI.Controllers
 {
     public class ControlesStockController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db = new NVEntities();
         /*
         // GET: api/ControlesStock
         public IQueryable<ControlStock> GetControlesStocks()
@@ -58,31 +57,23 @@ namespace NestoAPI.Controllers
                 DiasStockSeguridad = 7
             };
             DateTime haceDosAnnos = DateTime.Today.AddMonths(-24);
-            //controlStockProducto.ConsumoAnual = (int)await db.LinPedidoVtas.Where(l => l.Producto == productoId && l.Fecha_Factura > haceDosAnnos).SumAsync(l => l.Cantidad).ConfigureAwait(false);
+
             controlStockProducto.ConsumoAnual = (int)await db.LinPedidoVtas
-                .Where(l => l.Producto == productoId && l.Fecha_Factura > haceDosAnnos)
+                .Where(l => l.Producto == productoId && l.Fecha_Factura > haceDosAnnos && Constantes.Sedes.ListaSedes.Contains(l.Almacén))
                 .Select(l => (int?)l.Cantidad) // Proyectamos a un tipo nullable para usar DefaultIfEmpty
                 .DefaultIfEmpty(0) // Valor predeterminado en caso de que no haya registros
                 .SumAsync()
                 .ConfigureAwait(false);
-            //DateTime fechaPrimerMovimiento = await db.ExtractosProducto.Where(e => e.Número == productoId && e.Cantidad > 0).OrderBy(e => e.Fecha).Select(e => e.Fecha).FirstOrDefaultAsync().ConfigureAwait(false);
+
             DateTime? fechaNulablePrimerMovimiento = await db.ExtractosProducto
-                .Where(e => e.Número == productoId && e.Cantidad > 0)
+                .Where(e => e.Número == productoId && e.Cantidad > 0 && Constantes.Sedes.ListaSedes.Contains(e.Almacén))
                 .OrderBy(e => e.Fecha)
                 .Select(e => (DateTime?)e.Fecha) // Proyectamos a un tipo DateTime? (nullable)
                 .DefaultIfEmpty(null) // Valor predeterminado en caso de que no haya registros
                 .FirstOrDefaultAsync()
                 .ConfigureAwait(false);
 
-            DateTime fechaPrimerMovimiento;
-            if (fechaNulablePrimerMovimiento == null)
-            {
-                fechaPrimerMovimiento = DateTime.Today;
-            }
-            else
-            {
-                fechaPrimerMovimiento = (DateTime)fechaNulablePrimerMovimiento;
-            }
+            DateTime fechaPrimerMovimiento = fechaNulablePrimerMovimiento == null ? DateTime.Today : (DateTime)fechaNulablePrimerMovimiento;
             controlStockProducto.MesesAntiguedad = (decimal)(DateTime.Now - fechaPrimerMovimiento).TotalDays / 30;
             controlStockProducto.StockMinimoActual = controlesStock.SingleOrDefault(e => e.Almacén == Constantes.Almacenes.ALGETE)?.StockMínimo ?? 0;
 
@@ -93,15 +84,15 @@ namespace NestoAPI.Controllers
                 {
                     Almacen = almacen,
                     DiasReaprovisionamiento = controlStockProducto.DiasReaprovisionamiento,
-                    DiasStockSeguridad = controlStockProducto.DiasStockSeguridad
+                    DiasStockSeguridad = controlStockProducto.DiasStockSeguridad,
+                    //controlStockAlmacen.ConsumoAnual = (int)await db.LinPedidoVtas.Where(l => l.Almacén == controlStock.Almacén && l.Producto == productoId && l.Fecha_Factura > haceDosAnnos).SumAsync(l => l.Cantidad).ConfigureAwait(false);
+                    ConsumoAnual = (int)await db.LinPedidoVtas
+                        .Where(l => l.Almacén == almacen && l.Producto == productoId && l.Fecha_Factura > haceDosAnnos)
+                        .Select(l => (int?)l.Cantidad) // Proyectamos a un tipo nullable para usar DefaultIfEmpty
+                        .DefaultIfEmpty(0) // Valor predeterminado en caso de que no haya registros
+                        .SumAsync()
+                        .ConfigureAwait(false)
                 };
-                //controlStockAlmacen.ConsumoAnual = (int)await db.LinPedidoVtas.Where(l => l.Almacén == controlStock.Almacén && l.Producto == productoId && l.Fecha_Factura > haceDosAnnos).SumAsync(l => l.Cantidad).ConfigureAwait(false);
-                controlStockAlmacen.ConsumoAnual = (int)await db.LinPedidoVtas
-                    .Where(l => l.Almacén == almacen && l.Producto == productoId && l.Fecha_Factura > haceDosAnnos)
-                    .Select(l => (int?)l.Cantidad) // Proyectamos a un tipo nullable para usar DefaultIfEmpty
-                    .DefaultIfEmpty(0) // Valor predeterminado en caso de que no haya registros
-                    .SumAsync()
-                    .ConfigureAwait(false);
                 DateTime? fechaNulablePrimerMovimientoAlmacen = await db.ExtractosProducto
                 .Where(e => e.Almacén == almacen && e.Número == productoId && e.Cantidad > 0)
                 .OrderBy(e => e.Fecha)
@@ -110,21 +101,13 @@ namespace NestoAPI.Controllers
                 .FirstOrDefaultAsync()
                 .ConfigureAwait(false);
 
-                DateTime fechaPrimerMovimientoAlmacen;
-                if (fechaNulablePrimerMovimientoAlmacen == null)
-                {
-                    fechaPrimerMovimientoAlmacen = DateTime.Now;
-                }
-                else
-                {
-                    fechaPrimerMovimientoAlmacen = (DateTime)fechaNulablePrimerMovimientoAlmacen;
-                }
+                DateTime fechaPrimerMovimientoAlmacen = fechaNulablePrimerMovimientoAlmacen == null ? DateTime.Now : (DateTime)fechaNulablePrimerMovimientoAlmacen;
                 controlStockAlmacen.MesesAntiguedad = (decimal)(DateTime.Now - fechaPrimerMovimientoAlmacen).TotalDays / 30;
                 controlStockAlmacen.StockMaximoActual = controlStock != null ? controlStock.StockMáximo : 0;
                 controlStockAlmacen.Estacionalidad = controlStock != null ? controlStock.Estacionalidad : string.Empty;
                 controlStockAlmacen.Categoria = controlStock != null ? controlStock.Categoria : string.Empty;
                 controlStockAlmacen.Multiplos = controlStock != null ? controlStock.Múltiplos : 1;
-                controlStockAlmacen.YaExiste = controlStock != null ? true : false;
+                controlStockAlmacen.YaExiste = controlStock != null;
 
                 controlStockProducto.ControlesStocksAlmacen.Add(controlStockAlmacen);
             }
@@ -132,7 +115,7 @@ namespace NestoAPI.Controllers
 
             return Ok(controlStockProducto);
         }
-    
+
         // PUT: api/ControlesStock/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutControlStock(ControlStock controlStock)
@@ -151,7 +134,7 @@ namespace NestoAPI.Controllers
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -171,7 +154,7 @@ namespace NestoAPI.Controllers
 
             return StatusCode(HttpStatusCode.NoContent);
         }
-        
+
         // POST: api/ControlesStock
         [ResponseType(typeof(ControlStock))]
         public async Task<IHttpActionResult> PostControlStock(ControlStock controlStock)
@@ -181,11 +164,11 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            db.ControlesStocks.Add(controlStock);
+            _ = db.ControlesStocks.Add(controlStock);
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateException)
             {
@@ -199,7 +182,7 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            return CreatedAtRoute("DefaultApi", new { Empresa = controlStock.Empresa, Almacen = controlStock.Almacén, Producto = controlStock.Número }, controlStock);
+            return CreatedAtRoute("DefaultApi", new { controlStock.Empresa, Almacen = controlStock.Almacén, Producto = controlStock.Número }, controlStock);
         }
         /*
         // DELETE: api/ControlesStock/5

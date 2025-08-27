@@ -323,12 +323,15 @@ namespace NestoAPI.Controllers
 
             string textoEntrada = $"Resumen de seguimientos del {fechaInicio} al {fechaFin}. Los siguientes son los comentarios:\n\n";
 
+            int contadorComentariosTiempoReal = 0;
+            int contadorComentariosNoTiempoReal = 0;
+
             foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
             {
                 bool tiempoReal = true; // Por defecto asumimos que es en tiempo real
 
                 // Solo evaluamos si es visita presencial (tipo "V")
-                if (seguimiento.Tipo == "V")
+                if (seguimiento.Tipo.Trim() == "V")
                 {
                     // Verificamos si ya tenemos una visita presencial anterior del mismo vendedor
                     if (ultimaVisitaPresencial.TryGetValue(seguimiento.Vendedor, out var fechaAnterior))
@@ -337,13 +340,13 @@ namespace NestoAPI.Controllers
                         TimeSpan tiempoEntreVisitas = seguimiento.Fecha_Modificación - fechaAnterior;
 
                         // Si hay menos de 20 minutos entre visitas presenciales, marcamos como sospechoso
-                        if (tiempoEntreVisitas.TotalMinutes < 20)
+                        if (tiempoEntreVisitas.TotalMinutes < 5)
                         {
                             tiempoReal = false;
                         }
 
                         // Si son más de las 20h o antes de las 9h, marcamos como sospechoso
-                        if (seguimiento.Fecha_Modificación.Hour < 9 || seguimiento.Fecha_Modificación.Hour > 20)
+                        if (seguimiento.Fecha_Modificación.Hour < 9 || seguimiento.Fecha_Modificación.Hour > 19)
                         {
                             tiempoReal = false;
                         }
@@ -354,22 +357,35 @@ namespace NestoAPI.Controllers
                 }
 
                 // Convertimos el tipo de visita a texto completo (compatible con C# 7.3)
-                string tipoVisitaCompleto;
-                if (seguimiento.Tipo == "V")
-                {
-                    tipoVisitaCompleto = "Visita";
-                }
-                else
-                {
-                    tipoVisitaCompleto = seguimiento.Tipo == "T" ? "Teléfono" : seguimiento.Tipo == "W" ? "WhatsApp" : seguimiento.Tipo;
-                }
-
+                string tipoVisitaCompleto = seguimiento.Tipo.Trim() == "V"
+                    ? "Visita"
+                    : seguimiento.Tipo.Trim() == "T" ? "Teléfono" : seguimiento.Tipo.Trim() == "W" ? "WhatsApp" : seguimiento.Tipo.Trim();
                 textoEntrada += $"Vendedor: {seguimiento.Vendedor}\n" +
                                 $"Cliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()}\n" +
                                 $"Tipo Visita: {tipoVisitaCompleto}\n" +
                                 $"Comentario: {seguimiento.Comentarios.Trim()}\n" +
-                                $"Fecha y hora: {seguimiento.Fecha_Modificación}\n" +
-                                $"TiempoReal: {tiempoReal}\n\n";
+                                $"Fecha y hora: {seguimiento.Fecha_Modificación}\n";
+                if (tipoVisitaCompleto == "Visita")
+                {
+                    if (tiempoReal)
+                    {
+                        contadorComentariosTiempoReal++;
+                    }
+                    else
+                    {
+                        contadorComentariosNoTiempoReal++;
+                    }
+                }
+                textoEntrada += "\n";
+            }
+
+            if (contadorComentariosNoTiempoReal > contadorComentariosTiempoReal)
+            {
+                textoEntrada = "Este vendedor no registra los comentarios en tiempo real.\n" + textoEntrada;
+            }
+            else
+            {
+                textoEntrada += "Este vendedor sí registra los comentarios en tiempo real.\n" + textoEntrada;
             }
 
             // Llama a OpenAI para obtener el resumen
@@ -547,9 +563,9 @@ Además, evalúa la calidad de los comentarios teniendo en cuenta:
 - La longitud y el nivel de detalle (se valoran más los comentarios largos y detallados; los comentarios breves, de menos de 30 palabras, se consideran de menor calidad).
 - La claridad en la información comercial y la mención de marcas de productos o tratamientos estéticos o de peluquería que realiza. 
 - La información detallada sobre futuras oportunidades de venta 
-- **La puntualidad en el registro**: si tiene comentarios que no están registrados en tiempo real, baja la puntuación. Si la mayoría son en tiempo real, sube la puntuación. Si la mayoría de los seguimientos no están en tiempo real, no daremos más de 2 estrellas.
+- **La puntualidad en el registro**: antes de los comentarios nos dicen si el vendedor pasa los comentarios en tiempo real. Si el vendedor no registra los comentarios en tiempo real, penaliza mucho la puntuación de calidad.
 - Representa la puntuación de calidad con de 1 a 5 iconos de estrellas.
-- Añade una breve explicación justificando la puntuación, y explicando al vendedor cómo debería meter los comentarios para mejorar la puntuación en futuros análisis.
+- Añade una breve explicación justificando la puntuación, y explicando al vendedor cómo debería meter los comentarios para mejorar la puntuación en futuros análisis. Sobre registrarlos en tiempo real solo debes comentar algo si no lo hace.
 
 El mensaje resultante es importante que lo devuelvas en HTML para poner en el cuerpo de un correo, con un diseño atractivo"
         },

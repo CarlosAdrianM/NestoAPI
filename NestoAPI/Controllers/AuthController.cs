@@ -8,10 +8,13 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Net.Mail;
 using System.Runtime.Caching;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Security.Principal;
 using System.Text;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -219,6 +222,54 @@ public class AuthController : ApiController
         }
     }
 
+    [HttpPost]
+    [Route("api/auth/windows-token")]
+    public async Task<IHttpActionResult> GetWindowsToken()
+    {
+        // Debug para ver qué está pasando
+        System.Diagnostics.Debug.WriteLine($"AuthType: {User.Identity.AuthenticationType}");
+        System.Diagnostics.Debug.WriteLine($"IsAuthenticated: {User.Identity.IsAuthenticated}");
+        System.Diagnostics.Debug.WriteLine($"Name: {User.Identity.Name}");
+
+        // Si no está autenticado, hacer challenge
+        if (!User.Identity.IsAuthenticated ||
+            (User.Identity.AuthenticationType != "NTLM" && User.Identity.AuthenticationType != "Negotiate"))
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.Unauthorized);
+            response.Headers.Add("WWW-Authenticate", "Negotiate");
+            response.Headers.Add("WWW-Authenticate", "NTLM");
+            return ResponseMessage(response);
+        }
+
+        if (!(User.Identity is WindowsIdentity windowsIdentity))
+        {
+            return Unauthorized();
+        }
+
+        // Opcional: Verificar que pertenezca a un grupo específico de empleados
+        var principal = new WindowsPrincipal(windowsIdentity);
+        if (!principal.IsInRole("NUEVAVISION\\Usuarios del dominio"))
+        {
+            // Listar todos los grupos para debug
+            foreach (var group in windowsIdentity.Groups)
+            {
+                try
+                {
+                    var sid = group.Translate(typeof(NTAccount));
+                    System.Diagnostics.Debug.WriteLine($"Grupo: {sid}");
+                }
+                catch
+                {
+                    System.Diagnostics.Debug.WriteLine($"Grupo SID: {group}");
+                }
+            }
+            return Unauthorized();
+        }
+
+        // Crear JWT para empleado
+        string token = await CrearJWTParaEmpleadoAsync(windowsIdentity.Name);
+        return Ok(new { token });
+    }
 
 
     private async Task<string> BuscarCliente(string email, string nif)
@@ -286,6 +337,42 @@ public class AuthController : ApiController
         CustomJwtFormat jwtFormat = new CustomJwtFormat(ConfigurationManager.AppSettings["JwtIssuer"]);
         return jwtFormat.Protect(ticket);
     }
+
+    /// <summary>
+    /// Crea un JWT específico para empleados autenticados por Windows
+    /// </summary>
+    /// <param name="windowsUserName">Nombre del usuario de Windows (ej: DOMINIO\usuario)</param>
+    /// <returns>JWT string</returns>
+    private async Task<string> CrearJWTParaEmpleadoAsync(string windowsUserName)
+    {
+        // Construir claims para empleado
+        List<Claim> claims = new List<Claim>
+    {
+        new Claim(ClaimTypes.NameIdentifier, windowsUserName),
+        new Claim(ClaimTypes.Name, windowsUserName),
+        new Claim(ClaimTypes.AuthenticationMethod, "Windows"),
+        new Claim("IsEmployee", "true"), // Claim específico para identificar empleados
+        new Claim("HasRecentPurchases", "true") // Los empleados pueden ver todo
+    };
+
+        // Crear la identidad especificando el AuthenticationType "JWT"
+        ClaimsIdentity identity = new ClaimsIdentity(claims, "JWT");
+
+        // Establecer propiedades de autenticación (token más largo para empleados)
+        AuthenticationProperties props = new AuthenticationProperties
+        {
+            IssuedUtc = DateTime.UtcNow,
+            ExpiresUtc = DateTime.UtcNow.AddHours(8) // 8 horas para empleados
+        };
+
+        // Crear el ticket de autenticación
+        AuthenticationTicket ticket = new AuthenticationTicket(identity, props);
+
+        // Utilizar el CustomJwtFormat existente para generar el token
+        CustomJwtFormat jwtFormat = new CustomJwtFormat(ConfigurationManager.AppSettings["JwtIssuer"]);
+        return jwtFormat.Protect(ticket);
+    }
+
 
     private class CodigoValidacionTemporal
     {

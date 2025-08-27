@@ -137,5 +137,19 @@ namespace NestoAPI.Controllers
             List<VideoLookupModel> resultados = await _servicioVideos.BuscarVideos(q, tieneComprasRecientes, skip, take);
             return Ok(resultados);
         }
+
+        [AllowAnonymous]
+        [HttpGet]
+        [Route("Producto/{productoId}")]
+        [ResponseType(typeof(List<VideoLookupModel>))]
+        public async Task<IHttpActionResult> GetVideosPorProducto(string productoId)
+        {
+            if (string.IsNullOrWhiteSpace(productoId))
+            {
+                return BadRequest("Debe proporcionar un ID de producto válido.");
+            }
+            List<VideoLookupModel> videos = await _servicioVideos.GetVideosConProducto(productoId);
+            return Ok(videos);
+        }
     }
 }

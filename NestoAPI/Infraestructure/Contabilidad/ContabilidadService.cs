@@ -417,7 +417,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
         private readonly Dictionary<string, string> TerminalesUsuarios = new Dictionary<string, string>()
         {
             { "91900804273", "Paloma" },
-            { "91900804275", "Elena" },
+            { "91900804275", "Victoria" },
             { "26617120788", "Laura Camacho" },
             { "00346609775", "Patricia" },
             { "00132951570", "Web" },

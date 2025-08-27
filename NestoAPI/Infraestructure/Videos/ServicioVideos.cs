@@ -74,6 +74,32 @@ namespace NestoAPI.Infraestructure.Videos
             }
         }
 
+        public Task<List<VideoLookupModel>> GetVideosConProducto(string productoId)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                // Buscar todos los videos que contengan el producto especificado
+                IQueryable<Video> query = db.Videos
+                    .Where(v => v.VideosProductos.Any(vp => vp.Referencia == productoId))
+                    .OrderByDescending(v => v.FechaPublicacion);
+
+                List<VideoLookupModel> videos = query
+                    .Select(v => new VideoLookupModel
+                    {
+                        Id = v.Id,
+                        VideoId = v.VideoId,
+                        Titulo = v.Titulo,
+                        Descripcion = v.Descripcion,
+                        FechaPublicacion = (DateTime)v.FechaPublicacion,
+                        EsUnProtocolo = v.EsUnProtocolo,
+                        BloqueadoPorComprasRecientes = false
+                    })
+                    .ToList();
+
+                return Task.FromResult(videos);
+            }
+        }
+
         public Task<List<VideoLookupModel>> BuscarVideos(string query, bool tieneComprasRecientes, int skip = 0, int take = 20)
         {
             List<VideoResultadoBusqueda> resultadosLucene = LuceneBuscador.BuscarVideos(query, skip, take);
