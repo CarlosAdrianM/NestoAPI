@@ -1,4 +1,9 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Kits;
+using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Models;
+using NestoAPI.Models.Productos;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -7,16 +12,12 @@ using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
-using NestoAPI.Models;
-using NestoAPI.Infraestructure;
-using NestoAPI.Infraestructure.Kits;
-using NestoAPI.Infraestructure.Vendedores;
 
 namespace NestoAPI.Controllers
 {
     public class ProductosController : ApiController
     {
-        private NVEntities db;
+        private readonly NVEntities db;
         private readonly IProductoService productoService = new ProductoService();
 
         public ProductosController()
@@ -68,14 +69,14 @@ namespace NestoAPI.Controllers
                 IServicioVendedores _servicioVendedores = new ServicioVendedores();
                 var listaVendedores = (await _servicioVendedores.VendedoresEquipo(empresa, vendedor)).Select(v => v.vendedor);
                 lineasVenta = lineasVenta
-                    .Where(l => listaVendedores.Contains(l.Cliente.Vendedor) || 
+                    .Where(l => listaVendedores.Contains(l.Cliente.Vendedor) ||
                         (l.Cliente.VendedoresClienteGrupoProductoes
-                            .FirstOrDefault() != null && 
+                            .FirstOrDefault() != null &&
                          listaVendedores.Contains(l.Cliente.VendedoresClienteGrupoProductoes
                             .FirstOrDefault().Vendedor))
                 );
             }
-            
+
             if (lineasVenta == null)
             {
                 return NotFound();
@@ -155,7 +156,8 @@ namespace NestoAPI.Controllers
 
             foreach (var kit in producto.Kits)
             {
-                productoDTO.ProductosKit.Add(new ProductoKit {
+                productoDTO.ProductosKit.Add(new ProductoKit
+                {
                     ProductoId = kit.NúmeroAsociado.Trim(),
                     Cantidad = kit.Cantidad
                 });
@@ -166,7 +168,7 @@ namespace NestoAPI.Controllers
                 productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
                 productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
                 productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Almacenes.ALCOBENDAS));
-            }            
+            }
 
             return Ok(productoDTO);
         }
@@ -188,7 +190,7 @@ namespace NestoAPI.Controllers
                 productos = productos.Where(p => p.SubGruposProducto.Descripción.Contains(filtroSubgrupo));
             }
 
-            var productosDTO = await productos.Select(x=>new ProductoDTO
+            var productosDTO = await productos.Select(x => new ProductoDTO
             {
                 Producto = x.Número.Trim(),
                 Nombre = x.Nombre.Trim(),
@@ -208,7 +210,7 @@ namespace NestoAPI.Controllers
 
             return productosDTO;
         }
-        
+
         // GET: api/Productos/5
         [ResponseType(typeof(ProductoPlantillaDTO))]
         public async Task<IHttpActionResult> GetProducto(string empresa, string id, string cliente, string contacto, short cantidad)
@@ -312,6 +314,37 @@ namespace NestoAPI.Controllers
         }
 
 
+        [ResponseType(typeof(List<KitContienePerteneceModel>))]
+        [Route("api/Productos/KitsProducto")]
+        public async Task<IHttpActionResult> GetKitsProducto(string empresa, string producto)
+        {
+            var kits = await db.Kits
+                .Where(k => k.Empresa == empresa && k.Número == producto)
+                .Select(k => new KitContienePerteneceModel
+                {
+                    ContienePertenece = "Contiene",
+                    ProductoId = k.NúmeroAsociado.Trim(),
+                    Cantidad = k.Cantidad,
+                    Nombre = k.Producto1.Nombre.Trim(),
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            var pertenece = await db.Kits
+                .Where(k => k.Empresa == empresa && k.NúmeroAsociado == producto)
+                .Select(k => new KitContienePerteneceModel
+                {
+                    ContienePertenece = "Pertenece",
+                    ProductoId = k.Número.Trim(),
+                    Cantidad = k.Cantidad,
+                    Nombre = k.Producto.Nombre.Trim(),
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            kits.AddRange(pertenece);
+
+            return Ok(kits);
+        }
+
         [HttpPost]
         [ResponseType(typeof(Task<int>))]
         [Route("api/Productos/MontarKit")]
@@ -333,92 +366,92 @@ namespace NestoAPI.Controllers
             IUbicacionService ubicacionService = new UbicacionService();
             GestorKits gestorKits = new GestorKits(productoService, ubicacionService);
             int traspaso = await gestorKits.MontarKit(empresa, almacen, producto, cantidad, usuario);
-            
+
             return Ok(traspaso);
         }
 
-            /*
-            // PUT: api/Productos/5
-            [ResponseType(typeof(void))]
-            public async Task<IHttpActionResult> PutProducto(string id, Producto producto)
+        /*
+        // PUT: api/Productos/5
+        [ResponseType(typeof(void))]
+        public async Task<IHttpActionResult> PutProducto(string id, Producto producto)
+        {
+            if (!ModelState.IsValid)
             {
-                if (!ModelState.IsValid)
-                {
-                    return BadRequest(ModelState);
-                }
-
-                if (id != producto.Empresa)
-                {
-                    return BadRequest();
-                }
-
-                db.Entry(producto).State = EntityState.Modified;
-
-                try
-                {
-                    await db.SaveChangesAsync();
-                }
-                catch (DbUpdateConcurrencyException)
-                {
-                    if (!ProductoExists(id))
-                    {
-                        return NotFound();
-                    }
-                    else
-                    {
-                        throw;
-                    }
-                }
-
-                return StatusCode(HttpStatusCode.NoContent);
+                return BadRequest(ModelState);
             }
 
-            // POST: api/Productos
-            [ResponseType(typeof(Producto))]
-            public async Task<IHttpActionResult> PostProducto(Producto producto)
+            if (id != producto.Empresa)
             {
-                if (!ModelState.IsValid)
-                {
-                    return BadRequest(ModelState);
-                }
-
-                db.Productos.Add(producto);
-
-                try
-                {
-                    await db.SaveChangesAsync();
-                }
-                catch (DbUpdateException)
-                {
-                    if (ProductoExists(producto.Empresa))
-                    {
-                        return Conflict();
-                    }
-                    else
-                    {
-                        throw;
-                    }
-                }
-
-                return CreatedAtRoute("DefaultApi", new { id = producto.Empresa }, producto);
+                return BadRequest();
             }
 
-            // DELETE: api/Productos/5
-            [ResponseType(typeof(Producto))]
-            public async Task<IHttpActionResult> DeleteProducto(string id)
+            db.Entry(producto).State = EntityState.Modified;
+
+            try
             {
-                Producto producto = await db.Productos.FindAsync(id);
-                if (producto == null)
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (!ProductoExists(id))
                 {
                     return NotFound();
                 }
-
-                db.Productos.Remove(producto);
-                await db.SaveChangesAsync();
-
-                return Ok(producto);
+                else
+                {
+                    throw;
+                }
             }
-            */
+
+            return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        // POST: api/Productos
+        [ResponseType(typeof(Producto))]
+        public async Task<IHttpActionResult> PostProducto(Producto producto)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            db.Productos.Add(producto);
+
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbUpdateException)
+            {
+                if (ProductoExists(producto.Empresa))
+                {
+                    return Conflict();
+                }
+                else
+                {
+                    throw;
+                }
+            }
+
+            return CreatedAtRoute("DefaultApi", new { id = producto.Empresa }, producto);
+        }
+
+        // DELETE: api/Productos/5
+        [ResponseType(typeof(Producto))]
+        public async Task<IHttpActionResult> DeleteProducto(string id)
+        {
+            Producto producto = await db.Productos.FindAsync(id);
+            if (producto == null)
+            {
+                return NotFound();
+            }
+
+            db.Productos.Remove(producto);
+            await db.SaveChangesAsync();
+
+            return Ok(producto);
+        }
+        */
 
 
 

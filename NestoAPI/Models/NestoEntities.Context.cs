@@ -111,6 +111,7 @@ namespace NestoAPI.Models
         public virtual DbSet<Video> Videos { get; set; }
         public virtual DbSet<VideoProducto> VideosProductos { get; set; }
         public virtual DbSet<GruposProducto> GruposProductoes { get; set; }
+        public virtual DbSet<LogVideoProducto> LogVideosProductos { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

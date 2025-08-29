@@ -23,9 +23,9 @@
     <MvcBuildViews>false</MvcBuildViews>
     <UseIISExpress>true</UseIISExpress>
     <IISExpressSSLPort />
-    <IISExpressAnonymousAuthentication />
-    <IISExpressWindowsAuthentication />
-    <IISExpressUseClassicPipelineMode />
+    <IISExpressAnonymousAuthentication>enabled</IISExpressAnonymousAuthentication>
+    <IISExpressWindowsAuthentication>enabled</IISExpressWindowsAuthentication>
+    <IISExpressUseClassicPipelineMode>false</IISExpressUseClassicPipelineMode>
     <UseGlobalApplicationHostFile />
     <Use64BitIISExpress />
     <ApplicationInsightsResourceId>/subscriptions/e48a8f30-3e75-494a-b494-77082ac4a7ca/resourcegroups/Default-ApplicationInsights-EastUS/providers/microsoft.insights/components/NestoAPI</ApplicationInsightsResourceId>
@@ -482,6 +482,7 @@
     <Compile Include="Controllers\TokenRefreshController.cs" />
     <Compile Include="Controllers\VentasClienteController.cs" />
     <Compile Include="Controllers\VideosController.cs" />
+    <Compile Include="Controllers\VideosProductosController.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\GestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IServicioAlbaranesVenta.cs" />
     <Compile Include="Controllers\IServicioGestorStock.cs" />
@@ -823,6 +824,9 @@
     <Compile Include="Models\LinPedidoVta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\LogVideoProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\ModelFactory.cs" />
     <Compile Include="Models\Modificacion.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
@@ -940,6 +944,7 @@
     <Compile Include="Models\Productos\ControlStockBase.cs" />
     <Compile Include="Models\Productos\ControlStockProductoModel.cs" />
     <Compile Include="Models\Productos\DiarioProductoDTO.cs" />
+    <Compile Include="Models\Productos\KitContienePerteneceModel.cs" />
     <Compile Include="Models\Productos\ParametrosDiarioProducto.cs" />
     <Compile Include="Models\Proveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

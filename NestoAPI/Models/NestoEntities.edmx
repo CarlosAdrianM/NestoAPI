@@ -1107,6 +1107,20 @@
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
         </EntityType>
+        <EntityType Name="LogVideosProductos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="VideoProductoId" Type="int" Nullable="false" />
+          <Property Name="CampoModificado" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="ValorAnterior" Type="nvarchar(max)" />
+          <Property Name="ValorNuevo" Type="nvarchar(max)" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="255" Nullable="false" />
+          <Property Name="Accion" Type="nvarchar" MaxLength="20" Nullable="false" />
+          <Property Name="FechaCambio" Type="datetime2" Precision="7" Nullable="false" />
+          <Property Name="Observaciones" Type="nvarchar" MaxLength="500" />
+        </EntityType>
         <EntityType Name="Modificaciones">
           <Key>
             <PropertyRef Name="id" />
@@ -4863,6 +4877,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="Kits" EntityType="Self.Kits" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoCmp" EntityType="Self.LinPedidoCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="LogVideosProductos" EntityType="Self.LogVideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="MovimientoTPV" EntityType="Self.MovimientoTPV" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
@@ -6816,6 +6831,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="GruposProducto" EntitySet="GruposProductoes" />
             <End Role="VendedorPedidoGrupoProducto" EntitySet="VendedoresPedidosGruposProductos" />
           </AssociationSet>
+          <EntitySet Name="LogVideosProductos" EntityType="NVModel.LogVideoProducto" />
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -12017,6 +12033,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="LogVideoProducto">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="VideoProductoId" Type="Int32" Nullable="false" />
+          <Property Name="CampoModificado" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="ValorAnterior" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="ValorNuevo" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="255" FixedLength="false" Unicode="true" />
+          <Property Name="Accion" Type="String" Nullable="false" MaxLength="20" FixedLength="false" Unicode="true" />
+          <Property Name="FechaCambio" Type="DateTime" Nullable="false" Precision="7" />
+          <Property Name="Observaciones" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
+        </EntityType>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -13813,6 +13843,21 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Descripción" ColumnName="Descripción" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="LogVideosProductos">
+            <EntityTypeMapping TypeName="NVModel.LogVideoProducto">
+              <MappingFragment StoreEntitySet="LogVideosProductos">
+                <ScalarProperty Name="Observaciones" ColumnName="Observaciones" />
+                <ScalarProperty Name="FechaCambio" ColumnName="FechaCambio" />
+                <ScalarProperty Name="Accion" ColumnName="Accion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="ValorNuevo" ColumnName="ValorNuevo" />
+                <ScalarProperty Name="ValorAnterior" ColumnName="ValorAnterior" />
+                <ScalarProperty Name="CampoModificado" ColumnName="CampoModificado" />
+                <ScalarProperty Name="VideoProductoId" ColumnName="VideoProductoId" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

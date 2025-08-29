@@ -83,6 +83,7 @@ namespace NestoAPI.Infraestructure.Videos
                     .Where(v => v.VideosProductos.Any(vp => vp.Referencia == productoId))
                     .OrderByDescending(v => v.FechaPublicacion);
 
+
                 List<VideoLookupModel> videos = query
                     .Select(v => new VideoLookupModel
                     {
