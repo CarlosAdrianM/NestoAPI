@@ -17,6 +17,7 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 using System.Web.Http;
 
 
@@ -345,32 +346,52 @@ public class AuthController : ApiController
     /// <returns>JWT string</returns>
     private async Task<string> CrearJWTParaEmpleadoAsync(string windowsUserName)
     {
-        // Construir claims para empleado
-        List<Claim> claims = new List<Claim>
-    {
-        new Claim(ClaimTypes.NameIdentifier, windowsUserName),
-        new Claim(ClaimTypes.Name, windowsUserName),
-        new Claim(ClaimTypes.AuthenticationMethod, "Windows"),
-        new Claim("IsEmployee", "true"), // Claim específico para identificar empleados
-        new Claim("HasRecentPurchases", "true") // Los empleados pueden ver todo
-    };
-
-        // Crear la identidad especificando el AuthenticationType "JWT"
-        ClaimsIdentity identity = new ClaimsIdentity(claims, "JWT");
-
-        // Establecer propiedades de autenticación (token más largo para empleados)
-        AuthenticationProperties props = new AuthenticationProperties
+        try
         {
-            IssuedUtc = DateTime.UtcNow,
-            ExpiresUtc = DateTime.UtcNow.AddHours(8) // 8 horas para empleados
+            var windowsIdentity = HttpContext.Current.User.Identity as WindowsIdentity;
+            _ = new WindowsPrincipal(windowsIdentity);
+
+            // Construir claims para empleado
+            List<Claim> claims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, windowsUserName),
+            new Claim(ClaimTypes.Name, windowsUserName),
+            new Claim(ClaimTypes.AuthenticationMethod, "Windows"),
+            new Claim("IsEmployee", "true"), // Claim específico para identificar empleados
+            new Claim("HasRecentPurchases", "true") // Los empleados pueden ver todo
         };
 
-        // Crear el ticket de autenticación
-        AuthenticationTicket ticket = new AuthenticationTicket(identity, props);
+            foreach (var group in windowsIdentity.Groups)
+            {
+                try
+                {
+                    var sid = group.Translate(typeof(NTAccount));
+                    claims.Add(new Claim(ClaimTypes.Role, sid.ToString()));
+                }
+                catch { }
+            }
 
-        // Utilizar el CustomJwtFormat existente para generar el token
-        CustomJwtFormat jwtFormat = new CustomJwtFormat(ConfigurationManager.AppSettings["JwtIssuer"]);
-        return jwtFormat.Protect(ticket);
+            // Crear la identidad especificando el AuthenticationType "JWT"
+            ClaimsIdentity identity = new ClaimsIdentity(claims, "JWT");
+
+            // Establecer propiedades de autenticación (token más largo para empleados)
+            AuthenticationProperties props = new AuthenticationProperties
+            {
+                IssuedUtc = DateTime.UtcNow,
+                ExpiresUtc = DateTime.UtcNow.AddHours(8) // 8 horas para empleados
+            };
+
+            // Crear el ticket de autenticación
+            AuthenticationTicket ticket = new AuthenticationTicket(identity, props);
+
+            // Utilizar el CustomJwtFormat existente para generar el token
+            CustomJwtFormat jwtFormat = new CustomJwtFormat(ConfigurationManager.AppSettings["JwtIssuer"]);
+            return jwtFormat.Protect(ticket);
+        }
+        catch (Exception)
+        {
+            throw;
+        }
     }
 
 

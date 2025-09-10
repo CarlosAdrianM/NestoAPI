@@ -1,26 +1,28 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias;
+using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Infrastructure;
+using NestoAPI.Models;
+using NestoAPI.Models.PedidosBase;
+using NestoAPI.Models.PedidosVenta;
+using NestoAPI.Models.Picking;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
-using System.Web.Http.Description;
-using NestoAPI.Models;
-using Newtonsoft.Json;
-using NestoAPI.Models.Picking;
-using NestoAPI.Infraestructure;
 using System.Web.Http.Cors;
-using NestoAPI.Infraestructure.Agencias;
-using NestoAPI.Infraestructure.PedidosVenta;
-using NestoAPI.Models.PedidosVenta;
-using Newtonsoft.Json.Linq;
-using NestoAPI.Models.PedidosBase;
-using NestoAPI.Infraestructure.Vendedores;
-using System.Drawing.Drawing2D;
+using System.Web.Http.Description;
 
 namespace NestoAPI.Controllers
 {
@@ -28,7 +30,7 @@ namespace NestoAPI.Controllers
     {
         private const int ESTADO_LINEA_EN_CURSO = Constantes.EstadosLineaVenta.EN_CURSO;
         private const int ESTADO_LINEA_PENDIENTE = Constantes.EstadosLineaVenta.PENDIENTE;
-        
+
         public const int TIPO_LINEA_TEXTO = 0;
         public const int TIPO_LINEA_PRODUCTO = 1;
         public const int TIPO_LINEA_CUENTA_CONTABLE = 2;
@@ -37,7 +39,7 @@ namespace NestoAPI.Controllers
         public const int NUMERO_PRESUPUESTOS_MOSTRADOS = 50;
 
 
-        private NVEntities db;
+        private readonly NVEntities db;
         private readonly ServicioPedidosVenta servicio = new ServicioPedidosVenta(); // inyectar para tests
         private readonly ServicioVendedores servicioVendedores = new ServicioVendedores();
         private readonly GestorPedidosVenta gestor;
@@ -83,7 +85,7 @@ namespace NestoAPI.Controllers
             if (string.IsNullOrWhiteSpace(vendedor))
             {
                 vendedoresLista = new List<string>();
-            } 
+            }
             else
             {
                 //// Crear una instancia del controlador VendedoresController
@@ -109,12 +111,12 @@ namespace NestoAPI.Controllers
             }
 
             IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
-                                                              join v in db.VendedoresPedidosGruposProductos
-                                                              on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
-                                                              into jointData
-                                                              from jointRecord in jointData.DefaultIfEmpty()
-                                                              where (vendedor == "" || vendedor == null || vendedoresLista.Contains(c.Vendedor) || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor)))
-                                                              select c;
+                                                       join v in db.VendedoresPedidosGruposProductos
+                                                       on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
+                                                       into jointData
+                                                       from jointRecord in jointData.DefaultIfEmpty()
+                                                       where vendedor == "" || vendedor == null || vendedoresLista.Contains(c.Vendedor) || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor))
+                                                       select c;
 
 
             IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
@@ -167,7 +169,7 @@ namespace NestoAPI.Controllers
                                                        //This is how you actually turn the join into a left-join
                                                        from jointRecord in jointData.DefaultIfEmpty()
 
-                                                       where (vendedor == "" || vendedor == null || c.Vendedor == vendedor || jointRecord.Vendedor == vendedor)
+                                                       where vendedor == "" || vendedor == null || c.Vendedor == vendedor || jointRecord.Vendedor == vendedor
                                                        select c;
 
             IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
@@ -224,7 +226,7 @@ namespace NestoAPI.Controllers
                                                        //This is how you actually turn the join into a left-join
                                                        from jointRecord in jointData.DefaultIfEmpty()
 
-                                                       where (vendedor == "" || vendedor == null || vendedoresEquipo.Contains(c.Vendedor) || vendedoresEquipo.Contains(jointRecord.Vendedor))
+                                                       where vendedor == "" || vendedor == null || vendedoresEquipo.Contains(c.Vendedor) || vendedoresEquipo.Contains(jointRecord.Vendedor)
                                                        select c;
 
             IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
@@ -267,12 +269,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetPedidoVenta(string empresa, int numero)
         {
             PedidoVentaDTO pedido = await GestorPedidosVenta.LeerPedido(empresa, numero).ConfigureAwait(false);
-            if (pedido == null)
-            {
-                return NotFound();
-            }
-
-            return Ok(pedido);
+            return pedido == null ? NotFound() : (IHttpActionResult)Ok(pedido);
         }
 
         // PUT: api/PedidosVenta/5
@@ -292,12 +289,13 @@ namespace NestoAPI.Controllers
                     Nuevo = JsonConvert.SerializeObject(pedido),
                     Usuario = pedido.Usuario
                 };
-                db.Modificaciones.Add(modificacion);
-            } catch (Exception ex)
-            {
-                
+                _ = db.Modificaciones.Add(modificacion);
             }
-            
+            catch (Exception)
+            {
+
+            }
+
 
             db.Entry(cabPedidoVta).Collection(c => c.Prepagos).Load();
             db.Entry(cabPedidoVta).Collection(c => c.EfectosPedidoVentas).Load();
@@ -306,7 +304,7 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            
+
             if (pedido.empresa != cabPedidoVta.Empresa.Trim() || pedido.numero != cabPedidoVta.Número)
             {
                 return BadRequest();
@@ -317,14 +315,15 @@ namespace NestoAPI.Controllers
             {
                 throw new ArgumentException("No se pueden modificar pedidos de clientes sin NIF");
             }
-            
+
             // Cargamos las líneas
             //db.Entry(cabPedidoVta).Reference(l => l.LinPedidoVtas).Load();
             cabPedidoVta = db.CabPedidoVtas.Include(l => l.LinPedidoVtas).SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
             // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
             bool tienePendientes = cabPedidoVta.LinPedidoVtas.Any(l => (l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) || l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
-            if (!tienePendientes) {
+            if (!tienePendientes)
+            {
                 errorPersonalizado("No se puede modificar un pedido ya facturado");
             }
 
@@ -386,7 +385,7 @@ namespace NestoAPI.Controllers
 
             // Si todas las líneas están en -3 pero la cabecera dice que no es presupuesto, es porque queremos pasarlo a pedido
             bool aceptarPresupuesto = pedido.Lineas.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.EsPresupuesto;
-            
+
             cabPedidoVta.Fecha = pedido.fecha;
             // La forma de pago influye en el importe del reembolso de la agencia. Si se modifica la forma de pago
             // hay que modificar el importe del reembolso
@@ -407,9 +406,9 @@ namespace NestoAPI.Controllers
             cabPedidoVta.ContactoCobro = pedido.contactoCobro;
 
             bool cambiarIvaEnLineas = false;
-            if ((cabPedidoVta.IVA == null && pedido.iva!=null) ||
+            if ((cabPedidoVta.IVA == null && pedido.iva != null) ||
                 (cabPedidoVta.IVA != null && pedido.iva == null) ||
-                ((cabPedidoVta.IVA != null && pedido.iva != null) &&
+                (cabPedidoVta.IVA != null && pedido.iva != null &&
                 cabPedidoVta.IVA.Trim() != pedido.iva.Trim()))
             {
                 cabPedidoVta.IVA = pedido.iva;
@@ -439,10 +438,10 @@ namespace NestoAPI.Controllers
             cabPedidoVta.NoComisiona = pedido.noComisiona;
             cabPedidoVta.MantenerJunto = pedido.mantenerJunto;
             cabPedidoVta.ServirJunto = pedido.servirJunto;
-            
+
             cabPedidoVta.Usuario = pedido.Usuario;
             cabPedidoVta.Fecha_Modificación = DateTime.Now;
-            
+
             db.Entry(cabPedidoVta).State = EntityState.Modified;
 
             // Carlos 02/03/17: gestionamos el vendedor por grupo de producto
@@ -463,10 +462,10 @@ namespace NestoAPI.Controllers
             {
                 LineaPedidoVentaDTO lineaEncontrada = pedido.Lineas.SingleOrDefault(l => l.id == linea.Nº_Orden);
 
-                if (linea.Picking != 0 || 
+                if (linea.Picking != 0 ||
                   !(
-                    linea.Estado == Constantes.EstadosLineaVenta.PENDIENTE || 
-                    linea.Estado == Constantes.EstadosLineaVenta.EN_CURSO || 
+                    linea.Estado == Constantes.EstadosLineaVenta.PENDIENTE ||
+                    linea.Estado == Constantes.EstadosLineaVenta.EN_CURSO ||
                     linea.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO
                     )
                 )
@@ -476,11 +475,12 @@ namespace NestoAPI.Controllers
                         //lineaEncontrada.BaseImponible = linea.Base_Imponible;
                         //lineaEncontrada.Total = linea.Total;
                         continue;
-                    } else
+                    }
+                    else
                     {
                         errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking o albarán");
                     }
-                    
+
                 }
 
                 if (lineaEncontrada == null || (lineaEncontrada.Cantidad == 0 && linea.Cantidad != 0))
@@ -489,14 +489,16 @@ namespace NestoAPI.Controllers
                     {
                         errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking");
                     }
-                    db.LinPedidoVtas.Remove(linea);
-                } else 
+                    _ = db.LinPedidoVtas.Remove(linea);
+                }
+                else
                 {
                     bool modificado = false;
                     if (linea.Producto?.Trim() != lineaEncontrada.Producto?.Trim())
                     {
                         Producto producto = db.Productos.Include(f => f.Familia1).Where(p => p.Empresa == pedido.empresa && p.Número == lineaEncontrada.Producto).SingleOrDefault();
-                        if (producto.Estado < Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO) {
+                        if (producto.Estado < Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
+                        {
                             errorPersonalizado($"El producto {producto.Número} está en un estado nulo ({producto.Estado})");
                         }
                         linea.Producto = producto.Número;
@@ -505,15 +507,15 @@ namespace NestoAPI.Controllers
                         linea.Familia = producto.Familia;
                         linea.TipoExclusiva = producto.Familia1.TipoExclusiva;
                         linea.PrecioTarifa = producto.PVP;
-                        linea.Coste = (decimal)producto.PrecioMedio;                        
+                        linea.Coste = (decimal)producto.PrecioMedio;
                         modificado = true;
                     }
-                    if(linea.Texto?.Trim() != lineaEncontrada.texto?.Trim())
+                    if (linea.Texto?.Trim() != lineaEncontrada.texto?.Trim())
                     {
                         linea.Texto = lineaEncontrada.texto;
                         modificado = true;
                     }
-                    if(linea.Precio != lineaEncontrada.PrecioUnitario)
+                    if (linea.Precio != lineaEncontrada.PrecioUnitario)
                     {
                         linea.Precio = lineaEncontrada.PrecioUnitario;
                         modificado = true;
@@ -534,7 +536,7 @@ namespace NestoAPI.Controllers
                         modificado = true;
                     }
                     // El DescuentoPP está en la cabecera
-                    if (pedido.DescuentoPP != linea.DescuentoPP) 
+                    if (pedido.DescuentoPP != linea.DescuentoPP)
                     {
                         linea.DescuentoPP = pedido.DescuentoPP;
                         modificado = true;
@@ -573,10 +575,11 @@ namespace NestoAPI.Controllers
                     //lineaEncontrada.Total = linea.Total;
                 }
             }
-            
+
 
             // Modificamos las líneas
-            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas || aceptarPresupuesto) { 
+            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas || aceptarPresupuesto)
+            {
                 foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
                 {
                     LinPedidoVta lineaPedido;
@@ -585,7 +588,7 @@ namespace NestoAPI.Controllers
                     {
                         ComprobarSiSePuedenInsertarLineas(pedido, algunaLineaTienePicking, linea); //da error si no se puede
                         lineaPedido = this.gestor.CrearLineaVta(linea, pedido.empresa, pedido.numero);
-                        db.LinPedidoVtas.Add(lineaPedido);
+                        _ = db.LinPedidoVtas.Add(lineaPedido);
                         //linea.BaseImponible = lineaPedido.Base_Imponible;
                         //linea.Total = lineaPedido.Total;
                         continue;
@@ -650,7 +653,7 @@ namespace NestoAPI.Controllers
             }
 
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
-            if (hayAlgunaLineaModificada ||  hayLineasNuevas || aceptarPresupuesto)
+            if (hayAlgunaLineaModificada || hayLineasNuevas || aceptarPresupuesto)
             {
                 RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
                 if (!respuesta.ValidacionSuperada)
@@ -697,7 +700,7 @@ namespace NestoAPI.Controllers
                     */
                     foreach (var prepago in cabPedidoVta.Prepagos.Where(p => p.Factura == null).ToList())
                     {
-                        db.Prepagos.Remove(prepago);
+                        _ = db.Prepagos.Remove(prepago);
                     }
                 }
             }
@@ -736,22 +739,22 @@ namespace NestoAPI.Controllers
                 for (var i = 0; i < cabPedidoVta.EfectosPedidoVentas.Count(); i++)
                 {
                     var efectoCabecera = cabPedidoVta.EfectosPedidoVentas.ElementAt(i);
-                    if (!pedido.Efectos.Any(e => 
+                    if (!pedido.Efectos.Any(e =>
                         e.Id == efectoCabecera.Id
                     ))
                     {
                         efectosBorrar.Add(efectoCabecera);
                     }
                 }
-                db.EfectosPedidosVentas.RemoveRange(efectosBorrar);
+                _ = db.EfectosPedidosVentas.RemoveRange(efectosBorrar);
             }
             else
             {
                 if (cabPedidoVta.EfectosPedidoVentas.Any())
-                {                    
+                {
                     foreach (var efecto in cabPedidoVta.EfectosPedidoVentas.ToList())
                     {
-                        db.EfectosPedidosVentas.Remove(efecto);
+                        _ = db.EfectosPedidosVentas.Remove(efecto);
                     }
                 }
             }
@@ -759,7 +762,7 @@ namespace NestoAPI.Controllers
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateConcurrencyException)
             {
@@ -808,6 +811,18 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            // Verificar si pertenece al grupo "Dirección"
+            bool grupoPermitidoSinValidacion;
+            try
+            {
+                var identity = User.Identity as ClaimsIdentity;
+                grupoPermitidoSinValidacion = User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN);
+            }
+            catch
+            {
+                grupoPermitidoSinValidacion = false;
+            }
+
             // Carlos 11/08/23:
             if (string.IsNullOrEmpty(pedido.formaPago) || string.IsNullOrEmpty(pedido.plazosPago))
             {
@@ -821,7 +836,7 @@ namespace NestoAPI.Controllers
             Empresa empresa = db.Empresas.SingleOrDefault(e => e.Número == pedido.empresa);
             vencimientoPedido = pedido.fecha.Value.AddDays(plazoPago.DíasPrimerPlazo);
             vencimientoPedido = vencimientoPedido.AddMonths(plazoPago.MesesPrimerPlazo);
-            db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
+            _ = db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
 
             if (pedido.ParametrosIva == null)
             {
@@ -845,7 +860,8 @@ namespace NestoAPI.Controllers
                 pedido.numero = contador.Pedidos;
             }
 
-            CabPedidoVta cabecera = new CabPedidoVta {
+            CabPedidoVta cabecera = new CabPedidoVta
+            {
                 Empresa = pedido.empresa,
                 Número = pedido.numero,
                 Nº_Cliente = pedido.cliente,
@@ -869,8 +885,8 @@ namespace NestoAPI.Controllers
                 Comentarios = pedido.comentarios,
                 Usuario = pedido.Usuario
             };
-            
-            db.CabPedidoVtas.Add(cabecera);
+
+            _ = db.CabPedidoVtas.Add(cabecera);
             GestorComisiones.CrearVendedorPedidoGrupoProducto(db, cabecera, pedido);
 
 
@@ -878,8 +894,8 @@ namespace NestoAPI.Controllers
             ParametroUsuario parametroUsuario;
 
             // Guardamos el parámetro de pedido, para que al abrir la ventana el usuario vea el pedido
-            string usuarioParametro = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\")+1);
-            if (usuarioParametro != null && (usuarioParametro.Length<7 || usuarioParametro.Substring(0,7) != "Cliente"))
+            string usuarioParametro = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
+            if (usuarioParametro != null && (usuarioParametro.Length < 7 || usuarioParametro.Substring(0, 7) != "Cliente"))
             {
                 parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "UltNumPedidoVta");
                 parametroUsuario.Valor = pedido.numero.ToString();
@@ -891,7 +907,8 @@ namespace NestoAPI.Controllers
 
             List<LinPedidoVta> lineasPedidoInsertar = new List<LinPedidoVta>();
             // Bucle de insertar líneas
-            foreach (LineaPedidoVentaDTO linea in pedido.Lineas) {
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
                 if (linea.oferta != null && linea.oferta != 0)
                 {
                     if (linea.oferta > maxNumeroOferta)
@@ -923,7 +940,7 @@ namespace NestoAPI.Controllers
                 {
                     linea.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva?.Trim()).PorcentajeIvaProducto;
                     linea.PorcentajeRecargoEquivalencia = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == linea.iva?.Trim()).PorcentajeRecargoEquivalencia;
-                }                
+                }
                 //linea.Total = linPedido.Total;
                 //db.LinPedidoVtas.Add(linPedido);
                 lineasPedidoInsertar.Add(linPedido);
@@ -969,10 +986,11 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
+            _ = db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
 
             // Actualizamos el contador de ofertas
-            if ((int)maxNumeroOferta!=0) {
+            if ((int)maxNumeroOferta != 0)
+            {
                 contador.Oferta += (int)maxNumeroOferta;
             }
 
@@ -1003,20 +1021,23 @@ namespace NestoAPI.Controllers
                     });
                 }
             }
-            
+
             // Carlos 07/10/15:
             // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
 
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
-            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
-            if (!respuesta.ValidacionSuperada)
+            if (!pedido.CreadoSinPasarValidacion || !grupoPermitidoSinValidacion)
             {
-                throw new Exception(respuesta.Motivo);
+                RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+                if (!respuesta.ValidacionSuperada)
+                {
+                    throw new ValidationException(respuesta.Motivo);
+                }
             }
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateException e)
             {
@@ -1030,7 +1051,7 @@ namespace NestoAPI.Controllers
                     Exception recorremosExcepcion = e;
                     while (recorremosExcepcion.InnerException != null)
                     {
-                        message = recorremosExcepcion.Message+ ". " + recorremosExcepcion.InnerException.Message;
+                        message = recorremosExcepcion.Message + ". " + recorremosExcepcion.InnerException.Message;
                         recorremosExcepcion = recorremosExcepcion.InnerException;
                     }
                     throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
@@ -1073,8 +1094,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> PonerDescuentoTodasLasLineas(string empresa, int pedido, decimal descuento)
         {
-            IQueryable<LinPedidoVta> lineas = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == pedido && l.Estado>= Constantes.EstadosLineaVenta .PENDIENTE && l.Estado < Constantes.EstadosLineaVenta.FACTURA);
-            await Task.Run(() => this.gestor.CalcularDescuentoTodasLasLineas(lineas.ToList(), descuento));
+            IQueryable<LinPedidoVta> lineas = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == pedido && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado < Constantes.EstadosLineaVenta.FACTURA);
+            await Task.Run(() => gestor.CalcularDescuentoTodasLasLineas(lineas.ToList(), descuento));
 
             return Ok(lineas);
         }
@@ -1097,7 +1118,7 @@ namespace NestoAPI.Controllers
 
         public LinPedidoVta dividirLinea(LinPedidoVta lineaActual, short cantidad)
         {
-            return this.dividirLinea(db, lineaActual, cantidad);
+            return dividirLinea(db, lineaActual, cantidad);
         }
 
         public LinPedidoVta dividirLinea(NVEntities db, LinPedidoVta linea, short cantidad)
@@ -1109,11 +1130,11 @@ namespace NestoAPI.Controllers
 
             LinPedidoVta lineaNueva = (LinPedidoVta)db.Entry(linea).CurrentValues.ToObject();
             lineaNueva.Cantidad -= cantidad;
-            this.gestor.CalcularImportesLinea(lineaNueva);
-            db.LinPedidoVtas.Add(lineaNueva); 
+            gestor.CalcularImportesLinea(lineaNueva);
+            _ = db.LinPedidoVtas.Add(lineaNueva);
 
             linea.Cantidad = cantidad;
-            this.gestor.CalcularImportesLinea(linea);
+            gestor.CalcularImportesLinea(linea);
 
             return lineaNueva;
         }
@@ -1124,7 +1145,7 @@ namespace NestoAPI.Controllers
         public async Task<RespuestaAgencia> SePuedeServirPorAgencia(PedidoVentaDTO pedido)
         {
             IGestorAgencias gestor = new GestorAgenciasGlovo();
-            
+
             return await gestor.SePuedeServirPedido(pedido, new ServicioAgencias(), new GestorStocks());
         }
 
@@ -1134,22 +1155,16 @@ namespace NestoAPI.Controllers
         public async Task<PedidoVentaDTO> UnirPedidos(JObject parametro)
         {
             ParametroStringIntInt parametroStringIntInt = parametro.ToObject<ParametroStringIntInt>();
-            ParametroStringIntPedido parametroStringIntPedido = parametro.ToObject<ParametroStringIntPedido>(); 
+            ParametroStringIntPedido parametroStringIntPedido = parametro.ToObject<ParametroStringIntPedido>();
 
             if (parametroStringIntInt == null && parametroStringIntPedido == null)
             {
                 throw new Exception("No se han pasado parametros");
             }
 
-            PedidoVentaDTO pedidoUnido;
-            if (parametroStringIntPedido == null || parametroStringIntPedido.PedidoAmpliacion == null)
-            {
-                pedidoUnido = await gestor.UnirPedidos(parametroStringIntInt.Empresa, parametroStringIntInt.NumeroPedidoOriginal, parametroStringIntInt.NumeroPedidoAmpliacion).ConfigureAwait(false);
-            } else
-            {
-                pedidoUnido = await gestor.UnirPedidos(parametroStringIntPedido.Empresa, parametroStringIntPedido.NumeroPedidoOriginal, parametroStringIntPedido.PedidoAmpliacion).ConfigureAwait(false);
-            }
-            
+            PedidoVentaDTO pedidoUnido = parametroStringIntPedido == null || parametroStringIntPedido.PedidoAmpliacion == null
+                ? await gestor.UnirPedidos(parametroStringIntInt.Empresa, parametroStringIntInt.NumeroPedidoOriginal, parametroStringIntInt.NumeroPedidoAmpliacion).ConfigureAwait(false)
+                : await gestor.UnirPedidos(parametroStringIntPedido.Empresa, parametroStringIntPedido.NumeroPedidoOriginal, parametroStringIntPedido.PedidoAmpliacion).ConfigureAwait(false);
             return pedidoUnido;
         }
 

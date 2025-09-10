@@ -14,26 +14,20 @@ namespace NestoAPI.Infraestructure
     {
         // Carlos 10/01/24: esto hay que refactorizarlo para poder hacerle tests
         // deben entrar ambos campos por inyección de dependencias
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db = new NVEntities();
         private readonly IServicioVendedores servicioVendedores = new ServicioVendedores();
 
-        private PedidoVentaDTO pedido;
+        private readonly PedidoVentaDTO pedido;
         private readonly string TEXTO_PEDIDO;
-        
-        string nombreVendedorCabecera = "";
-        string nombreVendedorPeluqueria = "";
+
+        private string nombreVendedorCabecera = "";
+        private string nombreVendedorPeluqueria = "";
 
         public GestorPresupuestos(PedidoVentaDTO pedido)
         {
             this.pedido = pedido;
-            if (pedido.EsPresupuesto)
-            {
-                TEXTO_PEDIDO = "Presupuesto";
-            } else
-            {
-                TEXTO_PEDIDO = "Pedido";
-            }
-            
+            TEXTO_PEDIDO = pedido.EsPresupuesto ? "Presupuesto" : "Pedido";
+
         }
 
         public async Task EnviarCorreo()
@@ -49,11 +43,13 @@ namespace NestoAPI.Infraestructure
             }
 
             MailMessage mail = new MailMessage();
-            SmtpClient client = new SmtpClient();
-            client.Port = 587;
-            client.EnableSsl = true;
-            client.DeliveryMethod = SmtpDeliveryMethod.Network;
-            client.UseDefaultCredentials = false;
+            SmtpClient client = new SmtpClient
+            {
+                Port = 587,
+                EnableSsl = true,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false
+            };
             string contrasenna = ConfigurationManager.AppSettings["office365password"];
             client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
             client.Host = "smtp.office365.com";
@@ -66,7 +62,7 @@ namespace NestoAPI.Infraestructure
             // Miramos si ponemos copia al vendedor de la cabecera
             Vendedor vendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == pedido.vendedor);
             correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : Constantes.Correos.INFORMATICA;
-            bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL" && l.Base_Imponible!=0);
+            bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL" && l.Base_Imponible != 0);
             if (tieneLineasNoPeluqueria)
             {
                 mail.To.Add(new MailAddress(correoVendedor.ToLower()));
@@ -81,7 +77,7 @@ namespace NestoAPI.Infraestructure
             }
 
             // Miramos si ponemos copia al vendedor de peluquería
-            bool tieneLineasPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo == "PEL" && l.Base_Imponible!=0);
+            bool tieneLineasPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo == "PEL" && l.Base_Imponible != 0);
             if (tieneLineasPeluqueria)
             {
                 string numeroVendedorPeluqueria = db.VendedoresPedidosGruposProductos.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Pedido == pedido.numero)?.Vendedor;
@@ -102,7 +98,7 @@ namespace NestoAPI.Infraestructure
             {
                 parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "CorreoDefecto");
                 correoUsuario = parametroUsuario != null ? parametroUsuario.Valor : Constantes.Correos.INFORMATICA;
-                if (correoUsuario != null && correoUsuario.Trim()!="")
+                if (correoUsuario != null && correoUsuario.Trim() != "")
                 {
                     correoUsuario = correoUsuario.Trim().ToLower();
                     mail.CC.Add(correoUsuario);
@@ -132,9 +128,9 @@ namespace NestoAPI.Infraestructure
                 mail.Priority = MailPriority.High;
             }
             // Si falta la foto ponemos copia a tienda online
-            if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") || 
+            if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") ||
                 mail.Body.Contains("-home_default/.jpg") ||
-                pedido.Lineas.First().formaVenta == Constantes.FormasVenta.AMAZON || 
+                pedido.Lineas.First().formaVenta == Constantes.FormasVenta.AMAZON ||
                 pedido.Lineas.First().formaVenta == Constantes.FormasVenta.TIENDA_ONLINE)
             {
                 mail.CC.Add(Constantes.Correos.TIENDA_ONLINE);
@@ -153,7 +149,8 @@ namespace NestoAPI.Infraestructure
             try
             {
                 client.Send(mail);
-            } catch
+            }
+            catch
             {
                 await Task.Delay(2000);
                 client.Send(mail);
@@ -164,85 +161,85 @@ namespace NestoAPI.Infraestructure
             StringBuilder s = new StringBuilder();
 
             // Estilo general del correo
-            s.AppendLine("<style>");
-            s.AppendLine("  body { font-family: 'Arial', sans-serif; }");
-            s.AppendLine("  h1 { color: #333; }");
-            s.AppendLine("  table { border-collapse: collapse; width: 100%; }");
-            s.AppendLine("  th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }");
-            s.AppendLine("  th { background-color: #f2f2f2; }");
-            s.AppendLine("  tr:nth-child(even) { background-color: #f9f9f9; }");
-            s.AppendLine("  tr:hover { background-color: #f5f5f5; }");
-            s.AppendLine("</style>");
+            _ = s.AppendLine("<style>");
+            _ = s.AppendLine("  body { font-family: 'Arial', sans-serif; }");
+            _ = s.AppendLine("  h1 { color: #333; }");
+            _ = s.AppendLine("  table { border-collapse: collapse; width: 100%; }");
+            _ = s.AppendLine("  th, td { border: 1px solid #ddd; padding: 8px; text-align: right; }");
+            _ = s.AppendLine("  th { background-color: #f2f2f2; }");
+            _ = s.AppendLine("  tr:nth-child(even) { background-color: #f9f9f9; }");
+            _ = s.AppendLine("  tr:hover { background-color: #f5f5f5; }");
+            _ = s.AppendLine("</style>");
 
-            s.AppendLine(string.Format("<H1>{0} {1} {2}</H1>", tipoCorreo, TEXTO_PEDIDO, pedido.numero));
+            _ = s.AppendLine(string.Format("<H1>{0} {1} {2}</H1>", tipoCorreo, TEXTO_PEDIDO, pedido.numero));
 
-            s.AppendLine("<table border=\"0\" style=\"width:100%\">");
-            s.AppendLine("<tr>");
-            s.AppendLine("<td width=\"50%\"><img src=\"http://www.productosdeesteticaypeluqueriaprofesional.com/logofra.jpg\"></td>");
-            s.AppendLine("<td width=\"50%\" style=\"text-align:center; vertical-align:middle\">" +
+            _ = s.AppendLine("<table border=\"0\" style=\"width:100%\">");
+            _ = s.AppendLine("<tr>");
+            _ = s.AppendLine("<td width=\"50%\"><img src=\"http://www.productosdeesteticaypeluqueriaprofesional.com/logofra.jpg\"></td>");
+            _ = s.AppendLine("<td width=\"50%\" style=\"text-align:center; vertical-align:middle\">" +
                 "<b>NUEVA VISIÓN, S.A.</b><br>" +
-                "<b>c/ Río Tiétar, 11</b><br>"+
-                "<b>Políg. Ind. Los Nogales</b><br>"+
-                "<b>28119 Algete (Madrid)</b><br>"+
+                "<b>c/ Río Tiétar, 11</b><br>" +
+                "<b>Políg. Ind. Los Nogales</b><br>" +
+                "<b>28119 Algete (Madrid)</b><br>" +
                 "</td>");
-            s.AppendLine("</tr>");
-            s.AppendLine("</table>");
+            _ = s.AppendLine("</tr>");
+            _ = s.AppendLine("</table>");
 
             Cliente cliente = db.Clientes.SingleOrDefault(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
             DateTime fechaPedido = pedido.fecha ?? DateTime.Today;
-            s.AppendLine("<table border=\"1\" style=\"width:100%\">");
-            s.AppendLine("<tr>");
-            s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">" +
+            _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+            _ = s.AppendLine("<tr>");
+            _ = s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">" +
                 "<b>" + TEXTO_PEDIDO + " " + pedido.numero.ToString() + "</b><br>" +
                 "Nº Cliente: " + pedido.cliente + "/" + pedido.contacto + "<br>" +
                 "CIF/NIF: " + cliente.CIF_NIF + "<br>");
             if (!string.IsNullOrEmpty(nombreVendedorCabecera))
             {
-                s.AppendLine("Vendedor: " + nombreVendedorCabecera + "<br>");
+                _ = s.AppendLine("Vendedor: " + nombreVendedorCabecera + "<br>");
             }
             if (!string.IsNullOrEmpty(nombreVendedorPeluqueria))
             {
-                s.AppendLine("Vendedor Peluquería: " + nombreVendedorPeluqueria + "<br>");
+                _ = s.AppendLine("Vendedor Peluquería: " + nombreVendedorPeluqueria + "<br>");
             }
-            s.AppendLine("Fecha: " + fechaPedido.ToString("D") + "<br>" +
+            _ = s.AppendLine("Fecha: " + fechaPedido.ToString("D") + "<br>" +
                 "Le Atendió: " + pedido.Usuario + "<br>" +
                 "</td>");
-            s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">"+
+            _ = s.AppendLine("<td width=\"50%\" style=\"text-align:left; vertical-align:middle\">" +
                 "<b>DIRECCIÓN DE ENTREGA</b><br>" +
-                cliente.Nombre+"<br>" +
-                cliente.Dirección+"<br>" +
-                cliente.CodPostal+ " " +cliente.Población+"<br>" +
-                cliente.Provincia+"<br>"+
+                cliente.Nombre + "<br>" +
+                cliente.Dirección + "<br>" +
+                cliente.CodPostal + " " + cliente.Población + "<br>" +
+                cliente.Provincia + "<br>" +
                 "Tel. " + cliente.Teléfono + "<br>" +
-                "<b>"+ pedido.comentarios + "</b><br>" +
+                "<b>" + pedido.comentarios + "</b><br>" +
                 "</td>");
-            s.AppendLine("</tr>");
+            _ = s.AppendLine("</tr>");
             if (!string.IsNullOrEmpty(pedido.comentarios))
             {
-                s.AppendLine("<tr>");
-                s.AppendLine($"<td colspan='2'>Comentarios: {pedido.comentarios.Trim()}</td>");
-                s.AppendLine("</tr>");
+                _ = s.AppendLine("<tr>");
+                _ = s.AppendLine($"<td colspan='2'>Comentarios: {pedido.comentarios.Trim()}</td>");
+                _ = s.AppendLine("</tr>");
             }
             if (!string.IsNullOrEmpty(pedido.comentarioPicking))
             {
-                s.AppendLine("<tr>");
-                s.AppendLine($"<td colspan='2'>Comentarios picking: {pedido.comentarioPicking.Trim()}</td>");
-                s.AppendLine("</tr>");
+                _ = s.AppendLine("<tr>");
+                _ = s.AppendLine($"<td colspan='2'>Comentarios picking: {pedido.comentarioPicking.Trim()}</td>");
+                _ = s.AppendLine("</tr>");
             }
 
-            s.AppendLine("</table>");
+            _ = s.AppendLine("</table>");
 
-            s.AppendLine("<table border=\"1\" style=\"width:100%\">");
-            s.AppendLine("<thead align = \"right\">");
-            s.Append("<tr><th>Imagen</th>");
-            s.Append("<th>Producto</th>");
-            s.Append("<th>Descripción</th>");
-            s.Append("<th>Cantidad</th>");
-            s.Append("<th>Precio Und.</th>");
-            s.Append("<th>Descuento</th>");
-            s.Append("<th>Importe</th></tr>");
-            s.AppendLine("</thead>");
-            s.AppendLine("<tbody align = \"right\">");
+            _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+            _ = s.AppendLine("<thead align = \"right\">");
+            _ = s.Append("<tr><th>Imagen</th>");
+            _ = s.Append("<th>Producto</th>");
+            _ = s.Append("<th>Descripción</th>");
+            _ = s.Append("<th>Cantidad</th>");
+            _ = s.Append("<th>Precio Und.</th>");
+            _ = s.Append("<th>Descuento</th>");
+            _ = s.Append("<th>Importe</th></tr>");
+            _ = s.AppendLine("</thead>");
+            _ = s.AppendLine("<tbody align = \"right\">");
 
             bool faltaStockDeAlgo = false;
             bool tieneQueVenirAlgunProducto = false;
@@ -250,48 +247,41 @@ namespace NestoAPI.Infraestructure
             GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
             {
-                string colorCantidad;
-                if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
-                {                    
-                    colorCantidad = gestorStocks.ColorStock(linea.Producto, linea.almacen);
-                }
-                else
-                {
-                    colorCantidad = "black";
-                }
+                string colorCantidad = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? gestorStocks.ColorStock(linea.Producto, linea.almacen) : "black";
                 if (colorCantidad == "DeepPink")
                 {
                     tieneQueVenirAlgunProducto = true;
-                } else if (colorCantidad == "red")
+                }
+                else if (colorCantidad == "red")
                 {
                     faltaStockDeAlgo = true;
                 }
-                s.Append("<tr style=\"color: " + colorCantidad + ";\">");
+                _ = s.Append("<tr style=\"color: " + colorCantidad + ";\">");
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
                     string rutaImagen = await ProductoDTO.RutaImagen(linea.Producto).ConfigureAwait(false);
-                    s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"><img src=\"" + rutaImagen + "\" style=\"max-height:100%; max-width:100%\"></td>");
+                    _ = s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"><img src=\"" + rutaImagen + "\" style=\"max-height:100%; max-width:100%\"></td>");
                 }
                 else
                 {
-                    s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"></td>");
+                    _ = s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"></td>");
                 }
-                s.Append("<td>" + linea.Producto + "</td>");
+                _ = s.Append("<td>" + linea.Producto + "</td>");
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
                     string rutaEnlace = await ProductoDTO.RutaEnlace(linea.Producto).ConfigureAwait(false);
                     rutaEnlace += "&utm_medium=correopedido";
-                    s.Append("<td><a href=\"" + rutaEnlace + "\">" + linea.texto + "</a></td>");
+                    _ = s.Append("<td><a href=\"" + rutaEnlace + "\">" + linea.texto + "</a></td>");
                 }
                 else
                 {
-                    s.Append("<td>" + linea.texto + "</td>");
+                    _ = s.Append("<td>" + linea.texto + "</td>");
                 }
-                s.Append("<td>" + linea.Cantidad.ToString() + "</td>");
-                s.Append("<td style=\"text-align:right\">" + linea.PrecioUnitario.ToString("C") + "</td>");
-                s.Append("<td style=\"text-align:right\">" + linea.DescuentoLinea.ToString("P") + "</td>");
-                s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
-                s.AppendLine("</tr>");
+                _ = s.Append("<td>" + linea.Cantidad.ToString() + "</td>");
+                _ = s.Append("<td style=\"text-align:right\">" + linea.PrecioUnitario.ToString("C") + "</td>");
+                _ = s.Append("<td style=\"text-align:right\">" + linea.DescuentoLinea.ToString("P") + "</td>");
+                _ = s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
+                _ = s.AppendLine("</tr>");
             }
             if (!pedido.servirJunto || pedido.mantenerJunto)
             {
@@ -301,7 +291,7 @@ namespace NestoAPI.Infraestructure
                 {
                     colorServirJunto = "red";
                     textoServirMantener += "¡¡¡ ATENCIÓN !!!";
-                }                
+                }
                 if (!pedido.servirJunto)
                 {
                     textoServirMantener += " Desmarcado servir junto ";
@@ -314,82 +304,88 @@ namespace NestoAPI.Infraestructure
                 {
                     textoServirMantener += " Marcado mantener junto ";
                 }
-                s.AppendLine("<tr style=\"color: " + colorServirJunto + ";\">");
-                s.AppendLine($"<td colspan='7'>{textoServirMantener.Trim()}</td>");
-                s.AppendLine("</tr>");
+                _ = s.AppendLine("<tr style=\"color: " + colorServirJunto + ";\">");
+                _ = s.AppendLine($"<td colspan='7'>{textoServirMantener.Trim()}</td>");
+                _ = s.AppendLine("</tr>");
             }
-            s.AppendLine("</tbody>");
-            s.AppendLine("</table>");
+            if (pedido.CreadoSinPasarValidacion)
+            {
+                _ = s.AppendLine("<tr style=\"color: red;\">");
+                _ = s.AppendLine($"<td colspan='7'>Nota: pedido creado sin pasar validación</td>");
+                _ = s.AppendLine("</tr>");
+            }
+            _ = s.AppendLine("</tbody>");
+            _ = s.AppendLine("</table>");
 
-            s.AppendLine("<table border=\"1\" style=\"width:100%\">");
-            s.AppendLine("<thead align = \"right\">");
-            s.Append("<tr><th>Base Imponible</th>");
-            s.Append("<th>IVA</th>");
-            s.Append("<th>Importe IVA</th>");
+            _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+            _ = s.AppendLine("<thead align = \"right\">");
+            _ = s.Append("<tr><th>Base Imponible</th>");
+            _ = s.Append("<th>IVA</th>");
+            _ = s.Append("<th>Importe IVA</th>");
             if (pedido.Lineas.Sum(l => l.ImporteRecargoEquivalencia) != 0)
             {
-                s.Append("<th>Importe RE</th>");
+                _ = s.Append("<th>Importe RE</th>");
             }
-            s.Append("<th>Total</th></tr>");
-            s.AppendLine("</thead>");
-            s.AppendLine("<tbody align = \"right\">");
-            s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.BaseImponible).ToString("C")+"</td>");
-            s.Append("<td style=\"text-align:right\">" + pedido.iva + "</td>");
-            s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.ImporteIva).ToString("C") + "</td>");
+            _ = s.Append("<th>Total</th></tr>");
+            _ = s.AppendLine("</thead>");
+            _ = s.AppendLine("<tbody align = \"right\">");
+            _ = s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.BaseImponible).ToString("C") + "</td>");
+            _ = s.Append("<td style=\"text-align:right\">" + pedido.iva + "</td>");
+            _ = s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.ImporteIva).ToString("C") + "</td>");
             if (pedido.Lineas.Sum(l => l.ImporteRecargoEquivalencia) != 0)
             {
-                s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.ImporteRecargoEquivalencia).ToString("C") + "</td>");
-            }            
-            s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l=>l.Total).ToString("C") + "</td>");
-            s.AppendLine("</tr>");
-            s.AppendLine("</tbody>");
-            s.AppendLine("</table>");
+                _ = s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.ImporteRecargoEquivalencia).ToString("C") + "</td>");
+            }
+            _ = s.Append("<td style=\"text-align:right\">" + pedido.Lineas.Sum(l => l.Total).ToString("C") + "</td>");
+            _ = s.AppendLine("</tr>");
+            _ = s.AppendLine("</tbody>");
+            _ = s.AppendLine("</table>");
 
             if (pedido.periodoFacturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
             {
-                s.AppendLine("<table border=\"1\" style=\"width:100%\">");
-                s.AppendLine("<thead align = \"center\">");
-                s.Append("<tr><th>Periodo de facturación</th>");
-                s.AppendLine("</thead>");
-                s.AppendLine("<tbody align = \"right\">");
-                s.Append("<tr><td style=\"text-align:center\">FIN DE MES</td>");
-                s.AppendLine("</tbody>");
-                s.AppendLine("</table>");
+                _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+                _ = s.AppendLine("<thead align = \"center\">");
+                _ = s.Append("<tr><th>Periodo de facturación</th>");
+                _ = s.AppendLine("</thead>");
+                _ = s.AppendLine("<tbody align = \"right\">");
+                _ = s.Append("<tr><td style=\"text-align:center\">FIN DE MES</td>");
+                _ = s.AppendLine("</tbody>");
+                _ = s.AppendLine("</table>");
             }
             else if (pedido.crearEfectosManualmente && pedido.Efectos.Any())
             {
-                s.AppendLine("<table border=\"1\" style=\"width:100%\">");
-                s.AppendLine("<thead align = \"center\">");
-                s.Append("<tr><th>Vencimiento</th>");
-                s.Append("<th>Importe</th>");
-                s.Append("<th>Forma Pago</th>");
-                s.Append("<th>CCC</th></tr>");
-                s.AppendLine("</thead>");
-                s.AppendLine("<tbody align = \"right\">");
+                _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+                _ = s.AppendLine("<thead align = \"center\">");
+                _ = s.Append("<tr><th>Vencimiento</th>");
+                _ = s.Append("<th>Importe</th>");
+                _ = s.Append("<th>Forma Pago</th>");
+                _ = s.Append("<th>CCC</th></tr>");
+                _ = s.AppendLine("</thead>");
+                _ = s.AppendLine("<tbody align = \"right\">");
                 foreach (EfectoPedidoVentaDTO efecto in pedido.Efectos)
                 {
-                    s.Append("<tr><td style=\"text-align:center\">" + efecto.FechaVencimiento.ToString("d") + "</td>");
-                    s.Append("<td style=\"text-align:right\">" + efecto.Importe.ToString("C") + "</td>");
-                    s.Append("<td style=\"text-align:center\">" + efecto.FormaPago + "</td>");
-                    s.Append("<td style=\"text-align:center\">" + efecto.Ccc + "</td></tr>");
+                    _ = s.Append("<tr><td style=\"text-align:center\">" + efecto.FechaVencimiento.ToString("d") + "</td>");
+                    _ = s.Append("<td style=\"text-align:right\">" + efecto.Importe.ToString("C") + "</td>");
+                    _ = s.Append("<td style=\"text-align:center\">" + efecto.FormaPago + "</td>");
+                    _ = s.Append("<td style=\"text-align:center\">" + efecto.Ccc + "</td></tr>");
                 }
-                s.AppendLine("</tbody>");
-                s.AppendLine("</table>");
-            } 
+                _ = s.AppendLine("</tbody>");
+                _ = s.AppendLine("</table>");
+            }
             else
             {
-                s.AppendLine("<table border=\"1\" style=\"width:100%\">");
-                s.AppendLine("<thead align = \"center\">");
-                s.Append("<tr><th>Forma de pago</th>");
-                s.Append("<th>Plazos de pago</th>");
-                s.Append("<th>CCC</th></tr>");
-                s.AppendLine("</thead>");
-                s.AppendLine("<tbody align = \"right\">");
-                s.Append("<tr><td style=\"text-align:center\">" + pedido.formaPago + "</td>");
-                s.Append("<td style=\"text-align:center\">" + pedido.plazosPago + "</td>");
-                s.Append($"<td style=\"text-align:center\"> { pedido.ccc } </td></tr>");
-                s.AppendLine("</tbody>");
-                s.AppendLine("</table>");
+                _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+                _ = s.AppendLine("<thead align = \"center\">");
+                _ = s.Append("<tr><th>Forma de pago</th>");
+                _ = s.Append("<th>Plazos de pago</th>");
+                _ = s.Append("<th>CCC</th></tr>");
+                _ = s.AppendLine("</thead>");
+                _ = s.AppendLine("<tbody align = \"right\">");
+                _ = s.Append("<tr><td style=\"text-align:center\">" + pedido.formaPago + "</td>");
+                _ = s.Append("<td style=\"text-align:center\">" + pedido.plazosPago + "</td>");
+                _ = s.Append($"<td style=\"text-align:center\"> {pedido.ccc} </td></tr>");
+                _ = s.AppendLine("</tbody>");
+                _ = s.AppendLine("</table>");
             }
 
             return s;

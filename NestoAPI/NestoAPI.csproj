@@ -565,6 +565,7 @@
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
+    <Compile Include="Infraestructure\PrincipalExtensions.cs" />
     <Compile Include="Infraestructure\Rapports\GestorRapports.cs" />
     <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />

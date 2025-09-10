@@ -249,8 +249,6 @@ namespace NestoAPI.Controllers
                 throw new Exception("Producto nulo");
             }
 
-            //decimal precio = datosPrecio.precio;
-            //decimal descuento = datosPrecio.descuento;
             PrecioDescuentoProducto precio = new PrecioDescuentoProducto
             {
                 precioCalculado = datosPrecio.precio,
@@ -262,7 +260,20 @@ namespace NestoAPI.Controllers
                 aplicarDescuento = aplicarDescuento
             };
 
-            GestorPrecios.calcularDescuentoProducto(precio);
+            if (cliente == Constantes.ClientesEspeciales.PUBLICO_FINAL)
+            {
+                var porcentajeIVA = 1.21M;
+                if (producto.IVA_Repercutido == Constantes.Empresas.IVA_REDUCIDO)
+                {
+                    porcentajeIVA = 1.1m;
+                }
+                precio.precioCalculado = await ProductoDTO.LeerPrecioPublicoFinal(productoPrecio) / porcentajeIVA;
+            }
+            else
+            {
+                GestorPrecios.calcularDescuentoProducto(precio);
+            }
+
             datosPrecio.precio = precio.precioCalculado;
             datosPrecio.descuento = precio.descuentoCalculado;
             datosPrecio.aplicarDescuento = precio.aplicarDescuento;

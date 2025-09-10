@@ -7,12 +7,12 @@ using System.Runtime.Serialization;
 namespace NestoAPI.Models.PedidosVenta
 {
     public class PedidoVentaDTO : PedidoBase<LineaPedidoVentaDTO>
-        {
+    {
         public PedidoVentaDTO() : base()
         {
-            this.Lineas = new HashSet<LineaPedidoVentaDTO>();
-            this.Prepagos = new HashSet<PrepagoDTO>();
-            this.Efectos = new HashSet<EfectoPedidoVentaDTO>();
+            Lineas = new HashSet<LineaPedidoVentaDTO>();
+            Prepagos = new HashSet<PrepagoDTO>();
+            Efectos = new HashSet<EfectoPedidoVentaDTO>();
         }
         public string ccc { get; set; }
         public string cliente { get; set; }
@@ -21,7 +21,8 @@ namespace NestoAPI.Models.PedidosVenta
         public string contacto { get; set; }
         public string contactoCobro { get; set; }
         public bool crearEfectosManualmente { get; set; }
-        public decimal DescuentoCliente {
+        public decimal DescuentoCliente
+        {
             get => DescuentoEntidad;
             set => DescuentoEntidad = value;
         }
@@ -38,12 +39,13 @@ namespace NestoAPI.Models.PedidosVenta
         public string periodoFacturacion { get; set; }
         [Required]
         public string plazosPago { get; set; }
-        public Nullable<System.DateTime> primerVencimiento { get; set; }      
+        public Nullable<System.DateTime> primerVencimiento { get; set; }
         public string ruta { get; set; }
         public string serie { get; set; }
         public bool servirJunto { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }
+        public bool CreadoSinPasarValidacion { get; set; }
 
         public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }

@@ -99,6 +99,7 @@ namespace NestoAPI.Models
             public const string EMPRESA_POR_DEFECTO = "1";
             public const string FORMA_VENTA_POR_DEFECTO = "VAR";
             public const string IVA_POR_DEFECTO = "G21";
+            public const string IVA_REDUCIDO = "R10";
         }
 
         public static class EstadosLineaVenta
@@ -147,6 +148,17 @@ namespace NestoAPI.Models
         {
             public const string AMAZON = "STK";
             public const string TIENDA_ONLINE = "WEB";
+        }
+
+        public class GruposSeguridad
+        {
+            public const string ADMINISTRACION = "Administración";
+            public const string ALMACEN = "Almacén";
+            public const string COMPRAS = "Compras";
+            public const string DIRECCION = "Dirección";
+            public const string FACTURACION = "Facturación";
+            public const string TIENDA_ON_LINE = "TiendaOnline";
+            public const string TIENDAS = "Tiendas";
         }
 
         public static class NivelRiesgoPagos
@@ -256,6 +268,7 @@ namespace NestoAPI.Models
             public const string EL_EDEN = "15191";
             public const string TIENDA_ONLINE = "31517";
             public const string AMAZON = "32624";
+            public const string PUBLICO_FINAL = "10458";
         }
 
         public static class Vendedores
