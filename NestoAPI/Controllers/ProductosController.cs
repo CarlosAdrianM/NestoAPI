@@ -218,15 +218,20 @@ namespace NestoAPI.Controllers
             Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id);
             if (producto == null)
             {
-                return NotFound();
+                producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.CodBarras == id);
+                if (producto == null)
+                {
+                    return NotFound();
+                }
             }
 
             ProductoPlantillaDTO productoDTO = new ProductoPlantillaDTO()
             {
-                producto = producto.Número,
-                nombre = producto.Nombre,
+                producto = producto.Número.Trim(),
+                nombre = producto.Nombre.Trim(),
                 precio = (decimal)producto.PVP,
-                aplicarDescuento = producto.Aplicar_Dto
+                aplicarDescuento = producto.Aplicar_Dto,
+                iva = producto.IVA_Repercutido
             };
 
             PrecioDescuentoProducto precio = new PrecioDescuentoProducto

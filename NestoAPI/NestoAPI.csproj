@@ -479,6 +479,7 @@
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
+    <Compile Include="Controllers\ParametrosIvaController.cs" />
     <Compile Include="Controllers\TokenRefreshController.cs" />
     <Compile Include="Controllers\VentasClienteController.cs" />
     <Compile Include="Controllers\VideosController.cs" />
@@ -570,6 +571,7 @@
     <Compile Include="Infraestructure\Rapports\IServicioRapports.cs" />
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
+    <Compile Include="Infraestructure\RoundingHelper.cs" />
     <Compile Include="Infraestructure\SeEstaVendiendo\GestorSeEstaVendiendo.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />

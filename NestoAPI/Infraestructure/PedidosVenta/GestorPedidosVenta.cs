@@ -17,7 +17,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 {
     public class GestorPedidosVenta
     {
-        private ServicioPedidosVenta servicio;
+        private readonly ServicioPedidosVenta servicio;
         public GestorPedidosVenta(ServicioPedidosVenta servicio)
         {
             this.servicio = servicio;
@@ -69,20 +69,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             bruto = (decimal)(linea.Cantidad * linea.Precio);
             if (linea.Aplicar_Dto)
             {
-                sumaDescuentos = (1 - (1 - (linea.DescuentoCliente)) * (1 - (linea.DescuentoProducto)) * (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
+                sumaDescuentos = 1 - ((1 - linea.DescuentoCliente) * (1 - linea.DescuentoProducto) * (1 - linea.Descuento) * (1 - linea.DescuentoPP));
             }
             else
             {
                 linea.DescuentoProducto = 0;
-                sumaDescuentos = (1 - (1 - (linea.Descuento)) * (1 - (linea.DescuentoPP)));
+                sumaDescuentos = 1 - ((1 - linea.Descuento) * (1 - linea.DescuentoPP));
             }
             importeDescuento = bruto * sumaDescuentos;
-            baseImponible = Math.Round(bruto - importeDescuento, 2, MidpointRounding.AwayFromZero);
+            baseImponible = RoundingHelper.DosDecimalesRound(bruto - importeDescuento);
             if (!string.IsNullOrWhiteSpace(iva))
             {
                 parametroIva = servicio.LeerParametroIVA(linea.Empresa, iva, linea.IVA);
                 porcentajeIVA = parametroIva != null ? (byte)parametroIva.C__IVA : (byte)0;
-                porcentajeRE = parametroIva != null ? (decimal)parametroIva.C__RE / 100 : (decimal)0;
+                porcentajeRE = parametroIva != null ? (decimal)parametroIva.C__RE / 100 : 0;
                 importeIVA = baseImponible * porcentajeIVA / 100;
                 importeRE = baseImponible * porcentajeRE;
             }
@@ -168,7 +168,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
         public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto, string ruta, string vendedor)
         {
-            string tipoExclusiva, grupo, subGrupo, familia, ivaRepercutido;
+            string tipoExclusiva, grupo, subGrupo, familia;
             decimal coste, precioTarifa;
             short estadoProducto;
             CentrosCoste centroCoste = null;
@@ -197,7 +197,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     grupo = producto.Grupo;
                     subGrupo = producto.SubGrupo;
                     familia = producto.Familia;
-                    ivaRepercutido = producto.IVA_Repercutido; // ¿Se usa? Ojo, que puede venir el IVA nulo y estar bien
+                    _ = producto.IVA_Repercutido; // ¿Se usa? Ojo, que puede venir el IVA nulo y estar bien
                     estadoProducto = (short)producto.Estado;
                     break;
 
@@ -207,7 +207,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     grupo = null;
                     subGrupo = null;
                     familia = null;
-                    ivaRepercutido = servicio.LeerEmpresa(empresa).TipoIvaDefecto;
+                    _ = servicio.LeerEmpresa(empresa).TipoIvaDefecto;
                     estadoProducto = 0;
                     if (linea.Producto.Substring(0, 1) == "6" || linea.Producto.Substring(0, 1) == "7")
                     {
@@ -221,21 +221,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     grupo = null;
                     subGrupo = null;
                     familia = null;
-                    ivaRepercutido = servicio.LeerEmpresa(empresa).TipoIvaDefecto;
+                    _ = servicio.LeerEmpresa(empresa).TipoIvaDefecto;
                     estadoProducto = 0;
                     break;
             }
 
 
             // Posiblemente este if se pueda refactorizar con el switch de arriba, pero hay que comprobarlo bien primero
-            if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
-            {
-                tipoExclusiva = servicio.LeerTipoExclusiva(empresa, linea.Producto);
-            }
-            else
-            {
-                tipoExclusiva = null;
-            }
+            tipoExclusiva = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? servicio.LeerTipoExclusiva(empresa, linea.Producto) : null;
 
             // Calculamos los valores que nos falten
             // esto habría que refactorizarlo para que solo lo lea una vez por pedido
@@ -288,7 +281,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Picking = 0,
                 NºOferta = linea.oferta,
                 BlancoParaBorrar = "NestoAPI",
-                LineaParcial = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? !EsSobrePedido(linea.Producto, (short)linea.Cantidad) : true,
+                LineaParcial = linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO || !EsSobrePedido(linea.Producto, (short)linea.Cantidad),
                 EstadoProducto = estadoProducto,
                 CentroCoste = centroCoste?.Número,
                 Departamento = centroCoste?.Departamento
@@ -343,14 +336,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal static async Task<PedidoVentaDTO> LeerPedido(string empresa, int numero)
         {
-            using (NVEntities db = new NVEntities()){
+            using (NVEntities db = new NVEntities())
+            {
                 CabPedidoVta cabPedidoVta = await db.CabPedidoVtas.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Número == numero).ConfigureAwait(false);
                 if (cabPedidoVta == null)
                 {
                     return null;
                 }
 
-                decimal totalComprobacion = Math.Round(cabPedidoVta.LinPedidoVtas.Sum(l => l.Total), 2, MidpointRounding.AwayFromZero);
+                decimal totalComprobacion = RoundingHelper.DosDecimalesRound(cabPedidoVta.LinPedidoVtas.Sum(l => l.Total));
 
                 PedidoVentaDTO pedido;
                 try
@@ -380,7 +374,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         mantenerJunto = cabPedidoVta.MantenerJunto,
                         servirJunto = cabPedidoVta.ServirJunto,
                         notaEntrega = cabPedidoVta.NotaEntrega,
-                        Usuario = cabPedidoVta.Usuario                        
+                        Usuario = cabPedidoVta.Usuario
                     };
                 }
                 catch (Exception ex)
@@ -408,7 +402,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         id = l.Nº_Orden,
                         almacen = l.Almacén,
                         AplicarDescuento = l.Aplicar_Dto,
-                        Cantidad = (l.Cantidad != null ? (short)l.Cantidad : (short)0),
+                        Cantidad = l.Cantidad != null ? (short)l.Cantidad : (short)0,
                         delegacion = l.Delegación,
                         DescuentoLinea = l.Descuento,
                         DescuentoProducto = l.DescuentoProducto,
@@ -418,20 +412,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         GrupoProducto = l.Grupo,
                         iva = l.IVA,
                         oferta = l.NºOferta,
-                        picking = (l.Picking != null ? (int)l.Picking : 0),
-                        PrecioUnitario = (l.Precio != null ? (decimal)l.Precio : 0),
+                        picking = l.Picking != null ? (int)l.Picking : 0,
+                        PrecioUnitario = l.Precio != null ? (decimal)l.Precio : 0,
                         Producto = l.Producto.Trim(),
                         SubgrupoProducto = l.SubGrupo,
                         texto = l.Texto.Trim(),
                         tipoLinea = l.TipoLinea,
                         usuario = l.Usuario,
                         vistoBueno = l.VtoBueno,
-                        //BaseImponible = l.Base_Imponible,
                         PorcentajeIva = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeIvaProducto : 0,
                         PorcentajeRecargoEquivalencia = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeRecargoEquivalencia : 0,
-                        //ImporteIva = l.ImporteIVA,
-                        //Total = l.Total,
-                        //Bruto = l.Bruto
+                        Factura = l.Nº_Factura.Trim(),
+                        Albaran = l.Nº_Albarán
                     })
                     .OrderBy(l => l.id)
                     .ToList();
@@ -479,7 +471,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 decimal totalPedidoLeido = Math.Round(pedido.Total, 2, MidpointRounding.AwayFromZero);
                 if (Math.Abs(totalComprobacion - totalPedidoLeido) > 0.05M)
                 {
-                    Debug.Print($"No cuadra el total guardado ({totalComprobacion.ToString("c")}) con el del pedido leído {totalPedidoLeido.ToString("c")}");
+                    Debug.Print($"No cuadra el total guardado ({totalComprobacion:c}) con el del pedido leído {totalPedidoLeido:c}");
                 }
 
                 return pedido;
@@ -498,10 +490,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             if (pedidoBD == null ||
                 pedidoBD.CCC != null ||
                 pedidoBD.Periodo_Facturacion == "FDM" ||
-                (pedidoBD.Forma_Pago == "CNF" ||
+                pedidoBD.Forma_Pago == "CNF" ||
                  pedidoBD.Forma_Pago == "TRN" ||
                  pedidoBD.Forma_Pago == "CHC" ||
-                 pedidoBD.Forma_Pago == "TAR") ||
+                 pedidoBD.Forma_Pago == "TAR" ||
                 pedidoBD.NotaEntrega ||
                 (!string.IsNullOrWhiteSpace(pedidoBD.PlazosPago) && pedidoBD.PlazosPago.Trim() == "PRE"))
             {
@@ -568,7 +560,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal async Task<PedidoVentaDTO> UnirPedidos(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
         {
-            bool originalEsPresupuesto = pedidoOriginal.Lineas.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);            
+            bool originalEsPresupuesto = pedidoOriginal.Lineas.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
 
             foreach (LineaPedidoVentaDTO linea in pedidoAmpliacion.Lineas.Where(l => l.estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.estado <= Constantes.EstadosLineaVenta.EN_CURSO).ToList())
             {
@@ -578,7 +570,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
                 }
                 pedidoOriginal.Lineas.Add(linea);
-                pedidoAmpliacion.Lineas.Remove(linea);
+                _ = pedidoAmpliacion.Lineas.Remove(linea);
             }
 
             using (TransactionScope transaction = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
@@ -589,9 +581,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     {
                         if (pedidoAmpliacion.numero != 0)
                         {
-                            await controller.PutPedidoVenta(pedidoAmpliacion).ConfigureAwait(true);
-                        }                        
-                        await controller.PutPedidoVenta(pedidoOriginal).ConfigureAwait(true);                        
+                            _ = await controller.PutPedidoVenta(pedidoAmpliacion).ConfigureAwait(true);
+                        }
+                        _ = await controller.PutPedidoVenta(pedidoOriginal).ConfigureAwait(true);
                         transaction.Complete();
                     }
                     catch (TransactionAbortedException ex)

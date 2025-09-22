@@ -1,4 +1,4 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -20,7 +20,7 @@ namespace NestoAPI.Models.PedidosBase
             set
             {
                 _descuentoEntidad = value;
-                foreach(var l in Lineas)
+                foreach (var l in Lineas)
                 {
                     l.DescuentoEntidad = value;
                 }
@@ -33,7 +33,7 @@ namespace NestoAPI.Models.PedidosBase
             set
             {
                 _descuentoPP = value;
-                foreach(var l in Lineas)
+                foreach (var l in Lineas)
                 {
                     l.DescuentoPP = value;
                 }
@@ -42,8 +42,8 @@ namespace NestoAPI.Models.PedidosBase
         public string Usuario { get; set; }
 
         // Propiedades Calculadas
-        public decimal BaseImponible => Math.Round(Lineas.Sum(l => l.BaseImponible), 2, MidpointRounding.AwayFromZero);
-        public decimal Total => Math.Round(Lineas.Sum(l => l.Total), 2, MidpointRounding.AwayFromZero);
+        public decimal BaseImponible => RoundingHelper.DosDecimalesRound(Lineas.Sum(l => l.BaseImponible));
+        public decimal Total => RoundingHelper.DosDecimalesRound(Lineas.Sum(l => l.Total));
 
         // Colecciones
         public virtual ICollection<T> Lineas { get; set; }

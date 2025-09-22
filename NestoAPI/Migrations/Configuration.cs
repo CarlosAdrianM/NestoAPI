@@ -1,13 +1,12 @@
+using Microsoft.AspNet.Identity;
+using Microsoft.AspNet.Identity.EntityFramework;
+using NestoAPI.Infraestructure;
+using System;
+using System.Data.Entity.Migrations;
+using System.Linq;
+
 namespace NestoAPI.Migrations
 {
-    using Infraestructure;
-    using Microsoft.AspNet.Identity;
-    using Microsoft.AspNet.Identity.EntityFramework;
-    using System;
-    using System.Data.Entity;
-    using System.Data.Entity.Migrations;
-    using System.Linq;
-
     internal sealed class Configuration : DbMigrationsConfiguration<NestoAPI.Infraestructure.ApplicationDbContext>
     {
         public Configuration()
@@ -37,37 +36,37 @@ namespace NestoAPI.Migrations
             // Poner el usuario en var adminUser = manager.FindByName("...");
             // Comprobar que el grupo sea correcto en manager.AddToRoles(adminUser.Id, new string[] { "..."});
             // En la consola del administrador de paquetes ejecutar update-database
-            
+
             var manager = new UserManager<ApplicationUser>(new UserStore<ApplicationUser>(new ApplicationDbContext()));
 
             var roleManager = new RoleManager<IdentityRole>(new RoleStore<IdentityRole>(new ApplicationDbContext()));
 
             var user = new ApplicationUser()
             {
-                UserName = "Daniel",
-                Email = "daniellopez@nuevavision.es",
+                UserName = "Lidia",
+                Email = "lidiahernandez@nuevavision.es",
                 EmailConfirmed = true,
-                FirstName = "Daniel",
-                LastName = "López",
+                FirstName = "Lidia",
+                LastName = "Hernández",
                 Level = 1,
                 JoinDate = DateTime.Now
             };
 
-            manager.Create(user, "Camarena.2025");
+            _ = manager.Create(user, "Valdetorres.2025");
 
-            
+
             if (roleManager.Roles.Count() == 0)
             {
-                roleManager.Create(new IdentityRole { Name = "SuperAdmin" });
-                roleManager.Create(new IdentityRole { Name = "Admin" });
-                roleManager.Create(new IdentityRole { Name = "Vendedor" });
-                roleManager.Create(new IdentityRole { Name = "Cliente" });
-                roleManager.Create(new IdentityRole { Name = "VendedorTelefono" });
+                _ = roleManager.Create(new IdentityRole { Name = "SuperAdmin" });
+                _ = roleManager.Create(new IdentityRole { Name = "Admin" });
+                _ = roleManager.Create(new IdentityRole { Name = "Vendedor" });
+                _ = roleManager.Create(new IdentityRole { Name = "Cliente" });
+                _ = roleManager.Create(new IdentityRole { Name = "VendedorTelefono" });
             }
 
-            var adminUser = manager.FindByName("Mamen");
+            var adminUser = manager.FindByName("Lidia");
 
-            manager.AddToRoles(adminUser.Id, new string[] { "Vendedor" });
+            _ = manager.AddToRoles(adminUser.Id, new string[] { "VendedorTelefono" });
         }
     }
 }

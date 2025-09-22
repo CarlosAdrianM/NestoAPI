@@ -1,8 +1,6 @@
-﻿using Microsoft.ApplicationInsights.WindowsServer;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Web;
 
 namespace NestoAPI.Models.RecursosHumanos
 {
@@ -127,7 +125,7 @@ namespace NestoAPI.Models.RecursosHumanos
             switch (delegacion)
             {
                 case Constantes.Almacenes.ALGETE:
-                    return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Algete || f.TipoFestivo == TipoFestivo.Empresa));
+                    return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Empresa));
                 case Constantes.Almacenes.ALCOBENDAS:
                     return Fiestas.Any(f => f.Fecha == fechaSinHora && (f.TipoFestivo == TipoFestivo.Alcobendas || f.TipoFestivo == TipoFestivo.Empresa));
                 case Constantes.Almacenes.REINA:
@@ -137,7 +135,7 @@ namespace NestoAPI.Models.RecursosHumanos
             }
         }
 
-        private static List<Festivo> Fiestas = new List<Festivo>
+        private static readonly List<Festivo> Fiestas = new List<Festivo>
         {
             #region 2024
             new Festivo()
@@ -294,7 +292,7 @@ namespace NestoAPI.Models.RecursosHumanos
                 Fecha = new DateTime(2025, 5, 1),
                 Fiesta = "Día del trabajo",
                 TipoFestivo = TipoFestivo.Nacional
-            },            
+            },
             new Festivo()
             {
                 Fecha = new DateTime(2025, 8, 15),

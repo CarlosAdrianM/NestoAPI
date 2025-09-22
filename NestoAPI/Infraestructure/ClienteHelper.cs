@@ -50,5 +50,4 @@ namespace NestoAPI.Infraestructure
             }
         }
     }
-
 }

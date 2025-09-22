@@ -1,22 +1,20 @@
 ﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using System.Web;
 using System.Data.Entity;
+using System.Linq;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
 {
     public class ServicioPedidosVenta : IServicioPedidosVenta
     {
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db = new NVEntities();
 
         public string CalcularAlmacen(string usuario, string empresa, int numeroPedido)
         {
             using (NVEntities db = new NVEntities())
             {
-                string almacen = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Almacén;
+                string almacen = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido)?.Almacén;
                 if (!string.IsNullOrWhiteSpace(almacen))
                 {
                     return almacen;
@@ -37,22 +35,20 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         public CentrosCoste CalcularCentroCoste(string empresa, int numeroPedido)
-        {            
+        {
             CabPedidoVta cabPedidoCoste = db.CabPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
             if (cabPedidoCoste == null)
             {
                 cabPedidoCoste = db.CabPedidoVtas.Local.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido);
             }
             string vendedor = cabPedidoCoste?.Vendedor;
-            if (string.IsNullOrWhiteSpace(vendedor))
-            {
-                throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque falta el vendedor");
-            }
-            return CalcularCentroCoste(empresa, vendedor);
+            return string.IsNullOrWhiteSpace(vendedor)
+                ? throw new Exception("No se puede calcular el centro de coste del pedido " + numeroPedido.ToString() + ", porque falta el vendedor")
+                : CalcularCentroCoste(empresa, vendedor);
         }
 
         public CentrosCoste CalcularCentroCoste(string empresa, string vendedor)
-        {            
+        {
             if (string.IsNullOrWhiteSpace(vendedor))
             {
                 throw new Exception("No se puede calcular el centro de coste porque falta el vendedor");
@@ -85,7 +81,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         public string CalcularDelegacion(string usuario, string empresa, int numeroPedido)
         {
-            string delegacion = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Delegación;
+            string delegacion = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido)?.Delegación;
             if (!string.IsNullOrWhiteSpace(delegacion))
             {
                 return delegacion;
@@ -106,7 +102,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         public string CalcularFormaVenta(string usuario, string empresa, int numeroPedido)
         {
-            string formaVenta = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido).Forma_Venta;
+            string formaVenta = db.LinPedidoVtas.FirstOrDefault(l => l.Empresa == empresa && l.Número == numeroPedido)?.Forma_Venta;
             if (!string.IsNullOrWhiteSpace(formaVenta))
             {
                 return formaVenta;

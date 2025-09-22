@@ -1,10 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.ComponentModel.DataAnnotations;
-using System.Configuration;
+using System.Linq;
 
 namespace NestoAPI.Models
 {
@@ -171,7 +168,7 @@ namespace NestoAPI.Models
     }
     public class ProductoPlantillaDTO
     {
-        private NVEntities db;
+        private readonly NVEntities db;
         public ProductoPlantillaDTO() { }
 
         // TO DO: cambiar db por gestorStocks
@@ -186,62 +183,45 @@ namespace NestoAPI.Models
         public decimal precio { get; set; }
         public bool aplicarDescuento { get; set; }
         public decimal descuento { get; set; }
+        public string iva { get; set; }
 
         public int Stock()
         {
-            if (db == null)
-            {
-                return 0;
-            }
-            return db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+            return db == null
+                ? 0
+                : db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
         public int Stock(string almacen)
         {
-            if (db == null)
-            {
-                return 0;
-            }
-            return db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+            return db == null
+                ? 0
+                : db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
         public int CantidadReservada()
         {
-            if (db == null)
-            {
-                return 0;
-            }
-            return db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+            return db == null
+                ? 0
+                : db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
         public int CantidadReservada(string almacen)
         {
-            if (db == null)
-            {
-                return 0;
-            }
-            return db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+            return db == null
+                ? 0
+                : db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
         public int CantidadDisponible()
         {
-            if (db == null)
-            {
-                return 0;
-            }
-            return Stock() - CantidadReservada();
+            return db == null ? 0 : Stock() - CantidadReservada();
         }
         public int CantidadDisponible(string almacen)
         {
-            if (db == null)
-            {
-                return 0;
-            }
-            return Stock(almacen) - CantidadReservada(almacen);
+            return db == null ? 0 : Stock(almacen) - CantidadReservada(almacen);
         }
         public int CantidadPendienteRecibir()
         {
-            if (db == null)
-            {
-                return 0;
-            }
-            return db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
+            return db == null
+                ? 0
+                : db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).Sum();
         }
     }
     public class SeguimientoClienteDTO
@@ -274,7 +254,7 @@ namespace NestoAPI.Models
             SoloPeluqueria,
             EsteticaYPeluqueria
         }
-        
+
         public enum EstadoSeguimientoDTO
         {
             Nulo = -1,
@@ -324,11 +304,11 @@ namespace NestoAPI.Models
     {
         public Mod347DTO()
         {
-            this.MovimientosMayor = new HashSet<ExtractoClienteDTO>();
+            MovimientosMayor = new HashSet<ExtractoClienteDTO>();
         }
 
         public decimal[] trimestre { get; set; }
-        public decimal total { get { return trimestre[0] + trimestre[1] + trimestre[2] + trimestre[3]; } }
+        public decimal total => trimestre[0] + trimestre[1] + trimestre[2] + trimestre[3];
         public string nombre { get; set; }
         public string direccion { get; set; }
         public string codigoPostal { get; set; }

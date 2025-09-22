@@ -1,6 +1,4 @@
-﻿using NestoAPI.Models.PedidosCompra;
-using System;
-using System.Drawing;
+﻿using NestoAPI.Infraestructure;
 
 namespace NestoAPI.Models.PedidosBase
 {
@@ -19,12 +17,12 @@ namespace NestoAPI.Models.PedidosBase
         public string Producto { get; set; }
 
         // Propiedades calculadas
-        public decimal BaseImponible { get => Math.Round(Bruto - ImporteDescuento, 2, MidpointRounding.AwayFromZero); }
-        public virtual decimal Bruto { get => PrecioUnitario * Cantidad; }
-        public decimal ImporteDescuento { get => Bruto * SumaDescuentos; }
-        public virtual decimal ImporteIva { get => BaseImponible * PorcentajeIva; }
-        public virtual decimal ImporteRecargoEquivalencia { get => BaseImponible * PorcentajeRecargoEquivalencia; }
-        public virtual decimal SumaDescuentos { get => AplicarDescuento ? 1 - (1 - DescuentoEntidad) * (1 - DescuentoProducto) * (1 - DescuentoLinea) : DescuentoLinea; }
-        public virtual decimal Total { get => BaseImponible + ImporteIva + ImporteRecargoEquivalencia; }
+        public decimal BaseImponible => RoundingHelper.DosDecimalesRound(Bruto - ImporteDescuento);
+        public virtual decimal Bruto => PrecioUnitario * Cantidad;
+        public decimal ImporteDescuento => Bruto * SumaDescuentos;
+        public virtual decimal ImporteIva => BaseImponible * PorcentajeIva;
+        public virtual decimal ImporteRecargoEquivalencia => BaseImponible * PorcentajeRecargoEquivalencia;
+        public virtual decimal SumaDescuentos => AplicarDescuento ? 1 - ((1 - DescuentoEntidad) * (1 - DescuentoProducto) * (1 - DescuentoLinea)) : DescuentoLinea;
+        public virtual decimal Total => BaseImponible + ImporteIva + ImporteRecargoEquivalencia;
     }
 }
