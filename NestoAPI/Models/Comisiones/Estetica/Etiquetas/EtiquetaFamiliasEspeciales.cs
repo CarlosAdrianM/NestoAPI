@@ -4,11 +4,11 @@ using System.Linq.Expressions;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaFamiliasEspeciales : IEtiquetaComisionVenta, ICloneable
+    public class EtiquetaFamiliasEspeciales : EtiquetaComisionVentaBase, IEtiquetaComisionVenta, ICloneable
     {
         protected IServicioComisionesAnuales _servicioComisiones;
         protected IQueryable<vstLinPedidoVtaComisione> consulta;
-        private string[] _familiasIncluidas;
+        private readonly string[] _familiasIncluidas;
 
         public EtiquetaFamiliasEspeciales(IServicioComisionesAnuales servicioComisiones, string[] familiasIncluidas)
         {
@@ -16,34 +16,19 @@ namespace NestoAPI.Models.Comisiones.Estetica
             _familiasIncluidas = familiasIncluidas;
         }
 
-        public string Nombre
-        {
-            get
-            {
-                return "Familias Especiales";
-            }
-        }
+        public override string Nombre => "Familias Especiales";
 
-        public decimal Venta { get; set; }
-        public decimal Tipo { get; set; }
-        public decimal Comision
+        public override decimal Comision
         {
-            get
-            {
-                return Math.Round(Venta * Tipo, 2);
-            }
-            set
-            {
-                throw new Exception("La comisión de las familias especiales no se puede fijar manualmente");
-            }
+            get => Math.Round(Venta * Tipo, 2); set => throw new Exception("La comisión de las familias especiales no se puede fijar manualmente");
         }
-        public bool EsComisionAcumulada => false;
+        public override bool EsComisionAcumulada => false;
 
-        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
+        public override decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
         }
-        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
+        public override decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -53,7 +38,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
         }
 
 
-        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComisionVenta.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+        public override IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -81,23 +66,23 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 .Where(PredicadoFiltro());
         }
 
-        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        public override bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
         {
             var filtro = PredicadoFiltro().Compile();
             return filtro(linea);
-        }        
+        }
 
-        public decimal SetTipo(TramoComision tramo)
+        public override decimal SetTipo(TramoComision tramo)
         {
             return tramo.TipoExtra;
         }
 
-        public object Clone()
+        public override object Clone()
         {
             return new EtiquetaFamiliasEspeciales(_servicioComisiones, _familiasIncluidas)
             {
-                Venta = this.Venta,
-                Tipo = this.Tipo
+                Venta = Venta,
+                Tipo = Tipo
             };
         }
     }

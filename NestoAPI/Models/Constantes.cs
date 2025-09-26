@@ -199,6 +199,7 @@ namespace NestoAPI.Models
             public const string FAMILIA_BONIFICACION = "Bonificac";
             public const string GRUPO_APARATOS = "APA";
             public const string GRUPO_COSMETICA = "COS";
+            public const string GRUPO_CURSOS = "CUR";
             public const string GRUPO_MATERIAS_PRIMAS = "MTP";
             public const string GRUPO_PELUQUERIA = "PEL";
             public const string SUBGRUPO_MUESTRAS = "MMP";

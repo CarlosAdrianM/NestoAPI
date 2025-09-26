@@ -1,31 +1,31 @@
-﻿using System;
+﻿using NestoAPI.Models;
+using NestoAPI.Models.Comisiones;
+using System;
 using System.Linq;
 using System.Web.Http;
-using NestoAPI.Models;
-using NestoAPI.Models.Comisiones;
 
 namespace NestoAPI.Controllers
 {
     public class ComisionAnualDetallesController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db = new NVEntities();
 
         // GET: api/ComisionAnualDetalles
         public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta)
         {
             return GetComisionesAnualesDetalles(vendedor, anno, mes, incluirAlbaranes, etiqueta, false);
         }
-        public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes,bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+        public IQueryable<vstLinPedidoVtaComisionesDetalle> GetComisionesAnualesDetalles(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             int annoActual = DateTime.Today.Year;
             int mesActual = DateTime.Today.Month;
 
             if (annoActual == anno && mesActual == mes)
             {
-                IComisionesAnuales comisiones = ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno);
+                IComisionesAnuales comisiones = ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno, mes);
                 var etiquetaServicio = comisiones.Etiquetas.Single(s => s.Nombre == etiqueta) as IEtiquetaComisionVenta;
                 var detalleComisiones = etiquetaServicio.LeerVentaMesDetalle(vendedor, anno, mes, incluirAlbaranes, etiqueta, incluirPicking).ToList();
-                return detalleComisiones.Select(c=>
+                return detalleComisiones.Select(c =>
                     new vstLinPedidoVtaComisionesDetalle
                     {
                         Vendedor = vendedor,
@@ -42,10 +42,10 @@ namespace NestoAPI.Controllers
             }
 
             var detalle = db.vstLinPedidoVtaComisionesDetalles.Where(v => v.Vendedor == vendedor && v.Anno == anno && v.Mes == mes && v.Etiqueta == etiqueta).OrderBy(v => v.Fecha_Factura);
-            
+
             return detalle;
         }
-        
+
         /*
         // GET: api/ComisionAnualDetalles/5
         [ResponseType(typeof(ComisionAnualDetalle))]

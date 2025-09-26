@@ -7,14 +7,14 @@ namespace NestoAPI.Models.Comisiones
 {
     public class ComisionesAnualesEstetica2025 : ComisionesAnualesBase, IComisionesAnuales
     {
-        private string[] _familiasEspeciales = { "cursos", "eva visnu", "apraise", "faby", "maderas", "max2origin", "mina" };
-        private string[] _otrasExclusivas = { "anubismed", "anubis", "belclinic", "cazcarra", "cv", "maystar", "oda" };
+        private readonly string[] _familiasEspeciales = { "cursos", "eva visnu", "apraise", "faby", "maderas", "max2origin", "mina" };
+        private readonly string[] _otrasExclusivas = { "anubismed", "anubis", "belclinic", "cazcarra", "cv", "maystar", "oda" };
         public ComisionesAnualesEstetica2025(IServicioComisionesAnuales servicioComisiones)
             : base(servicioComisiones)
         {
-            
+
         }
-                
+
         public override ICollection<IEtiquetaComision> NuevasEtiquetas => new Collection<IEtiquetaComision>
         {
             new EtiquetaGeneral(_servicio),
@@ -30,7 +30,7 @@ namespace NestoAPI.Models.Comisiones
 
         public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
         {
-            vendedor = vendedor.ToUpper();
+            _ = vendedor.ToUpper();
             Collection<TramoComision> tramosCalle = new Collection<TramoComision>
             {
                 new TramoComision
@@ -228,9 +228,9 @@ namespace NestoAPI.Models.Comisiones
                 hastaAnterior = nuevoTramo.Hasta;
             }
             */
-                        
+
             return tramosCalle;
-            
+
         }
 
         public ICollection<TramoComision> LeerTramosComisionMes(string vendedor)

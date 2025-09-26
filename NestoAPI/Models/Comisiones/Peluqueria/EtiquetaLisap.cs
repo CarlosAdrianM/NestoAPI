@@ -4,32 +4,30 @@ using System.Linq.Expressions;
 
 namespace NestoAPI.Models.Comisiones.Peluqueria
 {
-    public class EtiquetaLisap : IEtiquetaComisionVenta
+    public class EtiquetaLisap : EtiquetaComisionVentaBase, IEtiquetaComisionVenta
     {
         private IQueryable<vstLinPedidoVtaComisione> consulta;
         private readonly IServicioComisionesAnuales _servicioComisiones;
 
         public EtiquetaLisap(IServicioComisionesAnuales servicioComisiones)
         {
-            this._servicioComisiones = servicioComisiones;
+            _servicioComisiones = servicioComisiones;
         }
 
-        public string Nombre => "Lisap";
+        public override string Nombre => "Lisap";
 
-        public decimal Venta { get; set; }
-        public decimal Tipo { get; set; }
-        public decimal Comision
+        public override decimal Comision
         {
             get => Math.Round(Venta * Tipo, 2);
             set => throw new Exception("La comisión de Lisap no se puede fijar manualmente");
         }
-        public bool EsComisionAcumulada => false;
+        public override bool EsComisionAcumulada => false;
 
-        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
+        public override decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
         }
-        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
+        public override decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -44,7 +42,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
             return _servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
-        public IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+        public override IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -62,7 +60,7 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
             return l => l.Familia.ToLower() == "lisap";
         }
 
-        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        public override bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
         {
             var filtro = PredicadoFiltro().Compile();
             return filtro(linea);
@@ -72,14 +70,20 @@ namespace NestoAPI.Models.Comisiones.Peluqueria
             consulta = _servicioComisiones.Db.vstLinPedidoVtaComisiones
                 .Where(l => l.Vendedor == vendedor)
                 .Where(PredicadoFiltro());
-        }        
+        }
 
-        public decimal SetTipo(TramoComision tramo) => tramo.TipoExtra;
-
-        public object Clone() => new EtiquetaLisap(_servicioComisiones)
+        public override decimal SetTipo(TramoComision tramo)
         {
-            Venta = this.Venta,
-            Tipo = this.Tipo
-        };
+            return tramo.TipoExtra;
+        }
+
+        public override object Clone()
+        {
+            return new EtiquetaLisap(_servicioComisiones)
+            {
+                Venta = Venta,
+                Tipo = Tipo
+            };
+        }
     }
 }

@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace NestoAPI.Models.Comisiones.Estetica.Etiquetas
 {
-    public class EtiquetaClientesTramosMil : IEtiquetaComisionClientes
+    public class EtiquetaClientesTramosMil : EtiquetaComisionClientesBase, IEtiquetaComisionClientes
     {
         private const decimal IMPORTE_TRAMOS = 1000;
         private readonly IServicioComisionesAnuales _servicio;
@@ -14,31 +14,31 @@ namespace NestoAPI.Models.Comisiones.Estetica.Etiquetas
             _servicio = servicioComisiones;
         }
 
-        public int Recuento { get; set; }
+        public override string Nombre => "Tramos de mil";
 
-        public string Nombre => "Tramos de mil";
-
-        public decimal Tipo { get; set; }
-        public decimal Comision
+        public override decimal Comision
         {
             get => Math.Round(Recuento * Tipo, 2, MidpointRounding.AwayFromZero);
             set => throw new Exception("No se puede fijar manualmente la comisión por tramos de mil");
         }
 
-        public bool EsComisionAcumulada => false;
+        public override bool EsComisionAcumulada => false;
 
-        public object Clone() => new EtiquetaClientesTramosMil(_servicio)
+        public override object Clone()
         {
-            Recuento = this.Recuento,
-            Tipo = this.Tipo
-        };
+            return new EtiquetaClientesTramosMil(_servicio)
+            {
+                Recuento = Recuento,
+                Tipo = Tipo
+            };
+        }
 
-        public List<ClienteVenta> LeerClientesDetalle(string vendedor, int anno, int mes)
+        public override List<ClienteVenta> LeerClientesDetalle(string vendedor, int anno, int mes)
         {
             return _servicio.LeerClientesConVenta(vendedor, anno, mes);
         }
 
-        public int LeerClientesMes(string vendedor, int anno, int mes)
+        public override int LeerClientesMes(string vendedor, int anno, int mes)
         {
             var clientesTotales = LeerClientesDetalle(vendedor, anno, mes);
             var clientesComisionables = clientesTotales.Where(c => c.Venta >= IMPORTE_TRAMOS);
@@ -53,6 +53,12 @@ namespace NestoAPI.Models.Comisiones.Estetica.Etiquetas
             return totalClientes - yaHanComisionado;
         }
 
-        public decimal SetTipo(TramoComision tramo) => 4.0M; // 5 euros por cliente nuevo
+        public override decimal SetTipo(TramoComision tramo)
+        {
+            return 4.0M; // 5 euros por cliente nuevo
+        }
+
+        public override string UnidadCifra => "clientes";
+
     }
 }

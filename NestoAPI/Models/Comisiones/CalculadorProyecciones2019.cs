@@ -6,7 +6,6 @@ namespace NestoAPI.Models.Comisiones
 {
     public class CalculadorProyecciones2019 : ICalculadorProyecciones
     {
-        const string GENERAL = "General";
         private readonly IComisionesAnuales _comisiones;
 
         public CalculadorProyecciones2019(IComisionesAnuales comisiones)
@@ -30,27 +29,27 @@ namespace NestoAPI.Models.Comisiones
             if (ventaAcumulada == 0 && meses == 0)
             {
                 annoActual = _comisiones.LeerResumenAnno(vendedor, anno, todoElEquipo);
-                ventaActual = annoActual.Where(v => v.Mes <= mes).Sum(r => (r.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta);
+                ventaActual = annoActual.Where(v => v.Mes <= mes).Sum(r => ComisionesHelper.ObtenerEtiquetaAcumulada(r.Etiquetas).Venta);
                 numerosMesesActual = annoActual.Where(v => v.Mes <= mes).Count();
-            } else
+            }
+            else
             {
                 ventaActual = ventaAcumulada;
                 numerosMesesActual = meses;
             }
-            
-            var annoAnterior = _comisiones.LeerResumenAnno(vendedor, anno - 1, todoElEquipo);
-            var ventaAnterior = annoAnterior.Where(v => v.Mes > mes).Sum(r => (r.Etiquetas.Where(e => e.Nombre == GENERAL).Single() as IEtiquetaComisionVenta).Venta);
 
-            
-            var numeroMesesAnterior = annoAnterior.Where(v => v.Mes > mes).Count();
+            var annoAnterior = _comisiones.LeerResumenAnno(vendedor, anno - 1, todoElEquipo);
+            var ventaAnterior = annoAnterior.Where(v => v.Mes > mes).Sum(r => ComisionesHelper.ObtenerEtiquetaAcumulada(r.Etiquetas).Venta);
+
+            var numeroMesesAnterior = ventaAnterior != 0 ? annoAnterior.Where(v => v.Mes > mes).Count() : 0;
             bool hayAgostoAnterior = annoAnterior.Where(v => v.Mes == 8).SingleOrDefault() != null;
             int mesesProyeccion = mes < 8 && !hayAgostoAnterior ? 11 : 12;
 
 
-            if (numeroMesesAnterior != 12-mes)
-            {    
+            if (numeroMesesAnterior != 12 - mes)
+            {
                 decimal ventaMedia = ventaActual / numerosMesesActual;
-                ventaActual += ventaMedia * ((mesesProyeccion - mes) - numeroMesesAnterior);
+                ventaActual += ventaMedia * (mesesProyeccion - mes - numeroMesesAnterior);
             }
 
             return Math.Round(ventaActual + ventaAnterior, 2);
@@ -67,16 +66,17 @@ namespace NestoAPI.Models.Comisiones
             decimal ventasMesSiguienteAnnoAnterior;
             if (resumenVentasMesSiguienteAnnoAnterior != null)
             {
-                ventasMesSiguienteAnnoAnterior = resumenVentasMesSiguienteAnnoAnterior.Etiquetas.Where(e => e.Nombre == GENERAL).Sum(e => (e as IEtiquetaComisionVenta).Venta);
-            } else
+                ventasMesSiguienteAnnoAnterior = ComisionesHelper.ObtenerEtiquetaAcumulada(resumenVentasMesSiguienteAnnoAnterior.Etiquetas).Venta;
+            }
+            else
             {
                 decimal media = ventaAcumulada / (mes + 1);
                 ventasMesSiguienteAnnoAnterior = ventaAcumulada + media;
             }
-            var proyeccionMesSiguiente = resumen.GeneralProyeccion - ventasMesSiguienteAnnoAnterior;
-            var tramoProyeccion = VendedorComisionAnual.BuscarTramoComision(tramosAnno, resumen.GeneralProyeccion);
+            var proyeccionMesSiguiente = ComisionesHelper.ObtenerEtiquetaAcumulada(resumen.Etiquetas).Proyeccion - ventasMesSiguienteAnnoAnterior;
+            var tramoProyeccion = VendedorComisionAnual.BuscarTramoComision(tramosAnno, ComisionesHelper.ObtenerEtiquetaAcumulada(resumen.Etiquetas).Proyeccion);
             var tramoProyeccionMesSiguiente = VendedorComisionAnual.BuscarTramoComision(tramosAnno, proyeccionMesSiguiente);
-            return (tramoProyeccion != tramoProyeccionMesSiguiente);
+            return tramoProyeccion != tramoProyeccionMesSiguiente;
         }
     }
 }

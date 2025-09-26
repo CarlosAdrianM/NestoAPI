@@ -8,7 +8,7 @@ namespace NestoAPI.Models.Comisiones
     internal static class ServicioSelectorTipoComisionesAnualesVendedor
     {
 
-        public static IComisionesAnuales ComisionesVendedor(string vendedor, int anno)
+        public static IComisionesAnuales ComisionesVendedor(string vendedor, int anno, int mes)
         {
             using (var db = new NVEntities())
             {
@@ -70,6 +70,18 @@ namespace NestoAPI.Models.Comisiones
                     {
                         return new ComisionesAnualesTelefono2024(new ServicioComisionesAnualesComun());
                     }
+                    else if (anno == 2025 && vendedor == "PCN")
+                    {
+                        return new ComisionesAnnoParcial(new ComisionesAnualesTelefono2025(new ServicioComisionesAnualesComun()), 10);
+                    }
+                    else if (anno == 2025 && vendedor == "VCG")
+                    {
+                        return new ComisionesAnnoParcial(new ComisionesAnualesTelefono2025(new ServicioComisionesAnualesComun()), 8);
+                    }
+                    else if (anno == 2025 && vendedor == "LHY")
+                    {
+                        return new ComisionesAnnoParcial(new ComisionesAnualesTelefono2025(new ServicioComisionesAnualesComun()), 2);
+                    }
                     else if (anno == 2025)
                     {
                         return new ComisionesAnualesTelefono2025(new ServicioComisionesAnualesComun());
@@ -102,6 +114,19 @@ namespace NestoAPI.Models.Comisiones
                     else if (anno == 2024)
                     {
                         return new ComisionesAnualesEstetica2024(new ServicioComisionesAnualesComun());
+                    }
+                    else if (anno == 2025 && mes >= 9 && vendedor == "PI")
+                    {
+                        try
+                        {
+                            var comisionesCursos = new ComisionesAnualesCursos2025(new ServicioComisionesAnualesComun());
+                            var comisionesTrimestre = new ComisionesAnnoParcial(comisionesCursos, 4);
+                            return comisionesTrimestre;
+                        }
+                        catch (Exception)
+                        {
+                            throw;
+                        }
                     }
                     else if (anno == 2025)
                     {
@@ -147,13 +172,24 @@ namespace NestoAPI.Models.Comisiones
                 {
                     return new ComisionesAnualesEstetica2024(new ServicioComisionesAnualesComun());
                 }
-                else if (anno == 2025)
+                else if (anno == 2025 && vendedor != "ISR")
                 {
                     return new ComisionesAnualesEstetica2025(new ServicioComisionesAnualesComun());
+                }
+                else if (anno == 2025 && vendedor == "ISR")
+                {
+                    return new ComisionesAnnoParcial(new ComisionesAnualesEstetica2025(new ServicioComisionesAnualesComun()), 2);
                 }
 
                 throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");
             }
+        }
+
+        public static IEstrategiaComisionSobrepago EstrategiaComisionSobrepago(string vendedor, int anno, int mes)
+        {
+            return vendedor == "MRM" && anno == 2025 && mes >= 9
+                ? new EstrategiaSobrepagoTramoAnterior()
+                : (IEstrategiaComisionSobrepago)new EstrategiaSobrepagoDescuentoCompleto();
         }
     }
 }

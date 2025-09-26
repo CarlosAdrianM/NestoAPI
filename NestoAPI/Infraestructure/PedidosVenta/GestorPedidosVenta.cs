@@ -468,7 +468,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 pedido.crearEfectosManualmente = efectos.Any();
                 pedido.EsPresupuesto = lineasPedido.Any(c => c.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
 
-                decimal totalPedidoLeido = Math.Round(pedido.Total, 2, MidpointRounding.AwayFromZero);
+                decimal totalPedidoLeido = RoundingHelper.DosDecimalesRound(pedido.Total);
                 if (Math.Abs(totalComprobacion - totalPedidoLeido) > 0.05M)
                 {
                     Debug.Print($"No cuadra el total guardado ({totalComprobacion:c}) con el del pedido leído {totalPedidoLeido:c}");
@@ -519,7 +519,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
 
             decimal importeFinal = lineas.Sum(l => l.Total) + importeDeuda;
-            importeFinal = Math.Round(importeFinal, 2, MidpointRounding.AwayFromZero);
+            importeFinal = RoundingHelper.DosDecimalesRound(importeFinal);
 
             // Evitamos los reembolsos negativos
             if (importeFinal < 0)

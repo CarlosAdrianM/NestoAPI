@@ -1,27 +1,28 @@
 ﻿using System;
 using System.Linq.Expressions;
 
-namespace NestoAPI.Models.Comisiones.Estetica
+namespace NestoAPI.Models.Comisiones.Estetica.Etiquetas
 {
-    public class EtiquetaGeneral : EtiquetaComisionVentaAcumuladaBase
+    public class EtiquetaGeneralCursos : EtiquetaComisionVentaAcumuladaBase
     {
-        public EtiquetaGeneral(IServicioComisionesAnuales servicioComisiones)
+        public EtiquetaGeneralCursos(IServicioComisionesAnuales servicioComisiones)
             : base(servicioComisiones)
         {
         }
 
-        public override string Nombre => "General";
+        public override string Nombre => "General Cursos";
+
+        // No aplicar filtro por vendedor (comportamiento original)
+        protected override bool DebeAplicarFiltroVendedor => false;
 
         protected override Expression<Func<vstLinPedidoVtaComisione, bool>> PredicadoFiltro()
         {
-            return l => l.EstadoFamilia == 0 &&
-                        l.Familia.ToLower() != "unionlaser" &&
-                        l.Grupo.ToLower() != "otros aparatos";
+            return l => l.Grupo == "Cursos";
         }
 
         public override object Clone()
         {
-            return new EtiquetaGeneral(_servicioComisiones)
+            return new EtiquetaGeneralCursos(_servicioComisiones)
             {
                 Venta = Venta,
                 Tipo = Tipo,

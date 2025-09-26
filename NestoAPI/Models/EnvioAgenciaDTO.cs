@@ -1,9 +1,5 @@
-﻿using NestoAPI.Models.Rapports;
-using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System;
 using System.Net;
-using System.Web;
 
 namespace NestoAPI.Models
 {
@@ -43,7 +39,7 @@ namespace NestoAPI.Models
                 switch (AgenciaNombre)
                 {
                     case "ASM":
-                        enlace = !string.IsNullOrEmpty(CodigoBarras) && !string.IsNullOrEmpty(CodigoPostal) ? string.Format("http://m.gls-spain.es/e/{0}/{1}", CodigoBarras, CodigoPostal) : string.Empty;
+                        enlace = !string.IsNullOrEmpty(CodigoBarras) && !string.IsNullOrEmpty(CodigoPostal) ? string.Format("https://mygls.gls-spain.es/e/{0}/{1}", CodigoBarras, CodigoPostal) : string.Empty;
                         break;
                     case "OnTime":
                         if (!string.IsNullOrEmpty(Pedido.ToString()))
@@ -54,7 +50,7 @@ namespace NestoAPI.Models
                         else
                         {
                             enlace = string.Empty;
-                        }                        
+                        }
                         break;
                     case "Correos Express":
                         enlace = !string.IsNullOrEmpty(CodigoBarras) ? string.Format("https://s.correosexpress.com/c?n={0}", CodigoBarras) : string.Empty;

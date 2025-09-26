@@ -4,10 +4,10 @@ using System.Linq.Expressions;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaUnionLaser : IEtiquetaComisionVenta
+    public class EtiquetaUnionLaser : EtiquetaComisionVentaBase, IEtiquetaComisionVenta
     {
-        
-        private decimal _tipoFijoUnionLaser;
+
+        private readonly decimal _tipoFijoUnionLaser;
         private readonly IServicioComisionesAnuales _servicioComisiones;
 
         private IQueryable<vstLinPedidoVtaComisione> consulta;
@@ -24,41 +24,41 @@ namespace NestoAPI.Models.Comisiones.Estetica
             _tipoFijoUnionLaser = tipoFijoUnionLaser;
         }
 
-        public string Nombre => "Unión Láser";
+        public override string Nombre => "Unión Láser";
 
-        public decimal Venta { get; set; }
-        public decimal Tipo { get; set; }
-        public decimal Comision
+        public override decimal Comision
         {
             get => Math.Round(Venta * Tipo, 2);
             set => throw new Exception("La comisión de Unión Láser no se puede fijar manualmente");
         }
-        public bool EsComisionAcumulada => false;
-        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
+        public override bool EsComisionAcumulada => false;
+        public override bool SumaEnTotalVenta => true;
+
+        public override decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
         }
-        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
+        public override decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
             const decimal PORCENTAJE_BASE_IMPONIBLE_RENTING = .75M;
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
-                        
+
             CrearConsultaRenting(vendedor, incluirAlbaranes, fechaDesde, fechaHasta);
             decimal ventaRenting = consultaRenting.Select(l => (decimal)l.PrecioTarifa * PORCENTAJE_BASE_IMPONIBLE_RENTING).DefaultIfEmpty().Sum();
 
             CrearConsulta(vendedor, fechaDesde);
             decimal venta = _servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
-            
+
             return venta + ventaRenting;
 
         }
 
-        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComisionVenta.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+        public override IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
-            
+
             if (consultaRenting == null)
             {
                 CrearConsultaRenting(vendedor, incluirAlbaranes, fechaDesde, fechaHasta);
@@ -87,7 +87,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 .Except(consultaRenting);
         }
 
-        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        public override bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
         {
             var filtro = PredicadoFiltro().Compile();
             return filtro(linea);
@@ -100,22 +100,23 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
             consultaRenting = _servicioComisiones.Db.vstLinPedidoVtaComisiones.Where(l => listaVendedores.Contains(l.Vendedor) && facturasRenting.Contains(l.Nº_Factura));
 
-            if (incluirAlbaranes)
-            {
-                consultaRenting = consultaRenting.Where(l => l.Estado == 2 || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4));
-            }
-            else
-            {
-                consultaRenting = consultaRenting.Where(l => l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4);
-            }
+            consultaRenting = incluirAlbaranes
+                ? consultaRenting.Where(l => l.Estado == 2 || (l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4))
+                : consultaRenting.Where(l => l.Fecha_Factura >= fechaDesde && l.Fecha_Factura <= fechaHasta && l.Estado == 4);
         }
 
-        public virtual decimal SetTipo(TramoComision tramo) => _tipoFijoUnionLaser + tramo.TipoExtra;
-
-        public object Clone() => new EtiquetaUnionLaser(_servicioComisiones, _tipoFijoUnionLaser)
+        public override decimal SetTipo(TramoComision tramo)
         {
-            Venta = this.Venta,
-            Tipo = this.Tipo
-        };
+            return _tipoFijoUnionLaser + tramo.TipoExtra;
+        }
+
+        public override object Clone()
+        {
+            return new EtiquetaUnionLaser(_servicioComisiones, _tipoFijoUnionLaser)
+            {
+                Venta = Venta,
+                Tipo = Tipo
+            };
+        }
     }
 }

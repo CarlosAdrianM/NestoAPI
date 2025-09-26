@@ -9,14 +9,14 @@ namespace NestoAPI.Models.Comisiones
     {
         // Creamos esta clase abstracta para poder quitar métodos del servicio y hacerles test. Ej: LeerResumenAnno
         protected readonly IServicioComisionesAnuales _servicio;
-        private const string GENERAL = "General";
+        //private const string GENERAL = "General";
 
         protected ComisionesAnualesBase(IServicioComisionesAnuales servicio)
         {
             _servicio = servicio;
             Etiquetas = NuevasEtiquetas;
         }
-        
+
         public virtual ICollection<IEtiquetaComision> Etiquetas { get; private set; }
         public virtual ICollection<IEtiquetaComision> NuevasEtiquetas { get; private set; } // debería ser init cuando actualicemos a C# 9
 
@@ -114,11 +114,11 @@ namespace NestoAPI.Models.Comisiones
         {
             if (linea is null || linea.Familia is null)
             {
-                return GENERAL;
+                return ComisionesHelper.ObtenerEtiquetaAcumulada(Etiquetas).Nombre;
             }
             var etiquetasVenta = NuevasEtiquetas.OfType<IEtiquetaComisionVenta>();
 
-            foreach (var etiqueta in etiquetasVenta.Where(e => e.Nombre != GENERAL).Reverse())
+            foreach (var etiqueta in etiquetasVenta.Where(e => !(e is IEtiquetaComisionAcumulada)).Reverse())
             {
                 if (etiqueta.PerteneceALaEtiqueta(linea))
                 {
@@ -126,7 +126,7 @@ namespace NestoAPI.Models.Comisiones
                 }
             }
 
-            return GENERAL;
+            return ComisionesHelper.ObtenerEtiquetaAcumulada(Etiquetas).Nombre;
         }
     }
 }

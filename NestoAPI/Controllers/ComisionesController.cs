@@ -1,7 +1,5 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.Comisiones;
-using NestoAPI.Models.Comisiones.Estetica;
-using NestoAPI.Models.Comisiones.Peluqueria;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity.Infrastructure;
@@ -24,7 +22,7 @@ namespace NestoAPI.Controllers
             List<ResumenComisionesMes> comisiones = CalcularComisiones();
             return Ok(comisiones);
         }
-        
+
         // GET: api/Comisiones
         [HttpGet]
         [ResponseType(typeof(ResumenComisionesMes))]
@@ -32,7 +30,7 @@ namespace NestoAPI.Controllers
         {
             int anno = DateTime.Today.Year;
             int mes = DateTime.Today.Month;
-            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno), vendedor, anno, mes);
+            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno, mes), vendedor, anno, mes);
             return Ok(vendedorComision.ResumenMesActual);
         }
 
@@ -43,7 +41,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetComisiones(string vendedor, int anno)
         {
             int mes = DateTime.Today.Month;
-            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno), vendedor, anno, mes);
+            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno, mes), vendedor, anno, mes);
             return Ok(vendedorComision.ResumenMesActual);
         }
 
@@ -55,13 +53,14 @@ namespace NestoAPI.Controllers
             // si pasamos el vendedor en blanco, sacamos todos
             if (vendedor != null)
             {
-                VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno), vendedor, anno, mes);
+                VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno, mes), vendedor, anno, mes);
                 return Ok(vendedorComision.ResumenMesActual);
-            } else
+            }
+            else
             {
                 List<ResumenComisionesMes> comisiones = CalcularComisiones(anno, mes);
                 return Ok(comisiones);
-            }            
+            }
         }
 
         // GET: api/Comisiones
@@ -69,8 +68,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ResumenComisionesMes))]
         public async Task<IHttpActionResult> GetComisiones(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
-            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno), vendedor, anno, mes, incluirAlbaranes);
-            
+            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno, mes), vendedor, anno, mes, incluirAlbaranes);
+
             //await Task.Run(() => vendedor = new VendedorComisionAnual(servicio, "PA", 2018));
 
             return Ok(vendedorComision.ResumenMesActual);
@@ -81,7 +80,8 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(ResumenComisionesMes))]
         public async Task<IHttpActionResult> GetComisiones(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
-            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno), vendedor, anno, mes, incluirAlbaranes, incluirPicking);
+            var tipoComision = ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor, anno, mes);
+            VendedorComisionAnual vendedorComision = new VendedorComisionAnual(tipoComision, vendedor, anno, mes, incluirAlbaranes, incluirPicking);
 
             //await Task.Run(() => vendedor = new VendedorComisionAnual(servicio, "PA", 2018));
 
@@ -108,7 +108,7 @@ namespace NestoAPI.Controllers
                     {
                         if (etiqueta is IEtiquetaComisionVenta)
                         {
-                            db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
+                            _ = db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
                             {
                                 Vendedor = resumen.Vendedor,
                                 Anno = (short)resumen.Anno,
@@ -121,7 +121,7 @@ namespace NestoAPI.Controllers
                         }
                         else if (etiqueta is IEtiquetaComisionClientes)
                         {
-                            db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
+                            _ = db.ComisionesAnualesResumenMes.Add(new ComisionAnualResumenMes
                             {
                                 Vendedor = resumen.Vendedor,
                                 Anno = (short)resumen.Anno,
@@ -136,7 +136,7 @@ namespace NestoAPI.Controllers
                         {
                             throw new Exception("Tipo de etiqueta no contemplado");
                         }
-                        
+
                     }
                     catch (Exception ex)
                     {
@@ -155,9 +155,9 @@ namespace NestoAPI.Controllers
                 {
                     try
                     {
-                        string etiqueta = ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(linea.Vendedor, anno).EtiquetaLinea(linea);
+                        string etiqueta = ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(linea.Vendedor, anno, mes).EtiquetaLinea(linea);
 
-                        db.ComisionesAnualesDetalles.Add(new ComisionAnualDetalle
+                        _ = db.ComisionesAnualesDetalles.Add(new ComisionAnualDetalle
                         {
                             Id = linea.Nº_Orden,
                             EstadoFamilia = (short)linea.EstadoFamilia,
@@ -178,7 +178,7 @@ namespace NestoAPI.Controllers
 
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
             }
             catch (DbUpdateException)
             {
@@ -203,15 +203,16 @@ namespace NestoAPI.Controllers
         {
             List<VendedorDTO> vendedores = db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Número != Constantes.Vendedores.VENDEDOR_GENERAL &&
                 v.Estado >= Constantes.Vendedores.ESTADO_VENDEDOR_PRESENCIAL && v.Estado < Constantes.Vendedores.ESTADO_VENDEDOR_PARA_ANULAR).
-                Select(v => new VendedorDTO {
+                Select(v => new VendedorDTO
+                {
                     vendedor = v.Número.Trim()
                 }).ToList();
-    
+
             List<ResumenComisionesMes> comisiones = new List<ResumenComisionesMes>();
 
             foreach (VendedorDTO vendedor in vendedores)
             {
-                VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor.vendedor, anno), vendedor.vendedor, anno, mes);
+                VendedorComisionAnual vendedorComision = new VendedorComisionAnual(ServicioSelectorTipoComisionesAnualesVendedor.ComisionesVendedor(vendedor.vendedor, anno, mes), vendedor.vendedor, anno, mes);
                 comisiones.Add(vendedorComision.ResumenMesActual);
             }
 

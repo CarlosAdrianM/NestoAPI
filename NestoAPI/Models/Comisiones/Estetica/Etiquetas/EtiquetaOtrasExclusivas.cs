@@ -4,11 +4,11 @@ using System.Linq.Expressions;
 
 namespace NestoAPI.Models.Comisiones.Estetica
 {
-    public class EtiquetaOtrasExclusivas : IEtiquetaComisionVenta, ICloneable
+    public class EtiquetaOtrasExclusivas : EtiquetaComisionVentaBase, IEtiquetaComisionVenta, ICloneable
     {
-        private IServicioComisionesAnuales _servicioComisiones;
+        private readonly IServicioComisionesAnuales _servicioComisiones;
         private IQueryable<vstLinPedidoVtaComisione> consulta;
-        private string[] _familiasIncluidas;
+        private readonly string[] _familiasIncluidas;
 
         public EtiquetaOtrasExclusivas(IServicioComisionesAnuales servicioComisiones, string[] familiasIncluidas)
         {
@@ -16,28 +16,19 @@ namespace NestoAPI.Models.Comisiones.Estetica
             _familiasIncluidas = familiasIncluidas;
         }
 
-        public string Nombre => "Otras Exclusivas";
+        public override string Nombre => "Otras Exclusivas";
 
-        public decimal Venta { get; set; }
-        public decimal Tipo { get; set; }
-        public decimal Comision
+        public override decimal Comision
         {
-            get
-            {
-                return Math.Round(Venta * Tipo, 2);
-            }
-            set
-            {
-                throw new Exception("La comisión de las otras exclusivas no se puede fijar manualmente");
-            }
+            get => Math.Round(Venta * Tipo, 2); set => throw new Exception("La comisión de las otras exclusivas no se puede fijar manualmente");
         }
-        public bool EsComisionAcumulada => false;        
+        public override bool EsComisionAcumulada => false;
 
-        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
+        public override decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes)
         {
             return LeerVentaMes(vendedor, anno, mes, incluirAlbaranes, false);
         }
-        public decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
+        public override decimal LeerVentaMes(string vendedor, int anno, int mes, bool incluirAlbaranes, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -46,8 +37,7 @@ namespace NestoAPI.Models.Comisiones.Estetica
             return _servicioComisiones.CalcularVentaFiltrada(incluirAlbaranes, fechaDesde, fechaHasta, ref consulta, incluirPicking);
         }
 
-
-        IQueryable<vstLinPedidoVtaComisione> IEtiquetaComisionVenta.LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
+        public override IQueryable<vstLinPedidoVtaComisione> LeerVentaMesDetalle(string vendedor, int anno, int mes, bool incluirAlbaranes, string etiqueta, bool incluirPicking)
         {
             DateTime fechaDesde = VendedorComisionAnual.FechaDesde(anno, mes);
             DateTime fechaHasta = VendedorComisionAnual.FechaHasta(anno, mes);
@@ -73,25 +63,25 @@ namespace NestoAPI.Models.Comisiones.Estetica
                 .Where(PredicadoFiltro());
         }
 
-        public bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
+        public override bool PerteneceALaEtiqueta(vstLinPedidoVtaComisione linea)
         {
             var filtro = PredicadoFiltro().Compile();
             return filtro(linea);
-        }        
+        }
 
-        public decimal SetTipo(TramoComision tramo)
+        public override decimal SetTipo(TramoComision tramo)
         {
             decimal multiplo = 0.05M;
-            decimal resultado = Math.Round((tramo.TipoExtra * 100 / 3.0M) / multiplo) * multiplo / 100;
+            decimal resultado = Math.Round(tramo.TipoExtra * 100 / 3.0M / multiplo) * multiplo / 100;
             return resultado;
         }
 
-        public object Clone()
+        public override object Clone()
         {
             return new EtiquetaOtrasExclusivas(_servicioComisiones, _familiasIncluidas)
             {
-                Venta = this.Venta,
-                Tipo = this.Tipo
+                Venta = Venta,
+                Tipo = Tipo
             };
         }
     }
