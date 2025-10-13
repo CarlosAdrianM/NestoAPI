@@ -1,8 +1,8 @@
-﻿using System;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NestoAPI.Models.Picking;
-using System.Collections.Generic;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
+using NestoAPI.Models.Picking;
+using System;
+using System.Collections.Generic;
 
 namespace NestoAPI.Tests.Models.Picking
 {
@@ -135,6 +135,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Ruta = RUTA_CON_PORTES,
                 EsTiendaOnline = true,
                 EsNotaEntrega = false,
+                Iva = "GN",
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE + 1,
                 ImporteOriginalSobrePedido = 0,
                 Lineas = new List<LineaPedidoPicking>()
@@ -177,6 +178,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Ruta = RUTA_CON_PORTES,
                 EsTiendaOnline = false,
                 EsNotaEntrega = false,
+                Iva = "GN",
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO + 1,
                 ImporteOriginalSobrePedido = 0,
                 Lineas = new List<LineaPedidoPicking>()
@@ -210,6 +212,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Ruta = RUTA_CON_PORTES,
                 EsTiendaOnline = true,
                 EsNotaEntrega = false,
+                Iva = "GN",
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE + 1,
                 ImporteOriginalSobrePedido = 0,
                 Lineas = new List<LineaPedidoPicking>()
@@ -252,6 +255,6 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsTrue(gestor.LosProductosNoSobrePedidoOriginalesLlegabanAlImporteMinimo());
         }
-        
+
     }
 }

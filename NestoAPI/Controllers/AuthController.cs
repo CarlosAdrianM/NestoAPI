@@ -24,6 +24,8 @@ using System.Web.Http;
 public class AuthController : ApiController
 {
     private readonly string SecretKey = ConfigurationManager.AppSettings["as:AudienceSecret"];
+    private readonly string _apiKeyPrestashop = ConfigurationManager.AppSettings["ApiKeyPrestashop"];
+
     private readonly IGestorClientes _gestorClientes;
     private readonly IServicioCorreoElectronico _servicioCorreo;
     private const int ExpirationMinutes = 10;
@@ -272,6 +274,40 @@ public class AuthController : ApiController
         return Ok(new { token });
     }
 
+    [AllowAnonymous]
+    [HttpPost]
+    [Route("api/auth/prestashop-login")]
+    public async Task<IHttpActionResult> PrestashopLogin([FromBody] PrestashopLoginRequest request)
+    {
+        // Leer API key del header manualmente (Web API 2 no soporta [FromHeader])
+        _ = Request.Headers.TryGetValues("X-API-KEY", out IEnumerable<string> headerValues);
+        string apiKey = headerValues?.FirstOrDefault();
+
+        // Validar API key
+        if (apiKey != _apiKeyPrestashop)
+        {
+            return Unauthorized();
+        }
+
+        if (request == null || string.IsNullOrWhiteSpace(request.Email))
+        {
+            return BadRequest("Debe especificar el email.");
+        }
+
+        // Buscar cliente en base de datos
+        string clienteId = await BuscarCliente(request.Email, request.Nif);
+        if (string.IsNullOrEmpty(clienteId))
+        {
+            return Unauthorized();
+        }
+
+        // Generar el mismo token JWT que en los otros flujos
+        string token = await CrearJWTAsync(request.Email, request.Nif, clienteId);
+
+        // Devolver el token directamente, igual que los otros endpoints
+        return Ok(new { token });
+    }
+
 
     private async Task<string> BuscarCliente(string email, string nif)
     {
@@ -424,4 +460,10 @@ public class CodigoValidacionModel
     public string Email { get; set; }
     public string Token { get; set; }
     public string Codigo { get; set; }
+}
+
+public class PrestashopLoginRequest
+{
+    public string Email { get; set; }
+    public string Nif { get; set; }
 }

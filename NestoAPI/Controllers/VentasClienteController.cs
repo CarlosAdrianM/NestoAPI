@@ -1,6 +1,8 @@
-﻿using NestoAPI.Infraestructure.Ventas;
+﻿using Microsoft.ApplicationInsights;
+using NestoAPI.Infraestructure.Ventas;
 using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Web.Http;
 
@@ -47,6 +49,22 @@ namespace NestoAPI.Controllers
 
             try
             {
+                var telemetry = new TelemetryClient();
+
+                // Puedes crear un diccionario con los datos relevantes
+                var propiedades = new Dictionary<string, string>
+                {
+                    { "ClienteId", clienteId },
+                    { "ModoComparativa", modoComparativa },
+                    { "AgruparPor", agruparPor },
+                    { "Usuario", User?.Identity?.Name ?? "Anonimo" },
+                    { "Controller", nameof(VentasClienteController) },
+                    { "Accion", nameof(GetComparativaVentas) },
+                    { "Timestamp", DateTime.Now.ToString("o") } // formato ISO 8601
+                };
+
+                telemetry.TrackEvent("ConsultarVentasAnterioresCliente", propiedades);
+
                 var resultado = _gestor.ObtenerComparativaVentas(
                     clienteId,
                     modoComparativa.ToLower(),
@@ -56,8 +74,17 @@ namespace NestoAPI.Controllers
             }
             catch (Exception ex)
             {
+                var telemetry = new TelemetryClient();
+                telemetry.TrackException(ex, new Dictionary<string, string>
+                {
+                    { "ClienteId", clienteId },
+                    { "ModoComparativa", modoComparativa },
+                    { "AgruparPor", agruparPor }
+                });
+
                 return InternalServerError(ex);
             }
+
         }
     }
 }

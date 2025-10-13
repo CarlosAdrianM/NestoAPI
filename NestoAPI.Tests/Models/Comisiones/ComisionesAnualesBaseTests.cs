@@ -5,7 +5,6 @@ using NestoAPI.Models.Comisiones;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Tests.Models.Comisiones
 {
@@ -18,8 +17,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             // Arrange
             var servicio = A.Fake<IServicioComisionesAnuales>();
             List<string> listaVendedor = new List<string> { "VD" };
-            A.CallTo(() => servicio.ListaVendedores("VD")).Returns(listaVendedor);
-            A.CallTo(() => servicio.LeerComisionesAnualesResumenMes(listaVendedor, 2024)).Returns(new List<ComisionAnualResumenMes>
+            _ = A.CallTo(() => servicio.ListaVendedores("VD")).Returns(listaVendedor);
+            _ = A.CallTo(() => servicio.LeerComisionesAnualesResumenMes(listaVendedor, 2024)).Returns(new List<ComisionAnualResumenMes>
             {
                 new ComisionAnualResumenMes
                 {
@@ -29,8 +28,10 @@ namespace NestoAPI.Tests.Models.Comisiones
                     Tipo = 0.1M
                 }
             });
-            var sut = new ComisionesAnualesTest(servicio);
-            sut.ListaEtiquetas = new List<IEtiquetaComision> { new EtiquetaTestAcumulada() };
+            var sut = new ComisionesAnualesTest(servicio)
+            {
+                ListaEtiquetas = new List<IEtiquetaComision> { new EtiquetaTestAcumulada() }
+            };
 
             // Act
             var resultado = sut.LeerResumenAnno("VD", 2024);
@@ -45,8 +46,8 @@ namespace NestoAPI.Tests.Models.Comisiones
             // Arrange
             var servicio = A.Fake<IServicioComisionesAnuales>();
             List<string> listaVendedor = new List<string> { "VD" };
-            A.CallTo(() => servicio.ListaVendedores("VD")).Returns(listaVendedor);
-            A.CallTo(() => servicio.LeerComisionesAnualesResumenMes(listaVendedor, 2024)).Returns(new List<ComisionAnualResumenMes>
+            _ = A.CallTo(() => servicio.ListaVendedores("VD")).Returns(listaVendedor);
+            _ = A.CallTo(() => servicio.LeerComisionesAnualesResumenMes(listaVendedor, 2024)).Returns(new List<ComisionAnualResumenMes>
             {
                 new ComisionAnualResumenMes
                 {
@@ -56,8 +57,10 @@ namespace NestoAPI.Tests.Models.Comisiones
                     Tipo = 0.1M
                 }
             });
-            var sut = new ComisionesAnualesTest(servicio);
-            sut.ListaEtiquetas = new List<IEtiquetaComision> { new EtiquetaTestAnual() };
+            var sut = new ComisionesAnualesTest(servicio)
+            {
+                ListaEtiquetas = new List<IEtiquetaComision> { new EtiquetaTestAnual() }
+            };
 
             // Act
             var resultado = sut.LeerResumenAnno("VD", 2024);
@@ -77,7 +80,7 @@ namespace NestoAPI.Tests.Models.Comisiones
         public ICalculadorProyecciones CalculadorProyecciones => throw new NotImplementedException();
 
         public ComisionesAnualesTest(IServicioComisionesAnuales servicio)
-            :base(servicio) { }
+            : base(servicio) { }
 
         public ICollection<TramoComision> LeerTramosComisionMes(string vendedor)
         {
@@ -105,23 +108,29 @@ namespace NestoAPI.Tests.Models.Comisiones
     public class EtiquetaTestAcumulada : IEtiquetaComisionVenta
     {
         public string Nombre => "Test Acumulada";
-
         public decimal Tipo { get; set; }
         public decimal Comision { get; set; }
-
         public bool EsComisionAcumulada => true;
-
         public bool SoloExisteDatoAnual => false;
-
         public decimal Venta { get; set; }
+
+        // Propiedades nuevas requeridas
+        public bool SumaEnTotalVenta => false;
+        public decimal CifraAnual { get; set; }
+        public decimal ComisionAnual { get; set; }
+        public string UnidadCifra => "€";
+        public decimal PorcentajeAnual { get; set; }
 
         public object Clone()
         {
             return new EtiquetaTestAcumulada
             {
-                Comision = this.Comision,
-                Tipo = this.Tipo,
-                Venta = this.Venta
+                Comision = Comision,
+                Tipo = Tipo,
+                Venta = Venta,
+                CifraAnual = CifraAnual,
+                ComisionAnual = ComisionAnual,
+                PorcentajeAnual = PorcentajeAnual
             };
         }
 
@@ -153,26 +162,32 @@ namespace NestoAPI.Tests.Models.Comisiones
     public class EtiquetaTestAnual : IEtiquetaComisionVenta
     {
         public string Nombre => "Test Anual o No Acumulada";
-
         public decimal Tipo { get; set; }
         public decimal Comision
         {
             get => Math.Round(Venta * Tipo, 2);
             set => throw new Exception("La comisión de este test no se puede fijar manualmente");
         }
-
         public bool EsComisionAcumulada => false;
-
         public bool SoloExisteDatoAnual => true;
-
         public decimal Venta { get; set; }
+
+        // Propiedades nuevas requeridas
+        public bool SumaEnTotalVenta => false;
+        public decimal CifraAnual { get; set; }
+        public decimal ComisionAnual { get; set; }
+        public string UnidadCifra => "€";
+        public decimal PorcentajeAnual { get; set; }
 
         public object Clone()
         {
             return new EtiquetaTestAnual
             {
-                Tipo = this.Tipo,
-                Venta = this.Venta
+                Tipo = Tipo,
+                Venta = Venta,
+                CifraAnual = CifraAnual,
+                ComisionAnual = ComisionAnual,
+                PorcentajeAnual = PorcentajeAnual
             };
         }
 

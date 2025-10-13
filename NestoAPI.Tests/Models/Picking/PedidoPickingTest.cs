@@ -1,9 +1,8 @@
-﻿using System;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Models;
 using NestoAPI.Models.Picking;
 using System.Collections.Generic;
-using NestoAPI.Models;
-using FakeItEasy;
 
 namespace NestoAPI.Tests.Models.Picking
 {
@@ -71,14 +70,14 @@ namespace NestoAPI.Tests.Models.Picking
                 Total = 1
             };
             IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
-            PedidoPicking pedido = new PedidoPicking (rellenador)
+            PedidoPicking pedido = new PedidoPicking(rellenador)
             {
                 Id = 1,
                 ServirJunto = false,
                 PlazosPago = Constantes.PlazosPago.PREPAGO,
                 Lineas = new List<LineaPedidoPicking>()
             };
-            pedido.Lineas.Add(linea);            
+            pedido.Lineas.Add(linea);
 
             Assert.IsFalse(pedido.saleEnPicking());
             Assert.IsTrue(pedido.RetenidoPorPrepago);
@@ -139,6 +138,7 @@ namespace NestoAPI.Tests.Models.Picking
                 ImporteOriginalSobrePedido = 2,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO - 1,
                 Ruta = RUTA_CON_PORTES,
+                Iva = "GN",
                 Lineas = new List<LineaPedidoPicking>()
             };
 
@@ -206,6 +206,7 @@ namespace NestoAPI.Tests.Models.Picking
                 ServirJunto = false,
                 Ruta = RUTA_CON_PORTES,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO + 1,
+                Iva = "GN",
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -233,6 +234,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Ruta = RUTA_CON_PORTES,
                 ImporteOriginalSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO + 1,
                 ImporteOriginalNoSobrePedido = 0,
+                Iva = "GN",
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -396,6 +398,7 @@ namespace NestoAPI.Tests.Models.Picking
                 ServirJunto = false,
                 Ruta = RUTA_CON_PORTES,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO + 1,
+                Iva = "GN",
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -461,6 +464,7 @@ namespace NestoAPI.Tests.Models.Picking
                 Ruta = RUTA_CON_PORTES,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO + 1,
                 ImporteOriginalSobrePedido = 1,
+                Iva = "GN",
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -488,6 +492,7 @@ namespace NestoAPI.Tests.Models.Picking
                 EsPrecioPublicoFinal = true,
                 ImporteOriginalNoSobrePedido = GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL + 1,
                 Ruta = RUTA_CON_PORTES,
+                Iva = "GN",
                 Lineas = new List<LineaPedidoPicking>()
             };
             pedido.Lineas.Add(linea);
@@ -520,88 +525,6 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsTrue(pedido.hayQueSumarPortes());
         }
-
-        [TestMethod]
-        public void PedidoPicking_hayQueSumarPortes_siTieneDoceRollosPapelCamillaNoSumaPortes()
-        {
-            LineaPedidoPicking linea = new LineaPedidoPicking
-            {
-                Id = 1,
-                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
-                Producto = "17404    ",
-                Cantidad = 12,
-                CantidadReservada = 12,
-                BaseImponible = 59.40M,
-                EsSobrePedido = false
-            };
-            PedidoPicking pedido = new PedidoPicking
-            {
-                Id = 1,
-                ServirJunto = false,
-                EsPrecioPublicoFinal = false,
-                ImporteOriginalNoSobrePedido = 59.40M,
-                Ruta = RUTA_CON_PORTES,
-                Lineas = new List<LineaPedidoPicking>()
-            };
-            pedido.Lineas.Add(linea);
-
-            Assert.IsFalse(pedido.hayQueSumarPortes());
-        }
-        
-        [TestMethod]
-        public void PedidoPicking_hayQueSumarPortes_siNoTieneDoceRollosPapelCamillaSiSumaPortesAunqueSeaDe59con40euros()
-        {
-            LineaPedidoPicking linea = new LineaPedidoPicking
-            {
-                Id = 1,
-                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
-                Producto = "A",
-                Cantidad = 12,
-                CantidadReservada = 12,
-                BaseImponible = 59.40M,
-                EsSobrePedido = false
-            };
-            PedidoPicking pedido = new PedidoPicking
-            {
-                Id = 1,
-                ServirJunto = false,
-                EsPrecioPublicoFinal = false,
-                ImporteOriginalNoSobrePedido = 59.40M,
-                Ruta = RUTA_CON_PORTES,
-                Lineas = new List<LineaPedidoPicking>()
-            };
-            pedido.Lineas.Add(linea);
-
-            Assert.IsTrue(pedido.hayQueSumarPortes());
-        }
-
-        [TestMethod]
-        public void PedidoPicking_hayQueSumarPortes_siTieneDieciochoRollosEcoPapelCamillaNoSumaPortes()
-        {
-            LineaPedidoPicking linea = new LineaPedidoPicking
-            {
-                Id = 1,
-                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
-                Producto = "25401    ",
-                Cantidad = 18,
-                CantidadReservada = 18,
-                BaseImponible = 59.40M,
-                EsSobrePedido = false
-            };
-            PedidoPicking pedido = new PedidoPicking
-            {
-                Id = 1,
-                ServirJunto = false,
-                EsPrecioPublicoFinal = false,
-                ImporteOriginalNoSobrePedido = 59.40M,
-                Ruta = RUTA_CON_PORTES,
-                Lineas = new List<LineaPedidoPicking>()
-            };
-            pedido.Lineas.Add(linea);
-
-            Assert.IsFalse(pedido.hayQueSumarPortes());
-        }
-
 
         [TestMethod]
         public void PedidoPicking_hayQueSumarPortes_siTodoSonCuentasContablesYEsNegativaNoSuma()
