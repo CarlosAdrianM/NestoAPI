@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet:*)",
+      "Bash(msbuild:*)",
+      "Read(//c/Users/Carlos/source/repos/**)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

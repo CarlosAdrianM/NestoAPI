@@ -262,6 +262,7 @@ namespace NestoAPI.Models.RecursosHumanos
             },
             #endregion 2024
 
+            #region 2025
             // 2025
             new Festivo()
             {
@@ -301,7 +302,7 @@ namespace NestoAPI.Models.RecursosHumanos
             },
             new Festivo()
             {
-                Fecha = new DateTime(2025, 1, 11),
+                Fecha = new DateTime(2025, 11, 1),
                 Fiesta = "Día de Todos los Santos",
                 TipoFestivo = TipoFestivo.Nacional
             },
@@ -381,7 +382,131 @@ namespace NestoAPI.Models.RecursosHumanos
                 Fecha = new DateTime(2025, 12, 31),
                 Fiesta = "Nochevieja",
                 TipoFestivo = TipoFestivo.Empresa
+            },      
+            #endregion 2025
+
+        #region 2026
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 1, 1),
+                Fiesta = "Año nuevo",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 1, 6),
+                Fiesta = "Epifanía del Señor",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 4, 3),
+                Fiesta = "Viernes Santo",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 5, 1),
+                Fiesta = "Día del trabajo",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 8, 15),
+                Fiesta = "Asunción de la Virgen",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 10, 12),
+                Fiesta = "Fiesta Nacional de España",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 11, 1),
+                Fiesta = "Día de Todos los Santos",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 12, 7),
+                Fiesta = "Día de la Constitución Española",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 12, 8),
+                Fiesta = "Inmaculada Concepción",
+                TipoFestivo = TipoFestivo.Nacional
+            },new Festivo()
+            {
+                Fecha = new DateTime(2026, 12, 25),
+                Fiesta = "Navidad",
+                TipoFestivo = TipoFestivo.Nacional
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 4, 2),
+                Fiesta = "Jueves Santo",
+                TipoFestivo = TipoFestivo.Autonómica
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 5, 2),
+                Fiesta = "Día de la Comunidad de Madrid",
+                TipoFestivo = TipoFestivo.Autonómica
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 5, 15),
+                Fiesta = "San Isidro Labrador",
+                TipoFestivo = TipoFestivo.Madrid
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 11, 10),
+                Fiesta = "Nuestra Señora de la Almudena",
+                TipoFestivo = TipoFestivo.Madrid
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 9, 11),
+                Fiesta = "Fiestas de Algete (viernes)",
+                TipoFestivo = TipoFestivo.Algete
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 9, 14),
+                Fiesta = "Fiestas de Algete (lunes)",
+                TipoFestivo = TipoFestivo.Algete
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 1, 24),
+                Fiesta = "Nuestra Señora de la Paz",
+                TipoFestivo = TipoFestivo.Alcobendas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 5, 15),
+                Fiesta = "San Isidro",
+                TipoFestivo = TipoFestivo.Alcobendas
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 12, 24),
+                Fiesta = "Nochebuena",
+                TipoFestivo = TipoFestivo.Empresa
+            },
+            new Festivo()
+            {
+                Fecha = new DateTime(2026, 12, 31),
+                Fiesta = "Nochevieja",
+                TipoFestivo = TipoFestivo.Empresa
             }
+        #endregion 2026
         };
+
     }
 }

@@ -1,35 +1,45 @@
-﻿using System;
+﻿using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using NestoAPI.Models;
-using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
 {
+    [Obsolete("Usar ValidadorOfertasPermitidas y ValidadorDescuentosPermitidos en su lugar")]
     public class ValidadorOfertasYDescuentosPermitidos : IValidadorDenegacion
     {
         // TODO: refactorizar para dividir en dos validadores más sencillos (ofertas y descuentos)
 
         public RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
-            RespuestaValidacion respuesta = new RespuestaValidacion {
+            RespuestaValidacion respuesta = new RespuestaValidacion
+            {
                 ValidacionSuperada = true,
                 Motivo = "El pedido " + pedido.numero + " no tiene ninguna línea de productos"
             };
 
-            foreach (LineaPedidoVentaDTO linea in pedido.Lineas.Where(l => l.tipoLinea == 1)) //1=Producto
+            List<ErrorValidacion> erroresEncontrados = new List<ErrorValidacion>();
+
+            // Obtener productos únicos para evitar validar el mismo producto varias veces
+            var productosUnicos = pedido.Lineas
+                .Where(l => l.tipoLinea == 1)
+                .Select(l => l.Producto)
+                .Distinct();
+
+            foreach (string numeroProducto in productosUnicos)
             {
-                Producto producto = servicio.BuscarProducto(linea.Producto);
+                Producto producto = servicio.BuscarProducto(numeroProducto);
 
                 if (producto == null)
                 {
-                    return new RespuestaValidacion
+                    erroresEncontrados.Add(new ErrorValidacion
                     {
-                        ValidacionSuperada = false,
-                        AutorizadaDenegadaExpresamente = false,
-                        Motivo = "No existe el producto " + linea.Producto + " en la línea " + linea.id.ToString(),
-                        ProductoId = linea.Producto
-                    };
+                        Motivo = "No existe el producto " + numeroProducto,
+                        ProductoId = numeroProducto,
+                        AutorizadaDenegadaExpresamente = false
+                    });
+                    continue;
                 }
 
                 if (producto.Ficticio && producto.Familia != null && producto.Familia.Trim() == Constantes.Productos.FAMILIA_BONIFICACION)
@@ -37,24 +47,37 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     continue;
                 }
 
-                PrecioDescuentoProducto datos = new PrecioDescuentoProducto
-                {
-                    precioCalculado = linea.PrecioUnitario,
-                    descuentoCalculado = linea.DescuentoLinea,
-                    producto = producto,
-                    cantidad = (short)linea.Cantidad,
-                    aplicarDescuento = linea.AplicarDescuento
-                };
+                RespuestaValidacion respuestaProducto = EsOfertaPermitida(producto, pedido);
 
-                respuesta = EsOfertaPermitida(producto, pedido);
-                
-                // Una vez que una línea no es válida, todo el pedido deja de ser válido
-                if (!respuesta.ValidacionSuperada) 
+                if (!respuestaProducto.ValidacionSuperada)
                 {
-                    break;
+                    erroresEncontrados.Add(new ErrorValidacion
+                    {
+                        Motivo = respuestaProducto.Motivo,
+                        ProductoId = respuestaProducto.ProductoId,
+                        AutorizadaDenegadaExpresamente = respuestaProducto.AutorizadaDenegadaExpresamente
+                    });
+                }
+                else if (!string.IsNullOrEmpty(respuestaProducto.Motivo))
+                {
+                    // Guardamos el último mensaje exitoso para compatibilidad con tests
+                    respuesta.Motivo = respuestaProducto.Motivo;
                 }
             }
-            
+
+            // Si hay errores, consolidamos
+            if (erroresEncontrados.Any())
+            {
+                respuesta.ValidacionSuperada = false;
+                respuesta.Errores = erroresEncontrados;
+                respuesta.Motivos = erroresEncontrados.Select(e => e.Motivo).ToList();
+                // Para compatibilidad: si solo hay un error, lo ponemos en Motivo también
+                if (erroresEncontrados.Count == 1)
+                {
+                    respuesta.ProductoId = erroresEncontrados[0].ProductoId;
+                    respuesta.AutorizadaDenegadaExpresamente = erroresEncontrados[0].AutorizadaDenegadaExpresamente;
+                }
+            }
 
             return respuesta;
         }
@@ -112,7 +135,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 };
             }
 
-            
+
             List<OfertaPermitida> ofertas = GestorPrecios.servicio.BuscarOfertasPermitidas(producto.Número);
 
             // Hacemos el cast (double) para que no sea división entera y 11/5 no de 2
@@ -120,7 +143,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // si lo autorizado es 6+2, por ejemplo).
             IEnumerable<OfertaPermitida> ofertasFiltradas = ofertas.Where(o =>
                 (o.Cliente == null || o.Cliente == pedido.cliente) &&
-                (o.Contacto == null || o.Cliente == pedido.cliente && o.Contacto == pedido.contacto)
+                (o.Contacto == null || (o.Cliente == pedido.cliente && o.Contacto == pedido.contacto))
             );
 
             // Si hay oferta específica para el producto, la cogemos
@@ -138,7 +161,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 || // para que acepte el 3+1 si está aceptado el 2+1, por ejemplo
                 ((double)oferta.cantidad / oferta.cantidadOferta / o.CantidadRegalo > (double)o.CantidadConPrecio / oferta.cantidadOferta / o.CantidadRegalo)
                 )
-                && (o.FiltroProducto == null || o.FiltroProducto.Trim()=="" || producto.Nombre.StartsWith(o.FiltroProducto))
+                && (o.FiltroProducto == null || o.FiltroProducto.Trim() == "" || producto.Nombre.StartsWith(o.FiltroProducto))
             );
 
             OfertaPermitida ofertaCombinada = ofertasFiltradas.FirstOrDefault(o =>
@@ -173,7 +196,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     };
                 }
 
-                if (ofertaCombinada!=null)
+                if (ofertaCombinada != null)
                 {
                     // comprobar si cumple la ofertacombinada
                     // leer productos del pedido que cumplen el FiltroProducto
@@ -182,13 +205,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     int cantidadOferta = 0;
                     foreach (LineaPedidoVentaDTO linea in lineas)
                     {
-                        if (linea.BaseImponible == 0) {
+                        if (linea.BaseImponible == 0)
+                        {
                             cantidadOferta += linea.Cantidad;
-                        } else {
+                        }
+                        else
+                        {
                             cantidadCobrada += linea.Cantidad;
-                        };
+                        }
+                        ;
                     }
-                    if (cantidadCobrada>=ofertaCombinada.CantidadConPrecio && 
+                    if (cantidadCobrada >= ofertaCombinada.CantidadConPrecio &&
                         cantidadOferta <= ofertaCombinada.CantidadRegalo * cantidadCobrada / ofertaCombinada.CantidadConPrecio)
                     {
                         return new RespuestaValidacion
@@ -260,7 +287,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
          * Dado un pedido y un producto determinados, nos devuelve la oferta de ese producto que 
          * hay que ese pedido.
          */
-        public static PrecioDescuentoProducto MontarOfertaPedido(String numeroProducto, PedidoVentaDTO pedido)
+        public static PrecioDescuentoProducto MontarOfertaPedido(string numeroProducto, PedidoVentaDTO pedido)
         {
             if (numeroProducto != null)
             {
@@ -285,8 +312,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     cantidadOferta = (short)lineasSinPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad),
                     cantidad = (short)lineasConPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad),
                     producto = producto,
-                    precioCalculado = (decimal)Math.Round(lineasConPrecio.Where(l=> l.Producto == numeroProducto).Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
-                    descuentoCalculado = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => 1 - (1-l.DescuentoLinea) * (1-l.DescuentoProducto)).DefaultIfEmpty().Average()
+                    precioCalculado = Math.Round(lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
+                    descuentoCalculado = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => 1 - ((1 - l.DescuentoLinea) * (1 - l.DescuentoProducto))).DefaultIfEmpty().Average()
                 };
             }
 
@@ -295,8 +322,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 cantidadOferta = (short)lineasSinPrecio.Sum(l => l.Cantidad),
                 cantidad = (short)lineasConPrecio.Sum(l => l.Cantidad),
                 producto = producto,
-                precioCalculado = (decimal)lineasConPrecio.Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(),
-                descuentoCalculado = lineasConPrecio.Select(l => 1 - (1 - l.DescuentoLinea) * (1 - l.DescuentoProducto)).DefaultIfEmpty().Average()
+                precioCalculado = lineasConPrecio.Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(),
+                descuentoCalculado = lineasConPrecio.Select(l => 1 - ((1 - l.DescuentoLinea) * (1 - l.DescuentoProducto))).DefaultIfEmpty().Average()
             };
 
         }
@@ -305,7 +332,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         {
             Producto productoBuscado = GestorPrecios.servicio.BuscarProducto(numeroProducto);
             List<string> productosMismoPrecio = new List<string>();
-            foreach (string productoLinea in pedido.Lineas.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO).Select(l=>l.Producto).Distinct())
+            foreach (string productoLinea in pedido.Lineas.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO).Select(l => l.Producto).Distinct())
             {
                 Producto productoEncontrado = GestorPrecios.servicio.BuscarProducto(productoLinea);
                 if (productoEncontrado.PVP == productoBuscado.PVP && productoEncontrado.Familia == productoBuscado.Familia)

@@ -1026,12 +1026,14 @@ namespace NestoAPI.Controllers
             // ahora ya tenemos el importe del pedido, hay que mirar si los plazos de pago cambian
 
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
+            // Siempre calculamos la validación para incluirla en el correo, aunque no la bloqueemos
+            RespuestaValidacion respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
+
             if (!pedido.CreadoSinPasarValidacion || !grupoPermitidoSinValidacion)
             {
-                RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
-                if (!respuesta.ValidacionSuperada)
+                if (!respuestaValidacion.ValidacionSuperada)
                 {
-                    throw new ValidationException(respuesta.Motivo);
+                    throw new ValidationException(respuestaValidacion.Motivo);
                 }
             }
 
@@ -1064,7 +1066,7 @@ namespace NestoAPI.Controllers
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 
-            GestorPresupuestos gestor = new GestorPresupuestos(pedido);
+            GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion);
             await gestor.EnviarCorreo();
 
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos

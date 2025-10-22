@@ -2,6 +2,7 @@
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
 using System.Net.Mail;
@@ -18,14 +19,20 @@ namespace NestoAPI.Infraestructure
         private readonly IServicioVendedores servicioVendedores = new ServicioVendedores();
 
         private readonly PedidoVentaDTO pedido;
+        private readonly RespuestaValidacion respuestaValidacion;
         private readonly string TEXTO_PEDIDO;
 
         private string nombreVendedorCabecera = "";
         private string nombreVendedorPeluqueria = "";
 
-        public GestorPresupuestos(PedidoVentaDTO pedido)
+        public GestorPresupuestos(PedidoVentaDTO pedido) : this(pedido, null)
+        {
+        }
+
+        public GestorPresupuestos(PedidoVentaDTO pedido, RespuestaValidacion respuestaValidacion)
         {
             this.pedido = pedido;
+            this.respuestaValidacion = respuestaValidacion;
             TEXTO_PEDIDO = pedido.EsPresupuesto ? "Presupuesto" : "Pedido";
 
         }
@@ -111,6 +118,18 @@ namespace NestoAPI.Infraestructure
             }
             mail.CC.Add("carlosadrian@nuevavision.es");
             mail.CC.Add("manuelrodriguez@nuevavision.es");
+
+            // Agregar almacenes con reservas en copia
+            HashSet<string> almacenesConReservas = ObtenerAlmacenesConReservas();
+            foreach (string almacen in almacenesConReservas)
+            {
+                string correoAlmacen = ObtenerCorreoAlmacen(almacen);
+                if (!string.IsNullOrEmpty(correoAlmacen))
+                {
+                    mail.CC.Add(correoAlmacen);
+                }
+            }
+
             mail.Subject = string.Format("{0} {1} - c/ {2}", TEXTO_PEDIDO, pedido.numero, pedido.cliente);
             mail.Body = (await GenerarTablaHTML(pedido, tipoCorreo)).ToString();
             mail.IsBodyHtml = true;
@@ -229,6 +248,24 @@ namespace NestoAPI.Infraestructure
 
             _ = s.AppendLine("</table>");
 
+            // Primero detectamos si hay líneas rosas (con reservas necesarias)
+            bool hayLineasConReservas = false;
+            ServicioGestorStocks servicioGestorStocks = new ServicioGestorStocks();
+            GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
+
+            foreach (LineaPedidoVentaDTO lineaTemp in pedido.Lineas)
+            {
+                if (lineaTemp.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    string colorTemp = gestorStocks.ColorStock(lineaTemp.Producto, lineaTemp.almacen);
+                    if (colorTemp == "DeepPink")
+                    {
+                        hayLineasConReservas = true;
+                        break;
+                    }
+                }
+            }
+
             _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
             _ = s.AppendLine("<thead align = \"right\">");
             _ = s.Append("<tr><th>Imagen</th>");
@@ -237,25 +274,37 @@ namespace NestoAPI.Infraestructure
             _ = s.Append("<th>Cantidad</th>");
             _ = s.Append("<th>Precio Und.</th>");
             _ = s.Append("<th>Descuento</th>");
-            _ = s.Append("<th>Importe</th></tr>");
+            _ = s.Append("<th>Importe</th>");
+            if (hayLineasConReservas)
+            {
+                _ = s.Append("<th>Reservar</th>");
+            }
+            _ = s.AppendLine("</tr>");
             _ = s.AppendLine("</thead>");
             _ = s.AppendLine("<tbody align = \"right\">");
 
             bool faltaStockDeAlgo = false;
             bool tieneQueVenirAlgunProducto = false;
-            ServicioGestorStocks servicioGestorStocks = new ServicioGestorStocks();
-            GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
+
+            // Estructura para guardar qué almacenes deben reservar stock
+            Dictionary<string, HashSet<string>> almacenesConReservas = new Dictionary<string, HashSet<string>>();
+
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
             {
                 string colorCantidad = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? gestorStocks.ColorStock(linea.Producto, linea.almacen) : "black";
+                string textoReserva = "";
+
                 if (colorCantidad == "DeepPink")
                 {
                     tieneQueVenirAlgunProducto = true;
+                    // Calcular qué almacenes tienen stock de este producto
+                    textoReserva = CalcularReservasAlmacenes(linea, gestorStocks, servicioGestorStocks, almacenesConReservas);
                 }
                 else if (colorCantidad == "red")
                 {
                     faltaStockDeAlgo = true;
                 }
+
                 _ = s.Append("<tr style=\"color: " + colorCantidad + ";\">");
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
@@ -281,6 +330,10 @@ namespace NestoAPI.Infraestructure
                 _ = s.Append("<td style=\"text-align:right\">" + linea.PrecioUnitario.ToString("C") + "</td>");
                 _ = s.Append("<td style=\"text-align:right\">" + linea.DescuentoLinea.ToString("P") + "</td>");
                 _ = s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
+                if (hayLineasConReservas)
+                {
+                    _ = s.Append("<td style=\"text-align:left\">" + textoReserva + "</td>");
+                }
                 _ = s.AppendLine("</tr>");
             }
             if (!pedido.servirJunto || pedido.mantenerJunto)
@@ -305,13 +358,39 @@ namespace NestoAPI.Infraestructure
                     textoServirMantener += " Marcado mantener junto ";
                 }
                 _ = s.AppendLine("<tr style=\"color: " + colorServirJunto + ";\">");
-                _ = s.AppendLine($"<td colspan='7'>{textoServirMantener.Trim()}</td>");
+                int colspanNotas = hayLineasConReservas ? 8 : 7;
+                _ = s.AppendLine($"<td colspan='{colspanNotas}'>{textoServirMantener.Trim()}</td>");
                 _ = s.AppendLine("</tr>");
             }
             if (pedido.CreadoSinPasarValidacion)
             {
                 _ = s.AppendLine("<tr style=\"color: red;\">");
-                _ = s.AppendLine($"<td colspan='7'>Nota: pedido creado sin pasar validación</td>");
+                int colspanValidacion = hayLineasConReservas ? 8 : 7;
+                if (respuestaValidacion != null)
+                {
+                    if (!respuestaValidacion.ValidacionSuperada)
+                    {
+                        // La validación actual NO pasa - mostrar el motivo del error
+                        string motivo = !string.IsNullOrEmpty(respuestaValidacion.Motivo) ?
+                            respuestaValidacion.Motivo :
+                            (respuestaValidacion.Motivos != null && respuestaValidacion.Motivos.Any() ?
+                                string.Join("<br/>• ", respuestaValidacion.Motivos.Select(m => m)) :
+                                "Error de validación no especificado");
+                        _ = s.AppendLine($"<td colspan='{colspanValidacion}'>Nota: pedido creado sin pasar validación (actualmente NO pasaría la validación)<br/><strong>Motivo:</strong><br/>• {motivo.Replace(Environment.NewLine, "<br/>• ")}</td>");
+                    }
+                    else
+                    {
+                        // La validación actual SÍ pasa - informar que ahora pasaría
+                        string motivo = !string.IsNullOrEmpty(respuestaValidacion.Motivo) ?
+                            respuestaValidacion.Motivo :
+                            "El pedido ahora pasaría las validaciones correctamente";
+                        _ = s.AppendLine($"<td colspan='{colspanValidacion}'>Nota: pedido creado sin pasar validación (actualmente pasaría la validación)<br/><strong>Info:</strong> {motivo.Replace(Environment.NewLine, "<br/>")}</td>");
+                    }
+                }
+                else
+                {
+                    _ = s.AppendLine($"<td colspan='{colspanValidacion}'>Nota: pedido creado sin pasar validación (respuestaValidacion es null)</td>");
+                }
                 _ = s.AppendLine("</tr>");
             }
             _ = s.AppendLine("</tbody>");
@@ -389,6 +468,148 @@ namespace NestoAPI.Infraestructure
             }
 
             return s;
+        }
+
+        private string CalcularReservasAlmacenes(LineaPedidoVentaDTO linea, GestorStocks gestorStocks,
+            IServicioGestorStocks servicioGestorStocks, Dictionary<string, HashSet<string>> almacenesConReservas)
+        {
+            // Solo procesamos si es una línea de producto
+            if (linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO)
+            {
+                return "";
+            }
+
+            // Calculamos cuánto falta en el almacén solicitado
+            int stockAlmacenSolicitado = gestorStocks.Stock(linea.Producto, linea.almacen);
+            int pendientesAlmacenSolicitado = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, linea.almacen);
+            int disponibleAlmacenSolicitado = stockAlmacenSolicitado - pendientesAlmacenSolicitado;
+            int cantidadFaltante = linea.Cantidad - disponibleAlmacenSolicitado;
+
+            if (cantidadFaltante <= 0)
+            {
+                // No falta nada, no necesitamos reservas
+                return "";
+            }
+
+            // Buscamos en otros almacenes (todos excepto el solicitado)
+            List<string> almacenesDisponibles = new List<string>();
+            StringBuilder textoReserva = new StringBuilder();
+
+            foreach (string almacen in Constantes.Sedes.ListaSedes)
+            {
+                if (almacen == linea.almacen)
+                {
+                    continue; // Saltamos el almacén solicitado
+                }
+
+                int stockAlmacen = gestorStocks.Stock(linea.Producto, almacen);
+                int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, almacen);
+                int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
+
+                if (disponibleAlmacen > 0)
+                {
+                    almacenesDisponibles.Add(almacen);
+
+                    // Guardamos que este almacén tiene reservas
+                    if (!almacenesConReservas.ContainsKey(almacen))
+                    {
+                        almacenesConReservas[almacen] = new HashSet<string>();
+                    }
+                    _ = almacenesConReservas[almacen].Add(linea.Producto);
+                }
+            }
+
+            // Generamos el texto de reserva
+            if (almacenesDisponibles.Count == 0)
+            {
+                return ""; // No hay stock en otros almacenes
+            }
+            else if (almacenesDisponibles.Count == 1)
+            {
+                // Solo hay un almacén con stock
+                string almacen = almacenesDisponibles[0];
+                int stockAlmacen = gestorStocks.Stock(linea.Producto, almacen);
+                int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, almacen);
+                int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
+                int cantidadReservar = Math.Min(cantidadFaltante, disponibleAlmacen);
+
+                _ = textoReserva.Append($"<strong>{almacen}: {cantidadReservar} uds</strong>");
+            }
+            else
+            {
+                // Hay varios almacenes con stock - mostrar todos
+                _ = textoReserva.Append("<strong>");
+                List<string> reservasPorAlmacen = new List<string>();
+
+                foreach (string almacen in almacenesDisponibles)
+                {
+                    int stockAlmacen = gestorStocks.Stock(linea.Producto, almacen);
+                    int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, almacen);
+                    int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
+
+                    reservasPorAlmacen.Add($"{almacen}: {disponibleAlmacen} uds");
+                }
+
+                _ = textoReserva.Append(string.Join("<br/>", reservasPorAlmacen));
+                _ = textoReserva.Append("</strong>");
+            }
+
+            return textoReserva.ToString();
+        }
+
+        private HashSet<string> ObtenerAlmacenesConReservas()
+        {
+            HashSet<string> almacenes = new HashSet<string>();
+            ServicioGestorStocks servicioGestorStocks = new ServicioGestorStocks();
+            GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
+
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                if (linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    continue;
+                }
+
+                string colorCantidad = gestorStocks.ColorStock(linea.Producto, linea.almacen);
+                if (colorCantidad != "DeepPink")
+                {
+                    continue;
+                }
+
+                // Esta línea tiene stock en otros almacenes pero no en el solicitado
+                // Buscar en qué almacenes hay stock
+                foreach (string almacen in Constantes.Sedes.ListaSedes)
+                {
+                    if (almacen == linea.almacen)
+                    {
+                        continue;
+                    }
+
+                    int stockAlmacen = gestorStocks.Stock(linea.Producto, almacen);
+                    int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, almacen);
+                    int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
+
+                    if (disponibleAlmacen > 0)
+                    {
+                        _ = almacenes.Add(almacen);
+                    }
+                }
+            }
+
+            return almacenes;
+        }
+
+        private string ObtenerCorreoAlmacen(string almacen)
+        {
+            switch (almacen)
+            {
+                case Constantes.Almacenes.REINA:
+                    return Constantes.Correos.TIENDA_REINA;
+                case Constantes.Almacenes.ALCOBENDAS:
+                    return Constantes.Correos.TIENDA_ALCOBENDAS;
+                default:
+                    return null;
+            }
         }
 
         public void Rellenar(int numeroPedido)

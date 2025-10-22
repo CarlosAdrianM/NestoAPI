@@ -4,8 +4,6 @@ using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure
 {
@@ -15,7 +13,7 @@ namespace NestoAPI.Infraestructure
         {
             return calcularAplicarDescuento(producto.Aplicar_Dto, producto.Familia, producto.SubGrupo);
         }
-        
+
         public static bool calcularAplicarDescuento(bool aplicarDescuento, string familia, string subGrupo)
         {
             // Esto podríamos sacarlo a otra clase que sea más fácil de mantener
@@ -23,7 +21,8 @@ namespace NestoAPI.Infraestructure
             if (!aplicarDescuento)
             {
                 return false;
-            } else
+            }
+            else
             {
                 return true;
             }
@@ -48,7 +47,8 @@ namespace NestoAPI.Infraestructure
             }
 
 
-            using (NVEntities db = new NVEntities()) {
+            using (NVEntities db = new NVEntities())
+            {
                 // AQUÍ CALCULA PRECIOS, NO DESCUENTOS
                 //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     ' and contacto='0  ' and [nº producto]= '29487' and empresa='1  ' AND CANTIDADMÍNIMA<=1
 
@@ -144,7 +144,7 @@ namespace NestoAPI.Infraestructure
                 {
                     datos.descuentoCalculado = 1;
                 }
-                
+
                 if (datos.precioCalculado < datos.producto.PVP * (1 - datos.descuentoCalculado))
                 {
                     datos.descuentoCalculado = 0;
@@ -153,12 +153,12 @@ namespace NestoAPI.Infraestructure
                 {
                     datos.precioCalculado = (decimal)datos.producto.PVP;
                 }
-                
+
                 // Si quisiéramos comprobar también las condiciones que tiene en ficha, descomentar la siguiente línea
                 // comprobarCondiciones(datos);
             }
         }
-        
+
         private static void cargarListaCondiciones()
         {
             // Rellenamos la lista estática de las condiciones que queremos comprobar.
@@ -174,7 +174,8 @@ namespace NestoAPI.Infraestructure
 
         private static void CargarListaValidadoresPedido()
         {
-            listaValidadoresDenegacion.Add(new ValidadorOfertasYDescuentosPermitidos());
+            listaValidadoresDenegacion.Add(new ValidadorOfertasPermitidas());
+            listaValidadoresDenegacion.Add(new ValidadorDescuentosPermitidos());
             listaValidadoresDenegacion.Add(new ValidadorOtrosAparatosSiempreSinDescuento());
 
             listaValidadoresAceptacion.Add(new ValidadorOfertasCombinadas());
@@ -183,7 +184,8 @@ namespace NestoAPI.Infraestructure
             listaValidadoresAceptacion.Add(new ValidadorRegaloPorImportePedido());
         }
 
-        public static bool comprobarCondiciones(PrecioDescuentoProducto datos) {
+        public static bool comprobarCondiciones(PrecioDescuentoProducto datos)
+        {
             // Primero miramos si ese precio está en las oferta (tiene metidos los precios generales para todos los clientes)
             if (!datos.descuentosRellenos)
             {
@@ -214,9 +216,11 @@ namespace NestoAPI.Infraestructure
             bool cumpleTodasLasCondiciones = true;
 
             // Cambiar el for por un while para mejorar rendimiento
-            foreach (ICondicionPrecioDescuento condicion in listaCondiciones) {
+            foreach (ICondicionPrecioDescuento condicion in listaCondiciones)
+            {
                 cumpleTodasLasCondiciones = condicion.precioAceptado(datos) && cumpleTodasLasCondiciones;
-            };
+            }
+            ;
             return cumpleTodasLasCondiciones;
         }
 
@@ -233,7 +237,7 @@ namespace NestoAPI.Infraestructure
         // Es para poder sobreescribirlo en los tests
         public static IServicioPrecios servicio = new ServicioPrecios();
 
-        // Método para validar todas las ofertas de un pedido
+        // Método para validar todas las ofertas de un pedido        
         public static RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido)
         {
             RespuestaValidacion respuesta = new RespuestaValidacion
@@ -251,28 +255,87 @@ namespace NestoAPI.Infraestructure
                 CargarListaValidadoresPedido();
             }
 
+            List<string> erroresAcumulados = new List<string>();
+            string ultimoMotivoExitoso = null;
+            bool hayMotivoDeValidadorAceptacion = false; // NUEVO
+
             foreach (IValidadorDenegacion validador in listaValidadoresDenegacion)
             {
                 RespuestaValidacion respuestaValidacion = validador.EsPedidoValido(pedido, servicio);
-                if (!respuestaValidacion.ValidacionSuperada || respuesta.Motivo == null)
+
+                // Guardamos mensajes informativos cuando la validación pasa
+                // PERO no sobrescribimos mensajes de validadores de aceptación
+                if (respuestaValidacion.ValidacionSuperada && !string.IsNullOrEmpty(respuestaValidacion.Motivo) && !hayMotivoDeValidadorAceptacion)
                 {
-                    respuesta = respuestaValidacion;
+                    ultimoMotivoExitoso = respuestaValidacion.Motivo;
                 }
+
                 if (!respuestaValidacion.ValidacionSuperada)
                 {
-                    if (!respuestaValidacion.AutorizadaDenegadaExpresamente)
+                    // Procesamos CADA error encontrado por el validador
+                    if (respuestaValidacion.Errores != null && respuestaValidacion.Errores.Any())
                     {
-                        // Si no está expresamente denegada, miramos si algún validador de aceptación lo valida
-                        RespuestaValidacion respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, respuestaValidacion.ProductoId);
-                        if (respuestaAceptacion.ValidacionSuperada)
+                        foreach (var error in respuestaValidacion.Errores)
                         {
-                            respuesta = respuestaAceptacion;
-                            continue;
+                            if (!error.AutorizadaDenegadaExpresamente)
+                            {
+                                RespuestaValidacion respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, error.ProductoId);
+                                if (respuestaAceptacion.ValidacionSuperada)
+                                {
+                                    // Este error está justificado - guardamos el motivo de aceptación
+                                    if (!string.IsNullOrEmpty(respuestaAceptacion.Motivo))
+                                    {
+                                        ultimoMotivoExitoso = respuestaAceptacion.Motivo;
+                                        hayMotivoDeValidadorAceptacion = true; // NUEVO: marcamos que viene de aceptación
+                                    }
+                                    continue;
+                                }
+                            }
+
+                            // Acumulamos el error no justificado
+                            if (!string.IsNullOrEmpty(error.Motivo))
+                            {
+                                erroresAcumulados.Add(error.Motivo);
+                            }
                         }
                     }
-                    break;
+                    else
+                    {
+                        // Compatibilidad con validadores que no usan Errores
+                        if (!respuestaValidacion.AutorizadaDenegadaExpresamente)
+                        {
+                            RespuestaValidacion respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, respuestaValidacion.ProductoId);
+                            if (respuestaAceptacion.ValidacionSuperada)
+                            {
+                                if (!string.IsNullOrEmpty(respuestaAceptacion.Motivo))
+                                {
+                                    ultimoMotivoExitoso = respuestaAceptacion.Motivo;
+                                    hayMotivoDeValidadorAceptacion = true; // NUEVO: marcamos que viene de aceptación
+                                }
+                                continue;
+                            }
+                        }
+
+                        if (!string.IsNullOrEmpty(respuestaValidacion.Motivo))
+                        {
+                            erroresAcumulados.Add(respuestaValidacion.Motivo);
+                        }
+                    }
                 }
-            };
+            }
+
+            // Consolidamos todos los errores encontrados
+            erroresAcumulados = erroresAcumulados.Distinct().ToList();
+            if (erroresAcumulados.Any())
+            {
+                respuesta.ValidacionSuperada = false;
+                respuesta.Motivos = erroresAcumulados;
+            }
+            else if (!string.IsNullOrEmpty(ultimoMotivoExitoso))
+            {
+                // Si no hay errores pero hay un mensaje exitoso, lo guardamos
+                respuesta.Motivo = ultimoMotivoExitoso;
+            }
 
             return respuesta;
         }
@@ -287,7 +350,7 @@ namespace NestoAPI.Infraestructure
             RespuestaValidacion respuesta = new RespuestaValidacion
             {
                 ValidacionSuperada = false,
-                Motivo = "No hay ninguna oferta que permita poner el producto "+numeroProducto+" a ese precio"
+                Motivo = "No hay ninguna oferta que permita poner el producto " + numeroProducto + " a ese precio"
             };
 
             foreach (IValidadorAceptacion validador in listaValidadoresAceptacion)
@@ -297,7 +360,8 @@ namespace NestoAPI.Infraestructure
                 {
                     break;
                 }
-            };
+            }
+            ;
 
             return respuesta;
         }
@@ -314,12 +378,13 @@ namespace NestoAPI.Infraestructure
         public short cantidadOferta;
         public bool aplicarDescuento;
         public string motivo; // cadena para mostrar en la interfaz de usuario
-        public decimal? descuentoReal {
+        public decimal? descuentoReal
+        {
             get
             {
-                decimal dividendo = (precioCalculado * (1 -descuentoCalculado)  * cantidad);
-                decimal divisor = ((decimal)producto.PVP * (cantidad + cantidadOferta));
-                return divisor != 0 ? 1 - ( dividendo / divisor ) : 0;
+                decimal dividendo = precioCalculado * (1 - descuentoCalculado) * cantidad;
+                decimal divisor = (decimal)producto.PVP * (cantidad + cantidadOferta);
+                return divisor != 0 ? 1 - (dividendo / divisor) : 0;
             }
         }
         public decimal precioCalculadoDeFicha
@@ -339,13 +404,57 @@ namespace NestoAPI.Infraestructure
 
     public class RespuestaValidacion
     {
+        private List<string> _motivos = new List<string>();
+
         public bool ValidacionSuperada { get; set; }
+
+        public List<string> Motivos
+        {
+            get => _motivos;
+            set => _motivos = value ?? new List<string>();
+        }
+
+        // Para mantener el ProductoId de cada error
+        public List<ErrorValidacion> Errores { get; set; } = new List<ErrorValidacion>();
+
+        public string Motivo
+        {
+            get
+            {
+                if (!Motivos.Any())
+                {
+                    return null;
+                }
+
+                if (Motivos.Count == 1)
+                {
+                    return Motivos[0];
+                }
+
+                return string.Join(Environment.NewLine,
+                    Motivos.Select((m, i) => $"• {m}"));
+            }
+            set
+            {
+                if (!string.IsNullOrEmpty(value))
+                {
+                    _motivos = new List<string> { value };
+                }
+            }
+        }
+
+        public string ProductoId { get; set; }
+        public bool AutorizadaDenegadaExpresamente { get; set; }
+    }
+
+    public class ErrorValidacion
+    {
         public string Motivo { get; set; }
         public string ProductoId { get; set; }
         public bool AutorizadaDenegadaExpresamente { get; set; }
     }
 
-    public interface ICondicionPrecioDescuento 
+    public interface ICondicionPrecioDescuento
     {
         // Pasamos datos del producto para ver qué precio mínimo se le puede dejar.
         // En caso de ser correctos todos los datos que hemos pasado, el procedimiento

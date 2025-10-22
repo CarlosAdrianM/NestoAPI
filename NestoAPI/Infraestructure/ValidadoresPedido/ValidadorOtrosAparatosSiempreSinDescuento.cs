@@ -1,6 +1,7 @@
-﻿using System.Linq;
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Infraestructure.ValidadoresPedido
 {
@@ -8,23 +9,21 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
     {
         public RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
-            RespuestaValidacion respuesta = new RespuestaValidacion {
-                ValidacionSuperada = true,
-                Motivo = "El pedido " + pedido.numero + " no tiene ninguna línea de productos"
+            RespuestaValidacion respuesta = new RespuestaValidacion
+            {
+                ValidacionSuperada = true
             };
-            bool esValidoDeMomento = true;
+
+            List<string> erroresLineas = new List<string>();
+
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas.Where(l => l.tipoLinea == 1)) //1=Producto
             {
                 Producto producto = servicio.BuscarProducto(linea.Producto);
 
                 if (producto == null)
                 {
-                    return new RespuestaValidacion
-                    {
-                        ValidacionSuperada = false,
-                        AutorizadaDenegadaExpresamente = false,
-                        Motivo = "No existe el producto " + linea.Producto + " en la línea " + linea.id.ToString()
-                    };
+                    erroresLineas.Add("No existe el producto " + linea.Producto + " en la línea " + linea.id.ToString());
+                    continue; // Seguimos validando las demás líneas
                 }
 
                 PrecioDescuentoProducto datos = new PrecioDescuentoProducto
@@ -36,21 +35,26 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     aplicarDescuento = linea.AplicarDescuento
                 };
 
-                esValidoDeMomento = new OtrosAparatosNoPuedeLlevarDescuento().precioAceptado(datos);
-                
-                // Una vez que una línea no es válida, todo el pedido deja de ser válido
-                if (!esValidoDeMomento) 
+                bool esValidoLinea = new OtrosAparatosNoPuedeLlevarDescuento().precioAceptado(datos);
+
+                // En lugar de return, acumulamos el error
+                if (!esValidoLinea)
                 {
-                    return new RespuestaValidacion
-                    {
-                        ValidacionSuperada = false,
-                        Motivo = "El producto " + linea.Producto + " no puede llevar ningún descuento ni oferta porque es Otros Aparatos" ,
-                        ProductoId = linea.Producto,
-                        AutorizadaDenegadaExpresamente = true
-                    };
+                    erroresLineas.Add("El producto " + linea.Producto + " no puede llevar ningún descuento ni oferta porque es Otros Aparatos");
                 }
             }
-            
+
+            // Consolidamos todos los errores
+            if (erroresLineas.Any())
+            {
+                respuesta.ValidacionSuperada = false;
+                respuesta.Motivos = erroresLineas;
+                respuesta.AutorizadaDenegadaExpresamente = true;
+            }
+            else if (pedido.Lineas.Where(l => l.tipoLinea == 1).Count() == 0)
+            {
+                respuesta.Motivo = "El pedido " + pedido.numero + " no tiene ninguna línea de productos";
+            }
 
             return respuesta;
         }
