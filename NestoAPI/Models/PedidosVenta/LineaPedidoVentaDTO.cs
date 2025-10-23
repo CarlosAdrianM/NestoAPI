@@ -27,6 +27,16 @@ namespace NestoAPI.Models.PedidosVenta
         public int? Albaran { get; set; }
         public string Factura { get; set; }
 
+        // Carlos 23/10/25: para controlar en modificaciones qué líneas son nuevas o tienen cantidad modificada
+        [JsonIgnore]
+        public int? CantidadAnterior { get; set; }
+        [JsonIgnore]
+        public string ProductoAnterior { get; set; }
+        [JsonIgnore]
+        public bool EsLineaNueva => id == 0;
+        [JsonIgnore]
+        public bool CambioProducto => !EsLineaNueva && ProductoAnterior != null && ProductoAnterior.Trim() != Producto?.Trim();
+
         public override decimal SumaDescuentos
         {
             get

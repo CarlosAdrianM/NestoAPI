@@ -17,6 +17,7 @@ namespace NestoAPI.Infraestructure
         // deben entrar ambos campos por inyección de dependencias
         private readonly NVEntities db = new NVEntities();
         private readonly IServicioVendedores servicioVendedores = new ServicioVendedores();
+        private readonly IServicioGestorStocks servicioGestorStocks;
 
         private readonly PedidoVentaDTO pedido;
         private readonly RespuestaValidacion respuestaValidacion;
@@ -34,7 +35,22 @@ namespace NestoAPI.Infraestructure
             this.pedido = pedido;
             this.respuestaValidacion = respuestaValidacion;
             TEXTO_PEDIDO = pedido.EsPresupuesto ? "Presupuesto" : "Pedido";
+            servicioGestorStocks = new ServicioGestorStocks();
+        }
 
+        public GestorPresupuestos(
+            PedidoVentaDTO pedido,
+            RespuestaValidacion respuestaValidacion,
+            NVEntities db,
+            IServicioVendedores servicioVendedores,
+            IServicioGestorStocks servicioGestorStocks)
+        {
+            this.pedido = pedido;
+            this.respuestaValidacion = respuestaValidacion;
+            this.db = db;
+            this.servicioVendedores = servicioVendedores;
+            this.servicioGestorStocks = servicioGestorStocks;
+            TEXTO_PEDIDO = pedido.EsPresupuesto ? "Presupuesto" : "Pedido";
         }
 
         public async Task EnviarCorreo()
@@ -112,16 +128,36 @@ namespace NestoAPI.Infraestructure
                 }
             }
 
-            if (pedido.cliente == "15191")
+            if (pedido.cliente == Constantes.ClientesEspeciales.EL_EDEN)
             {
                 return;
             }
             mail.CC.Add("carlosadrian@nuevavision.es");
             mail.CC.Add("manuelrodriguez@nuevavision.es");
 
-            // Agregar almacenes con reservas en copia
-            HashSet<string> almacenesConReservas = ObtenerAlmacenesConReservas();
-            foreach (string almacen in almacenesConReservas)
+            // Carlos 23/10/25: Agregar almacenes con reservas en copia
+            // En modificaciones, incluimos tanto los almacenes que tenían reservas antes como los que las tienen ahora
+            HashSet<string> almacenesParaCC = new HashSet<string>();
+
+            if (tipoCorreo == "Modificación")
+            {
+                // Almacenes que TENÍAN reservas antes (para que sepan que algo cambió)
+                HashSet<string> almacenesAnteriores = ObtenerAlmacenesConReservasAnteriores();
+                foreach (string almacen in almacenesAnteriores)
+                {
+                    _ = almacenesParaCC.Add(almacen);
+                }
+            }
+
+            // Almacenes que TIENEN reservas ahora (para nuevo pedido o para modificación)
+            HashSet<string> almacenesActuales = ObtenerAlmacenesConReservas();
+            foreach (string almacen in almacenesActuales)
+            {
+                _ = almacenesParaCC.Add(almacen);
+            }
+
+            // Añadir los correos de los almacenes
+            foreach (string almacen in almacenesParaCC)
             {
                 string correoAlmacen = ObtenerCorreoAlmacen(almacen);
                 if (!string.IsNullOrEmpty(correoAlmacen))
@@ -250,7 +286,6 @@ namespace NestoAPI.Infraestructure
 
             // Primero detectamos si hay líneas rosas (con reservas necesarias)
             bool hayLineasConReservas = false;
-            ServicioGestorStocks servicioGestorStocks = new ServicioGestorStocks();
             GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
 
             foreach (LineaPedidoVentaDTO lineaTemp in pedido.Lineas)
@@ -298,7 +333,11 @@ namespace NestoAPI.Infraestructure
                 {
                     tieneQueVenirAlgunProducto = true;
                     // Calcular qué almacenes tienen stock de este producto
-                    textoReserva = CalcularReservasAlmacenes(linea, gestorStocks, servicioGestorStocks, almacenesConReservas);
+                    // Carlos 23/10/25: solo mostramos reserva si es línea nueva, si la cantidad cambió, o si cambió el producto
+                    if (linea.EsLineaNueva || linea.CambioProducto || (linea.CantidadAnterior.HasValue && linea.CantidadAnterior.Value != linea.Cantidad))
+                    {
+                        textoReserva = CalcularReservasAlmacenes(linea, gestorStocks, servicioGestorStocks, almacenesConReservas);
+                    }
                 }
                 else if (colorCantidad == "red")
                 {
@@ -420,6 +459,7 @@ namespace NestoAPI.Infraestructure
             _ = s.AppendLine("</tbody>");
             _ = s.AppendLine("</table>");
 
+            // Carlos 23/10/25: Mostrar periodo de facturación, efectos y/o forma de pago
             if (pedido.periodoFacturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
             {
                 _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
@@ -467,6 +507,27 @@ namespace NestoAPI.Infraestructure
                 _ = s.AppendLine("</table>");
             }
 
+            // Carlos 23/10/25: Mostrar tabla de prepagos SIEMPRE que existan (independiente de efectos)
+            if (pedido.Prepagos != null && pedido.Prepagos.Any())
+            {
+                _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+                _ = s.AppendLine("<thead align = \"center\">");
+                _ = s.Append("<tr><th>Concepto</th>");
+                _ = s.Append("<th>Importe</th></tr>");
+                _ = s.AppendLine("</thead>");
+                _ = s.AppendLine("<tbody align = \"right\">");
+                foreach (PrepagoDTO prepago in pedido.Prepagos)
+                {
+                    string concepto = string.IsNullOrWhiteSpace(prepago.ConceptoAdicional)
+                        ? "Prepago"
+                        : $"Prepago {prepago.ConceptoAdicional.Trim()}";
+                    _ = s.Append("<tr><td style=\"text-align:left\">" + concepto + "</td>");
+                    _ = s.Append("<td style=\"text-align:right\">" + prepago.Importe.ToString("C") + "</td></tr>");
+                }
+                _ = s.AppendLine("</tbody>");
+                _ = s.AppendLine("</table>");
+            }
+
             return s;
         }
 
@@ -479,16 +540,25 @@ namespace NestoAPI.Infraestructure
                 return "";
             }
 
+            // Carlos 23/10/25: Si la cantidad cambió, mostramos antes y después
+            StringBuilder prefijo = new StringBuilder();
+            if (linea.CantidadAnterior.HasValue && linea.CantidadAnterior.Value != linea.Cantidad)
+            {
+                _ = prefijo.Append($"<em>Antes: {linea.CantidadAnterior.Value} uds → Ahora: {linea.Cantidad} uds</em><br/>");
+            }
+
             // Calculamos cuánto falta en el almacén solicitado
             int stockAlmacenSolicitado = gestorStocks.Stock(linea.Producto, linea.almacen);
-            int pendientesAlmacenSolicitado = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, linea.almacen);
-            int disponibleAlmacenSolicitado = stockAlmacenSolicitado - pendientesAlmacenSolicitado;
-            int cantidadFaltante = linea.Cantidad - disponibleAlmacenSolicitado;
+            int pendientesTotales = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, linea.almacen);
+            int pendientesOtrosPedidos = Math.Max(0, pendientesTotales - linea.Cantidad);
+            int disponibleReal = stockAlmacenSolicitado - pendientesOtrosPedidos;
+            int cantidadFaltante = Math.Max(0, linea.Cantidad - disponibleReal);
 
             if (cantidadFaltante <= 0)
             {
                 // No falta nada, no necesitamos reservas
-                return "";
+                // Carlos 23/10/25: pero si la cantidad cambió, devolvemos el prefijo
+                return prefijo.ToString();
             }
 
             // Buscamos en otros almacenes (todos excepto el solicitado)
@@ -522,7 +592,8 @@ namespace NestoAPI.Infraestructure
             // Generamos el texto de reserva
             if (almacenesDisponibles.Count == 0)
             {
-                return ""; // No hay stock en otros almacenes
+                // Carlos 23/10/25: si no hay stock en otros almacenes, devolvemos solo el prefijo (si existe)
+                return prefijo.ToString();
             }
             else if (almacenesDisponibles.Count == 1)
             {
@@ -537,15 +608,23 @@ namespace NestoAPI.Infraestructure
             }
             else
             {
-                // Hay varios almacenes con stock - mostrar todos
+                // Carlos 23/10/25: Hay varios almacenes con stock
+                // Mostramos cuánto falta EN TOTAL y qué almacenes tienen stock disponible
                 _ = textoReserva.Append("<strong>");
+
+                // Primero mostramos cuánto falta en total
+                _ = textoReserva.Append($"Faltan {cantidadFaltante} uds. Stock disponible:<br/>");
+
+                // Luego listamos los almacenes con stock disponible
                 List<string> reservasPorAlmacen = new List<string>();
+                int totalDisponibleOtrosAlmacenes = 0;
 
                 foreach (string almacen in almacenesDisponibles)
                 {
                     int stockAlmacen = gestorStocks.Stock(linea.Producto, almacen);
                     int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, almacen);
                     int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
+                    totalDisponibleOtrosAlmacenes += disponibleAlmacen;
 
                     reservasPorAlmacen.Add($"{almacen}: {disponibleAlmacen} uds");
                 }
@@ -554,13 +633,13 @@ namespace NestoAPI.Infraestructure
                 _ = textoReserva.Append("</strong>");
             }
 
-            return textoReserva.ToString();
+            // Carlos 23/10/25: combinamos el prefijo (si existe) con el texto de reserva
+            return prefijo.ToString() + textoReserva.ToString();
         }
 
         private HashSet<string> ObtenerAlmacenesConReservas()
         {
             HashSet<string> almacenes = new HashSet<string>();
-            ServicioGestorStocks servicioGestorStocks = new ServicioGestorStocks();
             GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
 
             foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
@@ -587,6 +666,63 @@ namespace NestoAPI.Infraestructure
 
                     int stockAlmacen = gestorStocks.Stock(linea.Producto, almacen);
                     int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(linea.Producto, almacen);
+                    int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
+
+                    if (disponibleAlmacen > 0)
+                    {
+                        _ = almacenes.Add(almacen);
+                    }
+                }
+            }
+
+            return almacenes;
+        }
+
+        // Carlos 23/10/25: Obtener almacenes que TENÍAN reservas antes de la modificación
+        private HashSet<string> ObtenerAlmacenesConReservasAnteriores()
+        {
+            HashSet<string> almacenes = new HashSet<string>();
+            GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
+
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                // Solo procesamos líneas que existían antes (no son nuevas)
+                if (linea.EsLineaNueva || linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    continue;
+                }
+
+                // Si no tiene cantidad anterior, asumimos que no había reservas antes
+                if (!linea.CantidadAnterior.HasValue)
+                {
+                    continue;
+                }
+
+                // Si cambió el producto, usamos el producto anterior para calcular
+                string productoAEvaluar = linea.CambioProducto ? linea.ProductoAnterior : linea.Producto;
+
+                // Calculamos el color que TENÍA antes (usando la cantidad anterior y el producto anterior si cambió)
+                int stockAlmacenSolicitado = gestorStocks.Stock(productoAEvaluar, linea.almacen);
+                int pendientesAlmacenSolicitado = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAEvaluar, linea.almacen);
+                int disponibleAlmacenSolicitado = stockAlmacenSolicitado - pendientesAlmacenSolicitado;
+
+                // Si antes no faltaba stock, no había reservas
+                int cantidadFaltanteAnterior = linea.CantidadAnterior.Value - disponibleAlmacenSolicitado;
+                if (cantidadFaltanteAnterior <= 0)
+                {
+                    continue;
+                }
+
+                // Si llegamos aquí, antes SÍ faltaba stock. Buscar en qué almacenes había stock disponible
+                foreach (string almacen in Constantes.Sedes.ListaSedes)
+                {
+                    if (almacen == linea.almacen)
+                    {
+                        continue;
+                    }
+
+                    int stockAlmacen = gestorStocks.Stock(productoAEvaluar, almacen);
+                    int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAEvaluar, almacen);
                     int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
 
                     if (disponibleAlmacen > 0)

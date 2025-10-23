@@ -457,6 +457,17 @@ namespace NestoAPI.Controllers
             // Sacar diferencias entre el pedido original y el que hemos pasado:
             // - las líneas que la cantidad, o la base imponible sean diferentes hay que actualizarlas enteras
             // - las líneas que directamente no estén, hay que borrarlas
+            // Carlos 23/10/25: Guardamos las cantidades y productos originales para luego poder mostrarlas en el correo
+            foreach (LineaPedidoVentaDTO lineaPedido in pedido.Lineas.Where(l => l.id != 0))
+            {
+                var lineaOriginal = cabPedidoVta.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == lineaPedido.id);
+                if (lineaOriginal != null)
+                {
+                    lineaPedido.CantidadAnterior = lineaOriginal.Cantidad;
+                    lineaPedido.ProductoAnterior = lineaOriginal.Producto;
+                }
+            }
+
             bool hayAlgunaLineaModificada = false;
             foreach (LinPedidoVta linea in cabPedidoVta.LinPedidoVtas.ToList())
             {

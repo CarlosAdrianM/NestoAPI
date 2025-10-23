@@ -167,6 +167,7 @@
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
     <Compile Include="Infrastructure\GestorKitsTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
+    <Compile Include="Infrastructure\GestorPresupuestosTests.cs" />
     <Compile Include="Infrastructure\GestorUbicacionesTests.cs" />
     <Compile Include="Infrastructure\GestosStocksTests.cs" />
     <Compile Include="Infrastructure\GestorDepositosTests.cs" />
