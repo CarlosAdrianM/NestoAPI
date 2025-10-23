@@ -15,15 +15,20 @@ NestoAPI is an ASP.NET Web API project built with .NET Framework 4.8 using Entit
 ## Building and Testing
 
 ### Build
-```bash
-# Build the solution (requires Visual Studio or MSBuild)
-dotnet build NestoAPI.sln
+**IMPORTANT**: This project uses .NET Framework 4.8 and requires MSBuild (Visual Studio). **DO NOT** use `dotnet build` as it will fail with error MSB4019 (missing WebApplication.targets).
 
-# Or using .NET CLI for individual projects
-dotnet build NestoAPI/NestoAPI.csproj
+```bash
+# CORRECT: Use MSBuild (requires Visual Studio installed)
+msbuild NestoAPI.sln /t:Build /p:Configuration=Debug
+
+# INCORRECT: Do NOT use dotnet CLI - it will fail
+# dotnet build NestoAPI.sln  # ❌ This will NOT work
 ```
 
+**For Claude Code users**: Since MSBuild is typically not available in the Claude Code environment, assume code changes are syntactically correct after making them. The project must be built in Visual Studio by the user.
+
 ### Running Tests
+Tests can be run using the .NET CLI:
 ```bash
 # Run all tests
 dotnet test NestoAPI.Tests/NestoAPI.Tests.csproj
@@ -34,8 +39,6 @@ dotnet test NestoAPI.Tests/NestoAPI.Tests.csproj --logger "console;verbosity=det
 # Run a specific test
 dotnet test --filter "FullyQualifiedName~GestorPreciosTests"
 ```
-
-Note: This project uses .NET Framework 4.8, so full Visual Studio or appropriate build tools may be required.
 
 ## Architecture
 

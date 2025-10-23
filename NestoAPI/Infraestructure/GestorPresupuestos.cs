@@ -3,7 +3,6 @@ using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
-using System.Configuration;
 using System.Linq;
 using System.Net.Mail;
 using System.Text;
@@ -18,6 +17,7 @@ namespace NestoAPI.Infraestructure
         private readonly NVEntities db = new NVEntities();
         private readonly IServicioVendedores servicioVendedores = new ServicioVendedores();
         private readonly IServicioGestorStocks servicioGestorStocks;
+        private readonly IServicioCorreoElectronico servicioCorreo;
 
         private readonly PedidoVentaDTO pedido;
         private readonly RespuestaValidacion respuestaValidacion;
@@ -36,6 +36,7 @@ namespace NestoAPI.Infraestructure
             this.respuestaValidacion = respuestaValidacion;
             TEXTO_PEDIDO = pedido.EsPresupuesto ? "Presupuesto" : "Pedido";
             servicioGestorStocks = new ServicioGestorStocks();
+            servicioCorreo = new ServicioCorreoElectronico(); // En producción, sin logger
         }
 
         public GestorPresupuestos(
@@ -43,13 +44,15 @@ namespace NestoAPI.Infraestructure
             RespuestaValidacion respuestaValidacion,
             NVEntities db,
             IServicioVendedores servicioVendedores,
-            IServicioGestorStocks servicioGestorStocks)
+            IServicioGestorStocks servicioGestorStocks,
+            IServicioCorreoElectronico servicioCorreo = null)
         {
             this.pedido = pedido;
             this.respuestaValidacion = respuestaValidacion;
             this.db = db;
             this.servicioVendedores = servicioVendedores;
             this.servicioGestorStocks = servicioGestorStocks;
+            this.servicioCorreo = servicioCorreo;
             TEXTO_PEDIDO = pedido.EsPresupuesto ? "Presupuesto" : "Pedido";
         }
 
@@ -65,18 +68,10 @@ namespace NestoAPI.Infraestructure
                 return;
             }
 
-            MailMessage mail = new MailMessage();
-            SmtpClient client = new SmtpClient
+            MailMessage mail = new MailMessage
             {
-                Port = 587,
-                EnableSsl = true,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                UseDefaultCredentials = false
+                From = new MailAddress("nesto@nuevavision.es")
             };
-            string contrasenna = ConfigurationManager.AppSettings["office365password"];
-            client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
-            client.Host = "smtp.office365.com";
-            mail.From = new MailAddress("nesto@nuevavision.es");
 
             string correoVendedor = null;
             string correoVendedorPeluqueria = null;
@@ -200,16 +195,9 @@ namespace NestoAPI.Infraestructure
                 }
             }
 
-            // A veces no conecta a la primera, por lo que reintentamos 2s después
-            try
-            {
-                client.Send(mail);
-            }
-            catch
-            {
-                await Task.Delay(2000);
-                client.Send(mail);
-            }
+            // Carlos 23/10/25: Usar siempre el servicio de correo (puede ser real o mockeado)
+            // El ServicioCorreoElectronico ya tiene lógica de retry interna
+            servicioCorreo.EnviarCorreoSMTP(mail);
         }
         private async Task<StringBuilder> GenerarTablaHTML(PedidoVentaDTO pedido, string tipoCorreo)
         {
@@ -226,7 +214,14 @@ namespace NestoAPI.Infraestructure
             _ = s.AppendLine("  tr:hover { background-color: #f5f5f5; }");
             _ = s.AppendLine("</style>");
 
-            _ = s.AppendLine(string.Format("<H1>{0} {1} {2}</H1>", tipoCorreo, TEXTO_PEDIDO, pedido.numero));
+            // Carlos 23/10/25: Si el almacén no es ALG, añadimos una coletilla para que se vea claramente
+            string almacenPedido = pedido.Lineas.FirstOrDefault()?.almacen;
+            string textoAlmacen = "";
+            if (!string.IsNullOrEmpty(almacenPedido) && almacenPedido != Constantes.Almacenes.ALGETE)
+            {
+                textoAlmacen = $" (para recoger en {almacenPedido})";
+            }
+            _ = s.AppendLine(string.Format("<H1>{0} {1} {2}{3}</H1>", tipoCorreo, TEXTO_PEDIDO, pedido.numero, textoAlmacen));
 
             _ = s.AppendLine("<table border=\"0\" style=\"width:100%\">");
             _ = s.AppendLine("<tr>");
@@ -284,10 +279,11 @@ namespace NestoAPI.Infraestructure
 
             _ = s.AppendLine("</table>");
 
-            // Primero detectamos si hay líneas rosas (con reservas necesarias)
+            // Carlos 23/10/25: Detectamos si hay líneas con reservas (actuales) o que tenían reservas antes (en modificaciones)
             bool hayLineasConReservas = false;
             GestorStocks gestorStocks = new GestorStocks(servicioGestorStocks);
 
+            // Verificar si hay líneas actuales que necesitan reservas
             foreach (LineaPedidoVentaDTO lineaTemp in pedido.Lineas)
             {
                 if (lineaTemp.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
@@ -297,6 +293,41 @@ namespace NestoAPI.Infraestructure
                     {
                         hayLineasConReservas = true;
                         break;
+                    }
+                }
+            }
+
+            // En modificaciones, también verificar si había líneas que TENÍAN reservas antes
+            // (para que el almacén sepa que debe liberar reservas si se borró/cambió la línea)
+            if (!hayLineasConReservas && tipoCorreo == "Modificación")
+            {
+                foreach (LineaPedidoVentaDTO lineaTemp in pedido.Lineas)
+                {
+                    if (lineaTemp.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO || lineaTemp.EsLineaNueva)
+                    {
+                        continue;
+                    }
+
+                    // Verificar si cambió el producto o la cantidad, y si antes necesitaba reservas
+                    if (lineaTemp.CambioProducto || (lineaTemp.CantidadAnterior.HasValue && lineaTemp.CantidadAnterior.Value != lineaTemp.Cantidad))
+                    {
+                        string productoAnterior = lineaTemp.CambioProducto ? lineaTemp.ProductoAnterior : lineaTemp.Producto;
+                        int cantidadAnterior = lineaTemp.CantidadAnterior ?? lineaTemp.Cantidad;
+
+                        // Calcular si ANTES necesitaba reservas
+                        int stockAlmacen = gestorStocks.Stock(productoAnterior, lineaTemp.almacen);
+                        int pendientesTotales = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAnterior, lineaTemp.almacen);
+                        // Restar la cantidad actual del pedido para calcular pendientes de otros pedidos
+                        int pendientesOtrosPedidos = Math.Max(0, pendientesTotales - lineaTemp.Cantidad);
+                        int disponible = stockAlmacen - pendientesOtrosPedidos;
+                        int faltante = cantidadAnterior - disponible;
+
+                        if (faltante > 0)
+                        {
+                            // Antes SÍ necesitaba reservas, mostrar columna para que sepan que deben liberar
+                            hayLineasConReservas = true;
+                            break;
+                        }
                     }
                 }
             }
@@ -329,11 +360,11 @@ namespace NestoAPI.Infraestructure
                 string colorCantidad = linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ? gestorStocks.ColorStock(linea.Producto, linea.almacen) : "black";
                 string textoReserva = "";
 
+                // Carlos 23/10/25: Calcular si la línea necesita reservas AHORA
                 if (colorCantidad == "DeepPink")
                 {
                     tieneQueVenirAlgunProducto = true;
-                    // Calcular qué almacenes tienen stock de este producto
-                    // Carlos 23/10/25: solo mostramos reserva si es línea nueva, si la cantidad cambió, o si cambió el producto
+                    // Mostrar reserva si es línea nueva, si la cantidad cambió, o si cambió el producto
                     if (linea.EsLineaNueva || linea.CambioProducto || (linea.CantidadAnterior.HasValue && linea.CantidadAnterior.Value != linea.Cantidad))
                     {
                         textoReserva = CalcularReservasAlmacenes(linea, gestorStocks, servicioGestorStocks, almacenesConReservas);
@@ -342,6 +373,31 @@ namespace NestoAPI.Infraestructure
                 else if (colorCantidad == "red")
                 {
                     faltaStockDeAlgo = true;
+                }
+                // Carlos 23/10/25: En modificaciones, si la línea TENÍA reservas antes pero ya NO las necesita, informar
+                else if (tipoCorreo == "Modificación" && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !linea.EsLineaNueva)
+                {
+                    // Solo verificar si cambió algo (producto o cantidad)
+                    if (linea.CambioProducto || (linea.CantidadAnterior.HasValue && linea.CantidadAnterior.Value != linea.Cantidad))
+                    {
+                        string productoAnterior = linea.CambioProducto ? linea.ProductoAnterior : linea.Producto;
+                        int cantidadAnterior = linea.CantidadAnterior ?? linea.Cantidad;
+
+                        // Verificar si ANTES necesitaba reservas
+                        int stockAlmacenAntes = gestorStocks.Stock(productoAnterior, linea.almacen);
+                        int pendientesTotalesAntes = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAnterior, linea.almacen);
+                        // Restar la cantidad actual del pedido para calcular pendientes de otros pedidos
+                        int pendientesOtrosPedidosAntes = Math.Max(0, pendientesTotalesAntes - linea.Cantidad);
+                        int disponibleAntes = stockAlmacenAntes - pendientesOtrosPedidosAntes;
+                        int faltanteAntes = cantidadAnterior - disponibleAntes;
+
+                        if (faltanteAntes > 0)
+                        {
+                            // Antes SÍ necesitaba reservas, pero ahora NO (ya que colorCantidad != "DeepPink")
+                            // Informar al almacén que debe LIBERAR reservas
+                            textoReserva = GenerarTextoLiberarReservas(linea, productoAnterior, cantidadAnterior, gestorStocks, servicioGestorStocks);
+                        }
+                    }
                 }
 
                 _ = s.Append("<tr style=\"color: " + colorCantidad + ";\">");
@@ -531,7 +587,8 @@ namespace NestoAPI.Infraestructure
             return s;
         }
 
-        private string CalcularReservasAlmacenes(LineaPedidoVentaDTO linea, GestorStocks gestorStocks,
+        // Carlos 23/10/25: Cambiado de private a internal para poder hacer tests
+        internal string CalcularReservasAlmacenes(LineaPedidoVentaDTO linea, GestorStocks gestorStocks,
             IServicioGestorStocks servicioGestorStocks, Dictionary<string, HashSet<string>> almacenesConReservas)
         {
             // Solo procesamos si es una línea de producto
@@ -703,8 +760,10 @@ namespace NestoAPI.Infraestructure
 
                 // Calculamos el color que TENÍA antes (usando la cantidad anterior y el producto anterior si cambió)
                 int stockAlmacenSolicitado = gestorStocks.Stock(productoAEvaluar, linea.almacen);
-                int pendientesAlmacenSolicitado = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAEvaluar, linea.almacen);
-                int disponibleAlmacenSolicitado = stockAlmacenSolicitado - pendientesAlmacenSolicitado;
+                int pendientesTotalesAlmacenSolicitado = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAEvaluar, linea.almacen);
+                // Restar la cantidad actual del pedido para calcular pendientes de otros pedidos
+                int pendientesOtrosPedidos = Math.Max(0, pendientesTotalesAlmacenSolicitado - linea.Cantidad);
+                int disponibleAlmacenSolicitado = stockAlmacenSolicitado - pendientesOtrosPedidos;
 
                 // Si antes no faltaba stock, no había reservas
                 int cantidadFaltanteAnterior = linea.CantidadAnterior.Value - disponibleAlmacenSolicitado;
@@ -733,6 +792,86 @@ namespace NestoAPI.Infraestructure
             }
 
             return almacenes;
+        }
+
+        // Carlos 23/10/25: Generar texto para informar que se deben LIBERAR reservas
+        // Cambiado de private a internal para poder hacer tests
+        internal string GenerarTextoLiberarReservas(
+            LineaPedidoVentaDTO linea,
+            string productoAnterior,
+            int cantidadAnterior,
+            GestorStocks gestorStocks,
+            IServicioGestorStocks servicioGestorStocks)
+        {
+            StringBuilder textoLiberar = new StringBuilder();
+
+            // Calcular qué almacenes tenían stock del producto anterior
+            int stockAlmacenSolicitado = gestorStocks.Stock(productoAnterior, linea.almacen);
+            int pendientesTotalesAlmacenSolicitado = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAnterior, linea.almacen);
+            // Restar la cantidad actual del pedido para calcular pendientes de otros pedidos
+            int pendientesOtrosPedidos = Math.Max(0, pendientesTotalesAlmacenSolicitado - linea.Cantidad);
+            int disponibleAlmacenSolicitado = stockAlmacenSolicitado - pendientesOtrosPedidos;
+            int cantidadFaltanteAnterior = Math.Max(0, cantidadAnterior - disponibleAlmacenSolicitado);
+
+            if (cantidadFaltanteAnterior <= 0)
+            {
+                return ""; // No había reservas antes
+            }
+
+            // Buscar en qué almacenes había stock disponible
+            List<string> almacenesConStockAnterior = new List<string>();
+            foreach (string almacen in Constantes.Sedes.ListaSedes)
+            {
+                if (almacen == linea.almacen)
+                {
+                    continue;
+                }
+
+                int stockAlmacen = gestorStocks.Stock(productoAnterior, almacen);
+                int pendientesAlmacen = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAnterior, almacen);
+                int disponibleAlmacen = stockAlmacen - pendientesAlmacen;
+
+                if (disponibleAlmacen > 0)
+                {
+                    almacenesConStockAnterior.Add(almacen);
+                }
+            }
+
+            if (almacenesConStockAnterior.Count == 0)
+            {
+                return ""; // No había almacenes con stock antes
+            }
+
+            // Generar el mensaje de liberar
+            _ = textoLiberar.Append("<strong style=\"color: green;\">✓ LIBERAR: ");
+
+            if (linea.CambioProducto)
+            {
+                // Cambió el producto
+                _ = textoLiberar.Append($"Antes: {productoAnterior} ({cantidadAnterior} uds)");
+                if (linea.Cantidad == 0)
+                {
+                    _ = textoLiberar.Append(" → ELIMINADO");
+                }
+                else
+                {
+                    _ = textoLiberar.Append($" → Ahora: {linea.Producto} ({linea.Cantidad} uds)");
+                }
+            }
+            else if (linea.Cantidad == 0)
+            {
+                // Se eliminó la línea (cantidad = 0)
+                _ = textoLiberar.Append($"{cantidadAnterior} uds ELIMINADAS");
+            }
+            else
+            {
+                // Solo cambió la cantidad (disminuyó o ahora hay stock suficiente)
+                _ = textoLiberar.Append($"Antes: {cantidadAnterior} uds → Ahora: {linea.Cantidad} uds");
+            }
+
+            _ = textoLiberar.Append("</strong>");
+
+            return textoLiberar.ToString();
         }
 
         private string ObtenerCorreoAlmacen(string almacen)

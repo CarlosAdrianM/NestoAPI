@@ -2,6 +2,7 @@
 using System;
 using System.Configuration;
 using System.Net.Mail;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure
 {
@@ -9,7 +10,7 @@ namespace NestoAPI.Infraestructure
     {
         private readonly ILogger<ServicioCorreoElectronico> _logger;
 
-        public ServicioCorreoElectronico(ILogger<ServicioCorreoElectronico> logger)
+        public ServicioCorreoElectronico(ILogger<ServicioCorreoElectronico> logger = null)
         {
             _logger = logger;
         }
@@ -25,6 +26,7 @@ namespace NestoAPI.Infraestructure
                 client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
                 client.Host = "smtp.office365.com";
 
+                // Carlos 23/10/25: A veces no conecta a la primera, reintentamos después de 2s
                 try
                 {
                     client.Send(mail);
@@ -32,8 +34,18 @@ namespace NestoAPI.Infraestructure
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error al enviar el correo electrónico.");
-                    return false;
+                    _logger?.LogError(ex, "Error al enviar el correo electrónico. Reintentando...");
+                    try
+                    {
+                        Task.Delay(2000).Wait(); // Esperar 2 segundos
+                        client.Send(mail);
+                        return true;
+                    }
+                    catch (Exception ex2)
+                    {
+                        _logger?.LogError(ex2, "Error al reintentar enviar el correo electrónico.");
+                        return false;
+                    }
                 }
             }
         }
