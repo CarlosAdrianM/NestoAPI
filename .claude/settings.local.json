@@ -3,7 +3,9 @@
     "allow": [
       "Bash(dotnet:*)",
       "Bash(msbuild:*)",
-      "Read(//c/Users/Carlos/source/repos/**)"
+      "Read(//c/Users/Carlos/source/repos/**)",
+      "Bash(timeout 120 dotnet test:*)",
+      "Bash(echo:*)"
     ],
     "deny": [],
     "ask": []
