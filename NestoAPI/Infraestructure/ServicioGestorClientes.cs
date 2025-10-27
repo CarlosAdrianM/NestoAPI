@@ -438,13 +438,15 @@ namespace NestoAPI.Infraestructure
         {
             using (NVEntities db = new NVEntities())
             {
-                Cliente cliente = await db.Clientes
-                    .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.CIF_NIF == nif && c.PersonasContactoClientes.Any(p => p.CorreoElectrónico == email))
+                string nifNormalizado = NormalizarNif(nif);
+
+                var cliente = db.Clientes
+                    .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                                c.PersonasContactoClientes.Any(p => p.CorreoElectrónico == email))
                     .Include(c => c.PersonasContactoClientes)
                     .Include(c => c.Vendedore)
-                    .OrderByDescending(c => c.ClientePrincipal)
-                    .FirstOrDefaultAsync()
-                    .ConfigureAwait(false);
+                    .AsEnumerable() // cambia a LINQ en memoria
+                    .FirstOrDefault(c => NormalizarNif(c.CIF_NIF) == nifNormalizado);
 
                 return cliente == null
                     ? new ClienteDTO()
@@ -471,6 +473,41 @@ namespace NestoAPI.Infraestructure
                         }).ToList()
                     };
             }
+        }
+
+        private static string NormalizarNif(string nif)
+        {
+            if (string.IsNullOrWhiteSpace(nif))
+            {
+                return string.Empty;
+            }
+
+            // Limpieza general
+            nif = nif.Trim().ToUpperInvariant().Replace("-", "").Replace(" ", "");
+
+            // Detectamos si empieza o acaba con letra
+            bool empiezaLetra = char.IsLetter(nif.First());
+            bool acabaLetra = char.IsLetter(nif.Last());
+
+            string prefijo = empiezaLetra ? nif.First().ToString() : string.Empty;
+            string sufijo = acabaLetra ? nif.Last().ToString() : string.Empty;
+
+            // Parte numérica central (quitando letras)
+            string parteNumerica = nif;
+            if (empiezaLetra)
+            {
+                parteNumerica = parteNumerica.Substring(1);
+            }
+
+            if (acabaLetra && parteNumerica.Length > 0)
+            {
+                parteNumerica = parteNumerica.Substring(0, parteNumerica.Length - 1);
+            }
+
+            // Quitar ceros iniciales de la parte numérica
+            parteNumerica = parteNumerica.TrimStart('0');
+
+            return prefijo + parteNumerica + sufijo;
         }
     }
 }

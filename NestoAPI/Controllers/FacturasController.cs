@@ -38,7 +38,7 @@ namespace NestoAPI.Controllers
 
         // GET api/Facturas
         [HttpGet]
-        public async Task<HttpResponseMessage> GetFactura(string empresa, string numeroFactura)
+        public async Task<HttpResponseMessage> GetFactura(string empresa, string numeroFactura, bool papelConMembrete = false)
         {
             FacturaLookup factura = new FacturaLookup { Empresa = empresa, Factura = numeroFactura };
             List<FacturaLookup> lista = new List<FacturaLookup>
@@ -49,7 +49,7 @@ namespace NestoAPI.Controllers
 
             var result = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = gestor.FacturasEnPDF(facturas)
+                Content = gestor.FacturasEnPDF(facturas, papelConMembrete)
             };
             //result.Content.Headers.ContentDisposition =
             //    new ContentDispositionHeaderValue("attachment")

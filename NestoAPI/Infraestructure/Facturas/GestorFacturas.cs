@@ -40,7 +40,7 @@ namespace NestoAPI.Infraestructure.Facturas
             return FacturasEnPDF(facturas);
         }
 
-        public ByteArrayContent FacturasEnPDF(List<Factura> facturas)
+        public ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false)
         {
 
             ReportViewer viewer = new ReportViewer();
@@ -52,6 +52,8 @@ namespace NestoAPI.Infraestructure.Facturas
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Vencimientos", facturas.FirstOrDefault().Vencimientos));
             viewer.LocalReport.DataSources.Add(new ReportDataSource("NotasAlPie", facturas.FirstOrDefault().NotasAlPie));
             viewer.LocalReport.DataSources.Add(new ReportDataSource("Totales", facturas.FirstOrDefault().Totales));
+
+            viewer.LocalReport.SetParameters(new ReportParameter("PapelConMembrete", papelConMembrete.ToString()));
 
             viewer.LocalReport.Refresh();
             byte[] bytes = viewer.LocalReport.Render("PDF", null, out _, out _, out _, out _, out _);
@@ -480,6 +482,151 @@ namespace NestoAPI.Infraestructure.Facturas
             }
 
             return facturas;
+        }
+
+        public List<Factura> LeerAlbaranes(List<FacturaLookup> numerosAlbaran)
+        {
+            List<Factura> albaranes = new List<Factura>();
+
+            foreach (FacturaLookup albaran in numerosAlbaran)
+            {
+                if (int.TryParse(albaran.Factura, out int numeroAlbaran))
+                {
+                    Factura nuevoAlbaran = LeerAlbaran(albaran.Empresa, numeroAlbaran);
+                    albaranes.Add(nuevoAlbaran);
+                }
+            }
+
+            return albaranes;
+        }
+
+        public Factura LeerAlbaran(string empresa, int numeroAlbaran)
+        {
+            // Buscar el pedido que contiene este albarán
+            CabPedidoVta cabPedido = servicio.CargarCabPedidoPorAlbaran(empresa, numeroAlbaran);
+
+            if (cabPedido == null)
+            {
+                throw new Exception($"No se encontró ningún pedido con el albarán {numeroAlbaran} en la empresa {empresa}");
+            }
+
+            LinPedidoVta primeraLinea = cabPedido.LinPedidoVtas.FirstOrDefault(l => l.Nº_Albarán == numeroAlbaran);
+
+            if (primeraLinea == null)
+            {
+                throw new Exception($"No se encontró ninguna línea con el albarán {numeroAlbaran}");
+            }
+
+            ISerieFactura serieFactura = LeerSerie(cabPedido.Serie);
+
+            Cliente clienteEntrega = servicio.CargarCliente(cabPedido.Empresa, cabPedido.Nº_Cliente, cabPedido.Contacto);
+            Cliente clienteRazonSocial = clienteEntrega;
+            if (!clienteRazonSocial.ClientePrincipal)
+            {
+                clienteRazonSocial = servicio.CargarClientePrincipal(cabPedido.Empresa, cabPedido.Nº_Cliente);
+            }
+
+            Empresa empresaAlbaran = servicio.CargarEmpresa(empresa);
+            DireccionFactura direccionEmpresa = CargarDireccionEmpresa(empresaAlbaran);
+            DireccionFactura direccionRazonSocial = CargarDireccionRazonSocial(clienteRazonSocial);
+            DireccionFactura direccionEntrega = CargarDireccionEntrega(clienteEntrega);
+
+            List<DireccionFactura> direcciones = new List<DireccionFactura>
+            {
+                direccionEmpresa,
+                direccionRazonSocial,
+                direccionEntrega
+            };
+
+            bool ponerPrecios = clienteEntrega.AlbaranValorado;
+
+            // Filtrar solo las líneas del albarán especificado (estado >= 2)
+            List<LineaFactura> lineas = new List<LineaFactura>();
+            var lineasAlbaranQuery = cabPedido.LinPedidoVtas?.Where(l => l.Nº_Albarán == numeroAlbaran && l.Estado >= Constantes.EstadosLineaVenta.ALBARAN).OrderBy(l => l.Nº_Orden);
+
+            if (lineasAlbaranQuery == null || !lineasAlbaranQuery.Any())
+            {
+                throw new Exception($"No se encontraron líneas con estado ALBARAN (>= 2) para el albarán {numeroAlbaran}. Pedido: {cabPedido.Número}");
+            }
+
+            foreach (LinPedidoVta linea in lineasAlbaranQuery)
+            {
+                LineaFactura lineaNueva = new LineaFactura
+                {
+                    Albaran = (int)linea.Nº_Albarán,
+                    FechaAlbaran = (DateTime)linea.Fecha_Albarán,
+                    Cantidad = linea.Cantidad,
+                    Descripcion = linea.Texto?.Trim(),
+                    Descuento = ponerPrecios ? linea.SumaDescuentos : 0,
+                    Importe = ponerPrecios ? linea.Base_Imponible : 0,
+                    PrecioUnitario = ponerPrecios ? linea.Precio : 0,
+                    Producto = linea.Producto?.Trim(),
+                    Pedido = linea.Número,
+                    Estado = linea.Estado,
+                    Picking = linea.Picking ?? 0
+                };
+
+                if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    Producto producto = servicio.CargarProducto(linea.Empresa, linea.Producto);
+                    lineaNueva.Tamanno = producto.Tamaño;
+                    lineaNueva.UnidadMedida = producto.UnidadMedida?.Trim();
+                }
+                lineas.Add(lineaNueva);
+            }
+
+            decimal importeTotal = 0;
+
+            List<TotalFactura> totales = new List<TotalFactura>();
+            if (ponerPrecios)
+            {
+                var lineasAlbaran = cabPedido.LinPedidoVtas.Where(l => l.Nº_Albarán == numeroAlbaran && l.Estado >= Constantes.EstadosLineaVenta.ALBARAN);
+                var gruposTotal = lineasAlbaran.GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE });
+                foreach (var grupoTotal in gruposTotal)
+                {
+                    IEnumerable<LinPedidoVta> lineasGrupo = lineasAlbaran.Where(l => l.PorcentajeIVA == grupoTotal.Key.PorcentajeIVA && l.PorcentajeRE == grupoTotal.Key.PorcentajeRE);
+                    TotalFactura total = new TotalFactura
+                    {
+                        BaseImponible = lineasGrupo.Sum(l => l.Base_Imponible),
+                        ImporteIVA = Math.Round(lineasGrupo.Sum(l => l.ImporteIVA), 2, MidpointRounding.AwayFromZero),
+                        ImporteRecargoEquivalencia = Math.Round(lineasGrupo.Sum(l => l.ImporteRE), 2, MidpointRounding.AwayFromZero),
+                        PorcentajeIVA = grupoTotal.Key.PorcentajeIVA / 100M,
+                        PorcentajeRecargoEquivalencia = grupoTotal.Key.PorcentajeRE
+                    };
+                    totales.Add(total);
+                    importeTotal += total.BaseImponible + total.ImporteIVA + total.ImporteRecargoEquivalencia;
+                }
+            }
+
+            List<VendedorFactura> vendedores = servicio.CargarVendedoresPedido(empresa, cabPedido.Número);
+
+            // Los albaranes no tienen vencimientos
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>();
+
+            Factura albaran = new Factura
+            {
+                Cliente = cabPedido.Nº_Cliente.Trim(),
+                Comentarios = cabPedido?.Comentarios?.Trim(),
+                CorreoDesde = serieFactura.CorreoDesdeFactura,
+                Delegacion = primeraLinea?.Delegación?.Trim(),
+                Direcciones = direcciones,
+                DatosRegistrales = empresaAlbaran.TextoFactura?.Trim(),
+                Fecha = primeraLinea?.Fecha_Albarán ?? DateTime.Today,
+                ImporteTotal = importeTotal,
+                Lineas = lineas,
+                Nif = clienteRazonSocial.CIF_NIF?.Trim(),
+                NotasAlPie = serieFactura.Notas,
+                NumeroFactura = numeroAlbaran.ToString(),
+                Ruta = cabPedido.Ruta?.Trim(),
+                RutaInforme = serieFactura.RutaInforme,
+                Serie = cabPedido.Serie?.Trim(),
+                TipoDocumento = Constantes.Facturas.TiposDocumento.ALBARAN,
+                Totales = totales,
+                Vendedores = vendedores,
+                Vencimientos = vencimientos
+            };
+
+            return albaran;
         }
         public async Task<IEnumerable<FacturaCorreo>> EnviarFacturasPorCorreo(DateTime dia)
         {

@@ -135,6 +135,7 @@ namespace NestoAPI.Models
                 public const string FACTURA_PROFORMA = "FACTURA PROFORMA";
                 public const string PEDIDO = "PEDIDO";
                 public const string NOTA_ENTREGA = "NOTA DE ENTREGA";
+                public const string ALBARAN = "ALBARÁN";
             }
         }
 

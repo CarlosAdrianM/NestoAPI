@@ -27,6 +27,11 @@ namespace NestoAPI.Infraestructure.Facturas
             return db.CabPedidoVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroPedido);
         }
 
+        public CabPedidoVta CargarCabPedidoPorAlbaran(string empresa, int numeroAlbaran)
+        {
+            return db.CabPedidoVtas.FirstOrDefault(c => c.Empresa == empresa && c.LinPedidoVtas.Any(l => l.Nº_Albarán == numeroAlbaran));
+        }
+
         public Cliente CargarCliente(string empresa, string numeroCliente, string contacto)
         {
             return db.Clientes.Single(c => c.Empresa == empresa && c.Nº_Cliente == numeroCliente && c.Contacto == contacto);

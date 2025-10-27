@@ -1,11 +1,12 @@
 {
   "permissions": {
     "allow": [
-      "Bash(dotnet:*)",
-      "Bash(msbuild:*)",
-      "Read(//c/Users/Carlos/source/repos/**)",
-      "Bash(timeout 120 dotnet test:*)",
-      "Bash(echo:*)"
+      "Bash(dir:*)",
+      "Bash(cat:*)",
+      "Bash(for file in FacturaGB.rdlc FacturaUL.rdlc FacturaVC.rdlc)",
+      "Bash(do echo \"=== $file ===\")",
+      "Bash(done)",
+      "Read(//c/Users/Carlos/source/repos/Nesto/**)"
     ],
     "deny": [],
     "ask": []

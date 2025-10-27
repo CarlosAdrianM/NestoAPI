@@ -1488,7 +1488,7 @@
               <Paragraph>
                 <TextRuns>
                   <TextRun>
-                    <Value>=iif(First(Fields!TipoDocumento.Value, "Facturas")="PEDIDO","Nº Pedido","Nº Factura")</Value>
+                    <Value>=iif(First(Fields!TipoDocumento.Value, "Facturas")="PEDIDO","Nº Pedido",iif(First(Fields!TipoDocumento.Value, "Facturas")="ALBARÁN","Nº Albarán","Nº Factura"))</Value>
                     <Style />
                   </TextRun>
                 </TextRuns>
@@ -1954,7 +1954,7 @@
           </TablixMembers>
         </TablixRowHierarchy>
         <DataSetName>Vencimientos</DataSetName>
-        <Top>11.74745cm</Top>
+        <Top>12.27078cm</Top>
         <Height>1.2cm</Height>
         <Width>18.39828cm</Width>
         <ZIndex>4</ZIndex>
@@ -1963,7 +1963,12 @@
             <Style>None</Style>
           </Border>
         </Style>
+        <Visibility>
+          <Hidden>=First(Fields!TipoDocumento.Value, "Facturas") = "ALBARÁN"</Hidden>
+        </Visibility>
       </Tablix>
+      <Rectangle Name="RectangleTotales">
+        <ReportItems>
       <Tablix Name="Tablix5">
         <TablixBody>
           <TablixColumns>
@@ -2344,10 +2349,10 @@
           </TablixMembers>
         </TablixRowHierarchy>
         <DataSetName>Totales</DataSetName>
-        <Top>10.27078cm</Top>
+        <Top>0cm</Top>
         <Height>1.2cm</Height>
         <Width>14.61434cm</Width>
-        <ZIndex>5</ZIndex>
+        <ZIndex>1</ZIndex>
         <Style>
           <Border>
             <Style>None</Style>
@@ -2356,7 +2361,7 @@
       </Tablix>
       <Textbox Name="Textbox21">
         <CanGrow>true</CanGrow>
-        <KeepTogether>true</KeepTogether>
+        <KeepTogether>false</KeepTogether>
         <Paragraphs>
           <Paragraph>
             <TextRuns>
@@ -2373,11 +2378,11 @@
           </Paragraph>
         </Paragraphs>
         <rd:DefaultName>Textbox12</rd:DefaultName>
-        <Top>10.27988cm</Top>
+        <Top>0.0091cm</Top>
         <Left>14.67323cm</Left>
         <Height>0.6cm</Height>
         <Width>3.72505cm</Width>
-        <ZIndex>6</ZIndex>
+        <ZIndex>2</ZIndex>
         <Style>
           <Border>
             <Style>Solid</Style>
@@ -2391,7 +2396,7 @@
       </Textbox>
       <Textbox Name="NumeroFactura2">
         <CanGrow>true</CanGrow>
-        <KeepTogether>true</KeepTogether>
+        <KeepTogether>false</KeepTogether>
         <Paragraphs>
           <Paragraph>
             <TextRuns>
@@ -2410,11 +2415,11 @@
           </Paragraph>
         </Paragraphs>
         <rd:DefaultName>NumeroFactura</rd:DefaultName>
-        <Top>10.87078cm</Top>
+        <Top>0.6cm</Top>
         <Left>14.67323cm</Left>
         <Height>0.6cm</Height>
         <Width>3.72505cm</Width>
-        <ZIndex>7</ZIndex>
+        <ZIndex>3</ZIndex>
         <Style>
           <Border>
             <Style>Solid</Style>
@@ -2426,6 +2431,18 @@
           <rd:FormatSymbolCulture>es-ES</rd:FormatSymbolCulture>
         </Style>
       </Textbox>
+        </ReportItems>
+        <KeepTogether>true</KeepTogether>
+        <Top>10.27078cm</Top>
+        <Height>1.8cm</Height>
+        <Width>18.39828cm</Width>
+        <ZIndex>5</ZIndex>
+        <Style>
+          <Border>
+            <Style>None</Style>
+          </Border>
+        </Style>
+      </Rectangle>
       <Tablix Name="Tablix3">
         <TablixBody>
           <TablixColumns>
@@ -2566,6 +2583,9 @@
               <Style>None</Style>
             </Border>
           </Style>
+          <Visibility>
+            <Hidden>=Parameters!PapelConMembrete.Value</Hidden>
+          </Visibility>
         </Image>
         <Textbox Name="Nombre">
           <CanGrow>true</CanGrow>
@@ -2776,6 +2796,9 @@
             <PaddingTop>2pt</PaddingTop>
             <PaddingBottom>2pt</PaddingBottom>
           </Style>
+          <Visibility>
+            <Hidden>=Parameters!PapelConMembrete.Value</Hidden>
+          </Visibility>
         </Textbox>
       </ReportItems>
       <Style>
@@ -3187,6 +3210,17 @@
       </rd:DataSetInfo>
     </DataSet>
   </DataSets>
+  <ReportParameters>
+    <ReportParameter Name="PapelConMembrete">
+      <DataType>Boolean</DataType>
+      <DefaultValue>
+        <Values>
+          <Value>false</Value>
+        </Values>
+      </DefaultValue>
+      <Prompt>Papel con membrete</Prompt>
+    </ReportParameter>
+  </ReportParameters>
   <EmbeddedImages>
     <EmbeddedImage Name="NV_factura">
       <MIMEType>image/png</MIMEType>

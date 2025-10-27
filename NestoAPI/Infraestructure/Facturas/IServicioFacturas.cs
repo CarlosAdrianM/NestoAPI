@@ -13,6 +13,7 @@ namespace NestoAPI.Infraestructure.Facturas
         Cliente CargarClientePrincipal(string empresa, string numeroCliente);
         CabFacturaVta CargarCabFactura(string empresa, string numeroFactura);
         CabPedidoVta CargarCabPedido(string empresa, int numeroPedido);
+        CabPedidoVta CargarCabPedidoPorAlbaran(string empresa, int numeroAlbaran);
         Empresa CargarEmpresa(string numeroEmpresa);
         Producto CargarProducto(string empresa, string numeroProducto);
         List<VencimientoFactura> CargarVencimientosExtracto(string empresa, string cliente, string numeroFactura);
