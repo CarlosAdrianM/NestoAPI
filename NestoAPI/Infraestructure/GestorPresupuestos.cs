@@ -335,15 +335,16 @@ namespace NestoAPI.Infraestructure
                     faltaStockDeAlgo = true;
                 }
                 // Carlos 23/10/25: En modificaciones, si la línea TENÍA reservas antes pero ya NO las necesita, informar
+                // Carlos 28/10/25: FIX - Verificar SIEMPRE si antes necesitaba reservas, no solo cuando cambió algo
                 else if (tipoCorreo == "Modificación" && linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !linea.EsLineaNueva)
                 {
-                    // Solo verificar si cambió algo (producto o cantidad)
-                    if (linea.CambioProducto || (linea.CantidadAnterior.HasValue && linea.CantidadAnterior.Value != linea.Cantidad))
+                    // Verificar si ANTES necesitaba reservas (solo si tenemos CantidadAnterior)
+                    if (linea.CantidadAnterior.HasValue)
                     {
                         string productoAnterior = linea.CambioProducto ? linea.ProductoAnterior : linea.Producto;
-                        int cantidadAnterior = linea.CantidadAnterior ?? linea.Cantidad;
+                        int cantidadAnterior = linea.CantidadAnterior.Value;
 
-                        // Verificar si ANTES necesitaba reservas
+                        // Calcular si ANTES necesitaba reservas
                         int stockAlmacenAntes = gestorStocks.Stock(productoAnterior, linea.almacen);
                         int pendientesTotalesAntes = servicioGestorStocks.UnidadesPendientesEntregarAlmacen(productoAnterior, linea.almacen);
                         // Restar la cantidad actual del pedido para calcular pendientes de otros pedidos
@@ -355,6 +356,10 @@ namespace NestoAPI.Infraestructure
                         {
                             // Antes SÍ necesitaba reservas, pero ahora NO (ya que colorCantidad != "DeepPink")
                             // Informar al almacén que debe LIBERAR reservas
+                            // Esto puede pasar por:
+                            // 1. Cambió el producto o la cantidad
+                            // 2. Llegó stock al almacén principal
+                            // 3. Se liberaron otros pedidos
                             textoReserva = GenerarTextoLiberarReservas(linea, productoAnterior, cantidadAnterior, gestorStocks, servicioGestorStocks);
                         }
                     }
@@ -854,10 +859,15 @@ namespace NestoAPI.Infraestructure
                 // Se eliminó la línea (cantidad = 0)
                 _ = textoLiberar.Append($"{cantidadAnterior} uds ELIMINADAS");
             }
+            else if (cantidadAnterior != linea.Cantidad)
+            {
+                // Cambió la cantidad (disminuyó o aumentó)
+                _ = textoLiberar.Append($"Antes: {cantidadAnterior} uds → Ahora: {linea.Cantidad} uds");
+            }
             else
             {
-                // Solo cambió la cantidad (disminuyó o ahora hay stock suficiente)
-                _ = textoLiberar.Append($"Antes: {cantidadAnterior} uds → Ahora: {linea.Cantidad} uds");
+                // Carlos 28/10/25: NO cambió nada en la línea, pero llegó stock al almacén principal
+                _ = textoLiberar.Append($"{linea.Cantidad} uds - Stock disponible en almacén principal");
             }
 
             _ = textoLiberar.Append("</strong>");

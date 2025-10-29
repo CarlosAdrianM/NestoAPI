@@ -6,7 +6,9 @@
       "Bash(for file in FacturaGB.rdlc FacturaUL.rdlc FacturaVC.rdlc)",
       "Bash(do echo \"=== $file ===\")",
       "Bash(done)",
-      "Read(//c/Users/Carlos/source/repos/Nesto/**)"
+      "Read(//c/Users/Carlos/source/repos/Nesto/**)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet build:*)"
     ],
     "deny": [],
     "ask": []

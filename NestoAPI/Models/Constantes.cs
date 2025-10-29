@@ -176,6 +176,12 @@ namespace NestoAPI.Models
             public const string PERIODO_FACTURACION_FIN_DE_MES = "FDM";
             public const string PERIODO_FACTURACION_NORMAL = "NRM";
             public const string RUTA_GLOVO = "GLV";
+
+            // Rutas para facturación masiva
+            public const string RUTA_PROPIA_16 = "16";
+            public const string RUTA_PROPIA_AT = "AT";
+            public const string RUTA_AGENCIA_FW = "FW";
+            public const string RUTA_AGENCIA_00 = "00";
         }
         public static class PlazosPago
         {

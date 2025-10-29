@@ -457,6 +457,111 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         /// <summary>
+        /// Test que reproduce el bug de la columna Reservar vacía.
+        /// Escenario: Modificación de pedido donde una línea ANTES necesitaba reservas pero AHORA NO
+        /// - Antes: Producto 43228, cantidad 2, faltaba stock
+        /// - Ahora: Mismo producto, misma cantidad (2), YA NO falta stock
+        /// - La línea NO cambió (ni producto ni cantidad)
+        ///
+        /// BUG ORIGINAL:
+        /// - La lógica en GenerarTablaHTML (línea 341) solo verificaba si cambió producto o cantidad
+        /// - Si NO cambió nada, no se generaba texto de liberar → columna vacía
+        ///
+        /// FIX:
+        /// - Ahora verifica SIEMPRE si antes necesitaba reservas (línea 342 GestorPresupuestos.cs)
+        /// - Genera texto "Stock disponible en almacén principal" cuando no cambió nada (línea 869)
+        /// </summary>
+        [TestMethod]
+        public void GenerarTextoLiberar_DeberaMostrarMensajeCuandoNoHayCambiosEnLinea()
+        {
+            // Arrange
+            var pedido = new PedidoVentaDTO
+            {
+                empresa = "1",
+                numero = 901555,
+                cliente = "14375",
+                contacto = "1",
+                fecha = new DateTime(2025, 10, 27),
+                vendedor = "V01",
+                EsPresupuesto = false
+            };
+
+            // Línea que NO cambió (ni producto ni cantidad)
+            var linea = new LineaPedidoVentaDTO
+            {
+                id = 1,
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "43228",
+                Cantidad = 2,
+                CantidadAnterior = 2, // NO cambió
+                ProductoAnterior = null, // NO cambió
+                almacen = Constantes.Almacenes.ALGETE,
+                estado = Constantes.EstadosLineaVenta.PENDIENTE
+            };
+
+            pedido.Lineas = new List<LineaPedidoVentaDTO> { linea };
+
+            // Mock del servicio de stocks
+            var servicioGestorStocks = A.Fake<IServicioGestorStocks>();
+
+            // Configurar stocks para que ANTES faltara (faltante > 0)
+            // Stock físico = 1, Pendientes = 2 (este pedido)
+            // Disponible = Stock(1) - PendientesOtros(0) = 1
+            // Faltante = CantidadAnterior(2) - Disponible(1) = 1 > 0 ✓
+            A.CallTo(() => servicioGestorStocks.UnidadesPendientesEntregarAlmacen("43228", Constantes.Almacenes.ALGETE))
+                .Returns(2);
+            A.CallTo(() => servicioGestorStocks.Stock("43228", Constantes.Almacenes.ALGETE))
+                .Returns(1);
+
+            // Stock en otros almacenes (para que haya almacenes con reservas)
+            A.CallTo(() => servicioGestorStocks.UnidadesPendientesEntregarAlmacen("43228", Constantes.Almacenes.REINA))
+                .Returns(0);
+            A.CallTo(() => servicioGestorStocks.Stock("43228", Constantes.Almacenes.REINA))
+                .Returns(2);
+
+            A.CallTo(() => servicioGestorStocks.UnidadesPendientesEntregarAlmacen("43228", Constantes.Almacenes.ALCOBENDAS))
+                .Returns(0);
+            A.CallTo(() => servicioGestorStocks.Stock("43228", Constantes.Almacenes.ALCOBENDAS))
+                .Returns(1);
+
+            var gestorStocks = new GestorStocks(servicioGestorStocks);
+            var db = A.Fake<NVEntities>();
+            var servicioVendedores = A.Fake<IServicioVendedores>();
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+
+            var gestor = new GestorPresupuestos(
+                pedido,
+                null,
+                db,
+                servicioVendedores,
+                servicioGestorStocks,
+                servicioCorreo
+            );
+
+            // Act - Llamar directamente a GenerarTextoLiberarReservas
+            string textoLiberar = gestor.GenerarTextoLiberarReservas(
+                linea,
+                "43228", // productoAnterior (mismo producto)
+                2, // cantidadAnterior (misma cantidad)
+                gestorStocks,
+                servicioGestorStocks
+            );
+
+            // Assert
+            Assert.IsFalse(string.IsNullOrWhiteSpace(textoLiberar),
+                $"DEBERÍA generar texto de liberar. Resultado: '{textoLiberar}'");
+
+            Assert.IsTrue(textoLiberar.Contains("LIBERAR"),
+                $"Debe contener 'LIBERAR'. Resultado: {textoLiberar}");
+
+            Assert.IsTrue(textoLiberar.Contains("Stock disponible en almacén principal"),
+                $"Debe indicar que hay stock disponible. Resultado: {textoLiberar}");
+
+            Assert.IsTrue(textoLiberar.Contains("2 uds"),
+                $"Debe mostrar la cantidad (2 uds). Resultado: {textoLiberar}");
+        }
+
+        /// <summary>
         /// Test que verifica que NO se añaden almacenes para enviar correos si no hay stock disponible.
         /// Escenario: Pedido con línea que necesita reservas PERO no hay stock en otros almacenes
         /// - Línea con stock insuficiente en ALG
