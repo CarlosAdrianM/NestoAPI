@@ -828,6 +828,33 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="ExtractoRuta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº Orden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nº Orden" Type="int" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Contacto" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="CodPostal" Type="char" MaxLength="15" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
+          <Property Name="Nº Documento" Type="char" MaxLength="10" Nullable="false" />
+          <Property Name="Efecto" Type="char" MaxLength="3" />
+          <Property Name="Concepto" Type="char" MaxLength="50" />
+          <Property Name="Importe" Type="money" Nullable="false" />
+          <Property Name="ImportePdte" Type="money" Nullable="false" />
+          <Property Name="Delegación" Type="char" MaxLength="3" />
+          <Property Name="FormaVenta" Type="char" MaxLength="3" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" />
+          <Property Name="FechaVto" Type="datetime" />
+          <Property Name="FormaPago" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Ruta" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Estado" Type="tinyint" Nullable="false" />
+          <Property Name="TipoRuta" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="Familias">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -1149,6 +1176,18 @@
           <Property Name="Comentarios" Type="nvarchar" MaxLength="369" Nullable="false" />
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <!--Errores durante la generación:
+advertencia 6002: La tabla o vista 'NV.dbo.NotasEntrega' no tiene definida ninguna clave principal. Se ha inferido la clave y la definición se creado como una vista o tabla de solo lectura.-->
+        <EntityType Name="NotasEntrega">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+            <PropertyRef Name="NotaEntrega" />
+            <PropertyRef Name="Fecha" />
+          </Key>
+          <Property Name="NºOrden" Type="int" Nullable="false" />
+          <Property Name="NotaEntrega" Type="int" Nullable="false" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
         </EntityType>
         <EntityType Name="OfertasCombinadas">
           <Key>
@@ -3302,6 +3341,88 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_ExtractoRuta_CódigosPostales">
+          <End Role="CódigosPostales" Type="Self.CódigosPostales" Multiplicity="0..1" />
+          <End Role="ExtractoRuta" Type="Self.ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CódigosPostales">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CodPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="ExtractoRuta" Type="Self.ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_FormasPago">
+          <End Role="FormasPago" Type="Self.FormasPago" Multiplicity="1" />
+          <End Role="ExtractoRuta" Type="Self.ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_FormasVenta">
+          <End Role="FormasVenta" Type="Self.FormasVenta" Multiplicity="0..1" />
+          <End Role="ExtractoRuta" Type="Self.ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormasVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaVenta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_Rutas1">
+          <End Role="Rutas" Type="Self.Rutas" Multiplicity="1" />
+          <End Role="ExtractoRuta" Type="Self.ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Rutas">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Ruta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_Vendedores">
+          <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="0..1" />
+          <End Role="ExtractoRuta" Type="Self.ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedores">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Familias_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="Familias" Type="Self.Familias" Multiplicity="*" />
@@ -4866,6 +4987,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="ExtractoCliente" EntityType="Self.ExtractoCliente" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ExtractoProducto" EntityType="Self.ExtractoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ExtractoProveedor" EntityType="Self.ExtractoProveedor" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ExtractoRuta" EntityType="Self.ExtractoRuta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Familias" EntityType="Self.Familias" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FicheroCuaderno43" EntityType="Self.FicheroCuaderno43" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
@@ -4912,6 +5034,13 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="VendedorLinPedidoVta" EntityType="Self.VendedorLinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Videos" EntityType="Self.Videos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VideosProductos" EntityType="Self.VideosProductos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" store:Type="Tables" store:Schema="dbo">
+            <DefiningQuery>SELECT 
+    [NotasEntrega].[NºOrden] AS [NºOrden], 
+    [NotasEntrega].[NotaEntrega] AS [NotaEntrega], 
+    [NotasEntrega].[Fecha] AS [Fecha]
+    FROM [dbo].[NotasEntrega] AS [NotasEntrega]</DefiningQuery>
+          </EntitySet>
           <EntitySet Name="RentingFacturas" EntityType="Self.RentingFacturas" store:Type="Tables" store:Schema="dbo">
             <DefiningQuery>SELECT 
     [RentingFacturas].[Numero] AS [Numero]
@@ -5381,6 +5510,30 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_ExtractoProveedor_Proveedores" Association="Self.FK_ExtractoProveedor_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="ExtractoProveedor" EntitySet="ExtractoProveedor" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_CódigosPostales" Association="Self.FK_ExtractoRuta_CódigosPostales">
+            <End Role="CódigosPostales" EntitySet="CódigosPostales" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRuta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_Empresas" Association="Self.FK_ExtractoRuta_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRuta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_FormasPago" Association="Self.FK_ExtractoRuta_FormasPago">
+            <End Role="FormasPago" EntitySet="FormasPago" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRuta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_FormasVenta" Association="Self.FK_ExtractoRuta_FormasVenta">
+            <End Role="FormasVenta" EntitySet="FormasVenta" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRuta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_Rutas1" Association="Self.FK_ExtractoRuta_Rutas1">
+            <End Role="Rutas" EntitySet="Rutas" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRuta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_Vendedores" Association="Self.FK_ExtractoRuta_Vendedores">
+            <End Role="Vendedores" EntitySet="Vendedores" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRuta" />
           </AssociationSet>
           <AssociationSet Name="FK_Familias_Empresas" Association="Self.FK_Familias_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -6832,6 +6985,32 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="VendedorPedidoGrupoProducto" EntitySet="VendedoresPedidosGruposProductos" />
           </AssociationSet>
           <EntitySet Name="LogVideosProductos" EntityType="NVModel.LogVideoProducto" />
+          <EntitySet Name="ExtractoRutas" EntityType="NVModel.ExtractoRuta" />
+          <EntitySet Name="NotasEntregas" EntityType="NVModel.NotasEntrega" />
+          <AssociationSet Name="FK_ExtractoRuta_CódigosPostales" Association="NVModel.FK_ExtractoRuta_CódigosPostales">
+            <End Role="CodigoPostal" EntitySet="CodigosPostales" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_Empresas" Association="NVModel.FK_ExtractoRuta_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_FormasPago" Association="NVModel.FK_ExtractoRuta_FormasPago">
+            <End Role="FormaPago" EntitySet="FormasPago" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_FormasVenta" Association="NVModel.FK_ExtractoRuta_FormasVenta">
+            <End Role="FormaVenta" EntitySet="FormasVenta" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_Rutas1" Association="NVModel.FK_ExtractoRuta_Rutas1">
+            <End Role="Ruta" EntitySet="Rutas" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ExtractoRuta_Vendedores" Association="NVModel.FK_ExtractoRuta_Vendedores">
+            <End Role="Vendedor" EntitySet="Vendedores" />
+            <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
+          </AssociationSet>
           </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -6991,6 +7170,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Kits" Relationship="NVModel.FK_KITS_Empresas" FromRole="Empresa" ToRole="Kit" />
           <NavigationProperty Name="CabAlbaránVta" Relationship="NVModel.FK_CabAlbaránVta_Empresas" FromRole="Empresa" ToRole="CabAlbaránVta" />
           <NavigationProperty Name="GruposProductoes" Relationship="NVModel.FK_GruposProducto_Empresas" FromRole="Empresa" ToRole="GruposProducto" />
+          <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_Empresas" FromRole="Empresa" ToRole="ExtractoRuta" />
           </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -7797,6 +7977,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_FormasPago" FromRole="FormaPago" ToRole="ExtractoCliente" />
           <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_FormasPago" FromRole="FormaPago" ToRole="CabFacturaVta" />
           <NavigationProperty Name="CabPedidoCmps" Relationship="NVModel.FK_CabPedidoCmp_FormasPago" FromRole="FormaPago" ToRole="CabPedidoCmp" />
+          <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_FormasPago" FromRole="FormaPago" ToRole="ExtractoRuta" />
         </EntityType>
         <EntityType Name="PlazoPago">
           <Key>
@@ -8529,6 +8710,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_FormasVenta" FromRole="FormaVenta" ToRole="ExtractoCliente" />
           <NavigationProperty Name="LinPedidoCmps" Relationship="NVModel.FK_LinPedidoCmp_FormasVenta" FromRole="FormaVenta" ToRole="LinPedidoCmp" />
           <NavigationProperty Name="PreExtrProductoes" Relationship="NVModel.FK_PreExtrProducto_FormasVenta" FromRole="FormaVenta" ToRole="PreExtrProducto" />
+          <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_FormasVenta" FromRole="FormaVenta" ToRole="ExtractoRuta" />
         </EntityType>
         <Association Name="FK_Empresas_FormasVenta">
           <End Type="NVModel.FormaVenta" Role="FormasVenta" Multiplicity="0..1" />
@@ -9021,6 +9203,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Rutas_Empresas" FromRole="Ruta" ToRole="Empresa" />
           <NavigationProperty Name="ExtractoClientes" Relationship="NVModel.FK_ExtractoCliente_Rutas" FromRole="Ruta" ToRole="ExtractoCliente" />
           <NavigationProperty Name="AgenciasTransportes" Relationship="NVModel.FK_AgenciasTransporte_Rutas" FromRole="Ruta" ToRole="AgenciasTransporte" />
+          <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_Rutas1" FromRole="Ruta" ToRole="ExtractoRuta" />
         </EntityType>
         <Association Name="FK_Rutas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -9600,6 +9783,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="EquiposVentas" Relationship="NVModel.FK_EquiposVenta_Vendedores" FromRole="Vendedor" ToRole="EquiposVenta" />
           <NavigationProperty Name="EquiposVentas1" Relationship="NVModel.FK_EquiposVenta_Vendedores1" FromRole="Vendedor" ToRole="EquiposVenta" />
           <NavigationProperty Name="VendedorLinPedidoVtas" Relationship="NVModel.FK_VendedorLinPedidoVta_Vendedores" FromRole="Vendedor" ToRole="VendedorLinPedidoVta" />
+          <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_Vendedores" FromRole="Vendedor" ToRole="ExtractoRuta" />
         </EntityType>
         <Association Name="FK_Clientes_Vendedores">
           <End Type="NVModel.Vendedor" Role="Vendedore" Multiplicity="0..1" />
@@ -10359,6 +10543,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Empresas" Relationship="NVModel.FK_Empresas_CódigosPostales" FromRole="CódigosPostales" ToRole="Empresa" />
           <NavigationProperty Name="Proveedores" Relationship="NVModel.FK_Proveedores_CódigosPostales" FromRole="CódigosPostales" ToRole="Proveedor" />
           <NavigationProperty Name="VendedoresCodigoPostalGrupoProductoes" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_CódigosPostales" FromRole="CodigoPostal" ToRole="VendedoresCodigoPostalGrupoProducto" />
+          <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_CódigosPostales" FromRole="CodigoPostal" ToRole="ExtractoRuta" />
         </EntityType>
         <Association Name="FK_Clientes_CódigosPostales">
           <End Type="NVModel.CodigoPostal" Role="CódigosPostales" Multiplicity="0..1" />
@@ -12047,6 +12232,131 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaCambio" Type="DateTime" Nullable="false" Precision="7" />
           <Property Name="Observaciones" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
         </EntityType>
+        <EntityType Name="ExtractoRuta">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº_Orden" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Orden" Type="Int32" Nullable="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="CodPostal" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Nº_Documento" Type="String" Nullable="false" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Efecto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Concepto" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Importe" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="ImportePdte" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Delegación" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FormaVenta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="FechaVto" Type="DateTime" Precision="3" />
+          <Property Name="FormaPago" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Ruta" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Estado" Type="Byte" Nullable="false" />
+          <Property Name="TipoRuta" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="CódigosPostales" Relationship="NVModel.FK_ExtractoRuta_CódigosPostales" FromRole="ExtractoRuta" ToRole="CodigoPostal" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_ExtractoRuta_Empresas" FromRole="ExtractoRuta" ToRole="Empresa" />
+          <NavigationProperty Name="FormasPago" Relationship="NVModel.FK_ExtractoRuta_FormasPago" FromRole="ExtractoRuta" ToRole="FormaPago" />
+          <NavigationProperty Name="FormasVenta" Relationship="NVModel.FK_ExtractoRuta_FormasVenta" FromRole="ExtractoRuta" ToRole="FormaVenta" />
+          <NavigationProperty Name="Ruta1" Relationship="NVModel.FK_ExtractoRuta_Rutas1" FromRole="ExtractoRuta" ToRole="Ruta" />
+          <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_ExtractoRuta_Vendedores" FromRole="ExtractoRuta" ToRole="Vendedor" />
+        </EntityType>
+        <EntityType Name="NotasEntrega">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+            <PropertyRef Name="NotaEntrega" />
+            <PropertyRef Name="Fecha" />
+          </Key>
+          <Property Name="NºOrden" Type="Int32" Nullable="false" />
+          <Property Name="NotaEntrega" Type="Int32" Nullable="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+        </EntityType>
+        <Association Name="FK_ExtractoRuta_CódigosPostales">
+          <End Type="NVModel.CodigoPostal" Role="CodigoPostal" Multiplicity="0..1" />
+          <End Type="NVModel.ExtractoRuta" Role="ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="CodigoPostal">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="CodPostal" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.ExtractoRuta" Role="ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_FormasPago">
+          <End Type="NVModel.FormaPago" Role="FormaPago" Multiplicity="1" />
+          <End Type="NVModel.ExtractoRuta" Role="ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormaPago">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_FormasVenta">
+          <End Type="NVModel.FormaVenta" Role="FormaVenta" Multiplicity="0..1" />
+          <End Type="NVModel.ExtractoRuta" Role="ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="FormaVenta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="FormaVenta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_Rutas1">
+          <End Type="NVModel.Ruta" Role="Ruta" Multiplicity="1" />
+          <End Type="NVModel.ExtractoRuta" Role="ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Ruta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Ruta" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ExtractoRuta_Vendedores">
+          <End Type="NVModel.Vendedor" Role="Vendedor" Multiplicity="0..1" />
+          <End Type="NVModel.ExtractoRuta" Role="ExtractoRuta" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Vendedor">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ExtractoRuta">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Vendedor" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -13858,6 +14168,42 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="CampoModificado" ColumnName="CampoModificado" />
                 <ScalarProperty Name="VideoProductoId" ColumnName="VideoProductoId" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="ExtractoRutas">
+            <EntityTypeMapping TypeName="NVModel.ExtractoRuta">
+              <MappingFragment StoreEntitySet="ExtractoRuta">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="TipoRuta" ColumnName="TipoRuta" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Ruta" ColumnName="Ruta" />
+                <ScalarProperty Name="FormaPago" ColumnName="FormaPago" />
+                <ScalarProperty Name="FechaVto" ColumnName="FechaVto" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="FormaVenta" ColumnName="FormaVenta" />
+                <ScalarProperty Name="Delegación" ColumnName="Delegación" />
+                <ScalarProperty Name="ImportePdte" ColumnName="ImportePdte" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="Concepto" ColumnName="Concepto" />
+                <ScalarProperty Name="Efecto" ColumnName="Efecto" />
+                <ScalarProperty Name="Nº_Documento" ColumnName="Nº Documento" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="CodPostal" ColumnName="CodPostal" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Nº_Orden" ColumnName="Nº Orden" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="NotasEntregas">
+            <EntityTypeMapping TypeName="NVModel.NotasEntrega">
+              <MappingFragment StoreEntitySet="NotasEntrega">
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="NotaEntrega" ColumnName="NotaEntrega" />
+                <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

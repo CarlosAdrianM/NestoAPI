@@ -474,6 +474,7 @@
     <Compile Include="Controllers\ExtractoProveedoresController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
     <Compile Include="Controllers\FacturasController.cs" />
+    <Compile Include="Controllers\FacturacionRutasController.cs" />
     <Compile Include="Controllers\FormasPagoController.cs" />
     <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
@@ -481,6 +482,7 @@
     <Compile Include="Controllers\InventariosController.cs" />
     <Compile Include="Controllers\ParametrosIvaController.cs" />
     <Compile Include="Controllers\TokenRefreshController.cs" />
+    <Compile Include="Controllers\SyncWebhookController.cs" />
     <Compile Include="Controllers\VentasClienteController.cs" />
     <Compile Include="Controllers\VideosController.cs" />
     <Compile Include="Controllers\VideosProductosController.cs" />
@@ -537,6 +539,8 @@
     <Compile Include="Infraestructure\GestorClientes.cs" />
     <Compile Include="Infraestructure\GestorComisiones.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturas.cs" />
+    <Compile Include="Infraestructure\Facturas\GestorFacturacionRutas.cs" />
+    <Compile Include="Infraestructure\Facturas\IGestorFacturacionRutas.cs" />
     <Compile Include="Infraestructure\GestorPrecios.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\OtrosAparatosNoPuedeLlevarDescuento.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\RamasonNoPuedeLlevarNingunDescuento.cs" />
@@ -549,6 +553,8 @@
     <Compile Include="Infraestructure\IGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioAgencias.cs" />
     <Compile Include="Infraestructure\Facturas\IServicioFacturas.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\IServicioNotasEntrega.cs" />
+    <Compile Include="Infraestructure\ExtractosRuta\IServicioExtractoRuta.cs" />
     <Compile Include="Infraestructure\IServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
@@ -563,6 +569,8 @@
     <Compile Include="Infraestructure\Kits\UbicacionService.cs" />
     <Compile Include="Infraestructure\PedidosCompra\IPedidosCompraService.cs" />
     <Compile Include="Infraestructure\PedidosCompra\PedidosCompraService.cs" />
+    <Compile Include="Infraestructure\Pedidos\IServicioPedidosParaFacturacion.cs" />
+    <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacion.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
@@ -575,13 +583,21 @@
     <Compile Include="Infraestructure\SeEstaVendiendo\GestorSeEstaVendiendo.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
+    <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
+    <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
     <Compile Include="Infraestructure\ServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\ServicioPlantillaVenta.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
     <Compile Include="Infraestructure\ServicioReclamacionDeuda.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\ClienteChangeDetector.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\ClientesSyncHandler.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\ISyncTableHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SincronizacionEventWrapper.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\SyncTableRouter.cs" />
+    <Compile Include="Infraestructure\Traspasos\IServicioTraspasoEmpresa.cs" />
+    <Compile Include="Infraestructure\Traspasos\ServicioTraspasoEmpresa.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorOfertasPedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
@@ -635,6 +651,7 @@
     <Compile Include="Models\CabPedidoVta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\CabPedidoVta.Partial.cs" />
     <Compile Include="Models\CabRemesaPago.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -780,6 +797,10 @@
     <Compile Include="Models\ExtractoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\ExtractoRuta.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\ExtractoRuta.Partial.cs" />
     <Compile Include="Models\Domiciliaciones\EfectoDomiciliado.cs" />
     <Compile Include="Models\ExtractoProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
@@ -790,10 +811,26 @@
     <Compile Include="Models\Facturas\ClienteCorreoFactura.cs" />
     <Compile Include="Models\Facturas\DireccionFactura.cs" />
     <Compile Include="Models\Facturas\Factura.cs" />
+    <Compile Include="Models\Facturas\AlbaranCreadoDTO.cs" />
+    <Compile Include="Models\Facturas\DocumentoCreadoDTO.cs" />
+    <Compile Include="Models\Facturas\DocumentoImprimibleDTO.cs" />
+    <Compile Include="Models\Facturas\DocumentoParaImprimir.cs" />
     <Compile Include="Models\Facturas\FacturaCorreo.cs" />
+    <Compile Include="Models\Facturas\FacturaCreadaDTO.cs" />
     <Compile Include="Models\Facturas\FacturaLookup.cs" />
+    <Compile Include="Models\Facturas\FacturarRutasRequestDTO.cs" />
+    <Compile Include="Models\Facturas\FacturarRutasResponseDTO.cs" />
     <Compile Include="Models\Facturas\ISerieFactura.cs" />
+    <Compile Include="Models\Facturas\ITipoRuta.cs" />
+    <Compile Include="Models\Facturas\RutaAgencia.cs" />
+    <Compile Include="Models\Facturas\RutaAlmacen.cs" />
+    <Compile Include="Models\Facturas\RutaPropia.cs" />
+    <Compile Include="Models\Facturas\TipoRutaFactory.cs" />
+    <Compile Include="Models\Facturas\TipoRutaInfoDTO.cs" />
+    <Compile Include="Models\Facturas\PedidoConErrorDTO.cs" />
+    <Compile Include="Models\Facturas\PreviewFacturacionRutasResponseDTO.cs" />
     <Compile Include="Models\Facturas\LineaFactura.cs" />
+    <Compile Include="Models\Facturas\NotaEntregaCreadaDTO.cs" />
     <Compile Include="Models\Facturas\NotaFactura.cs" />
     <Compile Include="Models\Facturas\SeriesFactura\SerieCV.cs" />
     <Compile Include="Models\Facturas\SeriesFactura\SerieEV.cs" />
@@ -845,6 +882,7 @@
     <Compile Include="Models\LinPedidoVta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\LinPedidoVta.Partial.cs" />
     <Compile Include="Models\LogVideoProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -855,6 +893,8 @@
     <Compile Include="Models\MovimientoTPV.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\NotaEntrega.cs" />
+    <Compile Include="Models\NotaEntrega.Partial.cs" />
     <Compile Include="Models\NestoDTO.cs" />
     <Compile Include="Models\NestoEntities.Context.cs">
       <AutoGen>True</AutoGen>
@@ -871,6 +911,7 @@
       <DesignTime>True</DesignTime>
       <DependentUpon>NestoEntities.edmx</DependentUpon>
     </Compile>
+    <Compile Include="Models\NVEntities.Partial.cs" />
     <Compile Include="Models\OfertaCombinada.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -1014,8 +1055,10 @@
     <Compile Include="Models\SeguimientoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Sincronizacion\ExternalSyncMessageDTO.cs" />
     <Compile Include="Models\Sincronizacion\GooglePubSubEventPublisher.cs" />
     <Compile Include="Models\Sincronizacion\ISincronizacionEventPublisher.cs" />
+    <Compile Include="Models\Sincronizacion\PubSubPushRequestDTO.cs" />
     <Compile Include="Models\SubGruposProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

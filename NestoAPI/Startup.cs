@@ -8,7 +8,12 @@ using Microsoft.Owin.Security.OAuth;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.AlbaranesVenta;
+using NestoAPI.Infraestructure.ExtractosRuta;
+using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Infraestructure.NotasEntrega;
+using NestoAPI.Infraestructure.Pedidos;
 using NestoAPI.Infraestructure.Sincronizacion;
+using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infraestructure.Videos;
 using NestoAPI.Models.Sincronizacion;
@@ -16,6 +21,7 @@ using NestoAPI.Providers;
 using Newtonsoft.Json.Serialization;
 using Owin;
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Data.Entity;
 using System.Linq;
@@ -29,32 +35,45 @@ namespace NestoAPI
 
         public void Configuration(IAppBuilder app)
         {
-            _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
+            try
+            {
+                _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
 
-            HttpConfiguration httpConfig = new HttpConfiguration();
+                HttpConfiguration httpConfig = new HttpConfiguration();
 
-            // Configurar el contenedor de dependencias
-            IServiceProvider serviceProvider = ConfigureServices();
-            // Configurar el DependencyResolver
-            httpConfig.DependencyResolver = new DependencyResolver(serviceProvider);
+                // Configurar el contenedor de dependencias
+                IServiceProvider serviceProvider = ConfigureServices();
+                // Configurar el DependencyResolver
+                httpConfig.DependencyResolver = new DependencyResolver(serviceProvider);
 
-            // Configurar WebApi y pasarle el contenedor de dependencias
-            WebApiConfig.Register(httpConfig);
+                // Configurar WebApi y pasarle el contenedor de dependencias
+                WebApiConfig.Register(httpConfig);
 
-            //// Configurar OWIN para usar el contenedor de dependencias
-            //app.Use((context, next) =>
-            //{
-            //    // Establecer el proveedor de servicios en el contexto de OWIN
-            //    context.Set<IServiceProvider>(serviceProvider);
-            //    return next();
-            //});
+                //// Configurar OWIN para usar el contenedor de dependencias
+                //app.Use((context, next) =>
+                //{
+                //    // Establecer el proveedor de servicios en el contexto de OWIN
+                //    context.Set<IServiceProvider>(serviceProvider);
+                //    return next();
+                //});
 
-            ConfigureOAuthTokenGeneration(app);
-            ConfigureOAuthTokenConsumption(app);
+                ConfigureOAuthTokenGeneration(app);
+                ConfigureOAuthTokenConsumption(app);
 
-            ConfigureWebApi(httpConfig);
+                ConfigureWebApi(httpConfig);
 
-            _ = app.UseWebApi(httpConfig);
+                _ = app.UseWebApi(httpConfig);
+            }
+            catch (Exception ex)
+            {
+                // Escribir el error en el log de eventos de Windows
+                System.Diagnostics.EventLog.WriteEntry("Application",
+                    $"Error en NestoAPI Startup: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}\n\nInner Exception:\n{ex.InnerException?.Message}",
+                    System.Diagnostics.EventLogEntryType.Error);
+
+                // Re-lanzar para que se vea en Visual Studio
+                throw;
+            }
         }
 
         private void ConfigureOAuthTokenGeneration(IAppBuilder app)
@@ -123,6 +142,23 @@ namespace NestoAPI
             _ = services.AddScoped<IServicioVideos, ServicioVideos>();
             _ = services.AddScoped<IServicioCorreoElectronico, ServicioCorreoElectronico>();
             _ = services.AddScoped<IServicioPlantillaVenta, ServicioPlantillaVenta>();
+
+            // Servicios de Facturación de Rutas
+            _ = services.AddScoped<IServicioPedidosParaFacturacion, ServicioPedidosParaFacturacion>();
+            _ = services.AddScoped<IGestorFacturacionRutas, GestorFacturacionRutas>();
+            _ = services.AddScoped<IServicioTraspasoEmpresa, ServicioTraspasoEmpresa>();
+            _ = services.AddScoped<IServicioNotasEntrega, ServicioNotasEntrega>();
+            _ = services.AddScoped<IServicioExtractoRuta, ServicioExtractoRuta>();
+
+            // Servicios de sincronización bidireccional (External Systems <-> Nesto)
+            // Push Subscription: usa SyncWebhookController
+            _ = services.AddSingleton<ISyncTableHandler, ClientesSyncHandler>();
+            _ = services.AddSingleton<SyncTableRouter>(sp =>
+            {
+                var handlers = sp.GetServices<ISyncTableHandler>();
+                return new SyncTableRouter(handlers);
+            });
+            _ = services.AddScoped<SyncWebhookController>();
 
             // Registrar el contexto de la base de datos
             _ = services.AddScoped<DbContext>(_ => new ApplicationDbContext());

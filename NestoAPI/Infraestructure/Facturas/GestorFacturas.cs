@@ -474,9 +474,9 @@ namespace NestoAPI.Infraestructure.Facturas
                         : LeerFactura(factura.Empresa, factura.Factura);
                     facturas.Add(nuevaFactura);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    continue;
+                    throw new Exception($"Error al leer la factura/pedido {factura.Factura} de la empresa {factura.Empresa}: {ex.Message}", ex);
                 }
 
             }

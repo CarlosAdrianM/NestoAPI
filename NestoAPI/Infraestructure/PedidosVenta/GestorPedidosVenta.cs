@@ -51,6 +51,28 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 CalcularImportesLinea(linea);
             }
         }
+
+        /// <summary>
+        /// Recalcula los importes (IVA, RE, Total) de todas las líneas de un pedido.
+        /// Útil cuando se cambia la empresa del pedido y hay que recalcular con los ParámetrosIVA de la nueva empresa.
+        /// </summary>
+        /// <param name="pedido">Pedido cuyas líneas se recalcularán</param>
+        public void RecalcularImportesLineasPedido(CabPedidoVta pedido)
+        {
+            if (pedido == null)
+                throw new ArgumentNullException(nameof(pedido));
+
+            if (pedido.LinPedidoVtas == null || !pedido.LinPedidoVtas.Any())
+                return; // No hay líneas que recalcular
+
+            string iva = pedido.IVA;
+
+            foreach (var linea in pedido.LinPedidoVtas)
+            {
+                CalcularImportesLinea(linea, iva);
+            }
+        }
+
         // Si pongo public, lo confunde con el método POST, porque solo llevan un parámetro
         public void CalcularImportesLinea(LinPedidoVta linea)
         {

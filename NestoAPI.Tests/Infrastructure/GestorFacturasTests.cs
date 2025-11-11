@@ -609,6 +609,70 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(primerVencimiento.AddMonths(plazoPago.MesesEntrePlazos), vtos[1].Vencimiento);
             Assert.AreEqual(primerVencimiento.AddMonths(plazoPago.MesesEntrePlazos*2), vtos[2].Vencimiento);
         }
+
+        [TestMethod]
+        [ExpectedException(typeof(Exception))]
+        public void GestorFacturas_LeerFacturas_CuandoVencimientosNoCuadranDebeLanzarExcepcion()
+        {
+            // Arrange
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabPedidoVta cab = A.Fake<CabPedidoVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            cab.Número = 12345;
+            cab.CCC = "1";
+            cab.Forma_Pago = "EFC";
+            cab.Fecha = new DateTime(2019, 11, 7);
+            cab.Primer_Vencimiento = new DateTime(2019, 11, 7);
+            cab.PlazosPago = "UnPlazo";
+
+            PlazoPago plazoPago = new PlazoPago { Número = "UnPlazo", Nº_Plazos = 1 };
+            A.CallTo(() => servicio.CargarPlazosPago(A<string>.Ignored, A<string>.Ignored)).Returns(plazoPago);
+
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Cantidad = 1,
+                Texto = "PRODUCTO ROJO",
+                Precio = 20,
+                Producto = "123345",
+                Base_Imponible = 16.52M,
+                ImporteIVA = 3.48M,
+                ImporteRE = 0,
+                Total = 20,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M,
+                Estado = Constantes.EstadosLineaVenta.PRESUPUESTO
+            };
+            cab.LinPedidoVtas.Add(linea);
+
+            A.CallTo(() => servicio.CargarCabPedido("1", 12345)).Returns(cab);
+
+            // Los efectos suman 15 en lugar de 20, generando un desbalance
+            List<EfectoPedidoVenta> efectos = new List<EfectoPedidoVenta>
+            {
+                new EfectoPedidoVenta
+                {
+                    Importe = 15M, // Mal: debería ser 20
+                    FechaVencimiento = new DateTime(2019, 11, 7),
+                    FormaPago = "EFC",
+                    CCC = "1"
+                }
+            };
+            A.CallTo(() => servicio.CargarEfectosPedido(A<string>.Ignored, A<int>.Ignored)).Returns(efectos);
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act - esto debería lanzar una excepción con el mensaje
+            // "No cuadran los vencimientos con el total de la factura"
+            List<FacturaLookup> facturas = new List<FacturaLookup>
+            {
+                new FacturaLookup { Empresa = "1", Factura = "12345" }
+            };
+
+            // Assert - ExpectedException debería capturar la excepción
+            gestor.LeerFacturas(facturas);
+        }
     }
 
 

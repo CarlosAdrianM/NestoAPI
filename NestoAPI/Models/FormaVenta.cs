@@ -23,6 +23,7 @@ namespace NestoAPI.Models
             this.ExtractoClientes = new HashSet<ExtractoCliente>();
             this.LinPedidoCmps = new HashSet<LinPedidoCmp>();
             this.PreExtrProductoes = new HashSet<PreExtrProducto>();
+            this.ExtractoRutas = new HashSet<ExtractoRuta>();
         }
     
         public string Empresa { get; set; }
@@ -40,5 +41,6 @@ namespace NestoAPI.Models
         public virtual ICollection<ExtractoCliente> ExtractoClientes { get; set; }
         public virtual ICollection<LinPedidoCmp> LinPedidoCmps { get; set; }
         public virtual ICollection<PreExtrProducto> PreExtrProductoes { get; set; }
+        public virtual ICollection<ExtractoRuta> ExtractoRutas { get; set; }
     }
 }

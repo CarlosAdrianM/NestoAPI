@@ -9,7 +9,12 @@ using System.Threading.Tasks;
 namespace NestoAPI.Infraestructure.Pedidos
 {
     /// <summary>
-    /// Implementación del servicio para obtener pedidos listos para facturar
+    /// Implementación del servicio para obtener pedidos listos para facturar.
+    ///
+    /// REFACTORIZACIÓN: Usa TipoRutaFactory para obtener dinámicamente las rutas
+    /// manejadas por cada tipo, eliminando constantes hardcodeadas.
+    ///
+    /// NUEVA VERSIÓN: Recibe string tipoRutaId en lugar de enum, permitiendo extensibilidad.
     /// </summary>
     public class ServicioPedidosParaFacturacion : IServicioPedidosParaFacturacion
     {
@@ -23,14 +28,27 @@ namespace NestoAPI.Infraestructure.Pedidos
         /// <summary>
         /// Obtiene los pedidos listos para facturar según el tipo de ruta y fecha de entrega.
         /// </summary>
+        /// <param name="tipoRutaId">Id del tipo de ruta (ej: "PROPIA", "AGENCIA")</param>
+        /// <param name="fechaEntregaDesde">Fecha desde la cual considerar pedidos</param>
+        /// <returns>Lista de pedidos que cumplen los criterios</returns>
         public async Task<List<CabPedidoVta>> ObtenerPedidosParaFacturar(
-            TipoRutaFacturacion tipoRuta,
+            string tipoRutaId,
             DateTime fechaEntregaDesde)
         {
-            // Determinar las rutas según el tipo
-            List<string> rutasABuscar = ObtenerRutasSegunTipo(tipoRuta);
+            // Validar que tipoRutaId no sea null o vacío
+            if (string.IsNullOrWhiteSpace(tipoRutaId))
+                throw new ArgumentException("El tipo de ruta no puede ser null o vacío", nameof(tipoRutaId));
+
+            // Obtener el tipo de ruta desde el factory
+            var tipoRuta = TipoRutaFactory.ObtenerPorId(tipoRutaId);
+            if (tipoRuta == null)
+                throw new ArgumentException($"Tipo de ruta '{tipoRutaId}' no encontrado en el factory", nameof(tipoRutaId));
+
+            // Obtener las rutas contenidas en este tipo
+            List<string> rutasABuscar = tipoRuta.RutasContenidas.ToList();
 
             // Query con todos los filtros
+            // NOTA: No se filtra por VtoBueno aquí, se valida en el procesamiento
             var pedidos = await db.CabPedidoVtas
                 .Include(p => p.LinPedidoVtas)
                 .Include(p => p.Cliente)
@@ -38,40 +56,13 @@ namespace NestoAPI.Infraestructure.Pedidos
                 .Where(p => p.LinPedidoVtas.Any(l =>
                     l.Estado == Constantes.EstadosLineaVenta.EN_CURSO &&
                     l.Picking != null &&
-                    l.Picking != 0))
-                .Where(p => p.Fecha >= fechaEntregaDesde)
-                .Where(p => p.VistoBueno == true)
+                    l.Picking > 0 &&
+                    l.Fecha_Entrega <= fechaEntregaDesde))
                 .OrderBy(p => p.Fecha)
                 .ThenBy(p => p.Número)
                 .ToListAsync();
 
             return pedidos;
-        }
-
-        /// <summary>
-        /// Devuelve la lista de códigos de ruta según el tipo de facturación
-        /// </summary>
-        private List<string> ObtenerRutasSegunTipo(TipoRutaFacturacion tipoRuta)
-        {
-            switch (tipoRuta)
-            {
-                case TipoRutaFacturacion.RutaPropia:
-                    return new List<string>
-                    {
-                        Constantes.Pedidos.RUTA_PROPIA_16,
-                        Constantes.Pedidos.RUTA_PROPIA_AT
-                    };
-
-                case TipoRutaFacturacion.RutasAgencias:
-                    return new List<string>
-                    {
-                        Constantes.Pedidos.RUTA_AGENCIA_FW,
-                        Constantes.Pedidos.RUTA_AGENCIA_00
-                    };
-
-                default:
-                    throw new ArgumentException($"Tipo de ruta no válido: {tipoRuta}", nameof(tipoRuta));
-            }
         }
     }
 }

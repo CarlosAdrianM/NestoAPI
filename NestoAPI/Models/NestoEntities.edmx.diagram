@@ -284,6 +284,26 @@
         <EntityTypeShape EntityType="NVModel.VideoProducto" Width="1.5" PointX="18.625" PointY="1.125" />
         <AssociationConnector Association="NVModel.FK_VideosProductos_Videos" />
         <EntityTypeShape EntityType="NVModel.LogVideoProducto" Width="1.5" PointX="11.375" PointY="14.75" />
+        <EntityTypeShape EntityType="NVModel.ExtractoRuta" Width="1.5" PointX="17.125" PointY="66.625" />
+        <EntityTypeShape EntityType="NVModel.NotasEntrega" Width="1.5" PointX="3.375" PointY="11.75" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_CódigosPostales" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasPago" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasVenta" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Rutas1" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_CódigosPostales" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasPago" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasVenta" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Rutas1" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Vendedores" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_CódigosPostales" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Empresas" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasPago" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasVenta" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Rutas1" />
+        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Vendedores" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

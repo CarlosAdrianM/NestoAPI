@@ -90,6 +90,7 @@ namespace NestoAPI.Models
         public static class DiariosProducto
         {
             public const string MONTAR_KIT = "_MontarKit";
+            public const string ENTREGA_FACTURADA = "_EntregFac";
         }
 
         public static class Empresas
@@ -105,6 +106,7 @@ namespace NestoAPI.Models
         public static class EstadosLineaVenta
         {
             public const int PRESUPUESTO = -3;
+            public const int NOTA_ENTREGA = -2;
             public const int PENDIENTE = -1;
             public const int EN_CURSO = 1;
             public const int ALBARAN = 2;
@@ -312,6 +314,11 @@ namespace NestoAPI.Models
                 public const string CLIENTE = "2";
                 public const string PROVEEDOR = "3";
             }
+        }
+
+        public static class ExtractoRuta
+        {
+            public const string TIPO_RUTA_PEDIDO = "P";
         }
     }
 }

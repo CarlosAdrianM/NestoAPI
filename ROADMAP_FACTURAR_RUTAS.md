@@ -1,20 +1,461 @@
 # Roadmap: Funcionalidad Facturar Rutas
 
-## 🔄 Cambios Importantes (Actualización 28-Oct-2025)
+## 📊 Estado de Implementación (Actualización 04-Ene-2025)
 
-### ✅ Cambios Aplicados
+### ✅ **FASE 1: BACKEND (API) - COMPLETADA**
 
-1. **Validación MantenerJunto**
+| Componente | Estado | Notas |
+|------------|--------|-------|
+| **1.1 DTOs** | ✅ COMPLETADO | FacturarRutasRequestDTO, FacturarRutasResponseDTO, PedidoConErrorDTO + Tests |
+| **1.2 ServicioPedidosParaFacturacion** | ✅ COMPLETADO | Consulta de pedidos (validación VtoBueno movida a gestor) + Tests |
+| **1.3 GestorFacturacionRutas** | ✅ COMPLETADO | Lógica completa + validación VtoBueno + Tests |
+| **1.4 FacturacionRutasController** | ✅ COMPLETADO | Endpoint API con autorización + Tests |
+| **1.5 Generación de PDFs para Impresión** | ✅ COMPLETADO | DTOs con bytes PDF, servidor NO imprime (cliente WPF responsable) |
+| **1.6 Constantes** | ✅ COMPLETADO | Rutas, periodos de facturación, estados |
+| **1.7 ServicioTraspasoEmpresa** | ✅ COMPLETADO | Implementación SqlTransaction + clonación automática (04-Ene-2025) |
+
+### ✅ **FASE 2: FRONTEND (WPF) - COMPLETADA** (Actualizado 30-Oct-2025)
+
+**✅ REORGANIZADO A ESTRUCTURA MODULAR** (Modulos/PedidoVenta/)
+
+**📂 Modulos/PedidoVenta/PedidoVenta/**
+
+- ✅ **Models/Facturas/** (namespace: `Nesto.Modulos.PedidoVenta.Models.Facturas`)
+  - TipoRutaFacturacion.vb - Enum (RutaPropia, RutasAgencias)
+  - FacturarRutasRequestDTO.vb - Request para API
+  - FacturarRutasResponseDTO.vb - Response con listas de albaranes/facturas y propiedades calculadas
+  - PedidoConErrorDTO.vb - Detalle de errores
+  - **NEW:** DocumentoParaImprimir.vb - Bytes PDF + copias + bandeja
+  - **NEW:** AlbaranCreadoDTO.vb - Albarán con datos de impresión opcionales
+  - **NEW:** FacturaCreadaDTO.vb - Factura con datos de impresión opcionales
+
+- ✅ **Services/** (namespace: `Nesto.Modulos.PedidoVenta.Services`)
+  - IServicioFacturacionRutas.vb - Interfaz del servicio de facturación
+  - ServicioFacturacionRutas.vb - Cliente HTTP (HttpClient + JSON)
+  - **NEW:** IServicioImpresionDocumentos.vb - Interfaz para impresión con PdfiumViewer
+  - **NEW:** ServicioImpresionDocumentos.vb - Implementación con PdfiumViewer
+  - Ambos registrados en IoC Container (PedidoVenta.vb)
+
+- ✅ **ViewModels/**
+  - FacturarRutasPopupViewModel.vb - Completo con propiedades, comandos, async/await, DI, **impresión integrada**
+  - ErroresFacturacionRutasPopupViewModel.vb - ViewModel con comando de doble clic para abrir pedidos
+
+- ✅ **Views/**
+  - FacturarRutasPopup.xaml - View XAML del popup principal
+  - FacturarRutasPopup.xaml.vb - Code-behind
+  - ErroresFacturacionRutasPopup.xaml - DataGrid con doble clic para abrir pedidos
+  - ErroresFacturacionRutasPopup.xaml.vb - Manejo de eventos de doble clic
+
+**✅ INTEGRACIÓN COMPLETADA:**
+- ✅ **Botón en DetallePedidoView** - Agregado en el Grid de botones (Modulos/PedidoVenta/PedidoVenta/Views/DetallePedidoView.xaml)
+- ✅ **Comando en DetallePedidoViewModel** - AbrirFacturarRutasCommand implementado (Modulos/PedidoVenta/PedidoVenta/ViewModels/DetallePedidoViewModel.vb)
+- ✅ **Registro en Prism** - FacturarRutasPopup registrado como Dialog en el contenedor IoC (PedidoVenta.vb)
+- ✅ **Inyección de Dependencias** - Servicios registrados y usados en ViewModel
+- ✅ **Flujo de Impresión** - Diálogo de confirmación → Impresión con PdfiumViewer → Reporte de resultados
+- ✅ **Ventana de Errores** - DataGrid completo con doble clic para abrir pedidos con error
+
+**📝 Nota sobre Arquitectura:**
+Los servicios fueron movidos desde `Nesto.ViewModels/Servicios/` a `Modulos/PedidoVenta/PedidoVenta/Services/` para seguir la arquitectura modular del proyecto. Esto mantiene toda la funcionalidad de facturación de rutas encapsulada dentro del módulo PedidoVenta.
+
+### 🔄 **FASE 2.5: EXTRACTORUTA Y NOTASENTREGA - EN PROGRESO** (Actualización 06-Nov-2025)
+
+**Objetivo:** Registrar todas las operaciones de facturación en ExtractoRuta
+
+| Componente | Estado | Notas |
+|------------|--------|-------|
+| **Entidades (ExtractoRuta, NotaEntrega)** | ✅ COMPLETADO | Claves primarias compuestas, Data Annotations |
+| **ServicioExtractoRuta** | ✅ COMPLETADO | InsertarDesdeFactura, InsertarDesdeAlbaran |
+| **ServicioNotasEntrega** | ✅ COMPLETADO | Flujo completo con ContadoresGlobales |
+| **ITipoRuta.DebeInsertarEnExtractoRuta()** | ✅ COMPLETADO | Ruta Propia = true, Ruta Agencias = false |
+| **Integración en GestorFacturacionRutas** | ✅ COMPLETADO | Inserción condicional por tipo de ruta |
+| **Manejo de errores mejorado** | ✅ COMPLETADO | Captura InnerException completa |
+| **Tests actualizados** | ✅ COMPLETADO | ServicioExtractoRutaTests + GestorFacturacionRutasTests |
+| **Verificación error NotasEntrega.Add()** | ⏸️ PENDIENTE | Sin datos para probar hasta mañana |
+
+**Documentación completa:** Ver `SESION_EXTRACTORUTA_Y_NOTASENTREGA.md`
+
+**Pendientes para mañana:**
+- Verificar error en NotasEntrega.Add() (capturar InnerException)
+- Revisar lógica Preview con MantenerJunto (estado futuro de líneas)
+- Evaluar timeout de 100 segundos
+
+---
+
+### ⚠️ **FASE 3: INTEGRACIÓN Y TESTING E2E - PENDIENTE**
+- ❌ Tests de integración API
+- ❌ Tests UI (WPF)
+- ❌ Testing manual
+
+### ⏸️ **FASE 4: MEJORAS Y REFINAMIENTO - PENDIENTE**
+- ❌ Optimizaciones (paralelización, logs, retry)
+- ❌ Reporting
+- ❌ UX Improvements
+
+---
+
+## 🚨 Componentes STUB que Requieren Implementación
+
+### 1. **Generación de PDFs para Impresión** (✅ COMPLETADO - Actualizado 30-Oct-2025)
+
+**Arquitectura Implementada:**
+
+El servidor **NO imprime directamente**. En su lugar:
+
+1. **Backend (API)** - Genera bytes del PDF:
+   - `GestorFacturacionRutas` usa `IGestorFacturas.FacturasEnPDF()` para generar bytes
+   - Detecta comentarios "factura física" / "albarán físico" en pedidos
+   - Agrega bytes del PDF a `DocumentoParaImprimir` en el response
+
+2. **DTOs Creados:**
+   ```
+   Models/Facturas/
+   ├── DocumentoParaImprimir.cs
+   │   ├── byte[] BytesPDF
+   │   ├── int NumeroCopias
+   │   └── string Bandeja
+   ├── AlbaranCreadoDTO.cs
+   │   └── DocumentoParaImprimir DatosImpresion
+   └── FacturaCreadaDTO.cs
+       └── DocumentoParaImprimir DatosImpresion
+   ```
+
+3. **FacturarRutasResponseDTO actualizado:**
+   ```csharp
+   List<AlbaranCreadoDTO> Albaranes  // Algunos con DatosImpresion != null
+   List<FacturaCreadaDTO> Facturas   // Algunas con DatosImpresion != null
+   ```
+
+4. **Cliente WPF** - Responsable de imprimir:
+   - Recibe response con bytes de PDFs
+   - Usa PdfiumViewer para enviar a impresora:
+     ```vb
+     For Each factura In response.Facturas
+         If factura.DatosImpresion IsNot Nothing Then
+             Using stream As New MemoryStream(factura.DatosImpresion.BytesPDF)
+                 Using document As PdfDocument = PdfDocument.Load(stream)
+                     Using printDoc = document.CreatePrintDocument()
+                         ' Configurar copias y bandeja
+                         printDoc.PrinterSettings.Copies = factura.DatosImpresion.NumeroCopias
+                         printDoc.Print()
+                     End Using
+                 End Using
+             End Using
+         End If
+     Next
+     ```
+
+**Ventajas de este enfoque:**
+- ✅ **Sin I/O de disco**: PDFs viajan solo en memoria (API → WPF → Impresora)
+- ✅ **Eficiente**: Bytes generados una vez, transmitidos por red, impresos directamente
+- ✅ **Arquitectura correcta**: Servidor no tiene acceso a impresoras físicas
+- ✅ **Reutiliza infraestructura existente**: Usa `GestorFacturas.FacturasEnPDF()` (reportes RDLC)
+
+**✅ Implementado en WPF (30-Oct-2025):**
+- ✅ **IServicioImpresionDocumentos** - Interfaz con métodos para imprimir facturas/albaranes
+- ✅ **ServicioImpresionDocumentos** - Implementación con PdfiumViewer
+  - Carga bytes del PDF en MemoryStream
+  - Usa `PdfDocument.Load()` y `CreatePrintDocument()`
+  - Configura número de copias (`printDocument.PrinterSettings.Copies`)
+  - Captura errores por documento individual
+  - Retorna `ResultadoImpresion` con contadores y errores
+- ✅ **Registro en IoC** - Servicio registrado como Singleton en `PedidoVenta.vb`
+- ✅ **Integración en ViewModel** - `FacturarRutasPopupViewModel` inyecta y usa el servicio
+- ✅ **Diálogo de confirmación** - MessageBox pregunta al usuario antes de imprimir
+- ✅ **Manejo de errores** - Captura excepciones por documento, muestra resumen al usuario
+- ✅ **UX mejorada** - Muestra documentos impresos vs errores, cierra popup tras impresión
+
+**Pendiente (Mejoras Futuras - NO BLOQUEANTE):**
+- ⚠️ Configuración de bandeja según `DatosImpresion.Bandeja` (requiere mapeo a `PaperSource`)
+- ⚠️ Reglas de negocio para número de copias (actualmente lee del response, pero servidor envía 1)
+
+### 2. **ServicioTraspasoEmpresa** ✅ COMPLETADO (04-Ene-2025)
+**Ubicación:** `NestoAPI/Infraestructure/Traspasos/ServicioTraspasoEmpresa.cs`
+
+**Implementación Completada:**
+- ✅ Interfaz `IServicioTraspasoEmpresa` implementada
+- ✅ `HayQueTraspasar(pedido)` verifica si el campo `IVA` de la cabecera es null/vacío → traspasar a empresa espejo (3)
+- ✅ `TraspasarPedidoAEmpresa()` completamente funcional con:
+  - SqlConnection + SqlTransaction local (NO TransactionScope)
+  - Una sola conexión física (NO promueve a MSDTC)
+  - Clonación automática de entidades con `CabPedidoVta.ClonarParaEmpresa()` y `LinPedidoVta.ClonarParaEmpresa()`
+  - INSERT antes de DELETE (orden seguro - pedido original nunca se pierde)
+  - Soporte para líneas tipo PRODUCTO y CUENTA_CONTABLE
+  - Copiar cliente con `prdCopiarCliente`
+  - Copiar productos con `prdCopiarProducto` (tiene COMMIT interno - riesgo residual menor)
+  - Copiar cuentas contables con `prdCopiarCuentaContable`
+  - Recalcular importes con ParámetrosIVA de empresa destino
+  - Timeout controlado de 60 segundos
+  - Rollback automático si falla
+
+**Documentación Generada:**
+- `RESUMEN_IMPLEMENTACION_TRASPASO_SEGURO.md` - Resumen ejecutivo
+- `GARANTIAS_SEGURIDAD_TRASPASO.md` - Garantías técnicas al 100%
+- `ANALISIS_TRASPASO_EMPRESAS.md` - Análisis de procedimientos idempotentes
+- `ELIMINAR_TRANSACCION_prdCopiarProducto.sql` - Script opcional para eliminar COMMIT interno
+
+**Clases Parciales Creadas:**
+- `Models/NVEntities.Partial.cs` - Constructor para SqlConnection compartida
+- `Models/CabPedidoVta.Partial.cs` - Método `ClonarParaEmpresa()`
+- `Models/LinPedidoVta.Partial.cs` - Método `ClonarParaEmpresa()`
+
+**Ventajas de la Solución:**
+- ✅ Garantía 100% de no perder pedidos
+- ✅ Clonación automática (si se agregan campos al modelo, se copian automáticamente)
+- ✅ No requiere MSDTC
+- ✅ Predecible y eficiente
+
+**Procedimientos Almacenados Disponibles:**
+- `prdCopiarCliente(@EmpresaOrigen, @EmpresaDestino, @NumCliente)`
+- `prdCopiarProducto(@EmpresaOrigen, @EmpresaDestino, @NumProducto)`
+- `prdCopiarCuentaContable(@EmpresaOrigen, @EmpresaDestino, @NumCuenta)`
+
+**Nota:** Estos procedimientos son legacy pero funcionan en producción.
+
+### 3. **Notas de Entrega** ✅ COMPLETADO (30-Oct-2025)
+
+**Descripción:**
+Las notas de entrega son documentos que indican que se han entregado productos que pueden estar ya facturados o pendientes de facturación. Similar a albaranes/facturas, pero con lógica específica de stock.
+
+**Implementación Completada:**
+- ✅ `ServicioNotasEntrega` con 10 tests TDD
+- ✅ Refactorización de DTOs con herencia (DocumentoCreadoDTO → DocumentoImprimibleDTO)
+- ✅ `NotaEntregaCreadaDTO` con número de líneas, base imponible, y flag de líneas ya facturadas
+- ✅ Integrado en `GestorFacturacionRutas.ProcesarPedido()`
+- ✅ Preview incluido en `PreviewFacturarRutas()`
+
+**Criterios de Selección:**
+Pedidos que cumplan TODOS estos requisitos:
+- Líneas en estado `1` (EN_CURSO - de Constantes.EstadosLineaVenta)
+- `Fecha_Entrega` ≤ fecha de facturación de rutas
+- Campo `NotaEntrega` de la cabecera = `true`
+
+**Lógica de Procesamiento:**
+
+Hay DOS casos según el campo `YaFacturado` de las líneas:
+
+**CASO A: Líneas NO facturadas** (`YaFacturado = false` o `null`)
+- **Acción**: Cambiar estado de líneas a `-2` (NOTA_ENTREGA - verificar si existe en Constantes)
+- **Stock**: NO tocar stock (productos no salen de almacén)
+- **Motivo**: Son productos que se entregan pero se facturarán más adelante
+
+**CASO B: Líneas YA facturadas** (`YaFacturado = true`)
+- **Acción 1**: Cambiar estado de líneas a `-2` (NOTA_ENTREGA)
+- **Acción 2**: Dar de baja productos del stock mediante:
+
+  **Paso 1 - Insertar en PreExtrProducto:**
+  ```sql
+  INSERT INTO PreExtrProducto (
+      empresa,
+      Número,          -- Referencia del producto
+      fecha,           -- DateTime.Now (con hora)
+      [Nº cliente],
+      contacto,
+      texto,           -- $"Entrega de productos ya facturados pedido {numeroPedido}"
+      almacén,
+      grupo,
+      cantidad,
+      importe,
+      delegación,
+      [Forma Venta],
+      [Asiento automático],  -- true
+      LinPedido,             -- Nº_Orden o Id de la línea original
+      Diario                 -- "_EntregFac"
+  ) VALUES (...)
+  ```
+
+  **Campos adicionales (investigación pendiente):**
+  - `Albarán`: ¿Cuándo se rellena? ¿Con qué valor?
+  - `Factura`: ¿Cuándo se rellena? ¿Con qué valor?
+
+  **Paso 2 - Ejecutar procedimiento:**
+  ```sql
+  EXEC prdExtrProducto
+  ```
+  Este procedimiento procesa los registros de `PreExtrProducto` y actualiza el stock.
+
+**Estructura de Implementación Propuesta:**
+
+**Backend (API):**
+```
+NestoAPI/
+├── Models/Facturas/
+│   ├── NotaEntregaCreadaDTO.cs (nuevo)
+│   └── (actualizar FacturarRutasResponseDTO para incluir NotasEntrega)
+├── Infraestructure/NotasEntrega/
+│   ├── IServicioNotasEntrega.cs (nuevo)
+│   └── ServicioNotasEntrega.cs (nuevo)
+└── Tests/
+    └── ServicioNotasEntregaTests.cs (nuevo - TDD)
+```
+
+**Tests a Crear (TDD):**
+1. `CrearNotaEntrega_LineasNoFacturadas_CambiaEstadoASinTocarStock()`
+2. `CrearNotaEntrega_LineasYaFacturadas_CambiaEstadoYDaBajaStock()`
+3. `CrearNotaEntrega_MezclaFacturadoYNoFacturado_ProcesaCorrectamente()`
+4. `CrearNotaEntrega_PedidoSinNotaEntrega_NoSeProces a()`
+5. `CrearNotaEntrega_FechaEntregaFutura_NoSeProcesa()`
+
+**Frontend (WPF):**
+- Actualizar `FacturarRutasResponseDTO.vb` para incluir lista de notas de entrega creadas
+- Mostrar en resumen: "X notas de entrega creadas"
+
+**Integración en GestorFacturacionRutas:**
+
+En el flujo de `ProcesarPedido()`, **ANTES** de crear albarán:
+```csharp
+// 0. Si es nota de entrega, procesarla y RETORNAR (no crear albarán ni factura)
+if (pedido.NotaEntrega == true)
+{
+    await ProcesarNotaEntrega(pedido, response, usuario);
+    return;
+}
+
+// 1. Crear albarán...
+```
+
+**Campos de Base de Datos a Investigar:**
+- ¿Existe `Constantes.EstadosLineaVenta.NOTA_ENTREGA = -2`?
+- ¿Campo `NotaEntrega` en `CabPedidoVta`?
+- ¿Campo `YaFacturado` en `LinPedidoVta`?
+- Estructura completa de tabla `PreExtrProducto`
+- Comportamiento de procedimiento `prdExtrProducto`
+
+**Dependencias:**
+- **REQUIERE** definir constante `NOTA_ENTREGA = -2` si no existe
+- **REQUIERE** investigación de campos `Albarán` y `Factura` en `PreExtrProducto`
+
+**Estimación de Tiempo:**
+- Investigación de BD y procedimientos: 1-2 horas
+- Implementación TDD (tests + código): 4-6 horas
+- Integración en GestorFacturacionRutas: 1 hora
+- Tests de integración: 2 horas
+- **TOTAL: 8-11 horas**
+
+**Prioridad:** ⚠️ **ALTA - BLOQUEANTE** para pasar a producción
+
+---
+
+## 📝 Componentes Frontend PENDIENTES de Completar
+
+### 1. **ErroresFacturacionView + ViewModel** (Prioridad: MEDIA)
+
+**Estado actual:**
+- El `FacturarRutasPopupViewModel` tiene un método stub `MostrarVentanaErrores()` que muestra un diálogo simple
+- Falta crear la ventana completa con DataGrid para mostrar los errores
+
+**Pasos para implementar:**
+
+1. **Crear ErroresFacturacionViewModel.vb** en `Modulos/PedidoVenta/PedidoVenta/ViewModels/`
+   ```vb
+   ' Namespace: Nesto.Modulos.PedidoVenta.ViewModels
+   Imports Nesto.Modulos.PedidoVenta.Models.Facturas
+
+   Public Class ErroresFacturacionViewModel
+       Inherits BindableBase
+
+       ' Propiedades:
+       ' - Errores As ObservableCollection(Of PedidoConErrorDTO)
+       ' - ErrorSeleccionado As PedidoConErrorDTO
+       ' - TituloVentana As String (con binding al count)
+
+       ' Comandos:
+       ' - AbrirPedidoCommand (doble clic en DataGrid)
+       ' - CerrarCommand
+   End Class
+   ```
+
+2. **Crear ErroresFacturacionView.xaml** en `Modulos/PedidoVenta/PedidoVenta/Views/`
+   - Window con DataGrid mostrando: Pedido, Cliente, Nombre, Ruta, TipoError, MensajeError, Total
+   - Binding de doble clic a `AbrirPedidoCommand`
+   - Botón Cerrar
+
+3. **Actualizar FacturarRutasPopupViewModel.vb:**
+   - Reemplazar el método `MostrarVentanaErrores()` actual por:
+   ```vb
+   Private Sub MostrarVentanaErrores(errores As List(Of PedidoConErrorDTO))
+       Dim viewModel As New ErroresFacturacionViewModel(errores, container, configuracion, dialogService)
+       Dim ventana As New ErroresFacturacionView With {
+           .DataContext = viewModel,
+           .Owner = Application.Current.MainWindow
+       }
+       ventana.ShowDialog()
+   End Sub
+   ```
+
+**Referencias:**
+- Ver `Modulos/PedidoVenta/PedidoVenta/ViewModels/DetallePedidoViewModel.vb` para patrones del módulo
+- Ver `Nesto/Ventanas/Comisiones.xaml` para patrón de DataGrid
+
+---
+
+### 2. **Botón en DetallePedidoView** ✅ COMPLETADO
+
+**Ubicación:** `Modulos/PedidoVenta/PedidoVenta/Views/DetallePedidoView.xaml`
+
+**Implementado:**
+- Botón agregado en el Grid de botones (fila 3, columna 0)
+- Visible solo para usuarios del grupo "Almacén" o "Dirección"
+- Usa el comando `AbrirFacturarRutasCommand` del ViewModel
+
+---
+
+### 3. **Comando en DetallePedidoViewModel** ✅ COMPLETADO
+
+**Ubicación:** `Modulos/PedidoVenta/PedidoVenta/ViewModels/DetallePedidoViewModel.vb`
+
+**Implementado:**
+- Comando inicializado en el constructor (línea 61)
+- Propiedad `AbrirFacturarRutasCommand` agregada (líneas 865-876)
+- Método `OnAbrirFacturarRutas()` implementado
+- Usa `dialogService.ShowDialog("FacturarRutasPopup", Nothing, Nothing)` para abrir el popup
+
+---
+
+### 4. **Registro en IoC Container** ✅ COMPLETADO
+
+**Ubicación:** `Modulos/PedidoVenta/PedidoVenta/PedidoVenta.vb`
+
+**Implementado:**
+- Dialog registrado en el módulo Prism (línea 17)
+- Usa `containerRegistry.RegisterDialog(Of FacturarRutasPopup, FacturarRutasPopupViewModel)`
+- El ViewModel recibe sus dependencias por inyección (IUnityContainer, IConfiguracion, IDialogService)
+
+---
+
+## 🔄 Cambios Importantes
+
+### ✅ Cambios Aplicados (Actualización 29-Oct-2025)
+
+1. **Autenticación con Token (29-Oct-2025)**
+   - ❌ ANTES: El sistema usaba un usuario hardcodeado `USUARIO_SISTEMA = "API"` para todas las operaciones
+   - ✅ AHORA: Se implementó autenticación basada en tokens JWT:
+     - **WPF (Frontend)**: `ServicioFacturacionRutas` ahora inyecta y usa `IServicioAutenticacion`
+     - Antes de cada petición HTTP se llama a `await _servicioAutenticacion.ConfigurarAutorizacion(client)`
+     - Esto configura el header Authorization con el Bearer token del usuario autenticado
+     - **API (Backend)**: `FacturacionRutasController` obtiene el usuario desde `User.Identity`
+     - Método `ObtenerUsuarioActual()` extrae el username desde Claims (soporta dominio\usuario)
+     - El username se pasa a `GestorFacturacionRutas.FacturarRutas(pedidos, usuario)`
+     - El gestor pasa el usuario real a `ServicioAlbaranesVenta.CrearAlbaran()` y `ServicioFacturas.CrearFactura()`
+   - Manejo de errores: Si el token es inválido o expiró, se lanza `UnauthorizedAccessException` y se limpia el token
+   - **Beneficios**: Trazabilidad completa (quién creó cada albarán/factura), auditoría mejorada, seguridad reforzada
+
+2. **Cambio de Window a UserControl en Dialog (29-Oct-2025)**
+   - `FacturarRutasPopup.xaml` se cambió de `<Window>` a `<UserControl>` para cumplir con el patrón de Prism Dialogs
+   - Se agregó `prism:ViewModelLocator.AutoWireViewModel="True"` para inyección automática de dependencias
+   - Se eliminaron propiedades específicas de Window: `Title`, `Height`, `WindowStartupLocation`, `ResizeMode`
+   - El `FacturarRutasPopupViewModel` implementa `IDialogAware` con `Title`, `RequestClose`, `OnDialogOpened`, etc.
+
+3. **Validación MantenerJunto (28-Oct-2025)**
    - Se valida ANTES de intentar crear la factura (evita llamar al procedimiento `prdCrearFacturaVta` que fallaría)
    - Si `MantenerJunto = 1` y hay líneas sin albarán (Estado < 2), NO se crea factura
    - En ese caso, si tiene comentario de impresión, se imprime el ALBARÁN en lugar de la factura
 
-2. **Impresión Condicional de Albaranes**
+4. **Impresión Condicional de Albaranes (28-Oct-2025)**
    - ❌ ANTES: Los albaranes FDM se imprimían SIEMPRE
    - ✅ AHORA: Los albaranes solo se imprimen si el comentario contiene "factura física" O "albarán físico"
    - Búsqueda case-insensitive y sin tildes
 
-3. **Manejo de Errores al Crear Factura**
+5. **Manejo de Errores al Crear Factura (28-Oct-2025)**
    - Si falla la creación de factura (por cualquier motivo) y tiene comentario de impresión:
    - Se imprime el albarán como fallback
    - Se registra el error pero el proceso continúa

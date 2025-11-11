@@ -1,0 +1,134 @@
+CAMBIOS PENDIENTES EN GestorFacturacionRutas.cs
+=================================================
+
+IMPORTANTE: Cierra Visual Studio antes de aplicar estos cambios, o aplícalos manualmente.
+
+PASO 1: Modificar el método GenerarDatosImpresionAlbaran (línea ~361)
+------------------------------------------------------------------------
+
+BUSCAR:
+```csharp
+private DocumentoParaImprimir GenerarDatosImpresionAlbaran(string empresa, int numeroAlbaran)
+{
+    var lookup = new FacturaLookup { Empresa = empresa, Factura = numeroAlbaran.ToString() };
+    var lista = new List<FacturaLookup> { lookup };
+    var albaranes = gestorFacturas.LeerAlbaranes(lista);
+
+    var bytesPdf = gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete: false);
+
+    return new DocumentoParaImprimir
+    {
+        BytesPDF = bytesPdf.ReadAsByteArrayAsync().Result,
+        NumeroCopias = 1, // TODO: Configurar según reglas de negocio
+        Bandeja = "Default" // TODO: Configurar según reglas de negocio
+    };
+}
+```
+
+REEMPLAZAR POR:
+```csharp
+private DocumentoParaImprimir GenerarDatosImpresionAlbaran(CabPedidoVta pedido, string empresa, int numeroAlbaran)
+{
+    var lookup = new FacturaLookup { Empresa = empresa, Factura = numeroAlbaran.ToString() };
+    var lista = new List<FacturaLookup> { lookup };
+    var albaranes = gestorFacturas.LeerAlbaranes(lista);
+
+    var bytesPdf = gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete: false);
+
+    // Determinar tipo de ruta y obtener configuración de impresión
+    var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
+    bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+
+    // Si la ruta no está manejada por ningún tipo, no imprimir
+    int numeroCopias = tipoRuta != null
+        ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        : 0;
+
+    string bandeja = tipoRuta != null ? tipoRuta.ObtenerBandeja() : "Default";
+
+    return new DocumentoParaImprimir
+    {
+        BytesPDF = bytesPdf.ReadAsByteArrayAsync().Result,
+        NumeroCopias = numeroCopias,
+        Bandeja = bandeja
+    };
+}
+```
+
+PASO 2: Modificar el método GenerarDatosImpresionFactura (línea ~380)
+------------------------------------------------------------------------
+
+BUSCAR:
+```csharp
+private DocumentoParaImprimir GenerarDatosImpresionFactura(string empresa, string numeroFactura)
+{
+    var factura = gestorFacturas.LeerFactura(empresa, numeroFactura);
+    var facturas = new List<Factura> { factura };
+
+    var bytesPdf = gestorFacturas.FacturasEnPDF(facturas, papelConMembrete: false);
+
+    return new DocumentoParaImprimir
+    {
+        BytesPDF = bytesPdf.ReadAsByteArrayAsync().Result,
+        NumeroCopias = 1, // TODO: Configurar según reglas de negocio
+        Bandeja = "Default" // TODO: Configurar según reglas de negocio
+    };
+}
+```
+
+REEMPLAZAR POR:
+```csharp
+private DocumentoParaImprimir GenerarDatosImpresionFactura(CabPedidoVta pedido, string empresa, string numeroFactura)
+{
+    var factura = gestorFacturas.LeerFactura(empresa, numeroFactura);
+    var facturas = new List<Factura> { factura };
+
+    var bytesPdf = gestorFacturas.FacturasEnPDF(facturas, papelConMembrete: false);
+
+    // Determinar tipo de ruta y obtener configuración de impresión
+    var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
+    bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+
+    // Si la ruta no está manejada por ningún tipo, no imprimir
+    int numeroCopias = tipoRuta != null
+        ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        : 0;
+
+    string bandeja = tipoRuta != null ? tipoRuta.ObtenerBandeja() : "Default";
+
+    return new DocumentoParaImprimir
+    {
+        BytesPDF = bytesPdf.ReadAsByteArrayAsync().Result,
+        NumeroCopias = numeroCopias,
+        Bandeja = bandeja
+    };
+}
+```
+
+PASO 3: Actualizar llamada en ProcesarFacturaNRM (línea ~304)
+--------------------------------------------------------------
+
+BUSCAR:
+```csharp
+facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido.Empresa, numeroFactura);
+```
+
+REEMPLAZAR POR:
+```csharp
+facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, pedido.Empresa, numeroFactura);
+```
+
+PASO 4: Actualizar llamada en AgregarDatosImpresionAlbaranSiCorresponde (línea ~354)
+-------------------------------------------------------------------------------------
+
+BUSCAR:
+```csharp
+albaran.DatosImpresion = GenerarDatosImpresionAlbaran(pedido.Empresa, numeroAlbaran);
+```
+
+REEMPLAZAR POR:
+```csharp
+albaran.DatosImpresion = GenerarDatosImpresionAlbaran(pedido, pedido.Empresa, numeroAlbaran);
+```
+
+¡LISTO! Después de aplicar estos cambios, compila el proyecto.

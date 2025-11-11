@@ -40,26 +40,38 @@ namespace NestoAPI.Controllers
         [HttpGet]
         public async Task<HttpResponseMessage> GetFactura(string empresa, string numeroFactura, bool papelConMembrete = false)
         {
-            FacturaLookup factura = new FacturaLookup { Empresa = empresa, Factura = numeroFactura };
-            List<FacturaLookup> lista = new List<FacturaLookup>
+            try
             {
-                factura
-            };
-            List<Factura> facturas = gestor.LeerFacturas(lista);
+                FacturaLookup factura = new FacturaLookup { Empresa = empresa, Factura = numeroFactura };
+                List<FacturaLookup> lista = new List<FacturaLookup>
+                {
+                    factura
+                };
+                List<Factura> facturas = gestor.LeerFacturas(lista);
 
-            var result = new HttpResponseMessage(HttpStatusCode.OK)
+                var result = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = gestor.FacturasEnPDF(facturas, papelConMembrete)
+                };
+                //result.Content.Headers.ContentDisposition =
+                //    new ContentDispositionHeaderValue("attachment")
+                //    {
+                //        FileName = factura.Item2 + ".pdf"
+                //    };
+                result.Content.Headers.ContentType =
+                    new MediaTypeHeaderValue("application/pdf");
+
+                return result;
+            }
+            catch (Exception ex)
             {
-                Content = gestor.FacturasEnPDF(facturas, papelConMembrete)
-            };
-            //result.Content.Headers.ContentDisposition =
-            //    new ContentDispositionHeaderValue("attachment")
-            //    {
-            //        FileName = factura.Item2 + ".pdf"
-            //    };
-            result.Content.Headers.ContentType =
-                new MediaTypeHeaderValue("application/pdf");
-
-            return result;
+                var errorResponse = new HttpResponseMessage(HttpStatusCode.BadRequest)
+                {
+                    Content = new StringContent(ex.Message),
+                    ReasonPhrase = "Error al generar la factura"
+                };
+                return errorResponse;
+            }
         }
 
         [HttpGet]
