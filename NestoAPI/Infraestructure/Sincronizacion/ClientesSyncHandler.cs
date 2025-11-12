@@ -42,7 +42,12 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     return false;
                 }
 
-                Console.WriteLine($"🔍 Procesando Cliente: {clienteExterno}, Contacto: {contactoExterno}, Nombre: {message.Nombre}");
+                // Log con información completa del cliente
+                string personasInfo = message.PersonasContacto != null && message.PersonasContacto.Any()
+                    ? $", PersonasContacto=[{string.Join(", ", message.PersonasContacto.Select(p => p.Id))}]"
+                    : "";
+
+                Console.WriteLine($"🔍 Procesando Cliente {clienteExterno}-{contactoExterno}{personasInfo} (Source={message.Source})");
 
                 using (var db = new NVEntities())
                 {
@@ -58,11 +63,19 @@ namespace NestoAPI.Infraestructure.Sincronizacion
 
                     if (!cambios.Any())
                     {
-                        Console.WriteLine($"✅ Sin cambios en Cliente {clienteExterno}-{contactoExterno}, omitiendo actualización");
-                        return true; // No error, simplemente no hay cambios
+                        Console.WriteLine($"⚪ Cliente {clienteExterno}-{contactoExterno}: Sin cambios en datos principales, NO SE ACTUALIZA");
+
+                        // Continuar procesando PersonasContacto aunque el cliente no haya cambiado
+                        if (message.PersonasContacto != null && message.PersonasContacto.Any())
+                        {
+                            Console.WriteLine($"   ℹ️ Procesando {message.PersonasContacto.Count} PersonasContacto...");
+                            await ProcesarPersonasContacto(clienteExterno, contactoExterno, message.PersonasContacto);
+                        }
+
+                        return true;
                     }
 
-                    Console.WriteLine($"🔄 Cambios detectados en Cliente {clienteExterno}-{contactoExterno}:");
+                    Console.WriteLine($"🔄 Cliente {clienteExterno}-{contactoExterno}: Cambios detectados:");
                     foreach (var cambio in cambios)
                     {
                         Console.WriteLine($"   - {cambio}");
@@ -83,6 +96,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     // Procesar personas de contacto si existen
                     if (message.PersonasContacto != null && message.PersonasContacto.Any())
                     {
+                        Console.WriteLine($"   ℹ️ Procesando {message.PersonasContacto.Count} PersonasContacto...");
                         await ProcesarPersonasContacto(clienteExterno, contactoExterno, message.PersonasContacto);
                     }
 
@@ -156,11 +170,11 @@ namespace NestoAPI.Infraestructure.Sincronizacion
 
                     if (string.IsNullOrEmpty(personaContactoExterna))
                     {
-                        Console.WriteLine($"⚠️ PersonaContacto.Id vacío, omitiendo");
+                        Console.WriteLine($"      ⚠️ PersonaContacto con Id vacío, omitiendo");
                         continue;
                     }
 
-                    Console.WriteLine($"🔍 Procesando PersonaContacto: {personaContactoExterna}, Nombre: {personaExterna.Nombre}");
+                    Console.WriteLine($"      🔍 PersonaContacto {clienteExterno}-{contactoExterno}-{personaContactoExterna} ({personaExterna.Nombre})");
 
                     var personaNesto = await db.PersonasContactoClientes
                         .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
@@ -173,26 +187,26 @@ namespace NestoAPI.Infraestructure.Sincronizacion
 
                     if (!cambios.Any())
                     {
-                        Console.WriteLine($"✅ Sin cambios en PersonaContacto {personaContactoExterna}, omitiendo");
+                        Console.WriteLine($"      ⚪ {clienteExterno}-{contactoExterno}-{personaContactoExterna}: Sin cambios, NO SE ACTUALIZA");
                         continue;
                     }
 
-                    Console.WriteLine($"🔄 Cambios detectados en PersonaContacto {personaContactoExterna}:");
+                    Console.WriteLine($"      🔄 {clienteExterno}-{contactoExterno}-{personaContactoExterna}: Cambios detectados:");
                     foreach (var cambio in cambios)
                     {
-                        Console.WriteLine($"   - {cambio}");
+                        Console.WriteLine($"         - {cambio}");
                     }
 
                     if (personaNesto == null)
                     {
-                        Console.WriteLine($"⚠️ PersonaContacto {personaContactoExterna} no existe en Nesto.");
+                        Console.WriteLine($"      ⚠️ {clienteExterno}-{contactoExterno}-{personaContactoExterna}: No existe en Nesto");
                         continue;
                     }
 
                     ActualizarPersonaContactoDesdeExterno(personaNesto, personaExterna);
                     _ = await db.SaveChangesAsync();
 
-                    Console.WriteLine($"✅ PersonaContacto {personaContactoExterna} actualizada exitosamente");
+                    Console.WriteLine($"      ✅ {clienteExterno}-{contactoExterno}-{personaContactoExterna}: Actualizada exitosamente");
                 }
             }
         }

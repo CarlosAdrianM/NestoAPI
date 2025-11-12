@@ -1,6 +1,8 @@
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models.Sincronizacion;
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -16,10 +18,32 @@ namespace NestoAPI.Controllers
     public class SyncWebhookController : ApiController
     {
         private readonly SyncTableRouter _router;
+        private static readonly List<string> _recentLogs = new List<string>();
+        private static readonly Dictionary<string, DateTime> _recentMessages = new Dictionary<string, DateTime>();
+        private static readonly object _lockObj = new object();
+        private const int MaxLogs = 100;
+        private const int DuplicateDetectionWindowSeconds = 60; // Ventana de 60 segundos para detectar duplicados
 
         public SyncWebhookController(SyncTableRouter router)
         {
             _router = router;
+        }
+
+        private void Log(string message)
+        {
+            var timestamp = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss.fff");
+            var logEntry = $"[{timestamp}] {message}";
+
+            Console.WriteLine(logEntry);
+
+            lock (_lockObj)
+            {
+                _recentLogs.Add(logEntry);
+                if (_recentLogs.Count > MaxLogs)
+                {
+                    _recentLogs.RemoveAt(0);
+                }
+            }
         }
 
         /// <summary>
@@ -38,11 +62,11 @@ namespace NestoAPI.Controllers
                 // Validar request
                 if (request?.Message?.Data == null)
                 {
-                    Console.WriteLine("⚠️ Request inválido: mensaje vacío");
+                    Log("⚠️ Request inválido: mensaje vacío");
                     return BadRequest("Mensaje vacío o formato incorrecto");
                 }
 
-                Console.WriteLine($"📨 Webhook recibido: MessageId={request.Message.MessageId}, Subscription={request.Subscription}");
+                Log($"📨 Webhook recibido: MessageId={request.Message.MessageId}, Subscription={request.Subscription}");
 
                 // Decodificar datos de base64
                 string messageJson;
@@ -50,11 +74,10 @@ namespace NestoAPI.Controllers
                 {
                     byte[] data = Convert.FromBase64String(request.Message.Data);
                     messageJson = Encoding.UTF8.GetString(data);
-                    Console.WriteLine($"📄 Mensaje decodificado: {messageJson.Substring(0, Math.Min(200, messageJson.Length))}...");
                 }
                 catch (FormatException ex)
                 {
-                    Console.WriteLine($"❌ Error decodificando base64: {ex.Message}");
+                    Log($"❌ Error decodificando base64: {ex.Message}");
                     return BadRequest("Error decodificando mensaje base64");
                 }
 
@@ -66,10 +89,64 @@ namespace NestoAPI.Controllers
                     {
                         PropertyNameCaseInsensitive = true
                     });
+
+                    // Loguear información detallada del mensaje
+                    string logInfo = $"MessageId={request.Message.MessageId}";
+
+                    if (!string.IsNullOrEmpty(syncMessage?.Cliente))
+                    {
+                        logInfo += $" - Cliente {syncMessage.Cliente}";
+                    }
+
+                    if (!string.IsNullOrEmpty(syncMessage?.Contacto))
+                    {
+                        logInfo += $", Contacto {syncMessage.Contacto}";
+                    }
+
+                    if (!string.IsNullOrEmpty(syncMessage?.Source))
+                    {
+                        logInfo += $", Source={syncMessage.Source}";
+                    }
+
+                    if (syncMessage?.PersonasContacto != null && syncMessage.PersonasContacto.Count > 0)
+                    {
+                        var personasInfo = string.Join(", ", syncMessage.PersonasContacto.Select(p =>
+                            $"PersonaContacto {p.Id}:{p.Nombre}"
+                        ));
+                        logInfo += $", Personas=[{personasInfo}]";
+                    }
+
+                    // Detectar duplicados
+                    string messageKey = $"{syncMessage?.Cliente}|{syncMessage?.Contacto}|{syncMessage?.Source}";
+                    bool isDuplicate = false;
+
+                    lock (_lockObj)
+                    {
+                        // Limpiar mensajes antiguos (fuera de la ventana de detección)
+                        var cutoffTime = DateTime.UtcNow.AddSeconds(-DuplicateDetectionWindowSeconds);
+                        var keysToRemove = _recentMessages.Where(kvp => kvp.Value < cutoffTime).Select(kvp => kvp.Key).ToList();
+                        foreach (var key in keysToRemove)
+                        {
+                            _recentMessages.Remove(key);
+                        }
+
+                        // Verificar si es duplicado
+                        if (_recentMessages.ContainsKey(messageKey))
+                        {
+                            isDuplicate = true;
+                            var timeSinceLastMessage = DateTime.UtcNow - _recentMessages[messageKey];
+                            logInfo += $" ⚠️ POSIBLE DUPLICADO (último mensaje hace {timeSinceLastMessage.TotalSeconds:F1}s)";
+                        }
+
+                        // Registrar este mensaje
+                        _recentMessages[messageKey] = DateTime.UtcNow;
+                    }
+
+                    Log($"📄 {logInfo}");
                 }
                 catch (JsonException ex)
                 {
-                    Console.WriteLine($"❌ Error deserializando JSON: {ex.Message}");
+                    Log($"❌ Error deserializando JSON: {ex.Message}");
                     return BadRequest($"Error deserializando mensaje: {ex.Message}");
                 }
 
@@ -78,8 +155,9 @@ namespace NestoAPI.Controllers
 
                 if (success)
                 {
-                    Console.WriteLine($"✅ Mensaje procesado exitosamente: {request.Message.MessageId}");
-                    return Ok(new {
+                    Log($"✅ Mensaje procesado exitosamente: {request.Message.MessageId}");
+                    return Ok(new
+                    {
                         success = true,
                         messageId = request.Message.MessageId,
                         tabla = syncMessage?.Tabla,
@@ -88,9 +166,10 @@ namespace NestoAPI.Controllers
                 }
                 else
                 {
-                    Console.WriteLine($"⚠️ Mensaje procesado con advertencias: {request.Message.MessageId}");
+                    Log($"⚠️ Mensaje procesado con advertencias: {request.Message.MessageId}");
                     // Retornar 200 para que Pub/Sub no reenvíe (el error fue lógico, no técnico)
-                    return Ok(new {
+                    return Ok(new
+                    {
                         success = false,
                         messageId = request.Message.MessageId,
                         message = "Procesado con advertencias (ver logs)"
@@ -99,8 +178,8 @@ namespace NestoAPI.Controllers
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"❌ Error crítico procesando webhook: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
+                Log($"❌ Error crítico procesando webhook: {ex.Message}");
+                Log($"Stack trace: {ex.StackTrace}");
 
                 // Retornar 500 para que Pub/Sub reenvíe el mensaje
                 return InternalServerError(ex);
@@ -122,7 +201,30 @@ namespace NestoAPI.Controllers
             {
                 status = "healthy",
                 service = "SyncWebhook",
-                supportedTables = supportedTables,
+                supportedTables,
+                timestamp = DateTime.UtcNow
+            });
+        }
+
+        /// <summary>
+        /// Endpoint para consultar los últimos logs del webhook
+        /// URL: GET /api/sync/logs
+        /// </summary>
+        [HttpGet]
+        [Route("logs")]
+        [AllowAnonymous]
+        public IHttpActionResult GetLogs()
+        {
+            List<string> logs;
+            lock (_lockObj)
+            {
+                logs = new List<string>(_recentLogs);
+            }
+
+            return Ok(new
+            {
+                totalLogs = logs.Count,
+                logs,
                 timestamp = DateTime.UtcNow
             });
         }

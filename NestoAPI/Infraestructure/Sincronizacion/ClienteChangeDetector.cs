@@ -2,6 +2,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace NestoAPI.Infraestructure.Sincronizacion
 {
@@ -63,9 +64,9 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 cambios.Add($"CIF/NIF: '{NormalizeString(clienteNesto.CIF_NIF)}' → '{NormalizeString(clienteExterno.Nif)}'");
             }
 
-            if (!SonIguales(clienteNesto.Comentarios, clienteExterno.Comentarios))
+            if (!SonIgualesComentarios(clienteNesto.Comentarios, clienteExterno.Comentarios))
             {
-                cambios.Add($"Comentarios: '{NormalizeString(clienteNesto.Comentarios)}' → '{NormalizeString(clienteExterno.Comentarios)}'");
+                cambios.Add($"Comentarios: '{NormalizeComentarios(clienteNesto.Comentarios)}' → '{NormalizeComentarios(clienteExterno.Comentarios)}'");
             }
 
             return cambios;
@@ -128,6 +129,50 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             }
 
             return valor.Trim().ToUpperInvariant();
+        }
+
+        /// <summary>
+        /// Compara dos comentarios normalizando HTML y orden de líneas
+        /// </summary>
+        private bool SonIgualesComentarios(string comentario1, string comentario2)
+        {
+            var normalizado1 = NormalizeComentarios(comentario1);
+            var normalizado2 = NormalizeComentarios(comentario2);
+
+            return normalizado1 == normalizado2;
+        }
+
+        /// <summary>
+        /// Normaliza comentarios para comparación:
+        /// - Quita etiquetas HTML (<p>, </p>, etc.)
+        /// - Normaliza saltos de línea (\r\n → \n)
+        /// - Ordena las líneas alfabéticamente para evitar falsos positivos por diferente orden
+        /// - Trim y mayúsculas
+        /// </summary>
+        private string NormalizeComentarios(string comentario)
+        {
+            if (string.IsNullOrWhiteSpace(comentario))
+            {
+                return string.Empty;
+            }
+
+            // Quitar etiquetas HTML
+            string sinHtml = Regex.Replace(comentario, @"<[^>]+>", string.Empty);
+
+            // Normalizar saltos de línea
+            sinHtml = sinHtml.Replace("\r\n", "\n").Replace("\r", "\n");
+
+            // Dividir en líneas, ordenar alfabéticamente, y volver a unir
+            var lineas = sinHtml.Split(new[] { '\n' }, System.StringSplitOptions.RemoveEmptyEntries)
+                .Select(linea => linea.Trim())
+                .Where(linea => !string.IsNullOrWhiteSpace(linea))
+                .OrderBy(linea => linea)
+                .ToList();
+
+            // Unir líneas ordenadas
+            string resultado = string.Join("\n", lineas);
+
+            return resultado.Trim().ToUpperInvariant();
         }
     }
 }

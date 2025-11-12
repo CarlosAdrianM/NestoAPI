@@ -635,7 +635,7 @@ namespace NestoAPI.Controllers
                 {
                     try
                     {
-                        await _gestorClientes.PublicarClienteSincronizar(cliente);
+                        await _gestorClientes.PublicarClienteSincronizar(cliente, "Nesto viejo");
                     }
                     catch
                     {
@@ -691,7 +691,7 @@ namespace NestoAPI.Controllers
                         {
                             foreach (Cliente cliente in clientes)
                             {
-                                await _gestorClientes.PublicarClienteSincronizar(cliente);
+                                await _gestorClientes.PublicarClienteSincronizar(cliente, "Nesto viejo");
                             }
 
                             // Actualizar el campo Sincronizado en Nesto_sync

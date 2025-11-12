@@ -18,7 +18,6 @@ using System.Data.Entity.Infrastructure;
 using System.Data.Entity.Validation;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models.Sincronizacion;
-using Newtonsoft.Json;
 using Microsoft.Ajax.Utilities;
 
 namespace NestoAPI.Infraestructure
@@ -1403,12 +1402,15 @@ namespace NestoAPI.Infraestructure
             }
         }
 
-        public async Task PublicarClienteSincronizar(Cliente cliente)
+        public async Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto")
         {
             var personasContacto = cliente.PersonasContactoClientes
                 .Where(p => p.Empresa.Trim() == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado >= 0)
-                .Select(p => new { Id = p.Número?.Trim(), Nombre = p.Nombre?.Trim(), CorreoElectronico = p.CorreoElectrónico?.Trim(), Telefonos = p.Teléfono?.Trim(), Cargo = p.Cargo }) 
+                .Select(p => new { Id = p.Número?.Trim(), Nombre = p.Nombre?.Trim(), CorreoElectronico = p.CorreoElectrónico?.Trim(), Telefonos = p.Teléfono?.Trim(), Cargo = p.Cargo })
                 .ToList(); // Convertir la lista a un tipo que se pueda serializar
+
+            // Log para rastrear de dónde viene cada publicación
+            Console.WriteLine($"📤 Publicando mensaje: Cliente {cliente.Nº_Cliente?.Trim()}-{cliente.Contacto?.Trim()}, Source={source}, PersonasContacto=[{string.Join(", ", personasContacto.Select(p => p.Id))}]");
 
             // Publicar evento de sincronización
             var message = new
@@ -1428,12 +1430,11 @@ namespace NestoAPI.Infraestructure
                 Estado = cliente.Estado,
                 PersonasContacto = personasContacto,
                 Tabla = "Clientes",
-                Source = "Nesto"
+                Source = source
             };
 
-            string jsonMessage = JsonConvert.SerializeObject(message);
-
-            await _sincronizacionEventWrapper.PublishSincronizacionEventAsync("sincronizacion-tablas", jsonMessage);
+            // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar
+            await _sincronizacionEventWrapper.PublishSincronizacionEventAsync("sincronizacion-tablas", message);
         }
 
         private bool ClienteExists(NVEntities db, string empresa, string numCliente, string contacto)
