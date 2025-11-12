@@ -1410,7 +1410,10 @@ namespace NestoAPI.Infraestructure
                 .ToList(); // Convertir la lista a un tipo que se pueda serializar
 
             // Log para rastrear de dónde viene cada publicación
-            Console.WriteLine($"📤 Publicando mensaje: Cliente {cliente.Nº_Cliente?.Trim()}-{cliente.Contacto?.Trim()}, Source={source}, PersonasContacto=[{string.Join(", ", personasContacto.Select(p => p.Id))}]");
+            var personasInfo = personasContacto.Any()
+                ? string.Join(", ", personasContacto.Select(p => $"Id={p.Id} ({p.Nombre})"))
+                : "ninguna";
+            Console.WriteLine($"📤 Publicando mensaje: Cliente {cliente.Nº_Cliente?.Trim()}-{cliente.Contacto?.Trim()}, Source={source}, PersonasContacto=[{personasInfo}]");
 
             // Publicar evento de sincronización
             var message = new

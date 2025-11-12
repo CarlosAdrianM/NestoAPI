@@ -272,5 +272,218 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(1, cambios.Count);
             Assert.IsTrue(cambios.First().Contains("Email"));
         }
+
+        #region Tests de Normalización de Comentarios
+
+        [TestMethod]
+        public void DetectarCambios_ComentariosConHTMLYOrdenDiferente_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "<p>[Teléfonos extra] 649172403\nA/A Mª JOSÉ: 660101678</p>"
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "A/A Mª JOSÉ: 660101678\n[Teléfonos extra] 649172403"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Los comentarios con HTML y diferente orden deben considerarse iguales");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_ComentariosConDiferentesSaltosLinea_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "Línea 1\r\nLínea 2\r\nLínea 3"
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "Línea 1\nLínea 2\nLínea 3"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Los comentarios con diferentes saltos de línea (\\r\\n vs \\n) deben considerarse iguales");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_ComentariosHTMLVsTextoPlano_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "<p>Este es un comentario importante</p>"
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "Este es un comentario importante"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Los comentarios con HTML vs texto plano deben considerarse iguales si el contenido es el mismo");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_ComentariosConLineasEnOrdenInverso_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "Teléfono: 600111222\nEmail: test@example.com\nHorario: 9-18h"
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "Email: test@example.com\nHorario: 9-18h\nTeléfono: 600111222"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Los comentarios con las mismas líneas en diferente orden deben considerarse iguales");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_ComentariosConContenidoDiferente_DetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "Cliente VIP"
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "Cliente NORMAL"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(1, cambios.Count, "Los comentarios con contenido diferente deben detectar cambios");
+            Assert.IsTrue(cambios.First().Contains("Comentarios"));
+        }
+
+        [TestMethod]
+        public void DetectarCambios_ComentariosConHTMLComplejoDiferente_DetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "<p>Teléfono: 600111222</p><p>Email: test@example.com</p>"
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "<p>Teléfono: 600333444</p><p>Email: otro@example.com</p>"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(1, cambios.Count, "Los comentarios con contenido diferente deben detectar cambios");
+            Assert.IsTrue(cambios.First().Contains("Comentarios"));
+        }
+
+        [TestMethod]
+        public void DetectarCambios_ComentariosConEspaciosYHTMLExtra_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "  <p>  Comentario importante  </p>  "
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "Comentario importante"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Los espacios extra y HTML deben normalizarse");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_ComentarioNullVsHTMLVacio_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = null
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "<p></p>"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Comentario null debe ser igual a HTML vacío");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_ComentariosRealCasoUsuario_NoDetectaCambio()
+        {
+            // Arrange - Caso real del usuario
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "<p>[Teléfonos extra] 649172403\nA/A Mª JOSÉ: 660101678</p>"
+            };
+
+            var clienteExterno = new ExternalSyncMessageDTO
+            {
+                Nombre = "Cliente Test",
+                Comentarios = "A/A Mª JOSÉ: 660101678\n[Teléfonos extra] 649172403"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "El caso real del usuario debe funcionar correctamente");
+        }
+
+        #endregion
     }
 }

@@ -1177,7 +1177,7 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
         </EntityType>
-        <EntityType Name="NotaEntrega">
+        <EntityType Name="NotasEntrega">
           <Key>
             <PropertyRef Name="NºOrden" />
             <PropertyRef Name="NotaEntrega" />
@@ -4999,7 +4999,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="LogVideosProductos" EntityType="Self.LogVideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="MovimientoTPV" EntityType="Self.MovimientoTPV" Schema="dbo" store:Type="Tables" />
-          <EntitySet Name="NotasEntrega" EntityType="Self.NotaEntrega" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
@@ -6977,7 +6977,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </AssociationSet>
           <EntitySet Name="LogVideosProductos" EntityType="NVModel.LogVideoProducto" />
           <EntitySet Name="ExtractoRutas" EntityType="NVModel.ExtractoRuta" />
-                    <AssociationSet Name="FK_ExtractoRuta_CódigosPostales" Association="NVModel.FK_ExtractoRuta_CódigosPostales">
+          <EntitySet Name="NotasEntregas" EntityType="NVModel.NotasEntrega" />
+          <AssociationSet Name="FK_ExtractoRuta_CódigosPostales" Association="NVModel.FK_ExtractoRuta_CódigosPostales">
             <End Role="CodigoPostal" EntitySet="CodigosPostales" />
             <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
           </AssociationSet>
@@ -7001,8 +7002,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Vendedor" EntitySet="Vendedores" />
             <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
           </AssociationSet>
-          <EntitySet Name="NotasEntregas" EntityType="NVModel.NotaEntrega" />
-        </EntityContainer>
+          </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
             <PropertyRef Name="Número" />
@@ -7162,7 +7162,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="CabAlbaránVta" Relationship="NVModel.FK_CabAlbaránVta_Empresas" FromRole="Empresa" ToRole="CabAlbaránVta" />
           <NavigationProperty Name="GruposProductoes" Relationship="NVModel.FK_GruposProducto_Empresas" FromRole="Empresa" ToRole="GruposProducto" />
           <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_Empresas" FromRole="Empresa" ToRole="ExtractoRuta" />
-        </EntityType>
+          </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
           <End Type="NVModel.Empresa" Role="Empresa1" Multiplicity="*" />
@@ -7404,7 +7404,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="PersonasContactoClientes1" Relationship="NVModel.FK_PersonasContactoCliente_Clientes1" FromRole="Cliente" ToRole="PersonasContactoCliente" />
           <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Clientes" FromRole="Cliente" ToRole="CabFacturaVta" />
           <NavigationProperty Name="CabAlbaránVta" Relationship="NVModel.FK_CabAlbaránVta_Clientes" FromRole="Cliente" ToRole="CabAlbaránVta" />
-        </EntityType>
+          </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
           <End Type="NVModel.CabPedidoVta" Role="CabPedidoVta" Multiplicity="*" />
@@ -11855,7 +11855,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
           <Property Name="VideoId" Type="Int32" Nullable="false" />
           <Property Name="NombreProducto" Type="String" MaxLength="255" FixedLength="false" Unicode="true" />
-          <Property Name="Referencia" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="Referencia" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />          
           <Property Name="TiempoAparicion" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
           <NavigationProperty Name="Video" Relationship="NVModel.FK_VideosProductos_Videos" FromRole="VideosProducto" ToRole="Video" />
           <Property Name="EnlaceTienda" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
@@ -12256,6 +12256,16 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Ruta1" Relationship="NVModel.FK_ExtractoRuta_Rutas1" FromRole="ExtractoRuta" ToRole="Ruta" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_ExtractoRuta_Vendedores" FromRole="ExtractoRuta" ToRole="Vendedor" />
         </EntityType>
+        <EntityType Name="NotasEntrega">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+            <PropertyRef Name="NotaEntrega" />
+            <PropertyRef Name="Fecha" />
+          </Key>
+          <Property Name="NºOrden" Type="Int32" Nullable="false" />
+          <Property Name="NotaEntrega" Type="Int32" Nullable="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+        </EntityType>
         <Association Name="FK_ExtractoRuta_CódigosPostales">
           <End Type="NVModel.CodigoPostal" Role="CodigoPostal" Multiplicity="0..1" />
           <End Type="NVModel.ExtractoRuta" Role="ExtractoRuta" Multiplicity="*" />
@@ -12338,16 +12348,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
-        <EntityType Name="NotaEntrega">
-          <Key>
-            <PropertyRef Name="NºOrden" />
-            <PropertyRef Name="Numero" />
-          </Key>
-          <Property Name="NºOrden" Type="Int32" Nullable="false" />
-          <Property Name="Numero" Type="Int32" Nullable="false" />
-          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
-        </EntityType>
-      </Schema>
+        </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
     <edmx:Mappings>
@@ -14189,10 +14190,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </EntityTypeMapping>
           </EntitySetMapping>
           <EntitySetMapping Name="NotasEntregas">
-            <EntityTypeMapping TypeName="NVModel.NotaEntrega">
+            <EntityTypeMapping TypeName="NVModel.NotasEntrega">
               <MappingFragment StoreEntitySet="NotasEntrega">
                 <ScalarProperty Name="Fecha" ColumnName="Fecha" />
-                <ScalarProperty Name="Numero" ColumnName="NotaEntrega" />
+                <ScalarProperty Name="NotaEntrega" ColumnName="NotaEntrega" />
                 <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
               </MappingFragment>
             </EntityTypeMapping>
@@ -14218,7 +14219,6 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
       </DesignerInfoPropertySet>
     </Options>
     <!-- Diagram content (shape and connector positions) -->
-    <Diagrams>
-    </Diagrams>
+    <Diagrams></Diagrams>
   </Designer>
 </edmx:Edmx>

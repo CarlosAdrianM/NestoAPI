@@ -111,9 +111,9 @@ namespace NestoAPI.Controllers
                     if (syncMessage?.PersonasContacto != null && syncMessage.PersonasContacto.Count > 0)
                     {
                         var personasInfo = string.Join(", ", syncMessage.PersonasContacto.Select(p =>
-                            $"PersonaContacto {p.Id}:{p.Nombre}"
+                            $"Id={p.Id} ({p.Nombre})"
                         ));
-                        logInfo += $", Personas=[{personasInfo}]";
+                        logInfo += $", PersonasContacto=[{personasInfo}]";
                     }
 
                     // Detectar duplicados

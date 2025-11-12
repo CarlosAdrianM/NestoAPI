@@ -4,7 +4,7 @@
   <edmx:Runtime>
     <!-- SSDL content -->
     <edmx:StorageModels>
-    <Schema Namespace="NVModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2008" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
+      <Schema Namespace="NVModel.Store" Provider="System.Data.SqlClient" ProviderManifestToken="2008" Alias="Self" xmlns:store="http://schemas.microsoft.com/ado/2007/12/edm/EntityStoreSchemaGenerator" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm/ssdl">
         <EntityType Name="AgenciasLlamadasWeb">
           <Key>
             <PropertyRef Name="Id" />
@@ -1177,7 +1177,7 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
         </EntityType>
-        <EntityType Name="NotaEntrega">
+        <EntityType Name="NotasEntrega">
           <Key>
             <PropertyRef Name="NºOrden" />
             <PropertyRef Name="NotaEntrega" />
@@ -4999,7 +4999,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="LogVideosProductos" EntityType="Self.LogVideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="MovimientoTPV" EntityType="Self.MovimientoTPV" Schema="dbo" store:Type="Tables" />
-          <EntitySet Name="NotasEntrega" EntityType="Self.NotaEntrega" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
@@ -5963,7 +5963,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="VideosProductos" EntitySet="VideosProductos" />
           </AssociationSet>
         </EntityContainer>
-      </Schema></edmx:StorageModels>
+      </Schema>
+    </edmx:StorageModels>
     <!-- CSDL content -->
     <edmx:ConceptualModels>
       <Schema Namespace="NVModel" Alias="Self" annotation:UseStrongSpatialTypes="false" xmlns:annotation="http://schemas.microsoft.com/ado/2009/02/edm/annotation" xmlns:customannotation="http://schemas.microsoft.com/ado/2013/11/edm/customannotation" xmlns="http://schemas.microsoft.com/ado/2009/11/edm">
@@ -6977,7 +6978,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </AssociationSet>
           <EntitySet Name="LogVideosProductos" EntityType="NVModel.LogVideoProducto" />
           <EntitySet Name="ExtractoRutas" EntityType="NVModel.ExtractoRuta" />
-                    <AssociationSet Name="FK_ExtractoRuta_CódigosPostales" Association="NVModel.FK_ExtractoRuta_CódigosPostales">
+          <EntitySet Name="NotasEntregas" EntityType="NVModel.NotasEntrega" />
+          <AssociationSet Name="FK_ExtractoRuta_CódigosPostales" Association="NVModel.FK_ExtractoRuta_CódigosPostales">
             <End Role="CodigoPostal" EntitySet="CodigosPostales" />
             <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
           </AssociationSet>
@@ -7001,7 +7003,6 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Vendedor" EntitySet="Vendedores" />
             <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
           </AssociationSet>
-          <EntitySet Name="NotasEntregas" EntityType="NVModel.NotaEntrega" />
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -12256,6 +12257,16 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Ruta1" Relationship="NVModel.FK_ExtractoRuta_Rutas1" FromRole="ExtractoRuta" ToRole="Ruta" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_ExtractoRuta_Vendedores" FromRole="ExtractoRuta" ToRole="Vendedor" />
         </EntityType>
+        <EntityType Name="NotasEntrega">
+          <Key>
+            <PropertyRef Name="NºOrden" />
+            <PropertyRef Name="NotaEntrega" />
+            <PropertyRef Name="Fecha" />
+          </Key>
+          <Property Name="NºOrden" Type="Int32" Nullable="false" />
+          <Property Name="NotaEntrega" Type="Int32" Nullable="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+        </EntityType>
         <Association Name="FK_ExtractoRuta_CódigosPostales">
           <End Type="NVModel.CodigoPostal" Role="CodigoPostal" Multiplicity="0..1" />
           <End Type="NVModel.ExtractoRuta" Role="ExtractoRuta" Multiplicity="*" />
@@ -12338,15 +12349,6 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
-        <EntityType Name="NotaEntrega">
-          <Key>
-            <PropertyRef Name="NºOrden" />
-            <PropertyRef Name="Numero" />
-          </Key>
-          <Property Name="NºOrden" Type="Int32" Nullable="false" />
-          <Property Name="Numero" Type="Int32" Nullable="false" />
-          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
-        </EntityType>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -14189,15 +14191,15 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </EntityTypeMapping>
           </EntitySetMapping>
           <EntitySetMapping Name="NotasEntregas">
-            <EntityTypeMapping TypeName="NVModel.NotaEntrega">
+            <EntityTypeMapping TypeName="NVModel.NotasEntrega">
               <MappingFragment StoreEntitySet="NotasEntrega">
                 <ScalarProperty Name="Fecha" ColumnName="Fecha" />
-                <ScalarProperty Name="Numero" ColumnName="NotaEntrega" />
+                <ScalarProperty Name="NotaEntrega" ColumnName="NotaEntrega" />
                 <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
-          </EntityContainerMapping>
+        </EntityContainerMapping>
       </Mapping>
     </edmx:Mappings>
   </edmx:Runtime>

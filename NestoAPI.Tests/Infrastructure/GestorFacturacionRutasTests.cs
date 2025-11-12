@@ -195,6 +195,232 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region Grupo 2: Facturación después de crear albarán con MantenerJunto
+
+        [TestMethod]
+        public async Task FacturarRutas_PedidoNRMMantenerJuntoQueQuedaCompleto_CreaAlbaranYFactura()
+        {
+            // Arrange - Pedido NRM con MantenerJunto=1, con 2 líneas:
+            // - Una línea EN_CURSO (se albaranará)
+            // - Otra línea ya ALBARAN (ya albaranada)
+            // Después de crear el albarán, TODAS las líneas tendrán Estado >= 2,
+            // por lo que DEBERÍA crear la factura
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 12345,
+                Nº_Cliente = "1001",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, // "NRM"
+                MantenerJunto = true,
+                NotaEntrega = false,
+                Comentarios = "",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO, // Estado 1 - se albaranará
+                        VtoBueno = true,
+                        Base_Imponible = 100m
+                    },
+                    new LinPedidoVta
+                    {
+                        Estado = Constantes.EstadosLineaVenta.ALBARAN, // Estado 2 - ya albaranada
+                        VtoBueno = true,
+                        Base_Imponible = 50m
+                    }
+                }
+            };
+
+            var pedidos = new List<CabPedidoVta> { pedido };
+
+            // Configurar mock del servicio de albaranes
+            // Después de crear el albarán (número 1001), TODAS las líneas deben tener Estado >= 2
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12345, "usuario"))
+                .Returns(Task.FromResult(1001))
+                .Invokes(() =>
+                {
+                    // Simular que el albarán se crea y actualiza el estado de la línea EN_CURSO a ALBARAN
+                    pedido.LinPedidoVtas[0].Estado = Constantes.EstadosLineaVenta.ALBARAN;
+                });
+
+            // Configurar mock del servicio de facturas
+            A.CallTo(() => servicioFacturas.CrearFactura("1", 12345, "usuario"))
+                .Returns(Task.FromResult("A25/123"));
+
+            // Configurar mock de traspaso (no debe traspasar)
+            A.CallTo(() => servicioTraspaso.HayQueTraspasar(pedido))
+                .Returns(false);
+
+            // Configurar mock de SaveChangesAsync
+            A.CallTo(() => db.SaveChangesAsync())
+                .Returns(Task.FromResult(0));
+
+            // Act
+            var response = await gestor.FacturarRutas(pedidos, "usuario");
+
+            // Assert
+            Assert.AreEqual(1, response.PedidosProcesados, "Debe procesar 1 pedido");
+            Assert.AreEqual(1, response.Albaranes.Count, "Debe crear 1 albarán");
+            Assert.AreEqual(1, response.Facturas.Count, "Debe crear 1 factura (ESTE TEST FALLA ACTUALMENTE)");
+            Assert.AreEqual(0, response.PedidosConErrores.Count, "No debe haber errores");
+
+            // Verificar que se llamó a CrearAlbaran
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12345, "usuario"))
+                .MustHaveHappenedOnceExactly();
+
+            // Verificar que se llamó a CrearFactura (ESTO FALLA ACTUALMENTE)
+            A.CallTo(() => servicioFacturas.CrearFactura("1", 12345, "usuario"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task FacturarRutas_PedidoNRMMantenerJuntoQueSigueIncompleto_CreaSoloAlbaranConError()
+        {
+            // Arrange - Pedido NRM con MantenerJunto=1, con 2 líneas:
+            // - Una línea EN_CURSO (se albaranará)
+            // - Otra línea PENDIENTE (NO se albaranará)
+            // Después de crear el albarán, sigue habiendo líneas sin albarán,
+            // por lo que NO debe crear la factura
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 12346,
+                Nº_Cliente = "1002",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, // "NRM"
+                MantenerJunto = true,
+                NotaEntrega = false,
+                Comentarios = "",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO, // Estado 1 - se albaranará
+                        VtoBueno = true,
+                        Base_Imponible = 100m
+                    },
+                    new LinPedidoVta
+                    {
+                        Estado = Constantes.EstadosLineaVenta.PENDIENTE, // Estado -1 - NO se albaranará
+                        VtoBueno = true,
+                        Base_Imponible = 50m
+                    }
+                }
+            };
+
+            var pedidos = new List<CabPedidoVta> { pedido };
+
+            // Configurar mock del servicio de albaranes
+            // Después de crear el albarán, solo la primera línea cambia a ALBARAN
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12346, "usuario"))
+                .Returns(Task.FromResult(1002))
+                .Invokes(() =>
+                {
+                    // Simular que el albarán solo actualiza la línea EN_CURSO
+                    pedido.LinPedidoVtas[0].Estado = Constantes.EstadosLineaVenta.ALBARAN;
+                    // La línea PENDIENTE sigue en PENDIENTE
+                });
+
+            // Configurar mock de traspaso
+            A.CallTo(() => servicioTraspaso.HayQueTraspasar(pedido))
+                .Returns(false);
+
+            // Configurar mock de SaveChangesAsync
+            A.CallTo(() => db.SaveChangesAsync())
+                .Returns(Task.FromResult(0));
+
+            // Act
+            var response = await gestor.FacturarRutas(pedidos, "usuario");
+
+            // Assert
+            Assert.AreEqual(1, response.PedidosProcesados, "Debe procesar 1 pedido");
+            Assert.AreEqual(1, response.Albaranes.Count, "Debe crear 1 albarán");
+            Assert.AreEqual(0, response.Facturas.Count, "NO debe crear factura (quedan líneas pendientes)");
+            Assert.AreEqual(1, response.PedidosConErrores.Count, "Debe registrar 1 error");
+
+            // Verificar el mensaje de error
+            var error = response.PedidosConErrores[0];
+            Assert.AreEqual(12346, error.NumeroPedido);
+            Assert.AreEqual("Factura", error.TipoError);
+            Assert.IsTrue(error.MensajeError.Contains("MantenerJunto=1"));
+            Assert.IsTrue(error.MensajeError.Contains("1 línea(s) sin albarán"));
+
+            // Verificar que NO se llamó a CrearFactura
+            A.CallTo(() => servicioFacturas.CrearFactura(A<string>._, A<int>._, A<string>._))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task FacturarRutas_PedidoNRMMantenerJuntoTodasLineasAlbaranadasAntes_CreaAlbaranYFactura()
+        {
+            // Arrange - Pedido NRM con MantenerJunto=1, con 2 líneas:
+            // - Ambas líneas ya tienen Estado = ALBARAN
+            // Por lo tanto, DEBE poder facturar inmediatamente
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 12347,
+                Nº_Cliente = "1003",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, // "NRM"
+                MantenerJunto = true,
+                NotaEntrega = false,
+                Comentarios = "",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Estado = Constantes.EstadosLineaVenta.ALBARAN, // Ya albaranada
+                        VtoBueno = true,
+                        Base_Imponible = 100m
+                    },
+                    new LinPedidoVta
+                    {
+                        Estado = Constantes.EstadosLineaVenta.ALBARAN, // Ya albaranada
+                        VtoBueno = true,
+                        Base_Imponible = 50m
+                    }
+                }
+            };
+
+            var pedidos = new List<CabPedidoVta> { pedido };
+
+            // Configurar mock del servicio de albaranes
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12347, "usuario"))
+                .Returns(Task.FromResult(1003));
+
+            // Configurar mock del servicio de facturas
+            A.CallTo(() => servicioFacturas.CrearFactura("1", 12347, "usuario"))
+                .Returns(Task.FromResult("A25/124"));
+
+            // Configurar mock de traspaso
+            A.CallTo(() => servicioTraspaso.HayQueTraspasar(pedido))
+                .Returns(false);
+
+            // Configurar mock de SaveChangesAsync
+            A.CallTo(() => db.SaveChangesAsync())
+                .Returns(Task.FromResult(0));
+
+            // Act
+            var response = await gestor.FacturarRutas(pedidos, "usuario");
+
+            // Assert
+            Assert.AreEqual(1, response.PedidosProcesados, "Debe procesar 1 pedido");
+            Assert.AreEqual(1, response.Albaranes.Count, "Debe crear 1 albarán");
+            Assert.AreEqual(1, response.Facturas.Count, "Debe crear 1 factura");
+            Assert.AreEqual(0, response.PedidosConErrores.Count, "No debe haber errores");
+
+            // Verificar que se llamó a CrearFactura
+            A.CallTo(() => servicioFacturas.CrearFactura("1", 12347, "usuario"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        #endregion
+
         #region Grupo 3: Validación MantenerJunto
 
         [TestMethod]

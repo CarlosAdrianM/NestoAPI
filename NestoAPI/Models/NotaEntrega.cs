@@ -11,19 +11,11 @@ namespace NestoAPI.Models
 {
     using System;
     using System.Collections.Generic;
-    using System.ComponentModel.DataAnnotations;
-    using System.ComponentModel.DataAnnotations.Schema;
-
+    
     public partial class NotaEntrega
     {
-        [Key]
-        [Column("NºOrden", Order = 0)]
         public int NºOrden { get; set; }
-
-        [Key]
-        [Column("NotaEntrega", Order = 1)]
         public int Numero { get; set; }
-
         public System.DateTime Fecha { get; set; }
     }
 }

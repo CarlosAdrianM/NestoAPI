@@ -25,7 +25,8 @@
       "Bash(powershell -ExecutionPolicy Bypass -File \"C:\\Users\\Carlos\\source\\repos\\NestoAPI\\REFACTOR_VIEWMODEL.ps1\")",
       "Bash(powershell -ExecutionPolicy Bypass -File:*)",
       "Bash(git checkout:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(python:*)"
     ],
     "deny": [],
     "ask": []

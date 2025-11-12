@@ -1177,7 +1177,7 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
         </EntityType>
-        <EntityType Name="NotaEntrega">
+        <EntityType Name="NotasEntrega">
           <Key>
             <PropertyRef Name="NºOrden" />
             <PropertyRef Name="NotaEntrega" />
@@ -4999,7 +4999,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="LogVideosProductos" EntityType="Self.LogVideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="MovimientoTPV" EntityType="Self.MovimientoTPV" Schema="dbo" store:Type="Tables" />
-          <EntitySet Name="NotasEntrega" EntityType="Self.NotaEntrega" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
@@ -7001,7 +7001,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Vendedor" EntitySet="Vendedores" />
             <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
           </AssociationSet>
-          <EntitySet Name="NotasEntregas" EntityType="NVModel.NotaEntrega" />
+          <EntitySet Name="NotasEntregas" EntityType="NVModel.NotasEntrega" />
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -12338,13 +12338,13 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
-        <EntityType Name="NotaEntrega">
+        <EntityType Name="NotasEntrega">
           <Key>
             <PropertyRef Name="NºOrden" />
-            <PropertyRef Name="Numero" />
+            <PropertyRef Name="NotaEntrega" />
           </Key>
           <Property Name="NºOrden" Type="Int32" Nullable="false" />
-          <Property Name="Numero" Type="Int32" Nullable="false" />
+          <Property Name="NotaEntrega" Type="Int32" Nullable="false" />
           <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
         </EntityType>
       </Schema>
@@ -14189,10 +14189,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </EntityTypeMapping>
           </EntitySetMapping>
           <EntitySetMapping Name="NotasEntregas">
-            <EntityTypeMapping TypeName="NVModel.NotaEntrega">
+            <EntityTypeMapping TypeName="NVModel.NotasEntrega">
               <MappingFragment StoreEntitySet="NotasEntrega">
                 <ScalarProperty Name="Fecha" ColumnName="Fecha" />
-                <ScalarProperty Name="Numero" ColumnName="NotaEntrega" />
+                <ScalarProperty Name="NotaEntrega" ColumnName="NotaEntrega" />
                 <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
               </MappingFragment>
             </EntityTypeMapping>

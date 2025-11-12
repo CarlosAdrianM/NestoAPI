@@ -893,8 +893,6 @@
     <Compile Include="Models\MovimientoTPV.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
-    <Compile Include="Models\NotaEntrega.cs" />
-    <Compile Include="Models\NotaEntrega.Partial.cs" />
     <Compile Include="Models\NestoDTO.cs" />
     <Compile Include="Models\NestoEntities.Context.cs">
       <AutoGen>True</AutoGen>
@@ -910,6 +908,9 @@
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
       <DependentUpon>NestoEntities.edmx</DependentUpon>
+    </Compile>
+    <Compile Include="Models\NotaEntrega.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\NVEntities.Partial.cs" />
     <Compile Include="Models\OfertaCombinada.cs">

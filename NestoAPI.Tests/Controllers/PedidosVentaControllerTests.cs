@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -12,7 +12,7 @@ namespace NestoAPI.Tests.Controllers
     [TestClass]
     public class PedidosVentaControllerTests
     {
-        
+
         [TestMethod]
         public void PedidoVentaController_ComprobarSiSePuedenInsertarLineas_SiElPedidoTienePickingYEtiquetaImpresaNoSePuedeCambiarElContacto()
         {

@@ -262,6 +262,14 @@ namespace NestoAPI.Infraestructure.Facturas
 
                 System.Diagnostics.Debug.WriteLine($"  → Albarán {numeroAlbaran} creado correctamente");
 
+                // CRÍTICO: Recargar las líneas del pedido desde la BD
+                // El procedimiento prdCrearAlbaránVta actualiza el Estado de las líneas en la BD,
+                // pero el objeto pedido en memoria NO se actualiza automáticamente.
+                // Sin esta recarga, PuedeFacturarPedido() seguiría viendo los estados antiguos.
+                System.Diagnostics.Debug.WriteLine($"  → Recargando líneas del pedido desde BD para obtener estados actualizados");
+                await db.Entry(pedido).Collection(p => p.LinPedidoVtas).LoadAsync();
+                System.Diagnostics.Debug.WriteLine($"  → Líneas recargadas. Estados actuales: {string.Join(", ", pedido.LinPedidoVtas.Select(l => $"Línea {l.Nº_Orden}={l.Estado}"))}");
+
                 // Agregar albarán creado al response (sin datos de impresión por ahora)
                 var albaranCreado = CrearAlbaranCreadoDTO(pedido, numeroAlbaran);
                 response.Albaranes.Add(albaranCreado);
@@ -332,7 +340,10 @@ namespace NestoAPI.Infraestructure.Facturas
             FacturarRutasResponseDTO response,
             string usuario)
         {
-            // Validar ANTES si se puede facturar (MantenerJunto)
+            // IMPORTANTE: Después de crear el albarán, el estado de las líneas puede haber cambiado.
+            // Necesitamos validar de nuevo si ahora SÍ se puede facturar.
+            // Esto es crucial para pedidos con MantenerJunto=1 donde el albarán completó todas las líneas.
+
             if (!PuedeFacturarPedido(pedido))
             {
                 // No se puede facturar porque MantenerJunto = 1 y hay líneas sin albarán
@@ -359,6 +370,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
                 return; // No intentar crear factura
             }
+
+            // Si llegamos aquí, se puede facturar (ya sea porque no tiene MantenerJunto,
+            // o porque después de crear el albarán todas las líneas tienen Estado >= 2)
 
             try
             {

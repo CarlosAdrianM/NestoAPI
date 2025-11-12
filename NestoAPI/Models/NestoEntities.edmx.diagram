@@ -292,18 +292,6 @@
         <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasVenta" />
         <AssociationConnector Association="NVModel.FK_ExtractoRuta_Rutas1" />
         <AssociationConnector Association="NVModel.FK_ExtractoRuta_Vendedores" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_CódigosPostales" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Empresas" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasPago" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasVenta" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Rutas1" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Vendedores" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_CódigosPostales" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Empresas" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasPago" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasVenta" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Rutas1" />
-        <AssociationConnector Association="NVModel.FK_ExtractoRuta_Vendedores" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

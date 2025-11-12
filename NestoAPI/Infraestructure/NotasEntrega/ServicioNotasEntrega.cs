@@ -39,10 +39,14 @@ namespace NestoAPI.Infraestructure.NotasEntrega
 
             // Validaciones
             if (pedido == null)
+            {
                 throw new ArgumentNullException(nameof(pedido));
+            }
 
             if (string.IsNullOrWhiteSpace(usuario))
+            {
                 throw new ArgumentException("El usuario no puede ser null o vacío", nameof(usuario));
+            }
 
             System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Buscando cliente {pedido.Nº_Cliente}/{pedido.Contacto}");
             // Obtener cliente para el nombre
@@ -157,7 +161,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                     Usuario = usuario,
                     Fecha_Modificación = DateTime.Now
                 };
-                db.ExtractoRutas.Add(extractoRuta);
+                _ = db.ExtractoRutas.Add(extractoRuta);
             }
             else
             {
@@ -168,7 +172,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Guardando cambios en BD (SaveChangesAsync)...");
             try
             {
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
                 System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Cambios guardados correctamente. Nota de entrega completada.");
             }
             catch (Exception ex)
@@ -216,7 +220,7 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Estado = 0 // Pendiente de procesar
             };
 
-            db.PreExtrProductos.Add(preExtr);
+            _ = db.PreExtrProductos.Add(preExtr);
 
             // Nota: prdExtrProducto se ejecutará posteriormente (manualmente o por proceso automático)
             // para procesar todos los registros de PreExtrProducto y actualizar el stock.

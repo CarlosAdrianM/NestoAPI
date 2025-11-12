@@ -822,16 +822,32 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
-            // Verificar si pertenece al grupo "Dirección"
+            // Carlos 12/01/25: Verificar si pertenece al grupo "Dirección", "Almacén" o "Tiendas"
             bool grupoPermitidoSinValidacion;
+            bool grupoTiendasConAlmacenCorrecto = false;
             try
             {
                 var identity = User.Identity as ClaimsIdentity;
-                grupoPermitidoSinValidacion = User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) || User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN);
+                // Dirección y Almacén pueden crear sin validación sin importar el almacén
+                grupoPermitidoSinValidacion = User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
+                                             User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN);
+
+                // Tiendas puede crear sin validación solo si todas las líneas están en su almacén
+                if (!grupoPermitidoSinValidacion && User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
+                {
+                    string usuarioParam = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
+                    string almacenUsuario = ParametrosUsuarioController.LeerParametro(pedido.empresa, usuarioParam, "AlmacénPedidoVta");
+
+                    if (!string.IsNullOrWhiteSpace(almacenUsuario) && pedido.Lineas.Any())
+                    {
+                        grupoTiendasConAlmacenCorrecto = pedido.Lineas.All(l => l.almacen?.Trim() == almacenUsuario.Trim());
+                    }
+                }
             }
             catch
             {
                 grupoPermitidoSinValidacion = false;
+                grupoTiendasConAlmacenCorrecto = false;
             }
 
             // Carlos 11/08/23:
@@ -1040,7 +1056,12 @@ namespace NestoAPI.Controllers
             // Siempre calculamos la validación para incluirla en el correo, aunque no la bloqueemos
             RespuestaValidacion respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
 
-            if (!pedido.CreadoSinPasarValidacion || !grupoPermitidoSinValidacion)
+            // Carlos 12/01/25: Permitir omitir validación si:
+            // - Tiene rol Dirección o Almacén (sin importar almacenes), O
+            // - Tiene rol Tiendas Y todas las líneas están en su almacén
+            bool puedeOmitirValidacion = grupoPermitidoSinValidacion || grupoTiendasConAlmacenCorrecto;
+
+            if (!pedido.CreadoSinPasarValidacion || !puedeOmitirValidacion)
             {
                 if (!respuestaValidacion.ValidacionSuperada)
                 {
