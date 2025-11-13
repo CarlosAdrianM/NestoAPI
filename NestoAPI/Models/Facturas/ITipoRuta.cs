@@ -51,10 +51,14 @@ namespace NestoAPI.Models.Facturas
         int ObtenerNumeroCopias(CabPedidoVta pedido, bool debeImprimirDocumento, string empresaPorDefecto);
 
         /// <summary>
-        /// Obtiene la bandeja de impresión a utilizar.
+        /// Obtiene el tipo de bandeja de impresión a utilizar.
+        /// Usa valores estándar de PaperSourceKind compatibles con todas las impresoras.
         /// </summary>
-        /// <returns>Nombre de la bandeja ("Default", "Tray1", "Tray2", etc.)</returns>
-        string ObtenerBandeja();
+        /// <param name="pedido">Pedido asociado al documento</param>
+        /// <param name="esFactura">Indica si el documento es una factura (true) o albarán/nota de entrega (false)</param>
+        /// <param name="empresaPorDefecto">Empresa por defecto del sistema (para comparar si fue traspasado)</param>
+        /// <returns>Tipo de bandeja estándar (Upper, Middle, Lower, etc.)</returns>
+        TipoBandejaImpresion ObtenerBandeja(CabPedidoVta pedido, bool esFactura, string empresaPorDefecto);
 
         /// <summary>
         /// Indica si este tipo de ruta requiere insertar registros en ExtractoRuta.

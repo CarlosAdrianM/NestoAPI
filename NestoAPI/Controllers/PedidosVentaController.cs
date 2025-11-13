@@ -1,6 +1,11 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
+using NestoAPI.Infraestructure.AlbaranesVenta;
+using NestoAPI.Infraestructure.ExtractosRuta;
+using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
@@ -1218,6 +1223,65 @@ namespace NestoAPI.Controllers
         {
             var importeReembolso = gestor.ImporteReembolso(empresa, pedido);
             return Ok(importeReembolso);
+        }
+
+        /// <summary>
+        /// Obtiene los documentos de impresión para un pedido ya facturado.
+        /// Genera PDFs con las copias y bandeja apropiadas según el tipo de ruta.
+        /// Endpoint para ser usado desde AgenciasViewModel y otros lugares donde se necesite
+        /// imprimir documentos con la misma lógica que la facturación de rutas.
+        /// </summary>
+        /// <param name="empresa">Empresa del pedido</param>
+        /// <param name="numeroPedido">Número del pedido</param>
+        /// <param name="numeroFactura">Número de factura (opcional, null o "FDM" si es fin de mes)</param>
+        /// <param name="numeroAlbaran">Número de albarán (opcional)</param>
+        /// <returns>Documentos listos para imprimir con PDFs, copias y bandeja</returns>
+        [HttpGet]
+        [ResponseType(typeof(DocumentosImpresionPedidoDTO))]
+        [Route("api/PedidosVenta/{empresa}/{numeroPedido}/DocumentosImpresion")]
+        public async Task<IHttpActionResult> ObtenerDocumentosImpresion(
+            string empresa,
+            int numeroPedido,
+            string numeroFactura = null,
+            int? numeroAlbaran = null)
+        {
+            try
+            {
+                // Crear el gestor con todas sus dependencias
+                var servicioAlbaranes = new ServicioAlbaranesVenta();
+                var servicioFacturas = new ServicioFacturas();  // No recibe parámetros, crea su propio NVEntities
+                var gestorFacturas = new GestorFacturas(servicioFacturas);  // Recibe IServicioFacturas, no db
+                var servicioTraspaso = new ServicioTraspasoEmpresa(db);
+                var servicioNotasEntrega = new ServicioNotasEntrega(db);
+                var servicioExtractoRuta = new ServicioExtractoRuta(db);
+
+                var gestorFacturacionRutas = new GestorFacturacionRutas(
+                    db,
+                    servicioAlbaranes,
+                    servicioFacturas,
+                    gestorFacturas,
+                    servicioTraspaso,
+                    servicioNotasEntrega,
+                    servicioExtractoRuta
+                );
+
+                var documentos = await gestorFacturacionRutas.ObtenerDocumentosImpresion(
+                    empresa,
+                    numeroPedido,
+                    numeroFactura,
+                    numeroAlbaran);
+
+                return Ok(documentos);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error en ObtenerDocumentosImpresion: {ex.Message}");
+                return InternalServerError(ex);
+            }
         }
 
         private void errorPersonalizado(string mensajePersonalizado)

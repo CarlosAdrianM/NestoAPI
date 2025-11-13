@@ -57,9 +57,28 @@ namespace NestoAPI.Models.Facturas
             return 2;
         }
 
-        public string ObtenerBandeja()
+        /// <summary>
+        /// Obtiene la bandeja de impresión según el tipo de documento y si fue traspasado.
+        /// Usa tipos estándar compatibles con cualquier impresora.
+        /// - Facturas no traspasadas (en empresa por defecto): Lower (bandeja inferior)
+        /// - Resto de documentos (albaranes, notas de entrega, facturas traspasadas): Middle (bandeja media)
+        /// </summary>
+        public TipoBandejaImpresion ObtenerBandeja(CabPedidoVta pedido, bool esFactura, string empresaPorDefecto)
         {
-            return "Default";
+            if (pedido == null)
+            {
+                return TipoBandejaImpresion.Middle;
+            }
+
+            // Si es factura Y está en la empresa por defecto (no traspasada): Lower (bandeja inferior)
+            bool estaEnEmpresaPorDefecto = pedido.Empresa?.Trim() == empresaPorDefecto?.Trim();
+            if (esFactura && estaEnEmpresaPorDefecto)
+            {
+                return TipoBandejaImpresion.Lower;
+            }
+
+            // Resto de casos: Middle (bandeja media)
+            return TipoBandejaImpresion.Middle;
         }
 
         /// <summary>

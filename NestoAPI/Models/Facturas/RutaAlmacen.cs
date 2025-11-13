@@ -57,9 +57,13 @@ namespace NestoAPI.Models.Facturas
             return 0;
         }
 
-        public string ObtenerBandeja()
+        /// <summary>
+        /// Obtiene la bandeja de impresión (no aplicable para rutas de almacén ya que no se imprime).
+        /// </summary>
+        public TipoBandejaImpresion ObtenerBandeja(CabPedidoVta pedido, bool esFactura, string empresaPorDefecto)
         {
-            return "Default";
+            // No es relevante porque esta ruta no imprime, pero devolvemos Middle por defecto
+            return TipoBandejaImpresion.Middle;
         }
 
         /// <summary>

@@ -76,5 +76,10 @@ namespace NestoAPI.Models.Facturas
         /// Número de notas de entrega creadas (calculado)
         /// </summary>
         public int NotasEntregaCreadas => NotasEntrega?.Count ?? 0;
+
+        /// <summary>
+        /// Número de notas de entrega con datos de impresión (calculado)
+        /// </summary>
+        public int NotasEntregaParaImprimir => NotasEntrega?.Count(n => n.DatosImpresion != null) ?? 0;
     }
 }

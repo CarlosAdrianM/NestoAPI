@@ -947,6 +947,7 @@
     <Compile Include="Models\PedidosEspeciale.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PedidosVenta\DocumentosImpresionPedidoDTO.cs" />
     <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />

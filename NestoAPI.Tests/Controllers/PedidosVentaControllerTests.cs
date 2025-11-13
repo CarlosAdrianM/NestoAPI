@@ -18,5 +18,10 @@ namespace NestoAPI.Tests.Controllers
         {
 
         }
+
+        // NOTA: Los tests del endpoint ObtenerDocumentosImpresion son complejos de mockear
+        // debido a la estructura de Entity Framework y las relaciones de navegación.
+        // La lógica crítica está testeada en GestorFacturacionRutasTests.ObtenerDocumentosImpresion_*
+        // que cubren todos los escenarios de negocio.
     }
 }

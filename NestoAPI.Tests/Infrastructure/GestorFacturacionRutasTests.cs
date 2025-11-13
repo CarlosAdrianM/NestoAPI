@@ -1010,5 +1010,309 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region Grupo 6: ObtenerDocumentosImpresion
+
+        [TestMethod]
+        public async Task ObtenerDocumentosImpresion_PedidoNRMConFactura_RetornaFacturaYDatosImpresion()
+        {
+            // Arrange
+            string empresa = "1";
+            int numeroPedido = 12345;
+            string numeroFactura = "A25/123";
+            int? numeroAlbaran = 1001;
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = empresa,
+                Número = numeroPedido,
+                Nº_Cliente = "1001",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                NotaEntrega = false,
+                Comentarios = "FACTURA FÍSICA requerida",
+                Cliente = new Cliente
+                {
+                    Nº_Cliente = "1001",
+                    Nombre = "Cliente Test",
+                    ClienteGrupo = new ClienteGrupo
+                    {
+                        Grupo = "RU",
+                        Copias = 2,
+                        Bandeja = 2 // Middle
+                    }
+                }
+            };
+
+            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
+            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
+                .Returns(Task.FromResult(pedido));
+            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
+
+            // Configurar generación de datos de impresión de factura
+            A.CallTo(() => gestorFacturas.GenerarDatosImpresionFactura(
+                A<string>._, A<int>._, A<string>._, A<string>._, A<bool>._))
+                .Returns(new DatosImpresionDocumento
+                {
+                    ContenidoPdf = new byte[] { 1, 2, 3 },
+                    NumeroCopias = 2,
+                    Bandeja = System.Drawing.Printing.PaperSourceKind.Middle
+                });
+
+            // Act
+            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Facturas.Count, "Debe contener 1 factura");
+            Assert.AreEqual(numeroFactura, resultado.Facturas[0].NumeroFactura);
+            Assert.IsNotNull(resultado.Facturas[0].DatosImpresion, "Debe tener datos de impresión");
+            Assert.AreEqual(2, resultado.Facturas[0].DatosImpresion.NumeroCopias);
+            Assert.AreEqual(0, resultado.Albaranes.Count, "No debe generar albarán para NRM");
+            Assert.AreEqual(0, resultado.NotasEntrega.Count, "No debe generar nota de entrega");
+            Assert.IsTrue(resultado.HayDocumentosParaImprimir);
+        }
+
+        [TestMethod]
+        public async Task ObtenerDocumentosImpresion_PedidoFDMConAlbaran_RetornaAlbaranYDatosImpresion()
+        {
+            // Arrange
+            string empresa = "1";
+            int numeroPedido = 12346;
+            string numeroFactura = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES; // "FDM"
+            int? numeroAlbaran = 1002;
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = empresa,
+                Número = numeroPedido,
+                Nº_Cliente = "1002",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
+                NotaEntrega = false,
+                Comentarios = "ALBARÁN FÍSICO necesario",
+                Cliente = new Cliente
+                {
+                    Nº_Cliente = "1002",
+                    Nombre = "Cliente FDM",
+                    ClienteGrupo = new ClienteGrupo
+                    {
+                        Grupo = "RU",
+                        Copias = 1,
+                        Bandeja = 1 // Upper
+                    }
+                }
+            };
+
+            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
+            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
+                .Returns(Task.FromResult(pedido));
+            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
+
+            // Configurar generación de datos de impresión de albarán
+            A.CallTo(() => servicioAlbaranes.GenerarDatosImpresionAlbaran(
+                A<string>._, A<int>._, A<int>._, A<string>._, A<bool>._))
+                .Returns(new DatosImpresionDocumento
+                {
+                    ContenidoPdf = new byte[] { 4, 5, 6 },
+                    NumeroCopias = 1,
+                    Bandeja = System.Drawing.Printing.PaperSourceKind.Upper
+                });
+
+            // Act
+            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Facturas.Count, "No debe generar factura para FDM");
+            Assert.AreEqual(1, resultado.Albaranes.Count, "Debe contener 1 albarán");
+            Assert.AreEqual(numeroAlbaran.Value, resultado.Albaranes[0].NumeroAlbaran);
+            Assert.IsNotNull(resultado.Albaranes[0].DatosImpresion, "Debe tener datos de impresión");
+            Assert.AreEqual(1, resultado.Albaranes[0].DatosImpresion.NumeroCopias);
+            Assert.AreEqual(0, resultado.NotasEntrega.Count, "No debe generar nota de entrega");
+            Assert.IsTrue(resultado.HayDocumentosParaImprimir);
+        }
+
+        [TestMethod]
+        public async Task ObtenerDocumentosImpresion_PedidoNotaEntrega_RetornaNotaEntregaYDatosImpresion()
+        {
+            // Arrange
+            string empresa = "1";
+            int numeroPedido = 12347;
+            string numeroFactura = null;
+            int? numeroAlbaran = null;
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = empresa,
+                Número = numeroPedido,
+                Nº_Cliente = "1003",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                NotaEntrega = true,
+                Comentarios = "Nota de entrega solicitada",
+                Cliente = new Cliente
+                {
+                    Nº_Cliente = "1003",
+                    Nombre = "Cliente Nota Entrega",
+                    ClienteGrupo = new ClienteGrupo
+                    {
+                        Grupo = "RU",
+                        Copias = 1,
+                        Bandeja = 1
+                    }
+                }
+            };
+
+            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
+            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
+                .Returns(Task.FromResult(pedido));
+            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
+
+            // Configurar generación de datos de impresión de nota de entrega
+            A.CallTo(() => servicioNotasEntrega.GenerarDatosImpresionNotaEntrega(
+                A<string>._, A<int>._, A<string>._, A<bool>._))
+                .Returns(new DatosImpresionDocumento
+                {
+                    ContenidoPdf = new byte[] { 7, 8, 9 },
+                    NumeroCopias = 1,
+                    Bandeja = System.Drawing.Printing.PaperSourceKind.Upper
+                });
+
+            // Act
+            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Facturas.Count, "No debe generar factura");
+            Assert.AreEqual(0, resultado.Albaranes.Count, "No debe generar albarán");
+            Assert.AreEqual(1, resultado.NotasEntrega.Count, "Debe contener 1 nota de entrega");
+            Assert.IsNotNull(resultado.NotasEntrega[0].DatosImpresion, "Debe tener datos de impresión");
+            Assert.AreEqual(1, resultado.NotasEntrega[0].DatosImpresion.NumeroCopias);
+            Assert.IsTrue(resultado.HayDocumentosParaImprimir);
+        }
+
+        [TestMethod]
+        public async Task ObtenerDocumentosImpresion_SinComentarioImpresion_RetornaSinDatosImpresion()
+        {
+            // Arrange
+            string empresa = "1";
+            int numeroPedido = 12348;
+            string numeroFactura = "A25/124";
+            int? numeroAlbaran = 1003;
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = empresa,
+                Número = numeroPedido,
+                Nº_Cliente = "1004",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                NotaEntrega = false,
+                Comentarios = "Pedido normal sin solicitud de impresión", // No contiene palabras clave
+                Cliente = new Cliente
+                {
+                    Nº_Cliente = "1004",
+                    Nombre = "Cliente Sin Impresión"
+                }
+            };
+
+            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
+            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
+                .Returns(Task.FromResult(pedido));
+            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
+
+            // Act
+            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Facturas.Count, "Debe contener la factura");
+            Assert.IsNull(resultado.Facturas[0].DatosImpresion, "NO debe tener datos de impresión");
+            Assert.IsFalse(resultado.HayDocumentosParaImprimir, "No hay documentos para imprimir");
+            Assert.AreEqual(0, resultado.TotalDocumentosParaImprimir);
+        }
+
+        [TestMethod]
+        public async Task ObtenerDocumentosImpresion_PedidoNoEncontrado_RetornaListasVacias()
+        {
+            // Arrange
+            string empresa = "1";
+            int numeroPedido = 99999;
+            string numeroFactura = "A25/125";
+            int? numeroAlbaran = 1004;
+
+            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
+            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
+                .Returns(Task.FromResult<CabPedidoVta>(null)); // Pedido no existe
+            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
+
+            // Act
+            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Facturas.Count);
+            Assert.AreEqual(0, resultado.Albaranes.Count);
+            Assert.AreEqual(0, resultado.NotasEntrega.Count);
+            Assert.IsFalse(resultado.HayDocumentosParaImprimir);
+        }
+
+        [TestMethod]
+        public async Task ObtenerDocumentosImpresion_ConVariasCopias_RetornaTotalDocumentosCorrect()
+        {
+            // Arrange
+            string empresa = "1";
+            int numeroPedido = 12349;
+            string numeroFactura = "A25/126";
+            int? numeroAlbaran = 1005;
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = empresa,
+                Número = numeroPedido,
+                Nº_Cliente = "1005",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                NotaEntrega = false,
+                Comentarios = "FACTURA FÍSICA con varias copias",
+                Cliente = new Cliente
+                {
+                    Nº_Cliente = "1005",
+                    Nombre = "Cliente Multi-Copia",
+                    ClienteGrupo = new ClienteGrupo
+                    {
+                        Grupo = "RU",
+                        Copias = 3, // 3 copias
+                        Bandeja = 2
+                    }
+                }
+            };
+
+            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
+            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
+                .Returns(Task.FromResult(pedido));
+            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
+
+            A.CallTo(() => gestorFacturas.GenerarDatosImpresionFactura(
+                A<string>._, A<int>._, A<string>._, A<string>._, A<bool>._))
+                .Returns(new DatosImpresionDocumento
+                {
+                    ContenidoPdf = new byte[] { 1, 2, 3 },
+                    NumeroCopias = 3,
+                    Bandeja = System.Drawing.Printing.PaperSourceKind.Middle
+                });
+
+            // Act
+            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Facturas.Count);
+            Assert.AreEqual(3, resultado.Facturas[0].DatosImpresion.NumeroCopias);
+            Assert.AreEqual(3, resultado.TotalDocumentosParaImprimir, "Debe contar 3 copias");
+        }
+
+        #endregion
     }
 }

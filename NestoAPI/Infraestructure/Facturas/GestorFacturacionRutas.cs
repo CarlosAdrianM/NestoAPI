@@ -4,8 +4,10 @@ using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
+using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
@@ -229,6 +231,30 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     if (notaEntrega != null)
                     {
+                        // Determinar tipo de ruta y si debe generar PDF
+                        var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
+                        bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+
+                        // Obtener número de copias según el tipo de ruta
+                        int numeroCopias = tipoRuta != null
+                            ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                            : 0;
+
+                        // Si debe imprimir (numeroCopias > 0), generar PDF
+                        if (numeroCopias > 0)
+                        {
+                            try
+                            {
+                                System.Diagnostics.Debug.WriteLine($"  → Generando PDF de nota de entrega ({numeroCopias} copias)");
+                                notaEntrega.DatosImpresion = GenerarDatosImpresionNotaEntrega(pedido, pedido.Empresa, pedido.Número);
+                            }
+                            catch (Exception exPdf)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"  ✗ ERROR al generar PDF de nota de entrega: {exPdf.Message}");
+                                RegistrarError(pedido, "Generación PDF Nota de Entrega", exPdf, response);
+                            }
+                        }
+
                         response.NotasEntrega.Add(notaEntrega);
                         System.Diagnostics.Debug.WriteLine($"  → Nota de entrega agregada al response correctamente");
                     }
@@ -265,10 +291,18 @@ namespace NestoAPI.Infraestructure.Facturas
                 // CRÍTICO: Recargar las líneas del pedido desde la BD
                 // El procedimiento prdCrearAlbaránVta actualiza el Estado de las líneas en la BD,
                 // pero el objeto pedido en memoria NO se actualiza automáticamente.
-                // Sin esta recarga, PuedeFacturarPedido() seguiría viendo los estados antiguos.
+                // LoadAsync() NO refresca entidades ya tracked, por lo que usamos Reload() en cada línea.
                 System.Diagnostics.Debug.WriteLine($"  → Recargando líneas del pedido desde BD para obtener estados actualizados");
-                await db.Entry(pedido).Collection(p => p.LinPedidoVtas).LoadAsync();
-                System.Diagnostics.Debug.WriteLine($"  → Líneas recargadas. Estados actuales: {string.Join(", ", pedido.LinPedidoVtas.Select(l => $"Línea {l.Nº_Orden}={l.Estado}"))}");
+
+                if (pedido.LinPedidoVtas != null && pedido.LinPedidoVtas.Any())
+                {
+                    // IMPORTANTE: Reload() fuerza a EF a descartar los valores en memoria y recargar desde BD
+                    foreach (var linea in pedido.LinPedidoVtas)
+                    {
+                        await db.Entry(linea).ReloadAsync();
+                    }
+                    System.Diagnostics.Debug.WriteLine($"  → Líneas recargadas. Estados actuales: {string.Join(", ", pedido.LinPedidoVtas.Select(l => $"Línea {l.Nº_Orden}={l.Estado}"))}");
+                }
 
                 // Agregar albarán creado al response (sin datos de impresión por ahora)
                 var albaranCreado = CrearAlbaranCreadoDTO(pedido, numeroAlbaran);
@@ -398,12 +432,18 @@ namespace NestoAPI.Infraestructure.Facturas
                     await servicioExtractoRuta.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
                 }
 
-                // Si debe imprimirse, generar bytes del PDF
-                if (DebeImprimirDocumento(pedido.Comentarios))
+                // Determinar si debe generar PDF según el tipo de ruta
+                bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+                int numeroCopias = tipoRuta != null
+                    ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                    : 0;
+
+                // Si debe imprimirse (numeroCopias > 0), generar bytes del PDF
+                if (numeroCopias > 0)
                 {
                     try
                     {
-                        System.Diagnostics.Debug.WriteLine($"  → Generando PDF de factura");
+                        System.Diagnostics.Debug.WriteLine($"  → Generando PDF de factura ({numeroCopias} copias)");
                         facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, pedido.Empresa, numeroFactura);
                     }
                     catch (Exception exPdf)
@@ -435,16 +475,23 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>
-        /// Agrega datos de impresión al albarán si el pedido tiene comentario de impresión.
-        /// Usado para pedidos FDM (Fin de Mes).
+        /// Agrega datos de impresión al albarán si corresponde según el tipo de ruta.
+        /// Usado para pedidos FDM (Fin de Mes) y cuando falla la factura en NRM.
         /// </summary>
         private void AgregarDatosImpresionAlbaranSiCorresponde(
             CabPedidoVta pedido,
             int numeroAlbaran,
             FacturarRutasResponseDTO response)
         {
-            // Solo generar PDF si tiene comentario de impresión
-            if (!DebeImprimirDocumento(pedido.Comentarios))
+            // Determinar si debe generar PDF según el tipo de ruta
+            var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
+            bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+            int numeroCopias = tipoRuta != null
+                ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                : 0;
+
+            // Solo generar PDF si numeroCopias > 0
+            if (numeroCopias == 0)
             {
                 return;
             }
@@ -456,6 +503,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
             if (albaran != null)
             {
+                System.Diagnostics.Debug.WriteLine($"  → Generando PDF de albarán ({numeroCopias} copias)");
                 albaran.DatosImpresion = GenerarDatosImpresionAlbaran(pedido, pedido.Empresa, numeroAlbaran);
             }
         }
@@ -469,7 +517,7 @@ namespace NestoAPI.Infraestructure.Facturas
             var lista = new List<FacturaLookup> { lookup };
             var albaranes = gestorFacturas.LeerAlbaranes(lista);
 
-            var bytesPdf = gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete: false);
+            var bytesPdf = gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete: true);
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
@@ -480,13 +528,15 @@ namespace NestoAPI.Infraestructure.Facturas
                 ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
                 : 0;
 
-            string bandeja = tipoRuta != null ? tipoRuta.ObtenerBandeja() : "Default";
+            TipoBandejaImpresion tipoBandeja = tipoRuta != null
+                ? tipoRuta.ObtenerBandeja(pedido, esFactura: false, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                : TipoBandejaImpresion.Middle;
 
             return new DocumentoParaImprimir
             {
                 BytesPDF = bytesPdf.ReadAsByteArrayAsync().Result,
                 NumeroCopias = numeroCopias,
-                Bandeja = bandeja
+                TipoBandeja = tipoBandeja
             };
         }
 
@@ -498,7 +548,7 @@ namespace NestoAPI.Infraestructure.Facturas
             var factura = gestorFacturas.LeerFactura(empresa, numeroFactura);
             var facturas = new List<Factura> { factura };
 
-            var bytesPdf = gestorFacturas.FacturasEnPDF(facturas, papelConMembrete: false);
+            var bytesPdf = gestorFacturas.FacturasEnPDF(facturas, papelConMembrete: true);
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
@@ -509,13 +559,47 @@ namespace NestoAPI.Infraestructure.Facturas
                 ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
                 : 0;
 
-            string bandeja = tipoRuta != null ? tipoRuta.ObtenerBandeja() : "Default";
+            TipoBandejaImpresion tipoBandeja = tipoRuta != null
+                ? tipoRuta.ObtenerBandeja(pedido, esFactura: true, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                : TipoBandejaImpresion.Middle;
 
             return new DocumentoParaImprimir
             {
                 BytesPDF = bytesPdf.ReadAsByteArrayAsync().Result,
                 NumeroCopias = numeroCopias,
-                Bandeja = bandeja
+                TipoBandeja = tipoBandeja
+            };
+        }
+
+        /// <summary>
+        /// Genera los datos de impresión para una nota de entrega (bytes del PDF, copias, bandeja).
+        /// Usa el formato de pedido para generar el PDF de la nota de entrega.
+        /// </summary>
+        private DocumentoParaImprimir GenerarDatosImpresionNotaEntrega(CabPedidoVta pedido, string empresa, int numeroPedido)
+        {
+            var pedidoFactura = gestorFacturas.LeerPedido(empresa, numeroPedido);
+            var pedidos = new List<Factura> { pedidoFactura };
+
+            var bytesPdf = gestorFacturas.FacturasEnPDF(pedidos, papelConMembrete: true);
+
+            // Determinar tipo de ruta y obtener configuración de impresión
+            var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
+            bool debeImprimir = DebeImprimirDocumento(pedido.Comentarios);
+
+            // Si la ruta no está manejada por ningún tipo, no imprimir
+            int numeroCopias = tipoRuta != null
+                ? tipoRuta.ObtenerNumeroCopias(pedido, debeImprimir, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                : 0;
+
+            TipoBandejaImpresion tipoBandeja = tipoRuta != null
+                ? tipoRuta.ObtenerBandeja(pedido, esFactura: false, Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                : TipoBandejaImpresion.Middle;
+
+            return new DocumentoParaImprimir
+            {
+                BytesPDF = bytesPdf.ReadAsByteArrayAsync().Result,
+                NumeroCopias = numeroCopias,
+                TipoBandeja = tipoBandeja
             };
         }
 
@@ -764,6 +848,134 @@ namespace NestoAPI.Infraestructure.Facturas
             }
 
             RegistrarError(pedido, tipoError, mensajeCompleto, response);
+        }
+
+        /// <summary>
+        /// Obtiene los documentos de impresión para un pedido ya facturado.
+        /// Genera PDFs con las copias y bandeja apropiadas según el tipo de ruta.
+        /// </summary>
+        /// <param name="empresa">Empresa del pedido</param>
+        /// <param name="numeroPedido">Número del pedido</param>
+        /// <param name="numeroFactura">Número de factura si se generó (null o "FDM" si es fin de mes)</param>
+        /// <param name="numeroAlbaran">Número de albarán si se generó</param>
+        /// <returns>DTO con los documentos listos para imprimir</returns>
+        public async Task<DocumentosImpresionPedidoDTO> ObtenerDocumentosImpresion(
+            string empresa,
+            int numeroPedido,
+            string numeroFactura = null,
+            int? numeroAlbaran = null)
+        {
+            var response = new DocumentosImpresionPedidoDTO();
+
+            try
+            {
+                // 1. Cargar el pedido de la base de datos
+                var pedido = await db.CabPedidoVtas
+                    .Where(p => p.Empresa == empresa && p.Número == numeroPedido)
+                    .FirstOrDefaultAsync();
+
+                if (pedido == null)
+                {
+                    throw new ArgumentException($"No se encontró el pedido {numeroPedido} de la empresa {empresa}");
+                }
+
+                System.Diagnostics.Debug.WriteLine($"=== ObtenerDocumentosImpresion ===");
+                System.Diagnostics.Debug.WriteLine($"Pedido: {numeroPedido}, Factura: {numeroFactura ?? "null"}, Albarán: {numeroAlbaran?.ToString() ?? "null"}");
+
+                // 2. Determinar qué documento generar según lo que se pasó
+
+                // Si hay factura y no es FIN_DE_MES → generar factura
+                bool debeGenerarFactura = !string.IsNullOrWhiteSpace(numeroFactura) &&
+                                         numeroFactura != Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES;
+
+                // Si no hay factura o es FIN_DE_MES y hay albarán → generar albarán
+                bool debeGenerarAlbaran = !debeGenerarFactura && numeroAlbaran.HasValue && numeroAlbaran.Value > 0;
+
+                // Si no hay ninguno de los anteriores → generar nota de entrega
+                bool debeGenerarNotaEntrega = !debeGenerarFactura && !debeGenerarAlbaran;
+
+                System.Diagnostics.Debug.WriteLine($"Generar: Factura={debeGenerarFactura}, Albarán={debeGenerarAlbaran}, Nota={debeGenerarNotaEntrega}");
+
+                // 3. Generar los documentos correspondientes
+
+                if (debeGenerarFactura)
+                {
+                    var facturaCreada = new FacturaCreadaDTO
+                    {
+                        NumeroFactura = numeroFactura,
+                        Empresa = empresa,
+                        NumeroPedido = numeroPedido
+                    };
+
+                    try
+                    {
+                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, empresa, numeroFactura);
+                        response.Facturas.Add(facturaCreada);
+                        response.TipoDocumentoPrincipal = "Factura";
+                        response.Mensaje = $"Factura {numeroFactura} lista para imprimir";
+                        System.Diagnostics.Debug.WriteLine($"✓ Factura {numeroFactura} generada para impresión");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"❌ Error generando factura: {ex.Message}");
+                        throw new Exception($"Error al generar PDF de factura {numeroFactura}: {ex.Message}", ex);
+                    }
+                }
+                else if (debeGenerarAlbaran)
+                {
+                    var albaranCreado = new AlbaranCreadoDTO
+                    {
+                        NumeroAlbaran = numeroAlbaran.Value,
+                        Empresa = empresa,
+                        NumeroPedido = numeroPedido
+                    };
+
+                    try
+                    {
+                        albaranCreado.DatosImpresion = GenerarDatosImpresionAlbaran(pedido, empresa, numeroAlbaran.Value);
+                        response.Albaranes.Add(albaranCreado);
+                        response.TipoDocumentoPrincipal = "Albarán";
+                        response.Mensaje = $"Albarán {numeroAlbaran} listo para imprimir";
+                        System.Diagnostics.Debug.WriteLine($"✓ Albarán {numeroAlbaran} generado para impresión");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"❌ Error generando albarán: {ex.Message}");
+                        throw new Exception($"Error al generar PDF de albarán {numeroAlbaran}: {ex.Message}", ex);
+                    }
+                }
+                else if (debeGenerarNotaEntrega)
+                {
+                    var notaEntrega = new NotaEntregaCreadaDTO
+                    {
+                        NumeroPedido = numeroPedido,
+                        Empresa = empresa
+                    };
+
+                    try
+                    {
+                        notaEntrega.DatosImpresion = GenerarDatosImpresionNotaEntrega(pedido, empresa, numeroPedido);
+                        response.NotasEntrega.Add(notaEntrega);
+                        response.TipoDocumentoPrincipal = "Nota de Entrega";
+                        response.Mensaje = $"Nota de entrega del pedido {numeroPedido} lista para imprimir";
+                        System.Diagnostics.Debug.WriteLine($"✓ Nota de entrega del pedido {numeroPedido} generada para impresión");
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"❌ Error generando nota de entrega: {ex.Message}");
+                        throw new Exception($"Error al generar PDF de nota de entrega del pedido {numeroPedido}: {ex.Message}", ex);
+                    }
+                }
+
+                System.Diagnostics.Debug.WriteLine($"✓✓✓ Documentos generados correctamente. Total para imprimir: {response.TotalDocumentosParaImprimir}");
+                return response;
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"❌❌❌ Error en ObtenerDocumentosImpresion: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine($"StackTrace: {ex.StackTrace}");
+                throw;
+            }
         }
     }
 }
