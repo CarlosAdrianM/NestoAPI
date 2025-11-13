@@ -90,36 +90,20 @@ namespace NestoAPI.Controllers
                         PropertyNameCaseInsensitive = true
                     });
 
-                    // Loguear información detallada del mensaje
-                    string logInfo = $"MessageId={request.Message.MessageId}";
+                    // Obtener el handler apropiado para este mensaje
+                    var handler = _router.GetHandler(syncMessage);
 
-                    if (!string.IsNullOrEmpty(syncMessage?.Cliente))
+                    if (handler == null)
                     {
-                        logInfo += $" - Cliente {syncMessage.Cliente}";
+                        Log($"⚠️ No hay handler para Tabla={syncMessage?.Tabla}. Handlers disponibles: {string.Join(", ", _router.GetSupportedTables())}");
+                        return BadRequest($"Tabla '{syncMessage?.Tabla}' no soportada");
                     }
 
-                    if (!string.IsNullOrEmpty(syncMessage?.Contacto))
-                    {
-                        logInfo += $", Contacto {syncMessage.Contacto}";
-                    }
-
-                    if (!string.IsNullOrEmpty(syncMessage?.Source))
-                    {
-                        logInfo += $", Source={syncMessage.Source}";
-                    }
-
-                    if (syncMessage?.PersonasContacto != null && syncMessage.PersonasContacto.Count > 0)
-                    {
-                        var personasInfo = string.Join(", ", syncMessage.PersonasContacto.Select(p =>
-                            $"Id={p.Id} ({p.Nombre})"
-                        ));
-                        logInfo += $", PersonasContacto=[{personasInfo}]";
-                    }
+                    // El handler genera la clave y el log info (cada uno sabe su lógica)
+                    string messageKey = handler.GetMessageKey(syncMessage);
+                    string logInfo = $"MessageId={request.Message.MessageId} - {handler.GetLogInfo(syncMessage)}";
 
                     // Detectar duplicados
-                    string messageKey = $"{syncMessage?.Cliente}|{syncMessage?.Contacto}|{syncMessage?.Source}";
-                    bool isDuplicate = false;
-
                     lock (_lockObj)
                     {
                         // Limpiar mensajes antiguos (fuera de la ventana de detección)
@@ -133,7 +117,6 @@ namespace NestoAPI.Controllers
                         // Verificar si es duplicado
                         if (_recentMessages.ContainsKey(messageKey))
                         {
-                            isDuplicate = true;
                             var timeSinceLastMessage = DateTime.UtcNow - _recentMessages[messageKey];
                             logInfo += $" ⚠️ POSIBLE DUPLICADO (último mensaje hace {timeSinceLastMessage.TotalSeconds:F1}s)";
                         }

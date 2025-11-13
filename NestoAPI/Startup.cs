@@ -27,6 +27,8 @@ using System.Data.Entity;
 using System.Linq;
 using System.Net.Http.Formatting;
 using System.Web.Http;
+using Hangfire;
+using Hangfire.SqlServer;
 
 namespace NestoAPI
 {
@@ -59,6 +61,9 @@ namespace NestoAPI
 
                 ConfigureOAuthTokenGeneration(app);
                 ConfigureOAuthTokenConsumption(app);
+
+                // Configurar Hangfire para jobs programados
+                ConfigureHangfire(app);
 
                 ConfigureWebApi(httpConfig);
 
@@ -153,6 +158,7 @@ namespace NestoAPI
             // Servicios de sincronización bidireccional (External Systems <-> Nesto)
             // Push Subscription: usa SyncWebhookController
             _ = services.AddSingleton<ISyncTableHandler, ClientesSyncHandler>();
+            _ = services.AddSingleton<ISyncTableHandler, ProductosSyncHandler>();
             _ = services.AddSingleton<SyncTableRouter>(sp =>
             {
                 var handlers = sp.GetServices<ISyncTableHandler>();
@@ -180,7 +186,108 @@ namespace NestoAPI
             jsonFormatter.SerializerSettings.ContractResolver = new DefaultContractResolver();
 
             //Elimino que el sistema devuelva en XML, sólo trabajaremos con JSON
-            _ = config.Formatters.Remove(GlobalConfiguration.Configuration.Formatters.XmlFormatter);
+            _ = config.Formatters.Remove(System.Web.Http.GlobalConfiguration.Configuration.Formatters.XmlFormatter);
+        }
+
+        private void ConfigureHangfire(IAppBuilder app)
+        {
+            try
+            {
+                // Obtener connection string de Web.config
+                string connectionString = ConfigurationManager.ConnectionStrings["NestoConnection"].ConnectionString;
+
+                // Configurar Hangfire para usar SQL Server
+                Hangfire.GlobalConfiguration.Configuration
+                    .SetDataCompatibilityLevel(CompatibilityLevel.Version_170)
+                    .UseSimpleAssemblyNameTypeSerializer()
+                    .UseRecommendedSerializerSettings()
+                    .UseSqlServerStorage(connectionString, new SqlServerStorageOptions
+                    {
+                        CommandBatchMaxTimeout = TimeSpan.FromMinutes(5),
+                        SlidingInvisibilityTimeout = TimeSpan.FromMinutes(5),
+                        QueuePollInterval = TimeSpan.Zero,
+                        UseRecommendedIsolationLevel = true,
+                        DisableGlobalLocks = true
+                    });
+
+                // Configurar el dashboard de Hangfire en /hangfire
+                // IMPORTANTE: Restringir acceso en producción con DashboardAuthorizationFilter
+                app.UseHangfireDashboard("/hangfire", new DashboardOptions
+                {
+                    Authorization = new[] { new HangfireAuthorizationFilter() }
+                });
+
+                // Iniciar el servidor de Hangfire
+                app.UseHangfireServer(new BackgroundJobServerOptions
+                {
+                    WorkerCount = 1 // Solo un worker para evitar procesamiento duplicado
+                });
+
+                // Configurar jobs recurrentes
+                ConfigurarJobsRecurrentes();
+
+                Console.WriteLine("✅ Hangfire configurado correctamente");
+                System.Diagnostics.EventLog.WriteEntry("Application",
+                    "Hangfire configurado correctamente en NestoAPI. Dashboard disponible en /hangfire",
+                    System.Diagnostics.EventLogEntryType.Information);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"❌ Error al configurar Hangfire: {ex.Message}");
+                System.Diagnostics.EventLog.WriteEntry("Application",
+                    $"Error al configurar Hangfire: {ex.Message}\n\nStack Trace:\n{ex.StackTrace}",
+                    System.Diagnostics.EventLogEntryType.Error);
+                throw;
+            }
+        }
+
+        private void ConfigurarJobsRecurrentes()
+        {
+            // Sincronización de Productos cada 5 minutos
+            RecurringJob.AddOrUpdate(
+                "sincronizar-productos",
+                () => SincronizacionJobsService.SincronizarProductos(),
+                "*/5 * * * *", // Cron: cada 5 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+
+            Console.WriteLine("✅ Job recurrente 'sincronizar-productos' configurado (cada 5 minutos)");
+
+            // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
+            // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
+#if false
+            RecurringJob.AddOrUpdate(
+                "sincronizar-clientes",
+                () => SincronizacionJobsService.SincronizarClientes(),
+                "*/5 * * * *", // Cron: cada 5 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'sincronizar-clientes' configurado (cada 5 minutos)");
+#endif
+        }
+    }
+
+    /// <summary>
+    /// Filtro de autorización simple para el dashboard de Hangfire
+    /// En producción, deberías implementar autenticación real
+    /// </summary>
+    public class HangfireAuthorizationFilter : Hangfire.Dashboard.IDashboardAuthorizationFilter
+    {
+        public bool Authorize(Hangfire.Dashboard.DashboardContext context)
+        {
+            // TODO: Implementar autenticación real en producción
+            // Por ahora permite acceso a todos (solo para desarrollo/testing)
+            // En producción podrías verificar:
+            // - Usuario autenticado
+            // - Rol específico (ej: Admin)
+            // - IP permitida
+            return true;
         }
     }
 }

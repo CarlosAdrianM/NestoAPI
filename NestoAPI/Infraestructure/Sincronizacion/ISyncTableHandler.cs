@@ -21,5 +21,21 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// <param name="message">Mensaje deserializado desde sistemas externos</param>
         /// <returns>true si procesó exitosamente, false si hubo error</returns>
         Task<bool> HandleAsync(ExternalSyncMessageDTO message);
+
+        /// <summary>
+        /// Genera una clave única para detección de duplicados
+        /// Ejemplo: "CLIENTE|12345|0|Odoo" o "PRODUCTO|17404|Odoo"
+        /// </summary>
+        /// <param name="message">Mensaje recibido</param>
+        /// <returns>Clave única que identifica el mensaje</returns>
+        string GetMessageKey(ExternalSyncMessageDTO message);
+
+        /// <summary>
+        /// Genera información descriptiva para logs
+        /// Ejemplo: "Cliente 12345, Contacto 0, Source=Odoo" o "Producto 17404 (Nombre), PVP=12.50"
+        /// </summary>
+        /// <param name="message">Mensaje recibido</param>
+        /// <returns>String descriptivo para logging</returns>
+        string GetLogInfo(ExternalSyncMessageDTO message);
     }
 }

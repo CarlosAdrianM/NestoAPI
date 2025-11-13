@@ -81,5 +81,18 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         {
             return _handlers.Keys;
         }
+
+        /// <summary>
+        /// Obtiene el handler apropiado para un mensaje (basado en la tabla)
+        /// </summary>
+        public ISyncTableHandler GetHandler(ExternalSyncMessageDTO message)
+        {
+            if (message == null || string.IsNullOrWhiteSpace(message.Tabla))
+            {
+                return null;
+            }
+
+            return _handlers.ContainsKey(message.Tabla) ? _handlers[message.Tabla] : null;
+        }
     }
 }

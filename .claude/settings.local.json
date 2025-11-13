@@ -28,7 +28,8 @@
       "Bash(find:*)",
       "Bash(python:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(nuget restore:*)"
     ],
     "deny": [],
     "ask": []

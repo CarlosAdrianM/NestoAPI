@@ -23,6 +23,39 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             _changeDetector = new ClienteChangeDetector();
         }
 
+        public string GetMessageKey(ExternalSyncMessageDTO message)
+        {
+            var cliente = message?.Cliente?.Trim() ?? "NULL";
+            var contacto = message?.Contacto?.Trim() ?? "NULL";
+            var source = message?.Source?.Trim() ?? "NULL";
+            return $"CLIENTE|{cliente}|{contacto}|{source}";
+        }
+
+        public string GetLogInfo(ExternalSyncMessageDTO message)
+        {
+            var info = $"Cliente {message?.Cliente?.Trim() ?? "NULL"}";
+
+            if (!string.IsNullOrEmpty(message?.Contacto))
+            {
+                info += $", Contacto {message.Contacto.Trim()}";
+            }
+
+            if (!string.IsNullOrEmpty(message?.Source))
+            {
+                info += $", Source={message.Source}";
+            }
+
+            if (message?.PersonasContacto != null && message.PersonasContacto.Count > 0)
+            {
+                var personasInfo = string.Join(", ", message.PersonasContacto.Select(p =>
+                    $"Id={p.Id} ({p.Nombre})"
+                ));
+                info += $", PersonasContacto=[{personasInfo}]";
+            }
+
+            return info;
+        }
+
         public async Task<bool> HandleAsync(ExternalSyncMessageDTO message)
         {
             try

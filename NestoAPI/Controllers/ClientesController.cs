@@ -25,12 +25,14 @@ namespace NestoAPI.Controllers
         private IServicioVendedores servicioVendedores { get; }
         private readonly NVEntities db = new NVEntities();
         private readonly IGestorClientes _gestorClientes;
+        private readonly IGestorSincronizacion _gestorSincronizacion;
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
-        public ClientesController(IGestorClientes gestorClientes, IServicioVendedores servicioVendedores)
+        public ClientesController(IGestorClientes gestorClientes, IServicioVendedores servicioVendedores, IGestorSincronizacion gestorSincronizacion = null)
         {
             db.Configuration.LazyLoadingEnabled = false;
             this.servicioVendedores = servicioVendedores;
             _gestorClientes = gestorClientes;
+            _gestorSincronizacion = gestorSincronizacion ?? new GestorSincronizacion(db);
         }
 
         //public ClientesController() : this(null, null)
@@ -658,65 +660,26 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(bool))]
         public async Task<IHttpActionResult> GetClientesSync()
         {
-            bool todosOK = true;
-            int batchSize = 50; // Tamaño del lote
-            int delayMs = 5000; // Pausa de 5 segundos entre lotes
-
-            // Obtenemos los registros de Nesto_sync que necesitan sincronización
-            List<string> clientesParaSincronizar = await db.Database.SqlQuery<string>(
-                "SELECT ModificadoId FROM Nesto_sync WHERE Tabla = 'Clientes' AND Sincronizado IS NULL"
-            ).ToListAsync();
-
-            int totalClientes = clientesParaSincronizar.Count;
-
-            // Procesar por lotes de 50
-            for (int i = 0; i < totalClientes; i += batchSize)
-            {
-                List<string> loteIds = clientesParaSincronizar.Skip(i).Take(batchSize).ToList();
-
-                foreach (string clienteId in loteIds)
+            bool resultado = await _gestorSincronizacion.ProcesarTabla(
+                tabla: "Clientes",
+                obtenerEntidades: async (registro) =>
                 {
-                    try
-                    {
-                        // Buscar el cliente en la base de datos
-                        List<Cliente> clientes = await db.Clientes
-                            .Where(c => c.Nº_Cliente == clienteId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
-                            .OrderBy(c => c.Nº_Cliente)
-                            .ThenByDescending(c => c.ClientePrincipal)
-                            .ThenBy(c => c.Contacto)
-                            .Include(c => c.PersonasContactoClientes1)
-                            .ToListAsync();
-
-                        if (clientes != null && clientes.Any())
-                        {
-                            foreach (Cliente cliente in clientes)
-                            {
-                                await _gestorClientes.PublicarClienteSincronizar(cliente, "Nesto viejo");
-                            }
-
-                            // Actualizar el campo Sincronizado en Nesto_sync
-                            _ = await db.Database.ExecuteSqlCommandAsync(
-                                "UPDATE Nesto_sync SET Sincronizado = @now WHERE Tabla = 'Clientes' AND ModificadoId = @clienteId",
-                                new SqlParameter("@now", DateTime.Now),
-                                new SqlParameter("@clienteId", clienteId)
-                            );
-                        }
-                    }
-                    catch
-                    {
-                        todosOK = false;
-                        // Opcionalmente, podrías registrar el error
-                    }
-                }
-
-                // Esperar antes de procesar el siguiente lote (si no es el último)
-                if (i + batchSize < totalClientes)
+                    // Buscar todos los contactos del cliente en la base de datos
+                    return await db.Clientes
+                        .Where(c => c.Nº_Cliente == registro.ModificadoId && c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO)
+                        .OrderBy(c => c.Nº_Cliente)
+                        .ThenByDescending(c => c.ClientePrincipal)
+                        .ThenBy(c => c.Contacto)
+                        .Include(c => c.PersonasContactoClientes1)
+                        .ToListAsync();
+                },
+                publicarEntidad: async (cliente, usuario) =>
                 {
-                    await Task.Delay(delayMs);
+                    await _gestorClientes.PublicarClienteSincronizar(cliente, "Nesto viejo", usuario);
                 }
-            }
+            );
 
-            return Ok(todosOK);
+            return Ok(resultado);
         }
 
         protected override void Dispose(bool disposing)

@@ -258,6 +258,14 @@
     <Reference Include="Microsoft.Owin.Security.OAuth, Version=4.2.2.0, Culture=neutral, PublicKeyToken=31bf3856ad364e35, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.Owin.Security.OAuth.4.2.2\lib\net45\Microsoft.Owin.Security.OAuth.dll</HintPath>
     </Reference>
+    <Reference Include="Hangfire.Core, Version=1.8.22.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Hangfire.Core.1.8.22\lib\net46\Hangfire.Core.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="Hangfire.SqlServer, Version=1.8.22.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Hangfire.SqlServer.1.8.22\lib\net451\Hangfire.SqlServer.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="Microsoft.ReportViewer.Common, Version=11.0.0.0, Culture=neutral, PublicKeyToken=89845dcd8080cc91, processorArchitecture=MSIL">
       <HintPath>..\packages\Microsoft.Report.Viewer.11.0.0.0\lib\net\Microsoft.ReportViewer.Common.dll</HintPath>
     </Reference>
@@ -537,6 +545,8 @@
     <Compile Include="Infraestructure\Domiciliaciones\ServicioDomiciliaciones.cs" />
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GestorClientes.cs" />
+    <Compile Include="Infraestructure\GestorProductos.cs" />
+    <Compile Include="Infraestructure\GestorSincronizacion.cs" />
     <Compile Include="Infraestructure\GestorComisiones.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturas.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturacionRutas.cs" />
@@ -549,6 +559,8 @@
     <Compile Include="Infraestructure\GestorStocks.cs" />
     <Compile Include="Infraestructure\IGestorAgencias.cs" />
     <Compile Include="Infraestructure\IGestorClientes.cs" />
+    <Compile Include="Infraestructure\IGestorProductos.cs" />
+    <Compile Include="Infraestructure\IGestorSincronizacion.cs" />
     <Compile Include="Infraestructure\Facturas\IGestorFacturas.cs" />
     <Compile Include="Infraestructure\IGestorStocks.cs" />
     <Compile Include="Infraestructure\IServicioAgencias.cs" />
@@ -582,6 +594,7 @@
     <Compile Include="Infraestructure\RoundingHelper.cs" />
     <Compile Include="Infraestructure\SeEstaVendiendo\GestorSeEstaVendiendo.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
+    <Compile Include="Infraestructure\SincronizacionJobsService.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
@@ -593,6 +606,8 @@
     <Compile Include="Infraestructure\ServicioReclamacionDeuda.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClienteChangeDetector.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClientesSyncHandler.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\ProductoChangeDetector.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\ProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ISyncTableHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SincronizacionEventWrapper.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SyncTableRouter.cs" />
@@ -620,6 +635,7 @@
     </Compile>
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Models\AccountBindingModels.cs" />
+    <Compile Include="Models\NestoSyncRecord.cs" />
     <Compile Include="Models\AgenciaLlamadaWeb.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

@@ -23,6 +23,6 @@ namespace NestoAPI.Infraestructure
         ByteArrayContent MandatoEnPDF(List<Mandato> mandatos);
         Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email);
         Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif);
-        Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto");
+        Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null);
     }
 }

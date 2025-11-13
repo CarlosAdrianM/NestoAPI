@@ -1,8 +1,10 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Kits;
+using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
 using NestoAPI.Models.Productos;
+using NestoAPI.Models.Sincronizacion;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -19,15 +21,21 @@ namespace NestoAPI.Controllers
     {
         private readonly NVEntities db;
         private readonly IProductoService productoService = new ProductoService();
+        private readonly IGestorSincronizacion _gestorSincronizacion;
+        private readonly IGestorProductos _gestorProductos;
 
         public ProductosController()
         {
             db = new NVEntities();
+            _gestorSincronizacion = new GestorSincronizacion(db);
+            _gestorProductos = new GestorProductos(new SincronizacionEventWrapper(new GooglePubSubEventPublisher()));
         }
 
-        public ProductosController(NVEntities db)
+        public ProductosController(NVEntities db, IGestorSincronizacion gestorSincronizacion = null, IGestorProductos gestorProductos = null)
         {
             this.db = db;
+            _gestorSincronizacion = gestorSincronizacion ?? new GestorSincronizacion(db);
+            _gestorProductos = gestorProductos;
         }
 
         /*
@@ -481,6 +489,151 @@ namespace NestoAPI.Controllers
             return actionResult;
         }
 
+        /// <summary>
+        /// Endpoint para sincronizar productos pendientes desde la tabla nesto_sync
+        /// GET: api/Productos/Sync
+        /// </summary>
+        [HttpGet]
+        [Route("api/Productos/Sync")]
+        [ResponseType(typeof(bool))]
+        public async Task<IHttpActionResult> GetProductosSync()
+        {
+            bool resultado = await _gestorSincronizacion.ProcesarTabla(
+                tabla: "Productos",
+                obtenerEntidades: async (registro) =>
+                {
+                    // Buscar el producto en la base de datos
+                    Producto producto = await db.Productos
+                        .Include(p => p.Kits)
+                        .Include(p => p.Familia1)
+                        .Include(p => p.SubGruposProducto)
+                        .SingleOrDefaultAsync(p => p.Número == registro.ModificadoId && p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO);
+
+                    if (producto == null)
+                    {
+                        return new List<ProductoDTO>();
+                    }
+
+                    string productoId = registro.ModificadoId;
+
+                    // Construir el ProductoDTO completo (similar al endpoint GetProducto con fichaCompleta=true)
+                    ProductoDTO productoDTO = new ProductoDTO()
+                    {
+                        UrlFoto = await ProductoDTO.RutaImagen(productoId).ConfigureAwait(false),
+                        PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(productoId).ConfigureAwait(false),
+                        UrlEnlace = await ProductoDTO.RutaEnlace(productoId).ConfigureAwait(false),
+                        Producto = producto.Número?.Trim(),
+                        Nombre = producto.Nombre?.Trim(),
+                        Tamanno = producto.Tamaño,
+                        UnidadMedida = producto.UnidadMedida?.Trim(),
+                        Familia = producto.Familia1?.Descripción?.Trim(),
+                        PrecioProfesional = (decimal)producto.PVP,
+                        Estado = (short)producto.Estado,
+                        Grupo = producto.Grupo,
+                        Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
+                        RoturaStockProveedor = producto.RoturaStockProveedor,
+                        CodigoBarras = producto.CodBarras?.Trim()
+                    };
+
+                    // Agregar kits si existen
+                    foreach (var kit in producto.Kits)
+                    {
+                        productoDTO.ProductosKit.Add(new ProductoKit
+                        {
+                            ProductoId = kit.NúmeroAsociado.Trim(),
+                            Cantidad = kit.Cantidad
+                        });
+                    }
+
+                    // Agregar stocks si no es ficticio
+                    if (!producto.Ficticio)
+                    {
+                        productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Productos.ALMACEN_POR_DEFECTO));
+                        productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Productos.ALMACEN_TIENDA));
+                        productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Almacenes.ALCOBENDAS));
+                    }
+
+                    return new List<ProductoDTO> { productoDTO };
+                },
+                publicarEntidad: async (productoDTO, usuario) =>
+                {
+                    await _gestorProductos.PublicarProductoSincronizar(productoDTO, "Nesto viejo", usuario);
+                }
+            );
+
+            return Ok(resultado);
+        }
+
+        /// <summary>
+        /// GET: api/Productos/Publicar/17404
+        /// Publica inmediatamente un producto en Google Pub/Sub (para pruebas rápidas)
+        /// </summary>
+        [HttpGet]
+        [Route("api/Productos/Publicar/{id}")]
+        [ResponseType(typeof(ProductoDTO))]
+        public async Task<IHttpActionResult> GetProductoPublicar(string id)
+        {
+            try
+            {
+                // Buscar el producto en la base de datos
+                Producto producto = await db.Productos
+                    .Include(p => p.Kits)
+                    .Include(p => p.Familia1)
+                    .Include(p => p.SubGruposProducto)
+                    .SingleOrDefaultAsync(p => p.Número == id && p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO);
+
+                if (producto == null)
+                {
+                    return NotFound();
+                }
+
+                // Construir el ProductoDTO completo
+                ProductoDTO productoDTO = new ProductoDTO()
+                {
+                    UrlFoto = await ProductoDTO.RutaImagen(id).ConfigureAwait(false),
+                    PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(id).ConfigureAwait(false),
+                    UrlEnlace = await ProductoDTO.RutaEnlace(id).ConfigureAwait(false),
+                    Producto = producto.Número?.Trim(),
+                    Nombre = producto.Nombre?.Trim(),
+                    Tamanno = producto.Tamaño,
+                    UnidadMedida = producto.UnidadMedida?.Trim(),
+                    Familia = producto.Familia1?.Descripción?.Trim(),
+                    PrecioProfesional = (decimal)producto.PVP,
+                    Estado = (short)producto.Estado,
+                    Grupo = producto.Grupo,
+                    Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
+                    RoturaStockProveedor = producto.RoturaStockProveedor,
+                    CodigoBarras = producto.CodBarras?.Trim()
+                };
+
+                // Agregar kits si existen
+                foreach (var kit in producto.Kits)
+                {
+                    productoDTO.ProductosKit.Add(new ProductoKit
+                    {
+                        ProductoId = kit.NúmeroAsociado.Trim(),
+                        Cantidad = kit.Cantidad
+                    });
+                }
+
+                // Agregar stocks si no es ficticio
+                if (!producto.Ficticio)
+                {
+                    productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Productos.ALMACEN_POR_DEFECTO));
+                    productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Productos.ALMACEN_TIENDA));
+                    productoDTO.Stocks.Add(await productoService.CalcularStockProducto(id, Constantes.Almacenes.ALCOBENDAS));
+                }
+
+                // Publicar en Google Pub/Sub
+                await _gestorProductos.PublicarProductoSincronizar(productoDTO, "Test manual", "PRUEBA");
+
+                return Ok(productoDTO);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest($"Error al publicar producto: {ex.Message}");
+            }
+        }
 
         protected override void Dispose(bool disposing)
         {

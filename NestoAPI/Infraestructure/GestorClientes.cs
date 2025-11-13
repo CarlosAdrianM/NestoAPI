@@ -1402,7 +1402,7 @@ namespace NestoAPI.Infraestructure
             }
         }
 
-        public async Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto")
+        public async Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null)
         {
             var personasContacto = cliente.PersonasContactoClientes
                 .Where(p => p.Empresa.Trim() == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado >= 0)
@@ -1413,7 +1413,8 @@ namespace NestoAPI.Infraestructure
             var personasInfo = personasContacto.Any()
                 ? string.Join(", ", personasContacto.Select(p => $"Id={p.Id} ({p.Nombre})"))
                 : "ninguna";
-            Console.WriteLine($"📤 Publicando mensaje: Cliente {cliente.Nº_Cliente?.Trim()}-{cliente.Contacto?.Trim()}, Source={source}, PersonasContacto=[{personasInfo}]");
+            string usuarioInfo = !string.IsNullOrWhiteSpace(usuario) ? $", Usuario={usuario}" : "";
+            Console.WriteLine($"📤 Publicando mensaje: Cliente {cliente.Nº_Cliente?.Trim()}-{cliente.Contacto?.Trim()}, Source={source}{usuarioInfo}, PersonasContacto=[{personasInfo}]");
 
             // Publicar evento de sincronización
             var message = new
@@ -1433,7 +1434,8 @@ namespace NestoAPI.Infraestructure
                 Estado = cliente.Estado,
                 PersonasContacto = personasContacto,
                 Tabla = "Clientes",
-                Source = source
+                Source = source,
+                Usuario = usuario // Agregamos el usuario al mensaje
             };
 
             // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar
