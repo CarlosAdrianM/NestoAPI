@@ -2,6 +2,8 @@ using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
 using System.Data.Entity;
+using System.Data.SqlClient;
+using System.Data;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -79,8 +81,12 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 return resultado;
             }
 
-            // 1. Obtener y actualizar número de nota de entrega de ContadoresGlobales
-            System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Obteniendo número de nota de entrega de ContadoresGlobales");
+            // 1. Detectar si hay líneas con YaFacturado=true
+            bool hayLineasYaFacturadas = lineasAProcesar.Any(l => l.YaFacturado);
+            resultado.TeniaLineasYaFacturadas = hayLineasYaFacturadas;
+
+            // 2. Obtener y actualizar número de nota de entrega y traspaso de ContadoresGlobales
+            System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Obteniendo número de nota de entrega y traspaso de ContadoresGlobales");
             var contador = await db.ContadoresGlobales.FirstOrDefaultAsync();
             if (contador == null)
             {
@@ -92,10 +98,19 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             contador.NotaEntrega = numeroNotaEntrega + 1;
             System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Número de nota de entrega asignado: {numeroNotaEntrega}");
 
-            // 2. Procesar cada línea
+            // Obtener y actualizar número de traspaso para PreExtrProducto (si hay líneas ya facturadas)
+            int numeroTraspaso = 0;
+            if (hayLineasYaFacturadas)
+            {
+                numeroTraspaso = contador.TraspasoAlmacén;
+                contador.TraspasoAlmacén = numeroTraspaso + 1;
+                System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Número de traspaso asignado: {numeroTraspaso}");
+            }
+
+            // 3. Procesar cada línea
             foreach (var linea in lineasAProcesar)
             {
-                // 2a. Insertar en NotasEntrega
+                // 3a. Insertar en NotasEntrega
                 var notaEntregaLinea = new NotaEntrega
                 {
                     NºOrden = linea.Nº_Orden,
@@ -104,17 +119,16 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 };
                 db.NotasEntregas.Add(notaEntregaLinea);
 
-                // 2b. Cambiar estado de la línea a NOTA_ENTREGA
+                // 3b. Cambiar estado de la línea a NOTA_ENTREGA
                 linea.Estado = Constantes.EstadosLineaVenta.NOTA_ENTREGA;
 
-                // 2c. Si YaFacturado=true, dar de baja el stock
+                // 3c. Si YaFacturado=true, dar de baja el stock
                 if (linea.YaFacturado)
                 {
-                    resultado.TeniaLineasYaFacturadas = true;
-                    await DarDeBajaStock(pedido, linea, usuario);
+                    await DarDeBajaStock(pedido, linea, usuario, numeroTraspaso);
                 }
 
-                // 2d. Acumular contadores
+                // 3d. Acumular contadores
                 resultado.NumeroLineas++;
                 resultado.BaseImponible += linea.Base_Imponible;
             }
@@ -189,14 +203,43 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 throw; // Re-lanzar la excepción para que sea capturada por el gestor
             }
 
+            // 7. Si había líneas ya facturadas, ejecutar prdExtrProducto para reducir el stock
+            if (resultado.TeniaLineasYaFacturadas)
+            {
+                System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Ejecutando prdExtrProducto para reducir stock (diario={Constantes.DiariosProducto.ENTREGA_FACTURADA})");
+                try
+                {
+                    var empresaParametro = new SqlParameter("@Empresa", SqlDbType.Char, 2)
+                    {
+                        Value = pedido.Empresa
+                    };
+                    var diarioParametro = new SqlParameter("@Diario", SqlDbType.Char, 10)
+                    {
+                        Value = Constantes.DiariosProducto.ENTREGA_FACTURADA
+                    };
+
+                    var resultadoProcedimiento = await db.Database.ExecuteSqlCommandAsync(
+                        "EXEC prdExtrProducto @Empresa, @Diario",
+                        empresaParametro,
+                        diarioParametro);
+
+                    System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] prdExtrProducto ejecutado correctamente. Filas afectadas: {resultadoProcedimiento}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] ERROR al ejecutar prdExtrProducto: {ex.Message}");
+                    throw new Exception($"Error al reducir el stock de productos ya facturados: {ex.Message}", ex);
+                }
+            }
+
             return resultado;
         }
 
         /// <summary>
         /// Da de baja el stock de una línea ya facturada insertando en PreExtrProducto.
-        /// El procedimiento prdExtrProducto procesará estos registros y actualizará el stock.
+        /// El procedimiento prdExtrProducto se ejecutará automáticamente después de guardar todos los cambios.
         /// </summary>
-        private async Task DarDeBajaStock(CabPedidoVta pedido, LinPedidoVta linea, string usuario)
+        private async Task DarDeBajaStock(CabPedidoVta pedido, LinPedidoVta linea, string usuario, int numeroTraspaso)
         {
             var preExtr = new PreExtrProducto
             {
@@ -214,6 +257,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 Forma_Venta = linea.Forma_Venta,
                 Asiento_Automático = true,
                 LinPedido = linea.Nº_Orden,
+                NºPedido = pedido.Número,        // Campo Pedido: número del pedido
+                NºTraspaso = numeroTraspaso,     // Campo Traspaso: de ContadoresGlobales.TraspasoAlmacén
                 Diario = Constantes.DiariosProducto.ENTREGA_FACTURADA,
                 Usuario = usuario,
                 Fecha_Modificación = DateTime.Now,
@@ -222,8 +267,8 @@ namespace NestoAPI.Infraestructure.NotasEntrega
 
             _ = db.PreExtrProductos.Add(preExtr);
 
-            // Nota: prdExtrProducto se ejecutará posteriormente (manualmente o por proceso automático)
-            // para procesar todos los registros de PreExtrProducto y actualizar el stock.
+            // Nota: prdExtrProducto se ejecutará automáticamente al finalizar el procesamiento de la nota de entrega
+            // para procesar todos los registros de PreExtrProducto con diario _EntregFac y actualizar el stock.
             // El procedimiento usará LinPedido para buscar la ubicación reservada (Ubicaciones.NºOrdenVta)
             // y actualizará su estado automáticamente.
         }

@@ -332,14 +332,36 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 try
                 {
-                    // IMPORTANTE: Guardar ExtractoRuta del albarán ANTES del traspaso
-                    // El traspaso usa BeginTransaction() y no puede tener cambios pendientes
-                    await db.SaveChangesAsync();
+                    System.Diagnostics.Debug.WriteLine($"  → Traspasando pedido {pedido.Número} a empresa espejo");
 
+                    // El traspaso maneja su propia transacción y hace SaveChanges internamente
+                    // El ExtractoRuta del albarán se guarda dentro de la transacción del traspaso
                     await servicioTraspaso.TraspasarPedidoAEmpresa(
                         pedido,
                         Constantes.Empresas.EMPRESA_POR_DEFECTO,
                         Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO);
+
+                    System.Diagnostics.Debug.WriteLine($"  ✓ Traspaso completado exitosamente");
+
+                    // IMPORTANTE: Después del traspaso, el objeto 'pedido' quedó Detached
+                    // Necesitamos recargarlo desde BD porque cambió de empresa (PK modificada)
+                    System.Diagnostics.Debug.WriteLine($"  → Recargando pedido desde BD después del traspaso");
+
+                    var pedidoRecargado = await db.CabPedidoVtas
+                        .Include(p => p.LinPedidoVtas)
+                        .FirstOrDefaultAsync(p =>
+                            p.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO &&
+                            p.Número == pedido.Número);
+
+                    if (pedidoRecargado == null)
+                    {
+                        throw new InvalidOperationException(
+                            $"No se pudo recargar el pedido {pedido.Número} después del traspaso");
+                    }
+
+                    // Reemplazar la referencia al pedido para seguir trabajando con el recargado
+                    pedido = pedidoRecargado;
+                    System.Diagnostics.Debug.WriteLine($"  ✓ Pedido recargado con empresa {pedido.Empresa}");
                 }
                 catch (Exception ex)
                 {
@@ -349,7 +371,7 @@ namespace NestoAPI.Infraestructure.Facturas
             }
             else
             {
-                // Si no hay traspaso, guardar los cambios pendientes del ExtractoRuta
+                // Si NO hay traspaso, guardar los cambios pendientes del ExtractoRuta
                 await db.SaveChangesAsync();
             }
 

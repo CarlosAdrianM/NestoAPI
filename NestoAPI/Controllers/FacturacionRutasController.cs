@@ -268,7 +268,8 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// Obtiene el nombre del usuario autenticado desde los Claims.
+        /// Obtiene el nombre del usuario autenticado desde los Claims CON DOMINIO (ej: NUEVAVISION\Carlos).
+        /// Este método se usa para INSERT en tablas de auditoría (ExtractoRuta, PreExtrProducto, etc.)
         /// </summary>
         private string ObtenerUsuarioActual()
         {
@@ -278,10 +279,8 @@ namespace NestoAPI.Controllers
             // Intentar obtener el nombre de usuario desde User.Identity.Name
             if (!string.IsNullOrEmpty(User.Identity.Name))
             {
-                // Si el nombre incluye dominio (ej: DOMAIN\username), extraer solo el username
-                var nombreUsuario = User.Identity.Name;
-                var index = nombreUsuario.LastIndexOf('\\');
-                return index >= 0 ? nombreUsuario.Substring(index + 1) : nombreUsuario;
+                // Devolver el nombre completo CON dominio (ej: NUEVAVISION\Carlos)
+                return User.Identity.Name;
             }
 
             // Si no está en Identity.Name, buscar en claims
@@ -291,13 +290,27 @@ namespace NestoAPI.Controllers
                 var nombreClaim = user.FindFirst(ClaimTypes.Name) ?? user.FindFirst("sub");
                 if (nombreClaim != null)
                 {
-                    var nombreUsuario = nombreClaim.Value;
-                    var index = nombreUsuario.LastIndexOf('\\');
-                    return index >= 0 ? nombreUsuario.Substring(index + 1) : nombreUsuario;
+                    // Devolver el nombre completo CON dominio (ej: NUEVAVISION\Carlos)
+                    return nombreClaim.Value;
                 }
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Extrae el usuario SIN dominio de un nombre completo (ej: "NUEVAVISION\Carlos" -> "Carlos").
+        /// Este método se usa para SELECT en ParametrosUsuario y otras búsquedas.
+        /// </summary>
+        /// <param name="usuarioConDominio">Usuario con formato DOMINIO\Usuario</param>
+        /// <returns>Usuario sin el prefijo del dominio</returns>
+        private string ExtraerUsuarioSinDominio(string usuarioConDominio)
+        {
+            if (string.IsNullOrEmpty(usuarioConDominio))
+                return usuarioConDominio;
+
+            var index = usuarioConDominio.LastIndexOf('\\');
+            return index >= 0 ? usuarioConDominio.Substring(index + 1) : usuarioConDominio;
         }
 
         protected override void Dispose(bool disposing)

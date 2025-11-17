@@ -126,9 +126,10 @@ namespace NestoAPI.Models.Sincronizacion
         public bool? RoturaStockProveedor { get; set; }
 
         /// <summary>
-        /// Tamaño del producto
+        /// Tamaño del producto (volumen en ml)
+        /// Decimal para aceptar valores desde Odoo como 500.0
         /// </summary>
-        public int? Tamanno { get; set; }
+        public decimal? Tamanno { get; set; }
 
         /// <summary>
         /// Unidad de medida

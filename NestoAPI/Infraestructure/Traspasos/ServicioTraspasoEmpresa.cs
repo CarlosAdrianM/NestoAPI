@@ -107,6 +107,43 @@ namespace NestoAPI.Infraestructure.Traspasos
         }
 
         /// <summary>
+        /// Ejecuta un comando SQL directo usando la conexión y transacción actuales.
+        /// Usado para UPDATEs que modifican claves primarias (no permitidos por EF).
+        /// </summary>
+        private async Task<int> ExecuteSqlCommandAsync(
+            DbConnection connection,
+            DbTransaction transaction,
+            string sqlCommand,
+            params SqlParameter[] parameters)
+        {
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.Transaction = transaction;
+                cmd.CommandText = sqlCommand;
+                cmd.CommandType = CommandType.Text;
+                cmd.CommandTimeout = 60;
+
+                if (parameters != null && parameters.Length > 0)
+                {
+                    foreach (var param in parameters)
+                    {
+                        cmd.Parameters.Add(param);
+                    }
+                }
+
+                try
+                {
+                    return await cmd.ExecuteNonQueryAsync();
+                }
+                catch (SqlException ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Error ejecutando SQL: {ex.Message}\nSQL: {sqlCommand}", ex);
+                }
+            }
+        }
+
+        /// <summary>
         /// Traspasa un pedido de una empresa a otra.
         ///
         /// PROCESO SEGURO:
@@ -116,18 +153,24 @@ namespace NestoAPI.Infraestructure.Traspasos
         ///    a. Copiar cliente con prdCopiarCliente (SqlCommand con parámetros)
         ///    b. Copiar productos con prdCopiarProducto (SqlCommand con parámetros)
         ///    c. Copiar cuentas contables con prdCopiarCuentaContable (SqlCommand con parámetros)
-        ///    d. Clonar el pedido con empresa destino
-        ///    e. INSERTAR el nuevo pedido (empresa destino) usando EF
-        ///    f. Recalcular importes
-        ///    g. ELIMINAR el pedido original (empresa origen) usando EF
-        ///    h. Commit() - solo si todo salió bien
+        ///    d. DESHABILITAR FK de LinPedidoVta temporalmente (evita violación FK al cambiar PK)
+        ///    e. UPDATE directo de Empresa en CabPedidoVta (SQL, no EF - PK no modificable)
+        ///    f. UPDATE directo de Empresa en LinPedidoVta (SQL, no EF - funciona con líneas albaranadas)
+        ///    g. RE-HABILITAR FK de LinPedidoVta (WITH CHECK verifica integridad)
+        ///    h. Refrescar objetos en memoria (Detach + Reload)
+        ///    i. Recalcular importes con ParámetrosIVA de empresa destino
+        ///    j. SaveChanges() para guardar importes recalculados
+        ///    k. Commit() - solo si todo salió bien
         ///
         /// VENTAJAS:
         /// - Reutiliza conexión del DbContext (evita inconsistencias)
         /// - Usa parámetros SQL (protección contra inyección)
-        /// - Verifica estado de conexión
-        /// - NO usa DbContext para procedimientos almacenados (evita UnintentionalCodeFirstException)
-        /// - Orden seguro: INSERT antes de DELETE (nunca perdemos el pedido original)
+        /// - Deshabilita temporalmente FK para permitir UPDATE de PK
+        /// - UPDATE directo permite cambiar PK sin problemas
+        /// - Funciona con líneas albaranadas (Estado >= 2) - no las elimina
+        /// - Mantiene el mismo número de pedido
+        /// - No hay riesgo de perder datos (UPDATE en lugar de INSERT + DELETE)
+        /// - Todo dentro de una transacción - si falla, rollback automático
         /// </summary>
         public async Task TraspasarPedidoAEmpresa(CabPedidoVta pedido, string empresaOrigen, string empresaDestino)
         {
@@ -231,65 +274,129 @@ namespace NestoAPI.Infraestructure.Traspasos
                             }
                         }
 
-                        // 6. Clonar el pedido para empresa destino
-                        // IMPORTANTE: Usamos el método ClonarParaEmpresa() que copia TODAS las propiedades
-                        // VENTAJA: Si se agregan nuevas propiedades al modelo, se copiarán automáticamente
-                        var pedidoNuevo = pedido.ClonarParaEmpresa(empresaDestino.Trim());
+                        // 6. CRÍTICO: Deshabilitar temporalmente las FK de LinPedidoVta
+                        // RAZÓN: Al cambiar Empresa en CabPedidoVta, las FK de LinPedidoVta fallarían
+                        // porque buscarían CabPedidoVta(Empresa='1', Número=X) que ya no existe
+                        System.Diagnostics.Debug.WriteLine($"  → Deshabilitando FK de LinPedidoVta temporalmente");
 
-                        // Clonar las líneas usando el método ClonarParaEmpresa()
-                        var lineasNuevas = new System.Collections.Generic.List<LinPedidoVta>();
-                        if (pedido.LinPedidoVtas != null)
-                        {
-                            foreach (var lineaOriginal in pedido.LinPedidoVtas)
-                            {
-                                var lineaNueva = lineaOriginal.ClonarParaEmpresa(empresaDestino.Trim(), numeroPedido);
-                                lineasNuevas.Add(lineaNueva);
-                            }
-                        }
+                        await ExecuteSqlCommandAsync(
+                            connection,
+                            transaction.UnderlyingTransaction,
+                            "ALTER TABLE LinPedidoVta NOCHECK CONSTRAINT ALL"
+                        );
 
-                        pedidoNuevo.LinPedidoVtas = lineasNuevas;
+                        System.Diagnostics.Debug.WriteLine($"  ✓ FK deshabilitadas");
 
-                        // 7. Recalcular importes con ParámetrosIVA de empresa destino
-                        // IMPORTANTE: Hacerlo ANTES de insertar
-                        var gestorPedidos = new GestorPedidosVenta(servicioPedidos);
-                        gestorPedidos.RecalcularImportesLineasPedido(pedidoNuevo);
+                        // 7. Actualizar Empresa en cabecera del pedido usando UPDATE SQL directo
+                        // IMPORTANTE: No podemos usar EF porque Empresa es parte de la PK
+                        System.Diagnostics.Debug.WriteLine($"  → Actualizando empresa de cabecera: {empresaOrigen} → {empresaDestino}");
 
-                        // 8. INSERTAR el nuevo pedido PRIMERO (orden seguro)
-                        // Si esto falla, no hemos borrado nada todavía
-                        db.CabPedidoVtas.Add(pedidoNuevo);
-                        await db.SaveChangesAsync();
+                        await ExecuteSqlCommandAsync(
+                            connection,
+                            transaction.UnderlyingTransaction,
+                            @"UPDATE CabPedidoVta
+                              SET Empresa = @EmpresaDestino
+                              WHERE Empresa = @EmpresaOrigen
+                                AND Número = @NumeroPedido",
+                            new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
+                            new SqlParameter("@EmpresaDestino", SqlDbType.NVarChar, 10) { Value = empresaDestino.Trim() },
+                            new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
+                        );
 
-                        // 9. AHORA sí, eliminar el pedido original
-                        // Cargar el pedido original con sus líneas (en el mismo contexto)
-                        var pedidoOriginal = await db.CabPedidoVtas
+                        System.Diagnostics.Debug.WriteLine($"  ✓ Cabecera actualizada correctamente");
+
+                        // 8. Actualizar Empresa en líneas del pedido usando UPDATE SQL directo
+                        // IMPORTANTE: Esto funciona incluso si las líneas tienen Estado >= 2 (albaranadas)
+                        // El trigger de BD NO impide UPDATE, solo DELETE
+                        System.Diagnostics.Debug.WriteLine($"  → Actualizando empresa de líneas: {empresaOrigen} → {empresaDestino}");
+
+                        int lineasActualizadas = await ExecuteSqlCommandAsync(
+                            connection,
+                            transaction.UnderlyingTransaction,
+                            @"UPDATE LinPedidoVta
+                              SET Empresa = @EmpresaDestino
+                              WHERE Empresa = @EmpresaOrigen
+                                AND Número = @NumeroPedido",
+                            new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
+                            new SqlParameter("@EmpresaDestino", SqlDbType.NVarChar, 10) { Value = empresaDestino.Trim() },
+                            new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
+                        );
+
+                        System.Diagnostics.Debug.WriteLine($"  ✓ {lineasActualizadas} líneas actualizadas correctamente");
+
+                        // 9. Re-habilitar las FK de LinPedidoVta
+                        System.Diagnostics.Debug.WriteLine($"  → Re-habilitando FK de LinPedidoVta");
+
+                        await ExecuteSqlCommandAsync(
+                            connection,
+                            transaction.UnderlyingTransaction,
+                            "ALTER TABLE LinPedidoVta WITH CHECK CHECK CONSTRAINT ALL"
+                        );
+
+                        System.Diagnostics.Debug.WriteLine($"  ✓ FK re-habilitadas y verificadas");
+
+                        // 10. Refrescar el objeto pedido en memoria para que EF vea los cambios
+                        // IMPORTANTE: Necesitamos que EF "olvide" el objeto viejo y cargue el nuevo
+                        // porque cambiamos la PK con SQL directo
+                        System.Diagnostics.Debug.WriteLine($"  → Refrescando objeto pedido en memoria");
+
+                        db.Entry(pedido).State = EntityState.Detached;
+
+                        var pedidoActualizado = await db.CabPedidoVtas
                             .Include(p => p.LinPedidoVtas)
                             .FirstOrDefaultAsync(p =>
-                                p.Empresa == empresaOrigen.Trim() &&
+                                p.Empresa == empresaDestino.Trim() &&
                                 p.Número == numeroPedido);
 
-                        if (pedidoOriginal != null)
+                        if (pedidoActualizado == null)
                         {
-                            // Eliminar líneas primero (restricción FK)
-                            if (pedidoOriginal.LinPedidoVtas != null && pedidoOriginal.LinPedidoVtas.Any())
-                            {
-                                db.LinPedidoVtas.RemoveRange(pedidoOriginal.LinPedidoVtas);
-                            }
-
-                            // Eliminar cabecera
-                            db.CabPedidoVtas.Remove(pedidoOriginal);
-
-                            // Guardar cambios (dentro de la misma transacción)
-                            await db.SaveChangesAsync();
+                            throw new InvalidOperationException(
+                                $"No se pudo recargar el pedido {numeroPedido} después del traspaso a empresa {empresaDestino}");
                         }
 
-                        // 10. Si llegamos aquí, TODO salió bien
+                        System.Diagnostics.Debug.WriteLine($"  ✓ Pedido recargado desde BD con empresa {empresaDestino}");
+
+                        // 11. Recalcular importes con ParámetrosIVA de empresa destino
+                        // IMPORTANTE: Ahora trabajamos con el pedido recargado
+                        System.Diagnostics.Debug.WriteLine($"  → Recalculando importes con ParámetrosIVA de empresa {empresaDestino}");
+
+                        var gestorPedidos = new GestorPedidosVenta(servicioPedidos);
+                        gestorPedidos.RecalcularImportesLineasPedido(pedidoActualizado);
+
+                        System.Diagnostics.Debug.WriteLine($"  ✓ Importes recalculados");
+
+                        // 12. Guardar los importes recalculados (UPDATE normal de EF)
+                        System.Diagnostics.Debug.WriteLine($"  → Guardando importes recalculados");
+                        await db.SaveChangesAsync();
+
+                        // 13. Commit de la transacción
+                        System.Diagnostics.Debug.WriteLine($"  → Commit de transacción");
                         transaction.Commit();
+
+                        System.Diagnostics.Debug.WriteLine($"  ✓✓✓ Traspaso completado exitosamente ✓✓✓");
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Rollback en caso de error
-                        // NOTA: prdCopiarProducto con COMMIT interno NO se revierte (no crítico)
-                        transaction.Rollback();
+                        // Rollback en caso de error con protección contra conexión cerrada
+                        System.Diagnostics.Debug.WriteLine($"  ❌ ERROR en traspaso: {ex.Message}");
+
+                        try
+                        {
+                            if (transaction != null)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"  → Ejecutando Rollback de transacción");
+                                transaction.Rollback();
+                                System.Diagnostics.Debug.WriteLine($"  ✓ Rollback completado");
+                            }
+                        }
+                        catch (Exception rollbackEx)
+                        {
+                            // Si falla el Rollback (por conexión cerrada, etc.), loggear pero no re-lanzar
+                            // La excepción original del traspaso es más importante
+                            System.Diagnostics.Debug.WriteLine($"  ⚠ ERROR en Rollback (no crítico): {rollbackEx.Message}");
+                        }
+
+                        // Re-lanzar la excepción ORIGINAL del traspaso
                         throw;
                     }
                 }
@@ -303,16 +410,11 @@ namespace NestoAPI.Infraestructure.Traspasos
                 }
             }
 
-            // Actualizar el objeto pedido original con la empresa destino
-            // (para que el caller tenga el objeto actualizado)
-            pedido.Empresa = empresaDestino.Trim();
-            if (pedido.LinPedidoVtas != null)
-            {
-                foreach (var linea in pedido.LinPedidoVtas)
-                {
-                    linea.Empresa = empresaDestino.Trim();
-                }
-            }
+            // IMPORTANTE: El objeto 'pedido' que se pasó como parámetro quedó Detached
+            // El caller debe recargar el pedido desde la BD si necesita trabajar con él
+            // O alternativamente, podríamos retornar el pedidoActualizado, pero eso
+            // cambiaría la firma del método (void → Task<CabPedidoVta>)
+            System.Diagnostics.Debug.WriteLine($"NOTA: El pedido {numeroPedido} fue traspasado a empresa {empresaDestino}. El objeto parámetro quedó Detached.");
         }
     }
 }

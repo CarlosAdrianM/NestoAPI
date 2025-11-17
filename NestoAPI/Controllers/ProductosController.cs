@@ -253,7 +253,20 @@ namespace NestoAPI.Controllers
                 aplicarDescuento = producto.Aplicar_Dto || cliente == Constantes.ClientesEspeciales.EL_EDEN
             };
 
-            GestorPrecios.calcularDescuentoProducto(precio);
+            if (cliente == Constantes.ClientesEspeciales.PUBLICO_FINAL)
+            {
+                var porcentajeIVA = 1.21M;
+                if (producto.IVA_Repercutido == Constantes.Empresas.IVA_REDUCIDO)
+                {
+                    porcentajeIVA = 1.1m;
+                }
+                precio.precioCalculado = await ProductoDTO.LeerPrecioPublicoFinal(id) / porcentajeIVA;
+            }
+            else
+            {
+                GestorPrecios.calcularDescuentoProducto(precio);
+            }
+
             productoDTO.precio = precio.precioCalculado;
             productoDTO.aplicarDescuento = precio.aplicarDescuento;
             productoDTO.descuento = precio.descuentoCalculado;

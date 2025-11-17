@@ -364,5 +364,395 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region ProcesarNotaEntrega - Campos NºPedido y NºTraspaso
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_LineasYaFacturadas_RellenaCampoNumeroPedido()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 99999, // Este número debe aparecer en PreExtrProducto.NºPedido
+                Nº_Cliente = "1006",
+                Contacto = "0",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = true,
+                        Base_Imponible = 100m,
+                        Producto = "PROD010",
+                        Cantidad = 2,
+                        Grupo = "GRP001",
+                        Almacén = Constantes.Almacenes.ALGETE,
+                        Forma_Venta = "VAR",
+                        Delegación = "ALG"
+                    }
+                }
+            };
+
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Pedido" };
+            A.CallTo(() => db.Clientes.Find("1", "1006", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
+            A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
+
+            // Act
+            var resultado = await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
+
+            // Assert
+            Assert.IsTrue(resultado.TeniaLineasYaFacturadas);
+
+            // Verificar que se insertó en PreExtrProducto con NºPedido correcto
+            A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
+                p.NºPedido == 99999 && // Campo Pedido debe tener el número del pedido
+                p.Empresa == "1" &&
+                p.Número == "PROD010" &&
+                p.Usuario == "NUEVAVISION\\Carlos" // Usuario con dominio
+            ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_LineasYaFacturadas_RellenaCampoTraspaso()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 88888,
+                Nº_Cliente = "1007",
+                Contacto = "0",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = true,
+                        Base_Imponible = 150m,
+                        Producto = "PROD011",
+                        Cantidad = 3,
+                        Grupo = "GRP002",
+                        Almacén = Constantes.Almacenes.REINA,
+                        Forma_Venta = "VAR",
+                        Delegación = "REI"
+                    }
+                }
+            };
+
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Traspaso" };
+            A.CallTo(() => db.Clientes.Find("1", "1007", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 7777 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
+            A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
+
+            // Act
+            var resultado = await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
+
+            // Assert
+            Assert.IsTrue(resultado.TeniaLineasYaFacturadas);
+
+            // Verificar que se insertó en PreExtrProducto con NºTraspaso de ContadoresGlobales
+            A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
+                p.NºTraspaso == 7777 && // Campo Traspaso debe venir de ContadoresGlobales.TraspasoAlmacén
+                p.NºPedido == 88888 &&
+                p.Número == "PROD011"
+            ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_LineasYaFacturadas_IncrementaContadorTraspasoAlmacen()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 77777,
+                Nº_Cliente = "1008",
+                Contacto = "0",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = true,
+                        Base_Imponible = 200m,
+                        Producto = "PROD012",
+                        Cantidad = 4,
+                        Grupo = "GRP003",
+                        Almacén = Constantes.Almacenes.ALGETE,
+                        Forma_Venta = "VAR",
+                        Delegación = "ALG"
+                    }
+                }
+            };
+
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Incremento" };
+            A.CallTo(() => db.Clientes.Find("1", "1008", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
+            A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
+
+            // Act
+            await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
+
+            // Assert
+            // Verificar que el contador de TraspasoAlmacén se incrementó en 1
+            Assert.AreEqual(5001, fakeContador.TraspasoAlmacén, "ContadoresGlobales.TraspasoAlmacén debe incrementarse en 1");
+            Assert.AreEqual(1001, fakeContador.NotaEntrega, "ContadoresGlobales.NotaEntrega también debe incrementarse");
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_VariasLineasYaFacturadas_UsanMismoNumeroTraspaso()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 66666,
+                Nº_Cliente = "1009",
+                Contacto = "0",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = true,
+                        Base_Imponible = 100m,
+                        Producto = "PROD013",
+                        Cantidad = 1,
+                        Grupo = "GRP001",
+                        Almacén = Constantes.Almacenes.ALGETE,
+                        Forma_Venta = "VAR",
+                        Delegación = "ALG"
+                    },
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 2,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = true,
+                        Base_Imponible = 150m,
+                        Producto = "PROD014",
+                        Cantidad = 2,
+                        Grupo = "GRP002",
+                        Almacén = Constantes.Almacenes.ALGETE,
+                        Forma_Venta = "VAR",
+                        Delegación = "ALG"
+                    },
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 3,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = true,
+                        Base_Imponible = 200m,
+                        Producto = "PROD015",
+                        Cantidad = 3,
+                        Grupo = "GRP003",
+                        Almacén = Constantes.Almacenes.ALGETE,
+                        Forma_Venta = "VAR",
+                        Delegación = "ALG"
+                    }
+                }
+            };
+
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Múltiples Líneas" };
+            A.CallTo(() => db.Clientes.Find("1", "1009", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 9000 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
+            A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
+
+            // Act
+            await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
+
+            // Assert
+            // Verificar que TODAS las líneas usaron el MISMO número de traspaso (9000)
+            A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
+                p.NºTraspaso == 9000 && p.Número == "PROD013"
+            ))).MustHaveHappenedOnceExactly();
+
+            A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
+                p.NºTraspaso == 9000 && p.Número == "PROD014"
+            ))).MustHaveHappenedOnceExactly();
+
+            A.CallTo(() => fakePreExtr.Add(A<PreExtrProducto>.That.Matches(p =>
+                p.NºTraspaso == 9000 && p.Número == "PROD015"
+            ))).MustHaveHappenedOnceExactly();
+
+            // Verificar que el contador solo se incrementó UNA VEZ (no 3 veces)
+            Assert.AreEqual(9001, fakeContador.TraspasoAlmacén, "Contador debe incrementarse solo una vez por pedido, no por línea");
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_LineasNoFacturadas_NoIncrementaContadorTraspaso()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 55555,
+                Nº_Cliente = "1010",
+                Contacto = "0",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = false, // NO facturado
+                        Base_Imponible = 100m,
+                        Producto = "PROD016"
+                    }
+                }
+            };
+
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Sin Traspaso" };
+            A.CallTo(() => db.Clientes.Find("1", "1010", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            // Act
+            await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
+
+            // Assert
+            // Verificar que el contador de TraspasoAlmacén NO se incrementó (porque YaFacturado=false)
+            Assert.AreEqual(5000, fakeContador.TraspasoAlmacén, "TraspasoAlmacén NO debe incrementarse si no hay líneas YaFacturado=true");
+            Assert.AreEqual(1001, fakeContador.NotaEntrega, "NotaEntrega sí debe incrementarse siempre");
+        }
+
+        #endregion
+
+        #region ProcesarNotaEntrega - Ejecución de prdExtrProducto
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_LineasYaFacturadas_EjecutaPrdExtrProductoDespuesDeSaveChanges()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 44444,
+                Nº_Cliente = "1011",
+                Contacto = "0",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = true,
+                        Base_Imponible = 300m,
+                        Producto = "PROD017",
+                        Cantidad = 5,
+                        Grupo = "GRP001",
+                        Almacén = Constantes.Almacenes.ALGETE,
+                        Forma_Venta = "VAR",
+                        Delegación = "ALG"
+                    }
+                }
+            };
+
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Procedimiento" };
+            A.CallTo(() => db.Clientes.Find("1", "1011", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            var fakePreExtr = A.Fake<System.Data.Entity.DbSet<PreExtrProducto>>();
+            A.CallTo(() => db.PreExtrProductos).Returns(fakePreExtr);
+
+            var fakeDatabase = A.Fake<System.Data.Entity.Database>();
+            A.CallTo(() => db.Database).Returns(fakeDatabase);
+
+            // Act
+            await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
+
+            // Assert
+            // Verificar que SaveChangesAsync se llamó
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+
+            // Verificar que prdExtrProducto se ejecutó con los parámetros correctos
+            A.CallTo(() => fakeDatabase.ExecuteSqlCommandAsync(
+                "EXEC prdExtrProducto @Empresa, @Diario",
+                A<object[]>.That.Matches(args =>
+                    args.Length == 2 &&
+                    ((System.Data.SqlClient.SqlParameter)args[0]).Value.ToString() == "1" &&
+                    ((System.Data.SqlClient.SqlParameter)args[1]).Value.ToString() == Constantes.DiariosProducto.ENTREGA_FACTURADA
+                )
+            )).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_LineasNoFacturadas_NoEjecutaPrdExtrProducto()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 33333,
+                Nº_Cliente = "1012",
+                Contacto = "0",
+                NotaEntrega = true,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = false, // NO facturado
+                        Base_Imponible = 100m,
+                        Producto = "PROD018"
+                    }
+                }
+            };
+
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Sin Procedimiento" };
+            A.CallTo(() => db.Clientes.Find("1", "1012", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            var fakeDatabase = A.Fake<System.Data.Entity.Database>();
+            A.CallTo(() => db.Database).Returns(fakeDatabase);
+
+            // Act
+            await servicio.ProcesarNotaEntrega(pedido, "NUEVAVISION\\Carlos");
+
+            // Assert
+            // Verificar que SaveChangesAsync se llamó
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+
+            // Verificar que prdExtrProducto NO se ejecutó (porque no hay líneas YaFacturado=true)
+            A.CallTo(() => fakeDatabase.ExecuteSqlCommandAsync(
+                A<string>.That.Contains("prdExtrProducto"),
+                A<object[]>._
+            )).MustNotHaveHappened();
+        }
+
+        #endregion
     }
 }
