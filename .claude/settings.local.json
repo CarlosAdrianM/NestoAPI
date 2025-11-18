@@ -29,7 +29,8 @@
       "Bash(python:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(nuget restore:*)"
+      "Bash(nuget restore:*)",
+      "Bash($null)"
     ],
     "deny": [],
     "ask": []

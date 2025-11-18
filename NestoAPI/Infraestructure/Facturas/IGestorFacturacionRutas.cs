@@ -1,6 +1,7 @@
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using NestoAPI.Models.PedidosVenta;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -26,7 +27,8 @@ namespace NestoAPI.Infraestructure.Facturas
         /// </summary>
         /// <param name="pedidos">Lista de pedidos a facturar</param>
         /// <param name="usuario">Usuario que realiza la facturación</param>
-        Task<FacturarRutasResponseDTO> FacturarRutas(List<CabPedidoVta> pedidos, string usuario);
+        /// <param name="fechaEntregaDesde">Fecha límite de entrega para filtrar líneas procesables</param>
+        Task<FacturarRutasResponseDTO> FacturarRutas(List<CabPedidoVta> pedidos, string usuario, DateTime fechaEntregaDesde);
 
         /// <summary>
         /// Genera un preview (simulación) de facturación de rutas SIN crear nada en la BD.
@@ -34,7 +36,7 @@ namespace NestoAPI.Infraestructure.Facturas
         /// </summary>
         /// <param name="pedidos">Lista de pedidos a analizar</param>
         /// <param name="fechaEntregaDesde">Fecha límite de entrega para filtrar líneas</param>
-        PreviewFacturacionRutasResponseDTO PreviewFacturarRutas(List<CabPedidoVta> pedidos, System.DateTime fechaEntregaDesde);
+        PreviewFacturacionRutasResponseDTO PreviewFacturarRutas(List<CabPedidoVta> pedidos, DateTime fechaEntregaDesde);
 
         /// <summary>
         /// Obtiene los documentos de impresión para un pedido ya facturado.

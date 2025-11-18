@@ -49,12 +49,15 @@ namespace NestoAPI.Infraestructure.Pedidos
 
             // Query con todos los filtros
             // NOTA: No se filtra por VtoBueno aquí, se valida en el procesamiento
+            // IMPORTANTE: Incluimos líneas EN_CURSO (sin albarán) y ALBARAN (con albarán pero sin factura)
+            // Esto permite re-facturar pedidos NRM que ya tienen albarán pero necesitan factura
             var pedidos = await db.CabPedidoVtas
                 .Include(p => p.LinPedidoVtas)
                 .Include(p => p.Cliente)
                 .Where(p => rutasABuscar.Contains(p.Ruta))
                 .Where(p => p.LinPedidoVtas.Any(l =>
-                    l.Estado == Constantes.EstadosLineaVenta.EN_CURSO &&
+                    (l.Estado == Constantes.EstadosLineaVenta.EN_CURSO ||
+                     l.Estado == Constantes.EstadosLineaVenta.ALBARAN) &&
                     l.Picking != null &&
                     l.Picking > 0 &&
                     l.Fecha_Entrega <= fechaEntregaDesde))

@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
 using System.Data.Entity;
@@ -61,7 +62,9 @@ namespace NestoAPI.Infraestructure.Traspasos
         public bool HayQueTraspasar(CabPedidoVta pedido)
         {
             if (pedido == null)
+            {
                 return false;
+            }
 
             // Si IVA es null o vacío → traspasar
             return string.IsNullOrWhiteSpace(pedido.IVA);
@@ -89,13 +92,13 @@ namespace NestoAPI.Infraestructure.Traspasos
                 {
                     foreach (var param in parameters)
                     {
-                        cmd.Parameters.Add(param);
+                        _ = cmd.Parameters.Add(param);
                     }
                 }
 
                 try
                 {
-                    await cmd.ExecuteNonQueryAsync();
+                    _ = await cmd.ExecuteNonQueryAsync();
                 }
                 catch (SqlException ex)
                 {
@@ -127,7 +130,7 @@ namespace NestoAPI.Infraestructure.Traspasos
                 {
                     foreach (var param in parameters)
                     {
-                        cmd.Parameters.Add(param);
+                        _ = cmd.Parameters.Add(param);
                     }
                 }
 
@@ -144,19 +147,61 @@ namespace NestoAPI.Infraestructure.Traspasos
         }
 
         /// <summary>
+        /// Ejecuta una consulta SQL que devuelve un valor escalar (SELECT COUNT, SUM, etc.).
+        /// </summary>
+        private async Task<T> ExecuteSqlQueryScalarAsync<T>(
+            DbConnection connection,
+            DbTransaction transaction,
+            string sqlQuery,
+            params SqlParameter[] parameters)
+        {
+            using (var cmd = connection.CreateCommand())
+            {
+                cmd.Transaction = transaction;
+                cmd.CommandText = sqlQuery;
+                cmd.CommandType = CommandType.Text;
+                cmd.CommandTimeout = 60;
+
+                if (parameters != null && parameters.Length > 0)
+                {
+                    foreach (var param in parameters)
+                    {
+                        _ = cmd.Parameters.Add(param);
+                    }
+                }
+
+                try
+                {
+                    var result = await cmd.ExecuteScalarAsync();
+                    if (result == null || result == DBNull.Value)
+                    {
+                        return default;
+                    }
+                    return (T)Convert.ChangeType(result, typeof(T));
+                }
+                catch (SqlException ex)
+                {
+                    throw new InvalidOperationException(
+                        $"Error ejecutando consulta SQL: {ex.Message}\nSQL: {sqlQuery}", ex);
+                }
+            }
+        }
+
+        /// <summary>
         /// Traspasa un pedido de una empresa a otra.
         ///
-        /// PROCESO SEGURO:
+        /// PROCESO SEGURO (SIN deshabilitar constraints):
         /// 1. Validar parámetros (pedido no null, empresas no vacías, diferentes)
         /// 2. Verificar que pedido.Empresa == empresaOrigen
         /// 3. Reutilizar conexión del DbContext + transacción:
         ///    a. Copiar cliente con prdCopiarCliente (SqlCommand con parámetros)
         ///    b. Copiar productos con prdCopiarProducto (SqlCommand con parámetros)
         ///    c. Copiar cuentas contables con prdCopiarCuentaContable (SqlCommand con parámetros)
-        ///    d. DESHABILITAR FK de LinPedidoVta temporalmente (evita violación FK al cambiar PK)
-        ///    e. UPDATE directo de Empresa en CabPedidoVta (SQL, no EF - PK no modificable)
-        ///    f. UPDATE directo de Empresa en LinPedidoVta (SQL, no EF - funciona con líneas albaranadas)
-        ///    g. RE-HABILITAR FK de LinPedidoVta (WITH CHECK verifica integridad)
+        ///    d. Verificar si existe cabecera en empresa destino
+        ///    e. Si NO existe: INSERT cabecera en empresa destino (copia completa)
+        ///    f. UPDATE líneas: cambiar Empresa a destino (SQL directo - funciona con albaranadas)
+        ///    g. Verificar si quedan líneas en empresa origen
+        ///    h. Si NO quedan líneas: DELETE cabecera huérfana de empresa origen
         ///    h. Refrescar objetos en memoria (Detach + Reload)
         ///    i. Recalcular importes con ParámetrosIVA de empresa destino
         ///    j. SaveChanges() para guardar importes recalculados
@@ -172,20 +217,28 @@ namespace NestoAPI.Infraestructure.Traspasos
         /// - No hay riesgo de perder datos (UPDATE en lugar de INSERT + DELETE)
         /// - Todo dentro de una transacción - si falla, rollback automático
         /// </summary>
-        public async Task TraspasarPedidoAEmpresa(CabPedidoVta pedido, string empresaOrigen, string empresaDestino)
+        public async Task TraspasarPedidoAEmpresa(CabPedidoVta pedido, string empresaOrigen, string empresaDestino, string usuario)
         {
             // 1. Validaciones de parámetros
             if (pedido == null)
+            {
                 throw new ArgumentNullException(nameof(pedido));
+            }
 
             if (string.IsNullOrWhiteSpace(empresaOrigen))
+            {
                 throw new ArgumentException("La empresa de origen no puede ser null o vacía", nameof(empresaOrigen));
+            }
 
             if (string.IsNullOrWhiteSpace(empresaDestino))
+            {
                 throw new ArgumentException("La empresa de destino no puede ser null o vacía", nameof(empresaDestino));
+            }
 
             if (empresaOrigen.Trim() == empresaDestino.Trim())
+            {
                 throw new ArgumentException("La empresa de origen y destino deben ser diferentes");
+            }
 
             // 2. Verificar que el pedido pertenece a la empresa origen
             if (pedido.Empresa?.Trim() != empresaOrigen.Trim())
@@ -274,43 +327,113 @@ namespace NestoAPI.Infraestructure.Traspasos
                             }
                         }
 
-                        // 6. CRÍTICO: Deshabilitar temporalmente las FK de LinPedidoVta
-                        // RAZÓN: Al cambiar Empresa en CabPedidoVta, las FK de LinPedidoVta fallarían
-                        // porque buscarían CabPedidoVta(Empresa='1', Número=X) que ya no existe
-                        System.Diagnostics.Debug.WriteLine($"  → Deshabilitando FK de LinPedidoVta temporalmente");
+                        // 6. Verificar si ya existe la cabecera en empresa destino
+                        System.Diagnostics.Debug.WriteLine($"  → Verificando si existe cabecera en empresa destino");
 
-                        await ExecuteSqlCommandAsync(
+                        var existeCabeceraDestino = await ExecuteSqlQueryScalarAsync<int>(
                             connection,
                             transaction.UnderlyingTransaction,
-                            "ALTER TABLE LinPedidoVta NOCHECK CONSTRAINT ALL"
-                        );
-
-                        System.Diagnostics.Debug.WriteLine($"  ✓ FK deshabilitadas");
-
-                        // 7. Actualizar Empresa en cabecera del pedido usando UPDATE SQL directo
-                        // IMPORTANTE: No podemos usar EF porque Empresa es parte de la PK
-                        System.Diagnostics.Debug.WriteLine($"  → Actualizando empresa de cabecera: {empresaOrigen} → {empresaDestino}");
-
-                        await ExecuteSqlCommandAsync(
-                            connection,
-                            transaction.UnderlyingTransaction,
-                            @"UPDATE CabPedidoVta
-                              SET Empresa = @EmpresaDestino
-                              WHERE Empresa = @EmpresaOrigen
+                            @"SELECT COUNT(*)
+                              FROM CabPedidoVta
+                              WHERE Empresa = @EmpresaDestino
                                 AND Número = @NumeroPedido",
-                            new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
                             new SqlParameter("@EmpresaDestino", SqlDbType.NVarChar, 10) { Value = empresaDestino.Trim() },
                             new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
                         );
 
-                        System.Diagnostics.Debug.WriteLine($"  ✓ Cabecera actualizada correctamente");
+                        if (existeCabeceraDestino == 0)
+                        {
+                            // 7. Leer parámetros para la cabecera en empresa destino
+                            // IMPORTANTE: Usamos el USUARIO AUTENTICADO (el que ejecuta), NO el pedido.Usuario
+                            // Razón: El usuario autenticado tiene los parámetros de facturación correctos
+                            System.Diagnostics.Debug.WriteLine($"  → Leyendo parámetros para empresa destino");
 
-                        // 8. Actualizar Empresa en líneas del pedido usando UPDATE SQL directo
-                        // IMPORTANTE: Esto funciona incluso si las líneas tienen Estado >= 2 (albaranadas)
-                        // El trigger de BD NO impide UPDATE, solo DELETE
-                        System.Diagnostics.Debug.WriteLine($"  → Actualizando empresa de líneas: {empresaOrigen} → {empresaDestino}");
+                            string serieFacturacion = null;
 
-                        int lineasActualizadas = await ExecuteSqlCommandAsync(
+                            if (!string.IsNullOrEmpty(usuario))
+                            {
+                                // Método centralizado: extrae usuario sin dominio y busca en ParametrosUsuario
+                                serieFacturacion = Controllers.ParametrosUsuarioController.LeerParametro(
+                                    empresaDestino.Trim(),
+                                    usuario.Trim(),
+                                    "SerieFacturacionDefecto"
+                                );
+                            }
+
+                            // Si no se encuentra el parámetro o el usuario es null, mantener la serie original
+                            if (string.IsNullOrEmpty(serieFacturacion))
+                            {
+                                System.Diagnostics.Debug.WriteLine($"  ⚠ No se encontró SerieFacturacionDefecto para usuario '{usuario}' en empresa {empresaDestino}, se mantendrá la serie original");
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"  ✓ Serie para facturación: {serieFacturacion}");
+                            }
+
+                            // 8. Copiar cabecera a empresa destino usando INSERT
+                            System.Diagnostics.Debug.WriteLine($"  → Copiando cabecera a empresa destino con INSERT");
+
+                            string sqlInsert = string.IsNullOrEmpty(serieFacturacion)
+                                ? @"INSERT INTO CabPedidoVta (
+                                      Empresa, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
+                                      IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
+                                      Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación]
+                                    )
+                                    SELECT
+                                      @EmpresaDestino, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
+                                      @IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
+                                      Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación]
+                                    FROM CabPedidoVta
+                                    WHERE Empresa = @EmpresaOrigen
+                                      AND Número = @NumeroPedido"
+                                : @"INSERT INTO CabPedidoVta (
+                                      Empresa, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
+                                      IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
+                                      Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación]
+                                    )
+                                    SELECT
+                                      @EmpresaDestino, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
+                                      @IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, @Serie, CCC, Origen,
+                                      Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación]
+                                    FROM CabPedidoVta
+                                    WHERE Empresa = @EmpresaOrigen
+                                      AND Número = @NumeroPedido";
+
+                            var parametrosInsert = new List<SqlParameter>
+                            {
+                                new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
+                                new SqlParameter("@EmpresaDestino", SqlDbType.NVarChar, 10) { Value = empresaDestino.Trim() },
+                                new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido },
+                                new SqlParameter("@IVA", SqlDbType.NVarChar, 10) { Value = Constantes.Empresas.IVA_POR_DEFECTO }
+                            };
+
+                            if (!string.IsNullOrEmpty(serieFacturacion))
+                            {
+                                parametrosInsert.Add(new SqlParameter("@Serie", SqlDbType.NVarChar, 10) { Value = serieFacturacion.Trim() });
+                            }
+
+                            _ = await ExecuteSqlCommandAsync(
+                                connection,
+                                transaction.UnderlyingTransaction,
+                                sqlInsert,
+                                parametrosInsert.ToArray()
+                            );
+
+                            System.Diagnostics.Debug.WriteLine($"  ✓ Cabecera copiada a empresa destino");
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"  ✓ Cabecera ya existe en empresa destino");
+                        }
+
+                        // 9. Actualizar Empresa en líneas del pedido
+                        System.Diagnostics.Debug.WriteLine($"  → Moviendo líneas a empresa destino: {empresaOrigen} → {empresaDestino}");
+
+                        int lineasMovidas = await ExecuteSqlCommandAsync(
                             connection,
                             transaction.UnderlyingTransaction,
                             @"UPDATE LinPedidoVta
@@ -322,20 +445,51 @@ namespace NestoAPI.Infraestructure.Traspasos
                             new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
                         );
 
-                        System.Diagnostics.Debug.WriteLine($"  ✓ {lineasActualizadas} líneas actualizadas correctamente");
+                        System.Diagnostics.Debug.WriteLine($"  ✓ {lineasMovidas} líneas movidas a empresa destino");
 
-                        // 9. Re-habilitar las FK de LinPedidoVta
-                        System.Diagnostics.Debug.WriteLine($"  → Re-habilitando FK de LinPedidoVta");
+                        // 10. Verificar si quedan líneas en empresa origen y eliminar cabecera huérfana si no quedan
+                        if (lineasMovidas > 0)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"  → Verificando si quedan líneas en empresa origen");
 
-                        await ExecuteSqlCommandAsync(
-                            connection,
-                            transaction.UnderlyingTransaction,
-                            "ALTER TABLE LinPedidoVta WITH CHECK CHECK CONSTRAINT ALL"
-                        );
+                            var lineasRestantesOrigen = await ExecuteSqlQueryScalarAsync<int>(
+                                connection,
+                                transaction.UnderlyingTransaction,
+                                @"SELECT COUNT(*)
+                                  FROM LinPedidoVta
+                                  WHERE Empresa = @EmpresaOrigen
+                                    AND Número = @NumeroPedido",
+                                new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
+                                new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
+                            );
 
-                        System.Diagnostics.Debug.WriteLine($"  ✓ FK re-habilitadas y verificadas");
+                            if (lineasRestantesOrigen == 0)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"  → Eliminando cabecera huérfana de empresa origen");
 
-                        // 10. Refrescar el objeto pedido en memoria para que EF vea los cambios
+                                _ = await ExecuteSqlCommandAsync(
+                                    connection,
+                                    transaction.UnderlyingTransaction,
+                                    @"DELETE FROM CabPedidoVta
+                                      WHERE Empresa = @EmpresaOrigen
+                                        AND Número = @NumeroPedido",
+                                    new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
+                                    new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
+                                );
+
+                                System.Diagnostics.Debug.WriteLine($"  ✓ Cabecera huérfana eliminada de empresa origen");
+                            }
+                            else
+                            {
+                                System.Diagnostics.Debug.WriteLine($"  ✓ Quedan {lineasRestantesOrigen} líneas en empresa origen, cabecera mantenida");
+                            }
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"  ⚠ Cabecera sin líneas - mantenida para no perder datos");
+                        }
+
+                        // 11. Refrescar el objeto pedido en memoria para que EF vea los cambios
                         // IMPORTANTE: Necesitamos que EF "olvide" el objeto viejo y cargue el nuevo
                         // porque cambiamos la PK con SQL directo
                         System.Diagnostics.Debug.WriteLine($"  → Refrescando objeto pedido en memoria");
@@ -356,7 +510,7 @@ namespace NestoAPI.Infraestructure.Traspasos
 
                         System.Diagnostics.Debug.WriteLine($"  ✓ Pedido recargado desde BD con empresa {empresaDestino}");
 
-                        // 11. Recalcular importes con ParámetrosIVA de empresa destino
+                        // 12. Recalcular importes con ParámetrosIVA de empresa destino
                         // IMPORTANTE: Ahora trabajamos con el pedido recargado
                         System.Diagnostics.Debug.WriteLine($"  → Recalculando importes con ParámetrosIVA de empresa {empresaDestino}");
 
@@ -365,11 +519,11 @@ namespace NestoAPI.Infraestructure.Traspasos
 
                         System.Diagnostics.Debug.WriteLine($"  ✓ Importes recalculados");
 
-                        // 12. Guardar los importes recalculados (UPDATE normal de EF)
+                        // 13. Guardar los importes recalculados (UPDATE normal de EF)
                         System.Diagnostics.Debug.WriteLine($"  → Guardando importes recalculados");
-                        await db.SaveChangesAsync();
+                        _ = await db.SaveChangesAsync();
 
-                        // 13. Commit de la transacción
+                        // 14. Commit de la transacción
                         System.Diagnostics.Debug.WriteLine($"  → Commit de transacción");
                         transaction.Commit();
 

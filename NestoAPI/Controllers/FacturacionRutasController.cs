@@ -169,7 +169,7 @@ namespace NestoAPI.Controllers
                     servicioExtractoRuta
                 );
 
-                var response = await gestor.FacturarRutas(pedidos, usuario);
+                var response = await gestor.FacturarRutas(pedidos, usuario, fechaDesde);
 
                 return Ok(response);
             }

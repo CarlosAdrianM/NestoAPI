@@ -149,11 +149,62 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>
+        /// Obtiene las líneas del pedido que son procesables según criterios de facturación:
+        /// - Tienen picking asignado (Picking > 0)
+        /// - Fecha de entrega <= fechaEntregaDesde
+        /// </summary>
+        internal List<LinPedidoVta> ObtenerLineasProcesables(CabPedidoVta pedido, DateTime fechaEntregaDesde)
+        {
+            if (pedido?.LinPedidoVtas == null)
+            {
+                return new List<LinPedidoVta>();
+            }
+
+            return pedido.LinPedidoVtas
+                .Where(l => l.Picking != null &&
+                            l.Picking > 0 &&
+                            l.Fecha_Entrega <= fechaEntregaDesde)
+                .ToList();
+        }
+
+        /// <summary>
+        /// Obtiene el número de albarán existente si TODAS las líneas procesables ya tienen albarán.
+        /// Devuelve null si alguna línea procesable aún no tiene albarán.
+        /// </summary>
+        internal int? ObtenerNumeroAlbaranExistente(CabPedidoVta pedido, DateTime fechaEntregaDesde)
+        {
+            var lineasProcesables = ObtenerLineasProcesables(pedido, fechaEntregaDesde);
+
+            // Si no hay líneas procesables, no hay albarán
+            if (!lineasProcesables.Any())
+            {
+                return null;
+            }
+
+            // Verificar si TODAS las líneas procesables ya tienen albarán (Estado >= ALBARAN)
+            bool todasTienenAlbaran = lineasProcesables.All(l => l.Estado >= Constantes.EstadosLineaVenta.ALBARAN);
+
+            if (!todasTienenAlbaran)
+            {
+                return null; // Hay líneas sin albarán
+            }
+
+            // Obtener el número de albarán (todas deberían tener el mismo)
+            var numeroAlbaran = lineasProcesables
+                .Where(l => l.Nº_Albarán.HasValue)
+                .Select(l => l.Nº_Albarán.Value)
+                .FirstOrDefault();
+
+            return numeroAlbaran > 0 ? numeroAlbaran : (int?)null;
+        }
+
+        /// <summary>
         /// Procesa facturación masiva de pedidos por rutas.
         /// </summary>
         /// <param name="pedidos">Lista de pedidos a facturar</param>
         /// <param name="usuario">Usuario que realiza la facturación</param>
-        public async Task<FacturarRutasResponseDTO> FacturarRutas(System.Collections.Generic.List<CabPedidoVta> pedidos, string usuario)
+        /// <param name="fechaEntregaDesde">Fecha desde para filtrar líneas procesables</param>
+        public async Task<FacturarRutasResponseDTO> FacturarRutas(System.Collections.Generic.List<CabPedidoVta> pedidos, string usuario, DateTime fechaEntregaDesde)
         {
             var response = new FacturarRutasResponseDTO
             {
@@ -169,7 +220,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 System.Diagnostics.Debug.WriteLine($"Procesando pedido {pedido.Número} - Cliente: {pedido.Nº_Cliente} - NotaEntrega: {pedido.NotaEntrega} - Periodo: {pedido.Periodo_Facturacion}");
                 try
                 {
-                    await ProcesarPedido(pedido, response, usuario);
+                    await ProcesarPedido(pedido, response, usuario, fechaEntregaDesde);
                     response.PedidosProcesados++;
                     System.Diagnostics.Debug.WriteLine($"  ✓ Pedido {pedido.Número} procesado correctamente");
                 }
@@ -203,13 +254,15 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>
-        /// Procesa un pedido individual: crea albarán, traspasa si necesario, crea factura y genera PDFs si corresponde.
+        /// Procesa un pedido individual: crea albarán (si no existe), traspasa si necesario, crea factura y genera PDFs si corresponde.
         /// Si es nota de entrega, solo procesa la nota de entrega (no crea albarán ni factura).
+        /// Si las líneas procesables ya tienen albarán, reutiliza el existente y continúa con facturación si es NRM.
         /// </summary>
         private async Task ProcesarPedido(
             CabPedidoVta pedido,
             FacturarRutasResponseDTO response,
-            string usuario)
+            string usuario,
+            DateTime fechaEntregaDesde)
         {
             // 0. Validar visto bueno ANTES de cualquier procesamiento
             if (!TieneTodasLasLineasConVistoBueno(pedido))
@@ -276,55 +329,78 @@ namespace NestoAPI.Infraestructure.Facturas
                 return; // IMPORTANTE: No continuar con la creación de albarán/factura
             }
 
-            // 2. Crear albarán
+            // 2. Verificar si ya existe albarán o crearlo
             int numeroAlbaran;
-            try
+            bool albaranYaExistia = false;
+            var numeroAlbaranExistente = ObtenerNumeroAlbaranExistente(pedido, fechaEntregaDesde);
+
+            if (numeroAlbaranExistente.HasValue)
             {
-                System.Diagnostics.Debug.WriteLine($"  → Creando ALBARÁN para pedido {pedido.Número}");
-                numeroAlbaran = await servicioAlbaranes.CrearAlbaran(
-                    pedido.Empresa,
-                    pedido.Número,
-                    usuario);
+                // Ya tiene albarán - reutilizarlo
+                numeroAlbaran = numeroAlbaranExistente.Value;
+                albaranYaExistia = true;
+                System.Diagnostics.Debug.WriteLine($"  → Albarán {numeroAlbaran} ya existe (todas las líneas procesables están albaranadas)");
 
-                System.Diagnostics.Debug.WriteLine($"  → Albarán {numeroAlbaran} creado correctamente");
-
-                // CRÍTICO: Recargar las líneas del pedido desde la BD
-                // El procedimiento prdCrearAlbaránVta actualiza el Estado de las líneas en la BD,
-                // pero el objeto pedido en memoria NO se actualiza automáticamente.
-                // LoadAsync() NO refresca entidades ya tracked, por lo que usamos Reload() en cada línea.
-                System.Diagnostics.Debug.WriteLine($"  → Recargando líneas del pedido desde BD para obtener estados actualizados");
-
+                // CRÍTICO: Recargar líneas para asegurar estados actualizados
                 if (pedido.LinPedidoVtas != null && pedido.LinPedidoVtas.Any())
                 {
-                    // IMPORTANTE: Reload() fuerza a EF a descartar los valores en memoria y recargar desde BD
                     foreach (var linea in pedido.LinPedidoVtas)
                     {
                         await db.Entry(linea).ReloadAsync();
                     }
-                    System.Diagnostics.Debug.WriteLine($"  → Líneas recargadas. Estados actuales: {string.Join(", ", pedido.LinPedidoVtas.Select(l => $"Línea {l.Nº_Orden}={l.Estado}"))}");
-                }
-
-                // Agregar albarán creado al response (sin datos de impresión por ahora)
-                var albaranCreado = CrearAlbaranCreadoDTO(pedido, numeroAlbaran);
-                response.Albaranes.Add(albaranCreado);
-
-                // Insertar en ExtractoRuta desde albarán SOLO si:
-                // 1. El tipo de ruta lo requiere (Ruta Propia SÍ, Agencia NO)
-                // 2. NO es NRM (porque NRM insertará desde factura)
-                var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
-                bool esNRM = pedido.Periodo_Facturacion?.Trim() == Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
-
-                if (tipoRuta?.DebeInsertarEnExtractoRuta() == true && !esNRM)
-                {
-                    System.Diagnostics.Debug.WriteLine($"  → Insertando en ExtractoRuta desde albarán (FDM)");
-                    await servicioExtractoRuta.InsertarDesdeAlbaran(pedido, numeroAlbaran, usuario, autoSave: false);
                 }
             }
-            catch (Exception ex)
+            else
             {
-                System.Diagnostics.Debug.WriteLine($"  ✗ ERROR al crear albarán: {ex.Message}");
-                RegistrarError(pedido, "Albarán", ex, response);
-                return; // No continuar si falla el albarán
+                // Crear nuevo albarán
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"  → Creando ALBARÁN para pedido {pedido.Número}");
+                    numeroAlbaran = await servicioAlbaranes.CrearAlbaran(
+                        pedido.Empresa,
+                        pedido.Número,
+                        usuario);
+
+                    System.Diagnostics.Debug.WriteLine($"  → Albarán {numeroAlbaran} creado correctamente");
+
+                    // CRÍTICO: Recargar las líneas del pedido desde la BD
+                    // El procedimiento prdCrearAlbaránVta actualiza el Estado de las líneas en la BD,
+                    // pero el objeto pedido en memoria NO se actualiza automáticamente.
+                    // LoadAsync() NO refresca entidades ya tracked, por lo que usamos Reload() en cada línea.
+                    System.Diagnostics.Debug.WriteLine($"  → Recargando líneas del pedido desde BD para obtener estados actualizados");
+
+                    if (pedido.LinPedidoVtas != null && pedido.LinPedidoVtas.Any())
+                    {
+                        // IMPORTANTE: Reload() fuerza a EF a descartar los valores en memoria y recargar desde BD
+                        foreach (var linea in pedido.LinPedidoVtas)
+                        {
+                            await db.Entry(linea).ReloadAsync();
+                        }
+                        System.Diagnostics.Debug.WriteLine($"  → Líneas recargadas. Estados actuales: {string.Join(", ", pedido.LinPedidoVtas.Select(l => $"Línea {l.Nº_Orden}={l.Estado}"))}");
+                    }
+
+                    // Agregar albarán creado al response (sin datos de impresión por ahora)
+                    var albaranCreado = CrearAlbaranCreadoDTO(pedido, numeroAlbaran);
+                    response.Albaranes.Add(albaranCreado);
+
+                    // Insertar en ExtractoRuta desde albarán SOLO si:
+                    // 1. El tipo de ruta lo requiere (Ruta Propia SÍ, Agencia NO)
+                    // 2. NO es NRM (porque NRM insertará desde factura)
+                    var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
+                    bool esNRM = pedido.Periodo_Facturacion?.Trim() == Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
+
+                    if (tipoRuta?.DebeInsertarEnExtractoRuta() == true && !esNRM)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"  → Insertando en ExtractoRuta desde albarán (FDM)");
+                        await servicioExtractoRuta.InsertarDesdeAlbaran(pedido, numeroAlbaran, usuario, autoSave: false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"  ✗ ERROR al crear albarán: {ex.Message}");
+                    RegistrarError(pedido, "Albarán", ex, response);
+                    return; // No continuar si falla el albarán
+                }
             }
 
             // 3. Verificar si hay que traspasar a empresa destino
@@ -339,7 +415,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     await servicioTraspaso.TraspasarPedidoAEmpresa(
                         pedido,
                         Constantes.Empresas.EMPRESA_POR_DEFECTO,
-                        Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO);
+                        Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO,
+                        usuario);
 
                     System.Diagnostics.Debug.WriteLine($"  ✓ Traspaso completado exitosamente");
 
@@ -715,9 +792,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 preview.NumeroPedidos++;
 
                 // Calcular base imponible SOLO de las líneas que se van a procesar
-                // Filtros: Estado = EN_CURSO, Picking > 0, Fecha_Entrega <= fechaEntregaDesde
+                // Incluimos EN_CURSO (sin albarán) y ALBARAN (para re-facturación NRM)
                 decimal baseImponible = pedido.LinPedidoVtas?
-                    .Where(l => l.Estado == Constantes.EstadosLineaVenta.EN_CURSO &&
+                    .Where(l => (l.Estado == Constantes.EstadosLineaVenta.EN_CURSO ||
+                                 l.Estado == Constantes.EstadosLineaVenta.ALBARAN) &&
                                 l.Picking != null &&
                                 l.Picking > 0 &&
                                 l.Fecha_Entrega <= fechaEntregaDesde)

@@ -190,7 +190,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Act & Assert
             await Assert.ThrowsExceptionAsync<ArgumentNullException>(
-                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino));
+                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario"));
         }
 
         [TestMethod]
@@ -204,7 +204,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Act & Assert
             await Assert.ThrowsExceptionAsync<ArgumentException>(
-                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino));
+                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario"));
         }
 
         [TestMethod]
@@ -218,7 +218,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Act & Assert
             await Assert.ThrowsExceptionAsync<ArgumentException>(
-                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino));
+                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario"));
         }
 
         [TestMethod]
@@ -232,7 +232,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Act & Assert
             await Assert.ThrowsExceptionAsync<ArgumentException>(
-                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino));
+                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario"));
         }
 
         [TestMethod]
@@ -250,7 +250,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Act & Assert
             await Assert.ThrowsExceptionAsync<InvalidOperationException>(
-                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino));
+                () => servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario"));
         }
 
         #endregion
@@ -273,7 +273,7 @@ namespace NestoAPI.Tests.Infrastructure
             string empresaDestino = "3";
 
             // Act
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino);
+            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
 
             // Assert
             Assert.AreEqual("3", pedido.Empresa, "El pedido debe quedar en la empresa destino");
@@ -294,7 +294,7 @@ namespace NestoAPI.Tests.Infrastructure
             string empresaDestino = "3";
 
             // Act - No debe lanzar excepción
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino);
+            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
 
             // Assert
             Assert.AreEqual("3", pedido.Empresa);
@@ -321,7 +321,7 @@ namespace NestoAPI.Tests.Infrastructure
             string empresaDestino = "3";
 
             // Act
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino);
+            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
 
             // Assert
             Assert.AreEqual("3", pedido.Empresa, "La cabecera debe estar en empresa 3");
@@ -350,7 +350,7 @@ namespace NestoAPI.Tests.Infrastructure
             string empresaDestino = "3";
 
             // Act - No debe fallar por productos duplicados
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino);
+            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
 
             // Assert
             Assert.AreEqual("3", pedido.Empresa);
@@ -377,7 +377,7 @@ namespace NestoAPI.Tests.Infrastructure
             };
 
             // Act
-            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino);
+            await servicio.TraspasarPedidoAEmpresa(pedido, empresaOrigen, empresaDestino, "TEST\\usuario");
 
             // Assert
             Assert.AreEqual(empresaDestino, pedido.Empresa, $"La cabecera debe estar en empresa {empresaDestino}");

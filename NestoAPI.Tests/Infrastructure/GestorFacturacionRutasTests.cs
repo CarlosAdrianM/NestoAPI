@@ -1314,5 +1314,201 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region ObtenerLineasProcesables Tests
+
+        [TestMethod]
+        public void ObtenerLineasProcesables_ConPedidoNull_RetornaListaVacia()
+        {
+            // Arrange
+            CabPedidoVta pedido = null;
+            DateTime fechaDesde = DateTime.Today;
+
+            // Act
+            var resultado = gestor.ObtenerLineasProcesables(pedido, fechaDesde);
+
+            // Assert
+            Assert.IsNotNull(resultado, "Debe retornar lista vacía, no null");
+            Assert.AreEqual(0, resultado.Count, "Lista debe estar vacía");
+        }
+
+        [TestMethod]
+        public void ObtenerLineasProcesables_SoloLineasConPickingYFechaValida_DevuelveSoloEsas()
+        {
+            // Arrange
+            var hoy = DateTime.Today;
+            var ayer = hoy.AddDays(-1);
+            var manana = hoy.AddDays(1);
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 1,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { Número = 1, NºOrden = 1, Picking = 5, Fecha_Entrega = ayer },    // ✓ Válida
+                    new LinPedidoVta { Número = 1, NºOrden = 2, Picking = null, Fecha_Entrega = ayer }, // ✗ Sin picking
+                    new LinPedidoVta { Número = 1, NºOrden = 3, Picking = 0, Fecha_Entrega = ayer },    // ✗ Picking = 0
+                    new LinPedidoVta { Número = 1, NºOrden = 4, Picking = 3, Fecha_Entrega = manana },  // ✗ Fecha futura
+                    new LinPedidoVta { Número = 1, NºOrden = 5, Picking = 2, Fecha_Entrega = hoy }      // ✓ Válida
+                }
+            };
+
+            // Act
+            var resultado = gestor.ObtenerLineasProcesables(pedido, hoy);
+
+            // Assert
+            Assert.AreEqual(2, resultado.Count, "Solo 2 líneas son procesables");
+            Assert.IsTrue(resultado.Any(l => l.NºOrden == 1), "Debe incluir línea 1");
+            Assert.IsTrue(resultado.Any(l => l.NºOrden == 5), "Debe incluir línea 5");
+            Assert.IsFalse(resultado.Any(l => l.NºOrden == 2), "NO debe incluir línea sin picking");
+            Assert.IsFalse(resultado.Any(l => l.NºOrden == 3), "NO debe incluir línea con picking=0");
+            Assert.IsFalse(resultado.Any(l => l.NºOrden == 4), "NO debe incluir línea con fecha futura");
+        }
+
+        #endregion
+
+        #region ObtenerNumeroAlbaranExistente Tests
+
+        [TestMethod]
+        public void ObtenerNumeroAlbaranExistente_PedidoSinLineas_RetornaNull()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 1,
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            DateTime fechaDesde = DateTime.Today;
+
+            // Act
+            var resultado = gestor.ObtenerNumeroAlbaranExistente(pedido, fechaDesde);
+
+            // Assert
+            Assert.IsNull(resultado, "Sin líneas procesables debe retornar null");
+        }
+
+        [TestMethod]
+        public void ObtenerNumeroAlbaranExistente_AlgunaLineaProcesableSinAlbaran_RetornaNull()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 1,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { NºOrden = 1, Picking = 5, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
+                    new LinPedidoVta { NºOrden = 2, Picking = 3, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // Sin albarán
+                }
+            };
+            DateTime fechaDesde = DateTime.Today;
+
+            // Act
+            var resultado = gestor.ObtenerNumeroAlbaranExistente(pedido, fechaDesde);
+
+            // Assert
+            Assert.IsNull(resultado, "Si alguna línea procesable no tiene albarán, retorna null");
+        }
+
+        [TestMethod]
+        public void ObtenerNumeroAlbaranExistente_TodasLasLineasProcesablesTienenAlbaran_RetornaNumeroAlbaran()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 1,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { NºOrden = 1, Picking = 5, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
+                    new LinPedidoVta { NºOrden = 2, Picking = 3, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
+                    new LinPedidoVta { NºOrden = 3, Picking = null, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // No procesable
+                }
+            };
+            DateTime fechaDesde = DateTime.Today;
+
+            // Act
+            var resultado = gestor.ObtenerNumeroAlbaranExistente(pedido, fechaDesde);
+
+            // Assert
+            Assert.IsNotNull(resultado, "Todas las líneas procesables tienen albarán");
+            Assert.AreEqual(100, resultado.Value, "Debe retornar el número de albarán");
+        }
+
+        [TestMethod]
+        public void ObtenerNumeroAlbaranExistente_LineasFuturasNoImportan_SoloVeProcesables()
+        {
+            // Arrange
+            var hoy = DateTime.Today;
+            var manana = hoy.AddDays(1);
+
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 1,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { NºOrden = 1, Picking = 5, Fecha_Entrega = hoy, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },    // Procesable con albarán
+                    new LinPedidoVta { NºOrden = 2, Picking = 3, Fecha_Entrega = manana, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // Futura, no procesable
+                }
+            };
+            DateTime fechaDesde = hoy;
+
+            // Act
+            var resultado = gestor.ObtenerNumeroAlbaranExistente(pedido, fechaDesde);
+
+            // Assert
+            Assert.IsNotNull(resultado, "Líneas futuras no deben contar");
+            Assert.AreEqual(100, resultado.Value, "Solo importa que la línea procesable (hoy) tenga albarán");
+        }
+
+        #endregion
+
+        #region Re-facturación de Albaranes NRM Tests
+
+        [TestMethod]
+        public void ObtenerNumeroAlbaranExistente_PedidoConAlbaranNRM_PermiteRefacturar()
+        {
+            // Arrange: Pedido NRM con albarán pero sin factura
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 903241,
+                Periodo_Facturacion = "NRM",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        NºOrden = 1,
+                        Picking = 5,
+                        Fecha_Entrega = DateTime.Today,
+                        Estado = Constantes.EstadosLineaVenta.ALBARAN, // Ya tiene albarán
+                        Nº_Albarán = 707567
+                    },
+                    new LinPedidoVta
+                    {
+                        NºOrden = 2,
+                        Picking = 3,
+                        Fecha_Entrega = DateTime.Today,
+                        Estado = Constantes.EstadosLineaVenta.ALBARAN, // Ya tiene albarán
+                        Nº_Albarán = 707567
+                    }
+                }
+            };
+            DateTime fechaDesde = DateTime.Today;
+
+            // Act
+            var numeroAlbaran = gestor.ObtenerNumeroAlbaranExistente(pedido, fechaDesde);
+
+            // Assert
+            Assert.IsNotNull(numeroAlbaran, "Debe detectar que ya tiene albarán");
+            Assert.AreEqual(707567, numeroAlbaran.Value, "Debe retornar el número de albarán existente");
+            // NOTA: En el flujo real, al detectar albarán existente, NO creará albarán nuevo
+            // y continuará con la facturación NRM
+        }
+
+        #endregion
     }
 }

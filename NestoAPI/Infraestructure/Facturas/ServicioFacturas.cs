@@ -287,10 +287,26 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     return cabPedido.Periodo_Facturacion;
                 }
+
+                // Verificar si hay que traspasar a empresa espejo
+                var servicioTraspaso = new Infraestructure.Traspasos.ServicioTraspasoEmpresa(db);
+                if (servicioTraspaso.HayQueTraspasar(cabPedido))
+                {
+                    await servicioTraspaso.TraspasarPedidoAEmpresa(
+                        cabPedido,
+                        Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                        Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO,
+                        usuario);
+
+                    // Actualizar empresa para el stored procedure
+                    empresa = Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO;
+                }
+
                 if (string.IsNullOrEmpty(cabPedido.IVA))
                 {
                     throw new Exception("Este pedido no se puede facturar");
                 }
+
                 SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char)
                 {
                     Value = empresa

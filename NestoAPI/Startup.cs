@@ -191,6 +191,14 @@ namespace NestoAPI
 
         private void ConfigureHangfire(IAppBuilder app)
         {
+#if DEBUG
+            Console.WriteLine("⚠️ Hangfire deshabilitado en modo DEBUG");
+            System.Diagnostics.EventLog.WriteEntry("Application",
+                "Hangfire deshabilitado en modo DEBUG (desarrollo)",
+                System.Diagnostics.EventLogEntryType.Information);
+            return;
+#endif
+
             try
             {
                 // Obtener connection string de Web.config
