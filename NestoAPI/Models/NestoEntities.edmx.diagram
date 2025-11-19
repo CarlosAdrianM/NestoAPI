@@ -292,6 +292,7 @@
         <AssociationConnector Association="NVModel.FK_ExtractoRuta_FormasVenta" />
         <AssociationConnector Association="NVModel.FK_ExtractoRuta_Rutas1" />
         <AssociationConnector Association="NVModel.FK_ExtractoRuta_Vendedores" />
+        <EntityTypeShape EntityType="NVModel.SyncMessageRetry" Width="1.5" PointX="16.375" PointY="4.75" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

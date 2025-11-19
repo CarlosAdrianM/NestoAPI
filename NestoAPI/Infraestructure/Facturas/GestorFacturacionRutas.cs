@@ -511,15 +511,15 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 // Crear factura
                 System.Diagnostics.Debug.WriteLine($"  → Creando FACTURA para pedido {pedido.Número}");
-                string numeroFactura = await servicioFacturas.CrearFactura(
+                var resultadoFactura = await servicioFacturas.CrearFactura(
         pedido.Empresa,
         pedido.Número,
         usuario);
 
-                System.Diagnostics.Debug.WriteLine($"  → Factura {numeroFactura} creada correctamente");
+                System.Diagnostics.Debug.WriteLine($"  → Factura {resultadoFactura.NumeroFactura} creada correctamente");
 
                 // Agregar factura creada al response
-                var facturaCreada = CrearFacturaCreadaDTO(pedido, numeroFactura);
+                var facturaCreada = CrearFacturaCreadaDTO(pedido, resultadoFactura.NumeroFactura);
                 response.Facturas.Add(facturaCreada);
 
                 // Insertar en ExtractoRuta desde factura SOLO si el tipo de ruta lo requiere (Ruta Propia SÍ, Agencia NO)
@@ -528,7 +528,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 if (tipoRuta?.DebeInsertarEnExtractoRuta() == true)
                 {
                     System.Diagnostics.Debug.WriteLine($"  → Insertando en ExtractoRuta desde factura (NRM)");
-                    await servicioExtractoRuta.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
+                    await servicioExtractoRuta.InsertarDesdeFactura(pedido, resultadoFactura.NumeroFactura, usuario, autoSave: true);
                 }
 
                 // Determinar si debe generar PDF según el tipo de ruta
@@ -543,7 +543,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     try
                     {
                         System.Diagnostics.Debug.WriteLine($"  → Generando PDF de factura ({numeroCopias} copias)");
-                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, pedido.Empresa, numeroFactura);
+                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, pedido.Empresa, resultadoFactura.NumeroFactura);
                     }
                     catch (Exception exPdf)
                     {

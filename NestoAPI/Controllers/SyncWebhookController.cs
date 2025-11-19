@@ -2,6 +2,7 @@ using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models.Sincronizacion;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -18,15 +19,17 @@ namespace NestoAPI.Controllers
     public class SyncWebhookController : ApiController
     {
         private readonly SyncTableRouter _router;
+        private readonly MessageRetryManager _retryManager;
         private static readonly List<string> _recentLogs = new List<string>();
         private static readonly Dictionary<string, DateTime> _recentMessages = new Dictionary<string, DateTime>();
         private static readonly object _lockObj = new object();
         private const int MaxLogs = 100;
         private const int DuplicateDetectionWindowSeconds = 60; // Ventana de 60 segundos para detectar duplicados
 
-        public SyncWebhookController(SyncTableRouter router)
+        public SyncWebhookController(SyncTableRouter router, MessageRetryManager retryManager = null)
         {
             _router = router;
+            _retryManager = retryManager ?? new MessageRetryManager(new Models.NVEntities());
         }
 
         private void Log(string message)
@@ -133,28 +136,57 @@ namespace NestoAPI.Controllers
                     return BadRequest($"Error deserializando mensaje: {ex.Message}");
                 }
 
+                // ========== CONTROL DE REINTENTOS ==========
+                // Verificar si el mensaje debe procesarse o es poison pill
+                string messageId = request.Message.MessageId;
+                bool shouldProcess = await _retryManager.ShouldProcessMessage(messageId);
+
+                if (!shouldProcess)
+                {
+                    Log($"🚫 Mensaje descartado (poison pill o fallo permanente): {messageId}");
+                    // Retornar 200 para que Pub/Sub no reenvíe
+                    return Ok(new
+                    {
+                        success = false,
+                        messageId,
+                        message = "Mensaje descartado (poison pill o fallo permanente)",
+                        poisonPill = true
+                    });
+                }
+
+                // Registrar intento de procesamiento
+                await _retryManager.RecordAttempt(messageId, syncMessage);
+
                 // Rutear al handler correcto
                 bool success = await _router.RouteAsync(syncMessage);
 
                 if (success)
                 {
-                    Log($"✅ Mensaje procesado exitosamente: {request.Message.MessageId}");
+                    Log($"✅ Mensaje procesado exitosamente: {messageId}");
+
+                    // Registrar éxito (elimina el registro de reintentos)
+                    await _retryManager.RecordSuccess(messageId);
+
                     return Ok(new
                     {
                         success = true,
-                        messageId = request.Message.MessageId,
+                        messageId,
                         tabla = syncMessage?.Tabla,
                         source = syncMessage?.Source
                     });
                 }
                 else
                 {
-                    Log($"⚠️ Mensaje procesado con advertencias: {request.Message.MessageId}");
+                    Log($"⚠️ Mensaje procesado con advertencias: {messageId}");
+
+                    // Registrar fallo
+                    await _retryManager.RecordFailure(messageId, "Procesado con advertencias (ver logs)");
+
                     // Retornar 200 para que Pub/Sub no reenvíe (el error fue lógico, no técnico)
                     return Ok(new
                     {
                         success = false,
-                        messageId = request.Message.MessageId,
+                        messageId,
                         message = "Procesado con advertencias (ver logs)"
                     });
                 }
@@ -164,7 +196,29 @@ namespace NestoAPI.Controllers
                 Log($"❌ Error crítico procesando webhook: {ex.Message}");
                 Log($"Stack trace: {ex.StackTrace}");
 
-                // Retornar 500 para que Pub/Sub reenvíe el mensaje
+                // Registrar el fallo
+                string messageId = request?.Message?.MessageId ?? "unknown";
+                await _retryManager.RecordFailure(messageId, $"{ex.Message}\n{ex.StackTrace}");
+
+                // Verificar si ya alcanzó el límite de reintentos
+                bool shouldRetry = await _retryManager.ShouldProcessMessage(messageId);
+
+                if (!shouldRetry)
+                {
+                    Log($"☠️ Mensaje alcanzó límite de reintentos, marcado como poison pill: {messageId}");
+                    // Retornar 200 para que Pub/Sub NO reenvíe (ya es poison pill)
+                    return Ok(new
+                    {
+                        success = false,
+                        messageId,
+                        message = "Error crítico - límite de reintentos alcanzado",
+                        error = ex.Message,
+                        poisonPill = true
+                    });
+                }
+
+                // Aún dentro del límite, retornar 500 para que Pub/Sub reenvíe
+                Log($"🔄 Retornando 500 para reintento (Pub/Sub reenviará): {messageId}");
                 return InternalServerError(ex);
             }
         }
@@ -210,6 +264,144 @@ namespace NestoAPI.Controllers
                 logs,
                 timestamp = DateTime.UtcNow
             });
+        }
+
+        /// <summary>
+        /// Endpoint para listar poison pills (mensajes que fallaron repetidamente)
+        /// URL: GET /api/sync/poisonpills?status=PoisonPill
+        /// </summary>
+        /// <param name="status">Filtro opcional por estado: PoisonPill, Retrying, Reprocess, Resolved, PermanentFailure</param>
+        /// <param name="tabla">Filtro opcional por tabla: Clientes, Productos, etc.</param>
+        /// <param name="limit">Número máximo de registros a retornar (default: 100)</param>
+        [HttpGet]
+        [Route("poisonpills")]
+        [AllowAnonymous]
+        public async Task<IHttpActionResult> GetPoisonPills(string status = null, string tabla = null, int limit = 100)
+        {
+            try
+            {
+                using (var db = new Models.NVEntities())
+                {
+                    var query = db.SyncMessageRetries.AsQueryable();
+
+                    // Filtrar por estado si se especifica
+                    if (!string.IsNullOrEmpty(status))
+                    {
+                        query = query.Where(r => r.Status == status);
+                    }
+
+                    // Filtrar por tabla si se especifica
+                    if (!string.IsNullOrEmpty(tabla))
+                    {
+                        query = query.Where(r => r.Tabla == tabla);
+                    }
+
+                    // Ordenar por último intento (más reciente primero)
+                    var records = await query
+                        .OrderByDescending(r => r.LastAttemptDate)
+                        .Take(limit)
+                        .ToListAsync();
+
+                    var now = DateTime.UtcNow;
+
+                    // Convertir a DTOs
+                    var dtos = records.Select(r => new PoisonPillDTO
+                    {
+                        MessageId = r.MessageId,
+                        Tabla = r.Tabla,
+                        EntityId = r.EntityId,
+                        Source = r.Source,
+                        AttemptCount = r.AttemptCount,
+                        FirstAttemptDate = r.FirstAttemptDate,
+                        LastAttemptDate = r.LastAttemptDate,
+                        LastError = r.LastError,
+                        Status = r.Status,
+                        MessageData = r.MessageData,
+                        TimeSinceFirstAttempt = FormatTimeSpan(now - r.FirstAttemptDate),
+                        TimeSinceLastAttempt = FormatTimeSpan(now - r.LastAttemptDate)
+                    }).ToList();
+
+                    return Ok(new
+                    {
+                        total = dtos.Count,
+                        filters = new { status, tabla, limit },
+                        poisonPills = dtos,
+                        timestamp = DateTime.UtcNow
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"❌ Error obteniendo poison pills: {ex.Message}");
+                return InternalServerError(ex);
+            }
+        }
+
+        /// <summary>
+        /// Endpoint para cambiar el estado de un mensaje de sincronización
+        /// URL: POST /api/sync/poisonpills/changestatus
+        /// </summary>
+        /// <param name="request">Request con MessageId y NewStatus</param>
+        [HttpPost]
+        [Route("poisonpills/changestatus")]
+        [AllowAnonymous]
+        public async Task<IHttpActionResult> ChangeStatus([FromBody] ChangeStatusRequest request)
+        {
+            try
+            {
+                if (request == null || string.IsNullOrEmpty(request.MessageId) || string.IsNullOrEmpty(request.NewStatus))
+                {
+                    return BadRequest("MessageId y NewStatus son requeridos");
+                }
+
+                // Validar que el nuevo estado sea válido
+                if (!Enum.TryParse<RetryStatus>(request.NewStatus, out var newStatus))
+                {
+                    return BadRequest($"Estado inválido: {request.NewStatus}. Valores permitidos: Reprocess, Resolved, PermanentFailure");
+                }
+
+                // Validar que solo se permitan estados manuales
+                if (newStatus == RetryStatus.Retrying || newStatus == RetryStatus.PoisonPill)
+                {
+                    return BadRequest($"No se puede cambiar manualmente a estado: {newStatus}");
+                }
+
+                bool success = await _retryManager.ChangeStatus(request.MessageId, newStatus);
+
+                if (!success)
+                {
+                    return NotFound();
+                }
+
+                Log($"🔄 Estado cambiado: MessageId={request.MessageId}, NewStatus={request.NewStatus}");
+
+                return Ok(new
+                {
+                    success = true,
+                    messageId = request.MessageId,
+                    newStatus = request.NewStatus,
+                    timestamp = DateTime.UtcNow
+                });
+            }
+            catch (Exception ex)
+            {
+                Log($"❌ Error cambiando estado: {ex.Message}");
+                return InternalServerError(ex);
+            }
+        }
+
+        /// <summary>
+        /// Formatea un TimeSpan en un string legible
+        /// </summary>
+        private string FormatTimeSpan(TimeSpan ts)
+        {
+            if (ts.TotalDays >= 1)
+                return $"{ts.Days}d {ts.Hours}h";
+            if (ts.TotalHours >= 1)
+                return $"{ts.Hours}h {ts.Minutes}m";
+            if (ts.TotalMinutes >= 1)
+                return $"{ts.Minutes}m {ts.Seconds}s";
+            return $"{ts.Seconds}s";
         }
     }
 }

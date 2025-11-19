@@ -16,6 +16,7 @@ using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infraestructure.Videos;
+using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using NestoAPI.Providers;
 using Newtonsoft.Json.Serialization;
@@ -163,6 +164,11 @@ namespace NestoAPI
             {
                 var handlers = sp.GetServices<ISyncTableHandler>();
                 return new SyncTableRouter(handlers);
+            });
+            _ = services.AddScoped<MessageRetryManager>(sp =>
+            {
+                var db = new NVEntities();
+                return new MessageRetryManager(db);
             });
             _ = services.AddScoped<SyncWebhookController>();
 

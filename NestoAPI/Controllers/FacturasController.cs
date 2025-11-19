@@ -182,8 +182,8 @@ namespace NestoAPI.Controllers
 
             // Las excepciones se propagan automáticamente al GlobalExceptionFilter
             // que las formatea con información rica de contexto
-            string factura = await gestor.CrearFactura(empresa, pedido, usuario);
-            return Ok(factura);
+            var resultado = await gestor.CrearFactura(empresa, pedido, usuario);
+            return Ok(resultado);
         }
     }
 }

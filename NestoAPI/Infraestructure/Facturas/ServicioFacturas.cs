@@ -289,14 +289,21 @@ namespace NestoAPI.Infraestructure.Facturas
             return efectos;
         }
 
-        public async Task<string> CrearFactura(string empresa, int pedido, string usuario)
+        public async Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario)
         {
             using (NVEntities db = new NVEntities())
             {
+                string empresaOriginal = empresa;
                 CabPedidoVta cabPedido = db.CabPedidoVtas.Single(p => p.Empresa == empresa && p.Número == pedido);
                 if (cabPedido.Periodo_Facturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
                 {
-                    return cabPedido.Periodo_Facturacion;
+                    // Caso especial: cliente de fin de mes
+                    return new CrearFacturaResponseDTO
+                    {
+                        NumeroFactura = cabPedido.Periodo_Facturacion,
+                        Empresa = empresa,
+                        NumeroPedido = pedido
+                    };
                 }
 
                 // Verificar si hay que traspasar a empresa espejo
@@ -360,7 +367,14 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     // Obtener el valor de retorno del parámetro
                     string resultadoProcedimiento = numFactura.Value.ToString().Trim();
-                    return resultadoProcedimiento;
+
+                    // Retornar DTO con empresa final (puede ser diferente a la original)
+                    return new CrearFacturaResponseDTO
+                    {
+                        NumeroFactura = resultadoProcedimiento,
+                        Empresa = empresa, // Empresa donde se facturó (puede ser empresa espejo)
+                        NumeroPedido = pedido
+                    };
                 }
                 catch (SqlException ex)
                 {

@@ -114,6 +114,7 @@ namespace NestoAPI.Models
         public virtual DbSet<LogVideoProducto> LogVideosProductos { get; set; }
         public virtual DbSet<ExtractoRuta> ExtractoRutas { get; set; }
         public virtual DbSet<NotaEntrega> NotasEntregas { get; set; }
+        public virtual DbSet<SyncMessageRetry> SyncMessageRetries { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

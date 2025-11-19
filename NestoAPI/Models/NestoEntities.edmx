@@ -1177,7 +1177,7 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
         </EntityType>
-        <EntityType Name="NotaEntrega">
+        <EntityType Name="NotasEntrega">
           <Key>
             <PropertyRef Name="NºOrden" />
             <PropertyRef Name="NotaEntrega" />
@@ -1676,6 +1676,21 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="Descripción" Type="char" MaxLength="50" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="SyncMessageRetries">
+          <Key>
+            <PropertyRef Name="MessageId" />
+          </Key>
+          <Property Name="MessageId" Type="nvarchar" MaxLength="255" Nullable="false" />
+          <Property Name="Tabla" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="EntityId" Type="nvarchar" MaxLength="100" />
+          <Property Name="Source" Type="nvarchar" MaxLength="50" />
+          <Property Name="AttemptCount" Type="int" Nullable="false" />
+          <Property Name="FirstAttemptDate" Type="datetime" Nullable="false" />
+          <Property Name="LastAttemptDate" Type="datetime" Nullable="false" />
+          <Property Name="LastError" Type="nvarchar(max)" />
+          <Property Name="Status" Type="nvarchar" MaxLength="20" Nullable="false" />
+          <Property Name="MessageData" Type="nvarchar(max)" />
         </EntityType>
         <EntityType Name="Ubicaciones">
           <Key>
@@ -4999,7 +5014,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="LogVideosProductos" EntityType="Self.LogVideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="MovimientoTPV" EntityType="Self.MovimientoTPV" Schema="dbo" store:Type="Tables" />
-          <EntitySet Name="NotasEntrega" EntityType="Self.NotaEntrega" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
@@ -5023,6 +5038,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="Rutas" EntityType="Self.Rutas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="SeguimientoCliente" EntityType="Self.SeguimientoCliente" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="SubGruposProducto" EntityType="Self.SubGruposProducto" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="SyncMessageRetries" EntityType="Self.SyncMessageRetries" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Ubicaciones" EntityType="Self.Ubicaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="UsuarioVendedor" EntityType="Self.UsuarioVendedor" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Vendedores" EntityType="Self.Vendedores" Schema="dbo" store:Type="Tables" />
@@ -7002,6 +7018,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="ExtractoRuta" EntitySet="ExtractoRutas" />
           </AssociationSet>
           <EntitySet Name="NotasEntregas" EntityType="NVModel.NotaEntrega" />
+          <EntitySet Name="SyncMessageRetries" EntityType="NVModel.SyncMessageRetry" />
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -12347,6 +12364,21 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Numero" Type="Int32" Nullable="false" />
           <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
         </EntityType>
+        <EntityType Name="SyncMessageRetry">
+          <Key>
+            <PropertyRef Name="MessageId" />
+          </Key>
+          <Property Name="MessageId" Type="String" Nullable="false" MaxLength="255" FixedLength="false" Unicode="true" />
+          <Property Name="Tabla" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="EntityId" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="Source" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="AttemptCount" Type="Int32" Nullable="false" />
+          <Property Name="FirstAttemptDate" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="LastAttemptDate" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="LastError" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Status" Type="String" Nullable="false" MaxLength="20" FixedLength="false" Unicode="true" />
+          <Property Name="MessageData" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+        </EntityType>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -14194,6 +14226,22 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Fecha" ColumnName="Fecha" />
                 <ScalarProperty Name="Numero" ColumnName="NotaEntrega" />
                 <ScalarProperty Name="NºOrden" ColumnName="NºOrden" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="SyncMessageRetries">
+            <EntityTypeMapping TypeName="NVModel.SyncMessageRetry">
+              <MappingFragment StoreEntitySet="SyncMessageRetries">
+                <ScalarProperty Name="MessageData" ColumnName="MessageData" />
+                <ScalarProperty Name="Status" ColumnName="Status" />
+                <ScalarProperty Name="LastError" ColumnName="LastError" />
+                <ScalarProperty Name="LastAttemptDate" ColumnName="LastAttemptDate" />
+                <ScalarProperty Name="FirstAttemptDate" ColumnName="FirstAttemptDate" />
+                <ScalarProperty Name="AttemptCount" ColumnName="AttemptCount" />
+                <ScalarProperty Name="Source" ColumnName="Source" />
+                <ScalarProperty Name="EntityId" ColumnName="EntityId" />
+                <ScalarProperty Name="Tabla" ColumnName="Tabla" />
+                <ScalarProperty Name="MessageId" ColumnName="MessageId" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
