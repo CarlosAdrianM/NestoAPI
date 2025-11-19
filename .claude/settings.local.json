@@ -30,7 +30,8 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(nuget restore:*)",
-      "Bash($null)"
+      "Bash($null)",
+      "Bash(nuget install:*)"
     ],
     "deny": [],
     "ask": []

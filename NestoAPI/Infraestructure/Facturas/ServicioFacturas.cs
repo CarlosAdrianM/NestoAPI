@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Facturas;
 using System;
@@ -75,8 +76,18 @@ namespace NestoAPI.Infraestructure.Facturas
             IQueryable<IGrouping<string, vstLinPedidoVtaComisione>> vendedores = db.vstLinPedidoVtaComisiones.Where(l => l.Empresa == empresa && l.Nº_Factura == numeroFactura).GroupBy(l => l.Vendedor);
             foreach (IGrouping<string, vstLinPedidoVtaComisione> codigoVendedor in vendedores)
             {
-                string vendedor = db.Vendedores.Single(v => v.Empresa == empresa && v.Número == codigoVendedor.Key).Descripción.Trim();
-                nombresVendedores.Add(new VendedorFactura { Nombre = vendedor });
+                var vendedorEntity = db.Vendedores.FirstOrDefault(v => v.Empresa == empresa && v.Número == codigoVendedor.Key);
+                if (vendedorEntity != null && !string.IsNullOrWhiteSpace(vendedorEntity.Descripción))
+                {
+                    string vendedor = vendedorEntity.Descripción.Trim();
+                    nombresVendedores.Add(new VendedorFactura { Nombre = vendedor });
+                }
+                else
+                {
+                    // Si el vendedor no existe o no tiene descripción, agregar un placeholder
+                    System.Diagnostics.Debug.WriteLine($"⚠ ADVERTENCIA: Vendedor {codigoVendedor.Key} no encontrado o sin descripción para factura {numeroFactura}");
+                    nombresVendedores.Add(new VendedorFactura { Nombre = $"Vendedor {codigoVendedor.Key}" });
+                }
             }
             return nombresVendedores;
         }
@@ -300,11 +311,21 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     // Actualizar empresa para el stored procedure
                     empresa = Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO;
+
+                    // IMPORTANTE: Después del traspaso, el objeto cabPedido queda Detached
+                    // Debemos recargar el pedido desde la BD para tener los datos actualizados
+                    // (especialmente el campo IVA que se actualiza durante el traspaso)
+                    cabPedido = db.CabPedidoVtas.Single(p => p.Empresa == empresa && p.Número == pedido);
                 }
 
                 if (string.IsNullOrEmpty(cabPedido.IVA))
                 {
-                    throw new Exception("Este pedido no se puede facturar");
+                    throw new FacturacionException(
+                        $"El pedido {pedido} no se puede facturar porque falta configurar el campo IVA en la cabecera del pedido",
+                        "FACTURACION_IVA_FALTANTE",
+                        empresa: empresa,
+                        pedido: pedido,
+                        usuario: usuario);
                 }
 
                 SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char)
@@ -341,9 +362,27 @@ namespace NestoAPI.Infraestructure.Facturas
                     string resultadoProcedimiento = numFactura.Value.ToString().Trim();
                     return resultadoProcedimiento;
                 }
+                catch (SqlException ex)
+                {
+                    throw new FacturacionException(
+                        $"Error al ejecutar el procedimiento almacenado de facturación: {ex.Message}",
+                        "FACTURACION_STORED_PROCEDURE_ERROR",
+                        ex,
+                        empresa: empresa,
+                        pedido: pedido,
+                        usuario: usuario)
+                        .WithData("SqlErrorNumber", ex.Number)
+                        .WithData("StoredProcedure", "prdCrearFacturaVta");
+                }
                 catch (Exception ex)
                 {
-                    throw new Exception("Error al crear la factura", ex);
+                    throw new FacturacionException(
+                        $"Error inesperado al crear la factura del pedido {pedido}: {ex.Message}",
+                        "FACTURACION_ERROR_INESPERADO",
+                        ex,
+                        empresa: empresa,
+                        pedido: pedido,
+                        usuario: usuario);
                 }
             }
             ;

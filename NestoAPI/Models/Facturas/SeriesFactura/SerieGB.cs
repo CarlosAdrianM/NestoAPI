@@ -5,14 +5,18 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
 {
     public class SerieGB : ISerieFactura
     {
+        // GestorBuy - Serie especial que NO permite envío de facturas por correo electrónico
+        // pero SÍ permite impresión física en facturación de rutas
+
         public string RutaInforme => @"Models\Facturas\FacturaGB.rdlc";
 
         public List<NotaFactura> Notas => new List<NotaFactura>();
 
-        public MailAddress CorreoDesdeFactura => throw new System.NotImplementedException();
+        // IMPORTANTE: null indica que esta serie NO permite envío por correo electrónico
+        public MailAddress CorreoDesdeFactura => null;
 
-        public string FirmaCorreo => throw new System.NotImplementedException();
+        public string FirmaCorreo => null;
 
-        public MailAddress CorreoDesdeLogistica => throw new System.NotImplementedException();
+        public MailAddress CorreoDesdeLogistica => null;
     }
 }

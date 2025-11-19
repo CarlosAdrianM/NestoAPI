@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using NestoAPI.Infraestructure.Filters;
 using System;
 using System.Net.Http.Formatting;
 using System.Web.Http;
@@ -10,6 +11,9 @@ namespace NestoAPI
     {
         public static void Register(HttpConfiguration config)
         {
+            // Registrar filtro global de excepciones para manejo centralizado de errores
+            config.Filters.Add(new GlobalExceptionFilter());
+
             // Verificar la configuración global de Web API
             config.Formatters.Clear();  // Limpiar todos los formatters
             config.Formatters.Add(new JsonMediaTypeFormatter());  // Añadir solo el JSON formatter

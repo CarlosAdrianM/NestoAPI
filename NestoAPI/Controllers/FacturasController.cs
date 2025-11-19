@@ -31,6 +31,29 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(Factura))]
         public async Task<IHttpActionResult> GetFacturaJson(string empresa, string numeroFactura)
         {
+            // CONTROL DE SEGURIDAD: Bloquear acceso a facturas de series que no permiten descarga
+            // (series con CorreoDesdeFactura == null no se pueden descargar)
+            if (numeroFactura.Length >= 2)
+            {
+                try
+                {
+                    string codigoSerie = numeroFactura.Substring(0, 2);
+                    ISerieFactura serieFactura = GestorFacturas.LeerSerie(codigoSerie);
+
+                    if (serieFactura.CorreoDesdeFactura == null)
+                    {
+                        string mensajeError = $"No está permitido acceder a facturas de la serie {codigoSerie}. Esta serie no permite descarga por motivos de seguridad.";
+                        System.Diagnostics.Debug.WriteLine($"❌ SEGURIDAD: Intento de acceso a factura bloqueada: {numeroFactura}");
+                        return Content(HttpStatusCode.Forbidden, mensajeError);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Si no se puede leer la serie, permitir continuar (puede ser una serie inexistente que dará error después)
+                    System.Diagnostics.Debug.WriteLine($"⚠ Advertencia: No se pudo validar serie de factura {numeroFactura}: {ex.Message}");
+                }
+            }
+
             Factura factura = gestor.LeerFactura(empresa, numeroFactura);
 
             return Ok(factura);
@@ -42,6 +65,33 @@ namespace NestoAPI.Controllers
         {
             try
             {
+                // CONTROL DE SEGURIDAD: Bloquear descarga de PDFs de series que no permiten descarga
+                // (series con CorreoDesdeFactura == null no se pueden descargar)
+                if (numeroFactura.Length >= 2)
+                {
+                    try
+                    {
+                        string codigoSerie = numeroFactura.Substring(0, 2);
+                        ISerieFactura serieFactura = GestorFacturas.LeerSerie(codigoSerie);
+
+                        if (serieFactura.CorreoDesdeFactura == null)
+                        {
+                            string mensajeError = $"No está permitido descargar PDFs de la serie {codigoSerie}. Esta serie no permite descarga por motivos de seguridad.";
+                            System.Diagnostics.Debug.WriteLine($"❌ SEGURIDAD: Intento de descarga de PDF bloqueado: {numeroFactura}");
+                            return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                            {
+                                Content = new StringContent(mensajeError),
+                                ReasonPhrase = "Serie no permitida"
+                            };
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Si no se puede leer la serie, permitir continuar (puede ser una serie inexistente que dará error después)
+                        System.Diagnostics.Debug.WriteLine($"⚠ Advertencia: No se pudo validar serie de factura {numeroFactura}: {ex.Message}");
+                    }
+                }
+
                 FacturaLookup factura = new FacturaLookup { Empresa = empresa, Factura = numeroFactura };
                 List<FacturaLookup> lista = new List<FacturaLookup>
                 {
@@ -129,15 +179,11 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("No se ha especificado el pedido");
             }
-            try
-            {
-                string factura = await gestor.CrearFactura(empresa, pedido, usuario);
-                return Ok(factura);
-            }
-            catch (System.Exception ex)
-            {
-                return InternalServerError(ex);
-            }
+
+            // Las excepciones se propagan automáticamente al GlobalExceptionFilter
+            // que las formatea con información rica de contexto
+            string factura = await gestor.CrearFactura(empresa, pedido, usuario);
+            return Ok(factura);
         }
     }
 }

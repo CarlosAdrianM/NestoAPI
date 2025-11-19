@@ -1,4 +1,5 @@
 ﻿using Microsoft.Reporting.WebForms;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Facturas;
@@ -631,6 +632,18 @@ namespace NestoAPI.Infraestructure.Facturas
         public async Task<IEnumerable<FacturaCorreo>> EnviarFacturasPorCorreo(DateTime dia)
         {
             IEnumerable<FacturaCorreo> facturasCorreo = servicio.LeerFacturasDia(dia);
+
+            // CONTROL DE SEGURIDAD TEMPORAL (QUITAR DESPUÉS DE UNOS DÍAS):
+            // Capa extra de protección hard-coded para serie GB
+            var facturasGB = facturasCorreo.Where(f => f.Factura.Length >= 2 && f.Factura.Substring(0, 2).ToUpper() == "GB").ToList();
+            if (facturasGB.Any())
+            {
+                string listaFacturasGB = string.Join(", ", facturasGB.Select(f => f.Factura));
+                string mensajeError = $"❌ SEGURIDAD: Se detectaron {facturasGB.Count} factura(s) de serie GB en el envío diario: {listaFacturasGB}. Envío de correo CANCELADO.";
+                System.Diagnostics.Debug.WriteLine(mensajeError);
+                throw new InvalidOperationException(mensajeError);
+            }
+
             List<MailMessage> listaCorreos = new List<MailMessage>();
             string mailAnterior = string.Empty;
             MailMessage mail = new MailMessage();
@@ -655,6 +668,16 @@ namespace NestoAPI.Infraestructure.Facturas
                         mailAnterior = string.Empty;
                         continue;
                     }
+
+                    // Si la serie no permite envío por email (CorreoDesdeFactura == null), omitir esta factura
+                    if (serieFactura.CorreoDesdeFactura == null)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"⚠ Serie {fra.Factura.Substring(0, 2)} no permite envío por correo - factura {fra.Factura} omitida");
+                        mail = new MailMessage();
+                        mailAnterior = string.Empty;
+                        continue;
+                    }
+
                     try
                     {
                         mail = new MailMessage(serieFactura.CorreoDesdeFactura.Address, fra.Correo)
@@ -754,11 +777,56 @@ namespace NestoAPI.Infraestructure.Facturas
 
                 IEnumerable<FacturaCorreo> facturasCorreo = servicio.LeerFacturasCliente(cliente.Cliente, cliente.Contacto, firstDayOfQuarter, lastDayOfQuarter);
 
+                // CONTROL DE SEGURIDAD TEMPORAL (QUITAR DESPUÉS DE UNOS DÍAS):
+                // Capa extra de protección hard-coded para serie GB
+                var facturasGB = facturasCorreo.Where(f => f.Factura.Length >= 2 && f.Factura.Substring(0, 2).ToUpper() == "GB").ToList();
+                if (facturasGB.Any())
+                {
+                    string listaFacturasGB = string.Join(", ", facturasGB.Select(f => f.Factura));
+                    string mensajeError = $"❌ SEGURIDAD: Cliente {cliente.Cliente}/{cliente.Contacto} tiene {facturasGB.Count} factura(s) de serie GB: {listaFacturasGB}. Envío OMITIDO para este cliente.";
+                    System.Diagnostics.Debug.WriteLine(mensajeError);
+                    continue; // Saltar este cliente completo
+                }
+
+                // Verificar si alguna factura es de una serie que permite envío por email
+                bool todasSeriesBloqueadas = true;
+                foreach (FacturaCorreo fra in facturasCorreo)
+                {
+                    try
+                    {
+                        ISerieFactura serieTest = LeerSerie(fra.Factura.Substring(0, 2));
+                        if (serieTest.CorreoDesdeFactura != null)
+                        {
+                            todasSeriesBloqueadas = false;
+                            break;
+                        }
+                    }
+                    catch
+                    {
+                        // Ignorar series con errores
+                    }
+                }
+
+                // Si todas las facturas son de series bloqueadas, saltar este cliente
+                if (todasSeriesBloqueadas)
+                {
+                    System.Diagnostics.Debug.WriteLine($"⚠ Cliente {cliente.Cliente}/{cliente.Contacto} tiene solo facturas de series bloqueadas - omitido del envío trimestral");
+                    continue;
+                }
+
                 List<Attachment> facturasAdjuntas = new List<Attachment>();
                 foreach (FacturaCorreo fra in facturasCorreo)
                 {
                     try
                     {
+                        // Verificar si esta factura específica es de una serie bloqueada
+                        ISerieFactura serieFactura = LeerSerie(fra.Factura.Substring(0, 2));
+                        if (serieFactura.CorreoDesdeFactura == null)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"⚠ Factura {fra.Factura} de serie bloqueada - omitida del envío trimestral");
+                            continue;
+                        }
+
                         using (ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura))
                         {
                             byte[] facturaBytes = facturaPdf.ReadAsByteArrayAsync().Result;
@@ -781,7 +849,28 @@ namespace NestoAPI.Infraestructure.Facturas
                         mail.Subject = string.Format("Facturas del trimestre del {0} al {1} (cliente {2}/{3})",
                             firstDayOfQuarter.ToString("d"), lastDayOfQuarter.ToString("d"), cliente.Cliente.Trim(), cliente.Contacto.Trim());
                         mail.Bcc.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
-                        ISerieFactura serieFactura = LeerSerie(facturasCorreo.First().Factura.Substring(0, 2));
+
+                        // Buscar la primera factura de una serie que permita email para obtener el remitente
+                        ISerieFactura serieFactura = null;
+                        foreach (var fra in facturasCorreo)
+                        {
+                            try
+                            {
+                                var serie = LeerSerie(fra.Factura.Substring(0, 2));
+                                if (serie.CorreoDesdeFactura != null)
+                                {
+                                    serieFactura = serie;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+
+                        if (serieFactura == null || serieFactura.CorreoDesdeFactura == null)
+                        {
+                            throw new InvalidOperationException("No se encontró ninguna serie válida para envío por correo");
+                        }
+
                         mail.From = new MailAddress(serieFactura.CorreoDesdeFactura.Address);
                         mail.Body = GenerarCorreoTrimestreHTML(serieFactura);
                         mail.IsBodyHtml = true;
@@ -955,15 +1044,9 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public async Task<string> CrearFactura(string empresa, int pedido, string usuario)
         {
-            try
-            {
-                string factura = await servicio.CrearFactura(empresa, pedido, usuario);
-                return factura;
-            }
-            catch (Exception ex)
-            {
-                throw new Exception("Error al crear la factura", ex);
-            }
+            // Delegar directamente al servicio
+            // Las excepciones de negocio (FacturacionException) se propagan automáticamente
+            return await servicio.CrearFactura(empresa, pedido, usuario);
         }
     }
 }
