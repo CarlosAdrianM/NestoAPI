@@ -23,7 +23,7 @@ namespace NestoAPI.Tests.Infrastructure
         {
             // Arrange
             Cliente clienteNesto = null;
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Nuevo Cliente"
             };
@@ -52,7 +52,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "Sin comentarios"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Telefono = "666111222",
@@ -84,7 +84,7 @@ namespace NestoAPI.Tests.Infrastructure
                 CodPostal = "28001"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Telefono = "666222222", // Cambio aquí
@@ -116,7 +116,7 @@ namespace NestoAPI.Tests.Infrastructure
                 CodPostal = "08001"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Nuevo",
                 Telefono = "666222222",
@@ -147,7 +147,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Teléfono = "666111222"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test", // Sin espacios
                 Telefono = "666111222"
@@ -170,7 +170,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Población = "MADRID"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "cliente test",
                 Poblacion = "madrid"
@@ -193,7 +193,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = null // Null
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "" // Vacío
@@ -285,7 +285,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "<p>[Teléfonos extra] 649172403\nA/A Mª JOSÉ: 660101678</p>"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "A/A Mª JOSÉ: 660101678\n[Teléfonos extra] 649172403"
@@ -308,7 +308,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "Línea 1\r\nLínea 2\r\nLínea 3"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "Línea 1\nLínea 2\nLínea 3"
@@ -331,7 +331,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "<p>Este es un comentario importante</p>"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "Este es un comentario importante"
@@ -354,7 +354,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "Teléfono: 600111222\nEmail: test@example.com\nHorario: 9-18h"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "Email: test@example.com\nHorario: 9-18h\nTeléfono: 600111222"
@@ -377,7 +377,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "Cliente VIP"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "Cliente NORMAL"
@@ -401,7 +401,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "<p>Teléfono: 600111222</p><p>Email: test@example.com</p>"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "<p>Teléfono: 600333444</p><p>Email: otro@example.com</p>"
@@ -425,7 +425,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "  <p>  Comentario importante  </p>  "
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "Comentario importante"
@@ -448,7 +448,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = null
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "<p></p>"
@@ -471,7 +471,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Comentarios = "<p>[Teléfonos extra] 649172403\nA/A Mª JOSÉ: 660101678</p>"
             };
 
-            var clienteExterno = new ExternalSyncMessageDTO
+            var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Comentarios = "A/A Mª JOSÉ: 660101678\n[Teléfonos extra] 649172403"

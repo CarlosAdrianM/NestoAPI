@@ -1094,6 +1094,9 @@
     <Compile Include="Models\Sincronizacion\RetryStatus.cs" />
     <Compile Include="Models\Sincronizacion\PoisonPillDTO.cs" />
     <Compile Include="Models\Sincronizacion\ChangeStatusRequest.cs" />
+    <Compile Include="Models\Sincronizacion\SyncMessageBase.cs" />
+    <Compile Include="Models\Sincronizacion\ClienteSyncMessage.cs" />
+    <Compile Include="Models\Sincronizacion\ProductoSyncMessage.cs" />
     <Compile Include="Models\SubGruposProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

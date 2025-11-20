@@ -12,7 +12,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// <summary>
         /// Detecta qué campos han cambiado entre el producto de Nesto y el mensaje externo
         /// </summary>
-        public List<string> DetectarCambios(Producto productoNesto, ExternalSyncMessageDTO productoExterno)
+        public List<string> DetectarCambios(Producto productoNesto, ProductoSyncMessage productoExterno)
         {
             var cambios = new List<string>();
 

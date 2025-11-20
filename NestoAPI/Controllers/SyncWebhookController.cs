@@ -50,6 +50,40 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// Deserializa el mensaje JSON al tipo correcto según el campo "Tabla"
+        /// </summary>
+        private SyncMessageBase DeserializeSyncMessage(string messageJson)
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+
+            // Primero deserializar a un JsonDocument para leer el campo "Tabla"
+            using (var document = JsonDocument.Parse(messageJson))
+            {
+                if (!document.RootElement.TryGetProperty("Tabla", out var tablaElement))
+                {
+                    Log("⚠️ Mensaje sin campo 'Tabla'");
+                    return null;
+                }
+
+                string tabla = tablaElement.GetString();
+
+                // Deserializar al tipo correcto según la tabla
+                switch (tabla?.ToUpperInvariant())
+                {
+                    case "CLIENTES":
+                        return JsonSerializer.Deserialize<ClienteSyncMessage>(messageJson, options);
+
+                    case "PRODUCTOS":
+                        return JsonSerializer.Deserialize<ProductoSyncMessage>(messageJson, options);
+
+                    default:
+                        Log($"⚠️ Tabla desconocida: {tabla}");
+                        return null;
+                }
+            }
+        }
+
+        /// <summary>
         /// Endpoint que recibe mensajes push de Google Pub/Sub
         /// URL: POST /api/sync/webhook
         /// </summary>
@@ -84,14 +118,17 @@ namespace NestoAPI.Controllers
                     return BadRequest("Error decodificando mensaje base64");
                 }
 
-                // Deserializar mensaje
-                ExternalSyncMessageDTO syncMessage;
+                // Deserializar mensaje al tipo correcto según la tabla
+                SyncMessageBase syncMessage;
                 try
                 {
-                    syncMessage = JsonSerializer.Deserialize<ExternalSyncMessageDTO>(messageJson, new JsonSerializerOptions
+                    syncMessage = DeserializeSyncMessage(messageJson);
+
+                    if (syncMessage == null)
                     {
-                        PropertyNameCaseInsensitive = true
-                    });
+                        Log($"⚠️ Error deserializando mensaje: tipo no reconocido");
+                        return BadRequest("Tipo de mensaje no reconocido");
+                    }
 
                     // Obtener el handler apropiado para este mensaje
                     var handler = _router.GetHandler(syncMessage);

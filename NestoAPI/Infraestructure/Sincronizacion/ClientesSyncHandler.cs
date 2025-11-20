@@ -12,7 +12,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
     /// Handler de sincronización para la tabla Clientes
     /// Procesa actualizaciones de clientes y personas de contacto desde sistemas externos
     /// </summary>
-    public class ClientesSyncHandler : ISyncTableHandler
+    public class ClientesSyncHandler : ISyncTableHandler<ClienteSyncMessage>
     {
         private readonly ClienteChangeDetector _changeDetector;
 
@@ -23,7 +23,24 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             _changeDetector = new ClienteChangeDetector();
         }
 
-        public string GetMessageKey(ExternalSyncMessageDTO message)
+        // Implementación base polimórfica
+        Task<bool> ISyncTableHandlerBase.HandleAsync(SyncMessageBase message)
+        {
+            return HandleAsync(message as ClienteSyncMessage);
+        }
+
+        string ISyncTableHandlerBase.GetMessageKey(SyncMessageBase message)
+        {
+            return GetMessageKey(message as ClienteSyncMessage);
+        }
+
+        string ISyncTableHandlerBase.GetLogInfo(SyncMessageBase message)
+        {
+            return GetLogInfo(message as ClienteSyncMessage);
+        }
+
+        // Implementación tipada
+        public string GetMessageKey(ClienteSyncMessage message)
         {
             var cliente = message?.Cliente?.Trim() ?? "NULL";
             var contacto = message?.Contacto?.Trim() ?? "NULL";
@@ -31,7 +48,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             return $"CLIENTE|{cliente}|{contacto}|{source}";
         }
 
-        public string GetLogInfo(ExternalSyncMessageDTO message)
+        public string GetLogInfo(ClienteSyncMessage message)
         {
             var info = $"Cliente {message?.Cliente?.Trim() ?? "NULL"}";
 
@@ -56,7 +73,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             return info;
         }
 
-        public async Task<bool> HandleAsync(ExternalSyncMessageDTO message)
+        public async Task<bool> HandleAsync(ClienteSyncMessage message)
         {
             try
             {
@@ -144,7 +161,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             }
         }
 
-        private void ActualizarClienteDesdeExterno(Cliente clienteNesto, ExternalSyncMessageDTO clienteExterno)
+        private void ActualizarClienteDesdeExterno(Cliente clienteNesto, ClienteSyncMessage clienteExterno)
         {
             if (!string.IsNullOrWhiteSpace(clienteExterno.Nombre))
             {

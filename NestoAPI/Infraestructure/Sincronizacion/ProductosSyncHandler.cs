@@ -11,7 +11,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
     /// Handler de sincronización para la tabla Productos
     /// Procesa actualizaciones de productos desde sistemas externos
     /// </summary>
-    public class ProductosSyncHandler : ISyncTableHandler
+    public class ProductosSyncHandler : ISyncTableHandler<ProductoSyncMessage>
     {
         private readonly ProductoChangeDetector _changeDetector;
 
@@ -22,14 +22,31 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             _changeDetector = new ProductoChangeDetector();
         }
 
-        public string GetMessageKey(ExternalSyncMessageDTO message)
+        // Implementación base polimórfica
+        Task<bool> ISyncTableHandlerBase.HandleAsync(SyncMessageBase message)
+        {
+            return HandleAsync(message as ProductoSyncMessage);
+        }
+
+        string ISyncTableHandlerBase.GetMessageKey(SyncMessageBase message)
+        {
+            return GetMessageKey(message as ProductoSyncMessage);
+        }
+
+        string ISyncTableHandlerBase.GetLogInfo(SyncMessageBase message)
+        {
+            return GetLogInfo(message as ProductoSyncMessage);
+        }
+
+        // Implementación tipada
+        public string GetMessageKey(ProductoSyncMessage message)
         {
             var producto = message?.Producto?.Trim() ?? "NULL";
             var source = message?.Source?.Trim() ?? "NULL";
             return $"PRODUCTO|{producto}|{source}";
         }
 
-        public string GetLogInfo(ExternalSyncMessageDTO message)
+        public string GetLogInfo(ProductoSyncMessage message)
         {
             var info = $"Producto {message?.Producto?.Trim() ?? "NULL"}";
 
@@ -56,7 +73,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             return info;
         }
 
-        public async Task<bool> HandleAsync(ExternalSyncMessageDTO message)
+        public async Task<bool> HandleAsync(ProductoSyncMessage message)
         {
             try
             {
@@ -126,7 +143,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// Actualiza los campos del producto de Nesto con los datos del sistema externo
         /// Solo actualiza campos que vengan informados en el mensaje externo
         /// </summary>
-        private void ActualizarProductoDesdeExterno(Producto productoNesto, ExternalSyncMessageDTO productoExterno)
+        private void ActualizarProductoDesdeExterno(Producto productoNesto, ProductoSyncMessage productoExterno)
         {
             // Nombre del producto
             if (!string.IsNullOrWhiteSpace(productoExterno.Nombre))

@@ -12,9 +12,9 @@ namespace NestoAPI.Infraestructure.Sincronizacion
     /// </summary>
     public class SyncTableRouter
     {
-        private readonly Dictionary<string, ISyncTableHandler> _handlers;
+        private readonly Dictionary<string, ISyncTableHandlerBase> _handlers;
 
-        public SyncTableRouter(IEnumerable<ISyncTableHandler> handlers)
+        public SyncTableRouter(IEnumerable<ISyncTableHandlerBase> handlers)
         {
             _handlers = handlers.ToDictionary(h => h.TableName, h => h, StringComparer.OrdinalIgnoreCase);
 
@@ -28,7 +28,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// <summary>
         /// Registra un handler manualmente (útil para testing o carga dinámica)
         /// </summary>
-        public void RegisterHandler(ISyncTableHandler handler)
+        public void RegisterHandler(ISyncTableHandlerBase handler)
         {
             _handlers[handler.TableName] = handler;
             Console.WriteLine($"✅ Handler registrado: {handler.TableName}");
@@ -37,7 +37,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// <summary>
         /// Procesa un mensaje rutándolo al handler correcto según la tabla
         /// </summary>
-        public async Task<bool> RouteAsync(ExternalSyncMessageDTO message)
+        public async Task<bool> RouteAsync(SyncMessageBase message)
         {
             if (message == null)
             {
@@ -85,7 +85,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// <summary>
         /// Obtiene el handler apropiado para un mensaje (basado en la tabla)
         /// </summary>
-        public ISyncTableHandler GetHandler(ExternalSyncMessageDTO message)
+        public ISyncTableHandlerBase GetHandler(SyncMessageBase message)
         {
             if (message == null || string.IsNullOrWhiteSpace(message.Tabla))
             {

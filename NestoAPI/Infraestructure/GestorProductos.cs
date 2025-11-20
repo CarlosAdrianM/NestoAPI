@@ -1,6 +1,8 @@
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
+using NestoAPI.Models.Sincronizacion;
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure
@@ -37,8 +39,11 @@ namespace NestoAPI.Infraestructure
             Console.WriteLine($"📤 Publicando mensaje: Producto {productoDTO.Producto?.Trim()}, Source={source}{usuarioInfo}, Kits=[{kitsInfo}], Stocks=[{stocksInfo}]");
 
             // Publicar evento de sincronización con la estructura completa del ProductoDTO
-            var message = new
+            var message = new ProductoSyncMessage
             {
+                Tabla = "Productos",
+                Source = source,
+                Usuario = usuario,
                 Producto = productoDTO.Producto?.Trim(),
                 Nombre = productoDTO.Nombre?.Trim(),
                 Tamanno = productoDTO.Tamanno,
@@ -54,11 +59,8 @@ namespace NestoAPI.Infraestructure
                 RoturaStockProveedor = productoDTO.RoturaStockProveedor,
                 ClasificacionMasVendidos = productoDTO.ClasificacionMasVendidos,
                 CodigoBarras = productoDTO.CodigoBarras?.Trim(),
-                ProductosKit = productoDTO.ProductosKit,
-                Stocks = productoDTO.Stocks,
-                Tabla = "Productos",
-                Source = source,
-                Usuario = usuario // Agregamos el usuario al mensaje
+                ProductosKit = productoDTO.ProductosKit?.Select(k => k.ProductoId).ToList(),
+                Stocks = productoDTO.Stocks?.ToList()
             };
 
             // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar

@@ -81,7 +81,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// </summary>
         /// <param name="messageId">ID único del mensaje</param>
         /// <param name="message">Mensaje completo (para almacenar en JSON)</param>
-        public async Task RecordAttempt(string messageId, ExternalSyncMessageDTO message)
+        public async Task RecordAttempt(string messageId, SyncMessageBase message)
         {
             var retryRecord = await _db.SyncMessageRetries
                 .FirstOrDefaultAsync(r => r.MessageId == messageId);
@@ -209,24 +209,28 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// <summary>
         /// Extrae el EntityId del mensaje según la tabla
         /// </summary>
-        private string GetEntityId(ExternalSyncMessageDTO message)
+        private string GetEntityId(SyncMessageBase message)
         {
             if (message == null) return null;
 
             // Cada tabla tiene su propio identificador
-            if (!string.IsNullOrEmpty(message.Cliente))
-                return $"{message.Cliente}-{message.Contacto}";
+            switch (message)
+            {
+                case ClienteSyncMessage clienteMsg:
+                    return $"{clienteMsg.Cliente}-{clienteMsg.Contacto}";
 
-            if (!string.IsNullOrEmpty(message.Producto))
-                return message.Producto;
+                case ProductoSyncMessage productoMsg:
+                    return productoMsg.Producto;
 
-            return "Unknown";
+                default:
+                    return "Unknown";
+            }
         }
 
         /// <summary>
         /// Serializa el mensaje a JSON para almacenar en BD
         /// </summary>
-        private string SerializeMessage(ExternalSyncMessageDTO message)
+        private string SerializeMessage(SyncMessageBase message)
         {
             try
             {

@@ -4,38 +4,60 @@ using System.Threading.Tasks;
 namespace NestoAPI.Infraestructure.Sincronizacion
 {
     /// <summary>
-    /// Interfaz para handlers de sincronización por tabla
-    /// Cada tabla (Clientes, Productos, Proveedores, etc.) tiene su propio handler
+    /// Interfaz base no genérica para handlers de sincronización
+    /// Permite almacenar handlers de diferentes tipos en colecciones
     /// </summary>
-    public interface ISyncTableHandler
+    public interface ISyncTableHandlerBase
     {
         /// <summary>
         /// Nombre de la tabla que este handler procesa
-        /// Ejemplo: "Clientes", "Productos", "Proveedores"
         /// </summary>
         string TableName { get; }
 
         /// <summary>
-        /// Procesa un mensaje de sincronización para esta tabla
+        /// Procesa un mensaje de sincronización (versión polimórfica)
+        /// </summary>
+        Task<bool> HandleAsync(SyncMessageBase message);
+
+        /// <summary>
+        /// Genera una clave única para detección de duplicados (versión polimórfica)
+        /// </summary>
+        string GetMessageKey(SyncMessageBase message);
+
+        /// <summary>
+        /// Genera información descriptiva para logs (versión polimórfica)
+        /// </summary>
+        string GetLogInfo(SyncMessageBase message);
+    }
+
+    /// <summary>
+    /// Interfaz genérica para handlers de sincronización por tabla
+    /// Cada tabla (Clientes, Productos, Proveedores, etc.) tiene su propio handler
+    /// </summary>
+    /// <typeparam name="TMessage">Tipo específico de mensaje que hereda de SyncMessageBase</typeparam>
+    public interface ISyncTableHandler<TMessage> : ISyncTableHandlerBase where TMessage : SyncMessageBase
+    {
+        /// <summary>
+        /// Procesa un mensaje de sincronización para esta tabla (versión tipada)
         /// </summary>
         /// <param name="message">Mensaje deserializado desde sistemas externos</param>
         /// <returns>true si procesó exitosamente, false si hubo error</returns>
-        Task<bool> HandleAsync(ExternalSyncMessageDTO message);
+        Task<bool> HandleAsync(TMessage message);
 
         /// <summary>
-        /// Genera una clave única para detección de duplicados
+        /// Genera una clave única para detección de duplicados (versión tipada)
         /// Ejemplo: "CLIENTE|12345|0|Odoo" o "PRODUCTO|17404|Odoo"
         /// </summary>
         /// <param name="message">Mensaje recibido</param>
         /// <returns>Clave única que identifica el mensaje</returns>
-        string GetMessageKey(ExternalSyncMessageDTO message);
+        string GetMessageKey(TMessage message);
 
         /// <summary>
-        /// Genera información descriptiva para logs
+        /// Genera información descriptiva para logs (versión tipada)
         /// Ejemplo: "Cliente 12345, Contacto 0, Source=Odoo" o "Producto 17404 (Nombre), PVP=12.50"
         /// </summary>
         /// <param name="message">Mensaje recibido</param>
         /// <returns>String descriptivo para logging</returns>
-        string GetLogInfo(ExternalSyncMessageDTO message);
+        string GetLogInfo(TMessage message);
     }
 }

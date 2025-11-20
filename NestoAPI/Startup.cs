@@ -158,11 +158,11 @@ namespace NestoAPI
 
             // Servicios de sincronización bidireccional (External Systems <-> Nesto)
             // Push Subscription: usa SyncWebhookController
-            _ = services.AddSingleton<ISyncTableHandler, ClientesSyncHandler>();
-            _ = services.AddSingleton<ISyncTableHandler, ProductosSyncHandler>();
+            _ = services.AddSingleton<ISyncTableHandlerBase, ClientesSyncHandler>();
+            _ = services.AddSingleton<ISyncTableHandlerBase, ProductosSyncHandler>();
             _ = services.AddSingleton<SyncTableRouter>(sp =>
             {
-                var handlers = sp.GetServices<ISyncTableHandler>();
+                var handlers = sp.GetServices<ISyncTableHandlerBase>();
                 return new SyncTableRouter(handlers);
             });
             _ = services.AddScoped<MessageRetryManager>(sp =>

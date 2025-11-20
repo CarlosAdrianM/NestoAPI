@@ -1,12 +1,14 @@
+using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Models.Sincronizacion
 {
     /// <summary>
-    /// Mensaje de sincronización recibido/enviado a través de Google Pub/Sub
-    /// Estructura PLANA que coincide con lo que emiten GestorClientes y GestorProductos
-    /// Topic: sincronizacion-tablas
+    /// OBSOLETO: Usar ClienteSyncMessage o ProductoSyncMessage en su lugar
+    /// Esta clase mezclaba incorrectamente campos de diferentes entidades
+    /// Mantenida solo para referencia y compatibilidad temporal
     /// </summary>
+    [Obsolete("Usar ClienteSyncMessage o ProductoSyncMessage en su lugar. Esta clase mezclaba campos de diferentes entidades.")]
     public class ExternalSyncMessageDTO
     {
         // ===== CAMPOS COMUNES =====

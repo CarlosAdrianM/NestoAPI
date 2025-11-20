@@ -18,7 +18,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// <param name="clienteNesto">Cliente actual en la base de datos de Nesto</param>
         /// <param name="clienteExterno">Datos del cliente desde sistema externo</param>
         /// <returns>Lista de campos que han cambiado</returns>
-        public List<string> DetectarCambios(Cliente clienteNesto, ExternalSyncMessageDTO clienteExterno)
+        public List<string> DetectarCambios(Cliente clienteNesto, ClienteSyncMessage clienteExterno)
         {
             var cambios = new List<string>();
 

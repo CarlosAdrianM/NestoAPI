@@ -1406,8 +1406,15 @@ namespace NestoAPI.Infraestructure
         {
             var personasContacto = cliente.PersonasContactoClientes
                 .Where(p => p.Empresa.Trim() == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado >= 0)
-                .Select(p => new { Id = p.Número?.Trim(), Nombre = p.Nombre?.Trim(), CorreoElectronico = p.CorreoElectrónico?.Trim(), Telefonos = p.Teléfono?.Trim(), Cargo = p.Cargo })
-                .ToList(); // Convertir la lista a un tipo que se pueda serializar
+                .Select(p => new PersonaContactoSyncDTO
+                {
+                    Id = p.Número?.Trim(),
+                    Nombre = p.Nombre?.Trim(),
+                    CorreoElectronico = p.CorreoElectrónico?.Trim(),
+                    Telefonos = p.Teléfono?.Trim(),
+                    Cargo = p.Cargo
+                })
+                .ToList();
 
             // Log para rastrear de dónde viene cada publicación
             var personasInfo = personasContacto.Any()
@@ -1417,8 +1424,11 @@ namespace NestoAPI.Infraestructure
             Console.WriteLine($"📤 Publicando mensaje: Cliente {cliente.Nº_Cliente?.Trim()}-{cliente.Contacto?.Trim()}, Source={source}{usuarioInfo}, PersonasContacto=[{personasInfo}]");
 
             // Publicar evento de sincronización
-            var message = new
+            var message = new ClienteSyncMessage
             {
+                Tabla = "Clientes",
+                Source = source,
+                Usuario = usuario,
                 Nif = cliente.CIF_NIF?.Trim(),
                 Cliente = cliente.Nº_Cliente?.Trim(),
                 Contacto = cliente.Contacto?.Trim(),
@@ -1432,10 +1442,7 @@ namespace NestoAPI.Infraestructure
                 Comentarios = cliente.Comentarios?.Trim(),
                 Vendedor = cliente.Vendedor?.Trim(),
                 Estado = cliente.Estado,
-                PersonasContacto = personasContacto,
-                Tabla = "Clientes",
-                Source = source,
-                Usuario = usuario // Agregamos el usuario al mensaje
+                PersonasContacto = personasContacto
             };
 
             // Pasar el objeto directamente - GooglePubSubEventPublisher se encarga de serializar
