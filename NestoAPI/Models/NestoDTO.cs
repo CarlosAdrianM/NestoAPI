@@ -55,6 +55,20 @@ namespace NestoAPI.Models
         public int EstadoMinimo { get; set; }
         public int EstadoMaximo { get; set; }
     }
+    public class CCCDTO
+    {
+        public string empresa { get; set; }
+        public string cliente { get; set; }
+        public string contacto { get; set; }
+        public string numero { get; set; }
+        public string pais { get; set; }
+        public string entidad { get; set; }
+        public string oficina { get; set; }
+        public string bic { get; set; }
+        public short estado { get; set; }
+        public short? tipoMandato { get; set; }
+        public DateTime? fechaMandato { get; set; }
+    }
     public class DireccionesEntregaClienteDTO
     {
         public string contacto { get; set; }

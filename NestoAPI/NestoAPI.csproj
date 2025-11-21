@@ -558,6 +558,7 @@
     <Compile Include="Infraestructure\Exceptions\NestoBusinessException.cs" />
     <Compile Include="Infraestructure\Exceptions\FacturacionException.cs" />
     <Compile Include="Infraestructure\Exceptions\PedidoInvalidoException.cs" />
+    <Compile Include="Infraestructure\Exceptions\PedidoValidacionException.cs" />
     <Compile Include="Infraestructure\Exceptions\TraspasoEmpresaException.cs" />
     <Compile Include="Infraestructure\Filters\GlobalExceptionFilter.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturas.cs" />

@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.AlbaranesVenta;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.NotasEntrega;
@@ -1070,7 +1071,16 @@ namespace NestoAPI.Controllers
             {
                 if (!respuestaValidacion.ValidacionSuperada)
                 {
-                    throw new ValidationException(respuestaValidacion.Motivo);
+                    // Carlos 21/11/24: Usar PedidoValidacionException en lugar de ValidationException
+                    // para que GlobalExceptionFilter lo maneje correctamente y el frontend pueda
+                    // detectarlo por código de error "PEDIDO_VALIDACION_FALLO"
+                    throw new PedidoValidacionException(
+                        respuestaValidacion.Motivo,
+                        respuestaValidacion,
+                        empresa: pedido.empresa,
+                        pedido: pedido.numero,
+                        cliente: pedido.cliente,
+                        usuario: pedido.Usuario);
                 }
             }
 

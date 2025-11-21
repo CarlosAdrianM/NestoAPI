@@ -32,7 +32,9 @@
       "Bash(nuget restore:*)",
       "Bash($null)",
       "Bash(nuget install:*)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(timeout 90 dotnet test:*)",
+      "Bash([ -d \"C:/Users/Carlos/source/repos/Nesto/ControlesUsuario/SelectorCCC\" ])"
     ],
     "deny": [],
     "ask": []

@@ -180,6 +180,7 @@ Los códigos de error siguen el formato: `{ÁREA}_{DESCRIPCIÓN}`
 | `PEDIDO_SIN_LINEAS` | El pedido no tiene líneas |
 | `PEDIDO_CLIENTE_NO_EXISTE` | El cliente no existe |
 | `PEDIDO_ESTADO_INVALIDO` | El estado del pedido no permite la operación |
+| `PEDIDO_VALIDACION_FALLO` | El pedido no pasó las validaciones de precios/ofertas/descuentos |
 
 ### Traspasos
 | Código | Descripción |

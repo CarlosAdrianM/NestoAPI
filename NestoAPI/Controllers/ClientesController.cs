@@ -336,6 +336,51 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
+        [Route("api/Clientes/CCCs")]
+        // GET: api/Clientes/CCCs?empresa=1&cliente=10&contacto=0
+        // Carlos 20/11/24: Endpoint para obtener los CCCs de un cliente/contacto para el SelectorCCC
+        [ResponseType(typeof(List<CCCDTO>))]
+        public async Task<IHttpActionResult> GetCCCs(string empresa, string cliente, string contacto)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+            {
+                return BadRequest("El parámetro 'empresa' es obligatorio");
+            }
+
+            if (string.IsNullOrWhiteSpace(cliente))
+            {
+                return BadRequest("El parámetro 'cliente' es obligatorio");
+            }
+
+            if (string.IsNullOrWhiteSpace(contacto))
+            {
+                return BadRequest("El parámetro 'contacto' es obligatorio");
+            }
+
+            List<CCCDTO> cccs = await db.CCCs
+                .Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto == contacto)
+                .OrderByDescending(c => c.Estado)
+                .ThenBy(c => c.Número)
+                .Select(c => new CCCDTO
+                {
+                    empresa = c.Empresa.Trim(),
+                    cliente = c.Cliente.Trim(),
+                    contacto = c.Contacto.Trim(),
+                    numero = c.Número.Trim(),
+                    pais = c.Pais != null ? c.Pais.Trim() : null,
+                    entidad = c.Entidad != null ? c.Entidad.Trim() : null,
+                    oficina = c.Oficina != null ? c.Oficina.Trim() : null,
+                    bic = c.BIC != null ? c.BIC.Trim() : null,
+                    estado = c.Estado,
+                    tipoMandato = c.TipoMandato,
+                    fechaMandato = c.FechaMandato
+                })
+                .ToListAsync();
+
+            return Ok(cccs);
+        }
+
+        [HttpGet]
         [Route("api/Clientes/ComprobarNifNombre")]
         // GET: api/Clientes/5
         [ResponseType(typeof(RespuestaNifNombreCliente))]
