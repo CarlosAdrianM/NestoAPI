@@ -66,6 +66,23 @@ namespace NestoAPI.Models.Picking
             IEnumerable<LineaPedidoPicking> lineas = candidatos.Where(c => !c.EsNotaEntrega).SelectMany(l => l.Lineas);
             var productos = lineas.Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO).GroupBy(g => g.Producto);
 
+            // VALIDACIÓN: Detectar líneas con TipoLinea NULL antes de intentar materializarlas
+            var lineasConTipoNull = db.LinPedidoVtas
+                .Where(l => l.TipoLinea == null
+                    && (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE || l.Estado == Constantes.EstadosLineaVenta.EN_CURSO)
+                    && (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO))
+                .Select(l => new { l.Número, l.Nº_Orden })
+                .ToList();
+
+            if (lineasConTipoNull.Any())
+            {
+                var errores = string.Join(", ", lineasConTipoNull.Select(l => $"Pedido {l.Número} línea {l.Nº_Orden}"));
+                throw new InvalidOperationException(
+                    $"No se puede generar el picking porque hay {lineasConTipoNull.Count} línea(s) con tipo de línea en blanco (NULL). " +
+                    $"Esto indica que el pedido tiene datos incorrectos y debe corregirse manualmente antes de continuar. " +
+                    $"Líneas afectadas: {errores}");
+            }
+
             IEnumerable<LineaPedidoPicking> lineasResultado = db.LinPedidoVtas.Where(l => (l.Estado == Constantes.EstadosLineaVenta.PENDIENTE || l.Estado == Constantes.EstadosLineaVenta.EN_CURSO) && (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) )
                 .Select(l => new LineaPedidoPicking
                 {
@@ -90,6 +107,26 @@ namespace NestoAPI.Models.Picking
 
         private List<PedidoPicking> Ejecutar()
         {
+            // VALIDACIÓN: Verificar que ninguna línea de los pedidos seleccionados tenga TipoLinea NULL
+            var lineasConTipoNull = pedidos
+                .SelectMany(p => p.LinPedidoVtas
+                    .Where(l => l.TipoLinea == null
+                        && l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO
+                        && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                        && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO
+                        && (l.Picking == null || l.Picking == 0))
+                    .Select(l => new { Pedido = p.Número, Linea = l.Nº_Orden }))
+                .ToList();
+
+            if (lineasConTipoNull.Any())
+            {
+                var errores = string.Join(", ", lineasConTipoNull.Select(l => $"Pedido {l.Pedido} línea {l.Linea}"));
+                throw new InvalidOperationException(
+                    $"No se puede generar el picking porque hay {lineasConTipoNull.Count} línea(s) con tipo de línea en blanco (NULL). " +
+                    $"Esto indica que el pedido tiene datos incorrectos y debe corregirse manualmente antes de continuar. " +
+                    $"Líneas afectadas: {errores}");
+            }
+
             return pedidos.Select(p => new PedidoPicking
             {
                 Empresa = p.Empresa,

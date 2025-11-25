@@ -776,6 +776,19 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // Validación: verificar que ninguna línea tenga TipoLinea NULL
+            var lineasConTipoNull = cabPedidoVta.LinPedidoVtas
+                .Where(l => l.TipoLinea == null
+                    && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                    && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+                .ToList();
+            if (lineasConTipoNull.Any())
+            {
+                var errores = string.Join(", ", lineasConTipoNull.Select(l => $"línea {l.Nº_Orden}"));
+                throw new InvalidOperationException(
+                    $"No se puede modificar el pedido {pedido.numero} porque tiene {lineasConTipoNull.Count} línea(s) con tipo de línea en blanco (NULL). " +
+                    $"Esto indica un error en la creación de las líneas. Líneas afectadas: {errores}");
+            }
 
             try
             {
@@ -1082,6 +1095,16 @@ namespace NestoAPI.Controllers
                         cliente: pedido.cliente,
                         usuario: pedido.Usuario);
                 }
+            }
+
+            // Validación: verificar que ninguna línea tenga TipoLinea NULL
+            var lineasConTipoNull = lineasPedidoInsertar.Where(l => l.TipoLinea == null).ToList();
+            if (lineasConTipoNull.Any())
+            {
+                var errores = string.Join(", ", lineasConTipoNull.Select(l => $"línea {l.Nº_Orden}"));
+                throw new InvalidOperationException(
+                    $"No se puede crear el pedido {pedido.numero} porque tiene {lineasConTipoNull.Count} línea(s) con tipo de línea en blanco (NULL). " +
+                    $"Esto indica un error en la creación de las líneas. Líneas afectadas: {errores}");
             }
 
             try

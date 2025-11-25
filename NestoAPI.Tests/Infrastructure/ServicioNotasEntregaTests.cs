@@ -754,5 +754,182 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region ProcesarNotaEntrega - Actualización de Ubicaciones
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_ConLineasConUbicaciones_ActualizaEstadoUbicacionesAEntregado()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 11111,
+                Nº_Cliente = "1013",
+                Contacto = "0",
+                NotaEntrega = true,
+                Ruta = 1,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Número = 11111,
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = false,
+                        Base_Imponible = 100m,
+                        Producto = "PROD019",
+                        Delegación = "ALG",
+                        Forma_Venta = "VAR"
+                    },
+                    new LinPedidoVta
+                    {
+                        Número = 11111,
+                        Nº_Orden = 2,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = false,
+                        Base_Imponible = 150m,
+                        Producto = "PROD020",
+                        Delegación = "ALG",
+                        Forma_Venta = "VAR"
+                    }
+                }
+            };
+
+            // Mock del cliente
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Ubicaciones" };
+            A.CallTo(() => db.Clientes.Find("1", "1013", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            // Crear ubicaciones para las líneas del pedido
+            var ubicacion1 = new Ubicacion
+            {
+                Empresa = "1",
+                NºOrden = 100,
+                PedidoVta = 11111,
+                NºOrdenVta = 1, // Corresponde a la primera línea
+                Estado = Constantes.Ubicaciones.RESERVADO_PICKING, // Estado 3
+                Número = "PROD019",
+                Almacén = "ALG",
+                Cantidad = 10
+            };
+
+            var ubicacion2 = new Ubicacion
+            {
+                Empresa = "1",
+                NºOrden = 101,
+                PedidoVta = 11111,
+                NºOrdenVta = 2, // Corresponde a la segunda línea
+                Estado = Constantes.Ubicaciones.RESERVADO_PICKING, // Estado 3
+                Número = "PROD020",
+                Almacén = "ALG",
+                Cantidad = 5
+            };
+
+            // Ubicación que NO debe actualizarse (diferente pedido)
+            var ubicacionOtroPedido = new Ubicacion
+            {
+                Empresa = "1",
+                NºOrden = 102,
+                PedidoVta = 99999, // Diferente pedido
+                NºOrdenVta = 1,
+                Estado = Constantes.Ubicaciones.RESERVADO_PICKING,
+                Número = "PROD021",
+                Almacén = "ALG",
+                Cantidad = 3
+            };
+
+            var ubicaciones = new List<Ubicacion> { ubicacion1, ubicacion2, ubicacionOtroPedido };
+            var fakeUbicaciones = A.Fake<System.Data.Entity.DbSet<Ubicacion>>();
+            A.CallTo(() => db.Ubicaciones).Returns(fakeUbicaciones);
+            A.CallTo(() => fakeUbicaciones.AsQueryable()).Returns(ubicaciones.AsQueryable());
+
+            var fakeNotasEntrega = A.Fake<System.Data.Entity.DbSet<NotaEntrega>>();
+            A.CallTo(() => db.NotasEntregas).Returns(fakeNotasEntrega);
+
+            var fakeExtractoRutas = A.Fake<System.Data.Entity.DbSet<ExtractoRuta>>();
+            A.CallTo(() => db.ExtractoRutas).Returns(fakeExtractoRutas);
+            A.CallTo(() => fakeExtractoRutas.AsQueryable()).Returns(new List<ExtractoRuta>().AsQueryable());
+
+            // Act
+            var resultado = await servicio.ProcesarNotaEntrega(pedido, "testuser");
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(2, resultado.NumeroLineas);
+
+            // Verificar que las ubicaciones del pedido cambiaron a estado ENTREGADO_NOTA_ENTREGA (-3)
+            Assert.AreEqual(Constantes.Ubicaciones.ENTREGADO_NOTA_ENTREGA, ubicacion1.Estado,
+                "La ubicación de la línea 1 debe cambiar a estado ENTREGADO_NOTA_ENTREGA (-3)");
+            Assert.AreEqual(Constantes.Ubicaciones.ENTREGADO_NOTA_ENTREGA, ubicacion2.Estado,
+                "La ubicación de la línea 2 debe cambiar a estado ENTREGADO_NOTA_ENTREGA (-3)");
+
+            // Verificar que la ubicación de otro pedido NO cambió
+            Assert.AreEqual(Constantes.Ubicaciones.RESERVADO_PICKING, ubicacionOtroPedido.Estado,
+                "Las ubicaciones de otros pedidos NO deben cambiar de estado");
+
+            // Verificar que se guardó en la BD
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ProcesarNotaEntrega_LineasSinUbicaciones_NoGeneraError()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 22222,
+                Nº_Cliente = "1014",
+                Contacto = "0",
+                NotaEntrega = true,
+                Ruta = 1,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Número = 22222,
+                        Nº_Orden = 1,
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        YaFacturado = false,
+                        Base_Imponible = 100m,
+                        Producto = "PROD022",
+                        Delegación = "ALG",
+                        Forma_Venta = "VAR"
+                    }
+                }
+            };
+
+            var fakeCliente = new Cliente { Nombre = "Cliente Test Sin Ubicaciones" };
+            A.CallTo(() => db.Clientes.Find("1", "1014", "0")).Returns(fakeCliente);
+
+            var fakeContador = new ContadorGlobal { NotaEntrega = 1000, TraspasoAlmacén = 5000 };
+            A.CallTo(() => db.ContadoresGlobales.FirstOrDefaultAsync()).Returns(Task.FromResult(fakeContador));
+
+            // No hay ubicaciones para este pedido
+            var ubicaciones = new List<Ubicacion>();
+            var fakeUbicaciones = A.Fake<System.Data.Entity.DbSet<Ubicacion>>();
+            A.CallTo(() => db.Ubicaciones).Returns(fakeUbicaciones);
+            A.CallTo(() => fakeUbicaciones.AsQueryable()).Returns(ubicaciones.AsQueryable());
+
+            var fakeNotasEntrega = A.Fake<System.Data.Entity.DbSet<NotaEntrega>>();
+            A.CallTo(() => db.NotasEntregas).Returns(fakeNotasEntrega);
+
+            var fakeExtractoRutas = A.Fake<System.Data.Entity.DbSet<ExtractoRuta>>();
+            A.CallTo(() => db.ExtractoRutas).Returns(fakeExtractoRutas);
+            A.CallTo(() => fakeExtractoRutas.AsQueryable()).Returns(new List<ExtractoRuta>().AsQueryable());
+
+            // Act
+            var resultado = await servicio.ProcesarNotaEntrega(pedido, "testuser");
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.NumeroLineas);
+            // No debe lanzar excepción aunque no haya ubicaciones
+        }
+
+        #endregion
     }
 }

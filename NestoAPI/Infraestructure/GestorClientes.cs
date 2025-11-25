@@ -1,31 +1,29 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+﻿using Microsoft.ML;
+using Microsoft.Reporting.WebForms;
+using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
-using System.Globalization;
-using Microsoft.Reporting.WebForms;
-using System.Net.Http;
-using System.Data.SqlClient;
-using System.IO;
-using Microsoft.ML;
-using System.Data.Entity;
-using static NestoAPI.Models.Constantes;
+using NestoAPI.Models.Sincronizacion;
+using System;
+using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Data.Entity.Validation;
-using NestoAPI.Infraestructure.Sincronizacion;
-using NestoAPI.Models.Sincronizacion;
-using Microsoft.Ajax.Utilities;
+using System.Data.SqlClient;
+using System.Globalization;
+using System.IO;
+using System.Linq;
+using System.Net.Http;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure
 {
     public class GestorClientes : IGestorClientes
     {
-        readonly IServicioGestorClientes servicio;
-        readonly IServicioAgencias servicioAgencias;
+        private readonly IServicioGestorClientes servicio;
+        private readonly IServicioAgencias servicioAgencias;
         private readonly SincronizacionEventWrapper _sincronizacionEventWrapper;
 
         public GestorClientes(IServicioGestorClientes servicio, IServicioAgencias servicioAgencias, SincronizacionEventWrapper sincronizacionEventWrapper)
@@ -37,14 +35,14 @@ namespace NestoAPI.Infraestructure
 
         public async Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono)
         {
-            if (String.IsNullOrWhiteSpace(direccion))
+            if (string.IsNullOrWhiteSpace(direccion))
             {
                 throw new ArgumentException("La dirección no puede estar en blanco");
             }
 
             //¿Qué ocurre si el Código postal no existe?
 
-            if(string.IsNullOrWhiteSpace(codigoPostal))
+            if (string.IsNullOrWhiteSpace(codigoPostal))
             {
                 throw new ArgumentException("El código postal no puede estar en blanco");
             }
@@ -57,37 +55,37 @@ namespace NestoAPI.Infraestructure
             respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
             respuesta.TelefonoFormateado = LimpiarTelefono(telefono);
 
-            String[] listaTelefonos = respuesta.TelefonoFormateado.Split(Constantes.Clientes.SEPARADOR_TELEFONOS);
+            string[] listaTelefonos = respuesta.TelefonoFormateado.Split(Constantes.Clientes.SEPARADOR_TELEFONOS);
             respuesta.ClientesMismoTelefono = new List<ClienteTelefonoLookup>();
 
-            foreach (var tel in listaTelefonos) 
+            foreach (var tel in listaTelefonos)
             {
                 respuesta.ClientesMismoTelefono.AddRange(await servicio.ClientesMismoTelefono(tel));
             }
 
             respuesta.ClientesMismoTelefono = respuesta.ClientesMismoTelefono.Distinct().ToList();
-            
+
             return respuesta;
         }
 
         public async Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre)
         {
-            if (String.IsNullOrWhiteSpace(nombre))
+            if (string.IsNullOrWhiteSpace(nombre))
             {
                 throw new ArgumentException("El nombre no puede estar en blanco");
             }
 
             nif = LimpiarNif(nif);
-                        
+
             var respuesta = new RespuestaNifNombreCliente();
-            if (String.IsNullOrWhiteSpace(nif))
+            if (string.IsNullOrWhiteSpace(nif))
             {
                 respuesta.EstadoCliente = Constantes.Clientes.Estados.PRIMERA_VISITA;
                 respuesta.NombreFormateado = nombre.ToUpper().Trim();
                 return respuesta;
             }
             ClienteDTO clienteEncontrado = await servicio.BuscarClientePorNif(nif);
-            if(clienteEncontrado != null && clienteEncontrado.cliente != null)
+            if (clienteEncontrado != null && clienteEncontrado.cliente != null)
             {
                 respuesta.ExisteElCliente = true;
                 respuesta.Empresa = clienteEncontrado.empresa;
@@ -96,7 +94,8 @@ namespace NestoAPI.Infraestructure
                 respuesta.NombreFormateado = clienteEncontrado.nombre;
                 respuesta.NifFormateado = clienteEncontrado.cifNif;
                 respuesta.NifValidado = true;
-            } else
+            }
+            else
             {
                 respuesta = await servicio.ComprobarNifNombre(nif, nombre);
                 respuesta.ExisteElCliente = false;
@@ -120,14 +119,14 @@ namespace NestoAPI.Infraestructure
             // Si es -1 el código postal es incorrecto
             if (posicionCodigoPostal == -1)
             {
-                throw new ArgumentException("El código postal " + codigoPostal + " es incorrecto.\n" + direccionGoogle);
+                throw new ArgumentException($"El código postal {codigoPostal} es incorrecto.\n {direccionGoogle}");
             }
             var direccionFormateada = string.Empty;
             if (posicionCodigoPostal >= 2)
             {
                 direccionFormateada = direccionGoogle.Substring(0, posicionCodigoPostal - 2); // porque quitamos coma y espacio
             }
-            
+
 
             var posicionComaFormateada = direccionFormateada.IndexOf(", ", StringComparison.InvariantCulture);
             string numeroCalleFormateada;
@@ -135,16 +134,16 @@ namespace NestoAPI.Infraestructure
             if (posicionComaFormateada == -1)
             {
                 string direccionHastaNumero = new string(direccionFormateada
-                    .TakeWhile(x => !Char.IsNumber(x)).ToArray());
+                    .TakeWhile(x => !char.IsNumber(x)).ToArray());
                 numeroCalleFormateada = new string(
                     direccionFormateada.Substring(direccionHastaNumero.Length)
-                    .TakeWhile(x => Char.IsNumber(x)).ToArray()
+                    .TakeWhile(x => char.IsNumber(x)).ToArray()
                 );
                 if (string.IsNullOrEmpty(numeroCalleFormateada))
                 {
                     numeroCalleFormateada = direccion.IndexOf("S/N", StringComparison.InvariantCulture) != -1 ? "S/N" : string.Empty;
                 }
-                if (string.IsNullOrEmpty(numeroCalleFormateada) && direccionGoogle.Substring(0,5) != codigoPostal)
+                if (string.IsNullOrEmpty(numeroCalleFormateada) && direccionGoogle.Substring(0, 5) != codigoPostal)
                 {
                     Match m = Regex.Match(direccion, "(\\d+)");
                     if (m.Success)
@@ -158,7 +157,8 @@ namespace NestoAPI.Infraestructure
                     direccionFormateada = direccionHastaNumero.Substring(0, direccionHastaNumero.Length) +
                         ", " + numeroCalleFormateada;
                 }
-            } else
+            }
+            else
             {
                 numeroCalleFormateada = direccionFormateada.Substring(posicionComaFormateada + 2);
             }
@@ -185,7 +185,7 @@ namespace NestoAPI.Infraestructure
                     string sinNumero = "S/N";
                     direccionFormateada = direccionFormateada.Replace(numeroCalleFormateada, sinNumero);
                     numeroCalleFormateada = sinNumero;
-                    posicionNumero = direccion.IndexOf(numeroCalleFormateada);                    
+                    posicionNumero = direccion.IndexOf(numeroCalleFormateada);
                 }
             }
             var inicioDireccion = direccion.Substring(0, posicionNumero + numeroCalleFormateada.Length);
@@ -280,7 +280,7 @@ namespace NestoAPI.Infraestructure
             {
                 direccion = "Pl. " + direccion.Substring(6);
             }
-            
+
             Dictionary<string, string> abreviaturas = CargarAbreviaturas();
             foreach (var abr in abreviaturas)
             {
@@ -291,14 +291,14 @@ namespace NestoAPI.Infraestructure
                     direccion = direccion.Replace(abr.Value + "DE LA ", abr.Value);
                     direccion = direccion.Replace(abr.Value + "DEL ", abr.Value);
                     direccion = direccion.Replace(abr.Value + "DE ", abr.Value);
-                }                
+                }
 
                 if (direccion.EndsWith(buscar))
                 {
                     direccion = direccion.Substring(0, direccion.Length - buscar.Length) + abr.Value;
                 }
             }
-            
+
             return direccion;
         }
 
@@ -343,14 +343,14 @@ namespace NestoAPI.Infraestructure
             };
         }
 
-        private string ProcesarDireccion(string direccion, RespuestaDatosGeneralesClientes respuesta )
+        private string ProcesarDireccion(string direccion, RespuestaDatosGeneralesClientes respuesta)
         {
             string direccionRespuesta = direccion.Replace("  ", " ") + "+";
             //direccionRespuesta += respuesta.CodigoPostal + "+";
             direccionRespuesta += respuesta.Poblacion;
             if (respuesta.Poblacion?.ToUpper().Trim() != respuesta.Provincia?.ToUpper().Trim())
             {
-                direccionRespuesta += "+" +respuesta.Provincia;
+                direccionRespuesta += "+" + respuesta.Provincia;
             }
             direccionRespuesta = Regex.Replace(direccionRespuesta, @"\s+", " ");
             direccionRespuesta = direccionRespuesta.Replace(" ", "+");
@@ -369,7 +369,8 @@ namespace NestoAPI.Infraestructure
                     IbanFormateado = iban.Formateado,
                     IbanValido = iban.EsValido
                 };
-            } else
+            }
+            else
             {
                 respuesta = new RespuestaDatosBancoCliente
                 {
@@ -381,7 +382,8 @@ namespace NestoAPI.Infraestructure
             if (((plazosPago == "CONTADO" || plazosPago == "PRE") && formaPago != "RCB") || (formaPago == "RCB" && respuesta.IbanValido && (plazosPago == "1/30" || plazosPago == "CONTADO")))
             {
                 respuesta.DatosPagoValidos = true;
-            } else
+            }
+            else
             {
                 respuesta.DatosPagoValidos = false;
             }
@@ -396,11 +398,11 @@ namespace NestoAPI.Infraestructure
                 return string.Empty;
             }
 
-            string telefonoFormateado = String.Empty;
-            
-            foreach(var ch in telefono)
+            string telefonoFormateado = string.Empty;
+
+            foreach (var ch in telefono)
             {
-                if (Char.IsDigit(ch))
+                if (char.IsDigit(ch))
                 {
                     telefonoFormateado += ch;
                 }
@@ -467,7 +469,7 @@ namespace NestoAPI.Infraestructure
                 int numeroPersona = 0;
                 try
                 {
-                    numeroPersona = Int32.Parse(persona.Número);
+                    numeroPersona = int.Parse(persona.Número);
                 }
                 catch
                 {
@@ -500,7 +502,7 @@ namespace NestoAPI.Infraestructure
             List<Cliente> clientesModificados = new List<Cliente>();
 
             Cliente clienteDB = await servicio.BuscarCliente(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
-            string nuevoVendedor = String.Empty;
+            string nuevoVendedor = string.Empty;
             short nuevoEstado = Constantes.Clientes.Estados.VISITA_TELEFONICA;
             List<Cliente> contactos = await servicio.BuscarContactos(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
             List<string> vendedoresContacto = VendedoresContactosCliente(contactos);
@@ -514,7 +516,7 @@ namespace NestoAPI.Infraestructure
                 nuevoVendedor = vendedoresQueRecibenClientes.Contains(clienteDB.Vendedor) ?
                     clienteDB.Vendedor :
                     vendedoresQueRecibenClientes.ElementAt(diaVendedor);
-                               
+
                 if (nuevoVendedor == vendedoresQueRecibenClientes.ElementAt(diaVendedor))
                 {
                     var vendedoresContactoTelefonicos = vendedoresContacto.Intersect(vendedoresQueRecibenClientes);
@@ -531,13 +533,13 @@ namespace NestoAPI.Infraestructure
             // Se lo quita un comercial de estética telefónico
             if (cliente.VendedorEstetica == Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Vendedor != Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO)
             {
-                nuevoVendedor = Constantes.Vendedores.VENDEDOR_GENERAL;                
+                nuevoVendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
                 SeguimientoCliente seguimiento = await servicio.BuscarSeguimiento(cliente.Empresa, cliente.Cliente, cliente.Contacto).ConfigureAwait(false);
                 if (seguimiento != null && !string.IsNullOrEmpty(seguimiento.Comentarios))
                 {
                     bool soloEstetica = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "solo estetica", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
                     bool soloPeluqueria = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "solo peluqueria", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
-                    bool esteticaYPeluqueria = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "estetica y peluqueria", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0; 
+                    bool esteticaYPeluqueria = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "estetica y peluqueria", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
                     bool pasarANulo = CultureInfo.InvariantCulture.CompareInfo.IndexOf(seguimiento.Comentarios, "pasar a nulo", CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
                     if (soloEstetica)
                     {
@@ -591,7 +593,7 @@ namespace NestoAPI.Infraestructure
 
             // Se lo quita un comercial de peluquería
             if (cliente.VendedorPeluqueria == Constantes.Vendedores.VENDEDOR_GENERAL)
-            {              
+            {
                 vendedoresPresenciales = vendedoresPresenciales.Where(v => !v.Equals(clienteDB.VendedoresClienteGrupoProductoes?.FirstOrDefault().Vendedor)).ToList();
                 if (vendedoresPresenciales.Contains(clienteDB.Vendedor))
                 {
@@ -658,7 +660,7 @@ namespace NestoAPI.Infraestructure
                         Usuario = cliente.Usuario
                     });
                 }
-            }            
+            }
 
             clienteDB.Usuario = cliente.Usuario;
 
@@ -679,20 +681,20 @@ namespace NestoAPI.Infraestructure
             Cliente clienteDB = await servicio.BuscarCliente(db, clienteModificar.Empresa, clienteModificar.Cliente, clienteModificar.Contacto);
             if (clienteDB == null)
             {
-                throw new Exception(String.Format("Bad request: no existe el cliente {0}/{1}/{2}", clienteModificar.Empresa, clienteModificar.Cliente, clienteModificar.Contacto));
+                throw new Exception(string.Format("Bad request: no existe el cliente {0}/{1}/{2}", clienteModificar.Empresa, clienteModificar.Cliente, clienteModificar.Contacto));
             }
 
             //test estado 5 -> 0 o 9
-            if ((string.IsNullOrWhiteSpace(clienteDB.CIF_NIF) && !string.IsNullOrWhiteSpace(clienteModificar.Nif)) || 
-                (clienteDB.Estado == Constantes.Clientes.Estados.PRIMERA_VISITA) && !string.IsNullOrWhiteSpace(clienteDB.CIF_NIF))
+            if ((string.IsNullOrWhiteSpace(clienteDB.CIF_NIF) && !string.IsNullOrWhiteSpace(clienteModificar.Nif)) ||
+                ((clienteDB.Estado == Constantes.Clientes.Estados.PRIMERA_VISITA) && !string.IsNullOrWhiteSpace(clienteDB.CIF_NIF)))
             {
-                clienteDB.Estado = clienteDB.Vendedore.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO ? 
+                clienteDB.Estado = clienteDB.Vendedore.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO ?
                     Constantes.Clientes.Estados.VISITA_TELEFONICA : Constantes.Clientes.Estados.VISITA_PRESENCIAL;
             }
 
             // test se rellenan los datos y el CIF sobre todo
-            clienteDB.CIF_NIF   = clienteModificar.Nif;
-            clienteDB.Nombre    = clienteModificar.Nombre;
+            clienteDB.CIF_NIF = clienteModificar.Nif;
+            clienteDB.Nombre = clienteModificar.Nombre;
             clienteDB.Dirección = clienteModificar.Direccion;
             // Aquí hay que modificar la población y la provincia si el código postal ha cambiado
             if (clienteDB.CodPostal?.Trim() != clienteModificar.CodigoPostal)
@@ -702,8 +704,8 @@ namespace NestoAPI.Infraestructure
                 clienteDB.Provincia = cp.Provincia;
             }
             clienteDB.CodPostal = clienteModificar.CodigoPostal;
-            clienteDB.Teléfono  = clienteModificar.Telefono;
-            clienteDB.Vendedor  = clienteModificar.VendedorEstetica;
+            clienteDB.Teléfono = clienteModificar.Telefono;
+            clienteDB.Vendedor = clienteModificar.VendedorEstetica;
             clienteDB.Comentarios = clienteModificar.Comentarios;
             clienteDB.ComentarioPicking = clienteModificar.ComentariosPicking;
             clienteDB.ComentarioRuta = clienteModificar.ComentariosRuta;
@@ -722,23 +724,23 @@ namespace NestoAPI.Infraestructure
                     ImporteMínimo = 0
                 };
                 CondPagoCliente condPagoActual = clienteDB.CondPagoClientes.OrderBy(c => c.ImporteMínimo).First();
-                clienteDB.CondPagoClientes.Remove(condPagoActual);
+                _ = clienteDB.CondPagoClientes.Remove(condPagoActual);
                 clienteDB.CondPagoClientes.Add(condPagoNueva);
             }
 
-            
+
             if (clienteModificar.FormaPago == Constantes.FormasPago.RECIBO_BANCARIO && !string.IsNullOrWhiteSpace(clienteModificar.Iban))
             {
                 Iban iban = new Iban(clienteModificar.Iban);
                 bool esElMismoIban = false;
                 //CCC cccEncontrado = await servicio.BuscarIban(clienteModificar.Empresa, clienteModificar.Cliente, iban).ConfigureAwait(false);
-                if (clienteDB.CCC1 != null && (
+                if (clienteDB.CCC1 != null &&
                 clienteDB.CCC1.Pais == iban.Pais &&
                 clienteDB.CCC1.DC_IBAN == iban.DigitoControlPais &&
                 clienteDB.CCC1.Entidad == iban.Entidad &&
                 clienteDB.CCC1.Oficina == iban.Oficina &&
                 clienteDB.CCC1.DC == iban.DigitoControl &&
-                clienteDB.CCC1.Nº_Cuenta == iban.NumeroCuenta))
+                clienteDB.CCC1.Nº_Cuenta == iban.NumeroCuenta)
                 {
                     // TODO: permitir modificar IBAN, pero ponerlo en estado "en poder del vendedor"
                     //throw new Exception("El IBAN no se puede modificar. Debe hacerlo administración cuando tenga el mandato firmado en su poder.");
@@ -756,7 +758,7 @@ namespace NestoAPI.Infraestructure
                     }
                     if (cccEncontrado != null)
                     {
-                        if (cccEncontrado.Contacto?.Trim() == clienteModificar.Contacto?.Trim()) 
+                        if (cccEncontrado.Contacto?.Trim() == clienteModificar.Contacto?.Trim())
                         {
                             clienteDB.CCC = cccEncontrado.Número;
                             if (cccEncontrado.Estado == Constantes.Clientes.Estados.NULO)
@@ -833,19 +835,19 @@ namespace NestoAPI.Infraestructure
                             throw new Exception("No se pudo crear el CCC");
                         }
                         clienteDB.CCC = nuevoCCC.Número;
-                    }                    
+                    }
                 }
             }
 
-            
-            
+
+
             for (var i = 0; i < clienteDB.PersonasContactoClientes.Count; i++)
             {
                 PersonaContactoCliente personaExistente = clienteDB.PersonasContactoClientes.ElementAt(i);
                 PersonaContactoDTO personaEncontrada = clienteModificar.PersonasContacto.SingleOrDefault(p => p.Numero.ToString() == personaExistente.Número.Trim());
                 if (personaEncontrada == null)
                 {
-                    clienteDB.PersonasContactoClientes.Remove(personaExistente);
+                    _ = clienteDB.PersonasContactoClientes.Remove(personaExistente);
                 }
             }
 
@@ -859,13 +861,13 @@ namespace NestoAPI.Infraestructure
                     personaEncontrada = clienteDB.PersonasContactoClientes.FirstOrDefault(p => p.Número.Trim() == persona.Numero.ToString());
                     encontrada = personaEncontrada != null;
                 }
-                
+
                 if (!encontrada)
                 {
                     int ultimoNumero = 0;
                     try
                     {
-                        ultimoNumero = Int32.Parse(clienteDB.PersonasContactoClientes.Max(p => p.Número));
+                        ultimoNumero = int.Parse(clienteDB.PersonasContactoClientes.Max(p => p.Número));
                     }
                     catch
                     {
@@ -875,7 +877,7 @@ namespace NestoAPI.Infraestructure
                     {
                         Empresa = clienteDB.Empresa,
                         Cliente = clienteDB,
-                        Número = (ultimoNumero+1).ToString(),
+                        Número = (ultimoNumero + 1).ToString(),
                         Cargo = persona.FacturacionElectronica ? Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO : Constantes.Clientes.CARGO_POR_DEFECTO,
                         Nombre = persona.Nombre,
                         CorreoElectrónico = persona.CorreoElectronico,
@@ -884,7 +886,8 @@ namespace NestoAPI.Infraestructure
                         Usuario = clienteModificar.Usuario
                     };
                     clienteDB.PersonasContactoClientes.Add(personaContacto);
-                } else
+                }
+                else
                 {
                     if (persona.Nombre?.Trim() != personaEncontrada.Nombre?.Trim())
                     {
@@ -912,7 +915,7 @@ namespace NestoAPI.Infraestructure
         {
             string contacto = await servicio.CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
 
-            if (clienteCrear.Nif != null && clienteCrear.Nif.Trim() == String.Empty)
+            if (clienteCrear.Nif != null && clienteCrear.Nif.Trim() == string.Empty)
             {
                 clienteCrear.Nif = null;
             }
@@ -1025,18 +1028,13 @@ namespace NestoAPI.Infraestructure
                 };
                 cliente.CCCs.Add(ccc);
             }
-            
+
             return cliente;
         }
 
 
         public ByteArrayContent MandatoEnPDF(List<Mandato> mandatos)
         {
-            Warning[] warnings;
-            string mimeType;
-            string[] streamids;
-            string encoding;
-            string filenameExtension;
 
             ReportViewer viewer = new ReportViewer();
             viewer.LocalReport.ReportPath = @"Models\Clientes\MandatoCoreSEPA.rdlc";
@@ -1044,8 +1042,7 @@ namespace NestoAPI.Infraestructure
             viewer.LocalReport.EnableExternalImages = true;
 
             viewer.LocalReport.Refresh();
-
-            var bytes = viewer.LocalReport.Render("PDF", null, out mimeType, out encoding, out filenameExtension, out streamids, out warnings);
+            var bytes = viewer.LocalReport.Render("PDF", null, out _, out _, out _, out _, out _);
 
             viewer.LocalReport.Dispose();
             viewer.Dispose();
@@ -1076,7 +1073,7 @@ namespace NestoAPI.Infraestructure
                 PaisDeudor = "España",
                 Iban = new Iban($"{cccDB.Pais}{cccDB.DC_IBAN}{cccDB.Entidad}{cccDB.Oficina}{cccDB.DC}{cccDB.Nº_Cuenta}"),
                 SwiftBic = cccDB.BIC,
-                PersonaFirmante = "0123456789XY".Contains(clienteDB.CIF_NIF.Substring(0, 1)) ? clienteDB.Nombre : String.Empty
+                PersonaFirmante = "0123456789XY".Contains(clienteDB.CIF_NIF.Substring(0, 1)) ? clienteDB.Nombre : string.Empty
             };
 
             return mandato;
@@ -1165,7 +1162,7 @@ namespace NestoAPI.Infraestructure
                         servirJunto = clienteEncontrado.ServirJunto,
                         telefono = clienteEncontrado.Teléfono,
                         vendedor = clienteEncontrado.Vendedor,
-                        web = clienteEncontrado.Web,                        
+                        web = clienteEncontrado.Web,
                         Probabilidad = item.Probabilidad,
                         DiasDesdeUltimaInteraccion = (int)item.Cliente.DiasDesdeUltimaInteraccion,
                         DiasDesdeUltimoPedido = (int)item.Cliente.DiasDesdeUltimoPedido
@@ -1181,7 +1178,7 @@ namespace NestoAPI.Infraestructure
 
 
 
-        static List<ClienteInteraccion> ObtenerClientes(string vendedor, string tipoInteraccion)
+        private static List<ClienteInteraccion> ObtenerClientes(string vendedor, string tipoInteraccion)
         {
             if (string.IsNullOrEmpty(tipoInteraccion) || tipoInteraccion == "Teléfono")
             {
@@ -1269,7 +1266,7 @@ namespace NestoAPI.Infraestructure
                 c.ClienteId;
             ";
 
-            using (var context = new NVEntities()) 
+            using (var context = new NVEntities())
             {
                 var connectionString = context.Database.Connection.ConnectionString;
 
@@ -1305,14 +1302,14 @@ namespace NestoAPI.Infraestructure
                         {
                             throw new Exception("No se pudo leer los datos del modele", ex);
                         }
-                        
+
                     }
 
                     var clientesFiltrados = clientes.Where(c => c.DiasDesdeUltimaInteraccion >= 7 && c.DiasDesdeUltimoPedido >= 6).ToList();
 
                     return clientesFiltrados;
                 }
-            }           
+            }
         }
 
         public async Task<Cliente> ModificarCliente(ClienteCrear clienteCrear, NVEntities db)
@@ -1323,11 +1320,11 @@ namespace NestoAPI.Infraestructure
                 cliente = await PrepararClienteModificar(clienteCrear, db);
                 db.Entry(cliente).State = EntityState.Modified;
 
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
                 if (cliente.CCCs.Count != 0 && cliente.CCC == null)
                 {
                     cliente.CCC1 = cliente.CCCs.FirstOrDefault();
-                    await db.SaveChangesAsync();
+                    _ = await db.SaveChangesAsync();
                 }
 
                 // Publicar evento de sincronización
@@ -1367,13 +1364,13 @@ namespace NestoAPI.Infraestructure
                 }
 
                 cliente = await PrepararClienteCrear(clienteCrear, db);
-                db.Clientes.Add(cliente);
+                _ = db.Clientes.Add(cliente);
 
-                await db.SaveChangesAsync();
+                _ = await db.SaveChangesAsync();
                 if (cliente.CCCs.Count != 0 && cliente.CCC == null)
                 {
                     cliente.CCC1 = cliente.CCCs.FirstOrDefault();
-                    await db.SaveChangesAsync();
+                    _ = await db.SaveChangesAsync();
                 }
 
                 await PublicarClienteSincronizar(cliente);

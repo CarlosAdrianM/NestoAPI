@@ -266,6 +266,7 @@ namespace NestoAPI.Models
             public const int PENDIENTE_UBICAR = 2;
             public const int RESERVADO_PICKING = 3;
             public const int RESERVADO_REPOSICION = 3;
+            public const int ENTREGADO_NOTA_ENTREGA = -3;
         }
 
         public static class Picking

@@ -54,8 +54,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
         private bool EstamosDeBlackFriday()
         {
-            DateTime comienzaBlackFriday = new DateTime(2025, 4, 22);
-            DateTime terminaBlackFriday = new DateTime(2025, 4, 29);
+            DateTime comienzaBlackFriday = new DateTime(2025, 11, 25);
+            DateTime terminaBlackFriday = new DateTime(2025, 12, 2);
             return DateTime.Today >= comienzaBlackFriday && DateTime.Today <= terminaBlackFriday;
         }
     }

@@ -122,6 +122,9 @@ namespace NestoAPI.Infraestructure.NotasEntrega
                 // 3b. Cambiar estado de la línea a NOTA_ENTREGA
                 linea.Estado = Constantes.EstadosLineaVenta.NOTA_ENTREGA;
 
+                // 3b.1. Actualizar ubicaciones relacionadas con esta línea
+                ActualizarUbicacionesLineaNotaEntrega(pedido, linea);
+
                 // 3c. Si YaFacturado=true, dar de baja el stock
                 if (linea.YaFacturado)
                 {
@@ -271,6 +274,36 @@ namespace NestoAPI.Infraestructure.NotasEntrega
             // para procesar todos los registros de PreExtrProducto con diario _EntregFac y actualizar el stock.
             // El procedimiento usará LinPedido para buscar la ubicación reservada (Ubicaciones.NºOrdenVta)
             // y actualizará su estado automáticamente.
+        }
+
+        /// <summary>
+        /// Actualiza el estado de las ubicaciones asociadas a una línea de pedido cuando se crea la nota de entrega.
+        /// Busca todas las ubicaciones con estado RESERVADO_PICKING (3) que correspondan a la línea del pedido
+        /// y las cambia a estado ENTREGADO_NOTA_ENTREGA (-3).
+        /// </summary>
+        /// <param name="pedido">Cabecera del pedido</param>
+        /// <param name="linea">Línea del pedido procesada</param>
+        private void ActualizarUbicacionesLineaNotaEntrega(CabPedidoVta pedido, LinPedidoVta linea)
+        {
+            System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Actualizando ubicaciones para línea {linea.Nº_Orden} del pedido {pedido.Número}");
+
+            // Buscar todas las ubicaciones relacionadas con esta línea que estén en estado RESERVADO_PICKING
+            var ubicacionesRelacionadas = db.Ubicaciones
+                .Where(u => u.PedidoVta == pedido.Número
+                         && u.NºOrdenVta == linea.Nº_Orden
+                         && u.Estado == Constantes.Ubicaciones.RESERVADO_PICKING)
+                .ToList();
+
+            System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Encontradas {ubicacionesRelacionadas.Count} ubicaciones para actualizar");
+
+            // Actualizar el estado de todas las ubicaciones encontradas
+            foreach (var ubicacion in ubicacionesRelacionadas)
+            {
+                ubicacion.Estado = Constantes.Ubicaciones.ENTREGADO_NOTA_ENTREGA;
+                System.Diagnostics.Debug.WriteLine($"     [ServicioNotasEntrega] Ubicación {ubicacion.NºOrden} actualizada a estado {Constantes.Ubicaciones.ENTREGADO_NOTA_ENTREGA}");
+            }
+
+            // Nota: Los cambios se guardarán junto con el resto de cambios en el SaveChangesAsync() del método ProcesarNotaEntrega
         }
     }
 }
