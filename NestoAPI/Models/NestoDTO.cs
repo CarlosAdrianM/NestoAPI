@@ -68,6 +68,8 @@ namespace NestoAPI.Models
         public short estado { get; set; }
         public short? tipoMandato { get; set; }
         public DateTime? fechaMandato { get; set; }
+        public string ibanFormateado { get; set; }
+        public string nombreEntidad { get; set; }
     }
     public class DireccionesEntregaClienteDTO
     {
@@ -173,6 +175,33 @@ namespace NestoAPI.Models
         public decimal descuentoPP { get; set; }
         public decimal? financiacion { get; set; }
     }
+
+    public class PlazosPagoResponse
+    {
+        public List<PlazoPagoDTO> PlazosPago { get; set; }
+        public InfoDeudaClienteDTO InfoDeuda { get; set; }
+        public string PlazoPagoRecomendado { get; set; }
+    }
+
+    public class CondicionesPagoResponse
+    {
+        public List<PlazoPagoDTO> PlazosPago { get; set; }
+        public List<FormaPagoDTO> FormasPago { get; set; }
+        public InfoDeudaClienteDTO InfoDeuda { get; set; }
+        public string PlazoPagoRecomendado { get; set; }
+        public string FormaPagoRecomendada { get; set; }
+    }
+
+    public class InfoDeudaClienteDTO
+    {
+        public bool TieneDeudaVencida { get; set; }
+        public decimal? ImporteDeudaVencida { get; set; }
+        public int? DiasVencimiento { get; set; }
+        public bool TieneImpagados { get; set; }
+        public decimal? ImporteImpagados { get; set; }
+        public string MotivoRestriccion { get; set; }  // "Impagados", "Deuda vencida", null
+    }
+
     public class PrecioProductoDTO
     {
         public decimal precio { get; set; }

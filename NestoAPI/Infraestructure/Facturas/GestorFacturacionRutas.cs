@@ -50,9 +50,10 @@ namespace NestoAPI.Infraestructure.Facturas
 
         /// <summary>
         /// Determina si se debe imprimir un documento (factura o albarán) físicamente.
-        /// Busca en los comentarios del pedido:
-        /// - "Factura física" (case insensitive, sin tildes)
-        /// - "Albarán físico" (case insensitive, sin tildes)
+        /// Busca en los comentarios del pedido (case insensitive, sin tildes):
+        /// - "Factura física"
+        /// - "Factura en papel"
+        /// - "Albarán físico"
         /// </summary>
         public bool DebeImprimirDocumento(string comentarios)
         {
@@ -64,12 +65,15 @@ namespace NestoAPI.Infraestructure.Facturas
             // Normalizar: quitar tildes y convertir a minúsculas
             string comentariosNormalizados = RemoverTildes(comentarios.ToLower());
 
-            // Buscar "factura fisica" o "albaran fisico"
-            string facturaFisica = "factura fisica";
-            string albaranFisico = "albaran fisico";
+            // Lista de frases que indican que se debe imprimir
+            var frasesImpresion = new[]
+            {
+                "factura fisica",
+                "factura en papel",
+                "albaran fisico"
+            };
 
-            return comentariosNormalizados.Contains(facturaFisica) ||
-                   comentariosNormalizados.Contains(albaranFisico);
+            return frasesImpresion.Any(frase => comentariosNormalizados.Contains(frase));
         }
 
         /// <summary>

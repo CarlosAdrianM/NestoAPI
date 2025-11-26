@@ -20,7 +20,8 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
 
         /// <summary>
         /// Inserta un registro en ExtractoRuta copiando datos desde ExtractoCliente (para facturas).
-        /// Busca el registro de ExtractoCliente con TipoApunte = 1 (factura) y copia sus datos.
+        /// Busca el primer efecto de la factura (TipoApunte = 2, Efecto = "1") que contiene
+        /// el importe que debe cobrar el repartidor y la fecha de vencimiento correcta.
         /// </summary>
         public async Task InsertarDesdeFactura(CabPedidoVta pedido, string numeroFactura, string usuario, bool autoSave = true)
         {
@@ -31,41 +32,43 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
             if (string.IsNullOrWhiteSpace(usuario))
                 throw new ArgumentException("El usuario no puede ser null o vacío", nameof(usuario));
 
-            // Buscar el ExtractoCliente de la factura (TipoApunte = 1)
-            var extractoCliente = await db.ExtractosCliente
+            // Buscar el primer efecto de la factura (TipoApunte = 2 "Cartera", Efecto = "1")
+            // Este registro tiene el importe a cobrar por el repartidor y la fecha de vencimiento correcta
+            var extractoEfecto = await db.ExtractosCliente
                 .Where(e => e.Empresa == pedido.Empresa &&
                            e.Número == pedido.Nº_Cliente &&
                            e.Contacto == pedido.Contacto &&
                            e.Nº_Documento == numeroFactura.Trim() &&
-                           e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_FACTURA)
+                           e.TipoApunte == Constantes.Clientes.TiposExtracto.TIPO_CARTERA &&
+                           e.Efecto == "1")
                 .FirstOrDefaultAsync();
 
-            if (extractoCliente == null)
+            if (extractoEfecto == null)
             {
                 throw new InvalidOperationException(
-                    $"No se encontró el ExtractoCliente para la factura {numeroFactura}. " +
+                    $"No se encontró el efecto en ExtractoCliente para la factura {numeroFactura}. " +
                     "La factura debe estar contabilizada antes de insertar en ExtractoRuta.");
             }
 
-            // Crear ExtractoRuta copiando datos del ExtractoCliente
+            // Crear ExtractoRuta copiando datos del efecto
             var extractoRuta = new ExtractoRuta
             {
-                Empresa = extractoCliente.Empresa,
-                Nº_Orden = extractoCliente.Nº_Orden,
-                Número = extractoCliente.Número,
-                Contacto = extractoCliente.Contacto,
+                Empresa = extractoEfecto.Empresa,
+                Nº_Orden = extractoEfecto.Nº_Orden,
+                Número = extractoEfecto.Número,
+                Contacto = extractoEfecto.Contacto,
                 CodPostal = null, // No está en ExtractoCliente, podría obtenerse del cliente si es necesario
-                Fecha = extractoCliente.Fecha,
+                Fecha = extractoEfecto.Fecha,
                 Nº_Documento = numeroFactura.Trim().PadRight(10),
-                Efecto = extractoCliente.Efecto,
+                Efecto = extractoEfecto.Efecto,
                 Concepto = pedido.Comentarios,
-                Importe = extractoCliente.Importe,
-                ImportePdte = extractoCliente.ImportePdte,
-                Delegación = extractoCliente.Delegación,
-                FormaVenta = extractoCliente.FormaVenta,
-                Vendedor = extractoCliente.Vendedor,
-                FechaVto = extractoCliente.FechaVto,
-                FormaPago = extractoCliente.FormaPago,
+                Importe = extractoEfecto.Importe,
+                ImportePdte = extractoEfecto.Importe, // ImportePdte = Importe del efecto (pendiente de cobro)
+                Delegación = extractoEfecto.Delegación,
+                FormaVenta = extractoEfecto.FormaVenta,
+                Vendedor = extractoEfecto.Vendedor,
+                FechaVto = extractoEfecto.FechaVto,
+                FormaPago = extractoEfecto.FormaPago,
                 Ruta = pedido.Ruta,
                 Estado = 0,
                 TipoRuta = Constantes.ExtractoRuta.TIPO_RUTA_PEDIDO,

@@ -44,7 +44,16 @@
       "Bash(then echo \"exists\")",
       "Bash(else echo \"not found\")",
       "Bash(fi)",
-      "Bash(gh issue comment:*)"
+      "Bash(gh issue comment:*)",
+      "Bash(for issue in 197 198 199 200 201 202 203 204 205 206 207 208 209 210 211 212)",
+      "Bash(do echo \"=== ISSUE #$issue ===\")",
+      "Bash(gh issue close:*)",
+      "Bash(msbuild:*)",
+      "Bash(for proj in \"Modulos/CajasTests/CajasTests.csproj\" \"Producto.Tests/Producto.Tests.csproj\" \"PedidoCompraTests/PedidoCompraTests.csproj\" \"PlantillaVentaTests/PlantillaVentaTests.csproj\" \"CanalesExternosTests/CanalesExternosTests.csproj\" \"RapportsTests/RapportsTests.csproj\" \"Modulos/PedidoVenta/PedidoVentaTests/PedidoVentaTests.csproj\" \"Modulos/Cliente/ClienteTests/ClienteTests/ClienteTests.csproj\")",
+      "Bash(do echo \"=== Building $proj ===\")",
+      "WebFetch(domain:www.iban.es)",
+      "WebFetch(domain:es.iban.com)",
+      "WebFetch(domain:www.bde.es)"
     ],
     "deny": [],
     "ask": []

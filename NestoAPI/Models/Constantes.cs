@@ -145,6 +145,11 @@ namespace NestoAPI.Models
         {
             public const string EFECTIVO = "EFC";
             public const string RECIBO_BANCARIO = "RCB";
+            public const string TRANSFERENCIA = "TRN";
+            public const string TARJETA = "TAR";
+
+            // Formas de pago seguras para clientes con deuda (cobro garantizado antes de entregar)
+            public static readonly string[] FORMAS_PAGO_SEGURAS = { EFECTIVO, TRANSFERENCIA, TARJETA };
         }
 
         public static class FormasVenta

@@ -1466,6 +1466,144 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region Grupo 7: DebeImprimirDocumento - Nuevas opciones
+
+        [TestMethod]
+        public void DebeImprimirDocumento_FacturaEnPapel_RetornaTrue()
+        {
+            // Arrange - Nueva opción añadida
+            string comentarios = "El cliente solicita FACTURA EN PAPEL";
+
+            // Act
+            bool resultado = gestor.DebeImprimirDocumento(comentarios);
+
+            // Assert
+            Assert.IsTrue(resultado, "Debe detectar 'FACTURA EN PAPEL'");
+        }
+
+        [TestMethod]
+        public void DebeImprimirDocumento_FacturaEnPapelMinusculas_RetornaTrue()
+        {
+            // Arrange
+            string comentarios = "enviar factura en papel por favor";
+
+            // Act
+            bool resultado = gestor.DebeImprimirDocumento(comentarios);
+
+            // Assert
+            Assert.IsTrue(resultado, "Debe detectar 'factura en papel' en minúsculas");
+        }
+
+        [TestMethod]
+        public void DebeImprimirDocumento_FacturaEnPapelConTextoAdicional_RetornaTrue()
+        {
+            // Arrange
+            string comentarios = "Cliente VIP. Necesita factura en papel para contabilidad. Entregar antes de las 10.";
+
+            // Act
+            bool resultado = gestor.DebeImprimirDocumento(comentarios);
+
+            // Assert
+            Assert.IsTrue(resultado, "Debe detectar 'factura en papel' en medio de otros textos");
+        }
+
+        [TestMethod]
+        public void DebeImprimirDocumento_TodasLasOpciones_RetornaTrue()
+        {
+            // Arrange - Test de todas las opciones
+            var opciones = new[]
+            {
+                "FACTURA FÍSICA",
+                "factura fisica",
+                "FACTURA EN PAPEL",
+                "factura en papel",
+                "ALBARÁN FÍSICO",
+                "albaran fisico"
+            };
+
+            // Act & Assert
+            foreach (var opcion in opciones)
+            {
+                bool resultado = gestor.DebeImprimirDocumento(opcion);
+                Assert.IsTrue(resultado, $"Debe detectar '{opcion}'");
+            }
+        }
+
+        #endregion
+
+        #region Grupo 8: HayDocumentosParaImprimir - NumeroCopias > 0
+
+        [TestMethod]
+        public void HayDocumentosParaImprimir_ConNumeroCopiasCero_RetornaFalse()
+        {
+            // Arrange - REGRESIÓN: Antes devolvía true si DatosImpresion != null
+            var documentos = new Models.PedidosVenta.DocumentosImpresionPedidoDTO();
+            documentos.Facturas.Add(new FacturaCreadaDTO
+            {
+                NumeroFactura = "A25/001",
+                DatosImpresion = new DocumentoParaImprimir
+                {
+                    BytesPDF = new byte[] { 1, 2, 3 },
+                    NumeroCopias = 0, // Cero copias
+                    TipoBandeja = TipoBandejaImpresion.Middle
+                }
+            });
+
+            // Act
+            bool resultado = documentos.HayDocumentosParaImprimir;
+
+            // Assert
+            Assert.IsFalse(resultado, "NO debe haber documentos para imprimir si NumeroCopias = 0");
+        }
+
+        [TestMethod]
+        public void HayDocumentosParaImprimir_ConNumeroCopiasMayorQueCero_RetornaTrue()
+        {
+            // Arrange
+            var documentos = new Models.PedidosVenta.DocumentosImpresionPedidoDTO();
+            documentos.Facturas.Add(new FacturaCreadaDTO
+            {
+                NumeroFactura = "A25/001",
+                DatosImpresion = new DocumentoParaImprimir
+                {
+                    BytesPDF = new byte[] { 1, 2, 3 },
+                    NumeroCopias = 1, // Al menos 1 copia
+                    TipoBandeja = TipoBandejaImpresion.Middle
+                }
+            });
+
+            // Act
+            bool resultado = documentos.HayDocumentosParaImprimir;
+
+            // Assert
+            Assert.IsTrue(resultado, "Debe haber documentos para imprimir si NumeroCopias > 0");
+        }
+
+        [TestMethod]
+        public void TotalDocumentosParaImprimir_ConNumeroCopiasCero_RetornaCero()
+        {
+            // Arrange
+            var documentos = new Models.PedidosVenta.DocumentosImpresionPedidoDTO();
+            documentos.Facturas.Add(new FacturaCreadaDTO
+            {
+                NumeroFactura = "A25/001",
+                DatosImpresion = new DocumentoParaImprimir
+                {
+                    BytesPDF = new byte[] { 1, 2, 3 },
+                    NumeroCopias = 0,
+                    TipoBandeja = TipoBandejaImpresion.Middle
+                }
+            });
+
+            // Act
+            int total = documentos.TotalDocumentosParaImprimir;
+
+            // Assert
+            Assert.AreEqual(0, total, "Total debe ser 0 si NumeroCopias = 0");
+        }
+
+        #endregion
+
         #region Re-facturación de Albaranes NRM Tests
 
         [TestMethod]

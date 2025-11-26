@@ -335,10 +335,12 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+
         [HttpGet]
         [Route("api/Clientes/CCCs")]
         // GET: api/Clientes/CCCs?empresa=1&cliente=10&contacto=0
         // Carlos 20/11/24: Endpoint para obtener los CCCs de un cliente/contacto para el SelectorCCC
+        // Carlos 26/11/24: Modificado para obtener nombre de entidad desde tabla Entidades
         [ResponseType(typeof(List<CCCDTO>))]
         public async Task<IHttpActionResult> GetCCCs(string empresa, string cliente, string contacto)
         {
@@ -357,25 +359,68 @@ namespace NestoAPI.Controllers
                 return BadRequest("El parámetro 'contacto' es obligatorio");
             }
 
-            List<CCCDTO> cccs = await db.CCCs
+            // Obtener CCCs completos para poder componer el IBAN
+            var cccsDB = await db.CCCs
                 .Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Contacto == contacto)
                 .OrderByDescending(c => c.Estado)
                 .ThenBy(c => c.Número)
-                .Select(c => new CCCDTO
+                .ToListAsync();
+
+            // Obtener códigos de entidad únicos
+            var codigosEntidad = cccsDB
+                .Where(c => !string.IsNullOrWhiteSpace(c.Entidad))
+                .Select(c => c.Entidad.Trim())
+                .Distinct()
+                .ToList();
+
+            // Buscar nombres de entidades en la tabla Entidades
+            var nombresEntidades = await db.Entidades
+                .Where(e => codigosEntidad.Contains(e.Número))
+                .ToDictionaryAsync(e => e.Número.Trim(), e => e.Descripción != null ? e.Descripción.Trim() : null);
+
+            // Convertir a DTOs y generar IBAN formateado
+            List<CCCDTO> cccs = cccsDB.Select(c =>
+            {
+                string ibanFormateado = null;
+                try
+                {
+                    // Componer el IBAN a partir de los campos del CCC
+                    string ibanCompleto = Models.Clientes.Iban.ComponerIban(c);
+                    if (!string.IsNullOrWhiteSpace(ibanCompleto))
+                    {
+                        var iban = new Models.Clientes.Iban(ibanCompleto);
+                        ibanFormateado = iban.Formateado;
+                    }
+                }
+                catch
+                {
+                    // Si falla la validación del IBAN, dejarlo null
+                }
+
+                string codigoEntidad = c.Entidad != null ? c.Entidad.Trim() : null;
+                string nombreEntidad = null;
+                if (codigoEntidad != null && nombresEntidades.TryGetValue(codigoEntidad, out var nombre))
+                {
+                    nombreEntidad = nombre;
+                }
+
+                return new CCCDTO
                 {
                     empresa = c.Empresa.Trim(),
                     cliente = c.Cliente.Trim(),
                     contacto = c.Contacto.Trim(),
                     numero = c.Número.Trim(),
                     pais = c.Pais != null ? c.Pais.Trim() : null,
-                    entidad = c.Entidad != null ? c.Entidad.Trim() : null,
+                    entidad = codigoEntidad,
                     oficina = c.Oficina != null ? c.Oficina.Trim() : null,
                     bic = c.BIC != null ? c.BIC.Trim() : null,
                     estado = c.Estado,
                     tipoMandato = c.TipoMandato,
-                    fechaMandato = c.FechaMandato
-                })
-                .ToListAsync();
+                    fechaMandato = c.FechaMandato,
+                    ibanFormateado = ibanFormateado,
+                    nombreEntidad = nombreEntidad
+                };
+            }).ToList();
 
             return Ok(cccs);
         }

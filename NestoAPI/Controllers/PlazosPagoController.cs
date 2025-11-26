@@ -13,13 +13,20 @@ using NestoAPI.Models;
 
 namespace NestoAPI.Controllers
 {
+    [RoutePrefix("api/PlazosPago")]
     public class PlazosPagoController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private NVEntities db;
 
         // Carlos 06/11/15: lo pongo para desactivar el Lazy Loading
-        public PlazosPagoController()
+        public PlazosPagoController() : this(new NVEntities())
         {
+        }
+
+        // Constructor interno para testing (inyección de dependencias)
+        internal PlazosPagoController(NVEntities dbContext)
+        {
+            db = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
             db.Configuration.LazyLoadingEnabled = false;
         }
 
@@ -78,8 +85,7 @@ namespace NestoAPI.Controllers
             } 
 
             // Si el cliente tiene impagados o facturas vencidas, solo admitimos formas de pago de contado
-            int tiempoVencidas = 7; // días que tiene que llevar vencida una factura para que no sacar pedido
-            DateTime fechaDesdeVencida = System.DateTime.Today.AddDays(-tiempoVencidas);
+            DateTime fechaDesdeVencida = System.DateTime.Today; // Vencidas son las de ayer o antes (FechaVto < Today)
             ExtractoCliente impagado = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO).FirstOrDefault();
             ExtractoCliente deudaVencida = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.FechaVto < fechaDesdeVencida).FirstOrDefault();
 
@@ -146,6 +152,110 @@ namespace NestoAPI.Controllers
                         
 
             return Ok(plazosPago);
+        }
+
+        [HttpGet]
+        [Route("ConInfoDeuda")]
+        [ResponseType(typeof(PlazosPagoResponse))]
+        public async Task<IHttpActionResult> GetPlazosPagoConInfoDeuda(string empresa, string cliente)
+        {
+            // Reutiliza la lógica existente obteniendo el resultado
+            IHttpActionResult result = await GetPlazosPago(empresa, cliente);
+
+            if (!(result is OkNegotiatedContentResult<List<PlazoPagoDTO>> okResult))
+            {
+                return result; // Si hubo error, lo propagamos
+            }
+
+            var plazosPago = okResult.Content;
+            var infoDeuda = ObtenerInfoDeuda(cliente);
+
+            // Si el cliente tiene deuda vencida o impagados, recomendar PRE (prepago)
+            // En caso contrario, no hay recomendación específica (el frontend usará el valor del cliente)
+            string plazoPagoRecomendado = null;
+            if (infoDeuda.TieneImpagados || infoDeuda.TieneDeudaVencida)
+            {
+                plazoPagoRecomendado = Constantes.PlazosPago.PREPAGO;
+            }
+
+            return Ok(new PlazosPagoResponse
+            {
+                PlazosPago = plazosPago,
+                InfoDeuda = infoDeuda,
+                PlazoPagoRecomendado = plazoPagoRecomendado
+            });
+        }
+
+        [HttpGet]
+        [Route("CondicionesPago")]
+        [ResponseType(typeof(CondicionesPagoResponse))]
+        public async Task<IHttpActionResult> GetCondicionesPago(string empresa, string cliente)
+        {
+            // Obtener plazos de pago
+            IHttpActionResult resultPlazos = await GetPlazosPago(empresa, cliente);
+            if (!(resultPlazos is OkNegotiatedContentResult<List<PlazoPagoDTO>> okPlazos))
+            {
+                return resultPlazos;
+            }
+            var plazosPago = okPlazos.Content;
+
+            // Obtener info de deuda
+            var infoDeuda = ObtenerInfoDeuda(cliente);
+
+            // Obtener formas de pago y filtrar según deuda
+            var formasPago = await ObtenerFormasPagoFiltradas(empresa, cliente, infoDeuda);
+
+            // Determinar recomendaciones
+            string plazoPagoRecomendado = null;
+            string formaPagoRecomendada = null;
+
+            if (infoDeuda.TieneImpagados || infoDeuda.TieneDeudaVencida)
+            {
+                plazoPagoRecomendado = Constantes.PlazosPago.PREPAGO;
+                // Recomendar efectivo como primera opción segura
+                formaPagoRecomendada = Constantes.FormasPago.EFECTIVO;
+            }
+
+            return Ok(new CondicionesPagoResponse
+            {
+                PlazosPago = plazosPago,
+                FormasPago = formasPago,
+                InfoDeuda = infoDeuda,
+                PlazoPagoRecomendado = plazoPagoRecomendado,
+                FormaPagoRecomendada = formaPagoRecomendada
+            });
+        }
+
+        private async Task<List<FormaPagoDTO>> ObtenerFormasPagoFiltradas(string empresa, string cliente, InfoDeudaClienteDTO infoDeuda)
+        {
+            // Cargar todas las formas de pago estándar
+            var formasPago = await db.FormasPago
+                .Where(l => l.Empresa == empresa && !l.BloquearPagos && l.Número != "TAL")
+                .Select(f => new FormaPagoDTO
+                {
+                    formaPago = f.Número.Trim(),
+                    descripcion = f.Descripción.Trim(),
+                    bloquearPagos = f.BloquearPagos,
+                    cccObligatorio = f.CCCObligatorio
+                })
+                .ToListAsync();
+
+            // Si el cliente no tiene ningún CCC, quitar las formas de pago que requieran CCC
+            CCC ccc = db.CCCs.Where(c => c.Empresa == empresa && c.Cliente == cliente && c.Estado >= 0).FirstOrDefault();
+            if (ccc == null)
+            {
+                formasPago = formasPago.Where(f => f.cccObligatorio == false).ToList();
+            }
+
+            // Si el cliente tiene deuda (impagados o vencida), solo permitir formas de pago seguras
+            if (infoDeuda.TieneImpagados || infoDeuda.TieneDeudaVencida)
+            {
+                formasPago = formasPago
+                    .Where(f => Constantes.FormasPago.FORMAS_PAGO_SEGURAS.Contains(f.formaPago))
+                    .ToList();
+            }
+
+            return formasPago;
         }
 
         /*
@@ -243,6 +353,56 @@ namespace NestoAPI.Controllers
             return Ok(plazoPago);
         }
         */
+
+        internal InfoDeudaClienteDTO ObtenerInfoDeuda(string cliente)
+        {
+            DateTime fechaDesdeVencida = System.DateTime.Today; // Vencidas son las de ayer o antes (FechaVto < Today)
+
+            // Buscar impagados
+            var impagados = db.ExtractosCliente
+                .Where(e => e.Número == cliente
+                    && e.ImportePdte > 0
+                    && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
+                .ToList();
+
+            // Buscar cartera vencida (excluyendo impagados para evitar doble contabilización)
+            var deudasVencidas = db.ExtractosCliente
+                .Where(e => e.Número == cliente
+                    && e.ImportePdte > 0
+                    && e.FechaVto < fechaDesdeVencida
+                    && e.TipoApunte != Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
+                .OrderBy(e => e.FechaVto)
+                .ToList();
+
+            bool tieneImpagados = impagados.Any();
+            bool tieneDeudaVencida = deudasVencidas.Any();
+            decimal? importeImpagados = tieneImpagados ? impagados.Sum(e => e.ImportePdte) : (decimal?)null;
+            decimal? importeDeudaVencida = tieneDeudaVencida ? deudasVencidas.Sum(e => e.ImportePdte) : (decimal?)null;
+            int? diasVencimiento = null;
+            string motivoRestriccion = null;
+
+            if (tieneDeudaVencida)
+            {
+                var deudaMasAntigua = deudasVencidas.First();
+                diasVencimiento = (DateTime.Today - deudaMasAntigua.FechaVto)?.Days;
+                motivoRestriccion = "Cartera vencida";
+            }
+
+            if (tieneImpagados)
+            {
+                motivoRestriccion = tieneDeudaVencida ? "Impagados y cartera vencida" : "Impagados";
+            }
+
+            return new InfoDeudaClienteDTO
+            {
+                TieneDeudaVencida = tieneDeudaVencida,
+                ImporteDeudaVencida = importeDeudaVencida,
+                DiasVencimiento = diasVencimiento,
+                TieneImpagados = tieneImpagados,
+                ImporteImpagados = importeImpagados,
+                MotivoRestriccion = motivoRestriccion
+            };
+        }
 
         protected override void Dispose(bool disposing)
         {

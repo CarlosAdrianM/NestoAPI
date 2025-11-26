@@ -24,35 +24,37 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task InsertarDesdeFactura_ConFacturaValida_InsertaExtractoRuta()
+        public async Task InsertarDesdeFactura_ConEfectoValido_InsertaExtractoRutaConImportePendiente()
         {
             // Arrange
             var pedido = CrearPedidoPrueba();
             string numeroFactura = "FV123";
             string usuario = "testuser";
+            var fechaVto = DateTime.Now.AddDays(30);
 
-            var extractoCliente = new ExtractoCliente
+            // Creamos el efecto (TipoApunte = "2", Efecto = "1") que es el que debe usarse
+            var extractoEfecto = new ExtractoCliente
             {
                 Empresa = pedido.Empresa,
                 Nº_Orden = 12345,
                 Número = pedido.Nº_Cliente,
                 Contacto = pedido.Contacto,
                 Nº_Documento = numeroFactura,
-                TipoApunte = "1",
+                TipoApunte = "2", // Cartera (efecto)
+                Efecto = "1",     // Primer efecto
                 Fecha = DateTime.Now,
                 Importe = 100m,
-                ImportePdte = 100m,
+                ImportePdte = 0m, // En ExtractoCliente puede ser 0, pero en ExtractoRuta será igual a Importe
                 Delegación = "ALG",
                 FormaVenta = "TEL",
                 Vendedor = "JE ",
-                FechaVto = DateTime.Now.AddDays(30),
-                FormaPago = "EFC",
-                Efecto = "1  "
+                FechaVto = fechaVto,
+                FormaPago = "EFC"
             };
 
             var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
-            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoCliente });
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
             var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
@@ -66,8 +68,11 @@ namespace NestoAPI.Tests.Infrastructure
                 e.Número == pedido.Nº_Cliente &&
                 e.Contacto == pedido.Contacto &&
                 e.Nº_Documento == numeroFactura.PadRight(10) &&
+                e.Efecto == "1" &&
                 e.Concepto == pedido.Comentarios &&
                 e.Importe == 100m &&
+                e.ImportePdte == 100m && // ImportePdte = Importe del efecto
+                e.FechaVto == fechaVto &&
                 e.TipoRuta == "P"
             ))).MustHaveHappenedOnceExactly();
 
@@ -82,20 +87,22 @@ namespace NestoAPI.Tests.Infrastructure
             string numeroFactura = "FV123";
             string usuario = "testuser";
 
-            var extractoCliente = new ExtractoCliente
+            var extractoEfecto = new ExtractoCliente
             {
                 Empresa = pedido.Empresa,
                 Nº_Orden = 12345,
                 Número = pedido.Nº_Cliente,
                 Contacto = pedido.Contacto,
                 Nº_Documento = numeroFactura,
-                TipoApunte = "1",
-                Fecha = DateTime.Now
+                TipoApunte = "2", // Cartera (efecto)
+                Efecto = "1",     // Primer efecto
+                Fecha = DateTime.Now,
+                Importe = 50m
             };
 
             var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
-            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoCliente });
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
             var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
@@ -110,7 +117,7 @@ namespace NestoAPI.Tests.Infrastructure
 
         [TestMethod]
         [ExpectedException(typeof(InvalidOperationException))]
-        public async Task InsertarDesdeFactura_SinExtractoCliente_LanzaExcepcion()
+        public async Task InsertarDesdeFactura_SinEfectoEnExtractoCliente_LanzaExcepcion()
         {
             // Arrange
             var pedido = CrearPedidoPrueba();
@@ -125,6 +132,263 @@ namespace NestoAPI.Tests.Infrastructure
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario);
 
             // Assert - Excepción esperada
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(InvalidOperationException))]
+        public async Task InsertarDesdeFactura_ConSoloFacturaSinEfecto_LanzaExcepcion()
+        {
+            // Arrange - REGRESIÓN: Antes buscábamos TipoApunte="1" (factura), ahora debe buscar TipoApunte="2" (efecto)
+            var pedido = CrearPedidoPrueba();
+            string numeroFactura = "FV123";
+            string usuario = "testuser";
+
+            // Solo existe el registro de factura (TipoApunte = "1"), NO el efecto
+            var extractoFactura = new ExtractoCliente
+            {
+                Empresa = pedido.Empresa,
+                Nº_Orden = 12345,
+                Número = pedido.Nº_Cliente,
+                Contacto = pedido.Contacto,
+                Nº_Documento = numeroFactura,
+                TipoApunte = "1", // Factura, NO efecto
+                Efecto = null,
+                Fecha = DateTime.Now,
+                Importe = 100m,
+                ImportePdte = 0m
+            };
+
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoFactura });
+
+            // Act - Debe lanzar excepción porque no encuentra el efecto (TipoApunte="2")
+            await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario);
+
+            // Assert - Excepción esperada
+        }
+
+        [TestMethod]
+        public async Task InsertarDesdeFactura_ConVariosEfectos_UsaPrimerEfecto()
+        {
+            // Arrange - Cuando hay varios efectos, debe usar el primero (Efecto = "1")
+            var pedido = CrearPedidoPrueba();
+            string numeroFactura = "FV123";
+            string usuario = "testuser";
+            var fechaVtoPrimerEfecto = new DateTime(2025, 12, 1);
+            var fechaVtoSegundoEfecto = new DateTime(2025, 12, 31);
+
+            var extractos = new List<ExtractoCliente>
+            {
+                // Primer efecto - este debe usarse
+                new ExtractoCliente
+                {
+                    Empresa = pedido.Empresa,
+                    Nº_Orden = 12345,
+                    Número = pedido.Nº_Cliente,
+                    Contacto = pedido.Contacto,
+                    Nº_Documento = numeroFactura,
+                    TipoApunte = "2",
+                    Efecto = "1",
+                    Fecha = DateTime.Now,
+                    Importe = 50m,
+                    FechaVto = fechaVtoPrimerEfecto
+                },
+                // Segundo efecto - NO debe usarse
+                new ExtractoCliente
+                {
+                    Empresa = pedido.Empresa,
+                    Nº_Orden = 12346,
+                    Número = pedido.Nº_Cliente,
+                    Contacto = pedido.Contacto,
+                    Nº_Documento = numeroFactura,
+                    TipoApunte = "2",
+                    Efecto = "2",
+                    Fecha = DateTime.Now,
+                    Importe = 50m,
+                    FechaVto = fechaVtoSegundoEfecto
+                }
+            };
+
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, extractos);
+
+            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+
+            // Act
+            await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
+
+            // Assert - Debe usar el primer efecto con Importe=50 y FechaVto del primer efecto
+            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+                e.Efecto == "1" &&
+                e.Importe == 50m &&
+                e.ImportePdte == 50m &&
+                e.FechaVto == fechaVtoPrimerEfecto
+            ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task InsertarDesdeFactura_ConEmpresaTraspasada_UsaEmpresaDelPedido()
+        {
+            // Arrange - REGRESIÓN: Después del traspaso, el pedido tiene Empresa="3"
+            // y el ExtractoCliente también debe estar en Empresa="3"
+            var pedido = CrearPedidoPrueba();
+            pedido.Empresa = "3  "; // Empresa después del traspaso
+            string numeroFactura = "GB2501944";
+            string usuario = "testuser";
+
+            var extractoEfecto = new ExtractoCliente
+            {
+                Empresa = "3  ", // Debe coincidir con la empresa del pedido
+                Nº_Orden = 2963056,
+                Número = pedido.Nº_Cliente,
+                Contacto = pedido.Contacto,
+                Nº_Documento = numeroFactura,
+                TipoApunte = "2",
+                Efecto = "1",
+                Fecha = DateTime.Now,
+                Importe = 50m,
+                FechaVto = new DateTime(2025, 11, 25)
+            };
+
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
+
+            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+
+            // Act
+            await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
+
+            // Assert - El ExtractoRuta debe tener Empresa="3"
+            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+                e.Empresa == "3  " &&
+                e.Importe == 50m &&
+                e.ImportePdte == 50m
+            ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task InsertarDesdeFactura_ImportePdteEsIgualAImporte()
+        {
+            // Arrange - REGRESIÓN CRÍTICA: ImportePdte debe ser igual a Importe del efecto
+            // Este era el bug original: ImportePdte se copiaba del ExtractoCliente donde era 0
+            var pedido = CrearPedidoPrueba();
+            string numeroFactura = "FV123";
+            string usuario = "testuser";
+
+            var extractoEfecto = new ExtractoCliente
+            {
+                Empresa = pedido.Empresa,
+                Nº_Orden = 12345,
+                Número = pedido.Nº_Cliente,
+                Contacto = pedido.Contacto,
+                Nº_Documento = numeroFactura,
+                TipoApunte = "2",
+                Efecto = "1",
+                Fecha = DateTime.Now,
+                Importe = 150.75m,
+                ImportePdte = 0m, // En ExtractoCliente es 0, pero en ExtractoRuta debe ser = Importe
+                FechaVto = DateTime.Now.AddDays(30)
+            };
+
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
+
+            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+
+            // Act
+            await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
+
+            // Assert - ImportePdte DEBE ser igual a Importe (150.75), NO 0
+            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+                e.Importe == 150.75m &&
+                e.ImportePdte == 150.75m // Este era el bug: antes era 0
+            ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task InsertarDesdeFactura_EfectoSeCopiaCorrectamente()
+        {
+            // Arrange - REGRESIÓN: El campo Efecto debe copiarse del ExtractoCliente
+            // Antes se copiaba de TipoApunte="1" donde Efecto=NULL
+            var pedido = CrearPedidoPrueba();
+            string numeroFactura = "FV123";
+            string usuario = "testuser";
+
+            var extractoEfecto = new ExtractoCliente
+            {
+                Empresa = pedido.Empresa,
+                Nº_Orden = 12345,
+                Número = pedido.Nº_Cliente,
+                Contacto = pedido.Contacto,
+                Nº_Documento = numeroFactura,
+                TipoApunte = "2",
+                Efecto = "1", // Este valor debe copiarse
+                Fecha = DateTime.Now,
+                Importe = 100m
+            };
+
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
+
+            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+
+            // Act
+            await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
+
+            // Assert - Efecto debe ser "1", NO null
+            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+                e.Efecto == "1" // Este era el bug: antes era NULL
+            ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task InsertarDesdeFactura_FechaVtoSeCopiaDelEfecto()
+        {
+            // Arrange - REGRESIÓN: FechaVto debe ser la del efecto, no la de la factura
+            // La factura (TipoApunte="1") tiene FechaVto=2001-01-01 (incorrecta)
+            // El efecto (TipoApunte="2") tiene la fecha correcta de vencimiento
+            var pedido = CrearPedidoPrueba();
+            string numeroFactura = "FV123";
+            string usuario = "testuser";
+            var fechaVtoCorrecta = new DateTime(2025, 12, 15);
+
+            var extractoEfecto = new ExtractoCliente
+            {
+                Empresa = pedido.Empresa,
+                Nº_Orden = 12345,
+                Número = pedido.Nº_Cliente,
+                Contacto = pedido.Contacto,
+                Nº_Documento = numeroFactura,
+                TipoApunte = "2",
+                Efecto = "1",
+                Fecha = DateTime.Now,
+                Importe = 100m,
+                FechaVto = fechaVtoCorrecta // Esta es la fecha correcta de vencimiento
+            };
+
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
+
+            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+
+            // Act
+            await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
+
+            // Assert - FechaVto debe ser 2025-12-15, NO 2001-01-01
+            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+                e.FechaVto == fechaVtoCorrecta
+            ))).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

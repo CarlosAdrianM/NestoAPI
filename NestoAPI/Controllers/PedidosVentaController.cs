@@ -1317,6 +1317,39 @@ namespace NestoAPI.Controllers
             }
         }
 
+        /// <summary>
+        /// Verifica si los comentarios de un pedido indican que se debe imprimir documento físico.
+        /// Útil para auto-marcar el checkbox de impresión en AgenciasViewModel.
+        /// Busca frases como "factura física", "factura en papel", "albarán físico".
+        /// </summary>
+        /// <param name="comentarios">Comentarios del pedido</param>
+        /// <returns>True si los comentarios indican impresión física</returns>
+        [HttpGet]
+        [Route("api/PedidosVenta/DebeImprimirDocumento")]
+        public IHttpActionResult DebeImprimirDocumento(string comentarios)
+        {
+            // Crear una instancia temporal del gestor para usar su método
+            var servicioAlbaranes = new ServicioAlbaranesVenta();
+            var servicioFacturas = new ServicioFacturas();
+            var gestorFacturas = new GestorFacturas(servicioFacturas);
+            var servicioTraspaso = new ServicioTraspasoEmpresa(db);
+            var servicioNotasEntrega = new ServicioNotasEntrega(db);
+            var servicioExtractoRuta = new ServicioExtractoRuta(db);
+
+            var gestorFacturacionRutas = new GestorFacturacionRutas(
+                db,
+                servicioAlbaranes,
+                servicioFacturas,
+                gestorFacturas,
+                servicioTraspaso,
+                servicioNotasEntrega,
+                servicioExtractoRuta
+            );
+
+            bool debeImprimir = gestorFacturacionRutas.DebeImprimirDocumento(comentarios);
+            return Ok(debeImprimir);
+        }
+
         private void errorPersonalizado(string mensajePersonalizado)
         {
             var message = new HttpResponseMessage(HttpStatusCode.Forbidden)

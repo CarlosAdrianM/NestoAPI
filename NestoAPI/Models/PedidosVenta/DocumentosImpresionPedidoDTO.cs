@@ -33,12 +33,12 @@ namespace NestoAPI.Models.PedidosVenta
         public List<NotaEntregaCreadaDTO> NotasEntrega { get; set; }
 
         /// <summary>
-        /// Indica si hay algún documento para imprimir
+        /// Indica si hay algún documento para imprimir (con al menos 1 copia)
         /// </summary>
         public bool HayDocumentosParaImprimir =>
-            (Facturas?.Any(f => f.DatosImpresion != null) ?? false) ||
-            (Albaranes?.Any(a => a.DatosImpresion != null) ?? false) ||
-            (NotasEntrega?.Any(n => n.DatosImpresion != null) ?? false);
+            (Facturas?.Any(f => f.DatosImpresion != null && f.DatosImpresion.NumeroCopias > 0) ?? false) ||
+            (Albaranes?.Any(a => a.DatosImpresion != null && a.DatosImpresion.NumeroCopias > 0) ?? false) ||
+            (NotasEntrega?.Any(n => n.DatosImpresion != null && n.DatosImpresion.NumeroCopias > 0) ?? false);
 
         /// <summary>
         /// Total de documentos que se imprimirán (considerando copias)

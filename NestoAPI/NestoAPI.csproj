@@ -649,6 +649,9 @@
     </Compile>
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Models\AccountBindingModels.cs" />
+    <Compile Include="Models\Entidad.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\NestoSyncRecord.cs" />
     <Compile Include="Models\AgenciaLlamadaWeb.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
