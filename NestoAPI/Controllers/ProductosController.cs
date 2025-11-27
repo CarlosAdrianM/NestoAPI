@@ -260,7 +260,7 @@ namespace NestoAPI.Controllers
                 {
                     porcentajeIVA = 1.1m;
                 }
-                precio.precioCalculado = await ProductoDTO.LeerPrecioPublicoFinal(id) / porcentajeIVA;
+                precio.precioCalculado = await ProductoDTO.LeerPrecioPublicoFinal(producto.Número.Trim()) / porcentajeIVA;
             }
             else
             {

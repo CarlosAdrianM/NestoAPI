@@ -652,6 +652,10 @@
     <Compile Include="Models\Entidad.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Facturas\ISerieFacturaVerifactu.cs" />
+    <Compile Include="Models\Facturas\RegistroSeriesVerifactu.cs" />
+    <Compile Include="Models\Facturas\SeriesFactura\SerieRC.cs" />
+    <Compile Include="Models\Facturas\SeriesFactura\SerieRV.cs" />
     <Compile Include="Models\NestoSyncRecord.cs" />
     <Compile Include="Models\AgenciaLlamadaWeb.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
