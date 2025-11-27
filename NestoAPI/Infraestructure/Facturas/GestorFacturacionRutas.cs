@@ -1,3 +1,4 @@
+using Elmah;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.NotasEntrega;
@@ -13,6 +14,7 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
@@ -513,12 +515,12 @@ namespace NestoAPI.Infraestructure.Facturas
 
             try
             {
-                // Crear factura
+                // Crear factura (el auto-fix de descuadre se maneja internamente en ServicioFacturas)
                 System.Diagnostics.Debug.WriteLine($"  → Creando FACTURA para pedido {pedido.Número}");
                 var resultadoFactura = await servicioFacturas.CrearFactura(
-        pedido.Empresa,
-        pedido.Número,
-        usuario);
+                    pedido.Empresa,
+                    pedido.Número,
+                    usuario);
 
                 System.Diagnostics.Debug.WriteLine($"  → Factura {resultadoFactura.NumeroFactura} creada correctamente");
 
@@ -573,7 +575,6 @@ namespace NestoAPI.Infraestructure.Facturas
                         RegistrarError(pedido, "Generación PDF Albarán", exImpresion, response);
                     }
                 }
-                return;
             }
         }
 
@@ -933,6 +934,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
         /// <summary>
         /// Registra un error en el response con detalles completos de la excepción.
+        /// Si el error es de descuadre, añade información del ValidadorDescuentoPP.
         /// </summary>
         private void RegistrarError(
             CabPedidoVta pedido,
@@ -952,6 +954,272 @@ namespace NestoAPI.Infraestructure.Facturas
             }
 
             RegistrarError(pedido, tipoError, mensajeCompleto, response);
+
+            // Si es un error de descuadre, añadir información del validador de descuento PP
+            if (EsErrorDescuadre(mensajeCompleto))
+            {
+                AgregarInfoDescuentoPP(pedido, response);
+            }
+        }
+
+        /// <summary>
+        /// Detecta si el mensaje de error indica un problema de descuadre.
+        /// </summary>
+        private bool EsErrorDescuadre(string mensajeError)
+        {
+            if (string.IsNullOrEmpty(mensajeError))
+            {
+                return false;
+            }
+
+            var mensajeLower = mensajeError.ToLower();
+            return mensajeLower.Contains("descuadre") ||
+                   mensajeLower.Contains("cuadre") ||
+                   mensajeLower.Contains("diferencia") && mensajeLower.Contains("total");
+        }
+
+        /// <summary>
+        /// Agrega información detallada del pedido para diagnosticar descuadres.
+        /// Captura los valores de BD vs los calculados para identificar el origen del problema.
+        /// </summary>
+        private void AgregarInfoDescuentoPP(CabPedidoVta pedido, FacturarRutasResponseDTO response)
+        {
+            try
+            {
+                var infoBuilder = new StringBuilder();
+                infoBuilder.AppendLine($"=== DIAGNÓSTICO DESCUADRE (Issues #242/#243) ===");
+                infoBuilder.AppendLine($"Fecha/Hora: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+                infoBuilder.AppendLine($"Modo redondeo NestoAPI: {(RoundingHelper.UsarAwayFromZero ? "AwayFromZero" : "ToEven (VB6)")}");
+                infoBuilder.AppendLine();
+
+                // Datos del pedido
+                infoBuilder.AppendLine($"--- DATOS DEL PEDIDO ---");
+                infoBuilder.AppendLine($"Pedido: {pedido.Empresa}/{pedido.Número}");
+                infoBuilder.AppendLine($"Cliente: {pedido.Nº_Cliente} - {pedido.Contacto}");
+                infoBuilder.AppendLine($"Plazo pago: {pedido.PlazosPago}");
+                infoBuilder.AppendLine($"Origen: {pedido.Origen ?? "NULL"}");
+                infoBuilder.AppendLine($"Fecha pedido: {pedido.Fecha:yyyy-MM-dd}");
+                infoBuilder.AppendLine();
+
+                // Totales de las líneas en BD (lo que usa el procedimiento almacenado)
+                infoBuilder.AppendLine($"--- LÍNEAS EN BASE DE DATOS (LinPedidoVta) ---");
+                decimal sumaBrutoBD = 0;
+                decimal sumaBaseImponibleBD = 0;
+                decimal sumaTotalBD = 0;
+                decimal sumaImporteIvaBD = 0;
+                decimal sumaImporteReBD = 0;
+
+                if (pedido.LinPedidoVtas != null && pedido.LinPedidoVtas.Any())
+                {
+                    int numLinea = 0;
+                    foreach (var linea in pedido.LinPedidoVtas.OrderBy(l => l.Nº_Orden))
+                    {
+                        numLinea++;
+                        sumaBrutoBD += linea.Bruto;
+                        sumaBaseImponibleBD += linea.Base_Imponible;
+                        sumaTotalBD += linea.Total;
+                        sumaImporteIvaBD += linea.ImporteIVA;
+                        sumaImporteReBD += linea.ImporteRE;
+
+                        // Mostrar detalle de cada línea
+                        infoBuilder.AppendLine($"  Línea {numLinea}: Prod={linea.Producto?.Trim()}, Cant={linea.Cantidad}, " +
+                            $"Precio={linea.Precio:F4}, Bruto={linea.Bruto:F2}, " +
+                            $"DtoCli={linea.DescuentoCliente:P2}, DtoProd={linea.DescuentoProducto:P2}, " +
+                            $"DtoLin={linea.Descuento:P2}, DtoPP={linea.DescuentoPP:P2}, " +
+                            $"Base={linea.Base_Imponible:F2}, IVA%={linea.PorcentajeIVA}, " +
+                            $"ImpIVA={linea.ImporteIVA:F2}, Total={linea.Total:F2}");
+                    }
+                    infoBuilder.AppendLine();
+                    infoBuilder.AppendLine($"  SUMA BD -> Bruto={sumaBrutoBD:F2}, Base={sumaBaseImponibleBD:F2}, " +
+                        $"IVA={sumaImporteIvaBD:F2}, RE={sumaImporteReBD:F2}, Total={sumaTotalBD:F2}");
+                }
+                else
+                {
+                    infoBuilder.AppendLine($"  (Sin líneas cargadas)");
+                }
+                infoBuilder.AppendLine();
+
+                // Comparación con cálculo desde NestoAPI
+                infoBuilder.AppendLine($"--- CÁLCULO DESDE NESTOAPI (recalculado) ---");
+                var pedidoDTO = ConvertirADTO(pedido);
+                if (pedidoDTO != null && pedidoDTO.Lineas.Any())
+                {
+                    decimal sumaBaseDTO = pedidoDTO.Lineas.Sum(l => l.BaseImponible);
+                    decimal sumaTotalDTO = pedidoDTO.Lineas.Sum(l => l.Total);
+                    infoBuilder.AppendLine($"  Base (suma líneas): {sumaBaseDTO:F2}");
+                    infoBuilder.AppendLine($"  Total (suma líneas): {sumaTotalDTO:F2}");
+                    infoBuilder.AppendLine($"  Base (PedidoBase.BaseImponible): {pedidoDTO.BaseImponible:F2}");
+                    infoBuilder.AppendLine($"  Total (PedidoBase.Total): {pedidoDTO.Total:F2}");
+                    infoBuilder.AppendLine();
+
+                    // Diferencias
+                    infoBuilder.AppendLine($"--- DIFERENCIAS ---");
+                    infoBuilder.AppendLine($"  Base BD vs DTO: {sumaBaseImponibleBD:F2} vs {sumaBaseDTO:F2} = {(sumaBaseImponibleBD - sumaBaseDTO):F4}");
+                    infoBuilder.AppendLine($"  Total BD vs DTO: {sumaTotalBD:F2} vs {sumaTotalDTO:F2} = {(sumaTotalBD - sumaTotalDTO):F4}");
+                }
+                infoBuilder.AppendLine();
+
+                // Agrupación por IVA (como hace la vista vstContabilizarFacturaVta)
+                infoBuilder.AppendLine($"--- AGRUPACIÓN POR IVA (como vstContabilizarFacturaVta) ---");
+                if (pedido.LinPedidoVtas != null && pedido.LinPedidoVtas.Any())
+                {
+                    var gruposIva = pedido.LinPedidoVtas
+                        .GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE })
+                        .Select(g => new
+                        {
+                            PorcentajeIVA = g.Key.PorcentajeIVA,
+                            PorcentajeRE = g.Key.PorcentajeRE,
+                            SumaTotal = g.Sum(l => l.Total),
+                            SumaTotalRedondeado = RoundingHelper.DosDecimalesRound(g.Sum(l => l.Total))
+                        });
+
+                    foreach (var grupo in gruposIva)
+                    {
+                        infoBuilder.AppendLine($"  IVA {grupo.PorcentajeIVA}% RE {grupo.PorcentajeRE:P2}: " +
+                            $"Total={grupo.SumaTotal:F4}, Redondeado={grupo.SumaTotalRedondeado:F2}");
+                    }
+
+                    var totalCuadre = gruposIva.Sum(g => g.SumaTotalRedondeado);
+                    infoBuilder.AppendLine($"  TOTAL CUADRE (sum de grupos redondeados): {totalCuadre:F2}");
+                }
+
+                var infoDiagnostico = infoBuilder.ToString();
+
+                // Actualizar el último error con la info
+                var ultimoError = response.PedidosConErrores.LastOrDefault();
+                if (ultimoError != null && ultimoError.NumeroPedido == pedido.Número)
+                {
+                    ultimoError.InfoDescuentoPP = infoDiagnostico;
+                }
+
+                // Escribir en Debug para los logs de Visual Studio
+                System.Diagnostics.Debug.WriteLine(infoDiagnostico);
+
+                // Registrar en ELMAH para trazabilidad
+                RegistrarDescuadreEnElmah(pedido, ultimoError?.MensajeError, infoDiagnostico);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"Error al calcular diagnóstico de descuadre: {ex.Message}");
+                System.Diagnostics.Debug.WriteLine(ex.StackTrace);
+            }
+        }
+
+        /// <summary>
+        /// Registra un error de descuadre en ELMAH con información detallada del análisis.
+        /// </summary>
+        private void RegistrarDescuadreEnElmah(
+            CabPedidoVta pedido,
+            string mensajeErrorOriginal,
+            string infoDiagnostico)
+        {
+            try
+            {
+                // Crear una excepción con toda la información para ELMAH
+                var mensajeCompleto = new StringBuilder();
+                mensajeCompleto.AppendLine($"ERROR DE DESCUADRE EN FACTURACIÓN - Pedido {pedido.Número}");
+                mensajeCompleto.AppendLine();
+                mensajeCompleto.AppendLine("--- ERROR ORIGINAL ---");
+                mensajeCompleto.AppendLine(mensajeErrorOriginal ?? "Sin mensaje");
+                mensajeCompleto.AppendLine();
+                mensajeCompleto.AppendLine(infoDiagnostico);
+
+                var excepcionDescuadre = new System.ApplicationException(mensajeCompleto.ToString());
+
+                // Añadir datos adicionales a la excepción para búsqueda rápida
+                excepcionDescuadre.Data["Pedido"] = pedido.Número;
+                excepcionDescuadre.Data["Empresa"] = pedido.Empresa;
+                excepcionDescuadre.Data["Cliente"] = pedido.Nº_Cliente;
+                excepcionDescuadre.Data["Contacto"] = pedido.Contacto;
+                excepcionDescuadre.Data["Ruta"] = pedido.Ruta;
+                excepcionDescuadre.Data["PeriodoFacturacion"] = pedido.Periodo_Facturacion;
+                excepcionDescuadre.Data["PlazoPago"] = pedido.PlazosPago;
+                excepcionDescuadre.Data["Origen"] = pedido.Origen;
+                excepcionDescuadre.Data["ModoRedondeo"] = RoundingHelper.UsarAwayFromZero ? "AwayFromZero" : "ToEven";
+                excepcionDescuadre.Data["TipoError"] = "DESCUADRE_FACTURACION";
+                excepcionDescuadre.Data["NumeroLineas"] = pedido.LinPedidoVtas?.Count ?? 0;
+
+                // Totales de BD para referencia rápida
+                if (pedido.LinPedidoVtas != null && pedido.LinPedidoVtas.Any())
+                {
+                    excepcionDescuadre.Data["TotalBD"] = pedido.LinPedidoVtas.Sum(l => l.Total);
+                    excepcionDescuadre.Data["BaseImponibleBD"] = pedido.LinPedidoVtas.Sum(l => l.Base_Imponible);
+                }
+
+                // Registrar en ELMAH
+                var httpContext = HttpContext.Current;
+                if (httpContext != null)
+                {
+                    ErrorSignal.FromContext(httpContext).Raise(excepcionDescuadre, httpContext);
+                }
+                else
+                {
+                    // Si no hay contexto HTTP, usar ErrorLog directamente
+                    ErrorLog.GetDefault(null)?.Log(new Error(excepcionDescuadre));
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[ELMAH] Registrado error de descuadre para pedido {pedido.Número}");
+            }
+            catch (Exception ex)
+            {
+                // Si falla el registro en ELMAH, no interrumpir el flujo
+                System.Diagnostics.Debug.WriteLine($"[ELMAH] Error al registrar en ELMAH: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Convierte un CabPedidoVta a PedidoVentaDTO para poder usar el validador.
+        /// </summary>
+        private PedidoVentaDTO ConvertirADTO(CabPedidoVta pedido)
+        {
+            if (pedido == null)
+            {
+                return null;
+            }
+
+            var dto = new PedidoVentaDTO
+            {
+                empresa = pedido.Empresa,
+                numero = pedido.Número,
+                cliente = pedido.Nº_Cliente,
+                contacto = pedido.Contacto
+            };
+
+            // Obtener el descuento PP del plazo de pago
+            if (!string.IsNullOrWhiteSpace(pedido.PlazosPago))
+            {
+                var plazoPago = db.PlazosPago.FirstOrDefault(p =>
+                    p.Empresa == pedido.Empresa &&
+                    p.Número == pedido.PlazosPago);
+                if (plazoPago != null)
+                {
+                    dto.DescuentoPP = plazoPago.DtoProntoPago;
+                }
+            }
+
+            // Convertir líneas
+            if (pedido.LinPedidoVtas != null)
+            {
+                foreach (var linea in pedido.LinPedidoVtas)
+                {
+                    var lineaDTO = new LineaPedidoVentaDTO
+                    {
+                        Pedido = dto,
+                        Producto = linea.Producto,
+                        Cantidad = (int)(linea.Cantidad ?? 0),
+                        PrecioUnitario = linea.Precio ?? 0m,
+                        DescuentoLinea = linea.Descuento,
+                        DescuentoProducto = linea.DescuentoProducto,
+                        DescuentoEntidad = linea.DescuentoCliente,
+                        AplicarDescuento = linea.Aplicar_Dto,
+                        PorcentajeIva = linea.PorcentajeIVA / 100m,
+                        PorcentajeRecargoEquivalencia = linea.PorcentajeRE
+                    };
+                    dto.Lineas.Add(lineaDTO);
+                }
+            }
+
+            return dto;
         }
 
         /// <summary>

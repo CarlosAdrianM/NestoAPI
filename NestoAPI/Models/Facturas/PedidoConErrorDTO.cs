@@ -61,5 +61,11 @@ namespace NestoAPI.Models.Facturas
         /// Total del pedido
         /// </summary>
         public decimal Total { get; set; }
+
+        /// <summary>
+        /// Información adicional de validación del descuento PP.
+        /// Solo se rellena cuando hay un error de descuadre para ayudar al diagnóstico.
+        /// </summary>
+        public string InfoDescuentoPP { get; set; }
     }
 }

@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure.Exceptions;
+﻿using Elmah;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Facturas;
@@ -6,11 +7,14 @@ using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Data;
+using System.Data.Entity;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Net;
 using System.Net.Mail;
+using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
@@ -294,7 +298,10 @@ namespace NestoAPI.Infraestructure.Facturas
             using (NVEntities db = new NVEntities())
             {
                 string empresaOriginal = empresa;
-                CabPedidoVta cabPedido = db.CabPedidoVtas.Single(p => p.Empresa == empresa && p.Número == pedido);
+                CabPedidoVta cabPedido = db.CabPedidoVtas
+                    .Include(p => p.LinPedidoVtas)
+                    .Single(p => p.Empresa == empresa && p.Número == pedido);
+
                 if (cabPedido.Periodo_Facturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
                 {
                     // Caso especial: cliente de fin de mes
@@ -322,7 +329,9 @@ namespace NestoAPI.Infraestructure.Facturas
                     // IMPORTANTE: Después del traspaso, el objeto cabPedido queda Detached
                     // Debemos recargar el pedido desde la BD para tener los datos actualizados
                     // (especialmente el campo IVA que se actualiza durante el traspaso)
-                    cabPedido = db.CabPedidoVtas.Single(p => p.Empresa == empresa && p.Número == pedido);
+                    cabPedido = db.CabPedidoVtas
+                        .Include(p => p.LinPedidoVtas)
+                        .Single(p => p.Empresa == empresa && p.Número == pedido);
                 }
 
                 if (string.IsNullOrEmpty(cabPedido.IVA))
@@ -335,71 +344,270 @@ namespace NestoAPI.Infraestructure.Facturas
                         usuario: usuario);
                 }
 
-                SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char)
-                {
-                    Value = empresa
-                };
-                SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int)
-                {
-                    Value = pedido
-                };
-                SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime)
-                {
-                    Value = DateTime.Today // De momento dejamos siempre la de hoy
-                };
-                SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char)
-                {
-                    Value = usuario
-                };
+                // Intentar crear la factura con auto-retry si hay descuadre
+                const int maxIntentos = 2;
+                Exception ultimaExcepcion = null;
+                bool seAplicoAutoFix = false;
 
-                SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) // Tipo y tamaño corregidos
+                for (int intento = 1; intento <= maxIntentos; intento++)
                 {
-                    Direction = ParameterDirection.Output
-                };
-
-                try
-                {
-                    // Ejecutar el procedimiento almacenado
-                    _ = await db.Database.ExecuteSqlCommandAsync(
-                        "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
-                        empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
-                    );
-
-                    // Obtener el valor de retorno del parámetro
-                    string resultadoProcedimiento = numFactura.Value.ToString().Trim();
-
-                    // Retornar DTO con empresa final (puede ser diferente a la original)
-                    return new CrearFacturaResponseDTO
+                    try
                     {
-                        NumeroFactura = resultadoProcedimiento,
-                        Empresa = empresa, // Empresa donde se facturó (puede ser empresa espejo)
-                        NumeroPedido = pedido
-                    };
+                        System.Diagnostics.Debug.WriteLine($"  → Ejecutando prdCrearFacturaVta para pedido {pedido} (intento {intento}/{maxIntentos})");
+
+                        // Crear nuevos parámetros en cada intento (no se pueden reutilizar)
+                        SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char) { Value = empresa };
+                        SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int) { Value = pedido };
+                        SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime) { Value = DateTime.Today };
+                        SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char) { Value = usuario };
+                        SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) { Direction = ParameterDirection.Output };
+
+                        // Ejecutar el procedimiento almacenado
+                        _ = await db.Database.ExecuteSqlCommandAsync(
+                            "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
+                            empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
+                        );
+
+                        // Obtener el valor de retorno del parámetro
+                        string resultadoProcedimiento = numFactura.Value.ToString().Trim();
+
+                        // Si se aplicó auto-fix, registrar el éxito
+                        if (seAplicoAutoFix)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"  ✓ AUTO-FIX EXITOSO: Factura {resultadoProcedimiento} creada tras recalcular líneas");
+                        }
+
+                        // Retornar DTO con empresa final (puede ser diferente a la original)
+                        return new CrearFacturaResponseDTO
+                        {
+                            NumeroFactura = resultadoProcedimiento,
+                            Empresa = empresa,
+                            NumeroPedido = pedido
+                        };
+                    }
+                    catch (Exception ex)
+                    {
+                        ultimaExcepcion = ex;
+                        string mensajeError = ex.Message + (ex.InnerException?.Message ?? "");
+
+                        System.Diagnostics.Debug.WriteLine($"  ✗ ERROR al crear factura (intento {intento}): {mensajeError}");
+
+                        // Verificar si es un error de descuadre y si podemos reintentar
+                        if (EsErrorDescuadre(mensajeError) && intento < maxIntentos)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"  → Detectado error de descuadre. Intentando auto-fix...");
+
+                            // Intentar recalcular las líneas del pedido
+                            bool huboCambios = await RecalcularLineasPedido(db, cabPedido);
+
+                            if (huboCambios)
+                            {
+                                seAplicoAutoFix = true;
+                                System.Diagnostics.Debug.WriteLine($"  → Auto-fix aplicado. Reintentando creación de factura...");
+                                // El bucle continuará con el siguiente intento
+                            }
+                            else
+                            {
+                                // No hubo cambios que hacer, el descuadre tiene otra causa
+                                System.Diagnostics.Debug.WriteLine($"  → No se detectaron diferencias de redondeo. El descuadre tiene otra causa.");
+                                break; // Salir del bucle, no tiene sentido reintentar
+                            }
+                        }
+                        else
+                        {
+                            // No es descuadre o ya no hay más reintentos
+                            break;
+                        }
+                    }
                 }
-                catch (SqlException ex)
+
+                // Si llegamos aquí, todos los intentos fallaron
+                if (ultimaExcepcion is SqlException sqlEx)
                 {
                     throw new FacturacionException(
-                        $"Error al ejecutar el procedimiento almacenado de facturación: {ex.Message}",
+                        $"Error al ejecutar el procedimiento almacenado de facturación: {sqlEx.Message}",
                         "FACTURACION_STORED_PROCEDURE_ERROR",
-                        ex,
+                        sqlEx,
                         empresa: empresa,
                         pedido: pedido,
                         usuario: usuario)
-                        .WithData("SqlErrorNumber", ex.Number)
-                        .WithData("StoredProcedure", "prdCrearFacturaVta");
+                        .WithData("SqlErrorNumber", sqlEx.Number)
+                        .WithData("StoredProcedure", "prdCrearFacturaVta")
+                        .WithData("SeIntentoAutoFix", seAplicoAutoFix);
                 }
-                catch (Exception ex)
+                else
                 {
                     throw new FacturacionException(
-                        $"Error inesperado al crear la factura del pedido {pedido}: {ex.Message}",
+                        $"Error inesperado al crear la factura del pedido {pedido}: {ultimaExcepcion?.Message}",
                         "FACTURACION_ERROR_INESPERADO",
-                        ex,
+                        ultimaExcepcion,
                         empresa: empresa,
                         pedido: pedido,
-                        usuario: usuario);
+                        usuario: usuario)
+                        .WithData("SeIntentoAutoFix", seAplicoAutoFix);
                 }
             }
-            ;
+        }
+
+        /// <summary>
+        /// Detecta si el mensaje de error indica un problema de descuadre.
+        /// </summary>
+        private bool EsErrorDescuadre(string mensajeError)
+        {
+            if (string.IsNullOrEmpty(mensajeError))
+            {
+                return false;
+            }
+
+            var mensajeLower = mensajeError.ToLower();
+            return mensajeLower.Contains("descuadre") ||
+                   mensajeLower.Contains("cuadre") ||
+                   (mensajeLower.Contains("diferencia") && mensajeLower.Contains("total"));
+        }
+
+        /// <summary>
+        /// Recalcula los importes de las líneas de un pedido usando SQL directo.
+        /// Esto garantiza que el redondeo sea exactamente el mismo que usa el procedimiento almacenado.
+        /// Issue #242/#243: Unificar redondeo entre NestoAPI y procedimientos almacenados.
+        /// </summary>
+        /// <param name="db">Contexto de Entity Framework</param>
+        /// <param name="pedido">Pedido a recalcular</param>
+        /// <returns>True si se realizaron cambios, False si no hubo cambios</returns>
+        private async Task<bool> RecalcularLineasPedido(NVEntities db, CabPedidoVta pedido)
+        {
+            if (pedido == null)
+            {
+                return false;
+            }
+
+            var infoRecalculo = new StringBuilder();
+            infoRecalculo.AppendLine($"=== AUTO-FIX: Recálculo de líneas pedido {pedido.Empresa}/{pedido.Número} ===");
+            infoRecalculo.AppendLine($"Fecha/Hora: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            infoRecalculo.AppendLine();
+
+            // Ejecutar UPDATE SQL directo - misma fórmula que el procedimiento almacenado
+            // Solo actualiza líneas con diferencia > 0.001 para evitar cambios innecesarios
+            string sql = @"
+                UPDATE l
+                SET
+                    [Base Imponible] = ROUND(l.Bruto - (l.Bruto *
+                        CASE WHEN l.[Aplicar Dto] = 1
+                            THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                            ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                        END
+                    ), 2),
+                    ImporteIVA = ROUND(
+                        ROUND(l.Bruto - (l.Bruto *
+                            CASE WHEN l.[Aplicar Dto] = 1
+                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                            END
+                        ), 2) * l.PorcentajeIVA / 100
+                    , 2),
+                    ImporteRE = ROUND(
+                        ROUND(l.Bruto - (l.Bruto *
+                            CASE WHEN l.[Aplicar Dto] = 1
+                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                            END
+                        ), 2) * l.PorcentajeRE
+                    , 2),
+                    Total = ROUND(
+                        ROUND(l.Bruto - (l.Bruto *
+                            CASE WHEN l.[Aplicar Dto] = 1
+                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                            END
+                        ), 2) * (1 + l.PorcentajeIVA/100.0 + l.PorcentajeRE)
+                    , 2)
+                FROM LinPedidoVta l
+                WHERE l.Empresa = @empresa
+                  AND l.Número = @numero
+                  AND l.Estado BETWEEN -1 AND 1
+                  AND ABS(l.[Base Imponible] - ROUND(l.Bruto - (l.Bruto *
+                        CASE WHEN l.[Aplicar Dto] = 1
+                            THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                            ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                        END
+                    ), 2)) > 0.001";
+
+            var empresaParam = new SqlParameter("@empresa", pedido.Empresa);
+            var numeroParam = new SqlParameter("@numero", pedido.Número);
+
+            int filasAfectadas = await db.Database.ExecuteSqlCommandAsync(sql, empresaParam, numeroParam);
+
+            bool huboCambios = filasAfectadas > 0;
+
+            if (huboCambios)
+            {
+                infoRecalculo.AppendLine($"  Líneas actualizadas: {filasAfectadas}");
+                infoRecalculo.AppendLine($"  ✓ Cambios guardados correctamente via SQL directo");
+
+                // Recargar las líneas desde la BD para que EF tenga los valores actualizados
+                infoRecalculo.AppendLine($"  Recargando líneas desde BD...");
+                if (pedido.LinPedidoVtas != null)
+                {
+                    foreach (var linea in pedido.LinPedidoVtas)
+                    {
+                        await db.Entry(linea).ReloadAsync();
+                    }
+                }
+                infoRecalculo.AppendLine($"  ✓ Líneas recargadas correctamente");
+
+                System.Diagnostics.Debug.WriteLine(infoRecalculo.ToString());
+
+                // Registrar en ELMAH para trazabilidad
+                RegistrarAutoFixEnElmah(pedido, infoRecalculo.ToString());
+            }
+            else
+            {
+                System.Diagnostics.Debug.WriteLine($"  No se detectaron diferencias en las líneas del pedido {pedido.Número}");
+            }
+
+            return huboCambios;
+        }
+
+        /// <summary>
+        /// Registra en ELMAH que se realizó un auto-fix de descuadre.
+        /// Esto es informativo para trazabilidad, no un error crítico.
+        /// </summary>
+        private void RegistrarAutoFixEnElmah(CabPedidoVta pedido, string detallesRecalculo)
+        {
+            try
+            {
+                var mensajeCompleto = new StringBuilder();
+                mensajeCompleto.AppendLine($"AUTO-FIX DE DESCUADRE APLICADO - Pedido {pedido.Empresa}/{pedido.Número}");
+                mensajeCompleto.AppendLine();
+                mensajeCompleto.AppendLine("Se detectó un error de descuadre durante la facturación.");
+                mensajeCompleto.AppendLine("Se recalcularon automáticamente las líneas del pedido y se reintentó la factura.");
+                mensajeCompleto.AppendLine("El usuario NO vio ningún error.");
+                mensajeCompleto.AppendLine();
+                mensajeCompleto.AppendLine(detallesRecalculo);
+
+                var excepcionInfo = new System.ApplicationException(mensajeCompleto.ToString());
+                excepcionInfo.Data["Pedido"] = pedido.Número;
+                excepcionInfo.Data["Empresa"] = pedido.Empresa;
+                excepcionInfo.Data["Cliente"] = pedido.Nº_Cliente;
+                excepcionInfo.Data["TipoError"] = "AUTO_FIX_DESCUADRE";
+                excepcionInfo.Data["ModoRedondeo"] = RoundingHelper.UsarAwayFromZero ? "AwayFromZero" : "ToEven";
+
+                var httpContext = HttpContext.Current;
+                if (httpContext != null)
+                {
+                    ErrorSignal.FromContext(httpContext).Raise(excepcionInfo, httpContext);
+                }
+                else
+                {
+                    ErrorLog.GetDefault(null)?.Log(new Error(excepcionInfo));
+                }
+
+                System.Diagnostics.Debug.WriteLine($"[ELMAH] Registrado auto-fix para pedido {pedido.Número}");
+            }
+            catch (Exception ex)
+            {
+                // Si falla el registro en ELMAH, no interrumpir el flujo
+                System.Diagnostics.Debug.WriteLine($"[ELMAH] Error al registrar auto-fix: {ex.Message}");
+            }
         }
     }
 }

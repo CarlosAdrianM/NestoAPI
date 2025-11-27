@@ -194,9 +194,25 @@ Recent refactoring consolidated commission calculations into `GestorComisiones`:
   - Main database connection (Entity Framework)
   - "NVIdentity" for ASP.NET Identity
 
+### Rounding System (Issues #242/#243)
+The application uses `RoundingHelper` for all decimal rounding operations:
+- **Location**: `Infraestructure/RoundingHelper.cs`
+- **Default mode**: `AwayFromZero` (commercial rounding, compliant with Spanish legislation)
+- **Rollback**: Set `RoundingHelper.UsarAwayFromZero = false` to revert to VB6-style `ToEven` rounding
+- **SQL Server**: Uses `ROUND()` which is already AwayFromZero - no changes needed
+- **Auto-fix**: When invoice creation fails due to rounding mismatch ("descuadre"), `ServicioFacturas.CrearFactura()` automatically recalculates line amounts using SQL and retries. The fix is logged to ELMAH but the user sees no error.
+- **Diagnostics**: When invoice mismatch errors occur, detailed diagnostics are logged to ELMAH including line-by-line totals
+
+Related files:
+- `RoundingHelper.cs` - Rounding logic with configurable mode
+- `ValidadorDescuentoPP.cs` - Validates early payment discount calculations
+- `ServicioFacturas.cs` - Auto-fix logic for rounding mismatches in `CrearFactura()`
+- `GestorFacturacionRutas.cs` - Logs detailed diagnostics on mismatch errors
+
 ## Recent Changes
 
 Based on git status, recent work includes:
+- Rounding system refactoring (Issues #242/#243) - Changed to AwayFromZero with rollback capability
 - Refactoring of validator system (`ValidadorOfertasYDescuentosPermitidos` split into separate validators)
 - New offer management system (`GestorOfertasPedido`)
 - Commission system refactoring (`GestorComisiones`)
