@@ -344,85 +344,48 @@ namespace NestoAPI.Infraestructure.Facturas
                         usuario: usuario);
                 }
 
-                // Intentar crear la factura con auto-retry si hay descuadre
-                const int maxIntentos = 2;
-                Exception ultimaExcepcion = null;
-                bool seAplicoAutoFix = false;
-
-                for (int intento = 1; intento <= maxIntentos; intento++)
+                // PREVENTIVO: Recalcular líneas ANTES de llamar al stored procedure
+                // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
+                // El recálculo se hace antes porque después del SP (incluso con rollback),
+                // las líneas pueden estar temporalmente en estado 4 y el trigger no permite modificarlas.
+                bool seAplicoAutoFix = await RecalcularLineasPedido(db, cabPedido);
+                if (seAplicoAutoFix)
                 {
-                    try
-                    {
-                        System.Diagnostics.Debug.WriteLine($"  → Ejecutando prdCrearFacturaVta para pedido {pedido} (intento {intento}/{maxIntentos})");
-
-                        // Crear nuevos parámetros en cada intento (no se pueden reutilizar)
-                        SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char) { Value = empresa };
-                        SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int) { Value = pedido };
-                        SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime) { Value = DateTime.Today };
-                        SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char) { Value = usuario };
-                        SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) { Direction = ParameterDirection.Output };
-
-                        // Ejecutar el procedimiento almacenado
-                        _ = await db.Database.ExecuteSqlCommandAsync(
-                            "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
-                            empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
-                        );
-
-                        // Obtener el valor de retorno del parámetro
-                        string resultadoProcedimiento = numFactura.Value.ToString().Trim();
-
-                        // Si se aplicó auto-fix, registrar el éxito
-                        if (seAplicoAutoFix)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"  ✓ AUTO-FIX EXITOSO: Factura {resultadoProcedimiento} creada tras recalcular líneas");
-                        }
-
-                        // Retornar DTO con empresa final (puede ser diferente a la original)
-                        return new CrearFacturaResponseDTO
-                        {
-                            NumeroFactura = resultadoProcedimiento,
-                            Empresa = empresa,
-                            NumeroPedido = pedido
-                        };
-                    }
-                    catch (Exception ex)
-                    {
-                        ultimaExcepcion = ex;
-                        string mensajeError = ex.Message + (ex.InnerException?.Message ?? "");
-
-                        System.Diagnostics.Debug.WriteLine($"  ✗ ERROR al crear factura (intento {intento}): {mensajeError}");
-
-                        // Verificar si es un error de descuadre y si podemos reintentar
-                        if (EsErrorDescuadre(mensajeError) && intento < maxIntentos)
-                        {
-                            System.Diagnostics.Debug.WriteLine($"  → Detectado error de descuadre. Intentando auto-fix...");
-
-                            // Intentar recalcular las líneas del pedido
-                            bool huboCambios = await RecalcularLineasPedido(db, cabPedido);
-
-                            if (huboCambios)
-                            {
-                                seAplicoAutoFix = true;
-                                System.Diagnostics.Debug.WriteLine($"  → Auto-fix aplicado. Reintentando creación de factura...");
-                                // El bucle continuará con el siguiente intento
-                            }
-                            else
-                            {
-                                // No hubo cambios que hacer, el descuadre tiene otra causa
-                                System.Diagnostics.Debug.WriteLine($"  → No se detectaron diferencias de redondeo. El descuadre tiene otra causa.");
-                                break; // Salir del bucle, no tiene sentido reintentar
-                            }
-                        }
-                        else
-                        {
-                            // No es descuadre o ya no hay más reintentos
-                            break;
-                        }
-                    }
+                    System.Diagnostics.Debug.WriteLine($"  → AUTO-FIX PREVENTIVO aplicado para pedido {pedido}");
                 }
 
-                // Si llegamos aquí, todos los intentos fallaron
-                if (ultimaExcepcion is SqlException sqlEx)
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine($"  → Ejecutando prdCrearFacturaVta para pedido {pedido}");
+
+                    SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char) { Value = empresa };
+                    SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int) { Value = pedido };
+                    SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime) { Value = DateTime.Today };
+                    SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char) { Value = usuario };
+                    SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) { Direction = ParameterDirection.Output };
+
+                    // Ejecutar el procedimiento almacenado
+                    _ = await db.Database.ExecuteSqlCommandAsync(
+                        "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
+                        empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
+                    );
+
+                    // Obtener el valor de retorno del parámetro
+                    string resultadoProcedimiento = numFactura.Value.ToString().Trim();
+
+                    if (seAplicoAutoFix)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"  ✓ AUTO-FIX PREVENTIVO EXITOSO: Factura {resultadoProcedimiento} creada tras recalcular líneas");
+                    }
+
+                    return new CrearFacturaResponseDTO
+                    {
+                        NumeroFactura = resultadoProcedimiento,
+                        Empresa = empresa,
+                        NumeroPedido = pedido
+                    };
+                }
+                catch (SqlException sqlEx)
                 {
                     throw new FacturacionException(
                         $"Error al ejecutar el procedimiento almacenado de facturación: {sqlEx.Message}",
@@ -433,36 +396,20 @@ namespace NestoAPI.Infraestructure.Facturas
                         usuario: usuario)
                         .WithData("SqlErrorNumber", sqlEx.Number)
                         .WithData("StoredProcedure", "prdCrearFacturaVta")
-                        .WithData("SeIntentoAutoFix", seAplicoAutoFix);
+                        .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
                 }
-                else
+                catch (Exception ex)
                 {
                     throw new FacturacionException(
-                        $"Error inesperado al crear la factura del pedido {pedido}: {ultimaExcepcion?.Message}",
+                        $"Error inesperado al crear la factura del pedido {pedido}: {ex.Message}",
                         "FACTURACION_ERROR_INESPERADO",
-                        ultimaExcepcion,
+                        ex,
                         empresa: empresa,
                         pedido: pedido,
                         usuario: usuario)
-                        .WithData("SeIntentoAutoFix", seAplicoAutoFix);
+                        .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
                 }
             }
-        }
-
-        /// <summary>
-        /// Detecta si el mensaje de error indica un problema de descuadre.
-        /// </summary>
-        private bool EsErrorDescuadre(string mensajeError)
-        {
-            if (string.IsNullOrEmpty(mensajeError))
-            {
-                return false;
-            }
-
-            var mensajeLower = mensajeError.ToLower();
-            return mensajeLower.Contains("descuadre") ||
-                   mensajeLower.Contains("cuadre") ||
-                   (mensajeLower.Contains("diferencia") && mensajeLower.Contains("total"));
         }
 
         /// <summary>
@@ -485,51 +432,54 @@ namespace NestoAPI.Infraestructure.Facturas
             infoRecalculo.AppendLine($"Fecha/Hora: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
             infoRecalculo.AppendLine();
 
-            // Ejecutar UPDATE SQL directo - misma fórmula que el procedimiento almacenado
-            // Solo actualiza líneas con diferencia > 0.001 para evitar cambios innecesarios
+            // Ejecutar UPDATE SQL directo - misma fórmula que C# en GestorPedidosVenta.CalcularImportesLinea
+            // IMPORTANTE: Solo Base Imponible se redondea a 2 decimales.
+            // ImporteIVA, ImporteRE y Total NO se redondean (se guardan con más precisión).
+            // El redondeo final a 2 decimales se hace al sumar en la factura, no línea a línea.
+            //
+            // Fórmulas (deben coincidir exactamente con C#):
+            //   baseImponible = ROUND(bruto - importeDescuento, 2)
+            //   importeIVA = baseImponible * PorcentajeIVA / 100  (sin redondear)
+            //   importeRE = baseImponible * PorcentajeRE          (sin redondear, PorcentajeRE ya está en formato 0.052)
+            //   total = baseImponible + importeIVA + importeRE    (sin redondear)
+            // Estados de línea: -1=Pendiente, 1=En curso, 2=Albarán (las que se facturan)
+            // No incluimos estado 4 (Facturado) porque el trigger no permite modificarlas
             string sql = @"
+                ;WITH BaseCalculada AS (
+                    SELECT
+                        l.[Nº Orden],
+                        ROUND(l.Bruto - (l.Bruto *
+                            CASE WHEN l.[Aplicar Dto] = 1
+                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                            END
+                        ), 2) AS NuevaBI
+                    FROM LinPedidoVta l
+                    WHERE l.Empresa = @empresa
+                      AND l.Número = @numero
+                      AND l.Estado BETWEEN -1 AND 2
+                )
                 UPDATE l
                 SET
-                    [Base Imponible] = ROUND(l.Bruto - (l.Bruto *
-                        CASE WHEN l.[Aplicar Dto] = 1
-                            THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
-                            ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
-                        END
-                    ), 2),
-                    ImporteIVA = ROUND(
-                        ROUND(l.Bruto - (l.Bruto *
-                            CASE WHEN l.[Aplicar Dto] = 1
-                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
-                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
-                            END
-                        ), 2) * l.PorcentajeIVA / 100
-                    , 2),
-                    ImporteRE = ROUND(
-                        ROUND(l.Bruto - (l.Bruto *
-                            CASE WHEN l.[Aplicar Dto] = 1
-                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
-                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
-                            END
-                        ), 2) * l.PorcentajeRE
-                    , 2),
-                    Total = ROUND(
-                        ROUND(l.Bruto - (l.Bruto *
-                            CASE WHEN l.[Aplicar Dto] = 1
-                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
-                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
-                            END
-                        ), 2) * (1 + l.PorcentajeIVA/100.0 + l.PorcentajeRE)
-                    , 2)
+                    [Base Imponible] = bc.NuevaBI,
+                    ImporteIVA = bc.NuevaBI * l.PorcentajeIVA / 100.0,
+                    ImporteRE = bc.NuevaBI * l.PorcentajeRE,
+                    Total = bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE)
                 FROM LinPedidoVta l
+                INNER JOIN BaseCalculada bc ON l.[Nº Orden] = bc.[Nº Orden]
                 WHERE l.Empresa = @empresa
                   AND l.Número = @numero
-                  AND l.Estado BETWEEN -1 AND 1
-                  AND ABS(l.[Base Imponible] - ROUND(l.Bruto - (l.Bruto *
-                        CASE WHEN l.[Aplicar Dto] = 1
-                            THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
-                            ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
-                        END
-                    ), 2)) > 0.001";
+                  AND l.Estado BETWEEN -1 AND 2
+                  AND (
+                      -- Detectar diferencia en Base Imponible
+                      ABS(l.[Base Imponible] - bc.NuevaBI) > 0.001
+                      OR
+                      -- Detectar diferencia en ImporteIVA
+                      ABS(l.ImporteIVA - (bc.NuevaBI * l.PorcentajeIVA / 100.0)) > 0.001
+                      OR
+                      -- Detectar diferencia en Total
+                      ABS(l.Total - (bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE))) > 0.001
+                  )";
 
             var empresaParam = new SqlParameter("@empresa", pedido.Empresa);
             var numeroParam = new SqlParameter("@numero", pedido.Número);

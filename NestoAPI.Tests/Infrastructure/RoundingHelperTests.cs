@@ -165,5 +165,124 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region Tests cálculo líneas pedido (Issue #242/#243)
+
+        [TestMethod]
+        public void RoundingHelper_CalculoLineaPedido_ImporteIVANoSeRedondea()
+        {
+            // Arrange - Simula cálculo como en GestorPedidosVenta.CalcularImportesLinea
+            RoundingHelper.UsarAwayFromZero = true;
+            decimal bruto = 100m;
+            decimal descuento = 0.30m; // 30%
+            byte porcentajeIVA = 21;
+
+            // Act
+            decimal baseImponible = RoundingHelper.DosDecimalesRound(bruto - (bruto * descuento)); // 70.00
+            decimal importeIVA = baseImponible * porcentajeIVA / 100; // 14.70 (sin redondear)
+
+            // Assert
+            Assert.AreEqual(70.00m, baseImponible, "Base imponible debe redondearse a 2 decimales");
+            Assert.AreEqual(14.70m, importeIVA, "ImporteIVA NO debe redondearse");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_CalculoLineaPedido_TotalEsSumaNoMultiplicacion()
+        {
+            // Arrange - El total debe ser suma, no multiplicación por factor
+            RoundingHelper.UsarAwayFromZero = true;
+            decimal baseImponible = 70.00m;
+            byte porcentajeIVA = 21;
+            decimal porcentajeRE = 0.052m; // 5.2% ya dividido
+
+            // Act - Cálculo correcto (como en C#)
+            decimal importeIVA = baseImponible * porcentajeIVA / 100; // 14.70
+            decimal importeRE = baseImponible * porcentajeRE;          // 3.64
+            decimal totalCorrecto = baseImponible + importeIVA + importeRE; // 88.34
+
+            // Cálculo incorrecto (multiplicación por factor)
+            decimal totalIncorrecto = baseImponible * (1 + porcentajeIVA / 100.0m + porcentajeRE);
+
+            // Assert
+            Assert.AreEqual(88.34m, totalCorrecto, "Total debe ser suma de BI + IVA + RE");
+            Assert.AreEqual(totalCorrecto, totalIncorrecto,
+                "En este caso coinciden, pero pueden diferir por precisión en otros casos");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_CalculoLineaPedido_CasoConDiferenciaPrecision()
+        {
+            // Arrange - Caso donde la multiplicación y suma dan diferente resultado
+            RoundingHelper.UsarAwayFromZero = true;
+            decimal bruto = 33.45m;
+            decimal descuento = 0.30m; // 30%
+            byte porcentajeIVA = 21;
+            decimal porcentajeRE = 0.052m;
+
+            // Act
+            decimal baseImponible = RoundingHelper.DosDecimalesRound(bruto - (bruto * descuento)); // 23.42
+            decimal importeIVA = baseImponible * porcentajeIVA / 100;  // 4.9182
+            decimal importeRE = baseImponible * porcentajeRE;          // 1.21784
+
+            // Total correcto: suma
+            decimal totalSuma = baseImponible + importeIVA + importeRE;
+
+            // Total incorrecto: multiplicación (como estaba el SQL antes del fix)
+            decimal totalMultiplicacion = baseImponible * (1 + porcentajeIVA / 100.0m + porcentajeRE);
+
+            // Assert - Ambos métodos deberían dar el mismo resultado matemáticamente
+            Assert.AreEqual(totalSuma, totalMultiplicacion, 0.0001m,
+                "Suma y multiplicación deben ser equivalentes matemáticamente");
+
+            // Verificar valores intermedios no redondeados
+            Assert.AreEqual(23.42m, baseImponible);
+            Assert.AreEqual(4.9182m, importeIVA, "ImporteIVA no debe redondearse");
+            Assert.AreEqual(1.21784m, importeRE, "ImporteRE no debe redondearse");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_CalculoLineaPedido_ConsistenciaConSQL()
+        {
+            // Este test documenta cómo deben calcularse los valores para que
+            // coincidan con el SQL del auto-fix en ServicioFacturas.RecalcularLineasPedido
+            //
+            // SQL:
+            //   [Base Imponible] = ROUND(Bruto - ImporteDescuento, 2)
+            //   ImporteIVA = NuevaBI * PorcentajeIVA / 100.0
+            //   ImporteRE = NuevaBI * PorcentajeRE
+            //   Total = NuevaBI + ImporteIVA + ImporteRE
+
+            RoundingHelper.UsarAwayFromZero = true;
+
+            // Datos de ejemplo
+            decimal bruto = 54.90m;
+            decimal descuentoCliente = 0m;
+            decimal descuentoProducto = 0.30m;
+            decimal descuento = 0m;
+            decimal descuentoPP = 0m;
+            bool aplicarDto = true;
+            byte porcentajeIVA = 21;
+            decimal porcentajeRE = 0m;
+
+            // Cálculo como C#
+            decimal sumaDescuentos = aplicarDto
+                ? 1 - ((1 - descuentoCliente) * (1 - descuentoProducto) * (1 - descuento) * (1 - descuentoPP))
+                : 1 - ((1 - descuento) * (1 - descuentoPP));
+
+            decimal importeDescuento = bruto * sumaDescuentos;
+            decimal baseImponible = RoundingHelper.DosDecimalesRound(bruto - importeDescuento);
+            decimal importeIVA = baseImponible * porcentajeIVA / 100;
+            decimal importeRE = baseImponible * porcentajeRE;
+            decimal total = baseImponible + importeIVA + importeRE;
+
+            // Assert
+            Assert.AreEqual(0.30m, sumaDescuentos, "Suma descuentos = 30%");
+            Assert.AreEqual(38.43m, baseImponible, "Base imponible redondeada");
+            Assert.AreEqual(8.0703m, importeIVA, "ImporteIVA sin redondear");
+            Assert.AreEqual(0m, importeRE, "ImporteRE sin redondear");
+            Assert.AreEqual(46.5003m, total, "Total sin redondear");
+        }
+
+        #endregion
     }
 }

@@ -200,14 +200,15 @@ The application uses `RoundingHelper` for all decimal rounding operations:
 - **Default mode**: `AwayFromZero` (commercial rounding, compliant with Spanish legislation)
 - **Rollback**: Set `RoundingHelper.UsarAwayFromZero = false` to revert to VB6-style `ToEven` rounding
 - **SQL Server**: Uses `ROUND()` which is already AwayFromZero - no changes needed
-- **Auto-fix**: When invoice creation fails due to rounding mismatch ("descuadre"), `ServicioFacturas.CrearFactura()` automatically recalculates line amounts using SQL and retries. The fix is logged to ELMAH but the user sees no error.
-- **Diagnostics**: When invoice mismatch errors occur, detailed diagnostics are logged to ELMAH including line-by-line totals
+- **Auto-fix preventivo**: `ServicioFacturas.CrearFactura()` recalcula las líneas del pedido ANTES de llamar al stored procedure de facturación. Esto previene errores de descuadre causados por diferencias de redondeo entre C# y Nesto viejo (VB6). El fix se loguea a ELMAH para diagnóstico.
+- **Cálculo correcto de líneas**: Solo `BaseImponible` se redondea a 2 decimales. `ImporteIVA`, `ImporteRE` y `Total` mantienen precisión completa (se redondean al sumar en la factura, no línea a línea).
 
 Related files:
 - `RoundingHelper.cs` - Rounding logic with configurable mode
 - `ValidadorDescuentoPP.cs` - Validates early payment discount calculations
-- `ServicioFacturas.cs` - Auto-fix logic for rounding mismatches in `CrearFactura()`
+- `ServicioFacturas.cs` - Auto-fix preventivo en `CrearFactura()` y `RecalcularLineasPedido()`
 - `GestorFacturacionRutas.cs` - Logs detailed diagnostics on mismatch errors
+- `RoundingHelperTests.cs` - Tests documentando el comportamiento de redondeo y cálculo de líneas
 
 ## Recent Changes
 
