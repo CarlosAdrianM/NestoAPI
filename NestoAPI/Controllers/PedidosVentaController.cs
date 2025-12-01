@@ -17,14 +17,12 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Cors;
@@ -323,7 +321,8 @@ namespace NestoAPI.Controllers
             {
                 // Dirección y Almacén pueden modificar sin validación sin importar el almacén
                 grupoPermitidoSinValidacion = User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
-                                             User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN);
+                                             User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
+                                             TieneParametroPermitirOmitirValidacion(Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido.Usuario);
 
                 // Tiendas puede modificar sin validación solo si todas las líneas están en su almacén
                 if (!grupoPermitidoSinValidacion && User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
@@ -697,9 +696,11 @@ namespace NestoAPI.Controllers
             }
 
             // Carlos 04/01/18: comprobamos que las ofertas del pedido sean todas válidas
+            // Carlos 01/12/25: Movemos respuestaValidacion fuera del if para poder pasarla al correo (Issue #48)
+            RespuestaValidacion respuestaValidacion = null;
             if (hayAlgunaLineaModificada || hayLineasNuevas || aceptarPresupuesto)
             {
-                RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+                respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
 
                 // Carlos 28/11/25: Permitir omitir validación si (igual que en POST):
                 // - Tiene rol Dirección o Almacén (sin importar almacenes), O
@@ -708,17 +709,23 @@ namespace NestoAPI.Controllers
 
                 if (!pedido.CreadoSinPasarValidacion || !puedeOmitirValidacion)
                 {
-                    if (!respuesta.ValidacionSuperada)
+                    if (!respuestaValidacion.ValidacionSuperada)
                     {
                         throw new PedidoValidacionException(
-                            respuesta.Motivo,
-                            respuesta,
+                            respuestaValidacion.Motivo,
+                            respuestaValidacion,
                             empresa: pedido.empresa,
                             pedido: pedido.numero,
                             cliente: pedido.cliente,
                             usuario: pedido.Usuario);
                     }
                 }
+            }
+            // Carlos 01/12/25: Si el pedido se creó sin pasar validación pero no hubo cambios en las líneas,
+            // calculamos la respuesta de validación para incluirla en el correo (Issue #48)
+            else if (pedido.CreadoSinPasarValidacion)
+            {
+                respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
             }
 
             // Carlos 27/08/20: comprobamos solo un prepago. Para comprobar todos hay que poner Id en PrepagoDTO
@@ -859,7 +866,8 @@ namespace NestoAPI.Controllers
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 
-            GestorPresupuestos gestor = new GestorPresupuestos(pedido);
+            // Carlos 01/12/25: Pasar respuestaValidacion al GestorPresupuestos para incluirla en el correo (Issue #48)
+            GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion);
             await gestor.EnviarCorreo("Modificación");
 
             return StatusCode(HttpStatusCode.NoContent);
@@ -888,10 +896,10 @@ namespace NestoAPI.Controllers
             bool grupoTiendasConAlmacenCorrecto = false;
             try
             {
-                var identity = User.Identity as ClaimsIdentity;
                 // Dirección y Almacén pueden crear sin validación sin importar el almacén
                 grupoPermitidoSinValidacion = User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
-                                             User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN);
+                                             User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
+                                             TieneParametroPermitirOmitirValidacion(pedido.empresa, pedido.Usuario);
 
                 // Tiendas puede crear sin validación solo si todas las líneas están en su almacén
                 if (!grupoPermitidoSinValidacion && User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
@@ -1400,6 +1408,19 @@ namespace NestoAPI.Controllers
             };
             var ex = new HttpResponseException(message);
             throw ex;
+        }
+
+        private bool TieneParametroPermitirOmitirValidacion(string empresa, string usuario)
+        {
+            string valor = ParametrosUsuarioController.LeerParametro(empresa, usuario, "PermitirCrearPedidoConErroresValidacion");
+
+            if (!string.IsNullOrWhiteSpace(valor))
+            {
+                valor = valor.Trim().ToUpperInvariant();
+                return valor == "1" || valor == "TRUE" || valor == "SI" || valor == "SÍ";
+            }
+
+            return false;
         }
     }
 }

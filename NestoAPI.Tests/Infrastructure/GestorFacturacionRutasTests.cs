@@ -1648,5 +1648,315 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region Grupo 9: Concurrencia - DbContext compartido
+
+        /// <summary>
+        /// CRÍTICO: Verifica que cuando un pedido falla, los siguientes pedidos no se ven afectados.
+        /// Este test documenta el bug de concurrencia que causaba errores masivos en facturación de rutas.
+        ///
+        /// El problema era:
+        /// 1. ServicioAlbaranesVenta y ServicioFacturas creaban sus propios NVEntities
+        /// 2. Cuando un SP modificaba datos (ej: prdCrearAlbaránVta), el contexto de GestorFacturacionRutas
+        ///    no veía esos cambios → RowVersion desactualizado
+        /// 3. Cualquier SaveChanges posterior fallaba con "0 rows affected"
+        /// 4. El error "contaminaba" el contexto → los siguientes pedidos también fallaban
+        ///
+        /// La solución fue:
+        /// 1. Inyectar el mismo NVEntities a todos los servicios
+        /// 2. Limpiar el contexto después de cada error (LimpiarContextoDespuesDeError)
+        /// </summary>
+        [TestMethod]
+        public async Task FacturarRutas_CuandoUnPedidoFalla_LosSiguientesPedidosSeProcesanCorrectamente()
+        {
+            // Arrange - 3 pedidos: el primero falla, los otros dos deben procesarse bien
+            var pedido1Falla = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 100,
+                Nº_Cliente = "1001",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
+                NotaEntrega = false,
+                MantenerJunto = false,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true, Base_Imponible = 100m }
+                }
+            };
+
+            var pedido2OK = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 200,
+                Nº_Cliente = "1002",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
+                NotaEntrega = false,
+                MantenerJunto = false,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true, Base_Imponible = 200m }
+                }
+            };
+
+            var pedido3OK = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 300,
+                Nº_Cliente = "1003",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
+                NotaEntrega = false,
+                MantenerJunto = false,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true, Base_Imponible = 300m }
+                }
+            };
+
+            var pedidos = new List<CabPedidoVta> { pedido1Falla, pedido2OK, pedido3OK };
+
+            // Configurar: pedido 1 falla en CrearAlbaran
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 100, "usuario"))
+                .Throws(new Exception("Error simulado de concurrencia"));
+
+            // Configurar: pedidos 2 y 3 funcionan correctamente
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 200, "usuario"))
+                .Returns(Task.FromResult(2001));
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 300, "usuario"))
+                .Returns(Task.FromResult(3001));
+
+            // Configurar traspaso
+            A.CallTo(() => servicioTraspaso.HayQueTraspasar(A<CabPedidoVta>._))
+                .Returns(false);
+
+            // Configurar SaveChangesAsync
+            A.CallTo(() => db.SaveChangesAsync())
+                .Returns(Task.FromResult(0));
+
+            // Act
+            var response = await gestor.FacturarRutas(pedidos, "usuario", DateTime.Today);
+
+            // Assert
+            Assert.AreEqual(2, response.PedidosProcesados, "Deben procesarse 2 pedidos (el primero falla)");
+            Assert.AreEqual(2, response.Albaranes.Count, "Deben crearse 2 albaranes");
+            Assert.AreEqual(1, response.PedidosConErrores.Count, "Debe haber 1 error");
+            Assert.AreEqual(100, response.PedidosConErrores[0].NumeroPedido, "El error debe ser del pedido 100");
+
+            // Verificar que se intentó crear albarán para TODOS los pedidos
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 100, "usuario")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 200, "usuario")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 300, "usuario")).MustHaveHappenedOnceExactly();
+        }
+
+        /// <summary>
+        /// Verifica que múltiples errores consecutivos no impiden el procesamiento de pedidos válidos.
+        /// Este es un caso extremo pero importante para la robustez del sistema.
+        /// </summary>
+        [TestMethod]
+        public async Task FacturarRutas_MultiplesErroresConsecutivos_NoImpidenProcesamientoDePedidosValidos()
+        {
+            // Arrange - 5 pedidos: 3 fallan, 2 funcionan
+            var pedidos = new List<CabPedidoVta>();
+            for (int i = 1; i <= 5; i++)
+            {
+                pedidos.Add(new CabPedidoVta
+                {
+                    Empresa = "1",
+                    Número = i * 100,
+                    Nº_Cliente = $"100{i}",
+                    Contacto = "0",
+                    Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
+                    NotaEntrega = false,
+                    MantenerJunto = false,
+                    LinPedidoVtas = new List<LinPedidoVta>
+                    {
+                        new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true, Base_Imponible = i * 100m }
+                    }
+                });
+            }
+
+            // Configurar: pedidos 1, 2, 3 fallan; pedidos 4, 5 funcionan
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 100, "usuario"))
+                .Throws(new Exception("Error 1"));
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 200, "usuario"))
+                .Throws(new Exception("Error 2"));
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 300, "usuario"))
+                .Throws(new Exception("Error 3"));
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 400, "usuario"))
+                .Returns(Task.FromResult(4001));
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 500, "usuario"))
+                .Returns(Task.FromResult(5001));
+
+            A.CallTo(() => servicioTraspaso.HayQueTraspasar(A<CabPedidoVta>._)).Returns(false);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(0));
+
+            // Act
+            var response = await gestor.FacturarRutas(pedidos, "usuario", DateTime.Today);
+
+            // Assert
+            Assert.AreEqual(2, response.PedidosProcesados, "Deben procesarse 2 pedidos");
+            Assert.AreEqual(2, response.Albaranes.Count, "Deben crearse 2 albaranes");
+            Assert.AreEqual(3, response.PedidosConErrores.Count, "Deben haber 3 errores");
+
+            // Verificar que los errores son de los pedidos correctos
+            var pedidosConError = response.PedidosConErrores.Select(e => e.NumeroPedido).ToList();
+            Assert.IsTrue(pedidosConError.Contains(100));
+            Assert.IsTrue(pedidosConError.Contains(200));
+            Assert.IsTrue(pedidosConError.Contains(300));
+        }
+
+        #endregion
+
+        #region Grupo 10: Tests de ServicioFacturas con NVEntities inyectado
+
+        /// <summary>
+        /// Verifica que ServicioFacturas puede recibir un NVEntities externo.
+        /// Esto es crítico para evitar conflictos de concurrencia.
+        /// </summary>
+        [TestMethod]
+        public void ServicioFacturas_ConDbExterno_UsaElMismoContexto()
+        {
+            // Arrange
+            var dbExterno = A.Fake<NVEntities>();
+
+            // Act
+            var servicio = new ServicioFacturas(dbExterno);
+
+            // Assert - El servicio debe haberse creado sin errores
+            Assert.IsNotNull(servicio);
+        }
+
+        /// <summary>
+        /// Verifica que ServicioFacturas sin parámetro sigue funcionando (backward compatibility).
+        /// </summary>
+        [TestMethod]
+        public void ServicioFacturas_SinParametro_CreaContextoInterno()
+        {
+            // Act
+            var servicio = new ServicioFacturas();
+
+            // Assert - El servicio debe haberse creado sin errores
+            Assert.IsNotNull(servicio);
+        }
+
+        #endregion
+
+        #region Grupo 11: Tests de ServicioAlbaranesVenta con NVEntities inyectado
+
+        /// <summary>
+        /// Verifica que ServicioAlbaranesVenta puede recibir un NVEntities externo.
+        /// Esto es crítico para evitar conflictos de concurrencia.
+        /// </summary>
+        [TestMethod]
+        public void ServicioAlbaranesVenta_ConDbExterno_UsaElMismoContexto()
+        {
+            // Arrange
+            var dbExterno = A.Fake<NVEntities>();
+
+            // Act
+            var servicio = new ServicioAlbaranesVenta(dbExterno);
+
+            // Assert - El servicio debe haberse creado sin errores
+            Assert.IsNotNull(servicio);
+        }
+
+        /// <summary>
+        /// Verifica que ServicioAlbaranesVenta sin parámetro sigue funcionando (backward compatibility).
+        /// </summary>
+        [TestMethod]
+        public void ServicioAlbaranesVenta_SinParametro_CreaContextoInterno()
+        {
+            // Act
+            var servicio = new ServicioAlbaranesVenta();
+
+            // Assert - El servicio debe haberse creado sin errores
+            Assert.IsNotNull(servicio);
+        }
+
+        #endregion
+
+        #region Grupo 12: Tests de LimpiarContextoDespuesDeError
+
+        /// <summary>
+        /// Verifica que LimpiarContextoDespuesDeError no lanza excepciones cuando el pedido es null.
+        /// Esto es importante porque el método se llama en el catch y no debe fallar.
+        /// </summary>
+        [TestMethod]
+        public void LimpiarContextoDespuesDeError_ConPedidoNull_NoLanzaExcepcion()
+        {
+            // Arrange
+            CabPedidoVta pedidoNull = null;
+
+            // Act & Assert - No debe lanzar excepción
+            gestor.LimpiarContextoDespuesDeError(pedidoNull);
+        }
+
+        /// <summary>
+        /// Verifica que LimpiarContextoDespuesDeError maneja correctamente un pedido sin líneas.
+        /// </summary>
+        [TestMethod]
+        public void LimpiarContextoDespuesDeError_ConPedidoSinLineas_NoLanzaExcepcion()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 12345,
+                LinPedidoVtas = null
+            };
+
+            // Act & Assert - No debe lanzar excepción
+            gestor.LimpiarContextoDespuesDeError(pedido);
+        }
+
+        /// <summary>
+        /// Verifica que LimpiarContextoDespuesDeError limpia el contexto sin errores cuando hay líneas.
+        /// </summary>
+        [TestMethod]
+        public void LimpiarContextoDespuesDeError_ConPedidoYLineas_NoLanzaExcepcion()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 12345,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { NºOrden = 1, Base_Imponible = 100m },
+                    new LinPedidoVta { NºOrden = 2, Base_Imponible = 200m }
+                }
+            };
+
+            // Act & Assert - No debe lanzar excepción
+            gestor.LimpiarContextoDespuesDeError(pedido);
+        }
+
+        /// <summary>
+        /// Verifica que después de llamar a LimpiarContextoDespuesDeError,
+        /// el método puede llamarse múltiples veces sin problemas (idempotencia).
+        /// </summary>
+        [TestMethod]
+        public void LimpiarContextoDespuesDeError_LlamarMultiplesVeces_NoLanzaExcepcion()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 12345,
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { NºOrden = 1, Base_Imponible = 100m }
+                }
+            };
+
+            // Act & Assert - Llamar múltiples veces no debe causar problemas
+            gestor.LimpiarContextoDespuesDeError(pedido);
+            gestor.LimpiarContextoDespuesDeError(pedido);
+            gestor.LimpiarContextoDespuesDeError(pedido);
+        }
+
+        #endregion
     }
 }

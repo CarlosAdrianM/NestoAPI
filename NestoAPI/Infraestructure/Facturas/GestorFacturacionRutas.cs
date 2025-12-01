@@ -234,6 +234,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     System.Diagnostics.Debug.WriteLine($"  ✗ EXCEPCIÓN en pedido {pedido.Número}: {ex.Message}");
                     RegistrarError(pedido, "Proceso general", ex, response);
+
+                    // CRÍTICO: Limpiar el contexto después de un error para evitar que afecte a los siguientes pedidos
+                    // Si no limpiamos, las entidades modificadas por SPs pueden tener RowVersion desactualizado
+                    LimpiarContextoDespuesDeError(pedido);
                 }
             }
 
@@ -1164,6 +1168,58 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 // Si falla el registro en ELMAH, no interrumpir el flujo
                 System.Diagnostics.Debug.WriteLine($"[ELMAH] Error al registrar en ELMAH: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Limpia el contexto de EF después de un error para evitar que entidades "sucias"
+        /// afecten al procesamiento de los siguientes pedidos.
+        /// Cuando un SP modifica datos y luego falla, las entidades en memoria pueden tener
+        /// RowVersion desactualizado, causando errores de concurrencia en operaciones posteriores.
+        /// </summary>
+        internal void LimpiarContextoDespuesDeError(CabPedidoVta pedido)
+        {
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"  → Limpiando contexto después del error para pedido {pedido.Número}");
+
+                // Detach el pedido y sus líneas para que EF "olvide" el estado corrupto
+                if (pedido != null)
+                {
+                    // Detach las líneas primero
+                    if (pedido.LinPedidoVtas != null)
+                    {
+                        foreach (var linea in pedido.LinPedidoVtas.ToList())
+                        {
+                            var entry = db.Entry(linea);
+                            if (entry.State != EntityState.Detached)
+                            {
+                                entry.State = EntityState.Detached;
+                            }
+                        }
+                    }
+
+                    // Detach la cabecera
+                    var cabEntry = db.Entry(pedido);
+                    if (cabEntry.State != EntityState.Detached)
+                    {
+                        cabEntry.State = EntityState.Detached;
+                    }
+                }
+
+                // Limpiar cualquier cambio pendiente en el contexto
+                // Esto evita que SaveChanges intente guardar cambios parciales de la operación fallida
+                foreach (var entry in db.ChangeTracker.Entries().Where(e => e.State != EntityState.Unchanged && e.State != EntityState.Detached).ToList())
+                {
+                    entry.State = EntityState.Detached;
+                }
+
+                System.Diagnostics.Debug.WriteLine($"  ✓ Contexto limpiado correctamente");
+            }
+            catch (Exception ex)
+            {
+                // Si falla la limpieza, solo loggear - no interrumpir el flujo
+                System.Diagnostics.Debug.WriteLine($"  ⚠ Error al limpiar contexto: {ex.Message}");
             }
         }
 

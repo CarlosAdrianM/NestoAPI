@@ -294,6 +294,7 @@
         <AssociationConnector Association="NVModel.FK_ExtractoRuta_Vendedores" />
         <EntityTypeShape EntityType="NVModel.SyncMessageRetry" Width="1.5" PointX="16.375" PointY="4.75" />
         <EntityTypeShape EntityType="NVModel.Entidad" Width="1.5" PointX="3.375" PointY="11.75" />
+        <EntityTypeShape EntityType="NVModel.LinFacturaVtaRectificacion" Width="1.5" PointX="8.375" PointY="17.75" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

@@ -20,7 +20,35 @@ namespace NestoAPI.Infraestructure.Facturas
 {
     public class ServicioFacturas : IServicioFacturas
     {
-        private readonly NVEntities db = new NVEntities();
+        private readonly NVEntities db;
+        private readonly bool dbEsExterno;
+
+        /// <summary>
+        /// Constructor por defecto. Crea su propio NVEntities interno.
+        /// </summary>
+        public ServicioFacturas() : this(null)
+        {
+        }
+
+        /// <summary>
+        /// Constructor que permite inyectar un NVEntities externo.
+        /// Esto es necesario para evitar conflictos de concurrencia cuando se usa
+        /// desde GestorFacturacionRutas, que ya tiene su propio contexto.
+        /// </summary>
+        /// <param name="dbExterno">NVEntities externo. Si es null, se crea uno interno.</param>
+        public ServicioFacturas(NVEntities dbExterno)
+        {
+            if (dbExterno != null)
+            {
+                db = dbExterno;
+                dbEsExterno = true;
+            }
+            else
+            {
+                db = new NVEntities();
+                dbEsExterno = false;
+            }
+        }
 
         public CabFacturaVta CargarCabFactura(string empresa, string numeroFactura)
         {
@@ -295,25 +323,29 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public async Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario)
         {
-            using (NVEntities db = new NVEntities())
+            // Usar el db de la clase (puede ser externo o interno según el constructor)
+            // Esto evita conflictos de concurrencia cuando se llama desde GestorFacturacionRutas
+            string empresaOriginal = empresa;
+            CabPedidoVta cabPedido = db.CabPedidoVtas
+                .Include(p => p.LinPedidoVtas)
+                .Single(p => p.Empresa == empresa && p.Número == pedido);
+
+            if (cabPedido.Periodo_Facturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
             {
-                string empresaOriginal = empresa;
-                CabPedidoVta cabPedido = db.CabPedidoVtas
-                    .Include(p => p.LinPedidoVtas)
-                    .Single(p => p.Empresa == empresa && p.Número == pedido);
-
-                if (cabPedido.Periodo_Facturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
+                // Caso especial: cliente de fin de mes
+                return new CrearFacturaResponseDTO
                 {
-                    // Caso especial: cliente de fin de mes
-                    return new CrearFacturaResponseDTO
-                    {
-                        NumeroFactura = cabPedido.Periodo_Facturacion,
-                        Empresa = empresa,
-                        NumeroPedido = pedido
-                    };
-                }
+                    NumeroFactura = cabPedido.Periodo_Facturacion,
+                    Empresa = empresa,
+                    NumeroPedido = pedido
+                };
+            }
 
-                // Verificar si hay que traspasar a empresa espejo
+            // Verificar si hay que traspasar a empresa espejo
+            // NOTA: Solo traspasar si NO estamos usando db externo (para evitar doble traspaso
+            // cuando se llama desde GestorFacturacionRutas que ya maneja el traspaso)
+            if (!dbEsExterno)
+            {
                 var servicioTraspaso = new Infraestructure.Traspasos.ServicioTraspasoEmpresa(db);
                 if (servicioTraspaso.HayQueTraspasar(cabPedido))
                 {
@@ -333,83 +365,156 @@ namespace NestoAPI.Infraestructure.Facturas
                         .Include(p => p.LinPedidoVtas)
                         .Single(p => p.Empresa == empresa && p.Número == pedido);
                 }
+            }
 
-                if (string.IsNullOrEmpty(cabPedido.IVA))
-                {
-                    throw new FacturacionException(
-                        $"El pedido {pedido} no se puede facturar porque falta configurar el campo IVA en la cabecera del pedido",
-                        "FACTURACION_IVA_FALTANTE",
-                        empresa: empresa,
-                        pedido: pedido,
-                        usuario: usuario);
-                }
+            if (string.IsNullOrEmpty(cabPedido.IVA))
+            {
+                throw new FacturacionException(
+                    $"El pedido {pedido} no se puede facturar porque falta configurar el campo IVA en la cabecera del pedido",
+                    "FACTURACION_IVA_FALTANTE",
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario);
+            }
 
-                // PREVENTIVO: Recalcular líneas ANTES de llamar al stored procedure
-                // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
-                // El recálculo se hace antes porque después del SP (incluso con rollback),
-                // las líneas pueden estar temporalmente en estado 4 y el trigger no permite modificarlas.
-                bool seAplicoAutoFix = await RecalcularLineasPedido(db, cabPedido);
+            // PREVENTIVO: Recalcular líneas ANTES de llamar al stored procedure
+            // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
+            // El recálculo se hace antes porque después del SP (incluso con rollback),
+            // las líneas pueden estar temporalmente en estado 4 y el trigger no permite modificarlas.
+            bool seAplicoAutoFix = await RecalcularLineasPedido(db, cabPedido);
+            if (seAplicoAutoFix)
+            {
+                System.Diagnostics.Debug.WriteLine($"  → AUTO-FIX PREVENTIVO aplicado para pedido {pedido}");
+            }
+
+            try
+            {
+                System.Diagnostics.Debug.WriteLine($"  → Ejecutando prdCrearFacturaVta para pedido {pedido}");
+
+                SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char) { Value = empresa };
+                SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int) { Value = pedido };
+                SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime) { Value = DateTime.Today };
+                SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char) { Value = usuario };
+                SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) { Direction = ParameterDirection.Output };
+
+                // Ejecutar el procedimiento almacenado
+                _ = await db.Database.ExecuteSqlCommandAsync(
+                    "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
+                    empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
+                );
+
+                // Obtener el valor de retorno del parámetro
+                string resultadoProcedimiento = numFactura.Value.ToString().Trim();
+
                 if (seAplicoAutoFix)
                 {
-                    System.Diagnostics.Debug.WriteLine($"  → AUTO-FIX PREVENTIVO aplicado para pedido {pedido}");
+                    System.Diagnostics.Debug.WriteLine($"  ✓ AUTO-FIX PREVENTIVO EXITOSO: Factura {resultadoProcedimiento} creada tras recalcular líneas");
                 }
 
-                try
+                // Persistir datos fiscales del cliente principal en la factura (Verifactu)
+                await PersistirDatosFiscalesFactura(empresa, resultadoProcedimiento, cabPedido);
+
+                return new CrearFacturaResponseDTO
                 {
-                    System.Diagnostics.Debug.WriteLine($"  → Ejecutando prdCrearFacturaVta para pedido {pedido}");
-
-                    SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char) { Value = empresa };
-                    SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int) { Value = pedido };
-                    SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime) { Value = DateTime.Today };
-                    SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char) { Value = usuario };
-                    SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) { Direction = ParameterDirection.Output };
-
-                    // Ejecutar el procedimiento almacenado
-                    _ = await db.Database.ExecuteSqlCommandAsync(
-                        "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
-                        empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
-                    );
-
-                    // Obtener el valor de retorno del parámetro
-                    string resultadoProcedimiento = numFactura.Value.ToString().Trim();
-
-                    if (seAplicoAutoFix)
-                    {
-                        System.Diagnostics.Debug.WriteLine($"  ✓ AUTO-FIX PREVENTIVO EXITOSO: Factura {resultadoProcedimiento} creada tras recalcular líneas");
-                    }
-
-                    return new CrearFacturaResponseDTO
-                    {
-                        NumeroFactura = resultadoProcedimiento,
-                        Empresa = empresa,
-                        NumeroPedido = pedido
-                    };
-                }
-                catch (SqlException sqlEx)
-                {
-                    throw new FacturacionException(
-                        $"Error al ejecutar el procedimiento almacenado de facturación: {sqlEx.Message}",
-                        "FACTURACION_STORED_PROCEDURE_ERROR",
-                        sqlEx,
-                        empresa: empresa,
-                        pedido: pedido,
-                        usuario: usuario)
-                        .WithData("SqlErrorNumber", sqlEx.Number)
-                        .WithData("StoredProcedure", "prdCrearFacturaVta")
-                        .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
-                }
-                catch (Exception ex)
-                {
-                    throw new FacturacionException(
-                        $"Error inesperado al crear la factura del pedido {pedido}: {ex.Message}",
-                        "FACTURACION_ERROR_INESPERADO",
-                        ex,
-                        empresa: empresa,
-                        pedido: pedido,
-                        usuario: usuario)
-                        .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
-                }
+                    NumeroFactura = resultadoProcedimiento,
+                    Empresa = empresa,
+                    NumeroPedido = pedido
+                };
             }
+            catch (SqlException sqlEx)
+            {
+                throw new FacturacionException(
+                    $"Error al ejecutar el procedimiento almacenado de facturación: {sqlEx.Message}",
+                    "FACTURACION_STORED_PROCEDURE_ERROR",
+                    sqlEx,
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario)
+                    .WithData("SqlErrorNumber", sqlEx.Number)
+                    .WithData("StoredProcedure", "prdCrearFacturaVta")
+                    .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
+            }
+            catch (Exception ex)
+            {
+                throw new FacturacionException(
+                    $"Error inesperado al crear la factura del pedido {pedido}: {ex.Message}",
+                    "FACTURACION_ERROR_INESPERADO",
+                    ex,
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario)
+                    .WithData("SeAplicoAutoFixPreventivo", seAplicoAutoFix);
+            }
+        }
+
+        /// <summary>
+        /// Persiste los datos fiscales del cliente principal en la factura.
+        /// Esto es necesario para Verifactu: los datos fiscales deben quedar grabados
+        /// en el momento de la facturación, independientemente de cambios posteriores en el cliente.
+        /// </summary>
+        /// <param name="empresa">Empresa de la factura</param>
+        /// <param name="numeroFactura">Número de la factura recién creada</param>
+        /// <param name="cabPedido">Cabecera del pedido con TipoRectificativa</param>
+        private async Task PersistirDatosFiscalesFactura(string empresa, string numeroFactura, CabPedidoVta cabPedido)
+        {
+            // Obtener la factura recién creada
+            var factura = await db.CabsFacturasVtas
+                .FirstOrDefaultAsync(f => f.Empresa == empresa && f.Número == numeroFactura);
+
+            if (factura == null)
+            {
+                throw new FacturacionException(
+                    $"No se encontró la factura {numeroFactura} recién creada para guardar los datos fiscales",
+                    "FACTURACION_FACTURA_NO_ENCONTRADA",
+                    empresa: empresa,
+                    pedido: cabPedido.Número,
+                    usuario: cabPedido.Usuario);
+            }
+
+            // Buscar el cliente principal (datos fiscales)
+            var clientesPrincipales = await db.Clientes
+                .Where(c => c.Empresa == empresa
+                    && c.Nº_Cliente == factura.Nº_Cliente
+                    && c.ClientePrincipal)
+                .ToListAsync();
+
+            if (clientesPrincipales.Count == 0)
+            {
+                throw new FacturacionException(
+                    $"No se encontró el cliente principal para el cliente {factura.Nº_Cliente}. " +
+                    "Debe existir un contacto con ClientePrincipal = true para poder facturar.",
+                    "FACTURACION_CLIENTE_PRINCIPAL_NO_ENCONTRADO",
+                    empresa: empresa,
+                    pedido: cabPedido.Número,
+                    usuario: cabPedido.Usuario);
+            }
+
+            if (clientesPrincipales.Count > 1)
+            {
+                var contactos = string.Join(", ", clientesPrincipales.Select(c => c.Contacto?.Trim()));
+                throw new FacturacionException(
+                    $"El cliente {factura.Nº_Cliente} tiene {clientesPrincipales.Count} contactos marcados como ClientePrincipal. " +
+                    $"Solo debe haber uno. Contactos: {contactos}",
+                    "FACTURACION_MULTIPLES_CLIENTES_PRINCIPALES",
+                    empresa: empresa,
+                    pedido: cabPedido.Número,
+                    usuario: cabPedido.Usuario);
+            }
+
+            var clientePrincipal = clientesPrincipales.Single();
+
+            // Guardar datos fiscales en la factura
+            factura.NombreFiscal = clientePrincipal.Nombre?.Trim();
+            factura.CifNif = clientePrincipal.CIF_NIF?.Trim();
+            factura.DireccionFiscal = clientePrincipal.Dirección?.Trim();
+            factura.CodPostalFiscal = clientePrincipal.CodPostal?.Trim();
+            factura.PoblacionFiscal = clientePrincipal.Población?.Trim();
+            factura.ProvinciaFiscal = clientePrincipal.Provincia?.Trim();
+
+            // Copiar tipo rectificativa del pedido
+            factura.TipoRectificativa = cabPedido.TipoRectificativa;
+
+            await db.SaveChangesAsync();
         }
 
         /// <summary>
@@ -437,10 +542,19 @@ namespace NestoAPI.Infraestructure.Facturas
             // ImporteIVA, ImporteRE y Total NO se redondean (se guardan con más precisión).
             // El redondeo final a 2 decimales se hace al sumar en la factura, no línea a línea.
             //
-            // Fórmulas (deben coincidir exactamente con C#):
-            //   baseImponible = ROUND(bruto - importeDescuento, 2)
+            // Carlos 01/12/25: El SP prdCrearFacturaVta calcula los descuentos redondeando cada uno por separado:
+            //   @ImpDtoProducto = sum(round(Bruto*DescuentoProducto,2))
+            //   @ImpDtoCliente = sum(round(bruto*(1-(1-descuentoProducto)*(1-descuentoCliente)),2)) - @ImpDtoProducto
+            //   etc.
+            // Esto puede diferir en 0,01 de nuestra fórmula que redondea al final.
+            // Para evitar descuadres en el asiento, calculamos ImporteDto de forma coherente con el SP
+            // y ajustamos BaseImponible = Bruto - ImporteDto (en lugar de redondear la resta).
+            //
+            // Fórmulas (coherentes con el SP):
+            //   importeDto = ROUND(bruto * sumaDescuentos, 2)  -- igual que el SP
+            //   baseImponible = bruto - importeDto             -- sin redondeo adicional, para que cuadre
             //   importeIVA = baseImponible * PorcentajeIVA / 100  (sin redondear)
-            //   importeRE = baseImponible * PorcentajeRE          (sin redondear, PorcentajeRE ya está en formato 0.052)
+            //   importeRE = baseImponible * PorcentajeRE          (sin redondear)
             //   total = baseImponible + importeIVA + importeRE    (sin redondear)
             // Estados de línea: -1=Pendiente, 1=En curso, 2=Albarán (las que se facturan)
             // No incluimos estado 4 (Facturado) porque el trigger no permite modificarlas
@@ -448,12 +562,19 @@ namespace NestoAPI.Infraestructure.Facturas
                 ;WITH BaseCalculada AS (
                     SELECT
                         l.[Nº Orden],
-                        ROUND(l.Bruto - (l.Bruto *
+                        l.Bruto,
+                        ROUND(l.Bruto *
                             CASE WHEN l.[Aplicar Dto] = 1
                                 THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
                                 ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
                             END
-                        ), 2) AS NuevaBI
+                        , 2) AS NuevoImporteDto,
+                        l.Bruto - ROUND(l.Bruto *
+                            CASE WHEN l.[Aplicar Dto] = 1
+                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                            END
+                        , 2) AS NuevaBI
                     FROM LinPedidoVta l
                     WHERE l.Empresa = @empresa
                       AND l.Número = @numero
@@ -462,6 +583,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 UPDATE l
                 SET
                     [Base Imponible] = bc.NuevaBI,
+                    ImporteDto = bc.NuevoImporteDto,
                     ImporteIVA = bc.NuevaBI * l.PorcentajeIVA / 100.0,
                     ImporteRE = bc.NuevaBI * l.PorcentajeRE,
                     Total = bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE)
@@ -471,8 +593,10 @@ namespace NestoAPI.Infraestructure.Facturas
                   AND l.Número = @numero
                   AND l.Estado BETWEEN -1 AND 2
                   AND (
-                      -- Detectar diferencia en Base Imponible
+                      -- Detectar diferencia en Base Imponible o ImporteDto (coherencia con SP)
                       ABS(l.[Base Imponible] - bc.NuevaBI) > 0.001
+                      OR
+                      ABS(l.ImporteDto - bc.NuevoImporteDto) > 0.001
                       OR
                       -- Detectar diferencia en ImporteIVA
                       ABS(l.ImporteIVA - (bc.NuevaBI * l.PorcentajeIVA / 100.0)) > 0.001

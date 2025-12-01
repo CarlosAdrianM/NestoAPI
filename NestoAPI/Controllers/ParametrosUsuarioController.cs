@@ -79,13 +79,12 @@ namespace NestoAPI.Controllers
         {
             NVEntities db = new NVEntities();
             ParametroUsuario parametroUsuario;
-            string usuarioParametro = usuario.Substring(usuario.IndexOf("\\") + 1);
+            string usuarioParametro = usuario.Substring(usuario.IndexOf("\\") + 1).Trim();
             if (usuarioParametro != null)
             {
-                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario == usuarioParametro && p.Clave == clave);
+                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario.Trim() == usuarioParametro && p.Clave == clave);
                 return parametroUsuario?.Valor?.Trim();
             }
-            ;
 
             return "";
         }

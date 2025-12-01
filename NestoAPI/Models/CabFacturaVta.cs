@@ -40,6 +40,18 @@ namespace NestoAPI.Models
         public short EstadoCliente { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
+        public string NombreFiscal { get; set; }
+        public string CifNif { get; set; }
+        public string DireccionFiscal { get; set; }
+        public string CodPostalFiscal { get; set; }
+        public string PoblacionFiscal { get; set; }
+        public string ProvinciaFiscal { get; set; }
+        public string VerifactuUUID { get; set; }
+        public string VerifactuHuella { get; set; }
+        public string VerifactuQR { get; set; }
+        public string VerifactuURL { get; set; }
+        public string VerifactuEstado { get; set; }
+        public string TipoRectificativa { get; set; }
     
         public virtual CCC CCC1 { get; set; }
         public virtual Cliente Cliente { get; set; }

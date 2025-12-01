@@ -2,11 +2,7 @@
 using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.OAuth;
 using NestoAPI.Infraestructure;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Security.Claims;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Providers
@@ -16,7 +12,7 @@ namespace NestoAPI.Providers
 
         public override Task ValidateClientAuthentication(OAuthValidateClientAuthenticationContext context)
         {
-            context.Validated();
+            _ = context.Validated();
             return Task.FromResult<object>(null);
         }
 
@@ -46,7 +42,7 @@ namespace NestoAPI.Providers
 
             var ticket = new AuthenticationTicket(oAuthIdentity, null);
 
-            context.Validated(ticket);
+            _ = context.Validated(ticket);
 
         }
     }

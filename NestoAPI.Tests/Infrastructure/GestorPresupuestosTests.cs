@@ -639,5 +639,6 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, almacenes.Count,
                 "NO debería haber almacenes con reservas si no hay stock disponible en otros almacenes");
         }
+
     }
 }

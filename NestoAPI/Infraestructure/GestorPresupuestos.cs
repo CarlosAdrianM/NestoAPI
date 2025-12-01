@@ -422,36 +422,12 @@ namespace NestoAPI.Infraestructure
                 _ = s.AppendLine($"<td colspan='{colspanNotas}'>{textoServirMantener.Trim()}</td>");
                 _ = s.AppendLine("</tr>");
             }
-            if (pedido.CreadoSinPasarValidacion)
+            // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
+            int colspanValidacion = hayLineasConReservas ? 8 : 7;
+            string htmlValidacion = GenerarHtmlSeccionValidacion(pedido.CreadoSinPasarValidacion, respuestaValidacion, colspanValidacion);
+            if (!string.IsNullOrEmpty(htmlValidacion))
             {
-                _ = s.AppendLine("<tr style=\"color: red;\">");
-                int colspanValidacion = hayLineasConReservas ? 8 : 7;
-                if (respuestaValidacion != null)
-                {
-                    if (!respuestaValidacion.ValidacionSuperada)
-                    {
-                        // La validación actual NO pasa - mostrar el motivo del error
-                        string motivo = !string.IsNullOrEmpty(respuestaValidacion.Motivo) ?
-                            respuestaValidacion.Motivo :
-                            (respuestaValidacion.Motivos != null && respuestaValidacion.Motivos.Any() ?
-                                string.Join("<br/>• ", respuestaValidacion.Motivos.Select(m => m)) :
-                                "Error de validación no especificado");
-                        _ = s.AppendLine($"<td colspan='{colspanValidacion}'>Nota: pedido creado sin pasar validación (actualmente NO pasaría la validación)<br/><strong>Motivo:</strong><br/>• {motivo.Replace(Environment.NewLine, "<br/>• ")}</td>");
-                    }
-                    else
-                    {
-                        // La validación actual SÍ pasa - informar que ahora pasaría
-                        string motivo = !string.IsNullOrEmpty(respuestaValidacion.Motivo) ?
-                            respuestaValidacion.Motivo :
-                            "El pedido ahora pasaría las validaciones correctamente";
-                        _ = s.AppendLine($"<td colspan='{colspanValidacion}'>Nota: pedido creado sin pasar validación (actualmente pasaría la validación)<br/><strong>Info:</strong> {motivo.Replace(Environment.NewLine, "<br/>")}</td>");
-                    }
-                }
-                else
-                {
-                    _ = s.AppendLine($"<td colspan='{colspanValidacion}'>Nota: pedido creado sin pasar validación (respuestaValidacion es null)</td>");
-                }
-                _ = s.AppendLine("</tr>");
+                _ = s.Append(htmlValidacion);
             }
             _ = s.AppendLine("</tbody>");
             _ = s.AppendLine("</table>");
@@ -886,6 +862,54 @@ namespace NestoAPI.Infraestructure
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        /// Carlos 01/12/25: Método interno para generar el HTML de la sección de validación (Issue #48)
+        /// Extraído para poder testear que la respuestaValidacion se muestra correctamente
+        /// </summary>
+        /// <param name="creadoSinPasarValidacion">Si el pedido fue creado sin pasar validación</param>
+        /// <param name="respuesta">La respuesta de validación (puede ser null)</param>
+        /// <param name="colspan">Número de columnas para el colspan</param>
+        /// <returns>HTML de la sección de validación, o string vacío si no aplica</returns>
+        internal string GenerarHtmlSeccionValidacion(bool creadoSinPasarValidacion, RespuestaValidacion respuesta, int colspan)
+        {
+            if (!creadoSinPasarValidacion)
+            {
+                return string.Empty;
+            }
+
+            StringBuilder s = new StringBuilder();
+            _ = s.AppendLine("<tr style=\"color: red;\">");
+
+            if (respuesta != null)
+            {
+                if (!respuesta.ValidacionSuperada)
+                {
+                    // La validación actual NO pasa - mostrar el motivo del error
+                    string motivo = !string.IsNullOrEmpty(respuesta.Motivo) ?
+                        respuesta.Motivo :
+                        (respuesta.Motivos != null && respuesta.Motivos.Any() ?
+                            string.Join("<br/>• ", respuesta.Motivos.Select(m => m)) :
+                            "Error de validación no especificado");
+                    _ = s.AppendLine($"<td colspan='{colspan}'>Nota: pedido creado sin pasar validación (actualmente NO pasaría la validación)<br/><strong>Motivo:</strong><br/>• {motivo.Replace(Environment.NewLine, "<br/>• ")}</td>");
+                }
+                else
+                {
+                    // La validación actual SÍ pasa - informar que ahora pasaría
+                    string motivo = !string.IsNullOrEmpty(respuesta.Motivo) ?
+                        respuesta.Motivo :
+                        "El pedido ahora pasaría las validaciones correctamente";
+                    _ = s.AppendLine($"<td colspan='{colspan}'>Nota: pedido creado sin pasar validación (actualmente pasaría la validación)<br/><strong>Info:</strong> {motivo.Replace(Environment.NewLine, "<br/>")}</td>");
+                }
+            }
+            else
+            {
+                _ = s.AppendLine($"<td colspan='{colspan}'>Nota: pedido creado sin pasar validación (respuestaValidacion es null)</td>");
+            }
+
+            _ = s.AppendLine("</tr>");
+            return s.ToString();
         }
 
         public void Rellenar(int numeroPedido)

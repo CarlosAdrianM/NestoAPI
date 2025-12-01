@@ -150,6 +150,18 @@
           <Property Name="EstadoCliente" Type="smallint" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+          <Property Name="NombreFiscal" Type="nvarchar" MaxLength="100" />
+          <Property Name="CifNif" Type="varchar" MaxLength="20" />
+          <Property Name="DireccionFiscal" Type="nvarchar" MaxLength="200" />
+          <Property Name="CodPostalFiscal" Type="varchar" MaxLength="10" />
+          <Property Name="PoblacionFiscal" Type="nvarchar" MaxLength="100" />
+          <Property Name="ProvinciaFiscal" Type="varchar" MaxLength="50" />
+          <Property Name="VerifactuUUID" Type="varchar" MaxLength="50" />
+          <Property Name="VerifactuHuella" Type="varchar" MaxLength="100" />
+          <Property Name="VerifactuQR" Type="nvarchar(max)" />
+          <Property Name="VerifactuURL" Type="varchar" MaxLength="500" />
+          <Property Name="VerifactuEstado" Type="varchar" MaxLength="50" />
+          <Property Name="TipoRectificativa" Type="char" MaxLength="2" />
         </EntityType>
         <EntityType Name="CabPedidoCmp">
           <Key>
@@ -212,6 +224,7 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
+          <Property Name="TipoRectificativa" Type="char" MaxLength="2" />
         </EntityType>
         <EntityType Name="CabRemesaPagos">
           <Key>
@@ -1022,6 +1035,21 @@
           <Property Name="Cantidad" Type="smallint" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="LinFacturaVtaRectificacion">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NumeroFactura" />
+            <PropertyRef Name="NumeroLinea" />
+            <PropertyRef Name="FacturaOriginalNumero" />
+            <PropertyRef Name="FacturaOriginalLinea" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="1" Nullable="false" />
+          <Property Name="NumeroFactura" Type="varchar" MaxLength="15" Nullable="false" />
+          <Property Name="NumeroLinea" Type="int" Nullable="false" />
+          <Property Name="FacturaOriginalNumero" Type="varchar" MaxLength="15" Nullable="false" />
+          <Property Name="FacturaOriginalLinea" Type="int" Nullable="false" />
+          <Property Name="CantidadRectificada" Type="decimal" Precision="18" Scale="4" Nullable="false" />
         </EntityType>
         <EntityType Name="LinPedidoCmp">
           <Key>
@@ -5019,6 +5047,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="Inventarios" EntityType="Self.Inventarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="InventariosCuadre" EntityType="Self.InventariosCuadre" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Kits" EntityType="Self.Kits" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="LinFacturaVtaRectificacion" EntityType="Self.LinFacturaVtaRectificacion" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoCmp" EntityType="Self.LinPedidoCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LogVideosProductos" EntityType="Self.LogVideosProductos" Schema="dbo" store:Type="Tables" />
@@ -7030,6 +7059,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="NotasEntregas" EntityType="NVModel.NotaEntrega" />
           <EntitySet Name="SyncMessageRetries" EntityType="NVModel.SyncMessageRetry" />
           <EntitySet Name="Entidades" EntityType="NVModel.Entidad" />
+          <EntitySet Name="LinFacturaVtaRectificaciones" EntityType="NVModel.LinFacturaVtaRectificacion" />
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -7256,6 +7286,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="EnviosAgencias" Relationship="NVModel.FK_EnviosAgencia_CabPedidoVta" FromRole="CabPedidoVta" ToRole="EnviosAgencia" />
           <NavigationProperty Name="Prepagos" Relationship="NVModel.FK_Prepagos_CabPedidoVta" FromRole="CabPedidoVta" ToRole="Prepago" />
           <NavigationProperty Name="EfectosPedidoVentas" Relationship="NVModel.FK_EfectosPedidoVenta_CabPedidoVta" FromRole="CabPedidoVta" ToRole="EfectosPedidoVenta" />
+          <Property Name="TipoRectificativa" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
         </EntityType>
         <EntityType Name="LinPedidoVta">
           <Key>
@@ -10765,6 +10796,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="PlazosPago1" Relationship="NVModel.FK_CabFacturaVta_PlazosPago" FromRole="CabFacturaVta" ToRole="PlazoPago" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_CabFacturaVta_Vendedores" FromRole="CabFacturaVta" ToRole="Vendedor" />
           <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_CabFacturaVta" FromRole="CabFacturaVta" ToRole="LinPedidoVta" />
+          <Property Name="NombreFiscal" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="CifNif" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="DireccionFiscal" Type="String" MaxLength="200" FixedLength="false" Unicode="true" />
+          <Property Name="CodPostalFiscal" Type="String" MaxLength="10" FixedLength="false" Unicode="false" />
+          <Property Name="PoblacionFiscal" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="ProvinciaFiscal" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="VerifactuUUID" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="VerifactuHuella" Type="String" MaxLength="100" FixedLength="false" Unicode="false" />
+          <Property Name="VerifactuQR" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="VerifactuURL" Type="String" MaxLength="500" FixedLength="false" Unicode="false" />
+          <Property Name="VerifactuEstado" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="TipoRectificativa" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
         </EntityType>
         <Association Name="FK_CabFacturaVta_CCC">
           <End Type="NVModel.CCC" Role="CCC" Multiplicity="0..1" />
@@ -12399,6 +12442,21 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
         </EntityType>
+        <EntityType Name="LinFacturaVtaRectificacion">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="NumeroFactura" />
+            <PropertyRef Name="NumeroLinea" />
+            <PropertyRef Name="FacturaOriginalNumero" />
+            <PropertyRef Name="FacturaOriginalLinea" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="1" FixedLength="true" Unicode="false" />
+          <Property Name="NumeroFactura" Type="String" Nullable="false" MaxLength="15" FixedLength="false" Unicode="false" />
+          <Property Name="NumeroLinea" Type="Int32" Nullable="false" />
+          <Property Name="FacturaOriginalNumero" Type="String" Nullable="false" MaxLength="15" FixedLength="false" Unicode="false" />
+          <Property Name="FacturaOriginalLinea" Type="Int32" Nullable="false" />
+          <Property Name="CantidadRectificada" Type="Decimal" Nullable="false" Precision="18" Scale="4" />
+        </EntityType>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -12543,6 +12601,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="CabPedidoVtas">
             <EntityTypeMapping TypeName="NVModel.CabPedidoVta">
               <MappingFragment StoreEntitySet="CabPedidoVta">
+                <ScalarProperty Name="TipoRectificativa" ColumnName="TipoRectificativa" />
                 <ScalarProperty Name="RowVersion" ColumnName="RowVersion" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
@@ -13700,6 +13759,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="CabsFacturasVtas">
             <EntityTypeMapping TypeName="NVModel.CabFacturaVta">
               <MappingFragment StoreEntitySet="CabFacturaVta">
+                <ScalarProperty Name="TipoRectificativa" ColumnName="TipoRectificativa" />
+                <ScalarProperty Name="VerifactuEstado" ColumnName="VerifactuEstado" />
+                <ScalarProperty Name="VerifactuURL" ColumnName="VerifactuURL" />
+                <ScalarProperty Name="VerifactuQR" ColumnName="VerifactuQR" />
+                <ScalarProperty Name="VerifactuHuella" ColumnName="VerifactuHuella" />
+                <ScalarProperty Name="VerifactuUUID" ColumnName="VerifactuUUID" />
+                <ScalarProperty Name="ProvinciaFiscal" ColumnName="ProvinciaFiscal" />
+                <ScalarProperty Name="PoblacionFiscal" ColumnName="PoblacionFiscal" />
+                <ScalarProperty Name="CodPostalFiscal" ColumnName="CodPostalFiscal" />
+                <ScalarProperty Name="DireccionFiscal" ColumnName="DireccionFiscal" />
+                <ScalarProperty Name="CifNif" ColumnName="CifNif" />
+                <ScalarProperty Name="NombreFiscal" ColumnName="NombreFiscal" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="EstadoCliente" ColumnName="EstadoCliente" />
@@ -14272,6 +14343,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Descripción" ColumnName="Descripción" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="LinFacturaVtaRectificaciones">
+            <EntityTypeMapping TypeName="NVModel.LinFacturaVtaRectificacion">
+              <MappingFragment StoreEntitySet="LinFacturaVtaRectificacion">
+                <ScalarProperty Name="CantidadRectificada" ColumnName="CantidadRectificada" />
+                <ScalarProperty Name="FacturaOriginalLinea" ColumnName="FacturaOriginalLinea" />
+                <ScalarProperty Name="FacturaOriginalNumero" ColumnName="FacturaOriginalNumero" />
+                <ScalarProperty Name="NumeroLinea" ColumnName="NumeroLinea" />
+                <ScalarProperty Name="NumeroFactura" ColumnName="NumeroFactura" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

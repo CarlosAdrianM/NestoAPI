@@ -200,8 +200,15 @@ The application uses `RoundingHelper` for all decimal rounding operations:
 - **Default mode**: `AwayFromZero` (commercial rounding, compliant with Spanish legislation)
 - **Rollback**: Set `RoundingHelper.UsarAwayFromZero = false` to revert to VB6-style `ToEven` rounding
 - **SQL Server**: Uses `ROUND()` which is already AwayFromZero - no changes needed
-- **Auto-fix preventivo**: `ServicioFacturas.CrearFactura()` recalcula las líneas del pedido ANTES de llamar al stored procedure de facturación. Esto previene errores de descuadre causados por diferencias de redondeo entre C# y Nesto viejo (VB6). El fix se loguea a ELMAH para diagnóstico.
-- **Cálculo correcto de líneas**: Solo `BaseImponible` se redondea a 2 decimales. `ImporteIVA`, `ImporteRE` y `Total` mantienen precisión completa (se redondean al sumar en la factura, no línea a línea).
+- **Auto-fix preventivo**: `ServicioFacturas.CrearFactura()` recalcula las líneas del pedido ANTES de llamar al stored procedure de facturación. Esto previene errores de descuadre causados por diferencias de redondeo entre C# y el SP `prdCrearFacturaVta`. El fix se loguea a ELMAH para diagnóstico.
+- **Cálculo correcto de líneas (coherente con SP)**:
+  - `ImporteDto = ROUND(Bruto * SumaDescuentos, 2)` - Se redondea primero el descuento
+  - `BaseImponible = Bruto - ImporteDto` - Sin redondeo adicional, para que cuadre con el SP
+  - `ImporteIVA = BaseImponible * PorcentajeIVA / 100` - Sin redondear (precisión completa)
+  - `ImporteRE = BaseImponible * PorcentajeRE` - Sin redondear (precisión completa)
+  - `Total = BaseImponible + ImporteIVA + ImporteRE` - Sin redondear (precisión completa)
+  - El redondeo final a 2 decimales se hace al sumar en la factura, no línea a línea.
+- **Importante**: El SP `prdCrearFacturaVta` calcula los descuentos como `ROUND(Bruto*Descuento, 2)` y luego calcula el IVA sobre la base resultante. El auto-fix debe usar la misma lógica para evitar descuadres en el asiento contable.
 
 Related files:
 - `RoundingHelper.cs` - Rounding logic with configurable mode

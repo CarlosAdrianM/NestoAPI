@@ -609,6 +609,11 @@
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
     <Compile Include="Infraestructure\SincronizacionJobsService.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
+    <Compile Include="Infraestructure\Verifactu\IServicioVerifactu.cs" />
+    <Compile Include="Infraestructure\Verifactu\VerifactuFacturaRequest.cs" />
+    <Compile Include="Infraestructure\Verifactu\VerifactuResponse.cs" />
+    <Compile Include="Infraestructure\Verifactu\Verifacti\ServicioVerifacti.cs" />
+    <Compile Include="Infraestructure\Verifactu\Verifacti\VerifactiDTOs.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
     <Compile Include="Infraestructure\ServicioCorreoElectronico.cs" />
@@ -656,6 +661,9 @@
     <Compile Include="Models\Facturas\RegistroSeriesVerifactu.cs" />
     <Compile Include="Models\Facturas\SeriesFactura\SerieRC.cs" />
     <Compile Include="Models\Facturas\SeriesFactura\SerieRV.cs" />
+    <Compile Include="Models\LinFacturaVtaRectificacion.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\NestoSyncRecord.cs" />
     <Compile Include="Models\AgenciaLlamadaWeb.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

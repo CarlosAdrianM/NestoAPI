@@ -1,7 +1,25 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(gh issue close:*)",
+      "Bash(gh issue create:*)",
+      "WebFetch(domain:api.github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(gh issue view:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue comment:*)",
+      "Bash(dotnet test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(vstest.console.exe:*)",
+      "Bash(timeout 120 dotnet test:*)",
+      "Bash(find:*)",
+      "Bash(dotnet build:*)",
+      "WebFetch(domain:api.verifacti.com)",
+      "WebSearch",
+      "WebFetch(domain:www.verifacti.com)"
     ],
     "deny": [],
     "ask": []

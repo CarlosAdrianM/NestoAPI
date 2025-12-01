@@ -152,8 +152,10 @@ namespace NestoAPI.Controllers
                 }
 
                 // 2. Procesar facturación
-                var servicioAlbaranes = new ServicioAlbaranesVenta();
-                var servicioFacturas = new ServicioFacturas();
+                // IMPORTANTE: Pasar el db a TODOS los servicios para evitar conflictos de concurrencia
+                // Cada servicio que ejecuta SPs o modifica datos debe usar el MISMO contexto
+                var servicioAlbaranes = new ServicioAlbaranesVenta(db);
+                var servicioFacturas = new ServicioFacturas(db);
                 var gestorFacturas = new GestorFacturas(servicioFacturas);
                 var servicioTraspaso = new ServicioTraspasoEmpresa(db);
                 var servicioNotasEntrega = new ServicioNotasEntrega(db);
@@ -225,8 +227,9 @@ namespace NestoAPI.Controllers
                 }
 
                 // 2. Generar preview (NO crea nada)
-                var servicioAlbaranes = new ServicioAlbaranesVenta();
-                var servicioFacturas = new ServicioFacturas();
+                // IMPORTANTE: Pasar el db a TODOS los servicios para consistencia con FacturarRutas
+                var servicioAlbaranes = new ServicioAlbaranesVenta(db);
+                var servicioFacturas = new ServicioFacturas(db);
                 var gestorFacturas = new GestorFacturas(servicioFacturas);
                 var servicioTraspaso = new ServicioTraspasoEmpresa(db);
                 var servicioNotasEntrega = new ServicioNotasEntrega(db);
