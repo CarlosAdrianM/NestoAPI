@@ -866,6 +866,31 @@ namespace NestoAPI.Controllers
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 
+            // Carlos 02/12/25: Red de seguridad - cargar ParametrosIva si no viene para que el correo muestre IVA correcto (Issue #46)
+            if (pedido.iva != null && (pedido.ParametrosIva == null || !pedido.ParametrosIva.Any()))
+            {
+                var parametros = db.ParametrosIVA
+                    .Where(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva)
+                    .Select(p => new ParametrosIvaBase
+                    {
+                        CodigoIvaProducto = p.IVA_Producto.Trim(),
+                        PorcentajeIvaProducto = (decimal)p.C__IVA / 100,
+                        PorcentajeRecargoEquivalencia = (decimal)p.C__RE / 100
+                    });
+                pedido.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
+
+                // Recalcular porcentajes en las líneas para el correo
+                foreach (var linea in pedido.Lineas.Where(l => !string.IsNullOrEmpty(l.iva)))
+                {
+                    var parametro = pedido.ParametrosIva.SingleOrDefault(p => p.CodigoIvaProducto == l.iva.Trim());
+                    if (parametro != null)
+                    {
+                        linea.PorcentajeIva = parametro.PorcentajeIvaProducto;
+                        linea.PorcentajeRecargoEquivalencia = parametro.PorcentajeRecargoEquivalencia;
+                    }
+                }
+            }
+
             // Carlos 01/12/25: Pasar respuestaValidacion al GestorPresupuestos para incluirla en el correo (Issue #48)
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion);
             await gestor.EnviarCorreo("Modificación");
@@ -1017,11 +1042,9 @@ namespace NestoAPI.Controllers
                 {
                     linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
                 }
-                if (linea.almacen != Constantes.Productos.ALMACEN_POR_DEFECTO)
-                {
-                    linea.vistoBueno = true;
-                    //linea.fechaEntrega = DateTime.Today;
-                }
+                // Carlos 02/12/25: VistoBueno siempre true para evitar bloqueos en tiendas (Issue #45)
+                // Solución temporal mientras se define la lógica definitiva
+                linea.vistoBueno = true;
                 linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
                 //linea.BaseImponible = linPedido.Base_Imponible;
                 if (linea.GrupoProducto != linPedido.Grupo)

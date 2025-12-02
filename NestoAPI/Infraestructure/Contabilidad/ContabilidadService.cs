@@ -136,10 +136,23 @@ namespace NestoAPI.Infraestructure.Contabilidad
                         }
                         return resultado;
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        transaction.Rollback();
-                        return 0;
+                        // Carlos 02/12/25: Verificar estado de conexión antes de rollback (Issue #47)
+                        // El rollback puede fallar si la conexión ya está cerrada (timeout, error de red, etc.)
+                        try
+                        {
+                            if (db.Database.Connection.State == ConnectionState.Open)
+                            {
+                                transaction.Rollback();
+                            }
+                        }
+                        catch
+                        {
+                            // Ignorar errores en rollback - la transacción se revertirá automáticamente
+                            // cuando se cierre la conexión o expire el timeout
+                        }
+                        throw new Exception("Error al contabilizar el diario. Inténtelo de nuevo.", ex);
                     }
                 }
             }
