@@ -52,7 +52,9 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public CabFacturaVta CargarCabFactura(string empresa, string numeroFactura)
         {
-            return db.CabsFacturasVtas.SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroFactura);
+            return db.CabsFacturasVtas
+                .Include(c => c.LinPedidoVtas)
+                .SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroFactura);
         }
 
         public CabPedidoVta CargarCabPedido(string empresa, int numeroPedido)
@@ -452,28 +454,31 @@ namespace NestoAPI.Infraestructure.Facturas
         /// Esto es necesario para Verifactu: los datos fiscales deben quedar grabados
         /// en el momento de la facturación, independientemente de cambios posteriores en el cliente.
         /// </summary>
-        /// <param name="empresa">Empresa de la factura</param>
+        /// <param name="empresaFactura">Empresa de la factura (puede ser empresa espejo por traspaso)</param>
         /// <param name="numeroFactura">Número de la factura recién creada</param>
         /// <param name="cabPedido">Cabecera del pedido con TipoRectificativa</param>
-        private async Task PersistirDatosFiscalesFactura(string empresa, string numeroFactura, CabPedidoVta cabPedido)
+        private async Task PersistirDatosFiscalesFactura(string empresaFactura, string numeroFactura, CabPedidoVta cabPedido)
         {
             // Obtener la factura recién creada
             var factura = await db.CabsFacturasVtas
-                .FirstOrDefaultAsync(f => f.Empresa == empresa && f.Número == numeroFactura);
+                .FirstOrDefaultAsync(f => f.Empresa == empresaFactura && f.Número == numeroFactura);
 
             if (factura == null)
             {
                 throw new FacturacionException(
                     $"No se encontró la factura {numeroFactura} recién creada para guardar los datos fiscales",
                     "FACTURACION_FACTURA_NO_ENCONTRADA",
-                    empresa: empresa,
+                    empresa: empresaFactura,
                     pedido: cabPedido.Número,
                     usuario: cabPedido.Usuario);
             }
 
             // Buscar el cliente principal (datos fiscales)
+            // IMPORTANTE: Los clientes siempre están en EMPRESA_POR_DEFECTO ('1'),
+            // incluso cuando la factura se crea en empresa espejo ('3') por traspaso.
+            // Por eso buscamos el cliente en la empresa por defecto, no en la empresa de la factura.
             var clientesPrincipales = await db.Clientes
-                .Where(c => c.Empresa == empresa
+                .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
                     && c.Nº_Cliente == factura.Nº_Cliente
                     && c.ClientePrincipal)
                 .ToListAsync();
@@ -484,7 +489,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     $"No se encontró el cliente principal para el cliente {factura.Nº_Cliente}. " +
                     "Debe existir un contacto con ClientePrincipal = true para poder facturar.",
                     "FACTURACION_CLIENTE_PRINCIPAL_NO_ENCONTRADO",
-                    empresa: empresa,
+                    empresa: empresaFactura,
                     pedido: cabPedido.Número,
                     usuario: cabPedido.Usuario);
             }
@@ -496,7 +501,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     $"El cliente {factura.Nº_Cliente} tiene {clientesPrincipales.Count} contactos marcados como ClientePrincipal. " +
                     $"Solo debe haber uno. Contactos: {contactos}",
                     "FACTURACION_MULTIPLES_CLIENTES_PRINCIPALES",
-                    empresa: empresa,
+                    empresa: empresaFactura,
                     pedido: cabPedido.Número,
                     usuario: cabPedido.Usuario);
             }
@@ -546,16 +551,29 @@ namespace NestoAPI.Infraestructure.Facturas
             //   @ImpDtoProducto = sum(round(Bruto*DescuentoProducto,2))
             //   @ImpDtoCliente = sum(round(bruto*(1-(1-descuentoProducto)*(1-descuentoCliente)),2)) - @ImpDtoProducto
             //   etc.
-            // Esto puede diferir en 0,01 de nuestra fórmula que redondea al final.
-            // Para evitar descuadres en el asiento, calculamos ImporteDto de forma coherente con el SP
-            // y ajustamos BaseImponible = Bruto - ImporteDto (en lugar de redondear la resta).
             //
-            // Fórmulas (coherentes con el SP):
-            //   importeDto = ROUND(bruto * sumaDescuentos, 2)  -- igual que el SP
-            //   baseImponible = bruto - importeDto             -- sin redondeo adicional, para que cuadre
-            //   importeIVA = baseImponible * PorcentajeIVA / 100  (sin redondear)
-            //   importeRE = baseImponible * PorcentajeRE          (sin redondear)
-            //   total = baseImponible + importeIVA + importeRE    (sin redondear)
+            // Carlos 02/12/25: IMPORTANTE - NO podemos modificar Bruto porque existe la restricción:
+            //   CK_LinPedidoVta_5: ([bruto]=[precio]*[cantidad] OR [tipolinea]<>(1))
+            //
+            // Carlos 02/12/25: CLAVE PARA EL ASIENTO CONTABLE
+            // El SP construye el asiento usando:
+            //   - HABER Ventas (700): SUM(ROUND(Bruto, 2))
+            //   - DEBE Descuentos (665): SUM(ROUND(Bruto * Dto, 2))
+            //   - La diferencia (Ventas - Descuentos) debe ser igual a SUM(BaseImponible)
+            //
+            // Por tanto, BaseImponible debe calcularse como:
+            //   BaseImponible = ROUND(Bruto, 2) - ROUND(Bruto * SumaDescuentos, 2)
+            // Y NO como:
+            //   BaseImponible = Bruto - ROUND(Bruto * SumaDescuentos, 2)  <-- INCORRECTO, causa descuadre
+            //
+            // La diferencia (ej: 67.4325 vs 67.43) se acumula en múltiples líneas y descuadra el asiento.
+            //
+            // Fórmulas CORRECTAS (coherentes con el asiento contable del SP):
+            //   importeDto = ROUND(Bruto * sumaDescuentos, 2)
+            //   baseImponible = ROUND(Bruto, 2) - importeDto   <-- Usar ROUND(Bruto, 2)!
+            //   importeIVA = baseImponible * PorcentajeIVA / 100
+            //   importeRE = baseImponible * PorcentajeRE
+            //   total = baseImponible + importeIVA + importeRE
             // Estados de línea: -1=Pendiente, 1=En curso, 2=Albarán (las que se facturan)
             // No incluimos estado 4 (Facturado) porque el trigger no permite modificarlas
             string sql = @"
@@ -563,13 +581,15 @@ namespace NestoAPI.Infraestructure.Facturas
                     SELECT
                         l.[Nº Orden],
                         l.Bruto,
+                        ROUND(l.Bruto, 2) AS BrutoRedondeado,
                         ROUND(l.Bruto *
                             CASE WHEN l.[Aplicar Dto] = 1
                                 THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
                                 ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
                             END
                         , 2) AS NuevoImporteDto,
-                        l.Bruto - ROUND(l.Bruto *
+                        -- CLAVE: Usar ROUND(Bruto, 2) para que cuadre con el asiento contable del SP
+                        ROUND(l.Bruto, 2) - ROUND(l.Bruto *
                             CASE WHEN l.[Aplicar Dto] = 1
                                 THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
                                 ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
@@ -594,15 +614,16 @@ namespace NestoAPI.Infraestructure.Facturas
                   AND l.Estado BETWEEN -1 AND 2
                   AND (
                       -- Detectar diferencia en Base Imponible o ImporteDto (coherencia con SP)
-                      ABS(l.[Base Imponible] - bc.NuevaBI) > 0.001
+                      -- Tolerancia 0.0001 para detectar diferencias pequeñas que acumuladas causan descuadres
+                      ABS(l.[Base Imponible] - bc.NuevaBI) > 0.0001
                       OR
-                      ABS(l.ImporteDto - bc.NuevoImporteDto) > 0.001
+                      ABS(l.ImporteDto - bc.NuevoImporteDto) > 0.0001
                       OR
                       -- Detectar diferencia en ImporteIVA
-                      ABS(l.ImporteIVA - (bc.NuevaBI * l.PorcentajeIVA / 100.0)) > 0.001
+                      ABS(l.ImporteIVA - (bc.NuevaBI * l.PorcentajeIVA / 100.0)) > 0.0001
                       OR
                       -- Detectar diferencia en Total
-                      ABS(l.Total - (bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE))) > 0.001
+                      ABS(l.Total - (bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE))) > 0.0001
                   )";
 
             var empresaParam = new SqlParameter("@empresa", pedido.Empresa);

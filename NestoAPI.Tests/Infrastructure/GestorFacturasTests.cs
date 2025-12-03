@@ -611,6 +611,92 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorFacturas_LeerFactura_SiNoHayLineasImporteTotalEsCeroYLanzaExcepcion()
+        {
+            // Arrange - Este test documenta el bug que ocurría cuando CargarCabFactura
+            // no incluía las líneas (LinPedidoVtas) con .Include() y LazyLoadingEnabled = false.
+            // El importeTotal quedaba en 0 y no cuadraba con los vencimientos del extracto.
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            // NO añadimos líneas a cab.LinPedidoVtas para simular el bug
+            // donde las líneas no se cargaban por falta de Include()
+
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+
+            // Los vencimientos sí se cargan correctamente del extracto
+            VencimientoFactura vto1 = new VencimientoFactura
+            {
+                FormaPago = "EFC",
+                Importe = 744.09M,
+                ImportePendiente = 744.09M
+            };
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>() { vto1 };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+            A.CallTo(() => servicio.CargarVencimientosOriginales(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act & Assert - Sin líneas, importeTotal = 0, no cuadra con vencimientos = 744.09
+            var ex = Assert.ThrowsException<Exception>(() => gestor.LeerFactura("1", "NV11111"));
+            Assert.IsTrue(ex.Message.Contains("No cuadran los vencimientos"));
+            Assert.IsTrue(ex.Message.Contains("Total calculado: 0,00€") || ex.Message.Contains("Total calculado: 0.00"));
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_ConLineasCalculaImporteTotalCorrectamente()
+        {
+            // Arrange - Este test verifica que cuando las líneas SÍ se cargan,
+            // el importeTotal se calcula correctamente y cuadra con los vencimientos.
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+
+            // Añadimos una línea que genera un total de 744.09€
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2025, 12, 3),
+                Cantidad = 1,
+                Texto = "PRODUCTO TEST",
+                Precio = 614.95M,
+                Producto = "12345",
+                Base_Imponible = 614.95M,
+                ImporteIVA = 129.14M, // 21% de 614.95
+                ImporteRE = 0,
+                Total = 744.09M,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+
+            VencimientoFactura vto1 = new VencimientoFactura
+            {
+                FormaPago = "EFC",
+                Importe = 744.09M,
+                ImportePendiente = 744.09M
+            };
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>() { vto1 };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act - No debe lanzar excepción porque importeTotal = 744.09 cuadra con vencimientos
+            Factura factura = gestor.LeerFactura("1", "NV11111");
+
+            // Assert
+            Assert.AreEqual(744.09M, factura.ImporteTotal);
+            Assert.AreEqual(1, factura.Vencimientos.Count);
+            Assert.AreEqual(744.09M, factura.Vencimientos.First().Importe);
+        }
+
+        [TestMethod]
         [ExpectedException(typeof(Exception))]
         public void GestorFacturas_LeerFacturas_CuandoVencimientosNoCuadranDebeLanzarExcepcion()
         {
