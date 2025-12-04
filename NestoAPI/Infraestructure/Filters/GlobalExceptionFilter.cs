@@ -2,8 +2,11 @@ using Elmah;
 using NestoAPI.Infraestructure.Exceptions;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity.Validation;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Web.Http.Filters;
 
 namespace NestoAPI.Infraestructure.Filters
@@ -61,6 +64,12 @@ namespace NestoAPI.Infraestructure.Filters
             {
                 statusCode = businessException.StatusCode;
                 responseContent = CreateBusinessErrorResponse(businessException);
+            }
+            // Manejo especial para DbEntityValidationException (errores de validación de Entity Framework)
+            else if (exception is DbEntityValidationException validationException)
+            {
+                statusCode = HttpStatusCode.BadRequest;
+                responseContent = CreateValidationErrorResponse(validationException);
             }
             else
             {
@@ -143,6 +152,62 @@ namespace NestoAPI.Infraestructure.Filters
         }
 
         /// <summary>
+        /// Crea una respuesta estructurada para errores de validación de Entity Framework
+        /// </summary>
+        private object CreateValidationErrorResponse(DbEntityValidationException exception)
+        {
+            var validationErrors = new List<object>();
+
+            foreach (var entityError in exception.EntityValidationErrors)
+            {
+                var entityName = entityError.Entry.Entity.GetType().Name;
+                var entityState = entityError.Entry.State.ToString();
+
+                foreach (var propertyError in entityError.ValidationErrors)
+                {
+                    validationErrors.Add(new Dictionary<string, object>
+                    {
+                        ["entity"] = entityName,
+                        ["state"] = entityState,
+                        ["property"] = propertyError.PropertyName,
+                        ["error"] = propertyError.ErrorMessage
+                    });
+                }
+            }
+
+            // Construir mensaje legible
+            var messageBuilder = new StringBuilder();
+            messageBuilder.AppendLine("Error de validación de Entity Framework:");
+            foreach (var entityError in exception.EntityValidationErrors)
+            {
+                var entityName = entityError.Entry.Entity.GetType().Name;
+                messageBuilder.AppendLine($"  Entidad: {entityName} ({entityError.Entry.State})");
+                foreach (var propertyError in entityError.ValidationErrors)
+                {
+                    messageBuilder.AppendLine($"    - {propertyError.PropertyName}: {propertyError.ErrorMessage}");
+                }
+            }
+
+            var errorResponse = new Dictionary<string, object>
+            {
+                ["error"] = new Dictionary<string, object>
+                {
+                    ["code"] = "ENTITY_VALIDATION_ERROR",
+                    ["message"] = messageBuilder.ToString(),
+                    ["timestamp"] = DateTime.Now,
+                    ["validationErrors"] = validationErrors
+                }
+            };
+
+#if DEBUG
+            var errorDict = (Dictionary<string, object>)errorResponse["error"];
+            errorDict["stackTrace"] = exception.StackTrace;
+#endif
+
+            return errorResponse;
+        }
+
+        /// <summary>
         /// Crea una respuesta genérica para excepciones no controladas
         /// </summary>
         private object CreateGenericErrorResponse(Exception exception)
@@ -200,6 +265,19 @@ namespace NestoAPI.Infraestructure.Filters
                 {
                     System.Diagnostics.Debug.WriteLine($"[{timestamp}] [ERROR] Inner Exception: {businessException.InnerException.Message}");
                     System.Diagnostics.Debug.WriteLine($"[{timestamp}] [ERROR] Stack Trace: {businessException.InnerException.StackTrace}");
+                }
+            }
+            else if (exception is DbEntityValidationException validationException)
+            {
+                System.Diagnostics.Debug.WriteLine($"[{timestamp}] [ERROR] Entity Validation Exception:");
+                foreach (var entityError in validationException.EntityValidationErrors)
+                {
+                    var entityName = entityError.Entry.Entity.GetType().Name;
+                    System.Diagnostics.Debug.WriteLine($"[{timestamp}] [ERROR]   Entidad: {entityName} ({entityError.Entry.State})");
+                    foreach (var propertyError in entityError.ValidationErrors)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[{timestamp}] [ERROR]     - {propertyError.PropertyName}: {propertyError.ErrorMessage}");
+                    }
                 }
             }
             else
