@@ -75,17 +75,18 @@ namespace NestoAPI.Models.Picking
                 Prepagos = rellenadorPrepagos.Prepagos(Id);
                 decimal total = Math.Round(ImporteTotalConIVA, 2, MidpointRounding.AwayFromZero);
                 var importePrepagos = Prepagos.Sum(i => i.Importe);
-                if (importePrepagos >= total - DESCUADRE_PERMITIDO)
+
+                ExtractosPendientes = rellenadorPrepagos.ExtractosPendientes(Id);
+                var importeExtractoAFavor = -ExtractosPendientes.Where(e => e.estado == null || e.estado == "NRM").Sum(e => e.importePendiente);
+
+                // Sumar prepagos + saldo a favor del cliente en extracto
+                var importeTotalDisponible = importePrepagos + importeExtractoAFavor;
+
+                if (importeTotalDisponible >= total - DESCUADRE_PERMITIDO)
                 {
                     return true;
                 }
-                ExtractosPendientes = rellenadorPrepagos.ExtractosPendientes(Id);
-                var importePendiente = -ExtractosPendientes.Where(e => e.estado == null || e.estado == "NRM").Sum(e => e.importePendiente);
-                bool estaPagado = importePendiente >= total - DESCUADRE_PERMITIDO;
-                if (estaPagado)
-                {
-                    return true;
-                } else
+                else
                 {
                     RetenidoPorPrepago = true;
                     return false;

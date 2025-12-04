@@ -1,6 +1,7 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.Picking;
 using System.Collections.Generic;
 
@@ -81,6 +82,55 @@ namespace NestoAPI.Tests.Models.Picking
 
             Assert.IsFalse(pedido.saleEnPicking());
             Assert.IsTrue(pedido.RetenidoPorPrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_saleEnPicking_siPrepagoMasExtractoClienteCubrenTotalSiSale()
+        {
+            // Caso real: Total 1723.04€, Prepago 1199.23€, ExtractoCliente -523.81€ (a favor)
+            // La suma (1199.23 + 523.81 = 1723.04) cubre el total, debería salir en picking
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                Total = 1723.04M
+            };
+
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+
+            // Configurar prepago de 1199.23€
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored))
+                .Returns(new List<PrepagoDTO>
+                {
+                    new PrepagoDTO { Importe = 1199.23M }
+                });
+
+            // Configurar extracto cliente con saldo a favor de 523.81€ (importePendiente = -523.81)
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
+                .Returns(new List<ExtractoClienteDTO>
+                {
+                    new ExtractoClienteDTO
+                    {
+                        importePendiente = -523.81M,
+                        estado = null
+                    }
+                });
+
+            PedidoPicking pedido = new PedidoPicking(rellenador)
+            {
+                Id = 1,
+                ServirJunto = false,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            // La suma de prepago (1199.23) + extracto a favor (523.81) = 1723.04 cubre el total
+            Assert.IsTrue(pedido.saleEnPicking(), "Debería salir en picking porque prepago + extracto cliente cubren el total");
+            Assert.IsFalse(pedido.RetenidoPorPrepago);
         }
 
         [TestMethod]
