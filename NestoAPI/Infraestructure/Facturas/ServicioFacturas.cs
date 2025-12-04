@@ -52,7 +52,11 @@ namespace NestoAPI.Infraestructure.Facturas
 
         public CabFacturaVta CargarCabFactura(string empresa, string numeroFactura)
         {
+            // Usar AsNoTracking para forzar lectura fresca desde BD
+            // Esto es necesario porque el SP prdCrearFacturaVta actualiza LinPedidoVta.Nº_Factura
+            // y EF podría tener datos obsoletos en su caché del contexto
             return db.CabsFacturasVtas
+                .AsNoTracking()
                 .Include(c => c.LinPedidoVtas)
                 .SingleOrDefault(c => c.Empresa == empresa && c.Número == numeroFactura);
         }
@@ -459,6 +463,29 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <param name="cabPedido">Cabecera del pedido con TipoRectificativa</param>
         private async Task PersistirDatosFiscalesFactura(string empresaFactura, string numeroFactura, CabPedidoVta cabPedido)
         {
+            // IMPORTANTE: Detach el pedido y sus líneas antes de guardar datos fiscales
+            // El SP prdCrearFacturaVta modificó las líneas en la BD pero EF tiene datos obsoletos en memoria.
+            // Si no hacemos detach, SaveChanges intentará guardar las líneas con datos incorrectos.
+            if (cabPedido != null)
+            {
+                if (cabPedido.LinPedidoVtas != null)
+                {
+                    foreach (var linea in cabPedido.LinPedidoVtas.ToList())
+                    {
+                        var entry = db.Entry(linea);
+                        if (entry.State != EntityState.Detached)
+                        {
+                            entry.State = EntityState.Detached;
+                        }
+                    }
+                }
+                var cabEntry = db.Entry(cabPedido);
+                if (cabEntry.State != EntityState.Detached)
+                {
+                    cabEntry.State = EntityState.Detached;
+                }
+            }
+
             // Obtener la factura recién creada
             var factura = await db.CabsFacturasVtas
                 .FirstOrDefaultAsync(f => f.Empresa == empresaFactura && f.Número == numeroFactura);
