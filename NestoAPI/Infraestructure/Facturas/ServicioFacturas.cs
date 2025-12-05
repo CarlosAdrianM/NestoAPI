@@ -564,6 +564,14 @@ namespace NestoAPI.Infraestructure.Facturas
                 return false;
             }
 
+            // Capturar totales ANTES del recálculo
+            decimal baseImponibleAntes = pedido.LinPedidoVtas?
+                .Where(l => l.Estado >= -1 && l.Estado <= 2)
+                .Sum(l => l.Base_Imponible) ?? 0;
+            decimal totalAntes = pedido.LinPedidoVtas?
+                .Where(l => l.Estado >= -1 && l.Estado <= 2)
+                .Sum(l => l.Total) ?? 0;
+
             var infoRecalculo = new StringBuilder();
             infoRecalculo.AppendLine($"=== AUTO-FIX: Recálculo de líneas pedido {pedido.Empresa}/{pedido.Número} ===");
             infoRecalculo.AppendLine($"Fecha/Hora: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
@@ -675,6 +683,20 @@ namespace NestoAPI.Infraestructure.Facturas
                     }
                 }
                 infoRecalculo.AppendLine($"  ✓ Líneas recargadas correctamente");
+
+                // Capturar totales DESPUÉS del recálculo
+                decimal baseImponibleDespues = pedido.LinPedidoVtas?
+                    .Where(l => l.Estado >= -1 && l.Estado <= 2)
+                    .Sum(l => l.Base_Imponible) ?? 0;
+                decimal totalDespues = pedido.LinPedidoVtas?
+                    .Where(l => l.Estado >= -1 && l.Estado <= 2)
+                    .Sum(l => l.Total) ?? 0;
+
+                // Mostrar diferencias de importes
+                infoRecalculo.AppendLine();
+                infoRecalculo.AppendLine($"  IMPORTES:");
+                infoRecalculo.AppendLine($"    Base Imponible: {baseImponibleAntes:N2} → {baseImponibleDespues:N2} (Dif: {baseImponibleDespues - baseImponibleAntes:+0.00;-0.00;0.00})");
+                infoRecalculo.AppendLine($"    Total:          {totalAntes:N2} → {totalDespues:N2} (Dif: {totalDespues - totalAntes:+0.00;-0.00;0.00})");
 
                 System.Diagnostics.Debug.WriteLine(infoRecalculo.ToString());
 

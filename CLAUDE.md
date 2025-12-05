@@ -201,21 +201,47 @@ The application uses `RoundingHelper` for all decimal rounding operations:
 - **Rollback**: Set `RoundingHelper.UsarAwayFromZero = false` to revert to VB6-style `ToEven` rounding
 - **SQL Server**: Uses `ROUND()` which is already AwayFromZero - no changes needed
 - **Auto-fix preventivo**: `ServicioFacturas.CrearFactura()` recalcula las líneas del pedido ANTES de llamar al stored procedure de facturación. Esto previene errores de descuadre causados por diferencias de redondeo entre C# y el SP `prdCrearFacturaVta`. El fix se loguea a ELMAH para diagnóstico.
-- **Cálculo correcto de líneas (coherente con SP)**:
-  - `ImporteDto = ROUND(Bruto * SumaDescuentos, 2)` - Se redondea primero el descuento
-  - `BaseImponible = Bruto - ImporteDto` - Sin redondeo adicional, para que cuadre con el SP
+- **Restricción BD (CK_LinPedidoVta_5)**: `([bruto]=[precio]*[cantidad] OR [tipolinea]<>(1))` - Esta restricción impide modificar Bruto sin modificar también Precio. Por eso el auto-fix NO puede cambiar Bruto.
+- **CLAVE PARA EL ASIENTO CONTABLE (02/12/25)**: El SP `prdCrearFacturaVta` construye el asiento usando:
+  - HABER Ventas (700): `SUM(ROUND(Bruto, 2))`
+  - DEBE Descuentos (665): `SUM(ROUND(Bruto * Dto, 2))`
+  - La diferencia (Ventas - Descuentos) debe coincidir con `SUM(BaseImponible)`
+- **Cálculo correcto de líneas (coherente con el asiento contable)**:
+  - `Bruto = Cantidad * Precio` - **NO se puede redondear** por restricción `CK_LinPedidoVta_5`
+  - `ImporteDto = ROUND(Bruto * SumaDescuentos, 2)` - Se redondea el descuento ANTES de restar
+  - `BaseImponible = ROUND(Bruto, 2) - ImporteDto` - **USAR ROUND(Bruto, 2)** para que cuadre el asiento
   - `ImporteIVA = BaseImponible * PorcentajeIVA / 100` - Sin redondear (precisión completa)
   - `ImporteRE = BaseImponible * PorcentajeRE` - Sin redondear (precisión completa)
   - `Total = BaseImponible + ImporteIVA + ImporteRE` - Sin redondear (precisión completa)
-  - El redondeo final a 2 decimales se hace al sumar en la factura, no línea a línea.
-- **Importante**: El SP `prdCrearFacturaVta` calcula los descuentos como `ROUND(Bruto*Descuento, 2)` y luego calcula el IVA sobre la base resultante. El auto-fix debe usar la misma lógica para evitar descuadres en el asiento contable.
+- **Por qué ROUND(Bruto, 2) en BaseImponible**: Si Bruto tiene más de 2 decimales (ej: 67.4325 de CanalesExternos), la diferencia con ROUND(Bruto,2) (ej: 67.43) se acumula en múltiples líneas y descuadra el asiento. El SP usa ROUND(Bruto,2) para Ventas, así que BaseImponible debe calcularse igual.
 
 Related files:
 - `RoundingHelper.cs` - Rounding logic with configurable mode
 - `ValidadorDescuentoPP.cs` - Validates early payment discount calculations
 - `ServicioFacturas.cs` - Auto-fix preventivo en `CrearFactura()` y `RecalcularLineasPedido()`
 - `GestorFacturacionRutas.cs` - Logs detailed diagnostics on mismatch errors
+- `GestorPedidosVenta.cs` - `CalcularImportesLinea()` calcula Bruto, ImporteDto, BaseImponible con redondeo correcto
 - `RoundingHelperTests.cs` - Tests documentando el comportamiento de redondeo y cálculo de líneas
+
+### ELMAH User Sync (05/12/25)
+ELMAH no mostraba el usuario en los errores porque OWIN/JWT no sincroniza automáticamente el usuario con `HttpContext.Current.User`.
+
+**Solución implementada**:
+1. **`UserSyncHandler.cs`**: DelegatingHandler que copia `request.GetRequestContext().Principal` a `HttpContext.Current.User`
+2. **`WebApiConfig.cs`**: Registra el handler con `config.MessageHandlers.Add(new UserSyncHandler())`
+3. **`Startup.cs`**: Añadido `TokenValidationParameters` con `NameClaimType = ClaimTypes.Name` para mapear correctamente el claim del JWT
+
+**Flujos de autenticación soportados**:
+| Aplicación | Endpoint | Usuario en ELMAH |
+|------------|----------|------------------|
+| NestoApp (vendedores) | `/oauth/token` | `UserName` de Identity |
+| Nesto (empleados) | `/api/auth/windows-token` | `DOMINIO\Usuario` |
+| TiendasNuevaVision (clientes) | `/api/auth/token` | `email` |
+
+Related files:
+- `Infraestructure/UserSyncHandler.cs` - DelegatingHandler para sincronizar usuario
+- `App_Start/WebApiConfig.cs` - Registro del handler
+- `Startup.cs` - Configuración de TokenValidationParameters
 
 ## Recent Changes
 

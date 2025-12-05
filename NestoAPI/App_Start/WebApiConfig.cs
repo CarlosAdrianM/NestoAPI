@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Filters;
 using System;
 using System.Net.Http.Formatting;
@@ -11,6 +12,10 @@ namespace NestoAPI
     {
         public static void Register(HttpConfiguration config)
         {
+            // Sincronizar usuario autenticado (JWT/OWIN) con HttpContext.Current.User
+            // Esto es necesario para que ELMAH y otros componentes legacy vean el usuario
+            config.MessageHandlers.Add(new UserSyncHandler());
+
             // Registrar filtro global de excepciones para manejo centralizado de errores
             config.Filters.Add(new GlobalExceptionFilter());
 
