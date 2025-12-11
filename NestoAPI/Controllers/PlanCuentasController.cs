@@ -45,6 +45,36 @@ namespace NestoAPI.Controllers
             return Ok(planCuenta);
         }
 
+        // GET: api/PlanCuentas/Buscar?empresa=1&cuenta=57200013
+        // Busca una cuenta específica y devuelve el DTO para usar en líneas de pedido (TipoLinea=2)
+        [HttpGet]
+        [Route("api/PlanCuentas/Buscar")]
+        [ResponseType(typeof(CuentaContableDTO))]
+        public IHttpActionResult BuscarCuenta(string empresa, string cuenta)
+        {
+            if (string.IsNullOrEmpty(empresa) || string.IsNullOrEmpty(cuenta))
+            {
+                return BadRequest("Se requiere empresa y cuenta");
+            }
+
+            var planCuenta = db.PlanCuentas
+                .Where(p => p.Empresa == empresa && p.Nº_Cuenta == cuenta && p.Estado >= Constantes.Cuentas.ESTADO_ACTIVA)
+                .Select(p => new CuentaContableDTO
+                {
+                    Cuenta = p.Nº_Cuenta.Trim(),
+                    Nombre = p.Concepto.Trim(),
+                    Iva = p.IVA
+                })
+                .FirstOrDefault();
+
+            if (planCuenta == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(planCuenta);
+        }
+
         // PUT: api/PlanCuentas/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutPlanCuenta(string empresa, string id, PlanCuenta planCuenta)
