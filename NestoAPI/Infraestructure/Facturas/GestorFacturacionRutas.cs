@@ -538,7 +538,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 if (tipoRuta?.DebeInsertarEnExtractoRuta() == true)
                 {
                     System.Diagnostics.Debug.WriteLine($"  → Insertando en ExtractoRuta desde factura (NRM)");
-                    await servicioExtractoRuta.InsertarDesdeFactura(pedido, resultadoFactura.NumeroFactura, usuario, autoSave: true);
+                    // IMPORTANTE: Pasar resultadoFactura.Empresa porque puede ser diferente a pedido.Empresa
+                    // cuando hay traspaso a empresa espejo (ej: factura GB en empresa 3, pedido en empresa 1)
+                    await servicioExtractoRuta.InsertarDesdeFactura(pedido, resultadoFactura.NumeroFactura, usuario, resultadoFactura.Empresa, autoSave: true);
                 }
 
                 // Determinar si debe generar PDF según el tipo de ruta
@@ -553,7 +555,9 @@ namespace NestoAPI.Infraestructure.Facturas
                     try
                     {
                         System.Diagnostics.Debug.WriteLine($"  → Generando PDF de factura ({numeroCopias} copias)");
-                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, pedido.Empresa, resultadoFactura.NumeroFactura);
+                        // IMPORTANTE: Usar resultadoFactura.Empresa porque puede ser diferente a pedido.Empresa
+                        // cuando hay traspaso a empresa espejo (ej: factura GB en empresa 3, pedido en empresa 1)
+                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, resultadoFactura.Empresa, resultadoFactura.NumeroFactura);
                     }
                     catch (Exception exPdf)
                     {

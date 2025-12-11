@@ -17,6 +17,19 @@ namespace NestoAPI.Models
             public const string REINA = "REI";
         }
 
+        /// <summary>
+        /// Series de facturación.
+        /// Carlos 09/12/25: Issue #245
+        /// </summary>
+        public static class Series
+        {
+            public const string SERIE_POR_DEFECTO = "NV";
+            public const string SERIE_CURSOS = "CV";
+            public const string SERIE_UNION_LASER = "UL";
+            public const string SERIE_VISNU_COSMETICOS = "VC";
+            public const string SERIE_DEUDA_VENCIDA = "DV";
+        }
+
         public static class Clientes
         {
             public const char SEPARADOR_TELEFONOS = '/';

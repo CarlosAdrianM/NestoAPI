@@ -23,7 +23,12 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
         /// Busca el primer efecto de la factura (TipoApunte = 2, Efecto = "1") que contiene
         /// el importe que debe cobrar el repartidor y la fecha de vencimiento correcta.
         /// </summary>
-        public async Task InsertarDesdeFactura(CabPedidoVta pedido, string numeroFactura, string usuario, bool autoSave = true)
+        /// <param name="pedido">Pedido que se ha facturado</param>
+        /// <param name="numeroFactura">Número de la factura creada</param>
+        /// <param name="usuario">Usuario que realiza la operación</param>
+        /// <param name="empresaFactura">Empresa donde se creó la factura (puede ser diferente a pedido.Empresa por traspaso). Si es null, usa pedido.Empresa.</param>
+        /// <param name="autoSave">Si es true, guarda cambios automáticamente</param>
+        public async Task InsertarDesdeFactura(CabPedidoVta pedido, string numeroFactura, string usuario, string empresaFactura = null, bool autoSave = true)
         {
             if (pedido == null)
                 throw new ArgumentNullException(nameof(pedido));
@@ -32,10 +37,15 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
             if (string.IsNullOrWhiteSpace(usuario))
                 throw new ArgumentException("El usuario no puede ser null o vacío", nameof(usuario));
 
+            // Usar la empresa de la factura si se proporciona, o la del pedido si no
+            // IMPORTANTE: Cuando hay traspaso a empresa espejo, la factura se crea en otra empresa
+            // pero el pedido sigue teniendo la empresa original
+            var empresaBusqueda = !string.IsNullOrWhiteSpace(empresaFactura) ? empresaFactura : pedido.Empresa;
+
             // Buscar el primer efecto de la factura (TipoApunte = 2 "Cartera", Efecto = "1")
             // Este registro tiene el importe a cobrar por el repartidor y la fecha de vencimiento correcta
             var extractoEfecto = await db.ExtractosCliente
-                .Where(e => e.Empresa == pedido.Empresa &&
+                .Where(e => e.Empresa == empresaBusqueda &&
                            e.Número == pedido.Nº_Cliente &&
                            e.Contacto == pedido.Contacto &&
                            e.Nº_Documento == numeroFactura.Trim() &&

@@ -10,14 +10,15 @@ namespace NestoAPI.Infraestructure.ExtractosRuta
     {
         /// <summary>
         /// Inserta un registro en ExtractoRuta copiando datos desde ExtractoCliente (para facturas).
-        /// Busca el registro de ExtractoCliente con TipoApunte = 1 (factura) y copia sus datos.
+        /// Busca el registro de ExtractoCliente con TipoApunte = 2 (efecto/cartera) y copia sus datos.
         /// </summary>
         /// <param name="pedido">Pedido que se ha facturado</param>
         /// <param name="numeroFactura">Número de la factura creada</param>
         /// <param name="usuario">Usuario que realiza la operación</param>
+        /// <param name="empresaFactura">Empresa donde se creó la factura (puede ser diferente a pedido.Empresa por traspaso)</param>
         /// <param name="autoSave">Si es true, guarda cambios automáticamente. Si es false, el llamador debe hacer SaveChangesAsync()</param>
         /// <returns>Task</returns>
-        Task InsertarDesdeFactura(CabPedidoVta pedido, string numeroFactura, string usuario, bool autoSave = true);
+        Task InsertarDesdeFactura(CabPedidoVta pedido, string numeroFactura, string usuario, string empresaFactura = null, bool autoSave = true);
 
         /// <summary>
         /// Inserta un registro en ExtractoRuta usando datos del pedido (para albaranes).

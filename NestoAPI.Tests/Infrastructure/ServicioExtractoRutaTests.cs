@@ -533,5 +533,64 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => ((IQueryable<T>)mockSet).ElementType).Returns(queryable.ElementType);
             A.CallTo(() => ((IQueryable<T>)mockSet).GetEnumerator()).Returns(queryable.GetEnumerator());
         }
+
+        /// <summary>
+        /// BUG #Error1: Cuando un pedido de empresa '1' se factura en empresa '3' (por traspaso),
+        /// el método InsertarDesdeFactura busca el efecto en empresa '1' (del pedido) en lugar de
+        /// empresa '3' (de la factura), y no lo encuentra.
+        ///
+        /// Caso real: Pedido 903336, cliente 2077, factura GB2502038
+        /// - Pedido original: empresa '1'
+        /// - Factura creada: empresa '3' (serie GB = empresa espejo)
+        /// - El efecto en ExtractoCliente está en empresa '3'
+        /// - El código busca en empresa '1' y no lo encuentra
+        /// </summary>
+        [TestMethod]
+        public async Task InsertarDesdeFactura_CuandoPedidoEmpresa1YFacturaEnEmpresa3_DebeBuscarEnEmpresaDeLaFactura()
+        {
+            // Arrange
+            // El pedido original es de empresa '1'
+            var pedido = CrearPedidoPrueba();
+            pedido.Empresa = "1  ";
+            pedido.Nº_Cliente = "2077      ";
+            pedido.Contacto = "0  ";
+
+            // Pero la factura se creó en empresa '3' (serie GB = empresa espejo)
+            string numeroFactura = "GB2502038";
+            string empresaFactura = "3  "; // La empresa donde realmente se creó la factura
+            string usuario = "testuser";
+
+            // El efecto existe en empresa '3', NO en empresa '1'
+            var extractoEfecto = new ExtractoCliente
+            {
+                Empresa = "3  ", // El efecto está en empresa 3
+                Nº_Orden = 2966021,
+                Número = pedido.Nº_Cliente,
+                Contacto = pedido.Contacto,
+                Nº_Documento = numeroFactura,
+                TipoApunte = "2", // Cartera
+                Efecto = "1",
+                Fecha = DateTime.Now,
+                Importe = 196.66m,
+                FechaVto = DateTime.Now
+            };
+
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
+            ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
+
+            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+
+            // Act - Con el parámetro empresaFactura, debe buscar en empresa '3' y encontrar el efecto
+            await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, empresaFactura, autoSave: true);
+
+            // Assert - Debe haber insertado el ExtractoRuta correctamente
+            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+                e.Empresa == empresaFactura && // El ExtractoRuta debe ser de empresa '3'
+                e.Número == pedido.Nº_Cliente &&
+                e.Importe == 196.66m
+            ))).MustHaveHappenedOnceExactly();
+        }
     }
 }

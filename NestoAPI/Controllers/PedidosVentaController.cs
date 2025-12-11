@@ -882,7 +882,7 @@ namespace NestoAPI.Controllers
                 // Recalcular porcentajes en las líneas para el correo
                 foreach (var linea in pedido.Lineas.Where(l => !string.IsNullOrEmpty(l.iva)))
                 {
-                    var parametro = pedido.ParametrosIva.SingleOrDefault(p => p.CodigoIvaProducto == l.iva.Trim());
+                    var parametro = pedido.ParametrosIva.SingleOrDefault(p => p.CodigoIvaProducto == linea.iva.Trim());
                     if (parametro != null)
                     {
                         linea.PorcentajeIva = parametro.PorcentajeIvaProducto;
@@ -1431,6 +1431,45 @@ namespace NestoAPI.Controllers
             };
             var ex = new HttpResponseException(message);
             throw ex;
+        }
+
+        // Carlos 09/12/25: Issue #253/#52 - Endpoint para obtener lista de almacenes desde la BD
+        // GET: api/PedidosVenta/Almacenes
+        [HttpGet]
+        [Route("api/PedidosVenta/Almacenes")]
+        public async Task<IHttpActionResult> GetAlmacenes(string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO)
+        {
+            string consulta = @"
+                SELECT
+                    RTRIM(Número) AS Codigo,
+                    RTRIM(Descripción) AS Nombre,
+                    ISNULL(AlmacénFicticio, 0) AS EsFicticio,
+                    ISNULL(PermitirNegativo, 0) AS PermiteNegativo
+                FROM Almacenes
+                WHERE Empresa = @p0 AND Estado >= 0
+                ORDER BY AlmacénFicticio, PermitirNegativo, Número";
+
+            var almacenes = await db.Database.SqlQuery<AlmacenDTO>(consulta, empresa).ToListAsync().ConfigureAwait(false);
+
+            return Ok(almacenes);
+        }
+
+        // Carlos 09/12/25: Issue #245 - Endpoint para obtener lista de series de facturación
+        // GET: api/PedidosVenta/Series
+        [HttpGet]
+        [Route("api/PedidosVenta/Series")]
+        public IHttpActionResult GetSeries()
+        {
+            var series = new List<SerieDTO>
+            {
+                new SerieDTO { Codigo = "NV", Nombre = "Nueva Visión" },
+                new SerieDTO { Codigo = "CV", Nombre = "Cursos" },
+                new SerieDTO { Codigo = "UL", Nombre = "Unión Láser" },
+                new SerieDTO { Codigo = "VC", Nombre = "Visnú Cosméticos" },
+                new SerieDTO { Codigo = "DV", Nombre = "Deuda Vencida" }
+            };
+
+            return Ok(series);
         }
 
         private bool TieneParametroPermitirOmitirValidacion(string empresa, string usuario)

@@ -85,9 +85,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             byte porcentajeIVA;
             ParametroIVA parametroIva;
 
-            // Para que redondee a la baja
-            //bruto = (decimal)(linea.Cantidad * (decimal.Truncate((decimal)linea.Precio * 10000) / 10000));
-            // Carlos 09/07/23 ¿por qué tiene que redondear a la baja?
+            // Cálculo coherente con el SP prdCrearFacturaVta (Issue #242/#243)
+            //
+            // IMPORTANTE: NO se puede redondear Bruto porque existe la restricción en BD:
+            //   CK_LinPedidoVta_5: ([bruto]=[precio]*[cantidad] OR [tipolinea]<>(1))
+            // Por tanto Bruto = Cantidad * Precio (sin redondear)
+            //
+            // CLAVE PARA EL ASIENTO CONTABLE (02/12/25):
+            // El SP construye el asiento usando:
+            //   - HABER Ventas (700): SUM(ROUND(Bruto, 2))
+            //   - DEBE Descuentos (665): SUM(ROUND(Bruto * Dto, 2))
+            //   - La diferencia debe coincidir con SUM(BaseImponible)
+            //
+            // Por tanto, BaseImponible debe calcularse como:
+            //   BaseImponible = ROUND(Bruto, 2) - ROUND(Bruto * SumaDescuentos, 2)
+            // Y NO como:
+            //   BaseImponible = Bruto - ROUND(Bruto * SumaDescuentos, 2)  <-- INCORRECTO
+            //
+            // La diferencia (ej: 67.4325 vs 67.43) se acumula y descuadra el asiento.
             bruto = (decimal)(linea.Cantidad * linea.Precio);
             if (linea.Aplicar_Dto)
             {
@@ -98,8 +113,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 linea.DescuentoProducto = 0;
                 sumaDescuentos = 1 - ((1 - linea.Descuento) * (1 - linea.DescuentoPP));
             }
-            importeDescuento = bruto * sumaDescuentos;
-            baseImponible = RoundingHelper.DosDecimalesRound(bruto - importeDescuento);
+            // Redondear ImporteDto a 2 decimales ANTES de restar (coherente con SP)
+            importeDescuento = RoundingHelper.DosDecimalesRound(bruto * sumaDescuentos);
+            // CLAVE: Usar ROUND(Bruto, 2) para que cuadre con el asiento contable del SP
+            baseImponible = RoundingHelper.DosDecimalesRound(bruto) - importeDescuento;
             if (!string.IsNullOrWhiteSpace(iva))
             {
                 parametroIva = servicio.LeerParametroIVA(linea.Empresa, iva, linea.IVA);
@@ -418,8 +435,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 var plazosPago = db.PlazosPago.Single(p => p.Empresa == empresa && p.Número == pedido.plazosPago);
                 pedido.DescuentoPP = plazosPago.DtoProntoPago;
 
-                List<LineaPedidoVentaDTO> lineasPedido = db.LinPedidoVtas.Where(l => l.Empresa == empresa && l.Número == numero && l.Estado > -99)
-                    .Select(l => new LineaPedidoVentaDTO
+                // Carlos 09/12/25: Issue #253/#52 - Join con Productos para obtener EsFicticio
+                List<LineaPedidoVentaDTO> lineasPedido = (from l in db.LinPedidoVtas
+                    join prod in db.Productos on new { l.Empresa, Producto = l.Producto } equals new { prod.Empresa, Producto = prod.Número } into prodJoin
+                    from prod in prodJoin.DefaultIfEmpty()
+                    where l.Empresa == empresa && l.Número == numero && l.Estado > -99
+                    select new LineaPedidoVentaDTO
                     {
                         id = l.Nº_Orden,
                         almacen = l.Almacén,
@@ -445,7 +466,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         PorcentajeIva = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeIvaProducto : 0,
                         PorcentajeRecargoEquivalencia = parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault() != null ? parametros.Where(p => p.CodigoIvaProducto == l.IVA).FirstOrDefault().PorcentajeRecargoEquivalencia : 0,
                         Factura = l.Nº_Factura.Trim(),
-                        Albaran = l.Nº_Albarán
+                        Albaran = l.Nº_Albarán,
+                        // Carlos 09/12/25: Issue #253/#52 - EsFicticio es true si:
+                        // 1. El producto tiene Ficticio=true, O
+                        // 2. La línea es de tipo Cuenta Contable (tipoLinea=2)
+                        EsFicticio = (prod != null && prod.Ficticio) || l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE
                     })
                     .OrderBy(l => l.id)
                     .ToList();

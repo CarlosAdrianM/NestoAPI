@@ -229,7 +229,11 @@ ELMAH no mostraba el usuario en los errores porque OWIN/JWT no sincroniza autom�
 **Solución implementada**:
 1. **`UserSyncHandler.cs`**: DelegatingHandler que copia `request.GetRequestContext().Principal` a `HttpContext.Current.User`
 2. **`WebApiConfig.cs`**: Registra el handler con `config.MessageHandlers.Add(new UserSyncHandler())`
-3. **`Startup.cs`**: Añadido `TokenValidationParameters` con `NameClaimType = ClaimTypes.Name` para mapear correctamente el claim del JWT
+
+**IMPORTANTE - NO usar TokenValidationParameters (09/12/25)**:
+El commit c4cbbd1 añadió `TokenValidationParameters` a `JwtBearerAuthenticationOptions`, pero esto causaba
+que OWIN ignorara `AllowedAudiences` e `IssuerSecurityKeyProviders`, rechazando todos los tokens JWT.
+Ver `StartupJwtConfigurationTests.cs` para detalles del bug y su documentación.
 
 **Flujos de autenticación soportados**:
 | Aplicación | Endpoint | Usuario en ELMAH |
@@ -241,7 +245,7 @@ ELMAH no mostraba el usuario en los errores porque OWIN/JWT no sincroniza autom�
 Related files:
 - `Infraestructure/UserSyncHandler.cs` - DelegatingHandler para sincronizar usuario
 - `App_Start/WebApiConfig.cs` - Registro del handler
-- `Startup.cs` - Configuración de TokenValidationParameters
+- `StartupJwtConfigurationTests.cs` - Documentación del bug de TokenValidationParameters
 
 ## Recent Changes
 

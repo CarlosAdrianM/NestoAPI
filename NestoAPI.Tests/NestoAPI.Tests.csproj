@@ -171,6 +171,7 @@
     <Compile Include="Infrastructure\GestorUbicacionesTests.cs" />
     <Compile Include="Infrastructure\GestosStocksTests.cs" />
     <Compile Include="Infrastructure\GestorDepositosTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnualesBaseTests.cs" />
     <Compile Include="Models\Comisiones\EtiquetaClientesNuevosTests.cs" />

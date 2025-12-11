@@ -632,6 +632,7 @@
     <Compile Include="Infraestructure\Sincronizacion\MessageRetryManager.cs" />
     <Compile Include="Infraestructure\Traspasos\IServicioTraspasoEmpresa.cs" />
     <Compile Include="Infraestructure\Traspasos\ServicioTraspasoEmpresa.cs" />
+    <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorOfertasPedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
@@ -993,7 +994,9 @@
     <Compile Include="Models\PedidosEspeciale.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PedidosVenta\AlmacenDTO.cs" />
     <Compile Include="Models\PedidosVenta\DocumentosImpresionPedidoDTO.cs" />
+    <Compile Include="Models\PedidosVenta\SerieDTO.cs" />
     <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />

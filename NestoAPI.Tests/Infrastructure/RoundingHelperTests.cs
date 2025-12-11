@@ -246,8 +246,22 @@ namespace NestoAPI.Tests.Infrastructure
             // Este test documenta cómo deben calcularse los valores para que
             // coincidan con el SQL del auto-fix en ServicioFacturas.RecalcularLineasPedido
             //
+            // IMPORTANTE: Existe restricción BD CK_LinPedidoVta_5: ([bruto]=[precio]*[cantidad] OR [tipolinea]<>(1))
+            // Por eso NO se puede redondear Bruto - debe ser exactamente Cantidad * Precio
+            //
+            // CLAVE PARA EL ASIENTO CONTABLE (02/12/25):
+            // El SP prdCrearFacturaVta construye el asiento usando:
+            //   - HABER Ventas (700): SUM(ROUND(Bruto, 2))
+            //   - DEBE Descuentos (665): SUM(ROUND(Bruto * Dto, 2))
+            //   - La diferencia (Ventas - Descuentos) debe coincidir con SUM(BaseImponible)
+            //
+            // Por tanto, BaseImponible DEBE calcularse como:
+            //   BaseImponible = ROUND(Bruto, 2) - ROUND(Bruto * SumaDescuentos, 2)
+            //
             // SQL:
-            //   [Base Imponible] = ROUND(Bruto - ImporteDescuento, 2)
+            //   Bruto = Cantidad * Precio                      -- SIN redondear (por restricción BD)
+            //   ImporteDto = ROUND(Bruto * SumaDescuentos, 2)  -- ImporteDto redondeado
+            //   [Base Imponible] = ROUND(Bruto, 2) - ImporteDto -- USAR ROUND(Bruto, 2)!
             //   ImporteIVA = NuevaBI * PorcentajeIVA / 100.0
             //   ImporteRE = NuevaBI * PorcentajeRE
             //   Total = NuevaBI + ImporteIVA + ImporteRE
@@ -255,7 +269,8 @@ namespace NestoAPI.Tests.Infrastructure
             RoundingHelper.UsarAwayFromZero = true;
 
             // Datos de ejemplo
-            decimal bruto = 54.90m;
+            short cantidad = 1;
+            decimal precio = 54.90m;
             decimal descuentoCliente = 0m;
             decimal descuentoProducto = 0.30m;
             decimal descuento = 0m;
@@ -264,23 +279,123 @@ namespace NestoAPI.Tests.Infrastructure
             byte porcentajeIVA = 21;
             decimal porcentajeRE = 0m;
 
-            // Cálculo como C#
+            // Cálculo como C# (coherente con GestorPedidosVenta.CalcularImportesLinea)
+            // 1. Bruto NO se redondea (restricción CK_LinPedidoVta_5)
+            decimal bruto = cantidad * precio;
+
             decimal sumaDescuentos = aplicarDto
                 ? 1 - ((1 - descuentoCliente) * (1 - descuentoProducto) * (1 - descuento) * (1 - descuentoPP))
                 : 1 - ((1 - descuento) * (1 - descuentoPP));
 
-            decimal importeDescuento = bruto * sumaDescuentos;
-            decimal baseImponible = RoundingHelper.DosDecimalesRound(bruto - importeDescuento);
+            // 2. ImporteDto se redondea ANTES de restar
+            decimal importeDescuento = RoundingHelper.DosDecimalesRound(bruto * sumaDescuentos);
+            // 3. BaseImponible = ROUND(Bruto, 2) - ImporteDto (USAR ROUND(Bruto, 2) para cuadrar asiento)
+            decimal baseImponible = RoundingHelper.DosDecimalesRound(bruto) - importeDescuento;
             decimal importeIVA = baseImponible * porcentajeIVA / 100;
             decimal importeRE = baseImponible * porcentajeRE;
             decimal total = baseImponible + importeIVA + importeRE;
 
             // Assert
+            Assert.AreEqual(54.90m, bruto, "Bruto = Cantidad * Precio (sin redondear)");
             Assert.AreEqual(0.30m, sumaDescuentos, "Suma descuentos = 30%");
-            Assert.AreEqual(38.43m, baseImponible, "Base imponible redondeada");
+            Assert.AreEqual(16.47m, importeDescuento, "ImporteDto redondeado (54.90 * 0.30 = 16.47)");
+            Assert.AreEqual(38.43m, baseImponible, "Base imponible = ROUND(Bruto,2) - ImporteDto");
             Assert.AreEqual(8.0703m, importeIVA, "ImporteIVA sin redondear");
             Assert.AreEqual(0m, importeRE, "ImporteRE sin redondear");
             Assert.AreEqual(46.5003m, total, "Total sin redondear");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_CalculoLineaPedido_PrecioConCuatroDecimales()
+        {
+            // Este test documenta cómo se calculan las líneas con precios de 4 decimales
+            // (típico de pedidos de CanalesExternos donde precio = precio_con_iva / 1.21)
+            //
+            // IMPORTANTE: Bruto NO se puede redondear por restricción CK_LinPedidoVta_5
+            // PERO BaseImponible SÍ debe usar ROUND(Bruto, 2) para cuadrar el asiento contable.
+            //
+            // CLAVE (02/12/25): El SP usa ROUND(Bruto, 2) para la cuenta de Ventas (700),
+            // por tanto BaseImponible = ROUND(Bruto, 2) - ImporteDto
+
+            RoundingHelper.UsarAwayFromZero = true;
+
+            // Datos de ejemplo de CanalesExternos (precio con 4 decimales)
+            short cantidad = 1;
+            decimal precio = 4.4998m; // Precio calculado como precio_con_iva / 1.21
+            decimal sumaDescuentos = 0m; // Sin descuento
+
+            // Cálculo como lo hace GestorPedidosVenta.CalcularImportesLinea
+            decimal bruto = cantidad * precio; // 4.4998 (NO se redondea por restricción BD)
+            decimal importeDescuento = RoundingHelper.DosDecimalesRound(bruto * sumaDescuentos); // 0
+            // CLAVE: Usar ROUND(Bruto, 2) para que cuadre con el asiento contable
+            decimal baseImponible = RoundingHelper.DosDecimalesRound(bruto) - importeDescuento; // 4.50
+
+            // Assert
+            Assert.AreEqual(4.4998m, bruto, "Bruto = Cantidad * Precio (NO redondeado por CK_LinPedidoVta_5)");
+            Assert.AreEqual(0m, importeDescuento, "ImporteDto = 0 (sin descuento)");
+            Assert.AreEqual(4.50m, baseImponible, "BaseImponible = ROUND(Bruto,2) = 4.50 (para cuadrar asiento)");
+            Assert.AreNotEqual(bruto, baseImponible,
+                "Con precios de 4 decimales, ROUND(Bruto,2) ≠ Bruto. Esto es correcto para cuadrar el asiento.");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_CalculoLineaPedido_PrecioConCuatroDecimales_ConDescuento()
+        {
+            // Caso con precio de 4 decimales Y descuento
+            // El ImporteDto se redondea, Bruto no, y BaseImponible usa ROUND(Bruto, 2)
+
+            RoundingHelper.UsarAwayFromZero = true;
+
+            short cantidad = 2;
+            decimal precio = 5.4545m;
+            decimal sumaDescuentos = 0.10m; // 10% descuento
+
+            // Cálculo
+            decimal bruto = cantidad * precio; // 10.909 (NO redondeado)
+            decimal importeDescuento = RoundingHelper.DosDecimalesRound(bruto * sumaDescuentos); // Round(1.0909) = 1.09
+            // CLAVE: Usar ROUND(Bruto, 2) para que cuadre con el asiento contable
+            decimal baseImponible = RoundingHelper.DosDecimalesRound(bruto) - importeDescuento; // 10.91 - 1.09 = 9.82
+
+            // Assert
+            Assert.AreEqual(10.909m, bruto, "Bruto: 2 * 5.4545 = 10.909 (sin redondear)");
+            Assert.AreEqual(1.09m, importeDescuento, "ImporteDto redondeado: 10.909 * 0.10 = 1.0909 -> 1.09");
+            Assert.AreEqual(9.82m, baseImponible, "BaseImponible = ROUND(10.909, 2) - 1.09 = 10.91 - 1.09 = 9.82");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_CalculoLineaPedido_CasoDescuadreAsientoContable()
+        {
+            // Este test documenta el caso que causaba descuadre en el asiento contable
+            // Pedido 904887: 2 líneas con Bruto = 67.4325 y 15% descuento
+            //
+            // ANTES (INCORRECTO): BaseImponible = Bruto - ImporteDto = 67.4325 - 10.11 = 57.3225
+            // AHORA (CORRECTO):   BaseImponible = ROUND(Bruto, 2) - ImporteDto = 67.43 - 10.11 = 57.32
+            //
+            // La diferencia de 0.0025 por línea se acumulaba y descuadraba el asiento.
+
+            RoundingHelper.UsarAwayFromZero = true;
+
+            decimal bruto = 67.4325m;
+            decimal sumaDescuentos = 0.15m;
+
+            // Cálculo INCORRECTO (antes)
+            decimal importeDto = RoundingHelper.DosDecimalesRound(bruto * sumaDescuentos); // 10.11
+            decimal baseImponibleIncorrecta = bruto - importeDto; // 57.3225
+
+            // Cálculo CORRECTO (ahora)
+            decimal baseImponibleCorrecta = RoundingHelper.DosDecimalesRound(bruto) - importeDto; // 57.32
+
+            // Assert
+            Assert.AreEqual(10.11m, importeDto, "ImporteDto = ROUND(67.4325 * 0.15, 2) = 10.11");
+            Assert.AreEqual(57.3225m, baseImponibleIncorrecta, "Cálculo incorrecto: Bruto - ImporteDto");
+            Assert.AreEqual(57.32m, baseImponibleCorrecta, "Cálculo correcto: ROUND(Bruto, 2) - ImporteDto");
+            Assert.AreEqual(0.0025m, baseImponibleIncorrecta - baseImponibleCorrecta,
+                "Diferencia de 0.0025 por línea - se acumula y descuadra el asiento");
+
+            // Verificar que con 2 líneas la diferencia es 0.005
+            decimal diferenciaTotal = (baseImponibleIncorrecta - baseImponibleCorrecta) * 2;
+            Assert.AreEqual(0.005m, diferenciaTotal,
+                "Con 2 líneas: diferencia = 0.005 - al redondear puede causar 0.01 de descuadre");
         }
 
         #endregion

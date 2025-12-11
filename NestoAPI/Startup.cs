@@ -30,8 +30,6 @@ using System.Net.Http.Formatting;
 using System.Web.Http;
 using Hangfire;
 using Hangfire.SqlServer;
-using System.IdentityModel.Tokens;
-using System.Security.Claims;
 
 namespace NestoAPI
 {
@@ -122,15 +120,12 @@ namespace NestoAPI
                     AllowedAudiences = new[] { audienceId },
                     IssuerSecurityKeyProviders = new IIssuerSecurityKeyProvider[] {
                         new SymmetricKeyIssuerSecurityKeyProvider(issuer, audienceSecret)
-                    },
-                    // Mapear claims correctamente para que User.Identity.Name funcione con JWT
-                    // Sin esto, el claim "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name"
-                    // no se mapea automáticamente a User.Identity.Name
-                    TokenValidationParameters = new TokenValidationParameters
-                    {
-                        NameClaimType = ClaimTypes.Name,
-                        RoleClaimType = ClaimTypes.Role
                     }
+                    // IMPORTANTE: NO usar TokenValidationParameters aquí.
+                    // Si se proporciona TokenValidationParameters, OWIN ignora AllowedAudiences
+                    // e IssuerSecurityKeyProviders, causando que todos los tokens se rechacen.
+                    // Ver: StartupJwtConfigurationTests.cs para más detalles.
+                    // El mapeo de usuario para ELMAH se hace en UserSyncHandler.
                 });
         }
 

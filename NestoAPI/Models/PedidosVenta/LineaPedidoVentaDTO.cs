@@ -27,6 +27,10 @@ namespace NestoAPI.Models.PedidosVenta
         public int? Albaran { get; set; }
         public string Factura { get; set; }
 
+        // Carlos 09/12/25: Issue #253/#52 - Indica si el producto es ficticio (cuenta contable, etc.)
+        // Se usa para determinar si se puede cambiar el almacén de la línea
+        public bool EsFicticio { get; set; }
+
         // Carlos 23/10/25: para controlar en modificaciones qué líneas son nuevas o tienen cantidad modificada
         [JsonIgnore]
         public int? CantidadAnterior { get; set; }

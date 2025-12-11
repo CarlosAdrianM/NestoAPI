@@ -74,11 +74,13 @@ namespace NestoAPI.Infraestructure.Facturas
             ISerieFactura serieFactura = LeerSerie(cabFactura.Serie);
 
             CabPedidoVta cabPedido = primeraLinea != null ? servicio.CargarCabPedido(empresa, primeraLinea.Número) : null;
-            Cliente clienteEntrega = servicio.CargarCliente(cabFactura.Empresa, cabFactura.Nº_Cliente, cabFactura.Contacto);
+            // IMPORTANTE: Los clientes siempre están en EMPRESA_POR_DEFECTO ('1'),
+            // incluso cuando la factura se crea en empresa espejo ('3') por traspaso.
+            Cliente clienteEntrega = servicio.CargarCliente(Constantes.Empresas.EMPRESA_POR_DEFECTO, cabFactura.Nº_Cliente, cabFactura.Contacto);
             Cliente clienteRazonSocial = clienteEntrega;
             if (!clienteRazonSocial.ClientePrincipal)
             {
-                clienteRazonSocial = servicio.CargarClientePrincipal(cabFactura.Empresa, cabFactura.Nº_Cliente);
+                clienteRazonSocial = servicio.CargarClientePrincipal(Constantes.Empresas.EMPRESA_POR_DEFECTO, cabFactura.Nº_Cliente);
             }
 
             Empresa empresaFactura = servicio.CargarEmpresa(empresa);
@@ -183,7 +185,17 @@ namespace NestoAPI.Infraestructure.Facturas
 
             if (vencimientos.Sum(v => v.Importe) != importeTotal)
             {
-                throw new Exception("No cuadran los vencimientos con el total de la factura");
+                // Diagnóstico detallado para identificar la causa del descuadre
+                var sumaVencimientos = vencimientos.Sum(v => v.Importe);
+                var diferencia = importeTotal - sumaVencimientos;
+                var detalleVencimientos = vencimientos.Count > 0
+                    ? string.Join(", ", vencimientos.Select(v => $"{v.Importe:F2}€"))
+                    : "SIN VENCIMIENTOS";
+                throw new Exception(
+                    $"No cuadran los vencimientos con el total de la factura. " +
+                    $"Total calculado: {importeTotal:F2}€, Suma vencimientos: {sumaVencimientos:F2}€, " +
+                    $"Diferencia: {diferencia:F2}€, Vencimientos encontrados: {vencimientos.Count} [{detalleVencimientos}], " +
+                    $"Empresa búsqueda: {empresa}, Cliente: {clienteRazonSocial.Nº_Cliente?.Trim()}");
             }
 
             foreach (VencimientoFactura vencimiento in vencimientos)
