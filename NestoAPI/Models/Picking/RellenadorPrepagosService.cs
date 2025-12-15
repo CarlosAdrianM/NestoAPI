@@ -24,9 +24,10 @@ namespace NestoAPI.Models.Picking
         {
             var cliente = db.CabPedidoVtas.First(p => p.Número == pedido).Nº_Cliente;
             return db.ExtractosCliente.Where(e => e.ImportePdte != 0 && e.Número == cliente)
-                .Select(e => new ExtractoClienteDTO { 
+                .Select(e => new ExtractoClienteDTO {
                     importePendiente = e.ImportePdte,
-                    estado = e.Estado
+                    estado = e.Estado,
+                    vencimiento = e.FechaVto
                 })
                 .ToList();
         }

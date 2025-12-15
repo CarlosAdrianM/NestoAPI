@@ -77,10 +77,18 @@ namespace NestoAPI.Models.Picking
                 var importePrepagos = Prepagos.Sum(i => i.Importe);
 
                 ExtractosPendientes = rellenadorPrepagos.ExtractosPendientes(Id);
-                var importeExtractoAFavor = -ExtractosPendientes.Where(e => e.estado == null || e.estado == "NRM").Sum(e => e.importePendiente);
+                var extractosValidos = ExtractosPendientes.Where(e => e.estado == null || e.estado == "NRM");
 
-                // Sumar prepagos + saldo a favor del cliente en extracto
-                var importeTotalDisponible = importePrepagos + importeExtractoAFavor;
+                // Saldo a favor del cliente (importePendiente negativo): siempre se suma
+                var saldoAFavor = -extractosValidos.Where(e => e.importePendiente < 0).Sum(e => e.importePendiente);
+
+                // Deuda del cliente (importePendiente positivo): solo se resta si está vencida
+                var deudaVencida = extractosValidos
+                    .Where(e => e.importePendiente > 0 && e.vencimiento.HasValue && e.vencimiento.Value < DateTime.Today)
+                    .Sum(e => e.importePendiente);
+
+                // Sumar prepagos + saldo a favor - deuda vencida
+                var importeTotalDisponible = importePrepagos + saldoAFavor - deudaVencida;
 
                 if (importeTotalDisponible >= total - DESCUADRE_PERMITIDO)
                 {

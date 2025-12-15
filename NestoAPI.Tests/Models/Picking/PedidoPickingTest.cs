@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.Picking;
+using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Tests.Models.Picking
@@ -601,6 +602,209 @@ namespace NestoAPI.Tests.Models.Picking
             pedido.Lineas.Add(linea);
 
             Assert.IsFalse(pedido.hayQueSumarPortes());
+        }
+
+        [TestMethod]
+        public void PedidoPicking_saleEnPicking_siPrepagoYDeudaNoVencidaSiSale()
+        {
+            // Caso: Pedido 60€, Prepago 60€, Deuda cliente 100€ NO vencida
+            // Como la deuda no está vencida, el prepago cubre el pedido → SÍ sale en picking
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                Total = 60M
+            };
+
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+
+            // Prepago de 60€ que cubre exactamente el pedido
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored))
+                .Returns(new List<PrepagoDTO>
+                {
+                    new PrepagoDTO { Importe = 60M }
+                });
+
+            // Deuda de 100€ pero con vencimiento FUTURO (no vencida)
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
+                .Returns(new List<ExtractoClienteDTO>
+                {
+                    new ExtractoClienteDTO
+                    {
+                        importePendiente = 100M, // Deuda (positivo = nos deben)
+                        estado = null,
+                        vencimiento = DateTime.Today.AddDays(30) // Vence en 30 días
+                    }
+                });
+
+            PedidoPicking pedido = new PedidoPicking(rellenador)
+            {
+                Id = 1,
+                ServirJunto = false,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            // El prepago cubre el pedido y la deuda no está vencida → debe salir
+            Assert.IsTrue(pedido.saleEnPicking(), "Debería salir en picking: prepago cubre el total y la deuda no está vencida");
+            Assert.IsFalse(pedido.RetenidoPorPrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_saleEnPicking_siPrepagoYDeudaVencidaNoSale()
+        {
+            // Caso: Pedido 60€, Prepago 60€, Deuda cliente 100€ SÍ vencida
+            // Como la deuda está vencida, se descuenta del disponible → NO sale en picking
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                Total = 60M
+            };
+
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+
+            // Prepago de 60€
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored))
+                .Returns(new List<PrepagoDTO>
+                {
+                    new PrepagoDTO { Importe = 60M }
+                });
+
+            // Deuda de 100€ con vencimiento PASADO (vencida)
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
+                .Returns(new List<ExtractoClienteDTO>
+                {
+                    new ExtractoClienteDTO
+                    {
+                        importePendiente = 100M, // Deuda (positivo = nos deben)
+                        estado = null,
+                        vencimiento = DateTime.Today.AddDays(-10) // Venció hace 10 días
+                    }
+                });
+
+            PedidoPicking pedido = new PedidoPicking(rellenador)
+            {
+                Id = 1,
+                ServirJunto = false,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            // Prepago 60€ - Deuda vencida 100€ = -40€ < 60€ total → NO debe salir
+            Assert.IsFalse(pedido.saleEnPicking(), "No debería salir en picking: la deuda vencida hace que no haya suficiente disponible");
+            Assert.IsTrue(pedido.RetenidoPorPrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_saleEnPicking_siPrepagoYMezclaDeudaVencidaYNoVencidaSoloDescuentaVencida()
+        {
+            // Caso: Pedido 60€, Prepago 60€, Deuda vencida 20€, Deuda no vencida 80€
+            // Solo se descuenta la deuda vencida (20€), la no vencida se ignora
+            // Disponible = 60€ - 20€ = 40€ < 60€ → NO sale
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                Total = 60M
+            };
+
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored))
+                .Returns(new List<PrepagoDTO>
+                {
+                    new PrepagoDTO { Importe = 60M }
+                });
+
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
+                .Returns(new List<ExtractoClienteDTO>
+                {
+                    new ExtractoClienteDTO
+                    {
+                        importePendiente = 20M, // Deuda vencida
+                        estado = null,
+                        vencimiento = DateTime.Today.AddDays(-5)
+                    },
+                    new ExtractoClienteDTO
+                    {
+                        importePendiente = 80M, // Deuda NO vencida (se ignora)
+                        estado = null,
+                        vencimiento = DateTime.Today.AddDays(30)
+                    }
+                });
+
+            PedidoPicking pedido = new PedidoPicking(rellenador)
+            {
+                Id = 1,
+                ServirJunto = false,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            // Prepago 60€ - Deuda vencida 20€ = 40€ < 60€ → NO sale
+            Assert.IsFalse(pedido.saleEnPicking(), "No debería salir: prepago menos deuda vencida no cubre el total");
+            Assert.IsTrue(pedido.RetenidoPorPrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_saleEnPicking_siPrepagoYDeudaVencidaPequenaSiSale()
+        {
+            // Caso: Pedido 60€, Prepago 80€, Deuda vencida 10€
+            // Disponible = 80€ - 10€ = 70€ >= 60€ → SÍ sale
+            LineaPedidoPicking linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                Total = 60M
+            };
+
+            IRellenadorPrepagosService rellenador = A.Fake<IRellenadorPrepagosService>();
+
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored))
+                .Returns(new List<PrepagoDTO>
+                {
+                    new PrepagoDTO { Importe = 80M }
+                });
+
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
+                .Returns(new List<ExtractoClienteDTO>
+                {
+                    new ExtractoClienteDTO
+                    {
+                        importePendiente = 10M, // Deuda vencida pero pequeña
+                        estado = null,
+                        vencimiento = DateTime.Today.AddDays(-5)
+                    }
+                });
+
+            PedidoPicking pedido = new PedidoPicking(rellenador)
+            {
+                Id = 1,
+                ServirJunto = false,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(linea);
+
+            // Prepago 80€ - Deuda vencida 10€ = 70€ >= 60€ → SÍ sale
+            Assert.IsTrue(pedido.saleEnPicking(), "Debería salir: prepago menos deuda vencida aún cubre el total");
+            Assert.IsFalse(pedido.RetenidoPorPrepago);
         }
     }
 }
