@@ -64,9 +64,14 @@ namespace NestoAPI.Models.Sincronizacion
         public string Comentarios { get; set; }
 
         /// <summary>
-        /// Vendedor asignado
+        /// Vendedor asignado (código)
         /// </summary>
         public string Vendedor { get; set; }
+
+        /// <summary>
+        /// Email del vendedor asignado
+        /// </summary>
+        public string VendedorEmail { get; set; }
 
         /// <summary>
         /// Estado del cliente

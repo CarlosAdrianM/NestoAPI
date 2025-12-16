@@ -69,6 +69,13 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 cambios.Add($"Comentarios: '{NormalizeComentarios(clienteNesto.Comentarios)}' → '{NormalizeComentarios(clienteExterno.Comentarios)}'");
             }
 
+            // Detectar cambio de vendedor (por código o por email)
+            if (!string.IsNullOrWhiteSpace(clienteExterno.Vendedor) &&
+                !SonIguales(clienteNesto.Vendedor, clienteExterno.Vendedor))
+            {
+                cambios.Add($"Vendedor: '{NormalizeString(clienteNesto.Vendedor)}' → '{NormalizeString(clienteExterno.Vendedor)}'");
+            }
+
             return cambios;
         }
 

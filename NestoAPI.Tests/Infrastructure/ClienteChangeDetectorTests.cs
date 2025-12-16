@@ -485,5 +485,178 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region Tests de Detección de Cambio de Vendedor
+
+        [TestMethod]
+        public void DetectarCambios_VendedorDiferente_DetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "NV"
+            };
+
+            var clienteExterno = new ClienteSyncMessage
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "CAM" // Vendedor diferente
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(1, cambios.Count);
+            Assert.IsTrue(cambios.First().Contains("Vendedor"));
+            Assert.IsTrue(cambios.First().Contains("NV"));
+            Assert.IsTrue(cambios.First().Contains("CAM"));
+        }
+
+        [TestMethod]
+        public void DetectarCambios_MismoVendedor_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "CAM"
+            };
+
+            var clienteExterno = new ClienteSyncMessage
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "CAM"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "No debería detectar cambios cuando el vendedor es el mismo");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_VendedorConEspacios_NormalizaYNoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "CAM  " // Con espacios
+            };
+
+            var clienteExterno = new ClienteSyncMessage
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "CAM"
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Los espacios deben normalizarse");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_VendedorExternoNulo_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "CAM"
+            };
+
+            var clienteExterno = new ClienteSyncMessage
+            {
+                Nombre = "Cliente Test",
+                Vendedor = null // No viene vendedor en el mensaje
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Si el vendedor externo es nulo, no se debe detectar cambio (el sistema externo no quiere modificarlo)");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_VendedorExternoVacio_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "CAM"
+            };
+
+            var clienteExterno = new ClienteSyncMessage
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "" // Vacío
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "Si el vendedor externo es vacío, no se debe detectar cambio");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_VendedorCaseInsensitive_NoDetectaCambio()
+        {
+            // Arrange
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "CAM"
+            };
+
+            var clienteExterno = new ClienteSyncMessage
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "cam" // Minúsculas
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            Assert.AreEqual(0, cambios.Count, "La comparación debe ser case-insensitive");
+        }
+
+        [TestMethod]
+        public void DetectarCambios_SoloVendedorEmailSinVendedor_NoDetectaCambioPorSiSolo()
+        {
+            // Arrange - Este test documenta que el detector NO resuelve el email
+            // La resolución del email a código de vendedor se hace en el handler
+            var clienteNesto = new Cliente
+            {
+                Nombre = "Cliente Test",
+                Vendedor = "NV"
+            };
+
+            var clienteExterno = new ClienteSyncMessage
+            {
+                Nombre = "Cliente Test",
+                Vendedor = null, // No viene código
+                VendedorEmail = "carlosadrian@nuevavision.es" // Pero sí viene email
+            };
+
+            // Act
+            var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
+
+            // Assert
+            // El detector NO debe detectar cambio porque no tiene código de vendedor
+            // La resolución del email se hace en el handler ANTES de llamar al detector
+            Assert.AreEqual(0, cambios.Count,
+                "El detector no resuelve emails - eso lo hace el handler antes de llamar a DetectarCambios");
+        }
+
+        #endregion
     }
 }

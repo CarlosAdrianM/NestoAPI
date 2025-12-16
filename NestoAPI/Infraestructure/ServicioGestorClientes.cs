@@ -475,6 +475,23 @@ namespace NestoAPI.Infraestructure
             }
         }
 
+        public async Task<string> ObtenerEmailVendedor(string empresa, string vendedor)
+        {
+            if (string.IsNullOrWhiteSpace(vendedor))
+            {
+                return null;
+            }
+
+            using (NVEntities db = new NVEntities())
+            {
+                var vendedorEntity = await db.Vendedores
+                    .SingleOrDefaultAsync(v => v.Empresa == empresa && v.Número == vendedor)
+                    .ConfigureAwait(false);
+
+                return vendedorEntity?.Mail?.Trim();
+            }
+        }
+
         private static string NormalizarNif(string nif)
         {
             if (string.IsNullOrWhiteSpace(nif))

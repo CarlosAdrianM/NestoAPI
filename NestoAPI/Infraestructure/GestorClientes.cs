@@ -1413,6 +1413,18 @@ namespace NestoAPI.Infraestructure
                 })
                 .ToList();
 
+            // Obtener email del vendedor
+            // Si Vendedore está cargado (por Include), usamos su Mail directamente
+            // Si no, hacemos una consulta al servicio
+            string vendedorEmail = cliente.Vendedore?.Mail?.Trim();
+            if (vendedorEmail == null && !string.IsNullOrWhiteSpace(cliente.Vendedor))
+            {
+                vendedorEmail = await servicio.ObtenerEmailVendedor(
+                    cliente.Empresa?.Trim() ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    cliente.Vendedor?.Trim()
+                );
+            }
+
             // Log para rastrear de dónde viene cada publicación
             var personasInfo = personasContacto.Any()
                 ? string.Join(", ", personasContacto.Select(p => $"Id={p.Id} ({p.Nombre})"))
@@ -1438,6 +1450,7 @@ namespace NestoAPI.Infraestructure
                 Telefono = cliente.Teléfono?.Trim(),
                 Comentarios = cliente.Comentarios?.Trim(),
                 Vendedor = cliente.Vendedor?.Trim(),
+                VendedorEmail = vendedorEmail,
                 Estado = cliente.Estado,
                 PersonasContacto = personasContacto
             };

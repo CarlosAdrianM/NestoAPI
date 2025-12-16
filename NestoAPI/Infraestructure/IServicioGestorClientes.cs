@@ -39,5 +39,6 @@ namespace NestoAPI.Infraestructure
         Task<bool> CrearCCC(CCC nuevoCCC);
         Task<bool> RecuperarCCC(CCC cccEncontrado);
         Task<CodigoPostal> BuscarCodigoPostal(string empresa, string codigoPostal);
+        Task<string> ObtenerEmailVendedor(string empresa, string vendedor);
     }
 }

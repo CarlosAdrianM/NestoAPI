@@ -108,6 +108,10 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                                 && c.Contacto.Trim() == contactoExterno)
                         .FirstOrDefaultAsync();
 
+                    // Resolver el vendedor por email si no viene el código
+                    // Esto permite que DetectarCambios detecte cambios de vendedor por email
+                    await ResolverVendedorPorEmailSiNecesario(db, message, clienteExterno, contactoExterno);
+
                     // Detectar cambios
                     var cambios = _changeDetector.DetectarCambios(clienteNesto, message);
 
@@ -137,8 +141,12 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                         return false;
                     }
 
-                    // Actualizar el cliente
+                    // Actualizar el cliente (campos básicos)
                     ActualizarClienteDesdeExterno(clienteNesto, message);
+
+                    // Actualizar vendedor si viene en el mensaje y es válido
+                    await ActualizarVendedorSiValido(db, clienteNesto, message, clienteExterno, contactoExterno);
+
                     _ = await db.SaveChangesAsync();
 
                     Console.WriteLine($"✅ Cliente {clienteExterno}-{contactoExterno} actualizado exitosamente");
@@ -159,6 +167,80 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Resuelve el código de vendedor desde el email si no viene el código directo.
+        /// Modifica el mensaje para que tenga el código de vendedor resuelto.
+        /// </summary>
+        private async Task ResolverVendedorPorEmailSiNecesario(
+            NVEntities db,
+            ClienteSyncMessage message,
+            string clienteExterno,
+            string contactoExterno)
+        {
+            // Si ya viene el código de vendedor, no hay nada que hacer
+            if (!string.IsNullOrWhiteSpace(message.Vendedor))
+            {
+                return;
+            }
+
+            // Si no viene código pero sí viene email, buscar el vendedor por email
+            if (!string.IsNullOrWhiteSpace(message.VendedorEmail))
+            {
+                var emailBuscar = message.VendedorEmail.Trim();
+                var vendedor = await db.Vendedores
+                    .FirstOrDefaultAsync(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                                           && v.Mail != null
+                                           && v.Mail.Trim() == emailBuscar);
+
+                if (vendedor != null)
+                {
+                    Console.WriteLine($"   ℹ️ Vendedor resuelto por email '{emailBuscar}' → '{vendedor.Número?.Trim()}'");
+                    // Modificar el mensaje para que tenga el código de vendedor resuelto
+                    message.Vendedor = vendedor.Número?.Trim();
+                }
+                else
+                {
+                    Console.WriteLine($"   ⚠️ No se encontró vendedor con email '{emailBuscar}' para cliente {clienteExterno}-{contactoExterno}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Actualiza el vendedor del cliente si viene en el mensaje y el vendedor existe en la BD.
+        /// NOTA: El vendedor ya ha sido resuelto previamente por ResolverVendedorPorEmailSiNecesario.
+        /// </summary>
+        private async Task ActualizarVendedorSiValido(
+            NVEntities db,
+            Cliente clienteNesto,
+            ClienteSyncMessage message,
+            string clienteExterno,
+            string contactoExterno)
+        {
+            // El vendedor ya fue resuelto previamente (por código o por email)
+            if (string.IsNullOrWhiteSpace(message.Vendedor))
+            {
+                // No hay vendedor que actualizar
+                return;
+            }
+
+            var vendedorCodigo = message.Vendedor.Trim();
+
+            // Verificar que el vendedor existe en la tabla Vendedores
+            var vendedorExiste = await db.Vendedores
+                .AnyAsync(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                            && v.Número == vendedorCodigo);
+
+            if (!vendedorExiste)
+            {
+                Console.WriteLine($"   ⚠️ Vendedor '{vendedorCodigo}' no existe en Nesto. No se actualiza el vendedor del cliente {clienteExterno}-{contactoExterno}");
+                return;
+            }
+
+            // Actualizar el vendedor
+            clienteNesto.Vendedor = vendedorCodigo;
+            Console.WriteLine($"   ✅ Vendedor actualizado a '{vendedorCodigo}'");
         }
 
         private void ActualizarClienteDesdeExterno(Cliente clienteNesto, ClienteSyncMessage clienteExterno)
