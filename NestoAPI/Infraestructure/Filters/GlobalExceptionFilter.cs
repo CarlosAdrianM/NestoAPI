@@ -208,7 +208,12 @@ namespace NestoAPI.Infraestructure.Filters
         }
 
         /// <summary>
-        /// Crea una respuesta genérica para excepciones no controladas
+        /// Crea una respuesta genérica para excepciones no controladas.
+        ///
+        /// IMPORTANTE: El mensaje de error siempre se muestra al usuario (tanto en DEBUG como en RELEASE)
+        /// porque los errores operativos (como "ubicación descuadrada") necesitan ser visibles
+        /// para que el usuario pueda tomar acción. Solo se ocultan los detalles técnicos
+        /// (stack trace, inner exception) en modo RELEASE.
         /// </summary>
         private object CreateGenericErrorResponse(Exception exception)
         {
@@ -217,7 +222,7 @@ namespace NestoAPI.Infraestructure.Filters
                 ["error"] = new Dictionary<string, object>
                 {
                     ["code"] = "INTERNAL_ERROR",
-                    ["message"] = exception.Message,
+                    ["message"] = exception.Message, // Siempre mostrar el mensaje real
                     ["timestamp"] = DateTime.Now
                 }
             };
@@ -237,11 +242,9 @@ namespace NestoAPI.Infraestructure.Filters
                     ["stackTrace"] = exception.InnerException.StackTrace
                 };
             }
-#else
-            // En producción, mensaje genérico para evitar exponer detalles internos
-            var errorDict = (Dictionary<string, object>)errorResponse["error"];
-            errorDict["message"] = "Ha ocurrido un error interno. Por favor, contacte con el administrador.";
 #endif
+            // En RELEASE: se muestra el mensaje pero se ocultan los detalles técnicos
+            // (stack trace, inner exception, type) por seguridad
 
             return errorResponse;
         }

@@ -147,6 +147,7 @@ namespace NestoAPI.Models.Picking
                 .Select(l => new LineaPedidoPicking
                 {
                     Id = l.Nº_Orden,
+                    NumeroPedido = p.Número,
                     TipoLinea = (byte)l.TipoLinea,
                     Almacen = l.Almacén,
                     Producto = l.Producto,
