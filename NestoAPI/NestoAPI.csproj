@@ -1059,6 +1059,7 @@
     <Compile Include="Models\Productos\DiarioProductoDTO.cs" />
     <Compile Include="Models\Productos\KitContienePerteneceModel.cs" />
     <Compile Include="Models\Productos\ParametrosDiarioProducto.cs" />
+    <Compile Include="Models\Productos\ProductoControlStockDTO.cs" />
     <Compile Include="Models\Proveedor.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

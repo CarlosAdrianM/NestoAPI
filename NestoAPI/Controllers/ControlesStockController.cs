@@ -15,7 +15,16 @@ namespace NestoAPI.Controllers
 {
     public class ControlesStockController : ApiController
     {
-        private readonly NVEntities db = new NVEntities();
+        private NVEntities db = new NVEntities();
+
+        public ControlesStockController()
+        {
+        }
+
+        public ControlesStockController(NVEntities context)
+        {
+            db = context;
+        }
         /*
         // GET: api/ControlesStock
         public IQueryable<ControlStock> GetControlesStocks()
@@ -116,6 +125,114 @@ namespace NestoAPI.Controllers
             return Ok(controlStockProducto);
         }
 
+        // GET: api/ControlesStock/ProductosProveedor?proveedorId=65&almacen=ALG
+        [HttpGet]
+        [Route("api/ControlesStock/ProductosProveedor")]
+        [ResponseType(typeof(List<ProductoControlStockDTO>))]
+        public async Task<IHttpActionResult> GetProductosProveedor(string proveedorId, string almacen)
+        {
+            if (string.IsNullOrEmpty(proveedorId) || string.IsNullOrEmpty(almacen))
+            {
+                return BadRequest("Debe especificar proveedorId y almacen");
+            }
+
+            // Obtener productos del proveedor con estado 0
+            var productosProveedor = await db.ProveedoresProductoes
+                .Where(pp => pp.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && pp.Nº_Proveedor == proveedorId)
+                .Join(db.Productos.Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Estado == 0),
+                    pp => pp.Nº_Producto,
+                    p => p.Número,
+                    (pp, p) => new { Producto = p, ProveedorProducto = pp })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            if (!productosProveedor.Any())
+            {
+                return Ok(new List<ProductoControlStockDTO>());
+            }
+
+            // Obtener el proveedor para DiasEnServir
+            var proveedor = await db.Proveedores
+                .FirstOrDefaultAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == proveedorId)
+                .ConfigureAwait(false);
+
+            if (proveedor == null)
+            {
+                return NotFound();
+            }
+
+            int diasReaprovisionamiento = proveedor.DíasEnServir;
+            int diasStockSeguridad = 7;
+            DateTime haceDosAnnos = DateTime.Today.AddMonths(-24);
+
+            var resultado = new List<ProductoControlStockDTO>();
+
+            foreach (var item in productosProveedor)
+            {
+                string productoId = item.Producto.Número;
+
+                // Obtener control de stock existente para este almacén
+                var controlStock = await db.ControlesStocks
+                    .FirstOrDefaultAsync(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                                              c.Número == productoId &&
+                                              c.Almacén == almacen)
+                    .ConfigureAwait(false);
+
+                // Calcular consumo anual para el almacén
+                int consumoAnual = (int)await db.LinPedidoVtas
+                    .Where(l => l.Almacén == almacen && l.Producto == productoId && l.Fecha_Factura > haceDosAnnos)
+                    .Select(l => (int?)l.Cantidad)
+                    .DefaultIfEmpty(0)
+                    .SumAsync()
+                    .ConfigureAwait(false);
+
+                // Calcular meses de antigüedad
+                DateTime? fechaPrimerMovimiento = await db.ExtractosProducto
+                    .Where(e => e.Almacén == almacen && e.Número == productoId && e.Cantidad > 0)
+                    .OrderBy(e => e.Fecha)
+                    .Select(e => (DateTime?)e.Fecha)
+                    .FirstOrDefaultAsync()
+                    .ConfigureAwait(false);
+
+                decimal mesesAntiguedad = fechaPrimerMovimiento.HasValue
+                    ? (decimal)(DateTime.Now - fechaPrimerMovimiento.Value).TotalDays / 30
+                    : 1;
+
+                // Ajustar meses de antigüedad a los límites
+                if (mesesAntiguedad < 1) mesesAntiguedad = 1;
+                if (mesesAntiguedad > 24) mesesAntiguedad = 24;
+
+                // Calcular stocks
+                decimal consumoMedioMensual = consumoAnual / mesesAntiguedad;
+                decimal consumoMedioDiario = consumoMedioMensual / 30;
+                decimal puntoPedido = consumoMedioDiario * (diasStockSeguridad + diasReaprovisionamiento);
+
+                int stockMinimoCalculado = puntoPedido < 1
+                    ? (int)Math.Ceiling(puntoPedido)
+                    : (int)Math.Round(puntoPedido, 0, MidpointRounding.AwayFromZero);
+
+                int stockMaximoCalculado = (int)Math.Ceiling(consumoMedioDiario * (diasStockSeguridad + diasReaprovisionamiento * 2));
+
+                var dto = new ProductoControlStockDTO
+                {
+                    ProductoId = productoId.Trim(),
+                    Nombre = item.Producto.Nombre?.Trim(),
+                    StockMinimoActual = controlStock?.StockMínimo ?? 0,
+                    StockMinimoCalculado = stockMinimoCalculado,
+                    StockMaximoActual = controlStock?.StockMáximo ?? 0,
+                    StockMaximoCalculado = stockMaximoCalculado,
+                    YaExiste = controlStock != null,
+                    Categoria = controlStock?.Categoria ?? string.Empty,
+                    Estacionalidad = controlStock?.Estacionalidad ?? string.Empty,
+                    Multiplos = controlStock?.Múltiplos ?? 1
+                };
+
+                resultado.Add(dto);
+            }
+
+            return Ok(resultado);
+        }
+
         // PUT: api/ControlesStock/5
         [ResponseType(typeof(void))]
         public async Task<IHttpActionResult> PutControlStock(ControlStock controlStock)
@@ -124,28 +241,31 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
-            /*
-            if (id != controlStock.Empresa)
+
+            // Buscar el registro existente
+            var existente = await db.ControlesStocks
+                .FirstOrDefaultAsync(c => c.Empresa == controlStock.Empresa &&
+                                          c.Almacén == controlStock.Almacén &&
+                                          c.Número == controlStock.Número)
+                .ConfigureAwait(false);
+
+            if (existente == null)
             {
-                return BadRequest();
+                return NotFound();
             }
-            */
-            db.Entry(controlStock).State = EntityState.Modified;
+
+            // Actualizar solo los campos específicos
+            existente.StockMínimo = controlStock.StockMínimo;
+            existente.StockMáximo = controlStock.StockMáximo;
+            existente.Categoria = controlStock.Categoria;
+            existente.Estacionalidad = controlStock.Estacionalidad;
+            existente.Múltiplos = controlStock.Múltiplos;
+            existente.Usuario = string.IsNullOrEmpty(controlStock.Usuario) ? User.Identity.Name : controlStock.Usuario;
+            existente.Fecha_Modificación = DateTime.Now;
 
             try
             {
                 _ = await db.SaveChangesAsync();
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!ControlStockExists(controlStock.Empresa, controlStock.Almacén, controlStock.Número))
-                {
-                    return NotFound();
-                }
-                else
-                {
-                    throw;
-                }
             }
             catch (Exception ex)
             {
@@ -163,6 +283,15 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest(ModelState);
             }
+
+            // Si no viene Usuario, lo cogemos de Identity
+            if (string.IsNullOrEmpty(controlStock.Usuario))
+            {
+                controlStock.Usuario = User.Identity.Name;
+            }
+
+            // Establecer fecha de modificación
+            controlStock.Fecha_Modificación = DateTime.Now;
 
             _ = db.ControlesStocks.Add(controlStock);
 

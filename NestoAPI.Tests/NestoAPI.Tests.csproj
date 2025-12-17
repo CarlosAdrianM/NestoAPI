@@ -162,6 +162,7 @@
   <ItemGroup>
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerTest.cs" />
+    <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
