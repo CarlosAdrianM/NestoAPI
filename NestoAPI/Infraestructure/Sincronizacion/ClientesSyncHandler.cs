@@ -210,6 +210,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// <summary>
         /// Actualiza el vendedor del cliente si viene en el mensaje y el vendedor existe en la BD.
         /// NOTA: El vendedor ya ha sido resuelto previamente por ResolverVendedorPorEmailSiNecesario.
+        /// Si el vendedor viene vacío desde Odoo (VendedorEmail = ""), asigna el vendedor por defecto "NV".
         /// </summary>
         private async Task ActualizarVendedorSiValido(
             NVEntities db,
@@ -221,7 +222,13 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             // El vendedor ya fue resuelto previamente (por código o por email)
             if (string.IsNullOrWhiteSpace(message.Vendedor))
             {
-                // No hay vendedor que actualizar
+                // Si VendedorEmail viene como cadena vacía (no null) desde Odoo,
+                // significa que se eliminó el vendedor → asignar NV
+                if (message.VendedorEmail == "" && message.Source == "Odoo")
+                {
+                    clienteNesto.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
+                    Console.WriteLine($"   ✅ Vendedor eliminado en Odoo, asignando '{Constantes.Vendedores.VENDEDOR_GENERAL}'");
+                }
                 return;
             }
 
