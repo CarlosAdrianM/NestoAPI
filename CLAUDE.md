@@ -6,6 +6,54 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NestoAPI is an ASP.NET Web API project built with .NET Framework 4.8 using Entity Framework 6.x for data access. The application provides a REST API for managing sales orders (pedidos de venta), customer management, invoicing, inventory, commissions, and various business operations for a distribution company.
 
+## Related Repositories (Ecosistema Nesto)
+
+El usuario Carlos tiene varios repositorios relacionados que forman el ecosistema completo:
+
+### Nesto (Cliente de escritorio)
+- **URL**: https://github.com/CarlosAdrianM/Nesto
+- **Tecnologías**: C# (48%), Visual Basic .NET (46%), WPF
+- **Descripción**: Aplicación de escritorio para gestión empresarial (pedidos, productos, contratos)
+- **Arquitectura**: Modular con carpetas por dominio (Producto, PedidoCompra, CanalesExternos, Contratos)
+- **Ruta local típica**: `C:\Users\Carlos\source\repos\Nesto`
+
+### NestoApp (App móvil)
+- **URL**: https://github.com/CarlosAdrianM/NestoApp
+- **Tecnologías**: TypeScript (78%), Angular, Ionic
+- **Descripción**: Aplicación móvil multiplataforma para vendedores
+- **Autenticación**: Usa `/oauth/token` de NestoAPI
+- **Ruta local típica**: `C:\Users\Carlos\source\repos\NestoApp`
+
+### TiendasNuevaVision (Tienda online)
+- **URL**: https://github.com/CarlosAdrianM/TiendasNuevaVision
+- **Tecnologías**: (repositorio privado - verificar acceso)
+- **Descripción**: Tienda online para clientes finales
+- **Autenticación**: Usa `/api/auth/token` de NestoAPI
+- **Ruta local típica**: `C:\Users\Carlos\source\repos\TiendasNuevaVision`
+
+### odoo-custom-addons (Integración Odoo)
+- **URL**: https://github.com/CarlosAdrianM/odoo-custom-addons
+- **Tecnologías**: Python (97%), TSQL
+- **Descripción**: Módulos personalizados para Odoo
+- **Módulos**: `helpdesk_custom_machine`, `nesto_sync` (sincronización con Nesto)
+- **Ruta local típica**: `C:\Users\Carlos\source\repos\odoo-custom-addons`
+
+### Relaciones entre repositorios
+```
+┌─────────────────┐     ┌─────────────────┐
+│     Nesto       │────▶│    NestoAPI     │◀────┌─────────────────┐
+│   (Escritorio)  │     │   (Backend)     │     │    NestoApp     │
+│   WPF/VB.NET    │     │  ASP.NET 4.8    │     │  Angular/Ionic  │
+└─────────────────┘     └────────┬────────┘     └─────────────────┘
+                                 │
+                                 ▼
+┌─────────────────┐     ┌─────────────────┐
+│ TiendasNueva    │────▶│  odoo-custom    │
+│    Vision       │     │    -addons      │
+│ (Tienda online) │     │   (Python)      │
+└─────────────────┘     └─────────────────┘
+```
+
 ## Solution Structure
 
 - **NestoAPI**: Main Web API project
