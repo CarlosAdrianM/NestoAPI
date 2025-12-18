@@ -67,18 +67,18 @@ namespace NestoAPI.Tests.Infrastructure
         #region Tests de Vendedor Eliminado en Odoo (Issue #64 - Fix)
 
         /// <summary>
-        /// Documenta el comportamiento cuando el vendedor es eliminado en Odoo.
+        /// Documenta el comportamiento cuando el vendedor es eliminado en un sistema externo.
         ///
         /// REGLA DE NEGOCIO:
-        /// - Cuando VendedorEmail viene como cadena vacía ("") desde Odoo, significa
-        ///   que el vendedor fue eliminado/desasignado en el sistema externo.
+        /// - Cuando VendedorEmail viene como cadena vacía ("") desde cualquier sistema externo,
+        ///   significa que el vendedor fue eliminado/desasignado.
         /// - En este caso, el handler debe asignar el vendedor general "NV".
         ///
         /// Este test documenta que el DETECTOR no detecta cambios (porque Vendedor=null/vacío),
-        /// pero el HANDLER aplicará la lógica especial para Odoo.
+        /// pero el HANDLER aplicará la lógica especial.
         /// </summary>
         [TestMethod]
-        public void DetectarCambios_VendedorEliminadoEnOdoo_NoDetectaCambioEnDetector()
+        public void DetectarCambios_VendedorEliminadoEnSistemaExterno_NoDetectaCambioEnDetector()
         {
             // Arrange
             var clienteNesto = new Cliente
@@ -141,11 +141,11 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         /// <summary>
-        /// Documenta que la lógica de vendedor eliminado SOLO aplica para Source="Odoo".
-        /// Otros sistemas externos no activan esta lógica.
+        /// Documenta que la lógica de vendedor eliminado aplica a CUALQUIER sistema externo.
+        /// VendedorEmail = "" siempre significa "vendedor eliminado", independientemente del Source.
         /// </summary>
         [TestMethod]
-        public void DetectarCambios_VendedorEmailVacioPeroNoOdoo_NoModificaVendedor()
+        public void DetectarCambios_VendedorEmailVacioCualquierSistema_AplicaLogicaEliminacion()
         {
             // Arrange
             var clienteNesto = new Cliente
@@ -154,22 +154,24 @@ namespace NestoAPI.Tests.Infrastructure
                 Vendedor = "CAM"
             };
 
-            // Mensaje de otro sistema (no Odoo) con VendedorEmail vacío
+            // Mensaje de cualquier sistema con VendedorEmail vacío
             var clienteExterno = new ClienteSyncMessage
             {
                 Nombre = "Cliente Test",
                 Vendedor = null,
-                VendedorEmail = "", // Vacío pero de otro sistema
-                Source = "OtroSistema" // NO es Odoo
+                VendedorEmail = "", // Vacío = vendedor eliminado
+                Source = "Prestashop" // Cualquier sistema
             };
 
             // Act
             var cambios = _detector.DetectarCambios(clienteNesto, clienteExterno);
 
             // Assert
+            // El detector no detecta cambios, pero el handler SÍ aplicará la lógica
+            // de asignar NV cuando VendedorEmail = "" (independientemente del Source)
             Assert.AreEqual(0, cambios.Count,
-                "La lógica de vendedor eliminado (asignar 'NV') SOLO aplica " +
-                "cuando Source='Odoo'. Otros sistemas no activan esta lógica.");
+                "El detector no detecta cambios cuando Vendedor es null. " +
+                "El handler aplicará la lógica de VendedorEmail='' para CUALQUIER Source.");
         }
 
         #endregion
@@ -204,13 +206,14 @@ namespace NestoAPI.Tests.Infrastructure
         /// <summary>
         /// Documenta los escenarios de VendedorEmail y su resultado esperado.
         ///
-        /// | VendedorEmail | Source | Vendedor resuelto | Acción del Handler              |
-        /// |---------------|--------|-------------------|----------------------------------|
-        /// | "a@b.com"     | Odoo   | "CAM" (encontrado)| Actualiza a "CAM"               |
-        /// | "a@b.com"     | Odoo   | null (no existe)  | No modifica vendedor            |
-        /// | ""            | Odoo   | null              | Asigna "NV" (eliminado en Odoo) |
-        /// | null          | Odoo   | null              | No modifica vendedor            |
-        /// | ""            | Otro   | null              | No modifica vendedor            |
+        /// | VendedorEmail | Vendedor resuelto | Acción del Handler                    |
+        /// |---------------|-------------------|---------------------------------------|
+        /// | "a@b.com"     | "CAM" (encontrado)| Actualiza a "CAM"                     |
+        /// | "a@b.com"     | null (no existe)  | No modifica vendedor                  |
+        /// | ""            | null              | Asigna "NV" (vendedor eliminado)      |
+        /// | null          | null              | No modifica vendedor                  |
+        ///
+        /// NOTA: La lógica aplica a CUALQUIER Source, no solo Odoo.
         /// </summary>
         [TestMethod]
         public void DocumentacionEscenariosVendedorEmail()

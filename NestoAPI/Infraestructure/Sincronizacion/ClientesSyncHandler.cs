@@ -117,7 +117,15 @@ namespace NestoAPI.Infraestructure.Sincronizacion
 
                     if (!cambios.Any())
                     {
-                        Console.WriteLine($"⚪ Cliente {clienteExterno}-{contactoExterno}: Sin cambios en datos principales, NO SE ACTUALIZA");
+                        Console.WriteLine($"⚪ Cliente {clienteExterno}-{contactoExterno}: Sin cambios en datos principales");
+
+                        // Aunque no haya cambios en datos principales, verificar si hay que actualizar vendedor a NV
+                        // (caso: vendedor eliminado en Odoo)
+                        bool vendedorActualizado = await ActualizarVendedorEliminadoEnOdoo(db, clienteNesto, message, clienteExterno, contactoExterno);
+                        if (vendedorActualizado)
+                        {
+                            _ = await db.SaveChangesAsync();
+                        }
 
                         // Continuar procesando PersonasContacto aunque el cliente no haya cambiado
                         if (message.PersonasContacto != null && message.PersonasContacto.Any())
@@ -208,6 +216,35 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         }
 
         /// <summary>
+        /// Verifica si el vendedor fue eliminado en Odoo y lo actualiza a NV.
+        /// Se usa cuando no hay otros cambios detectados pero el vendedor puede haber sido eliminado.
+        /// </summary>
+        /// <returns>True si se actualizó el vendedor, False si no hubo cambios</returns>
+        private Task<bool> ActualizarVendedorEliminadoEnOdoo(
+            NVEntities db,
+            Cliente clienteNesto,
+            ClienteSyncMessage message,
+            string clienteExterno,
+            string contactoExterno)
+        {
+            // Solo aplica cuando VendedorEmail viene como cadena vacía (no null) desde cualquier sistema externo
+            // VendedorEmail = null significa "no modificar", VendedorEmail = "" significa "vendedor eliminado"
+            if (message.VendedorEmail == "" && string.IsNullOrWhiteSpace(message.Vendedor))
+            {
+                // Solo actualizar si el cliente tiene un vendedor diferente a NV
+                if (clienteNesto?.Vendedor?.Trim() != Constantes.Vendedores.VENDEDOR_GENERAL)
+                {
+                    clienteNesto.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
+                    clienteNesto.Fecha_Modificación = DateTime.Now;
+                    clienteNesto.Usuario = "EXTERNAL_SYNC";
+                    Console.WriteLine($"   ✅ Vendedor eliminado en Odoo para {clienteExterno}-{contactoExterno}, asignando '{Constantes.Vendedores.VENDEDOR_GENERAL}'");
+                    return Task.FromResult(true);
+                }
+            }
+            return Task.FromResult(false);
+        }
+
+        /// <summary>
         /// Actualiza el vendedor del cliente si viene en el mensaje y el vendedor existe en la BD.
         /// NOTA: El vendedor ya ha sido resuelto previamente por ResolverVendedorPorEmailSiNecesario.
         /// Si el vendedor viene vacío desde Odoo (VendedorEmail = ""), asigna el vendedor por defecto "NV".
@@ -222,12 +259,12 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             // El vendedor ya fue resuelto previamente (por código o por email)
             if (string.IsNullOrWhiteSpace(message.Vendedor))
             {
-                // Si VendedorEmail viene como cadena vacía (no null) desde Odoo,
+                // Si VendedorEmail viene como cadena vacía (no null) desde cualquier sistema,
                 // significa que se eliminó el vendedor → asignar NV
-                if (message.VendedorEmail == "" && message.Source == "Odoo")
+                if (message.VendedorEmail == "")
                 {
                     clienteNesto.Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
-                    Console.WriteLine($"   ✅ Vendedor eliminado en Odoo, asignando '{Constantes.Vendedores.VENDEDOR_GENERAL}'");
+                    Console.WriteLine($"   ✅ Vendedor eliminado en sistema externo, asignando '{Constantes.Vendedores.VENDEDOR_GENERAL}'");
                 }
                 return;
             }
