@@ -6,7 +6,7 @@ using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Models;
-using NestoAPI.Models.Facturas;
+using NestoAPI.Models.Facturas; // Incluye NivelSeveridad
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -1955,6 +1955,210 @@ namespace NestoAPI.Tests.Infrastructure
             gestor.LimpiarContextoDespuesDeError(pedido);
             gestor.LimpiarContextoDespuesDeError(pedido);
             gestor.LimpiarContextoDespuesDeError(pedido);
+        }
+
+        #endregion
+
+        #region Grupo 13: Detección de Severidad (Issue #267)
+
+        /// <summary>
+        /// Verifica que un mensaje sin prefijo se considera Error por defecto.
+        /// </summary>
+        [TestMethod]
+        public void DetectarSeveridadPorPrefijo_SinPrefijo_DevuelveError()
+        {
+            // Arrange
+            string mensaje = "Este es un mensaje de error normal";
+
+            // Act
+            var severidad = GestorFacturacionRutas.DetectarSeveridadPorPrefijo(ref mensaje);
+
+            // Assert
+            Assert.AreEqual(NivelSeveridad.Error, severidad);
+            Assert.AreEqual("Este es un mensaje de error normal", mensaje, "El mensaje no debe modificarse");
+        }
+
+        /// <summary>
+        /// Verifica que el prefijo [WARNING] se detecta y elimina del mensaje.
+        /// </summary>
+        [TestMethod]
+        public void DetectarSeveridadPorPrefijo_ConWarning_DevuelveWarningYQuitaPrefijo()
+        {
+            // Arrange
+            string mensaje = "[WARNING] No se puede facturar porque tiene MantenerJunto=1";
+
+            // Act
+            var severidad = GestorFacturacionRutas.DetectarSeveridadPorPrefijo(ref mensaje);
+
+            // Assert
+            Assert.AreEqual(NivelSeveridad.Warning, severidad);
+            Assert.AreEqual("No se puede facturar porque tiene MantenerJunto=1", mensaje, "Debe quitar el prefijo [WARNING]");
+        }
+
+        /// <summary>
+        /// Verifica que el prefijo [WARNING] es case-insensitive.
+        /// </summary>
+        [TestMethod]
+        public void DetectarSeveridadPorPrefijo_ConWarningMinusculas_DevuelveWarning()
+        {
+            // Arrange
+            string mensaje = "[warning] Este es un aviso";
+
+            // Act
+            var severidad = GestorFacturacionRutas.DetectarSeveridadPorPrefijo(ref mensaje);
+
+            // Assert
+            Assert.AreEqual(NivelSeveridad.Warning, severidad);
+            Assert.AreEqual("Este es un aviso", mensaje);
+        }
+
+        /// <summary>
+        /// Verifica que el prefijo [INFO] se detecta correctamente.
+        /// </summary>
+        [TestMethod]
+        public void DetectarSeveridadPorPrefijo_ConInfo_DevuelveInfoYQuitaPrefijo()
+        {
+            // Arrange
+            string mensaje = "[INFO] Información adicional sobre el proceso";
+
+            // Act
+            var severidad = GestorFacturacionRutas.DetectarSeveridadPorPrefijo(ref mensaje);
+
+            // Assert
+            Assert.AreEqual(NivelSeveridad.Info, severidad);
+            Assert.AreEqual("Información adicional sobre el proceso", mensaje);
+        }
+
+        /// <summary>
+        /// Verifica que un mensaje null o vacío devuelve Error.
+        /// </summary>
+        [TestMethod]
+        public void DetectarSeveridadPorPrefijo_MensajeNullOVacio_DevuelveError()
+        {
+            // Arrange
+            string mensajeNull = null;
+            string mensajeVacio = "";
+
+            // Act
+            var severidadNull = GestorFacturacionRutas.DetectarSeveridadPorPrefijo(ref mensajeNull);
+            var severidadVacio = GestorFacturacionRutas.DetectarSeveridadPorPrefijo(ref mensajeVacio);
+
+            // Assert
+            Assert.AreEqual(NivelSeveridad.Error, severidadNull);
+            Assert.AreEqual(NivelSeveridad.Error, severidadVacio);
+        }
+
+        /// <summary>
+        /// Verifica que DetectarSeveridad detecta el prefijo [WARNING] en excepciones normales.
+        /// </summary>
+        [TestMethod]
+        public void DetectarSeveridad_ExcepcionConPrefijoWarning_DevuelveWarning()
+        {
+            // Arrange
+            var ex = new Exception("[WARNING] El albarán se creó pero la factura queda pendiente");
+            string mensaje = ex.Message;
+
+            // Act
+            var severidad = GestorFacturacionRutas.DetectarSeveridad(ex, ref mensaje);
+
+            // Assert
+            Assert.AreEqual(NivelSeveridad.Warning, severidad);
+            Assert.AreEqual("El albarán se creó pero la factura queda pendiente", mensaje);
+        }
+
+        /// <summary>
+        /// Verifica que DetectarSeveridad devuelve Error para excepciones normales sin prefijo.
+        /// </summary>
+        [TestMethod]
+        public void DetectarSeveridad_ExcepcionSinPrefijo_DevuelveError()
+        {
+            // Arrange
+            var ex = new Exception("Error de base de datos");
+            string mensaje = ex.Message;
+
+            // Act
+            var severidad = GestorFacturacionRutas.DetectarSeveridad(ex, ref mensaje);
+
+            // Assert
+            Assert.AreEqual(NivelSeveridad.Error, severidad);
+            Assert.AreEqual("Error de base de datos", mensaje);
+        }
+
+        /// <summary>
+        /// Verifica que el prefijo tiene prioridad sobre el State de SqlException.
+        /// Si el mensaje tiene [WARNING], debe devolver Warning aunque SqlException tenga state=1.
+        /// </summary>
+        [TestMethod]
+        public void DetectarSeveridad_PrefijoTienePrioridadSobreSqlState()
+        {
+            // Arrange - Excepción normal con prefijo (simula el caso real)
+            var ex = new Exception("[WARNING] Mensaje con prefijo");
+            string mensaje = ex.Message;
+
+            // Act
+            var severidad = GestorFacturacionRutas.DetectarSeveridad(ex, ref mensaje);
+
+            // Assert
+            Assert.AreEqual(NivelSeveridad.Warning, severidad, "El prefijo debe tener prioridad");
+            Assert.AreEqual("Mensaje con prefijo", mensaje);
+        }
+
+        /// <summary>
+        /// Verifica que el caso MantenerJunto se marca como Warning (no Error).
+        /// Este test documenta el comportamiento esperado para la issue #267.
+        /// </summary>
+        [TestMethod]
+        public async Task FacturarRutas_MantenerJuntoConLineasPendientes_RegistraWarningNoError()
+        {
+            // Arrange - Pedido NRM con MantenerJunto=1 y líneas sin albarán
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 12350,
+                Nº_Cliente = "1006",
+                Contacto = "0",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                MantenerJunto = true,
+                NotaEntrega = false,
+                Comentarios = "",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta
+                    {
+                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                        VtoBueno = true,
+                        Base_Imponible = 100m
+                    },
+                    new LinPedidoVta
+                    {
+                        Estado = Constantes.EstadosLineaVenta.PENDIENTE, // No se albaranará
+                        VtoBueno = true,
+                        Base_Imponible = 50m
+                    }
+                }
+            };
+
+            var pedidos = new List<CabPedidoVta> { pedido };
+
+            // Configurar mock
+            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12350, "usuario"))
+                .Returns(Task.FromResult(1006))
+                .Invokes(() =>
+                {
+                    pedido.LinPedidoVtas[0].Estado = Constantes.EstadosLineaVenta.ALBARAN;
+                });
+
+            A.CallTo(() => servicioTraspaso.HayQueTraspasar(pedido)).Returns(false);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(0));
+
+            // Act
+            var response = await gestor.FacturarRutas(pedidos, "usuario");
+
+            // Assert
+            Assert.AreEqual(1, response.PedidosConErrores.Count, "Debe registrar 1 incidencia");
+            Assert.AreEqual(NivelSeveridad.Warning, response.PedidosConErrores[0].Severidad,
+                "MantenerJunto con líneas pendientes debe ser WARNING, no ERROR");
+            Assert.IsTrue(response.PedidosConErrores[0].MensajeError.Contains("MantenerJunto=1"));
         }
 
         #endregion

@@ -490,14 +490,15 @@ namespace NestoAPI.Infraestructure.Facturas
             if (!PuedeFacturarPedido(pedido))
             {
                 // No se puede facturar porque MantenerJunto = 1 y hay líneas sin albarán
-                // IMPORTANTE: Registrar esto como un "error" para que el usuario lo sepa
+                // Es un WARNING porque el albarán SÍ se creó, solo la factura queda pendiente
                 var lineasSinAlbaran = pedido.LinPedidoVtas?
                     .Count(l => l.Estado < Constantes.EstadosLineaVenta.ALBARAN) ?? 0;
 
                 RegistrarError(pedido, "Factura",
                     $"No se puede facturar porque tiene MantenerJunto=1 y hay {lineasSinAlbaran} línea(s) sin albarán. " +
                     $"Se ha creado el albarán {numeroAlbaran} pero la factura queda pendiente hasta que todas las líneas tengan albarán.",
-                    response);
+                    response,
+                    NivelSeveridad.Warning);
 
                 // En este caso, si tiene comentario de impresión, generar PDF del ALBARÁN
                 if (DebeImprimirDocumento(pedido.Comentarios))
@@ -879,7 +880,8 @@ namespace NestoAPI.Infraestructure.Facturas
             CabPedidoVta pedido,
             string tipoError,
             string mensajeError,
-            FacturarRutasResponseDTO response)
+            FacturarRutasResponseDTO response,
+            NivelSeveridad severidad = NivelSeveridad.Error)
         {
             string nombreCliente = "Desconocido";
             try
@@ -926,12 +928,14 @@ namespace NestoAPI.Infraestructure.Facturas
                     PeriodoFacturacion = pedido.Periodo_Facturacion,
                     TipoError = tipoError,
                     MensajeError = mensajeError,
+                    Severidad = severidad,
                     FechaEntrega = fechaEntrega ?? DateTime.Today,
                     Total = total
                 });
 
-                // CRÍTICO: Escribir en Debug para que aparezca en la ventana de Salida
-                System.Diagnostics.Debug.WriteLine($"ERROR REGISTRADO - Pedido {pedido.Número}: [{tipoError}] {mensajeError}");
+                // Escribir en Debug con el nivel de severidad
+                var prefijo = severidad == NivelSeveridad.Warning ? "WARNING" : severidad == NivelSeveridad.Info ? "INFO" : "ERROR";
+                System.Diagnostics.Debug.WriteLine($"{prefijo} REGISTRADO - Pedido {pedido.Número}: [{tipoError}] {mensajeError}");
             }
             catch (Exception ex)
             {
@@ -943,6 +947,10 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <summary>
         /// Registra un error en el response con detalles completos de la excepción.
         /// Si el error es de descuadre, añade información del ValidadorDescuentoPP.
+        /// Detecta la severidad por:
+        /// 1. Prefijo [WARNING] en el mensaje
+        /// 2. State de SqlException (state=2 → Warning)
+        /// 3. Severity de SqlException (menor a 11 → Warning)
         /// </summary>
         private void RegistrarError(
             CabPedidoVta pedido,
@@ -961,13 +969,111 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
             }
 
-            RegistrarError(pedido, tipoError, mensajeCompleto, response);
+            // Detectar severidad (combina prefijo, state y severity de SQL)
+            var severidad = DetectarSeveridad(ex, ref mensajeCompleto);
+
+            RegistrarError(pedido, tipoError, mensajeCompleto, response, severidad);
 
             // Si es un error de descuadre, añadir información del validador de descuento PP
             if (EsErrorDescuadre(mensajeCompleto))
             {
                 AgregarInfoDescuentoPP(pedido, response);
             }
+        }
+
+        /// <summary>
+        /// Detecta la severidad combinando múltiples métodos:
+        /// 1. Prefijo [WARNING] o [INFO] en el mensaje
+        /// 2. State de SqlException (state=2 → Warning, state=3 → Info)
+        /// 3. Severity/Class de SqlException (menor a 11 → Warning)
+        /// </summary>
+        /// <param name="ex">Excepción a analizar</param>
+        /// <param name="mensaje">Mensaje a analizar (se modifica para quitar el prefijo si existe)</param>
+        /// <returns>NivelSeveridad detectado</returns>
+        internal static NivelSeveridad DetectarSeveridad(Exception ex, ref string mensaje)
+        {
+            // 1. Primero verificar prefijo en el mensaje (tiene prioridad)
+            var severidadPorPrefijo = DetectarSeveridadPorPrefijo(ref mensaje);
+            if (severidadPorPrefijo != NivelSeveridad.Error)
+            {
+                return severidadPorPrefijo;
+            }
+
+            // 2. Verificar SqlException (buscar en toda la cadena de excepciones)
+            var sqlEx = EncontrarSqlException(ex);
+            if (sqlEx != null)
+            {
+                foreach (System.Data.SqlClient.SqlError error in sqlEx.Errors)
+                {
+                    // State = 2 → Warning (convención personalizada)
+                    if (error.State == 2)
+                    {
+                        return NivelSeveridad.Warning;
+                    }
+                    // State = 3 → Info (convención personalizada)
+                    if (error.State == 3)
+                    {
+                        return NivelSeveridad.Info;
+                    }
+                    // Severity/Class < 11 → Warning (mensajes informativos de SQL Server)
+                    if (error.Class < 11)
+                    {
+                        return NivelSeveridad.Warning;
+                    }
+                }
+            }
+
+            // 3. Por defecto es Error
+            return NivelSeveridad.Error;
+        }
+
+        /// <summary>
+        /// Busca una SqlException en la cadena de excepciones.
+        /// </summary>
+        private static System.Data.SqlClient.SqlException EncontrarSqlException(Exception ex)
+        {
+            var current = ex;
+            while (current != null)
+            {
+                if (current is System.Data.SqlClient.SqlException sqlEx)
+                {
+                    return sqlEx;
+                }
+                current = current.InnerException;
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Detecta la severidad por prefijo en el mensaje ([WARNING], [INFO]).
+        /// Si encuentra un prefijo, lo elimina del mensaje y devuelve la severidad correspondiente.
+        /// Por defecto devuelve Error si no hay prefijo.
+        /// </summary>
+        /// <param name="mensaje">Mensaje a analizar (se modifica para quitar el prefijo)</param>
+        /// <returns>NivelSeveridad detectado</returns>
+        internal static NivelSeveridad DetectarSeveridadPorPrefijo(ref string mensaje)
+        {
+            if (string.IsNullOrEmpty(mensaje))
+            {
+                return NivelSeveridad.Error;
+            }
+
+            // Detectar [WARNING]
+            if (mensaje.StartsWith("[WARNING]", StringComparison.OrdinalIgnoreCase))
+            {
+                mensaje = mensaje.Substring("[WARNING]".Length).TrimStart();
+                return NivelSeveridad.Warning;
+            }
+
+            // Detectar [INFO]
+            if (mensaje.StartsWith("[INFO]", StringComparison.OrdinalIgnoreCase))
+            {
+                mensaje = mensaje.Substring("[INFO]".Length).TrimStart();
+                return NivelSeveridad.Info;
+            }
+
+            // Por defecto es Error
+            return NivelSeveridad.Error;
         }
 
         /// <summary>

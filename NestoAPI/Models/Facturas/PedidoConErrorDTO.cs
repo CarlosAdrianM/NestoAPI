@@ -3,6 +3,27 @@ using System;
 namespace NestoAPI.Models.Facturas
 {
     /// <summary>
+    /// Nivel de severidad de un mensaje en el proceso de facturación
+    /// </summary>
+    public enum NivelSeveridad
+    {
+        /// <summary>
+        /// Error crítico que impide el proceso (ej: excepción al crear albarán/factura)
+        /// </summary>
+        Error = 0,
+
+        /// <summary>
+        /// Aviso informativo que el usuario puede ignorar (ej: factura pendiente por MantenerJunto)
+        /// </summary>
+        Warning = 1,
+
+        /// <summary>
+        /// Información adicional para el usuario (sin acción requerida)
+        /// </summary>
+        Info = 2
+    }
+
+    /// <summary>
     /// Información de un pedido que tuvo errores durante el proceso de facturación
     /// </summary>
     public class PedidoConErrorDTO
@@ -51,6 +72,14 @@ namespace NestoAPI.Models.Facturas
         /// Mensaje de error detallado
         /// </summary>
         public string MensajeError { get; set; }
+
+        /// <summary>
+        /// Nivel de severidad del mensaje.
+        /// Error: fallo crítico que impide el proceso.
+        /// Warning: aviso informativo que el usuario puede ignorar.
+        /// Info: información adicional sin acción requerida.
+        /// </summary>
+        public NivelSeveridad Severidad { get; set; } = NivelSeveridad.Error;
 
         /// <summary>
         /// Fecha de entrega del pedido
