@@ -242,6 +242,12 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            // Validar que Fecha_Modificación tenga un valor válido para SQL Server datetime (>= 1753)
+            if (controlStock.Fecha_Modificación < new DateTime(1753, 1, 1))
+            {
+                controlStock.Fecha_Modificación = DateTime.Now;
+            }
+
             // Buscar el registro existente
             var existente = await db.ControlesStocks
                 .FirstOrDefaultAsync(c => c.Empresa == controlStock.Empresa &&
@@ -290,7 +296,7 @@ namespace NestoAPI.Controllers
                 controlStock.Usuario = User.Identity.Name;
             }
 
-            // Establecer fecha de modificación
+            // Establecer fecha de modificación (siempre usamos Now para evitar problemas con datetime de SQL Server)
             controlStock.Fecha_Modificación = DateTime.Now;
 
             _ = db.ControlesStocks.Add(controlStock);

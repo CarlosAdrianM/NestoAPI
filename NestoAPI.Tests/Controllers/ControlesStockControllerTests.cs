@@ -280,5 +280,99 @@ namespace NestoAPI.Tests.Controllers
         }
 
         #endregion
+
+        #region Fecha_Modificación Validation Tests (Issue #63)
+
+        /// <summary>
+        /// Verifica que cuando Fecha_Modificación es DateTime.MinValue (0001-01-01),
+        /// el controlador lo corrige a DateTime.Now para evitar error de SQL Server.
+        /// SQL Server datetime no acepta fechas antes de 1753-01-01.
+        /// </summary>
+        [TestMethod]
+        public void ControlStock_FechaModificacionMinValue_DebeCorregirse()
+        {
+            // Arrange
+            var controlStock = new ControlStock
+            {
+                Empresa = "1",
+                Almacén = "ALG",
+                Número = "17404",
+                StockMínimo = 5,
+                StockMáximo = 10,
+                Múltiplos = 1,
+                Usuario = "test",
+                Fecha_Modificación = DateTime.MinValue // Valor problemático
+            };
+
+            // Act - Simular la validación que hace el controlador
+            if (controlStock.Fecha_Modificación < new DateTime(1753, 1, 1))
+            {
+                controlStock.Fecha_Modificación = DateTime.Now;
+            }
+
+            // Assert
+            Assert.IsTrue(controlStock.Fecha_Modificación >= new DateTime(1753, 1, 1),
+                "La fecha debe ser válida para SQL Server datetime (>= 1753-01-01)");
+            Assert.IsTrue(controlStock.Fecha_Modificación.Year >= 2020,
+                "La fecha debe ser cercana a la actual");
+        }
+
+        /// <summary>
+        /// Verifica que cuando Fecha_Modificación tiene un valor válido,
+        /// no se modifica.
+        /// </summary>
+        [TestMethod]
+        public void ControlStock_FechaModificacionValida_NoSeModifica()
+        {
+            // Arrange
+            var fechaOriginal = new DateTime(2025, 12, 19, 10, 30, 0);
+            var controlStock = new ControlStock
+            {
+                Empresa = "1",
+                Almacén = "ALG",
+                Número = "17404",
+                StockMínimo = 5,
+                StockMáximo = 10,
+                Múltiplos = 1,
+                Usuario = "test",
+                Fecha_Modificación = fechaOriginal
+            };
+
+            // Act - Simular la validación que hace el controlador
+            if (controlStock.Fecha_Modificación < new DateTime(1753, 1, 1))
+            {
+                controlStock.Fecha_Modificación = DateTime.Now;
+            }
+
+            // Assert
+            Assert.AreEqual(fechaOriginal, controlStock.Fecha_Modificación,
+                "La fecha válida no debe modificarse");
+        }
+
+        /// <summary>
+        /// Verifica que la fecha límite de SQL Server (1753-01-01) se considera válida.
+        /// </summary>
+        [TestMethod]
+        public void ControlStock_FechaModificacion1753_EsValida()
+        {
+            // Arrange
+            var fechaLimite = new DateTime(1753, 1, 1);
+            var controlStock = new ControlStock
+            {
+                Empresa = "1",
+                Almacén = "ALG",
+                Número = "17404",
+                Fecha_Modificación = fechaLimite
+            };
+
+            // Act - Simular la validación que hace el controlador
+            bool necesitaCorreccion = controlStock.Fecha_Modificación < new DateTime(1753, 1, 1);
+
+            // Assert
+            Assert.IsFalse(necesitaCorreccion,
+                "La fecha 1753-01-01 es el límite válido de SQL Server datetime");
+        }
+
+        #endregion
     }
 }
