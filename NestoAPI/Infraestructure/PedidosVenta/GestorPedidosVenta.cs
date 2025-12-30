@@ -87,9 +87,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             // Cálculo coherente con el SP prdCrearFacturaVta (Issue #242/#243)
             //
-            // IMPORTANTE: NO se puede redondear Bruto porque existe la restricción en BD:
-            //   CK_LinPedidoVta_5: ([bruto]=[precio]*[cantidad] OR [tipolinea]<>(1))
-            // Por tanto Bruto = Cantidad * Precio (sin redondear)
+            // IMPORTANTE (29/12/25):
+            // 1. Redondear Precio a 4 decimales PRIMERO (precisión del tipo money en SQL Server)
+            //    Si no, cuando SQL Server redondea Precio y Bruto independientemente,
+            //    la restricción CK_LinPedidoVta_5 ([bruto]=[precio]*[cantidad]) falla.
+            // 2. Calcular Bruto = Cantidad * Precio_redondeado (sin redondear Bruto)
             //
             // CLAVE PARA EL ASIENTO CONTABLE (02/12/25):
             // El SP construye el asiento usando:
@@ -103,6 +105,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             //   BaseImponible = Bruto - ROUND(Bruto * SumaDescuentos, 2)  <-- INCORRECTO
             //
             // La diferencia (ej: 67.4325 vs 67.43) se acumula y descuadra el asiento.
+            linea.Precio = RoundingHelper.Round(linea.Precio ?? 0, 4);
             bruto = (decimal)(linea.Cantidad * linea.Precio);
             if (linea.Aplicar_Dto)
             {

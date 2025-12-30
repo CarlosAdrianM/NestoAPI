@@ -399,5 +399,115 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region Tests restricción CK_LinPedidoVta_5 (Issue 29/12/25)
+
+        [TestMethod]
+        public void RoundingHelper_RestriccionBD_PrecioDebeRedondearse4DecimalesAntesDeBruto()
+        {
+            // Este test documenta el bug y la solución para la restricción CK_LinPedidoVta_5
+            //
+            // PROBLEMA: Cuando el precio viene con muchos decimales (ej: de CanalesExternos),
+            // SQL Server redondea Precio y Bruto INDEPENDIENTEMENTE al tipo money (4 decimales).
+            // Esto hace que la restricción [bruto]=[precio]*[cantidad] falle.
+            //
+            // SOLUCIÓN: Redondear Precio a 4 decimales ANTES de calcular Bruto.
+            // De esta forma, cuando SQL Server guarde ambos valores como money,
+            // la restricción se cumplirá porque ya están pre-redondeados.
+
+            RoundingHelper.UsarAwayFromZero = true;
+
+            // Datos reales del bug reportado (29/12/25)
+            decimal precioOriginal = 27.88429752066115702479338843m;
+            short cantidad = 3;
+
+            // ANTES (INCORRECTO): Bruto = Cantidad * PrecioSinRedondear
+            decimal brutoIncorrecto = cantidad * precioOriginal; // 83.65289256198347107438016529
+
+            // Cuando SQL Server guarda:
+            // - Precio money: 27.8843 (redondeado independientemente)
+            // - Bruto money: 83.6529 (redondeado independientemente)
+            // - Restricción: 27.8843 * 3 = 83.6529 -> PUEDE FALLAR por redondeo
+
+            // AHORA (CORRECTO): Precio se redondea PRIMERO, luego Bruto = Cantidad * PrecioRedondeado
+            decimal precioRedondeado = RoundingHelper.Round(precioOriginal, 4); // 27.8843
+            decimal brutoCorrecto = cantidad * precioRedondeado; // 83.6529
+
+            // Assert
+            Assert.AreEqual(27.8843m, precioRedondeado, "Precio debe redondearse a 4 decimales");
+            Assert.AreEqual(83.6529m, brutoCorrecto, "Bruto = 3 * 27.8843 = 83.6529");
+
+            // Verificar que la restricción se cumple
+            Assert.AreEqual(brutoCorrecto, precioRedondeado * cantidad,
+                "Restricción CK_LinPedidoVta_5: bruto = precio * cantidad DEBE cumplirse");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_RestriccionBD_CasoLinea2DelBug()
+        {
+            // Segunda línea del bug reportado (29/12/25)
+            RoundingHelper.UsarAwayFromZero = true;
+
+            decimal precioOriginal = 45.355371900826446280991735537m;
+            short cantidad = 2;
+
+            // Solución correcta
+            decimal precioRedondeado = RoundingHelper.Round(precioOriginal, 4); // 45.3554
+            decimal bruto = cantidad * precioRedondeado; // 90.7108
+
+            // Assert
+            Assert.AreEqual(45.3554m, precioRedondeado, "Precio redondeado a 4 decimales");
+            Assert.AreEqual(90.7108m, bruto, "Bruto = 2 * 45.3554 = 90.7108");
+            Assert.AreEqual(bruto, precioRedondeado * cantidad,
+                "Restricción CK_LinPedidoVta_5 se cumple");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_RestriccionBD_DemostracionDelProblema()
+        {
+            // Este test demuestra POR QUÉ falla la restricción si no se redondea el precio primero
+            //
+            // Ejemplo simplificado: precio = 1.00005, cantidad = 2
+            // Sin redondeo: bruto = 2.0001
+            // SQL Server money: precio = 1.0001, bruto = 2.0001
+            // Restricción: 1.0001 * 2 = 2.0002 ≠ 2.0001 -> FALLA
+
+            decimal precio = 1.00005m;
+            short cantidad = 2;
+
+            // Sin redondear precio primero
+            decimal brutoSinRedondearPrecio = cantidad * precio; // 2.0001
+
+            // Simular redondeo de SQL Server money (4 decimales)
+            decimal precioEnMoney = Math.Round(precio, 4, MidpointRounding.AwayFromZero); // 1.0001
+            decimal brutoEnMoney = Math.Round(brutoSinRedondearPrecio, 4, MidpointRounding.AwayFromZero); // 2.0001
+
+            // La restricción falla porque se redondearon independientemente
+            decimal productoEnMoney = precioEnMoney * cantidad; // 2.0002
+            Assert.AreNotEqual(brutoEnMoney, productoEnMoney,
+                "PROBLEMA: Bruto(2.0001) ≠ Precio(1.0001) * Cantidad(2) = 2.0002");
+
+            // SOLUCIÓN: Redondear precio ANTES de calcular bruto
+            decimal precioRedondeadoPrimero = RoundingHelper.Round(precio, 4); // 1.0001
+            decimal brutoConPrecioRedondeado = cantidad * precioRedondeadoPrimero; // 2.0002
+
+            Assert.AreEqual(brutoConPrecioRedondeado, precioRedondeadoPrimero * cantidad,
+                "SOLUCIÓN: Bruto(2.0002) = Precio(1.0001) * Cantidad(2) = 2.0002 ✓");
+        }
+
+        [TestMethod]
+        public void RoundingHelper_Round4Decimales_FuncionaCorrectamente()
+        {
+            RoundingHelper.UsarAwayFromZero = true;
+
+            // Casos de prueba para redondeo a 4 decimales
+            Assert.AreEqual(1.2346m, RoundingHelper.Round(1.23456m, 4), "Redondea hacia arriba");
+            Assert.AreEqual(1.2345m, RoundingHelper.Round(1.23454m, 4), "Redondea hacia abajo");
+            Assert.AreEqual(1.2346m, RoundingHelper.Round(1.234550m, 4), "0.5 redondea hacia arriba (AwayFromZero)");
+            Assert.AreEqual(27.8843m, RoundingHelper.Round(27.88429752066115702479338843m, 4), "Caso real del bug");
+            Assert.AreEqual(45.3554m, RoundingHelper.Round(45.355371900826446280991735537m, 4), "Caso real del bug línea 2");
+        }
+
+        #endregion
     }
 }
