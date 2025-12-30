@@ -740,10 +740,13 @@
     <Compile Include="Models\Comisiones\ComisionesAnualesCursos2025.cs" />
     <Compile Include="Models\Comisiones\ComisionesHelper.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2025.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesEstetica2026.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesJefeVentas2025.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesMinivendedores2025.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesMinivendedores2026.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesJefeVentas2024.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesTelefono2025.cs" />
+    <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesTelefono2026.cs" />
     <Compile Include="Models\Comisiones\Estetica\ComisionesAnualesTelefono2024.cs" />
     <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaClientesNuevos.cs" />
     <Compile Include="Models\Comisiones\Estetica\Etiquetas\EtiquetaClientesTramosMil.cs" />

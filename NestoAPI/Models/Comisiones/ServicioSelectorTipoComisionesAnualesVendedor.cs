@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models.Comisiones.Estetica;
+using NestoAPI.Models.Comisiones.EstrategiasSobrepago;
 using NestoAPI.Models.Comisiones.Peluqueria;
 using System;
 using System.Linq;
@@ -36,7 +37,7 @@ namespace NestoAPI.Models.Comisiones
                     {
                         return new ComisionesAnualesPeluqueria2024(new ServicioComisionesAnualesComun());
                     }
-                    else if (anno == 2025)
+                    else if (anno == 2025 || anno == 2026)
                     {
                         return new ComisionesAnualesPeluqueria2025(new ServicioComisionesAnualesComun());
                     }
@@ -86,6 +87,10 @@ namespace NestoAPI.Models.Comisiones
                     {
                         return new ComisionesAnualesTelefono2025(new ServicioComisionesAnualesComun());
                     }
+                    else if (anno == 2026)
+                    {
+                        return new ComisionesAnualesTelefono2026(new ServicioComisionesAnualesComun());
+                    }
                 }
 
                 var miniVendedores = db.Vendedores.Where(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_MINI).Select(v => v.Número.Trim());
@@ -132,6 +137,15 @@ namespace NestoAPI.Models.Comisiones
                     {
                         return new ComisionesAnualesMinivendedores2025(new ServicioComisionesAnualesComun());
                     }
+                    else if (anno == 2026)
+                    {
+                        return new ComisionesAnualesMinivendedores2026(new ServicioComisionesAnualesComun());
+                    }
+
+                    if (vendedor == "PI" && anno == 2026) // Mantenemos las del 2025
+                    {
+                        return new ComisionesAnualesCursos2025(new ServicioComisionesAnualesComun());
+                    }
                 }
 
                 var jefesVentas = db.EquiposVentas.Where(e => e.Superior == vendedor && e.FechaDesde <= new DateTime(anno, 1, 1)).Select(e => e.Superior).Distinct().ToList();
@@ -142,7 +156,7 @@ namespace NestoAPI.Models.Comisiones
                     {
                         return new ComisionesAnualesJefeVentas2024(new ServicioComisionesAnualesComun());
                     }
-                    if (anno == 2025)
+                    if (anno == 2025 || anno == 2026)
                     {
                         return new ComisionesAnualesJefeVentas2025(new ServicioComisionesAnualesComun());
                     }
@@ -180,6 +194,10 @@ namespace NestoAPI.Models.Comisiones
                 {
                     return new ComisionesAnnoParcial(new ComisionesAnualesEstetica2025(new ServicioComisionesAnualesComun()), 2);
                 }
+                else if (anno == 2026)
+                {
+                    return new ComisionesAnualesEstetica2026(new ServicioComisionesAnualesComun());
+                }
 
                 throw new Exception("El año " + anno.ToString() + " no está controlado por el sistema de comisiones");
             }
@@ -187,9 +205,18 @@ namespace NestoAPI.Models.Comisiones
 
         public static IEstrategiaComisionSobrepago EstrategiaComisionSobrepago(string vendedor, int anno, int mes)
         {
-            return vendedor == "MRM" && anno == 2025 && mes >= 9
-                ? new EstrategiaSobrepagoTramoAnterior()
-                : (IEstrategiaComisionSobrepago)new EstrategiaSobrepagoDescuentoCompleto();
+            if (vendedor == "MRM" && anno == 2025 && mes >= 9)
+            {
+                return new EstrategiaSobrepagoTramoAnterior();
+            }
+            else if (anno < 2026)
+            {
+                return (IEstrategiaComisionSobrepago)new EstrategiaSobrepagoDescuentoCompleto();
+            }
+            else
+            {
+                return (IEstrategiaComisionSobrepago)new EstrategiaSobrepagoMitadDeComision();
+            }
         }
     }
 }

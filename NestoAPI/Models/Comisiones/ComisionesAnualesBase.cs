@@ -7,6 +7,45 @@ namespace NestoAPI.Models.Comisiones
 {
     public abstract class ComisionesAnualesBase
     {
+        /// <summary>
+        /// Reescala los tramos de comisión aplicando un factor a los límites (Hasta).
+        /// Mantiene la continuidad de tramos: Desde[n] = Hasta[n-1] + 0.01M
+        /// </summary>
+        /// <param name="tramosBase">Tramos originales a reescalar</param>
+        /// <param name="factor">Factor de escala (ej: 1.027M para incremento IPC 2.7%)</param>
+        /// <returns>Nueva colección de tramos reescalados</returns>
+        public static ICollection<TramoComision> ReescalarTramos(
+            IEnumerable<TramoComision> tramosBase,
+            decimal factor)
+        {
+            var tramosLista = tramosBase.ToList();
+            var resultado = new Collection<TramoComision>();
+            decimal desdeActual = 0M;
+
+            for (int i = 0; i < tramosLista.Count; i++)
+            {
+                var tramoOriginal = tramosLista[i];
+
+                // Calcular nuevo Hasta: si es MaxValue no se escala
+                decimal nuevoHasta = tramoOriginal.Hasta == decimal.MaxValue
+                    ? decimal.MaxValue
+                    : decimal.Round(tramoOriginal.Hasta * factor, 2);
+
+                resultado.Add(new TramoComision
+                {
+                    Desde = desdeActual,
+                    Hasta = nuevoHasta,
+                    Tipo = tramoOriginal.Tipo,
+                    TipoExtra = tramoOriginal.TipoExtra
+                });
+
+                // El siguiente Desde será Hasta actual + 0.01
+                desdeActual = nuevoHasta + 0.01M;
+            }
+
+            return resultado;
+        }
+
         // Creamos esta clase abstracta para poder quitar métodos del servicio y hacerles test. Ej: LeerResumenAnno
         protected readonly IServicioComisionesAnuales _servicio;
         //private const string GENERAL = "General";

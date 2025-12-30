@@ -22,9 +22,9 @@ namespace NestoAPI.Models.Comisiones.Estetica
 
         public ICalculadorProyecciones CalculadorProyecciones => new CalculadorProyecciones2019(this);
 
-        public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
+        public virtual ICollection<TramoComision> LeerTramosBase()
         {
-            Collection<TramoComision> tramosTelefono = new Collection<TramoComision>
+            return new Collection<TramoComision>
             {
                 new TramoComision
                 {
@@ -130,7 +130,11 @@ namespace NestoAPI.Models.Comisiones.Estetica
                     TipoExtra = .02M
                 }
             };
-            return tramosTelefono;            
+        }
+
+        public ICollection<TramoComision> LeerTramosComisionAnno(string vendedor)
+        {
+            return LeerTramosBase();
         }
 
         public ICollection<TramoComision> LeerTramosComisionMes(string vendedor)
