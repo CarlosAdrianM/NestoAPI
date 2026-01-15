@@ -353,6 +353,7 @@ namespace NestoAPI.Models
         public decimal[] trimestre { get; set; }
         public decimal total => trimestre[0] + trimestre[1] + trimestre[2] + trimestre[3];
         public string nombre { get; set; }
+        public string cifNif { get; set; }
         public string direccion { get; set; }
         public string codigoPostal { get; set; }
 

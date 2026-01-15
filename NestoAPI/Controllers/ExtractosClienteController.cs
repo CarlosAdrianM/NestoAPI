@@ -9,6 +9,8 @@ using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.Mail;
 using System.Text;
 using System.Threading.Tasks;
@@ -147,6 +149,81 @@ namespace NestoAPI.Controllers
             return Ok(modelo);
         }
 
+        /// <summary>
+        /// Descarga el certificado del Modelo 347 en formato PDF.
+        /// Issue #69: Endpoint para que los clientes no tengan que generar el PDF cada uno.
+        /// </summary>
+        /// <param name="empresa">Código de empresa</param>
+        /// <param name="cliente">Código de cliente</param>
+        /// <param name="anno">Año del ejercicio (opcional, por defecto año anterior)</param>
+        /// <returns>PDF del certificado del Modelo 347</returns>
+        [HttpGet]
+        [Authorize]
+        [Route("api/ExtractosCliente/Modelo347Pdf")]
+        public async Task<HttpResponseMessage> GetModelo347Pdf(string empresa, string cliente, int? anno = null)
+        {
+            int ejercicio = anno ?? DateTime.Today.AddYears(-1).Year;
+            DateTime fechaDesde = new DateTime(ejercicio, 1, 1);
+            DateTime fechaHasta = new DateTime(ejercicio + 1, 1, 1);
+
+            // Cargar datos del cliente
+            Cliente clienteDb = await db.Clientes.SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal == true);
+            if (clienteDb == null)
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.NotFound, "Cliente no encontrado");
+            }
+
+            // Cargar datos del extracto
+            List<ExtractoClienteDTO> extracto = await db.ExtractosCliente
+                .Where(e => e.Empresa == empresa && e.Número == cliente && e.TipoApunte == "1" && e.Fecha >= fechaDesde && e.Fecha < fechaHasta && e.Estado != Constantes.ExtractosCliente.Estados.DEUDA_VENCIDA)
+                .Select(extractoEncontrado => new ExtractoClienteDTO
+                {
+                    id = extractoEncontrado.Nº_Orden,
+                    fecha = extractoEncontrado.Fecha,
+                    importe = extractoEncontrado.Importe
+                })
+                .OrderBy(e => e.fecha)
+                .ToListAsync();
+
+            // Crear DTO con datos del modelo 347
+            Mod347DTO modelo = new Mod347DTO
+            {
+                nombre = clienteDb.Nombre?.Trim() ?? "",
+                cifNif = clienteDb.CIF_NIF?.Trim() ?? "",
+                direccion = clienteDb.Dirección?.Trim() ?? "",
+                codigoPostal = clienteDb.CodPostal?.Trim() ?? "",
+                trimestre = new decimal[4]
+            };
+
+            for (int i = 0; i <= 3; i++)
+            {
+                modelo.trimestre[i] = extracto.Where(e => (e.fecha.Month + 2) / 3 == i + 1).Sum(e => e.importe);
+            }
+
+            // Cargar datos de la empresa declarante
+            Empresa empresaDeclarante = await db.Empresas.SingleOrDefaultAsync(e => e.Número == empresa);
+            if (empresaDeclarante == null)
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.NotFound, "Empresa no encontrada");
+            }
+
+            // Generar PDF
+            GeneradorPdfModelo347 generador = new GeneradorPdfModelo347();
+            byte[] pdfBytes = generador.Generar(modelo, empresaDeclarante, ejercicio);
+
+            // Devolver PDF
+            HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(pdfBytes)
+            };
+            response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            response.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("attachment")
+            {
+                FileName = $"Modelo347_{cliente}_{ejercicio}.pdf"
+            };
+
+            return response;
+        }
 
         // GET: api/ExtractosCliente/5
         [ResponseType(typeof(ExtractoCliente))]
