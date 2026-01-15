@@ -335,6 +335,9 @@ namespace NestoAPI.Infraestructure.Facturas
 
             foreach (VencimientoFactura vencimiento in vencimientos)
             {
+                // Issue #66: Ocultar estado de pago en pedidos/proformas porque no tienen pagos reales
+                vencimiento.OcultarEstadoPago = true;
+
                 if (!string.IsNullOrWhiteSpace(vencimiento.CCC))
                 {
                     Iban iban = new Iban(servicio.ComponerIban(cabPedido.Empresa, cabPedido.Nº_Cliente, cabPedido.Contacto, cabPedido.CCC));
