@@ -133,6 +133,10 @@ namespace NestoAPI.Models.Comisiones
                             throw;
                         }
                     }
+                    else if (vendedor == "PI" && anno == 2026) // Mantenemos las del 2025
+                    {
+                        return new ComisionesAnualesCursos2025(new ServicioComisionesAnualesComun());
+                    }
                     else if (anno == 2025)
                     {
                         return new ComisionesAnualesMinivendedores2025(new ServicioComisionesAnualesComun());
@@ -140,11 +144,6 @@ namespace NestoAPI.Models.Comisiones
                     else if (anno == 2026)
                     {
                         return new ComisionesAnualesMinivendedores2026(new ServicioComisionesAnualesComun());
-                    }
-
-                    if (vendedor == "PI" && anno == 2026) // Mantenemos las del 2025
-                    {
-                        return new ComisionesAnualesCursos2025(new ServicioComisionesAnualesComun());
                     }
                 }
 

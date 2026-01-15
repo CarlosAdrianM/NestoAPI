@@ -385,7 +385,7 @@ namespace NestoAPI.Models.RecursosHumanos
             },      
             #endregion 2025
 
-        #region 2026
+            #region 2026
             new Festivo()
             {
                 Fecha = new DateTime(2026, 1, 1),
@@ -505,7 +505,7 @@ namespace NestoAPI.Models.RecursosHumanos
                 Fiesta = "Nochevieja",
                 TipoFestivo = TipoFestivo.Empresa
             }
-        #endregion 2026
+            #endregion 2026
         };
 
     }
