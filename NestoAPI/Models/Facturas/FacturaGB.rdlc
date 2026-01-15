@@ -1182,7 +1182,7 @@
                 <Value>Importe Total Ticket</Value>
                 <Style>
                   <FontFamily>Baskerville Old Face</FontFamily>
-                  <FontSize>8pt</FontSize>
+                  <FontSize>10pt</FontSize>
                   <FontWeight>Bold</FontWeight>
                 </Style>
               </TextRun>
@@ -1220,7 +1220,7 @@
                 <Value>=First(Fields!ImporteTotal.Value, "Facturas")</Value>
                 <Style>
                   <FontFamily>Baskerville Old Face</FontFamily>
-                  <FontSize>8pt</FontSize>
+                  <FontSize>14pt</FontSize>
                   <FontWeight>Bold</FontWeight>
                   <Format>#,0.00 '€'</Format>
                 </Style>
@@ -1234,7 +1234,7 @@
         <rd:DefaultName>NumeroFactura</rd:DefaultName>
         <Top>10.87078cm</Top>
         <Left>10.97821cm</Left>
-        <Height>0.6cm</Height>
+        <Height>0.8cm</Height>
         <Width>7.42007cm</Width>
         <ZIndex>4</ZIndex>
         <Style>
