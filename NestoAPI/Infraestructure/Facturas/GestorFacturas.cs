@@ -934,11 +934,8 @@ namespace NestoAPI.Infraestructure.Facturas
             _ = s.AppendLine("<p style=\"color: green;\">Nuestro compromiso con la protección del medio ambiente es firme, por lo que agradecemos que nos ayude a conseguirlo con la eliminación de las facturas en papel.</p>");
             _ = s.AppendLine("<br/>");
             // Sección para la descarga de la app
-            _ = s.AppendLine("<p><strong>Ahora también puede descargar sus facturas desde nuestra aplicación en su móvil.</strong></p>");
-            _ = s.AppendLine("<p>Descárguela ahora desde Google Play:</p>");
-            _ = s.AppendLine("<a href=\"https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas\" target=\"_blank\">");
-            _ = s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" alt=\"Disponible en Google Play\" style=\"width: 150px; height: auto;\" />");
-            _ = s.AppendLine("</a>");
+            _ = s.AppendLine(GenerarSeccionDescargaApp());
+            _ = s.AppendLine(GenerarMensajeModelo347());
             _ = s.AppendLine("<br/>");
             _ = s.AppendLine(serieFactura.FirmaCorreo);
 
@@ -961,13 +958,68 @@ namespace NestoAPI.Infraestructure.Facturas
             _ = s.AppendLine("<p style=\"color: green;\">Nuestro compromiso con la protección del medio ambiente es firme, por lo que agradecemos que nos ayude a conseguirlo con la eliminación de las facturas en papel.</p>");
             _ = s.AppendLine("<br/>");
             // Sección para la descarga de la app
-            _ = s.AppendLine("<p><strong>Ahora también puede descargar sus facturas desde nuestra aplicación en su móvil.</strong></p>");
-            _ = s.AppendLine("<p>Descárguela ahora desde Google Play:</p>");
-            _ = s.AppendLine("<a href=\"https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas\" target=\"_blank\">");
-            _ = s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" alt=\"Disponible en Google Play\" style=\"width: 150px; height: auto;\" />");
-            _ = s.AppendLine("</a>");
+            _ = s.AppendLine(GenerarSeccionDescargaApp());
+            _ = s.AppendLine(GenerarMensajeModelo347());
             _ = s.AppendLine("<br/>");
             _ = s.AppendLine(serieFactura.FirmaCorreo);
+
+            return s.ToString();
+        }
+
+        /// <summary>
+        /// URL de descarga de la app en Google Play Store.
+        /// Centralizada para facilitar mantenimiento y reutilización.
+        /// </summary>
+        internal const string URL_GOOGLE_PLAY = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+
+        /// <summary>
+        /// Genera la sección HTML para promocionar la descarga de la app.
+        /// Incluye imagen del badge de Google Play + enlace de texto como fallback
+        /// (algunos clientes de correo como Outlook bloquean imágenes externas por defecto).
+        /// </summary>
+        internal static string GenerarSeccionDescargaApp()
+        {
+            var s = new StringBuilder();
+            _ = s.AppendLine("<p><strong>Ahora también puede descargar sus facturas desde nuestra aplicación en su móvil.</strong></p>");
+            _ = s.AppendLine("<p>Descárguela ahora desde Google Play:</p>");
+            _ = s.AppendLine($"<a href=\"{URL_GOOGLE_PLAY}\" target=\"_blank\">");
+            _ = s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" alt=\"Disponible en Google Play\" style=\"width: 150px; height: auto;\" />");
+            _ = s.AppendLine("</a>");
+            // Enlace de texto como fallback para clientes de correo que bloquean imágenes (ej: Outlook)
+            _ = s.AppendLine($"<p style=\"font-size: 12px; color: #666;\">Si no ve la imagen, haga clic aquí: <a href=\"{URL_GOOGLE_PLAY}\" target=\"_blank\">{URL_GOOGLE_PLAY}</a></p>");
+            return s.ToString();
+        }
+
+        /// <summary>
+        /// Genera el mensaje promocional del certificado del Modelo 347.
+        /// Solo se muestra en enero y febrero, que es cuando los clientes necesitan el certificado.
+        /// </summary>
+        /// <returns>HTML del mensaje o cadena vacía si no estamos en enero/febrero</returns>
+        internal static string GenerarMensajeModelo347()
+        {
+            return GenerarMensajeModelo347(DateTime.Today);
+        }
+
+        /// <summary>
+        /// Genera el mensaje promocional del certificado del Modelo 347.
+        /// Versión con fecha inyectable para tests.
+        /// </summary>
+        /// <param name="fecha">Fecha a evaluar</param>
+        /// <returns>HTML del mensaje o cadena vacía si no estamos en enero/febrero</returns>
+        internal static string GenerarMensajeModelo347(DateTime fecha)
+        {
+            if (fecha.Month != 1 && fecha.Month != 2)
+            {
+                return string.Empty;
+            }
+
+            var s = new StringBuilder();
+            _ = s.AppendLine("<br/>");
+            _ = s.AppendLine("<div style=\"border: 2px solid #007bff; border-radius: 8px; padding: 15px; margin: 15px 0; background-color: #e7f3ff;\">");
+            _ = s.AppendLine("<p style=\"font-size: 16px; color: #0056b3; margin: 0 0 10px 0;\"><strong>📋 ¿Necesita su certificado del Modelo 347?</strong></p>");
+            _ = s.AppendLine("<p style=\"margin: 0;\">Ahora puede descargarlo directamente desde nuestra aplicación móvil. ");
+            _ = s.AppendLine("¡Acceda a su certificado de forma rápida y sencilla!</p>");
+            _ = s.AppendLine("</div>");
 
             return s.ToString();
         }

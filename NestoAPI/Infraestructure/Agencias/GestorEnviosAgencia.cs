@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Infraestructure.Videos;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
@@ -109,7 +110,142 @@ namespace NestoAPI.Infraestructure.Agencias
             s.AppendLine("<p></p>");
             s.AppendLine("<a href=\"https://bit.ly/3skuKxx\"> <img src=\"http://productosdeesteticaypeluqueriaprofesional.com/Repositorio/Firma.jpg\" style=\"max-width:100%;\" /></a>");
 
+            // Pie promocional de la app con videoprotocolo
+            string piePromoApp = await GenerarPiePromocionAppAsync(envio.Cliente);
+            s.AppendLine(piePromoApp);
+
             return s;
+        }
+
+        /// <summary>
+        /// Genera el pie promocional para la descarga de la app, mostrando el último videoprotocolo.
+        /// Diseñado con tablas HTML y estilos inline para máxima compatibilidad con clientes de correo.
+        /// </summary>
+        /// <param name="cliente">Cliente para futura personalización del videoprotocolo mostrado</param>
+        internal async Task<string> GenerarPiePromocionAppAsync(string cliente = null)
+        {
+            IServicioVideos servicioVideos = new ServicioVideos();
+            var videoprotocolo = await servicioVideos.ObtenerVideoprotocoloParaCorreo(cliente);
+
+            return GenerarPiePromocionApp(videoprotocolo);
+        }
+
+        /// <summary>
+        /// Genera el HTML del pie promocional. Método separado para facilitar testing.
+        /// </summary>
+        internal static string GenerarPiePromocionApp(VideoLookupModel videoprotocolo)
+        {
+            const string urlGooglePlay = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+
+            var s = new StringBuilder();
+
+            // Separador
+            s.AppendLine("<br/>");
+            s.AppendLine("<hr style=\"border: none; border-top: 1px solid #ddd; margin: 20px 0;\" />");
+
+            // Contenedor principal - tabla para compatibilidad con email
+            s.AppendLine("<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" width=\"100%\" style=\"max-width: 600px;\">");
+            s.AppendLine("<tr><td style=\"padding: 20px; background-color: #f8f9fa; border-radius: 8px;\">");
+
+            // Título principal
+            s.AppendLine("<p style=\"font-size: 18px; color: #333; margin: 0 0 15px 0; font-family: Arial, sans-serif;\">");
+            s.AppendLine("<strong>🎬 Descubre nuestros videoprotocolos exclusivos</strong>");
+            s.AppendLine("</p>");
+
+            // Subtítulo
+            s.AppendLine("<p style=\"font-size: 14px; color: #666; margin: 0 0 15px 0; font-family: Arial, sans-serif;\">");
+            s.AppendLine("Tutoriales paso a paso de tratamientos en cabina, fichas técnicas de productos y mucho más. ");
+            s.AppendLine("<strong>¡Todo gratis en nuestra app!</strong>");
+            s.AppendLine("</p>");
+
+            // Si hay un videoprotocolo, mostrarlo
+            if (videoprotocolo != null && !string.IsNullOrEmpty(videoprotocolo.VideoId))
+            {
+                // Tabla para el videoprotocolo destacado
+                s.AppendLine("<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" width=\"100%\" style=\"margin: 15px 0;\">");
+                s.AppendLine("<tr>");
+
+                // Columna de la imagen (miniatura de YouTube)
+                s.AppendLine("<td style=\"width: 160px; vertical-align: top; padding-right: 15px;\">");
+                // Usamos mqdefault (320x180) que es buen tamaño para email
+                string urlMiniatura = $"https://img.youtube.com/vi/{videoprotocolo.VideoId}/mqdefault.jpg";
+                s.AppendLine($"<img src=\"{urlMiniatura}\" alt=\"{EscapeHtml(videoprotocolo.Titulo)}\" ");
+                s.AppendLine("style=\"width: 160px; height: 90px; border-radius: 4px; display: block;\" />");
+                s.AppendLine("</td>");
+
+                // Columna del texto
+                s.AppendLine("<td style=\"vertical-align: top;\">");
+                s.AppendLine("<p style=\"font-size: 13px; color: #007bff; margin: 0 0 5px 0; font-family: Arial, sans-serif;\">");
+                s.AppendLine("<strong>ÚLTIMO PROTOCOLO</strong>");
+                s.AppendLine("</p>");
+                s.AppendLine($"<p style=\"font-size: 14px; color: #333; margin: 0 0 8px 0; font-family: Arial, sans-serif;\">");
+                s.AppendLine($"<strong>{EscapeHtml(TruncateText(videoprotocolo.Titulo, 60))}</strong>");
+                s.AppendLine("</p>");
+
+                // Descripción truncada
+                if (!string.IsNullOrEmpty(videoprotocolo.Descripcion))
+                {
+                    s.AppendLine($"<p style=\"font-size: 12px; color: #666; margin: 0; font-family: Arial, sans-serif;\">");
+                    s.AppendLine(EscapeHtml(TruncateText(videoprotocolo.Descripcion, 100)));
+                    s.AppendLine("</p>");
+                }
+
+                s.AppendLine("</td>");
+                s.AppendLine("</tr>");
+                s.AppendLine("</table>");
+            }
+
+            // Sección de descarga de la app
+            s.AppendLine("<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" width=\"100%\" style=\"margin-top: 15px;\">");
+            s.AppendLine("<tr>");
+
+            // Botón/Badge de Google Play
+            s.AppendLine("<td style=\"vertical-align: middle;\">");
+            s.AppendLine($"<a href=\"{urlGooglePlay}\" target=\"_blank\" style=\"text-decoration: none;\">");
+            s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" ");
+            s.AppendLine("alt=\"Descargar en Google Play\" style=\"width: 135px; height: auto; display: inline-block;\" />");
+            s.AppendLine("</a>");
+            s.AppendLine("</td>");
+
+            // Texto junto al botón
+            s.AppendLine("<td style=\"vertical-align: middle; padding-left: 15px;\">");
+            s.AppendLine("<p style=\"font-size: 13px; color: #333; margin: 0; font-family: Arial, sans-serif;\">");
+            s.AppendLine("<strong>Descarga la app</strong> y accede a todos los contenidos.");
+            s.AppendLine("</p>");
+            s.AppendLine("</td>");
+
+            s.AppendLine("</tr>");
+            s.AppendLine("</table>");
+
+            // Enlace de texto como fallback (Outlook bloquea imágenes)
+            s.AppendLine($"<p style=\"font-size: 11px; color: #999; margin: 15px 0 0 0; font-family: Arial, sans-serif;\">");
+            s.AppendLine($"¿No ve la imagen? Descargue la app aquí: <a href=\"{urlGooglePlay}\" style=\"color: #007bff;\">{urlGooglePlay}</a>");
+            s.AppendLine("</p>");
+
+            // Cerrar contenedor principal
+            s.AppendLine("</td></tr>");
+            s.AppendLine("</table>");
+
+            return s.ToString();
+        }
+
+        /// <summary>
+        /// Escapa caracteres HTML para evitar XSS y problemas de renderizado.
+        /// </summary>
+        private static string EscapeHtml(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            return System.Web.HttpUtility.HtmlEncode(text);
+        }
+
+        /// <summary>
+        /// Trunca texto a una longitud máxima, añadiendo "..." si es necesario.
+        /// </summary>
+        private static string TruncateText(string text, int maxLength)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            if (text.Length <= maxLength) return text;
+            return text.Substring(0, maxLength - 3) + "...";
         }
         
         public static decimal ImporteReembolso(CabPedidoVta pedidoSeleccionado)

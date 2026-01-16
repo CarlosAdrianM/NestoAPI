@@ -165,6 +165,7 @@
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />
+    <Compile Include="Infrastructure\GestorEnviosAgenciaTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
     <Compile Include="Infrastructure\GestorKitsTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />

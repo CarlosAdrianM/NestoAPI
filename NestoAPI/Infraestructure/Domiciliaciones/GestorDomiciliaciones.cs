@@ -106,11 +106,14 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
             _ = s.AppendLine("<p>Si algo de lo aquí expresado no es de su conformidad o necesita cualquier otra aclaración adicional, puede contactarnos respondiendo a este mismo correo.</p>");
 
             // Sección para la descarga de la app
+            const string urlGooglePlay = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
             _ = s.AppendLine("<p><strong>Si necesita alguna factura de las mencionadas arriba, puede conseguirlas cómodamente desde nuestra aplicación en su móvil.</strong></p>");
             _ = s.AppendLine("<p>Descárguela ahora desde Google Play:</p>");
-            _ = s.AppendLine("<a href=\"https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas\" target=\"_blank\">");
+            _ = s.AppendLine($"<a href=\"{urlGooglePlay}\" target=\"_blank\">");
             _ = s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" alt=\"Disponible en Google Play\" style=\"width: 150px; height: auto;\" />");
             _ = s.AppendLine("</a>");
+            // Enlace de texto como fallback para clientes de correo que bloquean imágenes (ej: Outlook)
+            _ = s.AppendLine($"<p style=\"font-size: 12px; color: #666;\">Si no ve la imagen, haga clic aquí: <a href=\"{urlGooglePlay}\" target=\"_blank\">{urlGooglePlay}</a></p>");
             _ = s.AppendLine("<br/>");
 
             //<!-- Footer -->

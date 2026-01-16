@@ -108,6 +108,40 @@ namespace NestoAPI.Infraestructure.Videos
 
             return GetVideos(ids, tieneComprasRecientes);
         }
+
+        /// <summary>
+        /// Obtiene un videoprotocolo para mostrar en correos promocionales.
+        /// Por ahora devuelve el último videoprotocolo publicado.
+        /// FUTURO: Personalizar según el cliente y sus compras habituales.
+        /// </summary>
+        /// <param name="cliente">Cliente al que se enviará el correo (reservado para futura personalización)</param>
+        /// <returns>VideoLookupModel del videoprotocolo o null si no hay ninguno</returns>
+        public Task<VideoLookupModel> ObtenerVideoprotocoloParaCorreo(string cliente = null)
+        {
+            // FUTURO: Si se proporciona cliente, buscar videoprotocolos relacionados con
+            // los productos que más compra (familias/grupos de sus compras recientes).
+            // Por ahora, simplemente devolvemos el último videoprotocolo publicado.
+
+            using (NVEntities db = new NVEntities())
+            {
+                var video = db.Videos
+                    .Where(v => v.EsUnProtocolo)
+                    .OrderByDescending(v => v.Id)
+                    .Select(v => new VideoLookupModel
+                    {
+                        Id = v.Id,
+                        VideoId = v.VideoId,
+                        Titulo = v.Titulo,
+                        Descripcion = v.Descripcion,
+                        FechaPublicacion = v.FechaPublicacion ?? DateTime.MinValue,
+                        EsUnProtocolo = v.EsUnProtocolo,
+                        BloqueadoPorComprasRecientes = false
+                    })
+                    .FirstOrDefault();
+
+                return Task.FromResult(video);
+            }
+        }
     }
 
 

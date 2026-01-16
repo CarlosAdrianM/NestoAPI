@@ -759,6 +759,117 @@ namespace NestoAPI.Tests.Infrastructure
             // Assert - ExpectedException debería capturar la excepción
             gestor.LeerFacturas(facturas);
         }
+
+        #region Tests para GenerarMensajeModelo347 (Issue #72)
+
+        [TestMethod]
+        public void GenerarMensajeModelo347_EnEnero_DevuelveMensajeConContenido()
+        {
+            // Arrange
+            DateTime fechaEnero = new DateTime(2025, 1, 15);
+
+            // Act
+            string resultado = GestorFacturas.GenerarMensajeModelo347(fechaEnero);
+
+            // Assert
+            Assert.IsFalse(string.IsNullOrEmpty(resultado));
+            Assert.IsTrue(resultado.Contains("347"));
+            Assert.IsTrue(resultado.Contains("certificado"));
+        }
+
+        [TestMethod]
+        public void GenerarMensajeModelo347_EnFebrero_DevuelveMensajeConContenido()
+        {
+            // Arrange
+            DateTime fechaFebrero = new DateTime(2025, 2, 28);
+
+            // Act
+            string resultado = GestorFacturas.GenerarMensajeModelo347(fechaFebrero);
+
+            // Assert
+            Assert.IsFalse(string.IsNullOrEmpty(resultado));
+            Assert.IsTrue(resultado.Contains("347"));
+        }
+
+        [TestMethod]
+        public void GenerarMensajeModelo347_EnMarzo_DevuelveCadenaVacia()
+        {
+            // Arrange
+            DateTime fechaMarzo = new DateTime(2025, 3, 1);
+
+            // Act
+            string resultado = GestorFacturas.GenerarMensajeModelo347(fechaMarzo);
+
+            // Assert
+            Assert.AreEqual(string.Empty, resultado);
+        }
+
+        [TestMethod]
+        public void GenerarMensajeModelo347_EnDiciembre_DevuelveCadenaVacia()
+        {
+            // Arrange
+            DateTime fechaDiciembre = new DateTime(2025, 12, 31);
+
+            // Act
+            string resultado = GestorFacturas.GenerarMensajeModelo347(fechaDiciembre);
+
+            // Assert
+            Assert.AreEqual(string.Empty, resultado);
+        }
+
+        [TestMethod]
+        public void GenerarMensajeModelo347_EnJulio_DevuelveCadenaVacia()
+        {
+            // Arrange
+            DateTime fechaJulio = new DateTime(2025, 7, 15);
+
+            // Act
+            string resultado = GestorFacturas.GenerarMensajeModelo347(fechaJulio);
+
+            // Assert
+            Assert.AreEqual(string.Empty, resultado);
+        }
+
+        [TestMethod]
+        public void GenerarMensajeModelo347_PrimerDiaEnero_DevuelveMensaje()
+        {
+            // Arrange - Caso límite: 1 de enero
+            DateTime fecha = new DateTime(2025, 1, 1);
+
+            // Act
+            string resultado = GestorFacturas.GenerarMensajeModelo347(fecha);
+
+            // Assert
+            Assert.IsFalse(string.IsNullOrEmpty(resultado));
+        }
+
+        [TestMethod]
+        public void GenerarMensajeModelo347_UltimoDiaFebrero_DevuelveMensaje()
+        {
+            // Arrange - Caso límite: último día de febrero (año no bisiesto)
+            DateTime fecha = new DateTime(2025, 2, 28);
+
+            // Act
+            string resultado = GestorFacturas.GenerarMensajeModelo347(fecha);
+
+            // Assert
+            Assert.IsFalse(string.IsNullOrEmpty(resultado));
+        }
+
+        [TestMethod]
+        public void GenerarMensajeModelo347_PrimerDiaMarzo_DevuelveCadenaVacia()
+        {
+            // Arrange - Caso límite: 1 de marzo (ya no debe mostrar)
+            DateTime fecha = new DateTime(2025, 3, 1);
+
+            // Act
+            string resultado = GestorFacturas.GenerarMensajeModelo347(fecha);
+
+            // Assert
+            Assert.AreEqual(string.Empty, resultado);
+        }
+
+        #endregion
     }
 
 
