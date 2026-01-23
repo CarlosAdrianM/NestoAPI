@@ -17,8 +17,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 {
     public class GestorPedidosVenta
     {
-        private readonly ServicioPedidosVenta servicio;
-        public GestorPedidosVenta(ServicioPedidosVenta servicio)
+        private readonly IServicioPedidosVenta servicio;
+        public GestorPedidosVenta(IServicioPedidosVenta servicio)
         {
             this.servicio = servicio;
         }
@@ -536,9 +536,26 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             // Esa deuda la tiene que pagar independientemente de la forma de pago
             decimal importeDeuda = 0; // calcularDeuda()
 
+            if (pedidoBD == null)
+            {
+                return importeDeuda;
+            }
+
+            // Issue #250: Primero miramos si hay efectos manuales del pedido
+            var efectosPedido = servicio.CargarEfectosPedido(empresa, pedido);
+            if (efectosPedido.Any())
+            {
+                // Si hay efectos manuales, sumamos solo los que tienen FormaPago = EFC (efectivo)
+                decimal importeEfectivo = efectosPedido
+                    .Where(e => e.FormaPago == Constantes.FormasPago.EFECTIVO)
+                    .Sum(e => e.Importe);
+
+                return RoundingHelper.DosDecimalesRound(importeEfectivo + importeDeuda);
+            }
+
+            // Si no hay efectos manuales, usamos la lógica original basada en la cabecera
             // Miramos los casos en los que no hay contra reembolso
-            if (pedidoBD == null ||
-                pedidoBD.CCC != null ||
+            if (pedidoBD.CCC != null ||
                 pedidoBD.Periodo_Facturacion == "FDM" ||
                 pedidoBD.Forma_Pago == "CNF" ||
                  pedidoBD.Forma_Pago == "TRN" ||

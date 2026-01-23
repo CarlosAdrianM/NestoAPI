@@ -24,5 +24,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         PlazoPago LeerPlazosPago(string empresa, string plazosPago);
         Producto LeerProducto(string empresa, string producto);
         string LeerTipoExclusiva(string empresa, string producto);
+        List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido);
+        List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido);
+        List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido);
     }
 }

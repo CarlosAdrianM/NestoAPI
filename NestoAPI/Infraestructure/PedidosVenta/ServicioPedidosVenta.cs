@@ -184,7 +184,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return producto.Familia1.TipoExclusiva;
         }
 
-        internal List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido)
+        public List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido)
         {
             using (var db = new NVEntities())
             {
@@ -194,13 +194,23 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
         }
 
-        internal List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido)
+        public List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido)
         {
             using (var db = new NVEntities())
             {
                 return db.LinPedidoVtas
                         .Where(l => l.Número == pedido && l.Picking != 0 && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO)
                         .ToList();
+            }
+        }
+
+        public List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido)
+        {
+            using (var db = new NVEntities())
+            {
+                return db.EfectosPedidosVentas
+                    .Where(e => e.Empresa == empresa && e.Pedido == pedido)
+                    .ToList();
             }
         }
     }
