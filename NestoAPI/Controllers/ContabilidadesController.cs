@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
+using NestoAPI.Models.Mayor;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -8,6 +9,8 @@ using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -246,6 +249,195 @@ namespace NestoAPI.Controllers
                 return BadRequest(ex.Message);
             }
 
+        }
+
+        /// <summary>
+        /// Genera un PDF con el Mayor de una cuenta (cliente o proveedor).
+        /// </summary>
+        /// <param name="empresa">Codigo de empresa</param>
+        /// <param name="tipoCuenta">"cliente" o "proveedor"</param>
+        /// <param name="cuenta">Numero de cliente o proveedor</param>
+        /// <param name="fechaDesde">Fecha inicio del periodo (opcional, por defecto inicio del año)</param>
+        /// <param name="fechaHasta">Fecha fin del periodo (opcional, por defecto hoy)</param>
+        /// <param name="soloFacturas">Si es true, solo muestra movimientos con TipoApunte = 1 (facturas)</param>
+        /// <param name="eliminarPasoACartera">Si es true, elimina los pares Factura+PasoACartera que se anulan</param>
+        /// <returns>PDF con el Mayor de la cuenta</returns>
+        [HttpGet]
+        [Authorize]
+        [Route("api/Contabilidades/MayorPdf")]
+        public async Task<HttpResponseMessage> GetMayorPdf(
+            string empresa,
+            string tipoCuenta,
+            string cuenta,
+            DateTime? fechaDesde = null,
+            DateTime? fechaHasta = null,
+            bool soloFacturas = false,
+            bool eliminarPasoACartera = false)
+        {
+            // Valores por defecto para fechas
+            DateTime desde = fechaDesde ?? new DateTime(DateTime.Now.Year, 1, 1);
+            DateTime hasta = fechaHasta ?? DateTime.Now;
+            DateTime hastaMasUno = hasta.AddDays(1);
+
+            // Validar parametros
+            if (string.IsNullOrWhiteSpace(empresa) || string.IsNullOrWhiteSpace(tipoCuenta) || string.IsNullOrWhiteSpace(cuenta))
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.BadRequest, "Empresa, tipoCuenta y cuenta son obligatorios");
+            }
+
+            tipoCuenta = tipoCuenta.ToLower().Trim();
+            if (tipoCuenta != "cliente" && tipoCuenta != "proveedor")
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.BadRequest, "tipoCuenta debe ser 'cliente' o 'proveedor'");
+            }
+
+            try
+            {
+                // Obtener datos de la empresa
+                Empresa empresaEntity = await db.Empresas.FirstOrDefaultAsync(e => e.Número == empresa);
+                if (empresaEntity == null)
+                {
+                    return Request.CreateErrorResponse(HttpStatusCode.NotFound, "Empresa no encontrada");
+                }
+
+                // Crear DTO del Mayor
+                MayorCuentaDTO mayorDTO = new MayorCuentaDTO
+                {
+                    Empresa = empresa,
+                    NombreEmpresa = empresaEntity.Nombre?.Trim(),
+                    TipoCuenta = tipoCuenta,
+                    NumeroCuenta = cuenta,
+                    FechaDesde = desde,
+                    FechaHasta = hasta,
+                    SoloFacturas = soloFacturas
+                };
+
+                List<MovimientoMayorDTO> movimientos;
+
+                if (tipoCuenta == "cliente")
+                {
+                    // Obtener datos del cliente
+                    Cliente cliente = await db.Clientes
+                        .FirstOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cuenta);
+                    if (cliente == null)
+                    {
+                        return Request.CreateErrorResponse(HttpStatusCode.NotFound, "Cliente no encontrado");
+                    }
+
+                    mayorDTO.NombreCuenta = cliente.Nombre?.Trim();
+                    mayorDTO.CifNif = cliente.CIF_NIF?.Trim();
+                    mayorDTO.Direccion = $"{cliente.Dirección?.Trim()}, {cliente.CodPostal?.Trim()} {cliente.Población?.Trim()}";
+
+                    // Calcular saldo anterior (para clientes no necesita conversion)
+                    decimal saldoAnterior = await db.ExtractosCliente
+                        .Where(e => e.Empresa == empresa && e.Número == cuenta && e.Fecha < desde)
+                        .Select(e => e.Importe)
+                        .DefaultIfEmpty(0)
+                        .SumAsync();
+                    // Para clientes: positivo en ExtractoCliente = Debe (nos deben)
+                    mayorDTO.SaldoAnterior = saldoAnterior;
+
+                    // Obtener extractos del periodo
+                    IQueryable<ExtractoCliente> query = db.ExtractosCliente
+                        .Where(e => e.Empresa == empresa && e.Número == cuenta &&
+                                   e.Fecha >= desde && e.Fecha < hastaMasUno);
+
+                    // Filtrar por TipoApunte si soloFacturas
+                    if (soloFacturas)
+                    {
+                        query = query.Where(e => e.TipoApunte == Constantes.TiposExtractoCliente.FACTURA);
+                    }
+
+                    List<ExtractoCliente> extractos = await query
+                        .OrderBy(e => e.Fecha)
+                        .ThenBy(e => e.Nº_Orden)
+                        .ToListAsync();
+
+                    // Adaptar a MovimientoMayorDTO
+                    ExtractoClienteAdapter adapter = new ExtractoClienteAdapter();
+                    movimientos = adapter.Adaptar(extractos).ToList();
+                }
+                else // proveedor
+                {
+                    // Obtener datos del proveedor
+                    Proveedor proveedor = await db.Proveedores
+                        .FirstOrDefaultAsync(p => p.Empresa == empresa && p.Número == cuenta);
+                    if (proveedor == null)
+                    {
+                        return Request.CreateErrorResponse(HttpStatusCode.NotFound, "Proveedor no encontrado");
+                    }
+
+                    mayorDTO.NombreCuenta = proveedor.Nombre?.Trim();
+                    mayorDTO.CifNif = proveedor.CIF_NIF?.Trim();
+                    mayorDTO.Direccion = $"{proveedor.Dirección?.Trim()}, {proveedor.CodPostal?.Trim()} {proveedor.Población?.Trim()}";
+
+                    // Calcular saldo anterior (para proveedores el signo es inverso)
+                    decimal sumatoriaImportes = await db.ExtractosProveedor
+                        .Where(e => e.Empresa == empresa && e.Número == cuenta && e.Fecha < desde)
+                        .Select(e => e.Importe)
+                        .DefaultIfEmpty(0)
+                        .SumAsync();
+                    // Convertir saldo de proveedor: positivo en ExtractoProveedor = Haber (debemos)
+                    // Para el calculo Debe-Haber, necesitamos invertir el signo
+                    mayorDTO.SaldoAnterior = CalculadorSaldoMayor.ConvertirSaldoAnteriorProveedor(sumatoriaImportes);
+
+                    // Obtener extractos del periodo
+                    IQueryable<ExtractoProveedor> query = db.ExtractosProveedor
+                        .Where(e => e.Empresa == empresa && e.Número == cuenta &&
+                                   e.Fecha >= desde && e.Fecha < hastaMasUno);
+
+                    // Filtrar por TipoApunte si soloFacturas
+                    if (soloFacturas)
+                    {
+                        query = query.Where(e => e.TipoApunte == Constantes.TiposExtractoCliente.FACTURA);
+                    }
+
+                    List<ExtractoProveedor> extractos = await query
+                        .OrderBy(e => e.Fecha)
+                        .ThenBy(e => e.NºOrden)
+                        .ToListAsync();
+
+                    // Adaptar a MovimientoMayorDTO
+                    ExtractoProveedorAdapter adapter = new ExtractoProveedorAdapter();
+                    movimientos = adapter.Adaptar(extractos).ToList();
+                }
+
+                // Aplicar filtro de paso a cartera si se solicita
+                if (eliminarPasoACartera)
+                {
+                    movimientos = CalculadorSaldoMayor.EliminarPasoACartera(movimientos);
+                }
+
+                // Calcular saldos usando el helper
+                var (totalDebe, totalHaber, saldoFinal) = CalculadorSaldoMayor.CalcularSaldos(movimientos, mayorDTO.SaldoAnterior);
+
+                mayorDTO.Movimientos = movimientos;
+                mayorDTO.TotalDebe = totalDebe;
+                mayorDTO.TotalHaber = totalHaber;
+                mayorDTO.SaldoFinal = saldoFinal;
+                mayorDTO.EliminarPasoACartera = eliminarPasoACartera;
+
+                // Generar PDF
+                GeneradorPdfMayor generador = new GeneradorPdfMayor();
+                byte[] pdfBytes = generador.Generar(mayorDTO, empresaEntity);
+
+                // Crear respuesta
+                HttpResponseMessage response = new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new ByteArrayContent(pdfBytes)
+                };
+                response.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+                response.Content.Headers.ContentDisposition = new ContentDispositionHeaderValue("inline")
+                {
+                    FileName = $"Mayor_{tipoCuenta}_{cuenta}_{desde:yyyyMMdd}_{hasta:yyyyMMdd}.pdf"
+                };
+
+                return response;
+            }
+            catch (Exception ex)
+            {
+                return Request.CreateErrorResponse(HttpStatusCode.InternalServerError, ex.Message);
+            }
         }
 
         // PUT: api/Contabilidades/5
