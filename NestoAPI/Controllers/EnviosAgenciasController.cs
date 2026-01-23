@@ -14,6 +14,8 @@ using System.Net.Mail;
 using System.Text;
 using NestoAPI.Infraestructure.Agencias;
 using System.Web.Http.Cors;
+using System.Security.Claims;
+using NestoAPI.Infraestructure.Seguridad;
 
 namespace NestoAPI.Controllers
 {
@@ -202,8 +204,67 @@ namespace NestoAPI.Controllers
         {
             GestorEnviosAgencia gestor = new GestorEnviosAgencia();
 
-            await gestor.EnviarCorreoEntregaAgencia(envio);            
+            await gestor.EnviarCorreoEntregaAgencia(envio);
         }
-        
+
+        /// <summary>
+        /// Obtiene el último envío de un cliente con información de seguimiento.
+        /// Issue #70 - Para TiendasNuevaVision
+        /// </summary>
+        /// <param name="empresa">Código de empresa</param>
+        /// <param name="cliente">Código de cliente</param>
+        /// <returns>Información del último envío con URL de seguimiento</returns>
+        [HttpGet]
+        [Authorize]
+        [Route("api/EnviosAgencias/UltimoEnvioCliente")]
+        [ResponseType(typeof(UltimoEnvioClienteDTO))]
+        public async Task<IHttpActionResult> GetUltimoEnvioCliente(string empresa, string cliente)
+        {
+            if (string.IsNullOrWhiteSpace(empresa) || string.IsNullOrWhiteSpace(cliente))
+            {
+                return BadRequest("Los parámetros empresa y cliente son obligatorios");
+            }
+
+            // Validación de seguridad según tipo de usuario
+            var identity = User.Identity as ClaimsIdentity;
+            var validacion = ValidadorAccesoCliente.ValidarAcceso(identity, cliente);
+            if (!validacion.Autorizado)
+            {
+                return Unauthorized();
+            }
+
+            var ultimoEnvio = await db.EnviosAgencias
+                .Where(e => e.Empresa == empresa &&
+                            e.Cliente == cliente &&
+                            e.CodigoBarras != null &&
+                            e.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
+                .OrderByDescending(e => e.Fecha)
+                .ThenByDescending(e => e.Numero)
+                .Include(e => e.AgenciasTransporte)
+                .Select(e => new UltimoEnvioClienteDTO
+                {
+                    Pedido = e.Pedido ?? 0,
+                    Fecha = e.Fecha,
+                    FechaEntrega = e.FechaEntrega,
+                    AgenciaId = e.Agencia,
+                    AgenciaNombre = e.AgenciasTransporte.Nombre,
+                    AgenciaIdentificador = e.AgenciasTransporte.Identificador,
+                    NumeroSeguimiento = e.CodigoBarras,
+                    CodigoPostal = e.CodPostal,
+                    Cliente = e.Cliente,
+                    Estado = e.Estado,
+                    Bultos = e.Bultos,
+                    Observaciones = e.Observaciones
+                })
+                .FirstOrDefaultAsync();
+
+            if (ultimoEnvio == null)
+            {
+                return NotFound();
+            }
+
+            return Ok(ultimoEnvio);
+        }
+
     }
 }
