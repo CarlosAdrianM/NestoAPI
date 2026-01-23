@@ -257,8 +257,8 @@ public class AuthController : ApiController
             JwtSecurityTokenHandler handler = new JwtSecurityTokenHandler();
             JwtSecurityToken token = handler.ReadJwtToken(accessToken);
 
-            // Validar que no esté expirado hace más de 1 mes
-            if (token.ValidTo < DateTime.UtcNow.AddMonths(-1))
+            // Validar que no esté expirado hace más de 2 años (temporal, ir bajando hasta 1 mes)
+            if (token.ValidTo < DateTime.UtcNow.AddYears(-2))
             {
                 return Unauthorized();
             }
