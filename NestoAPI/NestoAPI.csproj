@@ -555,6 +555,11 @@
     <Compile Include="Infraestructure\Contabilidad\GestorContabilidad.cs" />
     <Compile Include="Infraestructure\Contabilidad\GestorCuaderno43.cs" />
     <Compile Include="Infraestructure\Contabilidad\IContabilidadService.cs" />
+    <Compile Include="Infraestructure\Contabilidad\IExtractoAdapter.cs" />
+    <Compile Include="Infraestructure\Contabilidad\ExtractoClienteAdapter.cs" />
+    <Compile Include="Infraestructure\Contabilidad\ExtractoProveedorAdapter.cs" />
+    <Compile Include="Infraestructure\Contabilidad\GeneradorPdfMayor.cs" />
+    <Compile Include="Infraestructure\Contabilidad\CalculadorSaldoMayor.cs" />
     <Compile Include="Infraestructure\Depositos\GestorDepositos.cs" />
     <Compile Include="Infraestructure\Depositos\IServicioDeposito.cs" />
     <Compile Include="Infraestructure\Depositos\ServicioDeposito.cs" />
@@ -618,6 +623,10 @@
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
     <Compile Include="Infraestructure\RoundingHelper.cs" />
+    <Compile Include="Infraestructure\Seguridad\ClaimsVendedorHelper.cs" />
+    <Compile Include="Infraestructure\Seguridad\IServicioUsuarioVendedor.cs" />
+    <Compile Include="Infraestructure\Seguridad\ServicioUsuarioVendedor.cs" />
+    <Compile Include="Infraestructure\Seguridad\ValidadorAccesoCliente.cs" />
     <Compile Include="Infraestructure\SeEstaVendiendo\GestorSeEstaVendiendo.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
     <Compile Include="Infraestructure\SincronizacionJobsService.cs" />
@@ -661,6 +670,8 @@
     <Compile Include="Infraestructure\Videos\GestorVideos.cs" />
     <Compile Include="Infraestructure\Videos\IServicioVideos.cs" />
     <Compile Include="Infraestructure\Videos\ServicioVideos.cs" />
+    <Compile Include="Infraestructure\OpenAI\IServicioOpenAI.cs" />
+    <Compile Include="Infraestructure\OpenAI\ServicioOpenAI.cs" />
     <Compile Include="InternalsVisibleTo.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.cs" />
     <Compile Include="Migrations\201603171731031_InitialCreate.Designer.cs">
@@ -804,6 +815,8 @@
     <Compile Include="Models\Comisiones\ServicioSelectorTipoComisionesAnualesVendedor.cs" />
     <Compile Include="Models\Comisiones\TramoComision.cs" />
     <Compile Include="Models\Comisiones\VendedorComisionAnual.cs" />
+    <Compile Include="Models\Mayor\MayorCuentaDTO.cs" />
+    <Compile Include="Models\Mayor\MovimientoMayorDTO.cs" />
     <Compile Include="Models\ConciliacionBancariaPunteo.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -850,6 +863,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\EnvioAgenciaDTO.cs" />
+    <Compile Include="Models\UltimoEnvioClienteDTO.cs" />
     <Compile Include="Models\EnviosAgencia.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
