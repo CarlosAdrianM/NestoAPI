@@ -1,6 +1,8 @@
 ﻿// Usings necesarios
+using Microsoft.AspNet.Identity.Owin;
 using Microsoft.Owin.Security;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
 using NestoAPI.Providers;
 using System;
@@ -30,6 +32,15 @@ public class AuthController : ApiController
     private readonly IServicioCorreoElectronico _servicioCorreo;
     private const int ExpirationMinutes = 10;
     private static readonly MemoryCache cache = MemoryCache.Default;
+    private ApplicationUserManager _userManager = null;
+
+    protected ApplicationUserManager UserManager
+    {
+        get
+        {
+            return _userManager ?? Request.GetOwinContext().GetUserManager<ApplicationUserManager>();
+        }
+    }
 
     public AuthController(IGestorClientes gestorClientes, IServicioCorreoElectronico servicioCorreo)
     {
@@ -217,6 +228,68 @@ public class AuthController : ApiController
             }
 
             string newToken = await CrearJWTAsync(email, nif, cliente);
+            return Ok(new { token = newToken });
+        }
+        catch
+        {
+            return Unauthorized();
+        }
+    }
+
+    /// <summary>
+    /// Refresca un token OAuth expirado (usado por NestoApp).
+    /// Los tokens OAuth son generados por /oauth/token y tienen claims de Identity + vendedor.
+    /// Se distinguen de tokens de clientes porque NO tienen claim "cliente".
+    /// </summary>
+    [HttpPost]
+    [Route("api/auth/refreshOAuthToken")]
+    public async Task<IHttpActionResult> RefreshOAuthToken()
+    {
+        if (Request.Headers.Authorization == null || string.IsNullOrEmpty(Request.Headers.Authorization.Parameter))
+        {
+            return Unauthorized();
+        }
+
+        string accessToken = Request.Headers.Authorization.Parameter;
+
+        try
+        {
+            JwtSecurityTokenHandler handler = new JwtSecurityTokenHandler();
+            JwtSecurityToken token = handler.ReadJwtToken(accessToken);
+
+            // Validar que no esté expirado hace más de 1 mes
+            if (token.ValidTo < DateTime.UtcNow.AddMonths(-1))
+            {
+                return Unauthorized();
+            }
+
+            // Detectar si es un token OAuth: NO tiene claim "cliente"
+            string cliente = token.Claims.FirstOrDefault(c => c.Type == "cliente")?.Value;
+            if (!string.IsNullOrEmpty(cliente))
+            {
+                // Es un token de cliente, no OAuth - redirigir al endpoint correcto
+                return BadRequest("Este endpoint es solo para tokens OAuth. Use api/auth/refreshToken para tokens de clientes.");
+            }
+
+            // Extraer username del token (puede estar en Name o NameIdentifier)
+            string userName = token.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value
+                ?? token.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value
+                ?? token.Claims.FirstOrDefault(c => c.Type == "unique_name")?.Value;
+
+            if (string.IsNullOrEmpty(userName))
+            {
+                return Unauthorized();
+            }
+
+            // Buscar usuario en Identity
+            ApplicationUser user = await UserManager.FindByNameAsync(userName);
+            if (user == null)
+            {
+                return Unauthorized();
+            }
+
+            // Regenerar el token con la misma lógica de CustomOAuthProvider
+            string newToken = await CrearJWTParaOAuthAsync(user);
             return Ok(new { token = newToken });
         }
         catch
@@ -428,6 +501,42 @@ public class AuthController : ApiController
         {
             throw;
         }
+    }
+
+    /// <summary>
+    /// Crea un JWT para usuarios OAuth (NestoApp).
+    /// Replica la lógica de CustomOAuthProvider.GrantResourceOwnerCredentials.
+    /// </summary>
+    /// <param name="user">Usuario de Identity</param>
+    /// <returns>JWT string</returns>
+    private async Task<string> CrearJWTParaOAuthAsync(ApplicationUser user)
+    {
+        // Generar la identidad igual que en CustomOAuthProvider
+        ClaimsIdentity oAuthIdentity = await user.GenerateUserIdentityAsync(UserManager, "JWT");
+
+        // Añadir claims de vendedor si el usuario tiene uno asociado (Issue #70)
+        try
+        {
+            ClaimsVendedorHelper.AñadirClaimsVendedor(oAuthIdentity, user.UserName);
+        }
+        catch (Exception)
+        {
+            // Si falla la búsqueda del vendedor, continuamos sin el claim
+        }
+
+        // Establecer propiedades de autenticación
+        AuthenticationProperties props = new AuthenticationProperties
+        {
+            IssuedUtc = DateTime.UtcNow,
+            ExpiresUtc = DateTime.UtcNow.AddDays(1) // Mismo tiempo que Startup.cs OAuthAuthorizationServerOptions
+        };
+
+        // Crear el ticket de autenticación
+        AuthenticationTicket ticket = new AuthenticationTicket(oAuthIdentity, props);
+
+        // Utilizar el CustomJwtFormat para generar el token
+        CustomJwtFormat jwtFormat = new CustomJwtFormat(ConfigurationManager.AppSettings["JwtIssuer"]);
+        return jwtFormat.Protect(ticket);
     }
 
 
