@@ -173,7 +173,13 @@
     <Compile Include="Infrastructure\GestorUbicacionesTests.cs" />
     <Compile Include="Infrastructure\GestosStocksTests.cs" />
     <Compile Include="Infrastructure\GestorDepositosTests.cs" />
+    <Compile Include="Infrastructure\OpenAI\ServicioOpenAITests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
+    <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />
+    <Compile Include="Infrastructure\Seguridad\ClaimsVendedorHelperTests.cs" />
+    <Compile Include="Infrastructure\Seguridad\ValidadorAccesoClienteTests.cs" />
+    <Compile Include="Infrastructure\Contabilidad\ExtractoAdaptersTests.cs" />
+    <Compile Include="Infrastructure\Contabilidad\CalculadorSaldoMayorTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnualesBaseTests.cs" />
     <Compile Include="Models\Comisiones\EtiquetaClientesNuevosTests.cs" />
@@ -195,6 +201,7 @@
     <Compile Include="Models\RecursosHumanos\EmpleadoTest.cs" />
     <Compile Include="Models\RecursosHumanos\AccionTest.cs" />
     <Compile Include="Models\Ubicaciones\PreExtractoProductoDTOTests.cs" />
+    <Compile Include="Models\UltimoEnvioClienteDTOTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Controllers\HomeControllerTest.cs" />
     <Compile Include="Controllers\ValuesControllerTest.cs" />
