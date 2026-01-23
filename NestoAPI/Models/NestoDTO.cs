@@ -130,6 +130,12 @@ namespace NestoAPI.Models
         public bool bloquearPagos { get; set; }
         public bool cccObligatorio { get; set; }
     }
+    public class StockAlmacenDTO
+    {
+        public string almacen { get; set; }
+        public int stock { get; set; }
+        public int cantidadDisponible { get; set; }
+    }
     public class LineaPlantillaVenta
     {
         public string producto { get; set; }
@@ -153,6 +159,7 @@ namespace NestoAPI.Models
         public short stock { get; set; }
         public short cantidadDisponible { get; set; }
         public int clasificacionMasVendidos { get; set; }
+        public List<StockAlmacenDTO> stocks { get; set; }
     }
     public class PersonaContactoDTO
     {

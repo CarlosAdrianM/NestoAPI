@@ -343,7 +343,14 @@ namespace NestoAPI.Controllers
                 return new List<LineaPlantillaVenta>();
             }
             List<LineaPlantillaVenta> resultado = PonerStockLineas(param);
-            return param.Ordenar ? resultado.OrderByDescending(l => l.cantidadDisponible).ToList() : resultado;
+            if (param.Ordenar)
+            {
+                // Ordenar por suma de cantidadDisponible de todos los almacenes
+                return resultado.OrderByDescending(l =>
+                    l.stocks != null ? l.stocks.Sum(s => s.cantidadDisponible) : l.cantidadDisponible
+                ).ToList();
+            }
+            return resultado;
         }
 
         private List<LineaPlantillaVenta> PonerStockLineas(PonerStockParam param)
@@ -352,10 +359,36 @@ namespace NestoAPI.Controllers
             {
                 return new List<LineaPlantillaVenta>();
             }
+
+            // Determinar los almacenes a consultar
+            List<string> almacenesConsultar = param.Almacenes != null && param.Almacenes.Count > 0
+                ? param.Almacenes
+                : !string.IsNullOrEmpty(param.Almacen)
+                    ? new List<string> { param.Almacen }
+                    : new List<string>();
+
             foreach (LineaPlantillaVenta linea in param.Lineas)
             {
                 ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(linea.producto, db);
-                linea.cantidadDisponible = (short)productoNuevo.CantidadDisponible(param.Almacen);
+
+                // Poblar la lista de stocks por almacen
+                linea.stocks = new List<StockAlmacenDTO>();
+                foreach (string almacen in almacenesConsultar)
+                {
+                    linea.stocks.Add(new StockAlmacenDTO
+                    {
+                        almacen = almacen,
+                        stock = productoNuevo.Stock(almacen),
+                        cantidadDisponible = productoNuevo.CantidadDisponible(almacen)
+                    });
+                }
+
+                // Mantener compatibilidad: usar el primer almacen para los campos legacy
+                if (almacenesConsultar.Count > 0)
+                {
+                    string primerAlmacen = almacenesConsultar[0];
+                    linea.cantidadDisponible = (short)productoNuevo.CantidadDisponible(primerAlmacen);
+                }
             }
 
             return param.Lineas;
@@ -380,6 +413,7 @@ namespace NestoAPI.Controllers
         public class PonerStockParam
         {
             public string Almacen { get; set; }
+            public List<string> Almacenes { get; set; }
             public List<LineaPlantillaVenta> Lineas { get; set; }
             public bool Ordenar { get; set; }
         }
