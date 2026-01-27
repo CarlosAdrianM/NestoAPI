@@ -49,6 +49,14 @@ namespace NestoAPI.Models.PedidosVenta
                 return AplicarDescuento ? 1 - ((1 - DescuentoEntidad) * (1 - DescuentoProducto) * (1 - DescuentoLinea) * (1 - descuentoPP)) : 1 - ((1 - DescuentoLinea) * (1 - descuentoPP));
             }
         }
+
+        /// <summary>
+        /// Suma de los descuentos de línea SIN el descuento pronto pago.
+        /// Se usa para mostrar en el correo de pedidos, donde el PP se muestra aparte.
+        /// </summary>
+        public decimal SumaDescuentosSinPP => AplicarDescuento
+            ? 1 - ((1 - DescuentoEntidad) * (1 - DescuentoProducto) * (1 - DescuentoLinea))
+            : DescuentoLinea;
     }
 
 }

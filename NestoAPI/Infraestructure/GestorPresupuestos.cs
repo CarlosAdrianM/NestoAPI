@@ -292,6 +292,9 @@ namespace NestoAPI.Infraestructure
             // Si hay algún almacén con reservas (actuales o anteriores), mostramos la columna
             hayLineasConReservas = almacenesActuales.Count > 0 || almacenesAnteriores.Count > 0;
 
+            // Carlos 27/01/26: Issue #79 - Detectar si hay descuentos para mostrar/ocultar la columna
+            bool hayDescuentos = pedido.Lineas.Any(l => l.SumaDescuentosSinPP > 0);
+
             _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
             _ = s.AppendLine("<thead align = \"right\">");
             _ = s.Append("<tr><th>Imagen</th>");
@@ -299,7 +302,10 @@ namespace NestoAPI.Infraestructure
             _ = s.Append("<th>Descripción</th>");
             _ = s.Append("<th>Cantidad</th>");
             _ = s.Append("<th>Precio Und.</th>");
-            _ = s.Append("<th>Descuento</th>");
+            if (hayDescuentos)
+            {
+                _ = s.Append("<th>Descuento</th>");
+            }
             _ = s.Append("<th>Importe</th>");
             if (hayLineasConReservas)
             {
@@ -388,7 +394,10 @@ namespace NestoAPI.Infraestructure
                 }
                 _ = s.Append("<td>" + linea.Cantidad.ToString() + "</td>");
                 _ = s.Append("<td style=\"text-align:right\">" + linea.PrecioUnitario.ToString("C") + "</td>");
-                _ = s.Append("<td style=\"text-align:right\">" + linea.DescuentoLinea.ToString("P") + "</td>");
+                if (hayDescuentos)
+                {
+                    _ = s.Append("<td style=\"text-align:right\">" + linea.SumaDescuentosSinPP.ToString("P") + "</td>");
+                }
                 _ = s.Append("<td style=\"text-align:right\">" + linea.BaseImponible.ToString("C") + "</td>");
                 if (hayLineasConReservas)
                 {
@@ -418,12 +427,12 @@ namespace NestoAPI.Infraestructure
                     textoServirMantener += " Marcado mantener junto ";
                 }
                 _ = s.AppendLine("<tr style=\"color: " + colorServirJunto + ";\">");
-                int colspanNotas = hayLineasConReservas ? 8 : 7;
+                int colspanNotas = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0);
                 _ = s.AppendLine($"<td colspan='{colspanNotas}'>{textoServirMantener.Trim()}</td>");
                 _ = s.AppendLine("</tr>");
             }
             // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
-            int colspanValidacion = hayLineasConReservas ? 8 : 7;
+            int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0);
             string htmlValidacion = GenerarHtmlSeccionValidacion(pedido.CreadoSinPasarValidacion, respuestaValidacion, colspanValidacion);
             if (!string.IsNullOrEmpty(htmlValidacion))
             {
@@ -431,6 +440,20 @@ namespace NestoAPI.Infraestructure
             }
             _ = s.AppendLine("</tbody>");
             _ = s.AppendLine("</table>");
+
+            // Carlos 27/01/26: Issue #79 - Mostrar descuento pronto pago si existe
+            if (pedido.DescuentoPP > 0)
+            {
+                decimal importeDtoPP = pedido.Lineas.Sum(l => l.Bruto) * pedido.DescuentoPP;
+                _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
+                _ = s.AppendLine("<tbody align=\"right\">");
+                _ = s.AppendLine("<tr>");
+                _ = s.AppendLine($"<td style=\"text-align:right\"><strong>Dto. PP: {pedido.DescuentoPP.ToString("P")}</strong></td>");
+                _ = s.AppendLine($"<td style=\"text-align:right\"><strong>{importeDtoPP.ToString("C")}</strong></td>");
+                _ = s.AppendLine("</tr>");
+                _ = s.AppendLine("</tbody>");
+                _ = s.AppendLine("</table>");
+            }
 
             _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
             _ = s.AppendLine("<thead align = \"right\">");
