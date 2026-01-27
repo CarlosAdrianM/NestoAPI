@@ -101,7 +101,7 @@ namespace NestoAPI.Controllers
 
                 var result = new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = gestor.FacturasEnPDF(facturas, papelConMembrete)
+                    Content = gestor.FacturasEnPDF(facturas, papelConMembrete, User.Identity.Name)
                 };
                 //result.Content.Headers.ContentDisposition =
                 //    new ContentDispositionHeaderValue("attachment")

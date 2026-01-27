@@ -17,7 +17,7 @@ namespace NestoAPI.Infraestructure.Facturas
         Factura LeerAlbaran(string empresa, int numeroAlbaran);
         List<Factura> LeerAlbaranes(List<FacturaLookup> numerosAlbaran);
         List<LineaFactura> LineasFactura(Factura factura);
-        ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false);
+        ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false, string usuario = null);
         List<NotaFactura> NotasFactura(Factura factura);
         List<TotalFactura> TotalesFactura(Factura factura);
         List<VencimientoFactura> VencimientosFactura(Factura factura);

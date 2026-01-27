@@ -46,11 +46,13 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <param name="numeroPedido">Número del pedido</param>
         /// <param name="numeroFactura">Número de factura si se generó (null o "FDM" si es fin de mes)</param>
         /// <param name="numeroAlbaran">Número de albarán si se generó</param>
+        /// <param name="usuario">Usuario para seleccionar el motor de PDF (RDLC/QuestPDF)</param>
         /// <returns>DTO con los documentos listos para imprimir</returns>
         Task<DocumentosImpresionPedidoDTO> ObtenerDocumentosImpresion(
             string empresa,
             int numeroPedido,
             string numeroFactura = null,
-            int? numeroAlbaran = null);
+            int? numeroAlbaran = null,
+            string usuario = null);
     }
 }

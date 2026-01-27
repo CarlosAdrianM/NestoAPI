@@ -15,6 +15,7 @@ using System.Net.Http.Headers;
 using System.Net.Mail;
 using System.Text;
 using System.Threading.Tasks;
+using Elmah;
 
 namespace NestoAPI.Infraestructure.Facturas
 {
@@ -41,29 +42,70 @@ namespace NestoAPI.Infraestructure.Facturas
             return FacturasEnPDF(facturas);
         }
 
-        public ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false)
+        public ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false, string usuario = null)
         {
+            // Determinar qué motor usar según el parámetro del usuario
+            IGeneradorPdfFacturas generador = ObtenerGeneradorPdf(usuario);
+            return generador.GenerarPdf(facturas, papelConMembrete);
+        }
 
-            ReportViewer viewer = new ReportViewer();
-            viewer.LocalReport.ReportPath = facturas.FirstOrDefault().RutaInforme;
-            viewer.LocalReport.DataSources.Add(new ReportDataSource("Facturas", facturas));
-            viewer.LocalReport.DataSources.Add(new ReportDataSource("Direcciones", facturas.FirstOrDefault().Direcciones));
-            viewer.LocalReport.DataSources.Add(new ReportDataSource("LineasFactura", facturas.FirstOrDefault().Lineas));
-            viewer.LocalReport.DataSources.Add(new ReportDataSource("Vendedores", facturas.FirstOrDefault().Vendedores));
-            viewer.LocalReport.DataSources.Add(new ReportDataSource("Vencimientos", facturas.FirstOrDefault().Vencimientos));
-            viewer.LocalReport.DataSources.Add(new ReportDataSource("NotasAlPie", facturas.FirstOrDefault().NotasAlPie));
-            viewer.LocalReport.DataSources.Add(new ReportDataSource("Totales", facturas.FirstOrDefault().Totales));
+        /// <summary>
+        /// Obtiene el generador de PDF apropiado según el parámetro MotorPdfFacturas del usuario.
+        /// Si el parámetro es "QuestPDF", usa la nueva implementación. En cualquier otro caso, usa RDLC.
+        /// IMPORTANTE: Este método NUNCA debe fallar. Si hay cualquier error, usa RDLC por defecto.
+        /// </summary>
+        private IGeneradorPdfFacturas ObtenerGeneradorPdf(string usuario)
+        {
+            // Si no hay usuario, intentar con (defecto) antes de ir a RDLC
+            string usuarioAConsultar = string.IsNullOrEmpty(usuario) ? "(defecto)" : usuario;
 
-            viewer.LocalReport.SetParameters(new ReportParameter("PapelConMembrete", papelConMembrete.ToString()));
+            try
+            {
+                string motorPdf = Controllers.ParametrosUsuarioController.LeerParametro(
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    usuarioAConsultar,
+                    "MotorPdfFacturas");
 
-            viewer.LocalReport.Refresh();
-            byte[] bytes = viewer.LocalReport.Render("PDF", null, out _, out _, out _, out _, out _);
+                if (string.Equals(motorPdf, "QuestPDF", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new GeneradorPdfFacturasQuestPdf();
+                }
+            }
+            catch (Exception ex)
+            {
+                // Si falla con el usuario real, intentar con (defecto)
+                if (!string.IsNullOrEmpty(usuario) && usuario != "(defecto)")
+                {
+                    ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
+                        $"Error al leer MotorPdfFacturas para usuario '{usuario}': {ex.Message}. Intentando con (defecto).", ex)));
 
-            //https://stackoverflow.com/questions/29643043/crystalreports-reportdocument-memory-leak-with-database-connections
-            viewer.LocalReport.Dispose();
-            viewer.Dispose();
+                    try
+                    {
+                        string motorPdfDefecto = Controllers.ParametrosUsuarioController.LeerParametro(
+                            Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                            "(defecto)",
+                            "MotorPdfFacturas");
 
-            return new ByteArrayContent(bytes);
+                        if (string.Equals(motorPdfDefecto, "QuestPDF", StringComparison.OrdinalIgnoreCase))
+                        {
+                            return new GeneradorPdfFacturasQuestPdf();
+                        }
+                    }
+                    catch (Exception exDefecto)
+                    {
+                        ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
+                            $"Error al leer MotorPdfFacturas para (defecto): {exDefecto.Message}. Usando RDLC.", exDefecto)));
+                    }
+                }
+                else
+                {
+                    ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
+                        $"Error al leer MotorPdfFacturas para '{usuarioAConsultar}': {ex.Message}. Usando RDLC.", ex)));
+                }
+            }
+
+            // Por defecto, usar RDLC (también si el parámetro no existe o tiene otro valor)
+            return new GeneradorPdfFacturasRdlc();
         }
 
         public Factura LeerFactura(string empresa, string numeroFactura)

@@ -309,7 +309,7 @@ namespace NestoAPI.Infraestructure.Facturas
                             try
                             {
                                 System.Diagnostics.Debug.WriteLine($"  → Generando PDF de nota de entrega ({numeroCopias} copias)");
-                                notaEntrega.DatosImpresion = GenerarDatosImpresionNotaEntrega(pedido, pedido.Empresa, pedido.Número);
+                                notaEntrega.DatosImpresion = GenerarDatosImpresionNotaEntrega(pedido, pedido.Empresa, pedido.Número, usuario);
                             }
                             catch (Exception exPdf)
                             {
@@ -470,7 +470,7 @@ namespace NestoAPI.Infraestructure.Facturas
             // 5. Si es FDM, generar PDF del albarán si tiene comentario de impresión
             else if (pedido.Periodo_Facturacion?.Trim() == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
             {
-                AgregarDatosImpresionAlbaranSiCorresponde(pedido, numeroAlbaran, response);
+                AgregarDatosImpresionAlbaranSiCorresponde(pedido, numeroAlbaran, response, usuario);
             }
         }
 
@@ -505,7 +505,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     try
                     {
-                        AgregarDatosImpresionAlbaranSiCorresponde(pedido, numeroAlbaran, response);
+                        AgregarDatosImpresionAlbaranSiCorresponde(pedido, numeroAlbaran, response, usuario);
                     }
                     catch (Exception ex)
                     {
@@ -558,7 +558,7 @@ namespace NestoAPI.Infraestructure.Facturas
                         System.Diagnostics.Debug.WriteLine($"  → Generando PDF de factura ({numeroCopias} copias)");
                         // IMPORTANTE: Usar resultadoFactura.Empresa porque puede ser diferente a pedido.Empresa
                         // cuando hay traspaso a empresa espejo (ej: factura GB en empresa 3, pedido en empresa 1)
-                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, resultadoFactura.Empresa, resultadoFactura.NumeroFactura);
+                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, resultadoFactura.Empresa, resultadoFactura.NumeroFactura, usuario);
                     }
                     catch (Exception exPdf)
                     {
@@ -577,7 +577,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     try
                     {
-                        AgregarDatosImpresionAlbaranSiCorresponde(pedido, numeroAlbaran, response);
+                        AgregarDatosImpresionAlbaranSiCorresponde(pedido, numeroAlbaran, response, usuario);
                     }
                     catch (Exception exImpresion)
                     {
@@ -594,7 +594,8 @@ namespace NestoAPI.Infraestructure.Facturas
         private void AgregarDatosImpresionAlbaranSiCorresponde(
             CabPedidoVta pedido,
             int numeroAlbaran,
-            FacturarRutasResponseDTO response)
+            FacturarRutasResponseDTO response,
+            string usuario)
         {
             // Determinar si debe generar PDF según el tipo de ruta
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
@@ -617,20 +618,20 @@ namespace NestoAPI.Infraestructure.Facturas
             if (albaran != null)
             {
                 System.Diagnostics.Debug.WriteLine($"  → Generando PDF de albarán ({numeroCopias} copias)");
-                albaran.DatosImpresion = GenerarDatosImpresionAlbaran(pedido, pedido.Empresa, numeroAlbaran);
+                albaran.DatosImpresion = GenerarDatosImpresionAlbaran(pedido, pedido.Empresa, numeroAlbaran, usuario);
             }
         }
 
         /// <summary>
         /// Genera los datos de impresión para un albarán (bytes del PDF, copias, bandeja).
         /// </summary>
-        private DocumentoParaImprimir GenerarDatosImpresionAlbaran(CabPedidoVta pedido, string empresa, int numeroAlbaran)
+        private DocumentoParaImprimir GenerarDatosImpresionAlbaran(CabPedidoVta pedido, string empresa, int numeroAlbaran, string usuario)
         {
             var lookup = new FacturaLookup { Empresa = empresa, Factura = numeroAlbaran.ToString() };
             var lista = new List<FacturaLookup> { lookup };
             var albaranes = gestorFacturas.LeerAlbaranes(lista);
 
-            var bytesPdf = gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete: true);
+            var bytesPdf = gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete: true, usuario: usuario);
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
@@ -656,12 +657,12 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <summary>
         /// Genera los datos de impresión para una factura (bytes del PDF, copias, bandeja).
         /// </summary>
-        private DocumentoParaImprimir GenerarDatosImpresionFactura(CabPedidoVta pedido, string empresa, string numeroFactura)
+        private DocumentoParaImprimir GenerarDatosImpresionFactura(CabPedidoVta pedido, string empresa, string numeroFactura, string usuario)
         {
             var factura = gestorFacturas.LeerFactura(empresa, numeroFactura);
             var facturas = new List<Factura> { factura };
 
-            var bytesPdf = gestorFacturas.FacturasEnPDF(facturas, papelConMembrete: true);
+            var bytesPdf = gestorFacturas.FacturasEnPDF(facturas, papelConMembrete: true, usuario: usuario);
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
@@ -688,12 +689,12 @@ namespace NestoAPI.Infraestructure.Facturas
         /// Genera los datos de impresión para una nota de entrega (bytes del PDF, copias, bandeja).
         /// Usa el formato de pedido para generar el PDF de la nota de entrega.
         /// </summary>
-        private DocumentoParaImprimir GenerarDatosImpresionNotaEntrega(CabPedidoVta pedido, string empresa, int numeroPedido)
+        private DocumentoParaImprimir GenerarDatosImpresionNotaEntrega(CabPedidoVta pedido, string empresa, int numeroPedido, string usuario)
         {
             var pedidoFactura = gestorFacturas.LeerPedido(empresa, numeroPedido);
             var pedidos = new List<Factura> { pedidoFactura };
 
-            var bytesPdf = gestorFacturas.FacturasEnPDF(pedidos, papelConMembrete: true);
+            var bytesPdf = gestorFacturas.FacturasEnPDF(pedidos, papelConMembrete: true, usuario: usuario);
 
             // Determinar tipo de ruta y obtener configuración de impresión
             var tipoRuta = TipoRutaFactory.ObtenerPorNumeroRuta(pedido.Ruta);
@@ -1401,7 +1402,8 @@ namespace NestoAPI.Infraestructure.Facturas
             string empresa,
             int numeroPedido,
             string numeroFactura = null,
-            int? numeroAlbaran = null)
+            int? numeroAlbaran = null,
+            string usuario = null)
         {
             var response = new DocumentosImpresionPedidoDTO();
 
@@ -1447,7 +1449,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     try
                     {
-                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, empresa, numeroFactura);
+                        facturaCreada.DatosImpresion = GenerarDatosImpresionFactura(pedido, empresa, numeroFactura, usuario);
                         response.Facturas.Add(facturaCreada);
                         response.TipoDocumentoPrincipal = "Factura";
                         response.Mensaje = $"Factura {numeroFactura} lista para imprimir";
@@ -1470,7 +1472,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     try
                     {
-                        albaranCreado.DatosImpresion = GenerarDatosImpresionAlbaran(pedido, empresa, numeroAlbaran.Value);
+                        albaranCreado.DatosImpresion = GenerarDatosImpresionAlbaran(pedido, empresa, numeroAlbaran.Value, usuario);
                         response.Albaranes.Add(albaranCreado);
                         response.TipoDocumentoPrincipal = "Albarán";
                         response.Mensaje = $"Albarán {numeroAlbaran} listo para imprimir";
@@ -1492,7 +1494,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     try
                     {
-                        notaEntrega.DatosImpresion = GenerarDatosImpresionNotaEntrega(pedido, empresa, numeroPedido);
+                        notaEntrega.DatosImpresion = GenerarDatosImpresionNotaEntrega(pedido, empresa, numeroPedido, usuario);
                         response.NotasEntrega.Add(notaEntrega);
                         response.TipoDocumentoPrincipal = "Nota de Entrega";
                         response.Mensaje = $"Nota de entrega del pedido {numeroPedido} lista para imprimir";

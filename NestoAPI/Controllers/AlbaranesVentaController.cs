@@ -38,7 +38,7 @@ namespace NestoAPI.Controllers
 
             var result = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = _gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete)
+                Content = _gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete, User.Identity.Name)
             };
             result.Content.Headers.ContentType =
                 new MediaTypeHeaderValue("application/pdf");

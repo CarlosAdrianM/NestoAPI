@@ -492,6 +492,7 @@
     <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
     <Compile Include="Controllers\ContabilidadesController.cs" />
+    <Compile Include="Controllers\CorreosPostCompraController.cs" />
     <Compile Include="Controllers\ControlesStockController.cs" />
     <Compile Include="Controllers\DepositosController.cs" />
     <Compile Include="Controllers\DiariosProductosController.cs" />
@@ -580,6 +581,9 @@
     <Compile Include="Infraestructure\Exceptions\TraspasoEmpresaException.cs" />
     <Compile Include="Infraestructure\Filters\GlobalExceptionFilter.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturas.cs" />
+    <Compile Include="Infraestructure\Facturas\GeneradorPdfFacturasQuestPdf.cs" />
+    <Compile Include="Infraestructure\Facturas\GeneradorPdfFacturasRdlc.cs" />
+    <Compile Include="Infraestructure\Facturas\IGeneradorPdfFacturas.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturacionRutas.cs" />
     <Compile Include="Infraestructure\Facturas\IGestorFacturacionRutas.cs" />
     <Compile Include="Infraestructure\GestorPrecios.cs" />
@@ -670,6 +674,11 @@
     <Compile Include="Infraestructure\Videos\GestorVideos.cs" />
     <Compile Include="Infraestructure\Videos\IServicioVideos.cs" />
     <Compile Include="Infraestructure\Videos\ServicioVideos.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\CorreosPostCompraJobsService.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\GeneradorContenidoCorreoPostCompra.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\IServicioRecomendacionesPostCompra.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\RecomendacionPostCompraDTO.cs" />
+    <Compile Include="Infraestructure\CorreosPostCompra\ServicioRecomendacionesPostCompra.cs" />
     <Compile Include="Infraestructure\OpenAI\IServicioOpenAI.cs" />
     <Compile Include="Infraestructure\OpenAI\ServicioOpenAI.cs" />
     <Compile Include="InternalsVisibleTo.cs" />
