@@ -77,16 +77,41 @@ namespace NestoAPI.Controllers
 
         public static string LeerParametro(string empresa, string usuario, string clave)
         {
-            NVEntities db = new NVEntities();
-            ParametroUsuario parametroUsuario;
-            string usuarioParametro = usuario.Substring(usuario.IndexOf("\\") + 1).Trim();
-            if (usuarioParametro != null)
+            using (NVEntities db = new NVEntities())
             {
-                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == empresa && p.Usuario.Trim() == usuarioParametro && p.Clave == clave);
-                return parametroUsuario?.Valor?.Trim();
-            }
+                string usuarioParametro = usuario.Substring(usuario.IndexOf("\\") + 1).Trim();
 
-            return "";
+                // 1. Buscar para el usuario específico
+                var parametroUsuario = db.ParametrosUsuario.SingleOrDefault(
+                    p => p.Empresa == empresa && p.Usuario.Trim() == usuarioParametro && p.Clave == clave);
+
+                if (parametroUsuario != null)
+                {
+                    return parametroUsuario.Valor?.Trim();
+                }
+
+                // 2. Buscar en (defecto) y crear para el usuario si existe
+                var parametroDefecto = db.ParametrosUsuario.SingleOrDefault(
+                    p => p.Empresa == empresa && p.Usuario == "(defecto)" && p.Clave == clave);
+
+                if (parametroDefecto != null)
+                {
+                    var nuevoParametro = new ParametroUsuario
+                    {
+                        Empresa = empresa,
+                        Usuario = usuarioParametro,
+                        Clave = clave,
+                        Valor = parametroDefecto.Valor,
+                        Usuario2 = usuarioParametro,
+                        Fecha_Modificación = DateTime.Now
+                    };
+                    db.ParametrosUsuario.Add(nuevoParametro);
+                    db.SaveChanges();
+                    return parametroDefecto.Valor?.Trim();
+                }
+
+                return null;
+            }
         }
 
 

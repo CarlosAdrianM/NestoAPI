@@ -550,6 +550,8 @@
     <Compile Include="Infraestructure\Buscador\LuceneBuscador.cs" />
     <Compile Include="Infraestructure\Buscador\SpanishInsensitiveAnalyzer.cs" />
     <Compile Include="Infraestructure\ClienteHelper.cs" />
+    <Compile Include="Infraestructure\ILectorParametrosUsuario.cs" />
+    <Compile Include="Infraestructure\LectorParametrosUsuario.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\Contabilidad\ContabilidadService.cs" />

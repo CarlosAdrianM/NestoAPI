@@ -22,14 +22,22 @@ namespace NestoAPI.Infraestructure.Facturas
     public class GestorFacturas : IGestorFacturas
     {
         private readonly IServicioFacturas servicio;
+        private readonly ILectorParametrosUsuario lectorParametros;
+
         public GestorFacturas()
         {
             servicio = new ServicioFacturas();
+            lectorParametros = new LectorParametrosUsuario();
         }
 
-        public GestorFacturas(IServicioFacturas servicio)
+        public GestorFacturas(IServicioFacturas servicio) : this(servicio, new LectorParametrosUsuario())
+        {
+        }
+
+        public GestorFacturas(IServicioFacturas servicio, ILectorParametrosUsuario lectorParametros)
         {
             this.servicio = servicio;
+            this.lectorParametros = lectorParametros;
         }
 
         public ByteArrayContent FacturaEnPDF(string empresa, string numeroFactura)
@@ -54,14 +62,14 @@ namespace NestoAPI.Infraestructure.Facturas
         /// Si el parámetro es "QuestPDF", usa la nueva implementación. En cualquier otro caso, usa RDLC.
         /// IMPORTANTE: Este método NUNCA debe fallar. Si hay cualquier error, usa RDLC por defecto.
         /// </summary>
-        private IGeneradorPdfFacturas ObtenerGeneradorPdf(string usuario)
+        internal IGeneradorPdfFacturas ObtenerGeneradorPdf(string usuario)
         {
             // Si no hay usuario, intentar con (defecto) antes de ir a RDLC
             string usuarioAConsultar = string.IsNullOrEmpty(usuario) ? "(defecto)" : usuario;
 
             try
             {
-                string motorPdf = Controllers.ParametrosUsuarioController.LeerParametro(
+                string motorPdf = lectorParametros.LeerParametro(
                     Constantes.Empresas.EMPRESA_POR_DEFECTO,
                     usuarioAConsultar,
                     "MotorPdfFacturas");
@@ -81,7 +89,7 @@ namespace NestoAPI.Infraestructure.Facturas
 
                     try
                     {
-                        string motorPdfDefecto = Controllers.ParametrosUsuarioController.LeerParametro(
+                        string motorPdfDefecto = lectorParametros.LeerParametro(
                             Constantes.Empresas.EMPRESA_POR_DEFECTO,
                             "(defecto)",
                             "MotorPdfFacturas");
