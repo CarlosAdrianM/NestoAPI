@@ -18,5 +18,12 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
         public string FirmaCorreo => null;
 
         public MailAddress CorreoDesdeLogistica => null;
+
+        // Propiedades QuestPDF
+        // GB usa formato ticket sin logo
+        public string UrlLogo => null;
+        public bool EsDescargable => false;  // No permite descarga de PDFs
+        public bool EsImprimible => true;    // Sí permite impresión física
+        public bool UsaFormatoTicket => true; // Formato simplificado tipo ticket
     }
 }

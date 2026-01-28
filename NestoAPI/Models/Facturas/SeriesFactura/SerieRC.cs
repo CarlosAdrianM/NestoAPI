@@ -25,6 +25,12 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
 
         public string FirmaCorreo => "<p>Departamento de Formación y Cursos<br/>Tel. 915311923<br/>cursos@nuevavision.es</p>";
 
+        // Propiedades QuestPDF (usa el mismo logo que NV)
+        public string UrlLogo => "https://www.productosdeesteticaypeluqueriaprofesional.com/img/cms/Landing/logo.png";
+        public bool EsDescargable => true;
+        public bool EsImprimible => true;
+        public bool UsaFormatoTicket => false;
+
         // Propiedades Verifactu
         public bool TramitaVerifactu => true;
         public string TipoFacturaVerifactuPorDefecto => "R1"; // Devolución por defecto

@@ -16,5 +16,10 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
         public MailAddress CorreoDesdeLogistica => new MailAddress("logistica@unionlaser.es", "UNIÓN LÁSER");
         public string FirmaCorreo => "<p>Departamento de Administración<br/>Tel. 647505622<br/>facturacion@unionlaser.es</p>";
 
+        // Propiedades QuestPDF
+        public string UrlLogo => "https://unionlaser.es/img/union-laser-logo-1449150245.jpg";
+        public bool EsDescargable => true;
+        public bool EsImprimible => true;
+        public bool UsaFormatoTicket => false;
     }
 }

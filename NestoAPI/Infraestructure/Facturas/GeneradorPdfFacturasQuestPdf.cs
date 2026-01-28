@@ -15,20 +15,34 @@ namespace NestoAPI.Infraestructure.Facturas
     /// </summary>
     public class GeneradorPdfFacturasQuestPdf : IGeneradorPdfFacturas
     {
-        private const string URL_LOGO = "http://www.productosdeesteticaypeluqueriaprofesional.com/logofra.jpg";
         private byte[] _logoBytes;
         private bool _papelConMembrete;
 
         public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false)
         {
             _papelConMembrete = papelConMembrete;
-            CargarImagenes();
 
             var factura = facturas.FirstOrDefault();
             if (factura == null)
             {
                 throw new ArgumentException("No se proporcionaron facturas para generar el PDF");
             }
+
+            // Si usa formato ticket, generar con plantilla simplificada
+            if (factura.UsaFormatoTicket)
+            {
+                return GenerarPdfTicket(factura);
+            }
+
+            // Para formato factura estándar, validar que tenga UrlLogo (excepto si es papel con membrete)
+            if (string.IsNullOrEmpty(factura.UrlLogo) && !_papelConMembrete)
+            {
+                throw new InvalidOperationException(
+                    $"La serie '{factura.Serie}' no tiene plantilla QuestPDF configurada. " +
+                    "Debe definir UrlLogo o establecer UsaFormatoTicket=true en la clase de serie.");
+            }
+
+            CargarImagenes(factura.UrlLogo);
 
             // Determinar si hay descuentos en alguna línea
             bool mostrarColumnaDescuento = factura.Lineas?.Any(l => l.Descuento != 0) ?? false;
@@ -52,9 +66,9 @@ namespace NestoAPI.Infraestructure.Facturas
             return new ByteArrayContent(pdfBytes);
         }
 
-        private void CargarImagenes()
+        private void CargarImagenes(string urlLogo)
         {
-            if (_papelConMembrete)
+            if (_papelConMembrete || string.IsNullOrEmpty(urlLogo))
             {
                 _logoBytes = null;
                 return;
@@ -65,7 +79,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 client.Timeout = TimeSpan.FromSeconds(10);
                 try
                 {
-                    _logoBytes = client.GetByteArrayAsync(URL_LOGO).GetAwaiter().GetResult();
+                    _logoBytes = client.GetByteArrayAsync(urlLogo).GetAwaiter().GetResult();
                 }
                 catch
                 {
@@ -218,6 +232,13 @@ namespace NestoAPI.Infraestructure.Facturas
                         table.Cell().Padding(2).Text(factura.NumeroFactura ?? "").FontSize(8);
                     });
                 });
+
+                // ========== Comentarios del pedido (después del cuadro FACTURA) ==========
+                if (!string.IsNullOrWhiteSpace(factura.Comentarios))
+                {
+                    column.Item().PaddingVertical(3).PaddingHorizontal(2)
+                        .Text(factura.Comentarios).Bold().FontSize(10);
+                }
 
                 column.Item().PaddingVertical(3);
             });
@@ -483,5 +504,191 @@ namespace NestoAPI.Infraestructure.Facturas
                 });
             });
         }
+
+        #region Formato Ticket (Serie GB)
+
+        /// <summary>
+        /// Genera PDF en formato ticket para la serie GB.
+        /// Formato simplificado sin logo, sin desglose de IVA, sin vencimientos.
+        /// </summary>
+        private ByteArrayContent GenerarPdfTicket(Factura factura)
+        {
+            var documento = Document.Create(container =>
+            {
+                container.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.MarginVertical(0.5f, Unit.Centimetre);
+                    page.MarginHorizontal(1.5f, Unit.Centimetre);
+                    page.DefaultTextStyle(x => x.FontSize(10).FontFamily("Georgia"));
+
+                    page.Header().Element(c => ComponerCabeceraTicket(c, factura));
+                    page.Content().Element(c => ComponerContenidoTicket(c, factura));
+                    page.Footer().Element(c => ComponerPieTicket(c, factura));
+                });
+            });
+
+            byte[] pdfBytes = documento.GeneratePdf();
+            return new ByteArrayContent(pdfBytes);
+        }
+
+        private void ComponerCabeceraTicket(IContainer container, Factura factura)
+        {
+            var direccionEntrega = factura.Direcciones?.FirstOrDefault(d => d.Tipo == "Entrega");
+            string tipoDocumento = factura.ImporteTotal < 0 ? "ABONO TICKET" : "TICKET";
+
+            container.Column(column =>
+            {
+                column.Item().PaddingBottom(10).Row(row =>
+                {
+                    // Cuadro izquierdo: TICKET + datos básicos
+                    row.RelativeItem().Border(1).Column(col =>
+                    {
+                        col.Item().Background(Colors.Grey.Lighten2).Padding(5)
+                            .Text(tipoDocumento).Bold().FontSize(16);
+
+                        col.Item().Padding(5).Row(dataRow =>
+                        {
+                            dataRow.RelativeItem().Column(labelCol =>
+                            {
+                                labelCol.Item().Text("Cliente").FontSize(9);
+                                labelCol.Item().Text(factura.Cliente ?? "").FontSize(10);
+                            });
+                            dataRow.RelativeItem().Column(labelCol =>
+                            {
+                                labelCol.Item().Text("Fecha").FontSize(9);
+                                labelCol.Item().Text(factura.Fecha.ToString("dd/MM/yy")).FontSize(10);
+                            });
+                            dataRow.RelativeItem().Column(labelCol =>
+                            {
+                                labelCol.Item().Text("Nº Ticket").FontSize(9);
+                                labelCol.Item().Text(factura.NumeroFactura ?? "").FontSize(10);
+                            });
+                        });
+                    });
+
+                    row.ConstantItem(10); // Espacio
+
+                    // Cuadro derecho: Dirección de entrega
+                    row.RelativeItem().Border(1).Column(col =>
+                    {
+                        col.Item().Padding(3).Text("DIRECCIÓN:").Bold().FontSize(6).FontColor(Colors.Grey.Darken1);
+
+                        if (direccionEntrega != null)
+                        {
+                            col.Item().PaddingHorizontal(5).Column(innerCol =>
+                            {
+                                innerCol.Item().Text(direccionEntrega.Nombre ?? "").FontSize(10);
+                                innerCol.Item().Text(direccionEntrega.Direccion ?? "").FontSize(10);
+                                innerCol.Item().Text(direccionEntrega.PoblacionCompleta ?? "").FontSize(10);
+                                if (!string.IsNullOrEmpty(direccionEntrega.Telefonos))
+                                {
+                                    innerCol.Item().Text(direccionEntrega.Telefonos).FontSize(10);
+                                }
+                                if (!string.IsNullOrEmpty(direccionEntrega.Comentarios))
+                                {
+                                    innerCol.Item().Text(direccionEntrega.Comentarios).FontSize(10);
+                                }
+                            });
+                        }
+                    });
+                });
+            });
+        }
+
+        private void ComponerContenidoTicket(IContainer container, Factura factura)
+        {
+            container.Column(column =>
+            {
+                // Tabla de líneas (sin columna Producto, sin filas de albarán)
+                column.Item().Table(table =>
+                {
+                    table.ColumnsDefinition(columns =>
+                    {
+                        columns.RelativeColumn(3);    // Nombre del Producto
+                        columns.ConstantColumn(50);   // Unidades
+                        columns.ConstantColumn(60);   // Precio
+                        columns.ConstantColumn(45);   // Desc.
+                        columns.ConstantColumn(65);   // Total
+                    });
+
+                    // Cabecera
+                    table.Header(header =>
+                    {
+                        header.Cell().Border(1).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2)
+                            .Padding(3).AlignMiddle().Text("Nombre del Producto").Bold().FontSize(8);
+                        header.Cell().Border(1).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2)
+                            .Padding(3).AlignMiddle().AlignRight().Text("Unidades").Bold().FontSize(8);
+                        header.Cell().Border(1).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2)
+                            .Padding(3).AlignMiddle().AlignRight().Text("Precio").Bold().FontSize(8);
+                        header.Cell().Border(1).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2)
+                            .Padding(3).AlignMiddle().AlignRight().Text("Desc.").Bold().FontSize(8);
+                        header.Cell().Border(1).BorderColor(Colors.Grey.Lighten1).Background(Colors.Grey.Lighten2)
+                            .Padding(3).AlignMiddle().AlignRight().Text("Total").Bold().FontSize(8);
+                    });
+
+                    // Filas de líneas (sin separador de albarán)
+                    if (factura.Lineas != null)
+                    {
+                        foreach (var linea in factura.Lineas)
+                        {
+                            // Fila de producto (sin columna de código de producto)
+                            table.Cell().Padding(2).Text(linea.DescripcionCompleta ?? "").FontSize(8);
+                            table.Cell().Padding(2).AlignRight().Text(linea.Cantidad?.ToString() ?? "").FontSize(8);
+                            table.Cell().Padding(2).AlignRight().Text(linea.PrecioUnitario?.ToString("N2") ?? "").FontSize(8);
+                            table.Cell().Padding(2).AlignRight()
+                                .Text(linea.Descuento != 0 ? linea.Descuento.ToString("P2") : "").FontSize(8);
+                            table.Cell().Padding(2).AlignRight().Text(linea.Importe.ToString("N2")).FontSize(8);
+                        }
+                    }
+                });
+
+                column.Item().PaddingVertical(10);
+
+                // Importe Total (a la derecha)
+                column.Item().AlignRight().Width(200).Column(totalCol =>
+                {
+                    totalCol.Item().Border(1).Background(Colors.Grey.Lighten2)
+                        .Padding(5).AlignCenter()
+                        .Text("Importe Total Ticket").Bold().FontSize(10);
+                    totalCol.Item().Border(1).Padding(5).AlignCenter()
+                        .Text(factura.ImporteTotal.ToString("N2") + " €").Bold().FontSize(14);
+                });
+
+                column.Item().PaddingVertical(10);
+
+                // Texto de pago al contado
+                column.Item().AlignCenter()
+                    .Text("PAGO AL CONTADO OBLIGATORIO AL MOMENTO DE LA ENTREGA").Bold().FontSize(10);
+
+                // Notas al pie
+                if (factura.NotasAlPie?.Any() == true)
+                {
+                    column.Item().PaddingTop(10).Column(notasCol =>
+                    {
+                        foreach (var nota in factura.NotasAlPie)
+                        {
+                            if (!string.IsNullOrEmpty(nota.Nota))
+                            {
+                                notasCol.Item().Text(nota.Nota).Bold().FontSize(8);
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        private void ComponerPieTicket(IContainer container, Factura factura)
+        {
+            container.Column(column =>
+            {
+                if (!string.IsNullOrEmpty(factura.DatosRegistrales))
+                {
+                    column.Item().AlignCenter().Text(factura.DatosRegistrales).FontSize(8);
+                }
+            });
+        }
+
+        #endregion
     }
 }

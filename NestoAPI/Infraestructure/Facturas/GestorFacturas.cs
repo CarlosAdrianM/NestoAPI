@@ -284,6 +284,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 Serie = cabFactura.Serie?.Trim(),
                 TipoDocumento = tipoDocumento,
                 Totales = totales,
+                UrlLogo = serieFactura.UrlLogo,
+                UsaFormatoTicket = serieFactura.UsaFormatoTicket,
                 Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
                 Vendedores = vendedores
             };
@@ -416,6 +418,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 Serie = cabPedido.Serie?.Trim(),
                 TipoDocumento = tipoDocumento,
                 Totales = totales,
+                UrlLogo = serieFactura.UrlLogo,
+                UsaFormatoTicket = serieFactura.UsaFormatoTicket,
                 Vencimientos = ponerPrecios ? vencimientos.OrderBy(v => v.Vencimiento).ToList() : new List<VencimientoFactura>(),
                 Vendedores = vendedores
             };
@@ -688,6 +692,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 Serie = cabPedido.Serie?.Trim(),
                 TipoDocumento = Constantes.Facturas.TiposDocumento.ALBARAN,
                 Totales = totales,
+                UrlLogo = serieFactura.UrlLogo,
+                UsaFormatoTicket = serieFactura.UsaFormatoTicket,
                 Vendedores = vendedores,
                 Vencimientos = vencimientos
             };
