@@ -450,6 +450,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         AplicarDescuento = l.Aplicar_Dto,
                         Cantidad = l.Cantidad != null ? (short)l.Cantidad : (short)0,
                         delegacion = l.Delegación,
+                        DescuentoEntidad = l.DescuentoCliente, // Carlos 28/01/26: Fix bug - DescuentoCliente no se mapeaba a DescuentoEntidad
                         DescuentoLinea = l.Descuento,
                         DescuentoProducto = l.DescuentoProducto,
                         estado = l.Estado,

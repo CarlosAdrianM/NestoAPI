@@ -178,5 +178,140 @@ namespace NestoAPI.Tests.Models
         }
 
         #endregion
+
+        #region Tests para DescuentoCliente/DescuentoEntidad - Bug Issue (falta mapear DescuentoCliente a DescuentoEntidad)
+
+        /// <summary>
+        /// Test que documenta el bug: cuando DescuentoCliente NO se mapea a DescuentoEntidad,
+        /// el cálculo de SumaDescuentos es incorrecto.
+        ///
+        /// Datos reales del pedido 908818:
+        /// - DescuentoCliente = 0.10 (10%)
+        /// - Descuento = 0.10 (10%)
+        /// - SumaDescuentos en BD = 0.19 (19%)
+        /// - ImporteDto = -11.40
+        ///
+        /// Pero en DetallePedidoVenta muestra 6€ porque DescuentoEntidad no está mapeado.
+        /// </summary>
+        [TestMethod]
+        public void SumaDescuentos_ConDescuentoCliente10Porciento_DebeCalcular19Porciento()
+        {
+            // Arrange - Simula los datos del pedido 908818
+            // En la BD: DescuentoCliente=0.10, Descuento=0.10, SumaDescuentos=0.19
+            var pedido = new PedidoVentaDTO { DescuentoPP = 0m };
+            var linea = new LineaPedidoVentaDTO
+            {
+                Pedido = pedido,
+                AplicarDescuento = true,
+                DescuentoEntidad = 0.10m,  // Esto es DescuentoCliente en la BD
+                DescuentoProducto = 0m,
+                DescuentoLinea = 0.10m,    // Esto es Descuento en la BD
+                PrecioUnitario = 60m,
+                Cantidad = 1
+            };
+
+            // Act
+            decimal sumaDescuentos = linea.SumaDescuentos;
+
+            // Assert
+            // Fórmula: 1 - ((1 - 0.10) * (1 - 0) * (1 - 0.10)) = 1 - (0.9 * 1 * 0.9) = 1 - 0.81 = 0.19
+            decimal esperado = 0.19m;
+            Assert.AreEqual(esperado, sumaDescuentos, 0.001m,
+                $"Con DescuentoCliente=10% y Descuento=10%, SumaDescuentos debe ser 19%. Obtenido: {sumaDescuentos}");
+        }
+
+        [TestMethod]
+        public void ImporteDescuento_ConDescuentoCliente10Porciento_DebeCalcular11Euro40()
+        {
+            // Arrange - Simula los datos del pedido 908818
+            // Precio=60€, Cantidad=1, DescuentoCliente=10%, Descuento=10%
+            // ImporteDto esperado = 60 * 0.19 = 11.40€
+            var pedido = new PedidoVentaDTO { DescuentoPP = 0m };
+            var linea = new LineaPedidoVentaDTO
+            {
+                Pedido = pedido,
+                AplicarDescuento = true,
+                DescuentoEntidad = 0.10m,  // DescuentoCliente
+                DescuentoProducto = 0m,
+                DescuentoLinea = 0.10m,    // Descuento
+                PrecioUnitario = 60m,
+                Cantidad = 1
+            };
+
+            // Act
+            decimal importeDto = linea.ImporteDescuento;
+
+            // Assert
+            // Bruto = 60, SumaDescuentos = 0.19, ImporteDto = 60 * 0.19 = 11.40
+            Assert.AreEqual(11.40m, importeDto, 0.01m,
+                $"Con Precio=60€ y SumaDescuentos=19%, ImporteDescuento debe ser 11.40€. Obtenido: {importeDto}");
+        }
+
+        /// <summary>
+        /// Test que demuestra el BUG actual: cuando DescuentoEntidad NO está mapeado (es 0),
+        /// el ImporteDescuento sale incorrecto (6€ en lugar de 11.40€).
+        ///
+        /// Este test DEBERÍA FALLAR después de aplicar el fix.
+        /// </summary>
+        [TestMethod]
+        public void Bug_SinMapearDescuentoCliente_ImporteDescuentoEsIncorrecto()
+        {
+            // Arrange - Simula el BUG: DescuentoCliente NO se mapea a DescuentoEntidad
+            // En la BD existe DescuentoCliente=0.10, pero en el DTO DescuentoEntidad=0 (no mapeado)
+            var pedido = new PedidoVentaDTO { DescuentoPP = 0m };
+            var linea = new LineaPedidoVentaDTO
+            {
+                Pedido = pedido,
+                AplicarDescuento = true,
+                DescuentoEntidad = 0m,     // BUG: No se mapea DescuentoCliente
+                DescuentoProducto = 0m,
+                DescuentoLinea = 0.10m,    // Descuento = 10%
+                PrecioUnitario = 60m,
+                Cantidad = 1
+            };
+
+            // Act
+            decimal importeDto = linea.ImporteDescuento;
+            decimal sumaDescuentos = linea.SumaDescuentos;
+
+            // Assert - Este test documenta el comportamiento INCORRECTO actual
+            // Con el bug: SumaDescuentos = 0.10 (solo DescuentoLinea)
+            // Sin el bug: SumaDescuentos = 0.19 (DescuentoCliente + DescuentoLinea)
+            Assert.AreEqual(0.10m, sumaDescuentos, 0.001m,
+                "BUG: Sin mapear DescuentoCliente, SumaDescuentos solo considera DescuentoLinea");
+            Assert.AreEqual(6m, importeDto, 0.01m,
+                "BUG: Sin mapear DescuentoCliente, ImporteDescuento es 6€ en lugar de 11.40€");
+        }
+
+        /// <summary>
+        /// Test que verifica que cuando se mapea correctamente DescuentoCliente a DescuentoEntidad,
+        /// el cálculo de BaseImponible también es correcto.
+        /// </summary>
+        [TestMethod]
+        public void BaseImponible_ConDescuentoCliente_DebeCalcularCorrectamente()
+        {
+            // Arrange
+            var pedido = new PedidoVentaDTO { DescuentoPP = 0m };
+            var linea = new LineaPedidoVentaDTO
+            {
+                Pedido = pedido,
+                AplicarDescuento = true,
+                DescuentoEntidad = 0.10m,  // DescuentoCliente
+                DescuentoProducto = 0m,
+                DescuentoLinea = 0.10m,    // Descuento
+                PrecioUnitario = 60m,
+                Cantidad = 1
+            };
+
+            // Act
+            decimal baseImponible = linea.BaseImponible;
+
+            // Assert
+            // Bruto = 60, ImporteDto = 11.40, BaseImponible = 60 - 11.40 = 48.60
+            Assert.AreEqual(48.60m, baseImponible, 0.01m,
+                $"BaseImponible debe ser 48.60€. Obtenido: {baseImponible}");
+        }
+
+        #endregion
     }
 }
