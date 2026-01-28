@@ -16,6 +16,7 @@ using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infraestructure.Videos;
+using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using NestoAPI.Providers;
@@ -274,6 +275,20 @@ namespace NestoAPI
             );
 
             Console.WriteLine("✅ Job recurrente 'sincronizar-productos' configurado (cada 5 minutos)");
+
+            // Job de correos post-compra: se ejecuta cada día a las 20:30
+            // Issue #74: Sistema de correos automáticos con videos personalizados post-compra
+            RecurringJob.AddOrUpdate(
+                "correos-postcompra-procesar-albaranes",
+                () => CorreosPostCompraJobsService.ProcesarAlbaranesDiarios(),
+                "30 20 * * *", // Cron: cada día a las 20:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+
+            Console.WriteLine("✅ Job recurrente 'correos-postcompra-procesar-albaranes' configurado (cada día a las 20:30)");
 
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':

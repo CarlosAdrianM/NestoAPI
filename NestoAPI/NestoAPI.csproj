@@ -660,6 +660,8 @@
     <Compile Include="Infraestructure\Sincronizacion\MessageRetryManager.cs" />
     <Compile Include="Infraestructure\Traspasos\IServicioTraspasoEmpresa.cs" />
     <Compile Include="Infraestructure\Traspasos\ServicioTraspasoEmpresa.cs" />
+    <Compile Include="Infraestructure\Rectificativas\IGestorCopiaPedidos.cs" />
+    <Compile Include="Infraestructure\Rectificativas\GestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorOfertasPedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
@@ -1044,6 +1046,9 @@
     <Compile Include="Models\PedidosVenta\ParametroStringIntPedido.cs" />
     <Compile Include="Models\PedidosVenta\PedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\PrepagoDTO.cs" />
+    <Compile Include="Models\Rectificativas\CopiarFacturaRequest.cs" />
+    <Compile Include="Models\Rectificativas\CopiarFacturaResponse.cs" />
+    <Compile Include="Models\Rectificativas\ClienteFacturaDTO.cs" />
     <Compile Include="Models\PersonaContactoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
