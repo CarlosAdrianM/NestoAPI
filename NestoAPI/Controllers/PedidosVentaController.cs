@@ -7,7 +7,9 @@ using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Traspasos;
+using NestoAPI.Infraestructure.Rectificativas;
 using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Models.Rectificativas;
 using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosBase;
@@ -1483,6 +1485,118 @@ namespace NestoAPI.Controllers
             }
 
             return false;
+        }
+
+        // Carlos 28/01/26: Issue #85 - Endpoint para copiar facturas y crear rectificativas
+        // POST: api/PedidosVenta/CopiarFactura
+        /// <summary>
+        /// Copia las líneas de una factura a un pedido nuevo o existente.
+        /// Útil para crear rectificativas rápidas o traspasar facturas entre clientes.
+        /// </summary>
+        /// <param name="request">Parámetros de la copia</param>
+        /// <returns>Resultado con los números de documentos creados</returns>
+        [HttpPost]
+        [Route("api/PedidosVenta/CopiarFactura")]
+        [ResponseType(typeof(CopiarFacturaResponse))]
+        public async Task<IHttpActionResult> PostCopiarFactura(CopiarFacturaRequest request)
+        {
+            if (request == null)
+            {
+                return BadRequest("El request no puede ser nulo");
+            }
+
+            try
+            {
+                // Obtener usuario del contexto
+                string usuario = User.Identity.Name ?? "API";
+
+                // Crear el gestor con las dependencias
+                var servicioAlbaranes = new ServicioAlbaranesVenta(db);
+                var servicioFacturas = new ServicioFacturas(db);
+                var gestorCopia = new GestorCopiaPedidos(
+                    db,
+                    servicio,
+                    servicioAlbaranes,
+                    servicioFacturas);
+
+                // Ejecutar la copia
+                var response = await gestorCopia.CopiarFactura(request, usuario);
+
+                if (response.Exitoso)
+                {
+                    return Ok(response);
+                }
+                else
+                {
+                    return BadRequest(response.Mensaje);
+                }
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+                return InternalServerError(ex);
+            }
+        }
+
+        // GET: api/PedidosVenta/ClientePorFactura?empresa=1&numeroFactura=NV26/001234
+        /// <summary>
+        /// Obtiene el cliente y empresa asociados a una factura.
+        /// Busca primero en la empresa especificada, si no encuentra busca en todas.
+        /// Issue #85
+        /// </summary>
+        /// <param name="empresa">Empresa preferida para buscar la factura</param>
+        /// <param name="numeroFactura">Numero de factura</param>
+        /// <returns>ClienteFacturaDTO con empresa y cliente, o NotFound si no existe</returns>
+        [HttpGet]
+        [Route("api/PedidosVenta/ClientePorFactura")]
+        [ResponseType(typeof(ClienteFacturaDTO))]
+        public async Task<IHttpActionResult> GetClientePorFactura(string empresa, string numeroFactura)
+        {
+            if (string.IsNullOrWhiteSpace(numeroFactura))
+            {
+                return BadRequest("Numero de factura es requerido");
+            }
+
+            try
+            {
+                // Buscar primero en la empresa especificada
+                var resultado = await db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresa
+                        && l.Nº_Factura.Trim() == numeroFactura.Trim()
+                        && l.Estado == Constantes.EstadosLineaVenta.FACTURA)
+                    .Select(l => new { l.Empresa, l.Nº_Cliente })
+                    .FirstOrDefaultAsync();
+
+                // Si no encuentra en la empresa especificada, buscar en cualquier empresa
+                if (resultado == null)
+                {
+                    resultado = await db.LinPedidoVtas
+                        .Where(l => l.Nº_Factura.Trim() == numeroFactura.Trim()
+                            && l.Estado == Constantes.EstadosLineaVenta.FACTURA)
+                        .Select(l => new { l.Empresa, l.Nº_Cliente })
+                        .FirstOrDefaultAsync();
+                }
+
+                if (resultado == null || string.IsNullOrWhiteSpace(resultado.Nº_Cliente))
+                {
+                    return NotFound();
+                }
+
+                return Ok(new ClienteFacturaDTO
+                {
+                    Empresa = resultado.Empresa?.Trim(),
+                    Cliente = resultado.Nº_Cliente?.Trim()
+                });
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+                return InternalServerError(ex);
+            }
         }
     }
 }
