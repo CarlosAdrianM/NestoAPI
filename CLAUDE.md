@@ -295,9 +295,52 @@ Related files:
 - `App_Start/WebApiConfig.cs` - Registro del handler
 - `StartupJwtConfigurationTests.cs` - Documentación del bug de TokenValidationParameters
 
+### Copiar Factura / Rectificativas (Issue #85)
+Sistema para copiar facturas existentes y crear rectificativas (abonos) de forma rápida.
+
+**Componentes implementados**:
+- **`GestorCopiaPedidos.cs`**: Lógica de negocio para copiar líneas de factura
+- **`PedidosVentaController.CopiarFactura`**: Endpoint POST `/api/PedidosVenta/CopiarFactura`
+- **`PedidosVentaController.GetClientePorFactura`**: Endpoint GET para buscar cliente por factura
+- **Cliente Nesto**: `CopiarFacturaView.xaml` + `CopiarFacturaViewModel.vb` (diálogo modal)
+
+**Flujo**:
+1. Usuario pulsa "Copiar Factura" en DetallePedidoView (visible solo para grupos ALMACEN y TIENDAS)
+2. Se abre diálogo con cliente y nº factura pre-rellenados (si hay línea seleccionada)
+3. Opciones: invertir cantidades, añadir a pedido original, crear albarán/factura automáticamente
+4. Si `CrearAlbaranYFactura=true`, se puebla `LinFacturaVtaRectificacion` para Verifactu (Issue #38)
+
+**TRABAJO PENDIENTE - Tabla auxiliar temporal**:
+Cuando el usuario crea un pedido sin marcar "Crear albarán y factura automáticamente" y posteriormente
+crea la factura manualmente desde el pedido, la tabla `LinFacturaVtaRectificacion` NO se puebla porque
+`ServicioFacturas.CrearFactura()` no tiene información sobre qué factura se está rectificando.
+
+**Solución propuesta (pendiente de implementar)**:
+1. Crear tabla auxiliar temporal `RectificativaPendiente`:
+   ```sql
+   CREATE TABLE RectificativaPendiente (
+       Empresa VARCHAR(3),
+       NumeroPedido INT,
+       NumeroLinea INT,
+       FacturaRectificada VARCHAR(20),
+       FechaCreacion DATETIME,
+       PRIMARY KEY (Empresa, NumeroPedido, NumeroLinea)
+   )
+   ```
+2. `GestorCopiaPedidos` guarda metadata cuando `CrearAlbaranYFactura=false` e `InvertirCantidades=true`
+3. `ServicioFacturas.CrearFactura()` consulta esta tabla al facturar y puebla `LinFacturaVtaRectificacion`
+4. Limpiar registros de `RectificativaPendiente` tras facturar o si el pedido se elimina
+
+Related files:
+- `Infraestructure/Rectificativas/GestorCopiaPedidos.cs` - Lógica principal
+- `Models/Rectificativas/CopiarFacturaRequestDTO.cs` - DTO de entrada
+- `Models/Rectificativas/CopiarFacturaResponseDTO.cs` - DTO de respuesta
+- `NestoAPI.Tests/Infrastructure/Rectificativas/GestorCopiaPedidosTests.cs` - Tests
+
 ## Recent Changes
 
 Based on git status, recent work includes:
+- Copiar Factura / Rectificativas (Issue #85) - Create rectificativas from existing invoices
 - Rounding system refactoring (Issues #242/#243) - Changed to AwayFromZero with rollback capability
 - Refactoring of validator system (`ValidadorOfertasYDescuentosPermitidos` split into separate validators)
 - New offer management system (`GestorOfertasPedido`)

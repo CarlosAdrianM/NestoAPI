@@ -177,6 +177,101 @@ namespace NestoAPI.Models
                 return precioPublico;
             }
         }
+
+        /// <summary>
+        /// Obtiene la URL del producto en la tienda online usando la API de Prestashop.
+        /// Busca el producto por su referencia y construye la URL amigable.
+        /// Issue #74: Sistema de correos post-compra.
+        /// </summary>
+        /// <param name="producto">Referencia del producto (ej: "12345")</param>
+        /// <returns>URL completa del producto en la tienda o null si no existe</returns>
+        public static async Task<string> LeerUrlTiendaOnline(string producto)
+        {
+            if (string.IsNullOrWhiteSpace(producto))
+            {
+                return null;
+            }
+
+            string urlPrestashop = $"http://www.productosdeesteticaypeluqueriaprofesional.com/api/products?filter[reference]={producto.Trim()}";
+            string userName;
+
+            try
+            {
+                userName = ConfigurationManager.AppSettings["PrestashopWebserviceKeyNV"];
+            }
+            catch
+            {
+                return null;
+            }
+
+            if (string.IsNullOrEmpty(userName))
+            {
+                return null;
+            }
+
+            try
+            {
+                using (var handler = new HttpClientHandler { Credentials = new NetworkCredential { UserName = userName } })
+                using (HttpClient client = new HttpClient(handler))
+                {
+                    // 1. Buscar el producto por referencia
+                    HttpResponseMessage response = await client.GetAsync(urlPrestashop).ConfigureAwait(false);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        return null;
+                    }
+
+                    string xmlResponse = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    XmlDocument xmlDoc = new XmlDocument();
+                    xmlDoc.LoadXml(xmlResponse);
+
+                    XmlNode productNode = xmlDoc.SelectSingleNode("//product");
+                    if (productNode == null)
+                    {
+                        return null;
+                    }
+
+                    // 2. Obtener detalles del producto para construir la URL
+                    string urlProductoApi = productNode.Attributes["xlink:href"]?.Value;
+                    if (string.IsNullOrEmpty(urlProductoApi))
+                    {
+                        return null;
+                    }
+
+                    HttpResponseMessage responseProducto = await client.GetAsync(urlProductoApi).ConfigureAwait(false);
+                    if (!responseProducto.IsSuccessStatusCode)
+                    {
+                        return null;
+                    }
+
+                    string xmlProducto = await responseProducto.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    XmlDocument xmlDocProducto = new XmlDocument();
+                    xmlDocProducto.LoadXml(xmlProducto);
+
+                    // 3. Extraer id y link_rewrite para construir la URL amigable
+                    XmlNode idNode = xmlDocProducto.SelectSingleNode("//product/id");
+                    XmlNode linkRewriteNode = xmlDocProducto.SelectSingleNode("//product/link_rewrite/language");
+
+                    if (idNode == null || linkRewriteNode == null)
+                    {
+                        return null;
+                    }
+
+                    string idProducto = idNode.InnerText;
+                    string linkRewrite = linkRewriteNode.InnerText;
+
+                    // 4. Construir la URL amigable con parámetros UTM
+                    string urlTienda = $"https://www.productosdeesteticaypeluqueriaprofesional.com/{idProducto}-{linkRewrite}.html";
+                    urlTienda += "?utm_source=nuevavision&utm_medium=email&utm_campaign=postcompra";
+
+                    return urlTienda;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
     }
 
     public class ProductoKit
