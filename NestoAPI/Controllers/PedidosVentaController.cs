@@ -1544,12 +1544,12 @@ namespace NestoAPI.Controllers
 
         // GET: api/PedidosVenta/ClientePorFactura?empresa=1&numeroFactura=NV26/001234
         /// <summary>
-        /// Obtiene el cliente y empresa asociados a una factura.
-        /// Busca primero en la empresa especificada, si no encuentra busca en todas.
+        /// Obtiene el cliente y empresa asociados a una factura o pedido.
+        /// Busca primero como número de factura, si no encuentra intenta como número de pedido.
         /// Issue #85
         /// </summary>
-        /// <param name="empresa">Empresa preferida para buscar la factura</param>
-        /// <param name="numeroFactura">Numero de factura</param>
+        /// <param name="empresa">Empresa preferida para buscar</param>
+        /// <param name="numeroFactura">Número de factura (ej: NV26/001234) o de pedido (ej: 908101)</param>
         /// <returns>ClienteFacturaDTO con empresa y cliente, o NotFound si no existe</returns>
         [HttpGet]
         [Route("api/PedidosVenta/ClientePorFactura")]
@@ -1558,12 +1558,12 @@ namespace NestoAPI.Controllers
         {
             if (string.IsNullOrWhiteSpace(numeroFactura))
             {
-                return BadRequest("Numero de factura es requerido");
+                return BadRequest("Número de factura o pedido es requerido");
             }
 
             try
             {
-                // Buscar primero en la empresa especificada
+                // Buscar primero como número de factura en la empresa especificada
                 var resultado = await db.LinPedidoVtas
                     .Where(l => l.Empresa == empresa
                         && l.Nº_Factura.Trim() == numeroFactura.Trim()
@@ -1579,6 +1579,28 @@ namespace NestoAPI.Controllers
                             && l.Estado == Constantes.EstadosLineaVenta.FACTURA)
                         .Select(l => new { l.Empresa, l.Nº_Cliente })
                         .FirstOrDefaultAsync();
+                }
+
+                // Si no encuentra como factura, intentar buscar como número de pedido
+                if (resultado == null && int.TryParse(numeroFactura.Trim(), out int numeroPedido))
+                {
+                    // Buscar primero en la empresa especificada
+                    resultado = await db.LinPedidoVtas
+                        .Where(l => l.Empresa == empresa
+                            && l.Número == numeroPedido
+                            && l.Estado == Constantes.EstadosLineaVenta.FACTURA)
+                        .Select(l => new { l.Empresa, l.Nº_Cliente })
+                        .FirstOrDefaultAsync();
+
+                    // Si no encuentra en la empresa especificada, buscar en cualquier empresa
+                    if (resultado == null)
+                    {
+                        resultado = await db.LinPedidoVtas
+                            .Where(l => l.Número == numeroPedido
+                                && l.Estado == Constantes.EstadosLineaVenta.FACTURA)
+                            .Select(l => new { l.Empresa, l.Nº_Cliente })
+                            .FirstOrDefaultAsync();
+                    }
                 }
 
                 if (resultado == null || string.IsNullOrWhiteSpace(resultado.Nº_Cliente))

@@ -36,90 +36,275 @@ namespace NestoAPI.Infraestructure.Rectificativas
 
         public async Task<CopiarFacturaResponse> CopiarFactura(CopiarFacturaRequest request, string usuario)
         {
-            var response = new CopiarFacturaResponse();
-
             try
             {
-                // 1. Validar request
+                // Validar request
                 ValidarRequest(request);
 
-                // 2. Obtener líneas de la factura origen
-                var lineasOrigen = await ObtenerLineasFactura(request.Empresa, request.NumeroFactura);
-                if (!lineasOrigen.Any())
+                // Si es operación AbonoYCargo, ejecutar flujo especial
+                if (request.CrearAbonoYCargo)
                 {
-                    response.Mensaje = $"No se encontraron líneas para la factura {request.NumeroFactura}";
-                    return response;
+                    return await EjecutarAbonoYCargo(request, usuario);
                 }
 
-                // 3. Obtener o crear el pedido destino
-                int numeroPedido;
-                CabPedidoVta pedidoDestino;
-
-                if (request.AnadirAPedidoOriginal)
+                // Si hay múltiples facturas, procesar según la opción de agrupar
+                if (request.NumerosFactura != null && request.NumerosFactura.Count > 1)
                 {
-                    // Añadir al pedido original
-                    numeroPedido = lineasOrigen.First().Número;
-                    pedidoDestino = await _db.CabPedidoVtas
-                        .FirstOrDefaultAsync(p => p.Empresa == request.Empresa && p.Número == numeroPedido);
-
-                    if (pedidoDestino == null)
-                    {
-                        response.Mensaje = $"No se encontró el pedido original {numeroPedido}";
-                        return response;
-                    }
-                }
-                else
-                {
-                    // Crear pedido nuevo
-                    pedidoDestino = await CrearPedidoNuevo(request, lineasOrigen.First(), usuario);
-                    numeroPedido = pedidoDestino.Número;
+                    return await CopiarMultiplesFacturas(request, usuario);
                 }
 
-                response.NumeroPedido = numeroPedido;
-
-                // 4. Copiar las líneas
-                var lineasCopiadas = await CopiarLineas(
-                    request,
-                    lineasOrigen,
-                    pedidoDestino,
-                    usuario);
-
-                response.LineasCopiadas = lineasCopiadas;
-
-                // 5. Añadir comentario de trazabilidad
-                string comentarioOrigen = $"[Copia de factura {request.NumeroFactura}]";
-                if (request.InvertirCantidades)
-                {
-                    comentarioOrigen = $"[Rectificativa de factura {request.NumeroFactura}]";
-                }
-                if (request.EsCambioCliente)
-                {
-                    comentarioOrigen += $" [Cliente origen: {request.Cliente}]";
-                }
-                pedidoDestino.Comentarios = string.IsNullOrEmpty(pedidoDestino.Comentarios)
-                    ? comentarioOrigen
-                    : pedidoDestino.Comentarios + " " + comentarioOrigen;
-
-                await _db.SaveChangesAsync();
-
-                // 6. Crear albarán y factura si se solicitó
-                if (request.CrearAlbaranYFactura)
-                {
-                    await CrearAlbaranYFactura(request, response, numeroPedido, usuario, lineasCopiadas);
-                }
-
-                response.Exitoso = true;
-                response.Mensaje = GenerarMensajeExito(response, request);
+                // Ejecutar copia estándar (una sola factura)
+                return await CopiarFacturaInterno(request, usuario);
             }
             catch (Exception ex)
             {
-                response.Exitoso = false;
-                response.Mensaje = $"Error al copiar factura: {ex.Message}";
                 // Registrar en ELMAH para diagnóstico
                 Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+
+                return new CopiarFacturaResponse
+                {
+                    Exitoso = false,
+                    Mensaje = $"Error al copiar factura: {ex.Message}"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Procesa múltiples facturas según la opción de agrupar.
+        /// Issue #279 - SelectorFacturas
+        /// </summary>
+        private async Task<CopiarFacturaResponse> CopiarMultiplesFacturas(CopiarFacturaRequest request, string usuario)
+        {
+            if (request.AgruparEnUnaRectificativa)
+            {
+                // Agrupar todas las facturas en una sola rectificativa
+                return await CopiarFacturasAgrupadas(request, usuario);
+            }
+            else
+            {
+                // Crear una rectificativa por cada factura
+                return await CopiarFacturasSeparadas(request, usuario);
+            }
+        }
+
+        /// <summary>
+        /// Copia múltiples facturas agrupándolas en un solo pedido/rectificativa.
+        /// </summary>
+        private async Task<CopiarFacturaResponse> CopiarFacturasAgrupadas(CopiarFacturaRequest request, string usuario)
+        {
+            var response = new CopiarFacturaResponse();
+            var todasLasLineas = new List<LinPedidoVta>();
+            var facturasEncontradas = new List<string>();
+
+            // Obtener líneas de todas las facturas
+            foreach (var numeroFactura in request.NumerosFactura)
+            {
+                var (lineas, facturaReal, error) = await ObtenerLineasFacturaOPedido(request.Empresa, numeroFactura);
+                if (!string.IsNullOrEmpty(error))
+                {
+                    response.Mensaje = $"Error en factura {numeroFactura}: {error}";
+                    return response;
+                }
+                if (lineas.Any())
+                {
+                    todasLasLineas.AddRange(lineas);
+                    facturasEncontradas.Add(facturaReal ?? numeroFactura);
+                }
             }
 
+            if (!todasLasLineas.Any())
+            {
+                response.Mensaje = "No se encontraron líneas en las facturas seleccionadas";
+                return response;
+            }
+
+            // Usar el request original pero con NumeroFactura como la primera factura
+            // (para trazabilidad en comentarios)
+            request.NumeroFactura = string.Join(", ", facturasEncontradas);
+
+            // Crear pedido nuevo con todas las líneas
+            var pedidoDestino = await CrearPedidoNuevo(request, todasLasLineas.First(), usuario);
+            response.NumeroPedido = pedidoDestino.Número;
+
+            // Copiar líneas de todas las facturas
+            var lineasCopiadas = await CopiarLineasMultiples(request, todasLasLineas, pedidoDestino, usuario, facturasEncontradas);
+            response.LineasCopiadas = lineasCopiadas;
+
+            // Añadir comentarios
+            string comentarioTrazabilidad = request.InvertirCantidades
+                ? $"[Rectificativa de facturas: {string.Join(", ", facturasEncontradas)}]"
+                : $"[Copia de facturas: {string.Join(", ", facturasEncontradas)}]";
+
+            var partesComentario = new List<string>();
+            if (!string.IsNullOrWhiteSpace(request.Comentarios))
+            {
+                partesComentario.Add(request.Comentarios.Trim());
+            }
+            partesComentario.Add(comentarioTrazabilidad);
+
+            string comentarioFinal = string.Join(" ", partesComentario);
+            pedidoDestino.Comentarios = string.IsNullOrEmpty(pedidoDestino.Comentarios)
+                ? comentarioFinal
+                : pedidoDestino.Comentarios + " " + comentarioFinal;
+
+            await _db.SaveChangesAsync();
+
+            // Crear albarán y factura si se solicitó
+            if (request.CrearAlbaranYFactura)
+            {
+                await CrearAlbaranYFactura(request, response, pedidoDestino.Número, usuario, lineasCopiadas);
+            }
+
+            response.Exitoso = true;
+            response.Mensaje = $"{(request.InvertirCantidades ? "Rectificativa" : "Copia")} creada: Pedido {response.NumeroPedido}" +
+                (response.NumeroFactura != null ? $", Factura {response.NumeroFactura}" : "") +
+                $". {lineasCopiadas.Count} líneas de {facturasEncontradas.Count} facturas.";
+
             return response;
+        }
+
+        /// <summary>
+        /// Copia múltiples facturas creando una rectificativa separada por cada una.
+        /// </summary>
+        private async Task<CopiarFacturaResponse> CopiarFacturasSeparadas(CopiarFacturaRequest request, string usuario)
+        {
+            var response = new CopiarFacturaResponse
+            {
+                ResultadosIndividuales = new List<CopiarFacturaResponse>()
+            };
+
+            var exitosos = 0;
+            var errores = 0;
+
+            foreach (var numeroFactura in request.NumerosFactura)
+            {
+                // Crear un request individual para cada factura
+                var requestIndividual = new CopiarFacturaRequest
+                {
+                    Empresa = request.Empresa,
+                    Cliente = request.Cliente,
+                    NumeroFactura = numeroFactura,
+                    InvertirCantidades = request.InvertirCantidades,
+                    AnadirAPedidoOriginal = false, // Siempre crear pedidos nuevos
+                    MantenerCondicionesOriginales = request.MantenerCondicionesOriginales,
+                    CrearAlbaranYFactura = request.CrearAlbaranYFactura,
+                    ClienteDestino = request.ClienteDestino,
+                    ContactoDestino = request.ContactoDestino,
+                    Comentarios = request.Comentarios
+                };
+
+                var resultadoIndividual = await CopiarFacturaInterno(requestIndividual, usuario);
+                response.ResultadosIndividuales.Add(resultadoIndividual);
+
+                if (resultadoIndividual.Exitoso)
+                {
+                    exitosos++;
+                }
+                else
+                {
+                    errores++;
+                }
+            }
+
+            // Rellenar campos principales con el primer resultado exitoso (para compatibilidad)
+            var primerExitoso = response.ResultadosIndividuales.FirstOrDefault(r => r.Exitoso);
+            if (primerExitoso != null)
+            {
+                response.NumeroPedido = primerExitoso.NumeroPedido;
+                response.NumeroAlbaran = primerExitoso.NumeroAlbaran;
+                response.NumeroFactura = primerExitoso.NumeroFactura;
+                response.LineasCopiadas = primerExitoso.LineasCopiadas;
+            }
+
+            response.Exitoso = exitosos > 0;
+            response.Mensaje = errores == 0
+                ? $"{exitosos} rectificativa(s) creada(s) correctamente"
+                : $"{exitosos} rectificativa(s) creada(s), {errores} error(es)";
+
+            return response;
+        }
+
+        /// <summary>
+        /// Copia líneas de múltiples facturas a un mismo pedido.
+        /// </summary>
+        private async Task<List<LineaCopiadaDTO>> CopiarLineasMultiples(
+            CopiarFacturaRequest request,
+            List<LinPedidoVta> todasLasLineas,
+            CabPedidoVta pedidoDestino,
+            string usuario,
+            List<string> facturasOrigen)
+        {
+            var lineasCopiadas = new List<LineaCopiadaDTO>();
+            int siguienteOrden = await _db.LinPedidoVtas
+                .Where(l => l.Empresa == pedidoDestino.Empresa && l.Número == pedidoDestino.Número)
+                .Select(l => l.Nº_Orden)
+                .DefaultIfEmpty(0)
+                .MaxAsync() + 1;
+
+            foreach (var lineaOrigen in todasLasLineas)
+            {
+                short cantidadNueva = (short)(request.InvertirCantidades
+                    ? -lineaOrigen.Cantidad
+                    : lineaOrigen.Cantidad);
+
+                var lineaNueva = new LinPedidoVta
+                {
+                    Empresa = pedidoDestino.Empresa,
+                    Número = pedidoDestino.Número,
+                    Nº_Orden = siguienteOrden++,
+                    Estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                    TipoLinea = lineaOrigen.TipoLinea,
+                    Producto = lineaOrigen.Producto,
+                    Texto = lineaOrigen.Texto,
+                    Cantidad = cantidadNueva,
+                    Fecha_Entrega = DateTime.Today,
+                    Almacén = lineaOrigen.Almacén,
+                    IVA = lineaOrigen.IVA,
+                    Grupo = lineaOrigen.Grupo,
+                    SubGrupo = lineaOrigen.SubGrupo,
+                    Familia = lineaOrigen.Familia,
+                    Nº_Cliente = pedidoDestino.Nº_Cliente,
+                    Contacto = pedidoDestino.Contacto,
+                    Delegación = lineaOrigen.Delegación,
+                    Forma_Venta = lineaOrigen.Forma_Venta,
+                    TipoExclusiva = lineaOrigen.TipoExclusiva,
+                    Picking = 0,
+                    VtoBueno = true,
+                    Usuario = usuario,
+                    BlancoParaBorrar = "NestoAPI",
+                    LineaParcial = true,
+                    Precio = lineaOrigen.Precio,
+                    PrecioTarifa = lineaOrigen.PrecioTarifa,
+                    Coste = lineaOrigen.Coste,
+                    Descuento = lineaOrigen.Descuento,
+                    DescuentoProducto = lineaOrigen.DescuentoProducto,
+                    DescuentoCliente = lineaOrigen.DescuentoCliente,
+                    DescuentoPP = lineaOrigen.DescuentoPP,
+                    Aplicar_Dto = lineaOrigen.Aplicar_Dto
+                };
+
+                // Calcular importes
+                var gestorPedidos = new GestorPedidosVenta(_servicioPedidos);
+                gestorPedidos.CalcularImportesLinea(lineaNueva, pedidoDestino.IVA);
+
+                _db.LinPedidoVtas.Add(lineaNueva);
+
+                lineasCopiadas.Add(new LineaCopiadaDTO
+                {
+                    NumeroLineaNueva = lineaNueva.Nº_Orden,
+                    Producto = lineaNueva.Producto?.Trim(),
+                    Descripcion = lineaNueva.Texto?.Trim(),
+                    FacturaOrigen = lineaOrigen.Nº_Factura?.Trim(),
+                    LineaOrigen = lineaOrigen.Nº_Orden,
+                    CantidadOriginal = lineaOrigen.Cantidad ?? 0,
+                    CantidadCopiada = cantidadNueva,
+                    PrecioUnitario = lineaNueva.Precio ?? 0,
+                    BaseImponible = lineaNueva.Base_Imponible
+                });
+            }
+
+            await _db.SaveChangesAsync();
+            return lineasCopiadas;
         }
 
         private void ValidarRequest(CopiarFacturaRequest request)
@@ -130,21 +315,82 @@ namespace NestoAPI.Infraestructure.Rectificativas
             if (string.IsNullOrWhiteSpace(request.Cliente))
                 throw new ArgumentException("El cliente es requerido");
 
-            if (string.IsNullOrWhiteSpace(request.NumeroFactura))
+            // Debe tener NumeroFactura O NumerosFactura con al menos un elemento
+            bool tieneFacturaSimple = !string.IsNullOrWhiteSpace(request.NumeroFactura);
+            bool tieneFacturasMultiples = request.NumerosFactura != null && request.NumerosFactura.Any();
+
+            if (!tieneFacturaSimple && !tieneFacturasMultiples)
                 throw new ArgumentException("El número de factura es requerido");
+
+            // Si hay NumerosFactura con un solo elemento, usar NumeroFactura para simplificar
+            if (tieneFacturasMultiples && request.NumerosFactura.Count == 1)
+            {
+                request.NumeroFactura = request.NumerosFactura[0];
+            }
 
             if (request.EsCambioCliente && string.IsNullOrWhiteSpace(request.ContactoDestino))
                 throw new ArgumentException("El contacto destino es requerido cuando se cambia de cliente");
         }
 
-        private async Task<List<LinPedidoVta>> ObtenerLineasFactura(string empresa, string numeroFactura)
+        /// <summary>
+        /// Obtiene las líneas de una factura. Si no encuentra la factura, intenta buscar por número de pedido.
+        /// Si el pedido tiene más de una factura, devuelve error.
+        /// </summary>
+        /// <returns>Tupla con las líneas y el número de factura encontrado (puede ser diferente si se buscó por pedido)</returns>
+        private async Task<(List<LinPedidoVta> Lineas, string NumeroFactura, string Error)> ObtenerLineasFacturaOPedido(string empresa, string numeroFacturaOPedido)
         {
-            return await _db.LinPedidoVtas
+            // Primero intentar buscar como factura
+            var lineasFactura = await _db.LinPedidoVtas
                 .Where(l => l.Empresa == empresa
-                    && l.Nº_Factura.Trim() == numeroFactura.Trim()
+                    && l.Nº_Factura.Trim() == numeroFacturaOPedido.Trim()
                     && l.Estado == Constantes.EstadosLineaVenta.FACTURA)
                 .OrderBy(l => l.Nº_Orden)
                 .ToListAsync();
+
+            if (lineasFactura.Any())
+            {
+                return (lineasFactura, numeroFacturaOPedido.Trim(), null);
+            }
+
+            // Si no encuentra como factura, intentar como número de pedido
+            if (int.TryParse(numeroFacturaOPedido.Trim(), out int numeroPedido))
+            {
+                // Buscar líneas facturadas de ese pedido
+                var lineasPedido = await _db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresa
+                        && l.Número == numeroPedido
+                        && l.Estado == Constantes.EstadosLineaVenta.FACTURA)
+                    .ToListAsync();
+
+                if (!lineasPedido.Any())
+                {
+                    return (new List<LinPedidoVta>(), null,
+                        $"No se encontró la factura '{numeroFacturaOPedido}' ni el pedido {numeroPedido} con líneas facturadas");
+                }
+
+                // Verificar cuántas facturas distintas tiene el pedido
+                var facturasDistintas = lineasPedido
+                    .Select(l => l.Nº_Factura?.Trim())
+                    .Where(f => !string.IsNullOrEmpty(f))
+                    .Distinct()
+                    .ToList();
+
+                if (facturasDistintas.Count > 1)
+                {
+                    return (new List<LinPedidoVta>(), null,
+                        $"El pedido {numeroPedido} tiene {facturasDistintas.Count} facturas: {string.Join(", ", facturasDistintas)}. " +
+                        "Debe especificar el número de factura.");
+                }
+
+                // El pedido tiene una sola factura
+                string facturaEncontrada = facturasDistintas.FirstOrDefault();
+                var lineasOrdenadas = lineasPedido.OrderBy(l => l.Nº_Orden).ToList();
+                return (lineasOrdenadas, facturaEncontrada, null);
+            }
+
+            // No es ni factura ni número de pedido válido
+            return (new List<LinPedidoVta>(), null,
+                $"No se encontró la factura '{numeroFacturaOPedido}'");
         }
 
         private async Task<CabPedidoVta> CrearPedidoNuevo(
@@ -195,6 +441,17 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 primerVencimiento = DateTime.Today.AddDays(plazoPago.DíasPrimerPlazo).AddMonths(plazoPago.MesesPrimerPlazo);
             }
 
+            // Rectificativas siempre con plazos CONTADO (requisito legal)
+            bool esRectificativa = request.InvertirCantidades;
+            string plazosPagoFinal = esRectificativa
+                ? Constantes.PlazosPago.CONTADO
+                : (request.MantenerCondicionesOriginales && !request.EsCambioCliente
+                    ? pedidoOriginal?.PlazosPago ?? plazosPagoCliente
+                    : plazosPagoCliente);
+
+            // Si es rectificativa con CONTADO, el vencimiento es hoy
+            DateTime vencimientoFinal = esRectificativa ? DateTime.Today : primerVencimiento;
+
             // Crear cabecera del pedido
             var pedidoNuevo = new CabPedidoVta
             {
@@ -206,10 +463,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 Forma_Pago = request.MantenerCondicionesOriginales && !request.EsCambioCliente
                     ? pedidoOriginal?.Forma_Pago ?? formaPagoCliente
                     : formaPagoCliente,
-                PlazosPago = request.MantenerCondicionesOriginales && !request.EsCambioCliente
-                    ? pedidoOriginal?.PlazosPago ?? plazosPagoCliente
-                    : plazosPagoCliente,
-                Primer_Vencimiento = primerVencimiento,
+                PlazosPago = plazosPagoFinal,
+                Primer_Vencimiento = vencimientoFinal,
                 IVA = clienteDb.IVA,
                 Vendedor = clienteDb.Vendedor,
                 Periodo_Facturacion = clienteDb.PeriodoFacturación,
@@ -367,11 +622,13 @@ namespace NestoAPI.Infraestructure.Rectificativas
             }
 
             // Validar que no hay líneas pendientes en el pedido (evitar facturar líneas no deseadas)
+            // Extraer IDs a lista de primitivos para que EF pueda traducirlo a SQL
+            var idsLineasCopiadas = lineasCopiadas.Select(lc => lc.NumeroLineaNueva).ToList();
             var lineasPendientes = await _db.LinPedidoVtas
                 .Where(l => l.Empresa == request.Empresa
                     && l.Número == numeroPedido
                     && l.Estado == Constantes.EstadosLineaVenta.PENDIENTE
-                    && !lineasCopiadas.Select(lc => lc.NumeroLineaNueva).Contains(l.Nº_Orden))
+                    && !idsLineasCopiadas.Contains(l.Nº_Orden))
                 .AnyAsync();
 
             if (lineasPendientes && request.AnadirAPedidoOriginal)
@@ -456,6 +713,244 @@ namespace NestoAPI.Infraestructure.Rectificativas
 
             string accion = request.InvertirCantidades ? "Rectificativa creada" : "Copia creada";
             return $"{accion}: {string.Join(", ", partes)}. {response.LineasCopiadas.Count} líneas procesadas.";
+        }
+
+        /// <summary>
+        /// Ejecuta la operación de Abono + Cargo en un solo paso:
+        /// 1. Crea rectificativa (abono) al cliente ORIGEN de la factura
+        /// 2. Crea factura nueva (cargo) al cliente DESTINO seleccionado
+        ///
+        /// Útil para:
+        /// - Corregir errores de dirección: abono a dirección incorrecta + cargo a dirección correcta
+        /// - Traspasar facturas entre clientes: abono al cliente erróneo + cargo al correcto
+        /// </summary>
+        private async Task<CopiarFacturaResponse> EjecutarAbonoYCargo(CopiarFacturaRequest request, string usuario)
+        {
+            var response = new CopiarFacturaResponse();
+
+            try
+            {
+                // Validar que hay cliente destino (requerido para esta operación)
+                if (string.IsNullOrWhiteSpace(request.ClienteDestino) || string.IsNullOrWhiteSpace(request.ContactoDestino))
+                {
+                    throw new ArgumentException("Para la operación Abono+Cargo debe especificar ClienteDestino y ContactoDestino");
+                }
+
+                // Obtener datos del cliente origen desde la factura (o buscar por pedido)
+                var (lineasOrigen, numeroFacturaReal, error) = await ObtenerLineasFacturaOPedido(request.Empresa, request.NumeroFactura);
+                if (!string.IsNullOrEmpty(error))
+                {
+                    response.Mensaje = error;
+                    return response;
+                }
+                if (!lineasOrigen.Any())
+                {
+                    response.Mensaje = $"No se encontraron líneas para '{request.NumeroFactura}'";
+                    return response;
+                }
+
+                // Usar el número de factura real (puede ser diferente si se buscó por pedido)
+                string facturaAUsar = numeroFacturaReal ?? request.NumeroFactura;
+
+                var primeraLinea = lineasOrigen.First();
+                string clienteOrigen = primeraLinea.Nº_Cliente?.Trim();
+                string contactoOrigen = primeraLinea.Contacto?.Trim();
+
+                // ========== PASO 1: Crear ABONO al cliente origen ==========
+                var requestAbono = new CopiarFacturaRequest
+                {
+                    Empresa = request.Empresa,
+                    Cliente = clienteOrigen,
+                    NumeroFactura = facturaAUsar,
+                    InvertirCantidades = true, // Abono = cantidades negativas
+                    AnadirAPedidoOriginal = false, // Pedido nuevo
+                    MantenerCondicionesOriginales = true, // Mismas condiciones que la factura original
+                    CrearAlbaranYFactura = true, // Facturar automáticamente
+                    // No cambiar de cliente para el abono
+                    ClienteDestino = null,
+                    ContactoDestino = null
+                };
+
+                var responseAbono = await CopiarFacturaInterno(requestAbono, usuario);
+                if (!responseAbono.Exitoso)
+                {
+                    response.Mensaje = $"Error al crear abono: {responseAbono.Mensaje}";
+                    return response;
+                }
+
+                response.Abono = new OperacionFacturaDTO
+                {
+                    Cliente = clienteOrigen,
+                    Contacto = contactoOrigen,
+                    NumeroPedido = responseAbono.NumeroPedido,
+                    NumeroAlbaran = responseAbono.NumeroAlbaran,
+                    NumeroFactura = responseAbono.NumeroFactura,
+                    Lineas = responseAbono.LineasCopiadas
+                };
+
+                // ========== PASO 2: Crear CARGO al cliente destino ==========
+                var requestCargo = new CopiarFacturaRequest
+                {
+                    Empresa = request.Empresa,
+                    Cliente = clienteOrigen, // Cliente de la factura original
+                    NumeroFactura = facturaAUsar,
+                    InvertirCantidades = false, // Cargo = cantidades positivas
+                    AnadirAPedidoOriginal = false, // Pedido nuevo
+                    MantenerCondicionesOriginales = request.MantenerCondicionesOriginales,
+                    CrearAlbaranYFactura = true, // Facturar automáticamente
+                    ClienteDestino = request.ClienteDestino,
+                    ContactoDestino = request.ContactoDestino
+                };
+
+                var responseCargo = await CopiarFacturaInterno(requestCargo, usuario);
+                if (!responseCargo.Exitoso)
+                {
+                    response.Mensaje = $"ATENCIÓN: Abono creado ({response.Abono.NumeroFactura}) pero error al crear cargo: {responseCargo.Mensaje}";
+                    response.Exitoso = false;
+                    return response;
+                }
+
+                response.Cargo = new OperacionFacturaDTO
+                {
+                    Cliente = request.ClienteDestino,
+                    Contacto = request.ContactoDestino,
+                    NumeroPedido = responseCargo.NumeroPedido,
+                    NumeroAlbaran = responseCargo.NumeroAlbaran,
+                    NumeroFactura = responseCargo.NumeroFactura,
+                    Lineas = responseCargo.LineasCopiadas
+                };
+
+                // Rellenar campos principales del response con datos del cargo (para compatibilidad)
+                response.NumeroPedido = responseCargo.NumeroPedido;
+                response.NumeroAlbaran = responseCargo.NumeroAlbaran;
+                response.NumeroFactura = responseCargo.NumeroFactura;
+                response.LineasCopiadas = responseCargo.LineasCopiadas;
+
+                response.Exitoso = true;
+                response.Mensaje = $"Abono+Cargo completado. " +
+                    $"ABONO: Factura {response.Abono.NumeroFactura} (cliente {clienteOrigen}/{contactoOrigen}). " +
+                    $"CARGO: Factura {response.Cargo.NumeroFactura} (cliente {request.ClienteDestino}/{request.ContactoDestino}). " +
+                    $"{lineasOrigen.Count} líneas procesadas.";
+            }
+            catch (Exception ex)
+            {
+                response.Exitoso = false;
+                response.Mensaje = $"Error en operación Abono+Cargo: {ex.Message}";
+                Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+            }
+
+            return response;
+        }
+
+        /// <summary>
+        /// Método interno que ejecuta la copia sin la validación de CrearAbonoYCargo
+        /// (para evitar recursión infinita).
+        /// </summary>
+        private async Task<CopiarFacturaResponse> CopiarFacturaInterno(CopiarFacturaRequest request, string usuario)
+        {
+            var response = new CopiarFacturaResponse();
+
+            // Obtener líneas de la factura origen (o buscar por pedido si no encuentra factura)
+            var (lineasOrigen, numeroFacturaReal, error) = await ObtenerLineasFacturaOPedido(request.Empresa, request.NumeroFactura);
+            if (!string.IsNullOrEmpty(error))
+            {
+                response.Mensaje = error;
+                return response;
+            }
+            if (!lineasOrigen.Any())
+            {
+                response.Mensaje = $"No se encontraron líneas para '{request.NumeroFactura}'";
+                return response;
+            }
+
+            // Actualizar el número de factura en el request si se encontró por pedido
+            if (numeroFacturaReal != request.NumeroFactura?.Trim())
+            {
+                request.NumeroFactura = numeroFacturaReal;
+            }
+
+            // Obtener o crear el pedido destino
+            int numeroPedido;
+            CabPedidoVta pedidoDestino;
+
+            if (request.AnadirAPedidoOriginal)
+            {
+                numeroPedido = lineasOrigen.First().Número;
+                pedidoDestino = await _db.CabPedidoVtas
+                    .FirstOrDefaultAsync(p => p.Empresa == request.Empresa && p.Número == numeroPedido);
+
+                if (pedidoDestino == null)
+                {
+                    response.Mensaje = $"No se encontró el pedido original {numeroPedido}";
+                    return response;
+                }
+            }
+            else
+            {
+                pedidoDestino = await CrearPedidoNuevo(request, lineasOrigen.First(), usuario);
+                numeroPedido = pedidoDestino.Número;
+            }
+
+            response.NumeroPedido = numeroPedido;
+
+            // Copiar las líneas
+            var lineasCopiadas = await CopiarLineas(
+                request,
+                lineasOrigen,
+                pedidoDestino,
+                usuario);
+
+            response.LineasCopiadas = lineasCopiadas;
+
+            // Añadir comentario del usuario (si existe) + comentario de trazabilidad + comentarios originales
+            string comentarioTrazabilidad = $"[Copia de factura {request.NumeroFactura}]";
+            if (request.InvertirCantidades)
+            {
+                comentarioTrazabilidad = $"[Rectificativa de factura {request.NumeroFactura}]";
+            }
+            if (request.EsCambioCliente)
+            {
+                comentarioTrazabilidad += $" [Cliente origen: {request.Cliente}]";
+            }
+
+            // Construir comentario final: comentario usuario + trazabilidad + comentarios originales
+            var partesComentario = new List<string>();
+            if (!string.IsNullOrWhiteSpace(request.Comentarios))
+            {
+                partesComentario.Add(request.Comentarios.Trim());
+            }
+            partesComentario.Add(comentarioTrazabilidad);
+
+            // Si mantiene condiciones originales, copiar también los comentarios del pedido original
+            if (request.MantenerCondicionesOriginales)
+            {
+                int numeroPedidoOriginal = lineasOrigen.First().Número;
+                var pedidoOriginal = await _db.CabPedidoVtas
+                    .FirstOrDefaultAsync(p => p.Empresa == request.Empresa && p.Número == numeroPedidoOriginal);
+
+                if (pedidoOriginal != null && !string.IsNullOrWhiteSpace(pedidoOriginal.Comentarios))
+                {
+                    partesComentario.Add(pedidoOriginal.Comentarios.Trim());
+                }
+            }
+
+            string comentarioFinal = string.Join(" ", partesComentario);
+            pedidoDestino.Comentarios = string.IsNullOrEmpty(pedidoDestino.Comentarios)
+                ? comentarioFinal
+                : pedidoDestino.Comentarios + " " + comentarioFinal;
+
+            await _db.SaveChangesAsync();
+
+            // Crear albarán y factura si se solicitó
+            if (request.CrearAlbaranYFactura)
+            {
+                await CrearAlbaranYFactura(request, response, numeroPedido, usuario, lineasCopiadas);
+            }
+
+            response.Exitoso = true;
+            response.Mensaje = GenerarMensajeExito(response, request);
+
+            return response;
         }
     }
 }

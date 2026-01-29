@@ -480,6 +480,235 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
 
         #endregion
 
+        #region Tests de CrearAbonoYCargo (Issue #85 - Abono+Cargo en un clic)
+
+        [TestMethod]
+        public void CopiarFacturaRequest_CrearAbonoYCargo_PorDefectoEsFalse()
+        {
+            // Arrange & Act
+            var request = new CopiarFacturaRequest();
+
+            // Assert
+            Assert.IsFalse(request.CrearAbonoYCargo, "Por defecto CrearAbonoYCargo debe ser false");
+        }
+
+        [TestMethod]
+        public void CopiarFacturaRequest_CrearAbonoYCargo_RequiereClienteDestino()
+        {
+            // Documenta que CrearAbonoYCargo requiere ClienteDestino y ContactoDestino
+            var request = new CopiarFacturaRequest
+            {
+                Empresa = "1",
+                Cliente = "15234",
+                NumeroFactura = "NV26/001234",
+                CrearAbonoYCargo = true,
+                ClienteDestino = "15234",  // Mismo cliente, diferente contacto
+                ContactoDestino = "1"      // Nuevo contacto con direccion correcta
+            };
+
+            // Assert
+            Assert.IsTrue(request.CrearAbonoYCargo);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(request.ClienteDestino),
+                "ClienteDestino es requerido para CrearAbonoYCargo");
+            Assert.IsFalse(string.IsNullOrWhiteSpace(request.ContactoDestino),
+                "ContactoDestino es requerido para CrearAbonoYCargo");
+        }
+
+        [TestMethod]
+        public void Escenario_CorregirDireccion_ConAbonoYCargo()
+        {
+            // Documenta el caso de uso principal:
+            // El cliente dice que la direccion de la factura esta mal.
+            // 1. Se crea un nuevo contacto con la direccion correcta
+            // 2. Se usa CrearAbonoYCargo para hacer rectificativa + factura nueva
+
+            var request = new CopiarFacturaRequest
+            {
+                Empresa = "1",
+                Cliente = "12345",               // Cliente original
+                NumeroFactura = "NV26/001234",   // Factura con direccion erronea
+                CrearAbonoYCargo = true,         // Hacer abono + cargo
+                ClienteDestino = "12345",        // Mismo cliente
+                ContactoDestino = "1",           // Nuevo contacto con direccion correcta
+                MantenerCondicionesOriginales = true
+            };
+
+            // El gestor debe:
+            // 1. Crear rectificativa al cliente 12345/0 (direccion original erronea)
+            // 2. Crear factura al cliente 12345/1 (direccion correcta)
+
+            Assert.IsTrue(request.CrearAbonoYCargo);
+            Assert.AreEqual(request.Cliente, request.ClienteDestino,
+                "En correccion de direccion, el cliente es el mismo");
+            Assert.AreNotEqual("0", request.ContactoDestino,
+                "El contacto destino debe ser diferente (nueva direccion)");
+        }
+
+        [TestMethod]
+        public void Escenario_TraspasoCompleto_ConAbonoYCargo()
+        {
+            // Documenta el caso de uso:
+            // Traspasar una factura de cliente A a cliente B en un solo clic
+
+            var request = new CopiarFacturaRequest
+            {
+                Empresa = "1",
+                Cliente = "15234",               // Cliente A (origen)
+                NumeroFactura = "NV26/001234",
+                CrearAbonoYCargo = true,         // Abono a A + Cargo a B
+                ClienteDestino = "18456",        // Cliente B (destino)
+                ContactoDestino = "0",
+                MantenerCondicionesOriginales = false  // Recalcular para cliente B
+            };
+
+            Assert.IsTrue(request.CrearAbonoYCargo);
+            Assert.AreNotEqual(request.Cliente, request.ClienteDestino,
+                "En traspaso, los clientes son diferentes");
+        }
+
+        #endregion
+
+        #region Tests de OperacionFacturaDTO
+
+        [TestMethod]
+        public void OperacionFacturaDTO_InicializaListaLineasVacia()
+        {
+            // Arrange & Act
+            var operacion = new OperacionFacturaDTO();
+
+            // Assert
+            Assert.IsNotNull(operacion.Lineas);
+            Assert.AreEqual(0, operacion.Lineas.Count);
+        }
+
+        [TestMethod]
+        public void OperacionFacturaDTO_ContieneInformacionCompleta()
+        {
+            // Arrange & Act
+            var operacion = new OperacionFacturaDTO
+            {
+                Cliente = "12345",
+                Contacto = "0",
+                NumeroPedido = 98765,
+                NumeroAlbaran = 11111,
+                NumeroFactura = "NV26/001235",
+                Lineas = new List<LineaCopiadaDTO>
+                {
+                    new LineaCopiadaDTO { NumeroLineaNueva = 1, Producto = "PROD01" },
+                    new LineaCopiadaDTO { NumeroLineaNueva = 2, Producto = "PROD02" }
+                }
+            };
+
+            // Assert
+            Assert.AreEqual("12345", operacion.Cliente);
+            Assert.AreEqual("0", operacion.Contacto);
+            Assert.AreEqual(98765, operacion.NumeroPedido);
+            Assert.AreEqual(11111, operacion.NumeroAlbaran);
+            Assert.AreEqual("NV26/001235", operacion.NumeroFactura);
+            Assert.AreEqual(2, operacion.Lineas.Count);
+        }
+
+        #endregion
+
+        #region Tests de CopiarFacturaResponse con Abono y Cargo
+
+        [TestMethod]
+        public void CopiarFacturaResponse_ConAbonoYCargo_ContieneAmbosResultados()
+        {
+            // Arrange & Act
+            var response = new CopiarFacturaResponse
+            {
+                Exitoso = true,
+                Mensaje = "Abono+Cargo completado",
+                Abono = new OperacionFacturaDTO
+                {
+                    Cliente = "12345",
+                    Contacto = "0",
+                    NumeroPedido = 100001,
+                    NumeroAlbaran = 200001,
+                    NumeroFactura = "NV26/001235"
+                },
+                Cargo = new OperacionFacturaDTO
+                {
+                    Cliente = "12345",
+                    Contacto = "1",
+                    NumeroPedido = 100002,
+                    NumeroAlbaran = 200002,
+                    NumeroFactura = "NV26/001236"
+                }
+            };
+
+            // Assert
+            Assert.IsNotNull(response.Abono, "Debe tener informacion del abono");
+            Assert.IsNotNull(response.Cargo, "Debe tener informacion del cargo");
+            Assert.AreEqual("NV26/001235", response.Abono.NumeroFactura);
+            Assert.AreEqual("NV26/001236", response.Cargo.NumeroFactura);
+            Assert.AreEqual(response.Abono.Cliente, response.Cargo.Cliente,
+                "En correccion de direccion, el cliente es el mismo");
+            Assert.AreNotEqual(response.Abono.Contacto, response.Cargo.Contacto,
+                "Los contactos deben ser diferentes");
+        }
+
+        [TestMethod]
+        public void CopiarFacturaResponse_SinAbonoYCargo_AbonoYCargoSonNull()
+        {
+            // Arrange & Act - Operacion normal sin AbonoYCargo
+            var response = new CopiarFacturaResponse
+            {
+                Exitoso = true,
+                NumeroPedido = 12345,
+                NumeroFactura = "NV26/001234"
+                // Abono y Cargo no se establecen
+            };
+
+            // Assert
+            Assert.IsNull(response.Abono, "En operacion normal, Abono debe ser null");
+            Assert.IsNull(response.Cargo, "En operacion normal, Cargo debe ser null");
+        }
+
+        [TestMethod]
+        public void CopiarFacturaResponse_AbonoYCargo_MensajeDescriptivo()
+        {
+            // Arrange
+            var response = new CopiarFacturaResponse
+            {
+                Exitoso = true,
+                Mensaje = "Abono+Cargo completado. ABONO: Factura NV26/001235 (cliente 12345/0). CARGO: Factura NV26/001236 (cliente 12345/1). 5 lineas procesadas.",
+                Abono = new OperacionFacturaDTO { NumeroFactura = "NV26/001235" },
+                Cargo = new OperacionFacturaDTO { NumeroFactura = "NV26/001236" }
+            };
+
+            // Assert
+            Assert.IsTrue(response.Mensaje.Contains("Abono+Cargo"));
+            Assert.IsTrue(response.Mensaje.Contains("ABONO"));
+            Assert.IsTrue(response.Mensaje.Contains("CARGO"));
+            Assert.IsTrue(response.Mensaje.Contains(response.Abono.NumeroFactura));
+            Assert.IsTrue(response.Mensaje.Contains(response.Cargo.NumeroFactura));
+        }
+
+        [TestMethod]
+        public void CopiarFacturaResponse_AbonoYCargo_ErrorEnCargo_MensajeDeAdvertencia()
+        {
+            // Documenta el comportamiento cuando el abono se crea pero el cargo falla
+            var response = new CopiarFacturaResponse
+            {
+                Exitoso = false,
+                Mensaje = "ATENCION: Abono creado (NV26/001235) pero error al crear cargo: Cliente destino no encontrado",
+                Abono = new OperacionFacturaDTO { NumeroFactura = "NV26/001235" },
+                Cargo = null  // No se pudo crear
+            };
+
+            // Assert
+            Assert.IsFalse(response.Exitoso);
+            Assert.IsTrue(response.Mensaje.Contains("ATENCION"));
+            Assert.IsTrue(response.Mensaje.Contains("Abono creado"));
+            Assert.IsTrue(response.Mensaje.Contains("error al crear cargo"));
+            Assert.IsNotNull(response.Abono, "El abono si se creo");
+            Assert.IsNull(response.Cargo, "El cargo no se pudo crear");
+        }
+
+        #endregion
+
         #region Tests de validacion de campos requeridos
 
         [TestMethod]

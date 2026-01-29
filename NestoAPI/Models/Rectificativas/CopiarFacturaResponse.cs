@@ -42,6 +42,61 @@ namespace NestoAPI.Models.Rectificativas
         /// Indica si la operación fue exitosa
         /// </summary>
         public bool Exitoso { get; set; }
+
+        // ========== Propiedades para operación AbonoYCargo ==========
+
+        /// <summary>
+        /// Datos del abono (rectificativa al cliente origen).
+        /// Solo se rellena cuando CrearAbonoYCargo=true.
+        /// </summary>
+        public OperacionFacturaDTO Abono { get; set; }
+
+        /// <summary>
+        /// Datos del cargo (factura nueva al cliente destino).
+        /// Solo se rellena cuando CrearAbonoYCargo=true.
+        /// </summary>
+        public OperacionFacturaDTO Cargo { get; set; }
+
+        // ========== Propiedades para múltiples facturas (Issue #279) ==========
+
+        /// <summary>
+        /// Lista de resultados individuales cuando se procesan múltiples facturas
+        /// sin agrupar (AgruparEnUnaRectificativa=false).
+        /// Cada elemento representa el resultado de procesar una factura.
+        /// </summary>
+        public List<CopiarFacturaResponse> ResultadosIndividuales { get; set; }
+    }
+
+    /// <summary>
+    /// Datos de una operación individual (abono o cargo) dentro de AbonoYCargo.
+    /// </summary>
+    public class OperacionFacturaDTO
+    {
+        /// <summary>
+        /// Cliente/Contacto de esta operación
+        /// </summary>
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+
+        /// <summary>
+        /// Número de pedido creado
+        /// </summary>
+        public int NumeroPedido { get; set; }
+
+        /// <summary>
+        /// Número de albarán creado
+        /// </summary>
+        public int? NumeroAlbaran { get; set; }
+
+        /// <summary>
+        /// Número de factura creada
+        /// </summary>
+        public string NumeroFactura { get; set; }
+
+        /// <summary>
+        /// Líneas procesadas en esta operación
+        /// </summary>
+        public List<LineaCopiadaDTO> Lineas { get; set; } = new List<LineaCopiadaDTO>();
     }
 
     /// <summary>
