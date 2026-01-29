@@ -299,6 +299,41 @@ namespace NestoAPI.Controllers
             return Ok(saldo);
         }
 
+        /// <summary>
+        /// Elimina el último registro de conciliación bancaria (Issue #77)
+        /// </summary>
+        [HttpDelete]
+        [Route("api/Bancos/UltimaConciliacion")]
+        [ResponseType(typeof(object))]
+        public async Task<IHttpActionResult> DeshacerUltimaConciliacion()
+        {
+            ConciliacionBancariaPunteo ultimaConciliacion = await db.ConciliacionesBancariasPunteos
+                .OrderByDescending(c => c.Id)
+                .FirstOrDefaultAsync();
+
+            if (ultimaConciliacion == null)
+            {
+                return NotFound();
+            }
+
+            // Guardamos los datos antes de eliminar para devolverlos
+            var resultado = new
+            {
+                ultimaConciliacion.Id,
+                ultimaConciliacion.ApunteBancoId,
+                ultimaConciliacion.ApunteContabilidadId,
+                ultimaConciliacion.ImportePunteado,
+                ultimaConciliacion.SimboloPunteo,
+                ultimaConciliacion.Usuario,
+                ultimaConciliacion.FechaCreacion
+            };
+
+            db.ConciliacionesBancariasPunteos.Remove(ultimaConciliacion);
+            await db.SaveChangesAsync();
+
+            return Ok(resultado);
+        }
+
         /*
         // POST: api/Bancos
         [ResponseType(typeof(Banco))]
