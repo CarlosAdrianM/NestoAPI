@@ -135,7 +135,12 @@ namespace NestoAPI.Infraestructure.Facturas
 
             Empresa empresaFactura = servicio.CargarEmpresa(empresa);
             DireccionFactura direccionEmpresa = CargarDireccionEmpresa(empresaFactura);
-            DireccionFactura direccionRazonSocial = CargarDireccionRazonSocial(clienteRazonSocial);
+            // Verifactu: usar datos fiscales persistidos en CabFacturaVta si existen,
+            // para que la factura muestre la dirección que tenía cuando se emitió.
+            // Fallback a datos del cliente para facturas antiguas sin datos persistidos.
+            DireccionFactura direccionRazonSocial = TieneDatosFiscalesPersistidos(cabFactura)
+                ? CargarDireccionRazonSocialDesdeFactura(cabFactura)
+                : CargarDireccionRazonSocial(clienteRazonSocial);
             DireccionFactura direccionEntrega = CargarDireccionEntrega(clienteEntrega);
 
             List<DireccionFactura> direcciones = new List<DireccionFactura>
@@ -265,6 +270,11 @@ namespace NestoAPI.Infraestructure.Facturas
                 : Constantes.Facturas.TiposDocumento.FACTURA_RECTIFICATIVA;
 
 
+            // Verifactu: usar NIF persistido si existe
+            string nifFactura = TieneDatosFiscalesPersistidos(cabFactura)
+                ? cabFactura.CifNif?.Trim()
+                : clienteRazonSocial.CIF_NIF?.Trim();
+
             Factura factura = new Factura
             {
                 Cliente = cabFactura.Nº_Cliente.Trim(),
@@ -276,7 +286,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 Fecha = cabFactura.Fecha,
                 ImporteTotal = importeTotal,
                 Lineas = lineas,
-                Nif = clienteRazonSocial.CIF_NIF?.Trim(),
+                Nif = nifFactura,
                 NotasAlPie = serieFactura.Notas,
                 NumeroFactura = cabFactura.Número?.Trim(),
                 Ruta = cabPedido.Ruta?.Trim(),
@@ -506,6 +516,34 @@ namespace NestoAPI.Infraestructure.Facturas
                 Provincia = clienteRazonSocial.Provincia?.Trim(),
                 Telefonos = clienteRazonSocial.Teléfono?.Trim()
             };
+        }
+
+        /// <summary>
+        /// Carga la dirección fiscal desde los datos persistidos en CabFacturaVta.
+        /// Verifactu requiere que la factura muestre la dirección que tenía cuando se emitió,
+        /// no la dirección actual del cliente (que puede haber cambiado).
+        /// </summary>
+        private static DireccionFactura CargarDireccionRazonSocialDesdeFactura(CabFacturaVta cabFactura)
+        {
+            return new DireccionFactura
+            {
+                Tipo = "Fiscal",
+                Nombre = cabFactura.NombreFiscal?.Trim(),
+                CodigoPostal = cabFactura.CodPostalFiscal?.Trim(),
+                Direccion = cabFactura.DireccionFiscal?.Trim(),
+                Poblacion = cabFactura.PoblacionFiscal?.Trim(),
+                Provincia = cabFactura.ProvinciaFiscal?.Trim(),
+                Telefonos = null // No se guarda en CabFacturaVta
+            };
+        }
+
+        /// <summary>
+        /// Indica si CabFacturaVta tiene datos fiscales persistidos.
+        /// Las facturas anteriores a Verifactu no tienen estos datos.
+        /// </summary>
+        private static bool TieneDatosFiscalesPersistidos(CabFacturaVta cabFactura)
+        {
+            return !string.IsNullOrWhiteSpace(cabFactura.NombreFiscal);
         }
 
         private static DireccionFactura CargarDireccionEmpresa(Empresa empresaPedido)

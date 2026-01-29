@@ -106,7 +106,7 @@ namespace NestoAPI.Controllers
                             vp.EnlaceVideo = builder.ToString();
                             cambios.Add(("EnlaceVideo", vp.EnlaceVideo, vp.EnlaceVideo));
                         }
-                        catch { /* Si el enlace no es válido, no hacemos nada */ }
+                        catch { /* Si el enlace no es vï¿½lido, no hacemos nada */ }
                     }
                 }
 
@@ -131,8 +131,21 @@ namespace NestoAPI.Controllers
                     });
                 }
 
-                _ = await db.SaveChangesAsync();
-                return Ok();
+                try
+                {
+                    _ = await db.SaveChangesAsync();
+                    return Ok();
+                }
+                catch (System.Data.Entity.Infrastructure.DbUpdateException ex)
+                {
+                    // Loguear en ELMAH
+                    Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+
+                    // Extraer mensaje de error interno (ej: permisos SQL)
+                    var innerMessage = ex.InnerException?.InnerException?.Message ?? ex.InnerException?.Message ?? ex.Message;
+                    return Content(System.Net.HttpStatusCode.InternalServerError,
+                        $"Error al guardar los cambios: {innerMessage}");
+                }
             }
         }
 
@@ -142,7 +155,7 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// Elimina un VideosProducto (solo empleados). 
-        /// Registra la eliminación en el log.
+        /// Registra la eliminaciï¿½n en el log.
         /// </summary>
         [HttpDelete]
         [Route("{id}")]
@@ -171,7 +184,7 @@ namespace NestoAPI.Controllers
                     return Ok(); // Idempotencia: ya no existe
                 }
 
-                // Registrar eliminación (antes de borrar)
+                // Registrar eliminaciï¿½n (antes de borrar)
                 _ = db.LogVideosProductos.Add(new LogVideoProducto
                 {
                     VideoProductoId = vp.Id,
@@ -226,10 +239,10 @@ namespace NestoAPI.Controllers
         #endregion
 
 
-        #region POST: Deshacer un cambio específico
+        #region POST: Deshacer un cambio especï¿½fico
 
         /// <summary>
-        /// Deshace un cambio específico a partir de un registro de log (solo empleados)
+        /// Deshace un cambio especï¿½fico a partir de un registro de log (solo empleados)
         /// </summary>
         [HttpPost]
         [Route("{id}/deshacer/{logId}")]
@@ -265,7 +278,7 @@ namespace NestoAPI.Controllers
                 var registroLog = await db.LogVideosProductos.FindAsync(logId);
                 if (registroLog == null || registroLog.VideoProductoId != id)
                 {
-                    return BadRequest("No se encontró el registro de log especificado.");
+                    return BadRequest("No se encontrï¿½ el registro de log especificado.");
                 }
 
                 // No permitimos deshacer un deshacer (para evitar bucles)
@@ -363,7 +376,7 @@ namespace NestoAPI.Controllers
 
                 if (!cambioAplicado)
                 {
-                    // Igualmente registramos que se intentó deshacer
+                    // Igualmente registramos que se intentï¿½ deshacer
                     _ = db.LogVideosProductos.Add(new LogVideoProducto
                     {
                         VideoProductoId = videoProducto.Id,

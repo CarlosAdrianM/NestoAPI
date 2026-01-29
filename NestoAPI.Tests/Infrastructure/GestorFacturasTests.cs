@@ -870,6 +870,197 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region Tests para Datos Fiscales Persistidos (Verifactu - Issue #88)
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_ConDatosFiscalesPersistidos_UsaDatosDeCabFactura()
+        {
+            // Arrange
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            // Datos fiscales persistidos en CabFacturaVta
+            cab.NombreFiscal = "EMPRESA PERSISTIDA S.L.";
+            cab.CifNif = "B12345678";
+            cab.DireccionFiscal = "Calle Persistida 123";
+            cab.CodPostalFiscal = "28001";
+            cab.PoblacionFiscal = "Madrid";
+            cab.ProvinciaFiscal = "Madrid";
+
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2026, 1, 29),
+                Cantidad = 1,
+                Texto = "PRODUCTO TEST",
+                Precio = 100,
+                Producto = "12345",
+                Base_Imponible = 100M,
+                ImporteIVA = 21M,
+                ImporteRE = 0,
+                Total = 121,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV26/001234")).Returns(cab);
+
+            // Cliente con datos DIFERENTES a los persistidos
+            Cliente clientePrincipal = new Cliente
+            {
+                Nombre = "EMPRESA ACTUAL S.L.",  // Diferente
+                CIF_NIF = "B99999999",           // Diferente
+                Dirección = "Calle Actual 456",  // Diferente
+                CodPostal = "28002",
+                Población = "Barcelona",
+                Provincia = "Barcelona",
+                ClientePrincipal = true
+            };
+            A.CallTo(() => servicio.CargarCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clientePrincipal);
+            A.CallTo(() => servicio.CargarClientePrincipal(A<string>.Ignored, A<string>.Ignored)).Returns(clientePrincipal);
+
+            VencimientoFactura vto = new VencimientoFactura { Importe = 121, ImportePendiente = 121 };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(new List<VencimientoFactura> { vto });
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV26/001234");
+
+            // Assert - Debe usar datos de CabFacturaVta, NO de Cliente
+            var direccionFiscal = factura.Direcciones.FirstOrDefault(d => d.Tipo == "Fiscal");
+            Assert.IsNotNull(direccionFiscal);
+            Assert.AreEqual("EMPRESA PERSISTIDA S.L.", direccionFiscal.Nombre, "Debe usar NombreFiscal de CabFacturaVta");
+            Assert.AreEqual("Calle Persistida 123", direccionFiscal.Direccion, "Debe usar DireccionFiscal de CabFacturaVta");
+            Assert.AreEqual("28001", direccionFiscal.CodigoPostal, "Debe usar CodPostalFiscal de CabFacturaVta");
+            Assert.AreEqual("Madrid", direccionFiscal.Poblacion, "Debe usar PoblacionFiscal de CabFacturaVta");
+            Assert.AreEqual("B12345678", factura.Nif, "Debe usar CifNif de CabFacturaVta");
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_SinDatosFiscalesPersistidos_UsaDatosDeCliente()
+        {
+            // Arrange - Factura antigua sin datos fiscales persistidos
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            // Sin datos fiscales (NombreFiscal = null)
+            cab.NombreFiscal = null;
+            cab.CifNif = null;
+            cab.DireccionFiscal = null;
+
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2025, 6, 15),
+                Cantidad = 1,
+                Texto = "PRODUCTO ANTIGUO",
+                Precio = 50,
+                Producto = "54321",
+                Base_Imponible = 50M,
+                ImporteIVA = 10.50M,
+                ImporteRE = 0,
+                Total = 60.50M,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV25/000001")).Returns(cab);
+
+            // Cliente actual
+            Cliente clientePrincipal = new Cliente
+            {
+                Nombre = "CLIENTE ACTUAL S.L.",
+                CIF_NIF = "B11111111",
+                Dirección = "Calle Cliente 789",
+                CodPostal = "28003",
+                Población = "Valencia",
+                Provincia = "Valencia",
+                ClientePrincipal = true
+            };
+            A.CallTo(() => servicio.CargarCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clientePrincipal);
+            A.CallTo(() => servicio.CargarClientePrincipal(A<string>.Ignored, A<string>.Ignored)).Returns(clientePrincipal);
+
+            VencimientoFactura vto = new VencimientoFactura { Importe = 60.50M, ImportePendiente = 60.50M };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(new List<VencimientoFactura> { vto });
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV25/000001");
+
+            // Assert - Debe usar datos de Cliente (fallback)
+            var direccionFiscal = factura.Direcciones.FirstOrDefault(d => d.Tipo == "Fiscal");
+            Assert.IsNotNull(direccionFiscal);
+            Assert.AreEqual("CLIENTE ACTUAL S.L.", direccionFiscal.Nombre, "Debe usar nombre de Cliente");
+            Assert.AreEqual("Calle Cliente 789", direccionFiscal.Direccion, "Debe usar direccion de Cliente");
+            Assert.AreEqual("B11111111", factura.Nif, "Debe usar CIF_NIF de Cliente");
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_ConNombreFiscalVacio_UsaDatosDeCliente()
+        {
+            // Arrange - NombreFiscal es cadena vacia (equivalente a null)
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            cab.NombreFiscal = "   "; // Solo espacios
+
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2026, 1, 29),
+                Cantidad = 1,
+                Texto = "PRODUCTO",
+                Precio = 100,
+                Producto = "11111",
+                Base_Imponible = 100M,
+                ImporteIVA = 21M,
+                ImporteRE = 0,
+                Total = 121,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV26/000002")).Returns(cab);
+
+            Cliente clientePrincipal = new Cliente
+            {
+                Nombre = "CLIENTE FALLBACK",
+                CIF_NIF = "B22222222",
+                Dirección = "Calle Fallback",
+                CodPostal = "28004",
+                Población = "Sevilla",
+                Provincia = "Sevilla",
+                ClientePrincipal = true
+            };
+            A.CallTo(() => servicio.CargarCliente(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clientePrincipal);
+            A.CallTo(() => servicio.CargarClientePrincipal(A<string>.Ignored, A<string>.Ignored)).Returns(clientePrincipal);
+
+            VencimientoFactura vto = new VencimientoFactura { Importe = 121M, ImportePendiente = 121M };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(new List<VencimientoFactura> { vto });
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV26/000002");
+
+            // Assert - Debe usar fallback a Cliente
+            var direccionFiscal = factura.Direcciones.FirstOrDefault(d => d.Tipo == "Fiscal");
+            Assert.AreEqual("CLIENTE FALLBACK", direccionFiscal.Nombre);
+        }
+
+        #endregion
     }
 
 
