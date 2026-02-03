@@ -11,11 +11,16 @@ namespace NestoAPI.Infraestructure.Videos
     public class ServicioVideos : IServicioVideos
     {
         private static readonly DateTime fechaLimite = DateTime.Now.AddYears(-3);
-        public Task<List<VideoLookupModel>> GetVideos(int skip, int take, bool tieneComprasRecientes)
+        public Task<List<VideoLookupModel>> GetVideos(int skip, int take, bool tieneComprasRecientes, bool soloProtocolos = false)
         {
             using (NVEntities db = new NVEntities())
             {
                 IQueryable<Video> query = db.Videos.AsQueryable();
+
+                if (soloProtocolos)
+                {
+                    query = query.Where(v => v.EsUnProtocolo);
+                }
 
                 if (!tieneComprasRecientes)
                 {
@@ -50,12 +55,18 @@ namespace NestoAPI.Infraestructure.Videos
             }
         }
 
-        public Task<List<VideoLookupModel>> GetVideos(List<int> ids, bool tieneComprasRecientes)
+        public Task<List<VideoLookupModel>> GetVideos(List<int> ids, bool tieneComprasRecientes, bool soloProtocolos = false)
         {
             using (NVEntities db = new NVEntities())
             {
-                var videos = db.Videos
-                    .Where(v => ids.Contains(v.Id))
+                IQueryable<Video> query = db.Videos.Where(v => ids.Contains(v.Id));
+
+                if (soloProtocolos)
+                {
+                    query = query.Where(v => v.EsUnProtocolo);
+                }
+
+                var videos = query
                     .ToList()
                     .Select(v => new VideoLookupModel
                     {
@@ -101,12 +112,12 @@ namespace NestoAPI.Infraestructure.Videos
             }
         }
 
-        public Task<List<VideoLookupModel>> BuscarVideos(string query, bool tieneComprasRecientes, int skip = 0, int take = 20)
+        public Task<List<VideoLookupModel>> BuscarVideos(string query, bool tieneComprasRecientes, bool soloProtocolos = false, int skip = 0, int take = 20)
         {
             List<VideoResultadoBusqueda> resultadosLucene = LuceneBuscador.BuscarVideos(query, skip, take);
             List<int> ids = resultadosLucene.Select(r => r.Id).ToList();
 
-            return GetVideos(ids, tieneComprasRecientes);
+            return GetVideos(ids, tieneComprasRecientes, soloProtocolos);
         }
 
         /// <summary>

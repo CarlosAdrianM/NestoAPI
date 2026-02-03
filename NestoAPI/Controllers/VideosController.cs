@@ -25,7 +25,7 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("")]
         [ResponseType(typeof(List<VideoLookupModel>))]
-        public async Task<IHttpActionResult> GetVideos(int skip, int take)
+        public async Task<IHttpActionResult> GetVideos(int skip, int take, bool soloProtocolos = false)
         {
             bool tieneComprasRecientes = false;
 
@@ -40,7 +40,7 @@ namespace NestoAPI.Controllers
             }
 
             // Obtener los videos en función de si tiene compras recientes
-            List<VideoLookupModel> videos = await _servicioVideos.GetVideos(skip, take, tieneComprasRecientes);
+            List<VideoLookupModel> videos = await _servicioVideos.GetVideos(skip, take, tieneComprasRecientes, soloProtocolos);
             return Ok(videos);
         }
 
@@ -115,7 +115,8 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> Buscar(
             [FromUri] string q,
             [FromUri] int skip = 0,
-            [FromUri] int take = 20)
+            [FromUri] int take = 20,
+            [FromUri] bool soloProtocolos = false)
         {
             if (string.IsNullOrWhiteSpace(q))
             {
@@ -134,7 +135,7 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            List<VideoLookupModel> resultados = await _servicioVideos.BuscarVideos(q, tieneComprasRecientes, skip, take);
+            List<VideoLookupModel> resultados = await _servicioVideos.BuscarVideos(q, tieneComprasRecientes, soloProtocolos, skip, take);
             return Ok(resultados);
         }
 
