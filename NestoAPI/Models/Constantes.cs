@@ -231,6 +231,7 @@ namespace NestoAPI.Models
             public const string GRUPO_PELUQUERIA = "PEL";
             public const string SUBGRUPO_MUESTRAS = "MMP";
             public const int DEPOSITO_DIAS_ESTADISTICA = 60;
+            public const decimal PORCENTAJE_MAXIMO_REGALOS = 0.10m; // 10%
         }
 
         public static class Proveedores

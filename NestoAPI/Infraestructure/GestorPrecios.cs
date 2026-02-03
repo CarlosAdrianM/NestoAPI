@@ -177,6 +177,7 @@ namespace NestoAPI.Infraestructure
             listaValidadoresDenegacion.Add(new ValidadorOfertasPermitidas());
             listaValidadoresDenegacion.Add(new ValidadorDescuentosPermitidos());
             listaValidadoresDenegacion.Add(new ValidadorOtrosAparatosSiempreSinDescuento());
+            listaValidadoresDenegacion.Add(new ValidadorLimiteRegalos());
 
             listaValidadoresAceptacion.Add(new ValidadorOfertasCombinadas());
             listaValidadoresAceptacion.Add(new ValidadorMuestrasYMaterialPromocional());

@@ -665,6 +665,7 @@
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorOfertasPedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorLimiteRegalos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasPermitidas.cs" />

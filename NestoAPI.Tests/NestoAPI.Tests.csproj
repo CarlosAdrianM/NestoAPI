@@ -182,6 +182,7 @@
     <Compile Include="Infrastructure\Rectificativas\GestorCopiaPedidosTests.cs" />
     <Compile Include="Infrastructure\Seguridad\ClaimsVendedorHelperTests.cs" />
     <Compile Include="Infrastructure\Seguridad\ValidadorAccesoClienteTests.cs" />
+    <Compile Include="Infrastructure\ValidadoresPedido\ValidadorLimiteRegalosTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ExtractoAdaptersTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\CalculadorSaldoMayorTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />
