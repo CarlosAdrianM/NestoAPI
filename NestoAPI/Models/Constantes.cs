@@ -224,6 +224,7 @@ namespace NestoAPI.Models
             public const short ESTADO_A_EXTINGUIR = 4;
             public const short ESTADO_NO_SOBRE_PEDIDO = 0;
             public const string FAMILIA_BONIFICACION = "Bonificac";
+            public const string GRUPO_ACCESORIOS = "ACC";
             public const string GRUPO_APARATOS = "APA";
             public const string GRUPO_COSMETICA = "COS";
             public const string GRUPO_CURSOS = "CUR";
@@ -232,6 +233,18 @@ namespace NestoAPI.Models
             public const string SUBGRUPO_MUESTRAS = "MMP";
             public const int DEPOSITO_DIAS_ESTADISTICA = 60;
             public const decimal PORCENTAJE_MAXIMO_REGALOS = 0.10m; // 10%
+
+            /// <summary>
+            /// Grupos de producto que generan Ganavisiones (puntos para bonificaciones).
+            /// Issue #94: Sistema Ganavisiones
+            /// </summary>
+            public static readonly string[] GRUPOS_BONIFICABLES_CON_GANAVISIONES = { GRUPO_COSMETICA, GRUPO_ACCESORIOS, GRUPO_PELUQUERIA };
+
+            /// <summary>
+            /// Valor en EUR de cada Ganavisión para bonificaciones.
+            /// Issue #94: Sistema Ganavisiones
+            /// </summary>
+            public const decimal VALOR_GANAVISION_EN_EUROS = 10m;
         }
 
         public static class Proveedores

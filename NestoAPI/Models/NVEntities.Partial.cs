@@ -1,11 +1,10 @@
 using System.Data.Common;
 using System.Data.Entity;
-using System.ComponentModel.DataAnnotations.Schema;
 
 namespace NestoAPI.Models
 {
     /// <summary>
-    /// Clase parcial de NVEntities para agregar constructores personalizados y DbSets adicionales
+    /// Clase parcial de NVEntities para agregar constructores personalizados
     /// </summary>
     public partial class NVEntities : DbContext
     {
@@ -21,9 +20,6 @@ namespace NestoAPI.Models
         public NVEntities(DbConnection existingConnection, bool contextOwnsConnection)
             : base(existingConnection, contextOwnsConnection)
         {
-            // Los DbSets adicionales ExtractoRuta y NotaEntrega ya están incluidos
-            // en el archivo generado NestoEntities.Context.cs (líneas 115-116)
-            // y se configuran automáticamente mediante el EDMX
         }
     }
 }

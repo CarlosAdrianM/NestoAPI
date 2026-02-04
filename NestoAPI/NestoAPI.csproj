@@ -504,6 +504,7 @@
     <Compile Include="Controllers\FacturacionRutasController.cs" />
     <Compile Include="Controllers\FormasPagoController.cs" />
     <Compile Include="Controllers\FormasVentaController.cs" />
+    <Compile Include="Controllers\GanavisionesController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
@@ -665,6 +666,7 @@
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorOfertasPedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorGanavisiones.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorLimiteRegalos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
@@ -941,6 +943,10 @@
     <Compile Include="Models\Familia.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Ganavision.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\Ganavisiones\GanavisionDTO.cs" />
     <Compile Include="Models\FicheroCuaderno43.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

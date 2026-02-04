@@ -141,5 +141,31 @@ namespace NestoAPI.Infraestructure
                 ).ToList();
             }
         }
+
+        /// <summary>
+        /// Obtiene los Ganavisiones activos para un producto.
+        /// Issue #94: Sistema Ganavisiones
+        /// </summary>
+        public int? BuscarGanavisionesProducto(string numeroProducto)
+        {
+            if (string.IsNullOrWhiteSpace(numeroProducto))
+            {
+                return null;
+            }
+
+            using (NVEntities db = new NVEntities())
+            {
+                var hoy = DateTime.Today;
+                var ganavision = db.Ganavisiones
+                    .Where(g => g.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                                g.ProductoId == numeroProducto.Trim() &&
+                                g.FechaDesde <= hoy &&
+                                (g.FechaHasta == null || g.FechaHasta >= hoy))
+                    .OrderByDescending(g => g.FechaDesde)
+                    .FirstOrDefault();
+
+                return ganavision?.Ganavisiones;
+            }
+        }
     }
 }

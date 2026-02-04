@@ -182,6 +182,7 @@ namespace NestoAPI.Infraestructure
             listaValidadoresAceptacion.Add(new ValidadorOfertasCombinadas());
             listaValidadoresAceptacion.Add(new ValidadorMuestrasYMaterialPromocional());
             listaValidadoresAceptacion.Add(new ValidadorRegalosTiendaOnline());
+            listaValidadoresAceptacion.Add(new ValidadorGanavisiones());
             listaValidadoresAceptacion.Add(new ValidadorRegaloPorImportePedido());
         }
 

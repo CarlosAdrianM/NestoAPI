@@ -117,6 +117,7 @@ namespace NestoAPI.Models
         public virtual DbSet<SyncMessageRetry> SyncMessageRetries { get; set; }
         public virtual DbSet<Entidad> Entidades { get; set; }
         public virtual DbSet<LinFacturaVtaRectificacion> LinFacturaVtaRectificaciones { get; set; }
+        public virtual DbSet<Ganavision> Ganavisiones { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

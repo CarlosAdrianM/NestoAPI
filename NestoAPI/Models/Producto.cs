@@ -30,6 +30,7 @@ namespace NestoAPI.Models
             this.Kits = new HashSet<Kit>();
             this.Kits1 = new HashSet<Kit>();
             this.GruposProductoes = new HashSet<GruposProducto>();
+            this.Ganavisiones = new HashSet<Ganavision>();
         }
     
         public string Empresa { get; set; }
@@ -88,5 +89,6 @@ namespace NestoAPI.Models
         public virtual ICollection<Kit> Kits1 { get; set; }
         public virtual ICollection<GruposProducto> GruposProductoes { get; set; }
         public virtual GruposProducto GruposProducto { get; set; }
+        public virtual ICollection<Ganavision> Ganavisiones { get; set; }
     }
 }

@@ -941,6 +941,20 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="Ganavisiones">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="ProductoId" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Ganavisiones" Type="int" Nullable="false" />
+          <Property Name="FechaDesde" Type="datetime" Nullable="false" />
+          <Property Name="FechaHasta" Type="datetime" />
+          <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
+        </EntityType>
         <EntityType Name="GruposProducto">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -3508,6 +3522,20 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_Ganavisiones_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="Ganavisiones" Type="Self.Ganavisiones" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Ganavisiones">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="ProductoId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_GruposProducto_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="*" />
@@ -5042,6 +5070,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="FicheroCuaderno43" EntityType="Self.FicheroCuaderno43" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasPago" EntityType="Self.FormasPago" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="FormasVenta" EntityType="Self.FormasVenta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="Ganavisiones" EntityType="Self.Ganavisiones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="GruposProducto" EntityType="Self.GruposProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Inmovilizados" EntityType="Self.Inmovilizados" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Inventarios" EntityType="Self.Inventarios" Schema="dbo" store:Type="Tables" />
@@ -5592,6 +5621,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_FormasVenta_Empresas" Association="Self.FK_FormasVenta_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="FormasVenta" EntitySet="FormasVenta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_Ganavisiones_Productos" Association="Self.FK_Ganavisiones_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="Ganavisiones" EntitySet="Ganavisiones" />
           </AssociationSet>
           <AssociationSet Name="FK_GruposProducto_Empresas" Association="Self.FK_GruposProducto_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -7060,6 +7093,11 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="SyncMessageRetries" EntityType="NVModel.SyncMessageRetry" />
           <EntitySet Name="Entidades" EntityType="NVModel.Entidad" />
           <EntitySet Name="LinFacturaVtaRectificaciones" EntityType="NVModel.LinFacturaVtaRectificacion" />
+          <EntitySet Name="Ganavisiones" EntityType="NVModel.Ganavision" />
+          <AssociationSet Name="FK_Ganavisiones_Productos" Association="NVModel.FK_Ganavisiones_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="Ganavisione" EntitySet="Ganavisiones" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -7632,6 +7670,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Kits1" Relationship="NVModel.FK_KITS_Productos1" FromRole="Producto" ToRole="Kit" />
           <NavigationProperty Name="GruposProductoes" Relationship="NVModel.FK_GruposProducto_Productos" FromRole="Producto" ToRole="GruposProducto" />
           <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_Productos_GruposProducto" FromRole="Producto" ToRole="GruposProducto" />
+          <NavigationProperty Name="Ganavisiones" Relationship="NVModel.FK_Ganavisiones_Productos" FromRole="Producto" ToRole="Ganavisione" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -12457,6 +12496,35 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FacturaOriginalLinea" Type="Int32" Nullable="false" />
           <Property Name="CantidadRectificada" Type="Decimal" Nullable="false" Precision="18" Scale="4" />
         </EntityType>
+        <EntityType Name="Ganavision">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="ProductoId" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Ganavisiones" Type="Int32" Nullable="false" />
+          <Property Name="FechaDesde" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="FechaHasta" Type="DateTime" Precision="3" />
+          <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <NavigationProperty Name="Producto" Relationship="NVModel.FK_Ganavisiones_Productos" FromRole="Ganavisione" ToRole="Producto" />
+        </EntityType>
+        <Association Name="FK_Ganavisiones_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.Ganavision" Role="Ganavisione" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="Ganavisione">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="ProductoId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -14355,6 +14423,21 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="NumeroLinea" ColumnName="NumeroLinea" />
                 <ScalarProperty Name="NumeroFactura" ColumnName="NumeroFactura" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="Ganavisiones">
+            <EntityTypeMapping TypeName="NVModel.Ganavision">
+              <MappingFragment StoreEntitySet="Ganavisiones">
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />
+                <ScalarProperty Name="FechaHasta" ColumnName="FechaHasta" />
+                <ScalarProperty Name="FechaDesde" ColumnName="FechaDesde" />
+                <ScalarProperty Name="Ganavisiones" ColumnName="Ganavisiones" />
+                <ScalarProperty Name="ProductoId" ColumnName="ProductoId" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
