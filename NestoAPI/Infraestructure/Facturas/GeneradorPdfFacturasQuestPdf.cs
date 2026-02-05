@@ -101,17 +101,22 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     column.Item().Row(row =>
                     {
-                        // Logo (izquierda) - tamaño fijo
+                        // Logo (izquierda) - tamaño igual al RDLC: 6.05cm x 3.96cm
                         if (_logoBytes != null && _logoBytes.Length > 0)
                         {
-                            row.ConstantItem(100).AlignLeft().AlignTop().Image(_logoBytes);
+                            row.ConstantItem(6.05f, Unit.Centimetre).Height(3.96f, Unit.Centimetre)
+                                .AlignLeft().AlignTop().Image(_logoBytes, ImageScaling.FitArea);
                         }
                         else
                         {
-                            row.ConstantItem(100);
+                            row.ConstantItem(6.05f, Unit.Centimetre).Height(3.96f, Unit.Centimetre);
                         }
 
-                        // Datos empresa (columna derecha, centrados en esa columna)
+                        // Espacio vacío alineado con Razón Social (columna izquierda de FILA 2)
+                        row.RelativeItem();
+                        row.ConstantItem(10); // Espacio entre columnas (igual que FILA 2)
+
+                        // Datos empresa centrados sobre Dirección de Entrega (columna derecha de FILA 2)
                         if (direccionEmpresa != null)
                         {
                             row.RelativeItem().AlignCenter().Column(col =>
