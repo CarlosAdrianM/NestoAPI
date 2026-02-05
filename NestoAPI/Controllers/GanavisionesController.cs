@@ -118,6 +118,33 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// Obtiene la lista de IDs de productos que estan en la tabla Ganavisiones (activos).
+        /// Issue #94: Sistema Ganavisiones - FASE 6
+        /// Util para cachear en el cliente y mostrar notificacion cuando el usuario selecciona un producto bonificable.
+        /// </summary>
+        /// <param name="empresa">Codigo de empresa</param>
+        /// <returns>Lista de ProductoIds bonificables</returns>
+        [HttpGet]
+        [Route("api/Ganavisiones/ProductosIds")]
+        [ResponseType(typeof(List<string>))]
+        public async Task<IHttpActionResult> GetProductosBonificablesIds(string empresa)
+        {
+            string empresaPadded = empresa.PadRight(3);
+            var hoy = DateTime.Today;
+
+            var productosIds = await db.Ganavisiones
+                .Where(g => g.Empresa == empresaPadded &&
+                            g.FechaDesde <= hoy &&
+                            (g.FechaHasta == null || g.FechaHasta >= hoy))
+                .Select(g => g.ProductoId.Trim())
+                .Distinct()
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return Ok(productosIds);
+        }
+
+        /// <summary>
         /// Obtiene los productos que se pueden bonificar dado un importe de base imponible bonificable.
         /// Issue #94: Sistema Ganavisiones - FASE 2/3
         /// </summary>
@@ -125,11 +152,12 @@ namespace NestoAPI.Controllers
         /// <param name="baseImponibleBonificable">Importe en EUR de la base imponible de grupos bonificables (COS, ACC, PEL)</param>
         /// <param name="almacen">Almacen del pedido (opcional). Si se especifica junto con servirJunto=false, solo devuelve productos con stock en ese almacen</param>
         /// <param name="servirJunto">Si es true (default), devuelve productos con stock en cualquier almacen. Si es false, solo con stock en el almacen especificado</param>
+        /// <param name="cliente">Numero de cliente. Si se especifica, excluye productos que el cliente haya comprado (BaseImponible != 0)</param>
         /// <returns>Lista de productos bonificables con sus Ganavisiones y stocks, ordenados por Ganavisiones ascendente</returns>
         [HttpGet]
         [Route("api/Ganavisiones/ProductosBonificables")]
         [ResponseType(typeof(ProductosBonificablesResponse))]
-        public async Task<IHttpActionResult> GetProductosBonificables(string empresa, decimal baseImponibleBonificable, string almacen = null, bool servirJunto = true)
+        public async Task<IHttpActionResult> GetProductosBonificables(string empresa, decimal baseImponibleBonificable, string almacen = null, bool servirJunto = true, string cliente = null)
         {
             if (baseImponibleBonificable < 0)
             {
@@ -166,6 +194,29 @@ namespace NestoAPI.Controllers
 
             // Obtener IDs de productos para consultar stocks
             var productosIds = ganavisionesQuery.Select(g => g.ProductoId).ToList();
+
+            // Excluir productos que el cliente haya comprado (BaseImponible != 0)
+            // Si solo los ha recibido como bonificacion (BaseImponible = 0), SI puede volver a recibirlos
+            if (!string.IsNullOrEmpty(cliente))
+            {
+                var productosComprados = await db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresaPadded &&
+                                l.Nº_Cliente == cliente &&
+                                productosIds.Contains(l.Producto) &&
+                                l.Base_Imponible != 0)
+                    .Select(l => l.Producto)
+                    .Distinct()
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                if (productosComprados.Any())
+                {
+                    ganavisionesQuery = ganavisionesQuery
+                        .Where(g => !productosComprados.Contains(g.ProductoId))
+                        .ToList();
+                    productosIds = ganavisionesQuery.Select(g => g.ProductoId).ToList();
+                }
+            }
 
             // Obtener stocks de todos los almacenes para estos productos
             var stocksPorProducto = await db.ExtractosProducto

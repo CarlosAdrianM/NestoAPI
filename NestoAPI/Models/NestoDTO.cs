@@ -146,6 +146,11 @@ namespace NestoAPI.Models
         public string unidadMedida { get; set; }
         public string familia { get; set; }
         public string subGrupo { get; set; }
+        /// <summary>
+        /// Grupo del producto (ej: COS, ACC, PEL, APA).
+        /// Issue #94: Sistema Ganavisiones - necesario para calcular base imponible bonificable.
+        /// </summary>
+        public string grupo { get; set; }
         public string codigoBarras { get; set; }
         public Nullable<short> estado { get; set; }
         public bool yaFacturado { get; set; }

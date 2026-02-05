@@ -24,6 +24,7 @@ namespace NestoAPI.Tests.Controllers
         private IDbSet<Ganavision> fakeGanavisiones;
         private IDbSet<Producto> fakeProductos;
         private IDbSet<ExtractoProducto> fakeExtractosProducto;
+        private IDbSet<LinPedidoVta> fakeLinPedidoVtas;
 
         [TestInitialize]
         public void Setup()
@@ -32,13 +33,16 @@ namespace NestoAPI.Tests.Controllers
             fakeGanavisiones = A.Fake<IDbSet<Ganavision>>();
             fakeProductos = A.Fake<IDbSet<Producto>>();
             fakeExtractosProducto = A.Fake<IDbSet<ExtractoProducto>>();
+            fakeLinPedidoVtas = A.Fake<IDbSet<LinPedidoVta>>();
 
             A.CallTo(() => db.Ganavisiones).Returns(fakeGanavisiones);
             A.CallTo(() => db.Productos).Returns(fakeProductos);
             A.CallTo(() => db.ExtractosProducto).Returns(fakeExtractosProducto);
+            A.CallTo(() => db.LinPedidoVtas).Returns(fakeLinPedidoVtas);
 
-            // Por defecto, extractos vacios
+            // Por defecto, extractos vacios y lineas de pedido vacias
             ConfigurarFakeDbSet(fakeExtractosProducto, new List<ExtractoProducto>().AsQueryable());
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, new List<LinPedidoVta>().AsQueryable());
 
             controller = new GanavisionesController(db);
         }
@@ -554,6 +558,109 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int?>));
             var okResult = (OkNegotiatedContentResult<int?>)resultado;
             Assert.IsNull(okResult.Content);
+        }
+
+        #endregion
+
+        #region GetProductosBonificablesIds Tests
+
+        [TestMethod]
+        public async Task GetProductosBonificablesIds_RetornaSoloProductosActivos()
+        {
+            // Arrange: Un producto activo, uno expirado, uno futuro
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD_ACTIVO",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null
+                },
+                new Ganavision
+                {
+                    Id = 2,
+                    Empresa = "1  ",
+                    ProductoId = "PROD_EXPIRADO",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-30),
+                    FechaHasta = DateTime.Today.AddDays(-1)
+                },
+                new Ganavision
+                {
+                    Id = 3,
+                    Empresa = "1  ",
+                    ProductoId = "PROD_FUTURO",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(1),
+                    FechaHasta = null
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Act
+            var resultado = await controller.GetProductosBonificablesIds("1");
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<string>>));
+            var okResult = (OkNegotiatedContentResult<List<string>>)resultado;
+            Assert.AreEqual(1, okResult.Content.Count);
+            Assert.AreEqual("PROD_ACTIVO", okResult.Content[0]);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificablesIds_SinProductos_RetornaListaVacia()
+        {
+            // Arrange
+            var ganavisiones = new List<Ganavision>().AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Act
+            var resultado = await controller.GetProductosBonificablesIds("1");
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<string>>));
+            var okResult = (OkNegotiatedContentResult<List<string>>)resultado;
+            Assert.AreEqual(0, okResult.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificablesIds_ProductosDuplicados_RetornaDistinct()
+        {
+            // Arrange: Mismo producto con dos registros (uno expirado y uno activo)
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-30),
+                    FechaHasta = DateTime.Today.AddDays(-1) // Expirado
+                },
+                new Ganavision
+                {
+                    Id = 2,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 10,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null // Activo
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Act
+            var resultado = await controller.GetProductosBonificablesIds("1");
+
+            // Assert: Solo debe aparecer una vez
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<string>>));
+            var okResult = (OkNegotiatedContentResult<List<string>>)resultado;
+            Assert.AreEqual(1, okResult.Content.Count);
+            Assert.AreEqual("PROD1", okResult.Content[0]);
         }
 
         #endregion
@@ -1139,6 +1246,277 @@ namespace NestoAPI.Tests.Controllers
             var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
             Assert.IsTrue(okResult.Content.PuedeDesmarcar);
             Assert.AreEqual(0, okResult.Content.ProductosProblematicos.Count);
+        }
+
+        #endregion
+
+        #region Filtro por historial de compras del cliente Tests
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ClienteNuncaCompro_MuestraTodosLosProductos()
+        {
+            // Arrange: Cliente sin historial de compras
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto 1", PVP = 5m }
+                },
+                new Ganavision
+                {
+                    Id = 2,
+                    Empresa = "1  ",
+                    ProductoId = "PROD2",
+                    Ganavisiones = 3,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD2", Nombre = "Producto 2", PVP = 3m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var extractos = new List<ExtractoProducto>
+            {
+                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 },
+                new ExtractoProducto { Número = "PROD2", Almacén = "ALG", Cantidad = 10 }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+
+            // Sin lineas de pedido para este cliente
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, new List<LinPedidoVta>().AsQueryable());
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m, cliente: "15000");
+
+            // Assert: Debe mostrar ambos productos
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(2, okResult.Content.Productos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ClienteComproProducto_ExcluyeEseProducto()
+        {
+            // Arrange: Cliente compro PROD1 con BaseImponible > 0
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Comprado", PVP = 5m }
+                },
+                new Ganavision
+                {
+                    Id = 2,
+                    Empresa = "1  ",
+                    ProductoId = "PROD2",
+                    Ganavisiones = 3,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD2", Nombre = "Producto Nuevo", PVP = 3m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var extractos = new List<ExtractoProducto>
+            {
+                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 },
+                new ExtractoProducto { Número = "PROD2", Almacén = "ALG", Cantidad = 10 }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+
+            // Cliente 15000 compro PROD1 con BaseImponible = 25
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1  ", Nº_Cliente = "15000", Producto = "PROD1", Base_Imponible = 25m }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, lineas);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m, cliente: "15000");
+
+            // Assert: Solo PROD2 debe aparecer
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("PROD2", okResult.Content.Productos[0].ProductoId.Trim());
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ClienteRecibioComoBonificacion_SiMuestraProducto()
+        {
+            // Arrange: Cliente recibio PROD1 como bonificacion (BaseImponible = 0)
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Bonificado Antes", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var extractos = new List<ExtractoProducto>
+            {
+                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+
+            // Cliente 15000 recibio PROD1 como bonificacion (BaseImponible = 0)
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1  ", Nº_Cliente = "15000", Producto = "PROD1", Base_Imponible = 0m }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, lineas);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m, cliente: "15000");
+
+            // Assert: PROD1 debe aparecer porque solo lo recibio como bonificacion
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("PROD1", okResult.Content.Productos[0].ProductoId.Trim());
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ClienteComproYRecibioComoBonificacion_ExcluyeProducto()
+        {
+            // Arrange: Cliente compro PROD1 y tambien lo recibio como bonificacion
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Mixto", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var extractos = new List<ExtractoProducto>
+            {
+                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+
+            // Cliente 15000: una vez lo compro, otra vez lo recibio gratis
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1  ", Nº_Cliente = "15000", Producto = "PROD1", Base_Imponible = 0m },
+                new LinPedidoVta { Empresa = "1  ", Nº_Cliente = "15000", Producto = "PROD1", Base_Imponible = 15m }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, lineas);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m, cliente: "15000");
+
+            // Assert: PROD1 NO debe aparecer porque alguna vez lo compro
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(0, okResult.Content.Productos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_SinCliente_NoFiltraPorHistorial()
+        {
+            // Arrange: Sin especificar cliente, no debe filtrar
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var extractos = new List<ExtractoProducto>
+            {
+                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+
+            // Hay un cliente que compro, pero no especificamos cliente
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1  ", Nº_Cliente = "15000", Producto = "PROD1", Base_Imponible = 25m }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, lineas);
+
+            // Act: Sin especificar cliente
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert: Debe mostrar el producto porque no se filtro por cliente
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_OtroClienteCompro_NoAfectaAlClienteActual()
+        {
+            // Arrange: Otro cliente compro PROD1, pero el cliente actual no
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var extractos = new List<ExtractoProducto>
+            {
+                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+
+            // Cliente 99999 compro, pero consultamos para cliente 15000
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1  ", Nº_Cliente = "99999", Producto = "PROD1", Base_Imponible = 25m }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, lineas);
+
+            // Act: Consultamos para cliente 15000
+            var resultado = await controller.GetProductosBonificables("1", 100m, cliente: "15000");
+
+            // Assert: Debe mostrar el producto porque el cliente 15000 no lo compro
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
         }
 
         #endregion
