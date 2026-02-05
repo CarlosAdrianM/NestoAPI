@@ -97,51 +97,54 @@ namespace NestoAPI.Infraestructure.Facturas
             container.Column(column =>
             {
                 // ========== FILA 1: Logo + Datos empresa ==========
-                if (!_papelConMembrete)
+                // Siempre reservamos el espacio del logo para que la Razón Social quede en la misma posición
+                // En papel con membrete: espacio vacío (el logo ya está preimpreso en el papel)
+                // En papel blanco: imprimimos logo y datos de empresa
+                column.Item().Row(row =>
                 {
-                    column.Item().Row(row =>
+                    // Logo (izquierda) - tamaño igual al RDLC: 6.05cm x 3.96cm
+                    // En papel membrete solo reservamos el espacio sin imprimir nada
+                    if (!_papelConMembrete && _logoBytes != null && _logoBytes.Length > 0)
                     {
-                        // Logo (izquierda) - tamaño igual al RDLC: 6.05cm x 3.96cm
-                        if (_logoBytes != null && _logoBytes.Length > 0)
-                        {
-                            row.ConstantItem(6.05f, Unit.Centimetre).Height(3.96f, Unit.Centimetre)
-                                .AlignLeft().AlignTop().Image(_logoBytes, ImageScaling.FitArea);
-                        }
-                        else
-                        {
-                            row.ConstantItem(6.05f, Unit.Centimetre).Height(3.96f, Unit.Centimetre);
-                        }
+                        row.ConstantItem(6.05f, Unit.Centimetre).Height(3.96f, Unit.Centimetre)
+                            .AlignLeft().AlignTop().Image(_logoBytes, ImageScaling.FitArea);
+                    }
+                    else
+                    {
+                        // Reservar espacio del logo (papel membrete o sin logo cargado)
+                        row.ConstantItem(6.05f, Unit.Centimetre).Height(3.96f, Unit.Centimetre);
+                    }
 
-                        // Espacio vacío alineado con Razón Social (columna izquierda de FILA 2)
-                        row.RelativeItem();
-                        row.ConstantItem(10); // Espacio entre columnas (igual que FILA 2)
+                    // Espacio vacío alineado con Razón Social (columna izquierda de FILA 2)
+                    row.RelativeItem();
+                    row.ConstantItem(10); // Espacio entre columnas (igual que FILA 2)
 
-                        // Datos empresa centrados sobre Dirección de Entrega (columna derecha de FILA 2)
-                        if (direccionEmpresa != null)
+                    // Datos empresa centrados sobre Dirección de Entrega (columna derecha de FILA 2)
+                    // En papel membrete no imprimimos datos de empresa (ya están en el membrete)
+                    if (!_papelConMembrete && direccionEmpresa != null)
+                    {
+                        row.RelativeItem().AlignCenter().Column(col =>
                         {
-                            row.RelativeItem().AlignCenter().Column(col =>
+                            col.Item().AlignCenter().Text(direccionEmpresa.Nombre).Bold().FontSize(10);
+                            col.Item().AlignCenter().Text(direccionEmpresa.Direccion).FontSize(8);
+                            col.Item().AlignCenter().Text(direccionEmpresa.PoblacionCompleta).FontSize(8);
+                            if (!string.IsNullOrEmpty(direccionEmpresa.Telefonos))
                             {
-                                col.Item().AlignCenter().Text(direccionEmpresa.Nombre).Bold().FontSize(10);
-                                col.Item().AlignCenter().Text(direccionEmpresa.Direccion).FontSize(8);
-                                col.Item().AlignCenter().Text(direccionEmpresa.PoblacionCompleta).FontSize(8);
-                                if (!string.IsNullOrEmpty(direccionEmpresa.Telefonos))
-                                {
-                                    col.Item().AlignCenter().Text($"Tel: {direccionEmpresa.Telefonos}").FontSize(8);
-                                }
-                                if (!string.IsNullOrEmpty(direccionEmpresa.Comentarios))
-                                {
-                                    col.Item().AlignCenter().Text(direccionEmpresa.Comentarios).FontSize(7);
-                                }
-                            });
-                        }
-                        else
-                        {
-                            row.RelativeItem();
-                        }
-                    });
+                                col.Item().AlignCenter().Text($"Tel: {direccionEmpresa.Telefonos}").FontSize(8);
+                            }
+                            if (!string.IsNullOrEmpty(direccionEmpresa.Comentarios))
+                            {
+                                col.Item().AlignCenter().Text(direccionEmpresa.Comentarios).FontSize(7);
+                            }
+                        });
+                    }
+                    else
+                    {
+                        row.RelativeItem();
+                    }
+                });
 
-                    column.Item().PaddingVertical(5);
-                }
+                column.Item().PaddingVertical(5);
 
                 // ========== FILA 2: Razón Social + Dirección Entrega ==========
                 column.Item().Row(row =>
