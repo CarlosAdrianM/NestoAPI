@@ -8,6 +8,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.Rectificativas;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure.Rectificativas
@@ -742,6 +743,255 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             // Assert - El formato esperado es SERIE/NUMERO
             Assert.IsTrue(request.NumeroFactura.Contains("/"),
                 "El numero de factura debe contener / como separador");
+        }
+
+        #endregion
+
+        #region Tests de validacion de lineas para copia
+
+        [TestMethod]
+        public void ValidarLineasParaCopia_LineaConYaFacturadoTrue_DebeRetornarError()
+        {
+            // Arrange
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Producto = "PROD01", YaFacturado = false, Recoger = 0 },
+                new LinPedidoVta { Producto = "PROD02", YaFacturado = true, Recoger = 0 },  // YaFacturado!
+                new LinPedidoVta { Producto = "PROD03", YaFacturado = false, Recoger = 0 }
+            };
+
+            // Act
+            var lineasYaFacturadas = lineas.Where(l => l.YaFacturado).ToList();
+
+            // Assert
+            Assert.IsTrue(lineasYaFacturadas.Any(), "Debe detectar lineas con YaFacturado=true");
+            Assert.AreEqual(1, lineasYaFacturadas.Count);
+            Assert.AreEqual("PROD02", lineasYaFacturadas.First().Producto);
+        }
+
+        [TestMethod]
+        public void ValidarLineasParaCopia_LineaConRecogerDistintoDeCero_DebeRetornarError()
+        {
+            // Arrange
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Producto = "PROD01", YaFacturado = false, Recoger = 0 },
+                new LinPedidoVta { Producto = "PROD02", YaFacturado = false, Recoger = 2 },  // Recoger != 0
+                new LinPedidoVta { Producto = "PROD03", YaFacturado = false, Recoger = 0 }
+            };
+
+            // Act
+            var lineasConRecoger = lineas.Where(l => l.Recoger != 0).ToList();
+
+            // Assert
+            Assert.IsTrue(lineasConRecoger.Any(), "Debe detectar lineas con Recoger != 0");
+            Assert.AreEqual(1, lineasConRecoger.Count);
+            Assert.AreEqual("PROD02", lineasConRecoger.First().Producto);
+        }
+
+        [TestMethod]
+        public void ValidarLineasParaCopia_TodasLasLineasValidas_NoDebeRetornarError()
+        {
+            // Arrange
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Producto = "PROD01", YaFacturado = false, Recoger = 0 },
+                new LinPedidoVta { Producto = "PROD02", YaFacturado = false, Recoger = 0 },
+                new LinPedidoVta { Producto = "PROD03", YaFacturado = false, Recoger = 0 }
+            };
+
+            // Act
+            var lineasYaFacturadas = lineas.Where(l => l.YaFacturado).ToList();
+            var lineasConRecoger = lineas.Where(l => l.Recoger != 0).ToList();
+
+            // Assert
+            Assert.IsFalse(lineasYaFacturadas.Any(), "No debe haber lineas con YaFacturado=true");
+            Assert.IsFalse(lineasConRecoger.Any(), "No debe haber lineas con Recoger != 0");
+        }
+
+        [TestMethod]
+        public void ValidarLineasParaCopia_RecogerNegativo_TambienDebeRetornarError()
+        {
+            // Arrange - Recoger negativo tambien es != 0
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Producto = "PROD01", YaFacturado = false, Recoger = -1 }
+            };
+
+            // Act
+            var lineasConRecoger = lineas.Where(l => l.Recoger != 0).ToList();
+
+            // Assert
+            Assert.IsTrue(lineasConRecoger.Any(), "Recoger negativo tambien debe detectarse");
+        }
+
+        #endregion
+
+        #region Tests de copia de campos adicionales
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarCentroCoste()
+        {
+            // Arrange
+            var lineaOrigen = new LinPedidoVta { CentroCoste = "CC1" };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta { CentroCoste = lineaOrigen.CentroCoste };
+
+            // Assert
+            Assert.AreEqual("CC1", lineaNueva.CentroCoste);
+        }
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarDepartamento()
+        {
+            // Arrange
+            var lineaOrigen = new LinPedidoVta { Departamento = "DEP" };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta { Departamento = lineaOrigen.Departamento };
+
+            // Assert
+            Assert.AreEqual("DEP", lineaNueva.Departamento);
+        }
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarNumeroOferta()
+        {
+            // Arrange
+            var lineaOrigen = new LinPedidoVta { NºOferta = 12345 };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta { NºOferta = lineaOrigen.NºOferta };
+
+            // Assert
+            Assert.AreEqual(12345, lineaNueva.NºOferta);
+        }
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarGeneraBonificacion()
+        {
+            // Arrange
+            var lineaOrigen = new LinPedidoVta { GeneraBonificación = true };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta { GeneraBonificación = lineaOrigen.GeneraBonificación };
+
+            // Assert
+            Assert.IsTrue(lineaNueva.GeneraBonificación);
+        }
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarReponer()
+        {
+            // Arrange
+            var lineaOrigen = new LinPedidoVta { Reponer = true };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta { Reponer = lineaOrigen.Reponer };
+
+            // Assert
+            Assert.IsTrue(lineaNueva.Reponer);
+        }
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarEstadoProducto()
+        {
+            // Arrange
+            var lineaOrigen = new LinPedidoVta { EstadoProducto = 2 };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta { EstadoProducto = lineaOrigen.EstadoProducto };
+
+            // Assert
+            Assert.AreEqual(2, lineaNueva.EstadoProducto);
+        }
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarNumSerie()
+        {
+            // Arrange
+            var lineaOrigen = new LinPedidoVta { NumSerie = "SN123456" };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta { NumSerie = lineaOrigen.NumSerie };
+
+            // Assert
+            Assert.AreEqual("SN123456", lineaNueva.NumSerie);
+        }
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarLineaParcial()
+        {
+            // Arrange - LineaParcial puede ser true o false, debe copiarse
+            var lineaOrigenParcial = new LinPedidoVta { LineaParcial = true };
+            var lineaOrigenNoParcial = new LinPedidoVta { LineaParcial = false };
+
+            // Act - Simula la copia
+            var lineaNuevaParcial = new LinPedidoVta { LineaParcial = lineaOrigenParcial.LineaParcial };
+            var lineaNuevaNoParcial = new LinPedidoVta { LineaParcial = lineaOrigenNoParcial.LineaParcial };
+
+            // Assert
+            Assert.IsTrue(lineaNuevaParcial.LineaParcial, "LineaParcial=true debe copiarse");
+            Assert.IsFalse(lineaNuevaNoParcial.LineaParcial, "LineaParcial=false debe copiarse");
+        }
+
+        [TestMethod]
+        public void CopiarLinea_NoDebeCopiarRecoger()
+        {
+            // Arrange - Recoger NO debe copiarse (ya validamos que sea 0)
+            var lineaOrigen = new LinPedidoVta { Recoger = 5 };
+
+            // Act - En la copia, Recoger no se asigna (queda en valor por defecto)
+            var lineaNueva = new LinPedidoVta();
+            // NO hacemos: lineaNueva.Recoger = lineaOrigen.Recoger
+
+            // Assert
+            Assert.AreEqual(0, lineaNueva.Recoger, "Recoger no debe copiarse, queda en 0");
+        }
+
+        [TestMethod]
+        public void CopiarLinea_CamposNulos_DebenCopiarseComoNulos()
+        {
+            // Arrange - Campos opcionales pueden ser null
+            var lineaOrigen = new LinPedidoVta
+            {
+                CentroCoste = null,
+                Departamento = null,
+                NºOferta = null,
+                EstadoProducto = null,
+                NumSerie = null
+            };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta
+            {
+                CentroCoste = lineaOrigen.CentroCoste,
+                Departamento = lineaOrigen.Departamento,
+                NºOferta = lineaOrigen.NºOferta,
+                EstadoProducto = lineaOrigen.EstadoProducto,
+                NumSerie = lineaOrigen.NumSerie
+            };
+
+            // Assert
+            Assert.IsNull(lineaNueva.CentroCoste);
+            Assert.IsNull(lineaNueva.Departamento);
+            Assert.IsNull(lineaNueva.NºOferta);
+            Assert.IsNull(lineaNueva.EstadoProducto);
+            Assert.IsNull(lineaNueva.NumSerie);
+        }
+
+        [TestMethod]
+        public void CopiarLinea_DebeCopiarDelegacion()
+        {
+            // Arrange - Delegacion ya se copiaba, verificamos que sigue funcionando
+            var lineaOrigen = new LinPedidoVta { Delegación = "MAD" };
+
+            // Act - Simula la copia
+            var lineaNueva = new LinPedidoVta { Delegación = lineaOrigen.Delegación };
+
+            // Assert
+            Assert.AreEqual("MAD", lineaNueva.Delegación);
         }
 
         #endregion

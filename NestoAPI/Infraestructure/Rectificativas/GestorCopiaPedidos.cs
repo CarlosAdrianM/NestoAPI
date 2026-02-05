@@ -266,13 +266,15 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     Nº_Cliente = pedidoDestino.Nº_Cliente,
                     Contacto = pedidoDestino.Contacto,
                     Delegación = lineaOrigen.Delegación,
+                    CentroCoste = lineaOrigen.CentroCoste,
+                    Departamento = lineaOrigen.Departamento,
                     Forma_Venta = lineaOrigen.Forma_Venta,
                     TipoExclusiva = lineaOrigen.TipoExclusiva,
                     Picking = 0,
                     VtoBueno = true,
                     Usuario = usuario,
                     BlancoParaBorrar = "NestoAPI",
-                    LineaParcial = true,
+                    LineaParcial = lineaOrigen.LineaParcial,
                     Precio = lineaOrigen.Precio,
                     PrecioTarifa = lineaOrigen.PrecioTarifa,
                     Coste = lineaOrigen.Coste,
@@ -280,7 +282,12 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     DescuentoProducto = lineaOrigen.DescuentoProducto,
                     DescuentoCliente = lineaOrigen.DescuentoCliente,
                     DescuentoPP = lineaOrigen.DescuentoPP,
-                    Aplicar_Dto = lineaOrigen.Aplicar_Dto
+                    Aplicar_Dto = lineaOrigen.Aplicar_Dto,
+                    NºOferta = lineaOrigen.NºOferta,
+                    GeneraBonificación = lineaOrigen.GeneraBonificación,
+                    Reponer = lineaOrigen.Reponer,
+                    EstadoProducto = lineaOrigen.EstadoProducto,
+                    NumSerie = lineaOrigen.NumSerie
                 };
 
                 // Calcular importes
@@ -349,6 +356,11 @@ namespace NestoAPI.Infraestructure.Rectificativas
 
             if (lineasFactura.Any())
             {
+                var errorValidacion = ValidarLineasParaCopia(lineasFactura);
+                if (!string.IsNullOrEmpty(errorValidacion))
+                {
+                    return (new List<LinPedidoVta>(), null, errorValidacion);
+                }
                 return (lineasFactura, numeroFacturaOPedido.Trim(), null);
             }
 
@@ -385,12 +397,36 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 // El pedido tiene una sola factura
                 string facturaEncontrada = facturasDistintas.FirstOrDefault();
                 var lineasOrdenadas = lineasPedido.OrderBy(l => l.Nº_Orden).ToList();
+                var errorValidacion = ValidarLineasParaCopia(lineasOrdenadas);
+                if (!string.IsNullOrEmpty(errorValidacion))
+                {
+                    return (new List<LinPedidoVta>(), null, errorValidacion);
+                }
                 return (lineasOrdenadas, facturaEncontrada, null);
             }
 
             // No es ni factura ni número de pedido válido
             return (new List<LinPedidoVta>(), null,
                 $"No se encontró la factura '{numeroFacturaOPedido}'");
+        }
+
+        private string ValidarLineasParaCopia(List<LinPedidoVta> lineas)
+        {
+            var lineasYaFacturadas = lineas.Where(l => l.YaFacturado).ToList();
+            if (lineasYaFacturadas.Any())
+            {
+                var productos = string.Join(", ", lineasYaFacturadas.Select(l => l.Producto?.Trim()));
+                return $"No se puede copiar la factura porque contiene líneas ya facturadas previamente (YaFacturado=true): {productos}";
+            }
+
+            var lineasConRecoger = lineas.Where(l => l.Recoger != 0).ToList();
+            if (lineasConRecoger.Any())
+            {
+                var productos = string.Join(", ", lineasConRecoger.Select(l => l.Producto?.Trim()));
+                return $"No se puede copiar la factura porque contiene líneas con cantidad pendiente de recoger: {productos}";
+            }
+
+            return null;
         }
 
         private async Task<CabPedidoVta> CrearPedidoNuevo(
@@ -541,13 +577,20 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     Nº_Cliente = pedidoDestino.Nº_Cliente,
                     Contacto = pedidoDestino.Contacto,
                     Delegación = lineaOrigen.Delegación,
+                    CentroCoste = lineaOrigen.CentroCoste,
+                    Departamento = lineaOrigen.Departamento,
                     Forma_Venta = lineaOrigen.Forma_Venta,
                     TipoExclusiva = lineaOrigen.TipoExclusiva,
                     Picking = 0,
                     VtoBueno = true,
                     Usuario = usuario,
                     BlancoParaBorrar = "NestoAPI",
-                    LineaParcial = true // No es sobre pedido
+                    LineaParcial = lineaOrigen.LineaParcial,
+                    NºOferta = lineaOrigen.NºOferta,
+                    GeneraBonificación = lineaOrigen.GeneraBonificación,
+                    Reponer = lineaOrigen.Reponer,
+                    EstadoProducto = lineaOrigen.EstadoProducto,
+                    NumSerie = lineaOrigen.NumSerie
                 };
 
                 // Copiar o recalcular condiciones
