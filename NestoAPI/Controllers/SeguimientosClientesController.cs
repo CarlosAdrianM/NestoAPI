@@ -219,15 +219,44 @@ namespace NestoAPI.Controllers
                 .Distinct()
                 .ToArray();
 
-            foreach (string vendedor in vendedoresConRapport)
+            if (vendedoresConRapport.Length == 0)
             {
-                string correo = db.Vendedores.SingleOrDefault(v => v.Empresa == empresa && v.Número == vendedor).Mail.Trim();
-                string copia = vendedoresPresenciales.Contains(vendedor) ? Constantes.Correos.JEFE_VENTAS : Constantes.Correos.CORREO_DIRECCION;
-                string resumen = await EnviarCorreoResumenRapportsSemana(empresa, fechaSemanaAnterior, fechaSinHora, vendedor, correo, copia);
-                resumenConjunto += resumen + "\n";
+                string mensaje = $"ResumenSemanal: No hay vendedores con rapport entre {fechaSemanaAnterior:dd/MM/yyyy} y {fechaSinHora:dd/MM/yyyy}";
+                Elmah.ErrorSignal.FromCurrentContext().Raise(new Exception(mensaje));
+                return Ok(new { Resumen = mensaje });
             }
 
-            return Ok(new { Resumen = resumenConjunto });
+            var errores = new List<string>();
+            foreach (string vendedor in vendedoresConRapport)
+            {
+                try
+                {
+                    var vendedorEntity = db.Vendedores.SingleOrDefault(v => v.Empresa == empresa && v.Número == vendedor);
+                    if (vendedorEntity == null || string.IsNullOrWhiteSpace(vendedorEntity.Mail))
+                    {
+                        string mensajeError = $"ResumenSemanal: Vendedor {vendedor} no tiene email configurado";
+                        Elmah.ErrorSignal.FromCurrentContext().Raise(new Exception(mensajeError));
+                        errores.Add(mensajeError);
+                        continue;
+                    }
+                    string correo = vendedorEntity.Mail.Trim();
+                    string copia = vendedoresPresenciales.Contains(vendedor) ? Constantes.Correos.JEFE_VENTAS : Constantes.Correos.CORREO_DIRECCION;
+                    string resumen = await EnviarCorreoResumenRapportsSemana(empresa, fechaSemanaAnterior, fechaSinHora, vendedor, correo, copia);
+                    if (string.IsNullOrEmpty(resumen))
+                    {
+                        errores.Add($"Vendedor {vendedor}: resumen vacío");
+                    }
+                    resumenConjunto += resumen + "\n";
+                }
+                catch (Exception ex)
+                {
+                    string errorMsg = $"ResumenSemanal: Error procesando vendedor {vendedor}: {ex.Message}";
+                    Elmah.ErrorSignal.FromCurrentContext().Raise(new Exception(errorMsg, ex));
+                    errores.Add(errorMsg);
+                }
+            }
+
+            return Ok(new { Resumen = resumenConjunto, Errores = errores, VendedoresConRapport = vendedoresConRapport.Length });
         }
 
         private async Task<string> EnviarCorreoResumenRapportsDia(string empresa, DateTime fecha, string[] vendedores, string correo, bool resto)
@@ -393,6 +422,7 @@ namespace NestoAPI.Controllers
 
             if (string.IsNullOrEmpty(resumen))
             {
+                Elmah.ErrorSignal.FromCurrentContext().Raise(new Exception($"ResumenSemanal: OpenAI devolvió vacío para vendedor {vendedor}"));
                 return string.Empty;
             }
 
@@ -517,8 +547,9 @@ namespace NestoAPI.Controllers
                 else
                 {
                     string errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error: {response.StatusCode}");
-                    Console.WriteLine($"Detalles del error: {errorContent}");
+                    string mensajeError = $"Error OpenAI (GenerarResumenFechaOpenAIAsync): {response.StatusCode} - {errorContent}";
+                    Console.WriteLine(mensajeError);
+                    Elmah.ErrorSignal.FromCurrentContext().Raise(new Exception(mensajeError));
                 }
 
                 return null;
@@ -640,8 +671,9 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 else
                 {
                     string errorContent = await response.Content.ReadAsStringAsync();
-                    Console.WriteLine($"Error: {response.StatusCode}");
-                    Console.WriteLine($"Detalles del error: {errorContent}");
+                    string mensajeError = $"Error OpenAI (GenerarResumenSemanaOpenAIAsync): {response.StatusCode} - {errorContent}";
+                    Console.WriteLine(mensajeError);
+                    Elmah.ErrorSignal.FromCurrentContext().Raise(new Exception(mensajeError));
                 }
 
                 return null;
