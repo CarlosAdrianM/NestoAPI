@@ -334,6 +334,56 @@ namespace NestoAPI.Controllers
             return Ok(resultado);
         }
 
+        /// <summary>
+        /// Elimina todas las conciliaciones bancarias asociadas a un apunte de contabilidad (Issue #285)
+        /// Solo para usuarios del grupo Administración
+        /// </summary>
+        [HttpDelete]
+        [Route("api/Bancos/ConciliacionPorApunte")]
+        [ResponseType(typeof(List<object>))]
+        public async Task<IHttpActionResult> DeshacerConciliacionPorApunte(int apunteContabilidadId, string usuario)
+        {
+            // Buscar todas las conciliaciones con ese ApunteContabilidadId
+            List<ConciliacionBancariaPunteo> conciliaciones = await db.ConciliacionesBancariasPunteos
+                .Where(c => c.ApunteContabilidadId == apunteContabilidadId)
+                .ToListAsync();
+
+            if (!conciliaciones.Any())
+            {
+                return Ok(new List<object>());
+            }
+
+            // Guardar los datos antes de eliminar para devolverlos y para auditoría
+            var resultados = conciliaciones.Select(c => new
+            {
+                c.Id,
+                c.ApunteBancoId,
+                c.ApunteContabilidadId,
+                c.ImportePunteado,
+                c.SimboloPunteo,
+                c.Usuario,
+                c.FechaCreacion
+            }).ToList();
+
+            // Registrar en tabla Modificaciones para auditoría
+            string jsonAnterior = Newtonsoft.Json.JsonConvert.SerializeObject(resultados);
+            Modificacion modificacion = new Modificacion
+            {
+                Tabla = "ConciliacionesBancariasPunteos",
+                Anterior = jsonAnterior,
+                Nuevo = null,
+                Usuario = usuario,
+                Fecha = DateTime.Now
+            };
+            db.Modificaciones.Add(modificacion);
+
+            // Eliminar las conciliaciones
+            db.ConciliacionesBancariasPunteos.RemoveRange(conciliaciones);
+            await db.SaveChangesAsync();
+
+            return Ok(resultados);
+        }
+
         /*
         // POST: api/Bancos
         [ResponseType(typeof(Banco))]
