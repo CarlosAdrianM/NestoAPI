@@ -247,6 +247,7 @@ namespace NestoAPI.Controllers
                     ProductoNombre = g.Producto?.Nombre?.Trim(),
                     Ganavisiones = g.Ganavisiones,
                     PVP = g.Producto?.PVP ?? 0,
+                    Iva = g.Producto?.IVA_Repercutido?.Trim(),
                     Stocks = stocks
                 };
 

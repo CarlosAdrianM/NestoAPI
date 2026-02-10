@@ -44,6 +44,11 @@ namespace NestoAPI.Models.Ganavisiones
         public string ProductoNombre { get; set; }
         public int Ganavisiones { get; set; }
         public decimal PVP { get; set; }
+        /// <summary>
+        /// IVA del producto (IVA_Repercutido). Necesario para crear líneas de pedido correctamente.
+        /// Fix: Clientes con recargo de equivalencia (R52) fallaban porque se usaba el IVA del cliente.
+        /// </summary>
+        public string Iva { get; set; }
         public List<StockAlmacenDTO> Stocks { get; set; }
         public int StockTotal => Stocks?.Sum(s => s.stock) ?? 0;
     }

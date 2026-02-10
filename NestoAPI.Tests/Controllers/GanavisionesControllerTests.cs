@@ -1519,6 +1519,80 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(1, okResult.Content.Productos.Count);
         }
 
+        [TestMethod]
+        public async Task GetProductosBonificables_RetornaIvaDelProducto()
+        {
+            // Arrange: Producto con IVA_Repercutido G21 (IVA general 21%)
+            // Fix: Clientes con recargo de equivalencia (R52) fallaban porque
+            // se usaba el IVA del cliente en lugar del IVA del producto
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto
+                    {
+                        Número = "PROD1",
+                        Nombre = "Producto Con IVA",
+                        PVP = 5m,
+                        IVA_Repercutido = "G21"  // IVA del producto
+                    }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("G21", okResult.Content.Productos[0].Iva,
+                "El DTO debe incluir el IVA del producto (IVA_Repercutido) para crear líneas de pedido correctamente");
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ProductoSinIva_RetornaIvaNulo()
+        {
+            // Arrange: Producto sin IVA_Repercutido definido
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto
+                    {
+                        Número = "PROD1",
+                        Nombre = "Producto Sin IVA",
+                        PVP = 5m,
+                        IVA_Repercutido = null  // Sin IVA definido
+                    }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.IsNull(okResult.Content.Productos[0].Iva,
+                "Si el producto no tiene IVA_Repercutido, el campo Iva debe ser null");
+        }
+
         #endregion
 
         #region Helper Methods

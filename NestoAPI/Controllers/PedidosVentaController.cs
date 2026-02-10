@@ -1,4 +1,5 @@
-﻿using NestoAPI.Infraestructure;
+﻿using Elmah;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.Exceptions;
@@ -26,6 +27,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
+using System.Web;
 using System.Web.Http;
 using System.Web.Http.Cors;
 using System.Web.Http.Description;
@@ -1188,6 +1190,9 @@ namespace NestoAPI.Controllers
             }
             catch (DbUpdateException e)
             {
+                // Issue #95: Loguear JSON del pedido en ELMAH para diagnóstico
+                LoguearPedidoEnElmah(pedido, e, "DbUpdateException al guardar pedido");
+
                 if (CabPedidoVtaExists(cabecera.Empresa, cabecera.Número))
                 {
                     return Conflict();
@@ -1206,6 +1211,9 @@ namespace NestoAPI.Controllers
             }
             catch (Exception e)
             {
+                // Issue #95: Loguear JSON del pedido en ELMAH para diagnóstico
+                LoguearPedidoEnElmah(pedido, e, "Exception al guardar pedido");
+
                 string message = e.Message;
                 // faltaría recorrer el InnerException
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
@@ -1618,6 +1626,57 @@ namespace NestoAPI.Controllers
             {
                 Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
                 return InternalServerError(ex);
+            }
+        }
+
+        /// <summary>
+        /// Loguea el JSON del pedido en ELMAH cuando falla la creación.
+        /// Issue #95: Borradores de PlantillaVenta
+        ///
+        /// Esto permite copiar el JSON desde ELMAH y pegarlo en la PlantillaVenta
+        /// para reproducir el error exactamente como ocurrió.
+        /// </summary>
+        private void LoguearPedidoEnElmah(PedidoVentaDTO pedido, Exception excepcionOriginal, string contexto)
+        {
+            try
+            {
+                var pedidoJson = JsonConvert.SerializeObject(pedido, Formatting.Indented, new JsonSerializerSettings
+                {
+                    ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
+                    NullValueHandling = NullValueHandling.Include
+                });
+
+                var mensajeCompleto = $@"{contexto}
+
+===== JSON DEL PEDIDO (para copiar y pegar en PlantillaVenta) =====
+
+{pedidoJson}
+
+===== FIN JSON DEL PEDIDO =====
+
+Error original: {excepcionOriginal.Message}";
+
+                var excepcionConPedido = new Exception(mensajeCompleto, excepcionOriginal);
+                excepcionConPedido.Data["Cliente"] = pedido?.cliente;
+                excepcionConPedido.Data["Empresa"] = pedido?.empresa;
+                excepcionConPedido.Data["NumeroLineas"] = pedido?.Lineas?.Count ?? 0;
+                excepcionConPedido.Data["Usuario"] = pedido?.Usuario;
+                excepcionConPedido.Data["PedidoJSON"] = pedidoJson;
+
+                var httpContext = HttpContext.Current;
+                if (httpContext != null)
+                {
+                    ErrorSignal.FromContext(httpContext).Raise(excepcionConPedido, httpContext);
+                }
+                else
+                {
+                    ErrorLog.GetDefault(null)?.Log(new Error(excepcionConPedido));
+                }
+            }
+            catch
+            {
+                // Si falla el logging, no queremos que afecte al flujo principal
+                // El error original ya se propaga
             }
         }
     }
