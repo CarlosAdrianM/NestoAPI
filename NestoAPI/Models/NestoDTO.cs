@@ -165,6 +165,7 @@ namespace NestoAPI.Models
         public short cantidadDisponible { get; set; }
         public int clasificacionMasVendidos { get; set; }
         public List<StockAlmacenDTO> stocks { get; set; }
+        public int StockDisponibleTodosLosAlmacenes { get; set; }
     }
     public class PersonaContactoDTO
     {

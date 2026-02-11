@@ -391,6 +391,11 @@ namespace NestoAPI.Controllers
                     string primerAlmacen = almacenesConsultar[0];
                     linea.cantidadDisponible = (short)productoNuevo.CantidadDisponible(primerAlmacen);
                 }
+
+                // Issue #286: Calcular StockDisponibleTodosLosAlmacenes como suma de todos los almacenes
+                linea.StockDisponibleTodosLosAlmacenes = linea.stocks != null
+                    ? linea.stocks.Sum(s => s.cantidadDisponible)
+                    : linea.cantidadDisponible;
             }
 
             return param.Lineas;
