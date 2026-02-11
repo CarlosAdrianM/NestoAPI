@@ -3024,10 +3024,48 @@ namespace NestoAPI.Tests.Infrastructure
             //linea2.BaseImponible = 0;
             pedido.Lineas.Add(linea2);
 
+            // FAMYPROD no tiene líneas gratis propias, así que cantidadOferta = 0
+            // La oferta se valida en REGALO (el producto con líneas gratis)
             PrecioDescuentoProducto precioDescuentoProducto = GestorOfertasPedido.MontarOfertaPedido(linea.Producto, pedido);
 
-            Assert.AreEqual(1, precioDescuentoProducto.cantidadOferta);
+            Assert.AreEqual(0, precioDescuentoProducto.cantidadOferta);
             Assert.AreEqual(2, precioDescuentoProducto.cantidad);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_MontarOfertaProducto_SiOtroProductoDelMismoPrecioTieneOfertaNoContaminaAlProductoSinOferta()
+        {
+            // FAMYPROD y REGALO tienen mismo PVP (100) y Familia ("DeMarca")
+            // FAMYPROD solo tiene líneas pagadas, REGALO tiene una línea gratis
+            // MontarOfertaPedido("FAMYPROD") NO debe devolver cantidadOferta > 0
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "FAMYPROD",
+                AplicarDescuento = false,
+                Cantidad = 1,
+                PrecioUnitario = 10
+            });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "REGALO",
+                AplicarDescuento = false,
+                Cantidad = 1,
+                PrecioUnitario = 0
+            });
+
+            PrecioDescuentoProducto ofertaFamyprod = GestorOfertasPedido.MontarOfertaPedido("FAMYPROD", pedido);
+            PrecioDescuentoProducto ofertaRegalo = GestorOfertasPedido.MontarOfertaPedido("REGALO", pedido);
+
+            // FAMYPROD no debe contaminarse con la oferta de REGALO
+            Assert.AreEqual(0, ofertaFamyprod.cantidadOferta);
+            Assert.AreEqual(1, ofertaFamyprod.cantidad);
+
+            // REGALO sí debe tener la oferta agregada
+            Assert.AreEqual(1, ofertaRegalo.cantidadOferta);
+            Assert.AreEqual(1, ofertaRegalo.cantidad);
         }
 
         [TestMethod]

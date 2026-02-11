@@ -30,7 +30,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
 
-            if (!lineasSinPrecio.Any())
+            if (!lineasSinPrecio.Any(l => l.Producto == numeroProducto))
             {
                 return new PrecioDescuentoProducto
                 {
