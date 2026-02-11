@@ -328,8 +328,9 @@ namespace NestoAPI.Controllers
             var productosProblematicos = new List<ProductoSinStockDTO>();
             foreach (var productoId in productosIds)
             {
+                var productoIdTrimmed = productoId?.Trim();
                 var stockEnAlmacen = stocksPorProducto
-                    .Where(s => s.ProductoId == productoId && s.Almacen == request.Almacen)
+                    .Where(s => s.ProductoId.Trim() == productoIdTrimmed && s.Almacen.Trim() == request.Almacen.Trim())
                     .Select(s => s.Stock)
                     .FirstOrDefault();
 
@@ -337,14 +338,14 @@ namespace NestoAPI.Controllers
                 {
                     // Buscar en que almacen SI tiene stock
                     var almacenConStock = stocksPorProducto
-                        .Where(s => s.ProductoId == productoId && s.Stock > 0)
+                        .Where(s => s.ProductoId.Trim() == productoIdTrimmed && s.Stock > 0)
                         .Select(s => s.Almacen)
                         .FirstOrDefault();
 
                     var nombreProducto = productos
-                        .Where(p => p.Número == productoId)
+                        .Where(p => p.Número.Trim() == productoIdTrimmed)
                         .Select(p => p.Nombre?.Trim())
-                        .FirstOrDefault();
+                        .FirstOrDefault() ?? productoIdTrimmed;
 
                     productosProblematicos.Add(new ProductoSinStockDTO
                     {
