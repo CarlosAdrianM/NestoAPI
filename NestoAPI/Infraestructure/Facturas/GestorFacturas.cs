@@ -199,58 +199,92 @@ namespace NestoAPI.Infraestructure.Facturas
 
 
             List<VendedorFactura> vendedores = servicio.CargarVendedoresFactura(empresa, numeroFactura);
-            List<VencimientoFactura> vencimientos = servicio.CargarVencimientosExtracto(empresa, clienteRazonSocial.Nº_Cliente, numeroFactura);
-            if (vencimientos.Count > 1)
-            {
-                List<VencimientoFactura> vencimientosPendientes = vencimientos.Where(v => v.ImportePendiente != 0).ToList();
-                if (vencimientosPendientes.Sum(v => v.ImportePendiente) == importeTotal)
-                {
-                    vencimientos = vencimientosPendientes;
-                }
-                else
-                {
-                    decimal totalAcumulado = 0;
-                    int i = 0;
 
-                    while (i < vencimientos.Count)
+            // Issue #96: Detectar impagados pendientes (TipoApunte=4 con ImportePdte!=0)
+            List<ImpagadoPendiente> impagadosPendientes = servicio.CargarImpagadosPendientes(
+                empresa, clienteRazonSocial.Nº_Cliente, numeroFactura);
+            bool impagadosAplicados = false;
+            List<VencimientoFactura> vencimientos = null;
+
+            if (impagadosPendientes != null && impagadosPendientes.Any())
+            {
+                // Cuando hay impagados, usar los efectos originales (del asiento de la factura)
+                // para obtener una lista limpia y aplicar los impagados encima
+                vencimientos = servicio.CargarVencimientosOriginales(empresa, clienteRazonSocial.Nº_Cliente, numeroFactura);
+                if (vencimientos.Sum(v => v.Importe) == importeTotal)
+                {
+                    AplicarImpagados(vencimientos, impagadosPendientes);
+                    impagadosAplicados = true;
+                }
+            }
+
+            if (!impagadosAplicados)
+            {
+                // Algoritmo existente: cargar todos los registros de cartera y limpiar
+                vencimientos = servicio.CargarVencimientosExtracto(empresa, clienteRazonSocial.Nº_Cliente, numeroFactura);
+                if (vencimientos.Count > 1)
+                {
+                    List<VencimientoFactura> vencimientosPendientes = vencimientos.Where(v => v.ImportePendiente != 0).ToList();
+                    if (vencimientosPendientes.Sum(v => v.ImportePendiente) == importeTotal)
                     {
-                        totalAcumulado += vencimientos[i].Importe;
-                        if (totalAcumulado == 0)
+                        vencimientos = vencimientosPendientes;
+                    }
+                    else
+                    {
+                        // Issue #96: Buscar los últimos vencimientos válidos desde el final.
+                        // Esto maneja múltiples rondas de modificación de plazos de pago.
+                        List<VencimientoFactura> ultimosVencimientos = ObtenerUltimosVencimientos(vencimientos, importeTotal);
+                        if (ultimosVencimientos != null)
                         {
-                            vencimientos.RemoveRange(0, i + 1);
-                            i = 0;
+                            vencimientos = ultimosVencimientos;
                         }
                         else
                         {
-                            if (i > 0 && vencimientos[i].Importe < 0)
+                            // Fallback: limpieza lineal para modificaciones parciales
+                            decimal totalAcumulado = 0;
+                            int i = 0;
+
+                            while (i < vencimientos.Count)
                             {
-                                vencimientos[i - 1].Importe += vencimientos[i].Importe;
-                                vencimientos.RemoveAt(i);
+                                totalAcumulado += vencimientos[i].Importe;
+                                if (totalAcumulado == 0)
+                                {
+                                    vencimientos.RemoveRange(0, i + 1);
+                                    i = 0;
+                                }
+                                else
+                                {
+                                    if (i > 0 && vencimientos[i].Importe < 0)
+                                    {
+                                        vencimientos[i - 1].Importe += vencimientos[i].Importe;
+                                        vencimientos.RemoveAt(i);
+                                    }
+                                    i++;
+                                }
                             }
-                            i++;
                         }
                     }
                 }
-            }
 
-            if (vencimientos.Sum(v => v.Importe) != importeTotal)
-            {
-                vencimientos = servicio.CargarVencimientosOriginales(empresa, clienteRazonSocial.Nº_Cliente, numeroFactura);
-            }
+                if (vencimientos.Sum(v => v.Importe) != importeTotal)
+                {
+                    vencimientos = servicio.CargarVencimientosOriginales(empresa, clienteRazonSocial.Nº_Cliente, numeroFactura);
+                }
 
-            if (vencimientos.Sum(v => v.Importe) != importeTotal)
-            {
-                // Diagnóstico detallado para identificar la causa del descuadre
-                var sumaVencimientos = vencimientos.Sum(v => v.Importe);
-                var diferencia = importeTotal - sumaVencimientos;
-                var detalleVencimientos = vencimientos.Count > 0
-                    ? string.Join(", ", vencimientos.Select(v => $"{v.Importe:F2}€"))
-                    : "SIN VENCIMIENTOS";
-                throw new Exception(
-                    $"No cuadran los vencimientos con el total de la factura. " +
-                    $"Total calculado: {importeTotal:F2}€, Suma vencimientos: {sumaVencimientos:F2}€, " +
-                    $"Diferencia: {diferencia:F2}€, Vencimientos encontrados: {vencimientos.Count} [{detalleVencimientos}], " +
-                    $"Empresa búsqueda: {empresa}, Cliente: {clienteRazonSocial.Nº_Cliente?.Trim()}");
+                if (vencimientos.Sum(v => v.Importe) != importeTotal)
+                {
+                    // Diagnóstico detallado para identificar la causa del descuadre
+                    var sumaVencimientos = vencimientos.Sum(v => v.Importe);
+                    var diferencia = importeTotal - sumaVencimientos;
+                    var detalleVencimientos = vencimientos.Count > 0
+                        ? string.Join(", ", vencimientos.Select(v => $"{v.Importe:F2}€"))
+                        : "SIN VENCIMIENTOS";
+                    throw new Exception(
+                        $"No cuadran los vencimientos con el total de la factura. " +
+                        $"Total calculado: {importeTotal:F2}€, Suma vencimientos: {sumaVencimientos:F2}€, " +
+                        $"Diferencia: {diferencia:F2}€, Vencimientos encontrados: {vencimientos.Count} [{detalleVencimientos}], " +
+                        $"Empresa búsqueda: {empresa}, Cliente: {clienteRazonSocial.Nº_Cliente?.Trim()}");
+                }
             }
 
             foreach (VencimientoFactura vencimiento in vencimientos)
@@ -488,6 +522,91 @@ namespace NestoAPI.Infraestructure.Facturas
             }
 
             return vencimientos;
+        }
+
+        /// <summary>
+        /// Issue #96: Obtiene los últimos vencimientos válidos recorriendo la lista desde el final.
+        /// Cuando hay múltiples rondas de modificación de plazos (dividir, reagrupar, volver a dividir),
+        /// los últimos registros con el mismo signo que el total representan el estado actual.
+        /// </summary>
+        /// <returns>Lista de vencimientos válidos, o null si no se encuentra una coincidencia.</returns>
+        internal static List<VencimientoFactura> ObtenerUltimosVencimientos(List<VencimientoFactura> vencimientos, decimal importeTotal)
+        {
+            if (importeTotal == 0 || vencimientos == null || !vencimientos.Any())
+            {
+                return null;
+            }
+
+            bool buscaPositivos = importeTotal > 0;
+            decimal suma = 0;
+            int indiceInicio = -1;
+
+            for (int j = vencimientos.Count - 1; j >= 0; j--)
+            {
+                bool mismoSigno = buscaPositivos ? vencimientos[j].Importe > 0 : vencimientos[j].Importe < 0;
+
+                if (mismoSigno)
+                {
+                    suma += vencimientos[j].Importe;
+                    indiceInicio = j;
+
+                    if (suma == importeTotal)
+                    {
+                        return vencimientos.Skip(indiceInicio)
+                            .Where(v => buscaPositivos ? v.Importe > 0 : v.Importe < 0)
+                            .ToList();
+                    }
+
+                    if (buscaPositivos ? suma > importeTotal : suma < importeTotal)
+                    {
+                        return null;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Aplica la información de impagados pendientes a los vencimientos de la factura.
+        /// Cuando un efecto tiene un impagado pendiente (TipoApunte=4, ImportePdte!=0),
+        /// se actualiza el vencimiento para mostrar "Impagado" con el importe de gastos si aplica.
+        /// </summary>
+        internal static void AplicarImpagados(List<VencimientoFactura> vencimientos, List<ImpagadoPendiente> impagados)
+        {
+            if (impagados == null || !impagados.Any() || vencimientos == null || !vencimientos.Any())
+            {
+                return;
+            }
+
+            var impagadosPorFecha = impagados
+                .GroupBy(i => i.FechaVto)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            foreach (var vencimiento in vencimientos)
+            {
+                if (!impagadosPorFecha.ContainsKey(vencimiento.Vencimiento))
+                {
+                    continue;
+                }
+
+                var impagadosDelVencimiento = impagadosPorFecha[vencimiento.Vencimiento];
+
+                decimal importePrincipal = impagadosDelVencimiento
+                    .Where(i => !i.EsGastos)
+                    .Sum(i => i.ImportePendiente);
+                decimal importeGastos = impagadosDelVencimiento
+                    .Where(i => i.EsGastos)
+                    .Sum(i => i.ImportePendiente);
+
+                if (importePrincipal != 0 || importeGastos != 0)
+                {
+                    vencimiento.EsImpagado = true;
+                    vencimiento.GastosImpagado = importeGastos;
+                    vencimiento.Importe = importePrincipal + importeGastos;
+                    vencimiento.ImportePendiente = importePrincipal + importeGastos;
+                }
+            }
         }
 
         private static DireccionFactura CargarDireccionEntrega(Cliente clienteEntrega)

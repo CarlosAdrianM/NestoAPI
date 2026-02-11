@@ -108,6 +108,23 @@ namespace NestoAPI.Infraestructure.Facturas
             return vencimientos;
         }
 
+        public List<ImpagadoPendiente> CargarImpagadosPendientes(string empresa, string cliente, string numeroFactura)
+        {
+            return db.ExtractosCliente
+                .Where(e => e.Empresa == empresa
+                    && e.Número == cliente
+                    && e.Nº_Documento == numeroFactura
+                    && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO
+                    && e.ImportePdte != 0)
+                .Select(e => new ImpagadoPendiente
+                {
+                    FechaVto = e.FechaVto ?? e.Fecha,
+                    ImportePendiente = e.ImportePdte,
+                    EsGastos = e.Concepto.Contains("Gastos")
+                })
+                .ToList();
+        }
+
         public List<VendedorFactura> CargarVendedoresFactura(string empresa, string numeroFactura)
         {
             List<VendedorFactura> nombresVendedores = new List<VendedorFactura>();

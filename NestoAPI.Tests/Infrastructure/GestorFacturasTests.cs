@@ -871,6 +871,737 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region Tests para ObtenerUltimosVencimientos (Issue #96)
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_ConListaVacia_RetornaNull()
+        {
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(new List<VencimientoFactura>(), 100);
+
+            Assert.IsNull(resultado);
+        }
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_ConImporteTotalCero_RetornaNull()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 50 },
+                new VencimientoFactura { Importe = -50 }
+            };
+
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(vencimientos, 0);
+
+            Assert.IsNull(resultado);
+        }
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_ConUnSoloVencimientoPositivo_RetornaEse()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 100, Vencimiento = new DateTime(2026, 2, 4) }
+            };
+
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(vencimientos, 100);
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Count);
+            Assert.AreEqual(100, resultado[0].Importe);
+        }
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_ConMultiplesPositivosQueSumanTotal_RetornaTodos()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 50, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = 50, Vencimiento = new DateTime(2026, 3, 4) }
+            };
+
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(vencimientos, 100);
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(2, resultado.Count);
+            Assert.AreEqual(50, resultado[0].Importe);
+            Assert.AreEqual(50, resultado[1].Importe);
+        }
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_ConUnaRondaDeModificacion_RetornaUltimaRonda()
+        {
+            // Efecto original + anulación + 3 nuevos efectos
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 1087.94M, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = -1087.94M, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = 362.65M, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = 362.65M, Vencimiento = new DateTime(2026, 3, 6) },
+                new VencimientoFactura { Importe = 362.64M, Vencimiento = new DateTime(2026, 4, 5) }
+            };
+
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(vencimientos, 1087.94M);
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(3, resultado.Count);
+            Assert.AreEqual(362.65M, resultado[0].Importe);
+            Assert.AreEqual(362.65M, resultado[1].Importe);
+            Assert.AreEqual(362.64M, resultado[2].Importe);
+        }
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_ConDosRondasDeModificacion_RetornaUltimaRonda()
+        {
+            // Efecto original + anulación + 3 efectos + reagrupación + anulación + 4 efectos
+            var vencimientos = new List<VencimientoFactura>
+            {
+                // Ronda 1: efecto original
+                new VencimientoFactura { Importe = 1087.94M, Vencimiento = new DateTime(2026, 2, 4) },
+                // Anulación ronda 1
+                new VencimientoFactura { Importe = -1087.94M, Vencimiento = new DateTime(2026, 2, 4) },
+                // Ronda 2: dividido en 3
+                new VencimientoFactura { Importe = 362.65M, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = 362.65M, Vencimiento = new DateTime(2026, 3, 6) },
+                new VencimientoFactura { Importe = 362.64M, Vencimiento = new DateTime(2026, 4, 5) },
+                // Reagrupación: anulan los 3
+                new VencimientoFactura { Importe = -362.65M, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = -362.65M, Vencimiento = new DateTime(2026, 3, 6) },
+                new VencimientoFactura { Importe = -362.64M, Vencimiento = new DateTime(2026, 4, 5) },
+                // Efecto agrupado
+                new VencimientoFactura { Importe = 1087.94M, Vencimiento = new DateTime(2026, 2, 4) },
+                // Anulación del agrupado
+                new VencimientoFactura { Importe = -1087.94M, Vencimiento = new DateTime(2026, 2, 4) },
+                // Ronda 3: dividido en 4 (CORRECTO)
+                new VencimientoFactura { Importe = 271.98M, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = 271.98M, Vencimiento = new DateTime(2026, 3, 6) },
+                new VencimientoFactura { Importe = 271.98M, Vencimiento = new DateTime(2026, 4, 5) },
+                new VencimientoFactura { Importe = 272.00M, Vencimiento = new DateTime(2026, 5, 5) }
+            };
+
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(vencimientos, 1087.94M);
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(4, resultado.Count);
+            Assert.AreEqual(271.98M, resultado[0].Importe);
+            Assert.AreEqual(new DateTime(2026, 2, 4), resultado[0].Vencimiento);
+            Assert.AreEqual(271.98M, resultado[1].Importe);
+            Assert.AreEqual(new DateTime(2026, 3, 6), resultado[1].Vencimiento);
+            Assert.AreEqual(271.98M, resultado[2].Importe);
+            Assert.AreEqual(new DateTime(2026, 4, 5), resultado[2].Vencimiento);
+            Assert.AreEqual(272.00M, resultado[3].Importe);
+            Assert.AreEqual(new DateTime(2026, 5, 5), resultado[3].Vencimiento);
+        }
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_CuandoSumaSuperaTotal_RetornaNull()
+        {
+            // Los últimos positivos suman más que el total
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 20 },
+                new VencimientoFactura { Importe = -14 },
+                new VencimientoFactura { Importe = 7 },
+                new VencimientoFactura { Importe = 7 }
+            };
+
+            // Total es 20, pero los últimos positivos desde el final son 7+7=14, luego 14+20=34 > 20
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(vencimientos, 20);
+
+            Assert.IsNull(resultado);
+        }
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_ConTotalNegativo_RetornaUltimosNegativos()
+        {
+            // Factura rectificativa: total negativo
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = -500, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = 500, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = -250, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura { Importe = -250, Vencimiento = new DateTime(2026, 3, 6) }
+            };
+
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(vencimientos, -500);
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(2, resultado.Count);
+            Assert.AreEqual(-250, resultado[0].Importe);
+            Assert.AreEqual(-250, resultado[1].Importe);
+        }
+
+        [TestMethod]
+        public void ObtenerUltimosVencimientos_ConservaDatosDelVencimiento()
+        {
+            // Verifica que CCC, FormaPago, ImportePendiente se mantienen
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 100, Vencimiento = new DateTime(2026, 2, 4), CCC = "OLD", FormaPago = "OLD" },
+                new VencimientoFactura { Importe = -100, Vencimiento = new DateTime(2026, 2, 4) },
+                new VencimientoFactura
+                {
+                    Importe = 60, ImportePendiente = 0, Vencimiento = new DateTime(2026, 2, 4),
+                    CCC = "10", FormaPago = "RCB", Iban = "ES21 2100 ****"
+                },
+                new VencimientoFactura
+                {
+                    Importe = 40, ImportePendiente = 40, Vencimiento = new DateTime(2026, 3, 6),
+                    CCC = "10", FormaPago = "RCB", Iban = "ES21 2100 ****"
+                }
+            };
+
+            var resultado = GestorFacturas.ObtenerUltimosVencimientos(vencimientos, 100);
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(2, resultado.Count);
+            Assert.AreEqual(0, resultado[0].ImportePendiente);
+            Assert.AreEqual("10", resultado[0].CCC);
+            Assert.AreEqual("RCB", resultado[0].FormaPago);
+            Assert.AreEqual(40, resultado[1].ImportePendiente);
+        }
+
+        #endregion
+
+        #region Tests para LeerFactura con múltiples rondas de modificación (Issue #96)
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_ConMultiplesRondasDeModificacion_MuestraSoloUltimaRonda()
+        {
+            // Arrange - Reproduce el caso real de la factura NV2601836
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "IM";
+            cab.Nº_Cliente = "11437";
+            cab.Serie = "NV";
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2026, 2, 4),
+                Cantidad = 1,
+                Texto = "PRODUCTO TEST",
+                Precio = 899.12M,
+                Producto = "12345",
+                Base_Imponible = 899.12M,
+                ImporteIVA = 188.82M,
+                ImporteRE = 0,
+                Total = 1087.94M,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV2601836")).Returns(cab);
+
+            // 14 registros CARTERA simulando múltiples rondas de modificación
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>
+            {
+                // Asiento 1171298: Efecto original
+                new VencimientoFactura { Importe = 1087.94M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 2, 4), FormaPago = "RCB", CCC = "10" },
+                // Asiento 1171582: Anulación + división en 3
+                new VencimientoFactura { Importe = -1087.94M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 2, 4), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 362.65M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 2, 4), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 362.65M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 3, 6), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 362.64M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 4, 5), FormaPago = "RCB", CCC = "10" },
+                // Asiento 1171584: Reagrupación (anulan los 3 + 1 nuevo efecto agrupado)
+                new VencimientoFactura { Importe = -362.65M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 2, 4), FormaPago = "RCB" },
+                new VencimientoFactura { Importe = -362.65M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 3, 6), FormaPago = "RCB" },
+                new VencimientoFactura { Importe = -362.64M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 4, 5), FormaPago = "RCB" },
+                new VencimientoFactura { Importe = 1087.94M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 2, 4), FormaPago = "RCB", CCC = "10" },
+                // Asiento 1171585: Anulación + división en 4 (CORRECTO)
+                new VencimientoFactura { Importe = -1087.94M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 2, 4), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 271.98M, ImportePendiente = 0, Vencimiento = new DateTime(2026, 2, 4), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 271.98M, ImportePendiente = 271.98M, Vencimiento = new DateTime(2026, 3, 6), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 271.98M, ImportePendiente = 271.98M, Vencimiento = new DateTime(2026, 4, 5), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 272.00M, ImportePendiente = 259.66M, Vencimiento = new DateTime(2026, 5, 5), FormaPago = "RCB", CCC = "10" }
+            };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV2601836");
+
+            // Assert - Solo deben aparecer los 4 vencimientos de la última ronda
+            Assert.AreEqual(4, factura.Vencimientos.Count);
+            Assert.AreEqual(271.98M, factura.Vencimientos[0].Importe);
+            Assert.AreEqual(new DateTime(2026, 2, 4), factura.Vencimientos[0].Vencimiento);
+            Assert.AreEqual(0M, factura.Vencimientos[0].ImportePendiente);
+            Assert.AreEqual(271.98M, factura.Vencimientos[1].Importe);
+            Assert.AreEqual(new DateTime(2026, 3, 6), factura.Vencimientos[1].Vencimiento);
+            Assert.AreEqual(271.98M, factura.Vencimientos[2].Importe);
+            Assert.AreEqual(new DateTime(2026, 4, 5), factura.Vencimientos[2].Vencimiento);
+            Assert.AreEqual(272.00M, factura.Vencimientos[3].Importe);
+            Assert.AreEqual(259.66M, factura.Vencimientos[3].ImportePendiente);
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_ConUnaRondaDeModificacion_MuestraNuevosVencimientos()
+        {
+            // Arrange - Un solo cambio de plazos (caso más habitual)
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2026, 1, 15),
+                Cantidad = 1,
+                Texto = "PRODUCTO",
+                Precio = 100,
+                Producto = "12345",
+                Base_Imponible = 82.64M,
+                ImporteIVA = 17.36M,
+                ImporteRE = 0,
+                Total = 100,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+
+            // Efecto original + anulación + 2 nuevos efectos
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 100, ImportePendiente = 0, Vencimiento = new DateTime(2026, 1, 15), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = -100, ImportePendiente = 0, Vencimiento = new DateTime(2026, 1, 15), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 50, ImportePendiente = 50, Vencimiento = new DateTime(2026, 1, 15), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 50, ImportePendiente = 50, Vencimiento = new DateTime(2026, 2, 15), FormaPago = "RCB", CCC = "10" }
+            };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV11111");
+
+            // Assert
+            Assert.AreEqual(2, factura.Vencimientos.Count);
+            Assert.AreEqual(50, factura.Vencimientos[0].Importe);
+            Assert.AreEqual(50, factura.Vencimientos[1].Importe);
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_SinModificaciones_MuestraVencimientoOriginal()
+        {
+            // Arrange - Caso más simple: un solo vencimiento sin cambios
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2026, 1, 15),
+                Cantidad = 1,
+                Texto = "PRODUCTO",
+                Precio = 100,
+                Producto = "12345",
+                Base_Imponible = 82.64M,
+                ImporteIVA = 17.36M,
+                ImporteRE = 0,
+                Total = 100,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 100, ImportePendiente = 100, Vencimiento = new DateTime(2026, 1, 15), FormaPago = "RCB", CCC = "10" }
+            };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV11111");
+
+            // Assert
+            Assert.AreEqual(1, factura.Vencimientos.Count);
+            Assert.AreEqual(100, factura.Vencimientos.First().Importe);
+            Assert.AreEqual(100, factura.Vencimientos.First().ImportePendiente);
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_SinModificacionesConTresPlazos_MuestraTresVencimientos()
+        {
+            // Arrange - Tres plazos originales sin modificación
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2026, 1, 15),
+                Cantidad = 1,
+                Texto = "PRODUCTO",
+                Precio = 300,
+                Producto = "12345",
+                Base_Imponible = 247.93M,
+                ImporteIVA = 52.07M,
+                ImporteRE = 0,
+                Total = 300,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 100, ImportePendiente = 0, Vencimiento = new DateTime(2026, 1, 15), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 100, ImportePendiente = 100, Vencimiento = new DateTime(2026, 2, 15), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 100, ImportePendiente = 100, Vencimiento = new DateTime(2026, 3, 15), FormaPago = "RCB", CCC = "10" }
+            };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV11111");
+
+            // Assert
+            Assert.AreEqual(3, factura.Vencimientos.Count);
+            Assert.AreEqual(100, factura.Vencimientos[0].Importe);
+            Assert.AreEqual(100, factura.Vencimientos[1].Importe);
+            Assert.AreEqual(100, factura.Vencimientos[2].Importe);
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_ConModificacionParcial_ManejaCorrectamente()
+        {
+            // Arrange - Modificación parcial: [20, -14, 7, 7] (caso del test existente)
+            // El while loop existente maneja esto: convierte a [6, 7, 7]
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2026, 1, 15),
+                Cantidad = 1,
+                Texto = "PRODUCTO",
+                Precio = 20,
+                Producto = "12345",
+                Base_Imponible = 16.52M,
+                ImporteIVA = 3.48M,
+                ImporteRE = 0,
+                Total = 20,
+                PorcentajeIVA = (byte)0.21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 20, ImportePendiente = 0, Vencimiento = new DateTime(2026, 1, 15), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = -14, ImportePendiente = 0, Vencimiento = new DateTime(2026, 1, 15), FormaPago = "RCB" },
+                new VencimientoFactura { Importe = 7, ImportePendiente = 7, Vencimiento = new DateTime(2026, 1, 15), FormaPago = "RCB", CCC = "10" },
+                new VencimientoFactura { Importe = 7, ImportePendiente = 7, Vencimiento = new DateTime(2026, 2, 15), FormaPago = "RCB", CCC = "10" }
+            };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV11111");
+
+            // Assert - El while loop maneja esto: [6, 7, 7]
+            Assert.AreEqual(3, factura.Vencimientos.Count);
+            Assert.AreEqual(6, factura.Vencimientos[0].Importe);
+            Assert.AreEqual(7, factura.Vencimientos[1].Importe);
+            Assert.AreEqual(7, factura.Vencimientos[2].Importe);
+        }
+
+        #endregion
+
+        #region Tests para AplicarImpagados (Issue #96)
+
+        [TestMethod]
+        public void AplicarImpagados_ConListaNull_NoFalla()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 100, ImportePendiente = 0 }
+            };
+
+            GestorFacturas.AplicarImpagados(vencimientos, null);
+
+            Assert.AreEqual(100, vencimientos[0].Importe);
+            Assert.IsFalse(vencimientos[0].EsImpagado);
+        }
+
+        [TestMethod]
+        public void AplicarImpagados_SinImpagados_NoModificaVencimientos()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 100, ImportePendiente = 0, Vencimiento = new DateTime(2025, 10, 19) }
+            };
+
+            GestorFacturas.AplicarImpagados(vencimientos, new List<ImpagadoPendiente>());
+
+            Assert.AreEqual(100, vencimientos[0].Importe);
+            Assert.IsFalse(vencimientos[0].EsImpagado);
+        }
+
+        [TestMethod]
+        public void AplicarImpagados_ConImpagadoSinGastos_MarcaComoImpagado()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 223.42M, ImportePendiente = 0, Vencimiento = new DateTime(2025, 11, 19) }
+            };
+            var impagados = new List<ImpagadoPendiente>
+            {
+                new ImpagadoPendiente { FechaVto = new DateTime(2025, 11, 19), ImportePendiente = 223.42M, EsGastos = false }
+            };
+
+            GestorFacturas.AplicarImpagados(vencimientos, impagados);
+
+            Assert.IsTrue(vencimientos[0].EsImpagado);
+            Assert.AreEqual(223.42M, vencimientos[0].Importe);
+            Assert.AreEqual(223.42M, vencimientos[0].ImportePendiente);
+            Assert.AreEqual(0, vencimientos[0].GastosImpagado);
+            Assert.AreEqual("Impagado", vencimientos[0].TextoPagado);
+        }
+
+        [TestMethod]
+        public void AplicarImpagados_ConImpagadoYGastos_ActualizaImporteYMarca()
+        {
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 223.42M, ImportePendiente = 0, Vencimiento = new DateTime(2025, 11, 19) }
+            };
+            var impagados = new List<ImpagadoPendiente>
+            {
+                new ImpagadoPendiente { FechaVto = new DateTime(2025, 11, 19), ImportePendiente = 223.42M, EsGastos = false },
+                new ImpagadoPendiente { FechaVto = new DateTime(2025, 11, 19), ImportePendiente = 3.00M, EsGastos = true }
+            };
+
+            GestorFacturas.AplicarImpagados(vencimientos, impagados);
+
+            Assert.IsTrue(vencimientos[0].EsImpagado);
+            Assert.AreEqual(226.42M, vencimientos[0].Importe);
+            Assert.AreEqual(226.42M, vencimientos[0].ImportePendiente);
+            Assert.AreEqual(3.00M, vencimientos[0].GastosImpagado);
+            Assert.IsTrue(vencimientos[0].TextoPagado.Contains("Impagado"));
+            Assert.IsTrue(vencimientos[0].TextoPagado.Contains("gastos"));
+        }
+
+        [TestMethod]
+        public void AplicarImpagados_ConMultiplesVencimientos_SoloMarcaElCorrecto()
+        {
+            // 4 efectos como el caso real NV2515520
+            var vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 223.25M, ImportePendiente = 0, Vencimiento = new DateTime(2025, 9, 19), FormaPago = "TRN" },
+                new VencimientoFactura { Importe = 223.42M, ImportePendiente = 0, Vencimiento = new DateTime(2025, 10, 19), FormaPago = "RCB" },
+                new VencimientoFactura { Importe = 223.42M, ImportePendiente = 0, Vencimiento = new DateTime(2025, 11, 19), FormaPago = "RCB" },
+                new VencimientoFactura { Importe = 223.41M, ImportePendiente = 223.41M, Vencimiento = new DateTime(2025, 12, 19), FormaPago = "RCB" }
+            };
+            // Impagado solo en efecto 3 (19/11)
+            var impagados = new List<ImpagadoPendiente>
+            {
+                new ImpagadoPendiente { FechaVto = new DateTime(2025, 11, 19), ImportePendiente = 223.42M, EsGastos = false },
+                new ImpagadoPendiente { FechaVto = new DateTime(2025, 11, 19), ImportePendiente = 3.00M, EsGastos = true }
+            };
+
+            GestorFacturas.AplicarImpagados(vencimientos, impagados);
+
+            // Efecto 1: pagado, sin cambios
+            Assert.IsFalse(vencimientos[0].EsImpagado);
+            Assert.AreEqual(223.25M, vencimientos[0].Importe);
+            // Efecto 2: pagado, sin cambios
+            Assert.IsFalse(vencimientos[1].EsImpagado);
+            Assert.AreEqual(223.42M, vencimientos[1].Importe);
+            // Efecto 3: impagado con gastos
+            Assert.IsTrue(vencimientos[2].EsImpagado);
+            Assert.AreEqual(226.42M, vencimientos[2].Importe);
+            Assert.AreEqual(3.00M, vencimientos[2].GastosImpagado);
+            // Efecto 4: pendiente, sin cambios
+            Assert.IsFalse(vencimientos[3].EsImpagado);
+            Assert.AreEqual(223.41M, vencimientos[3].Importe);
+        }
+
+        #endregion
+
+        #region Tests de TextoPagado con impagados
+
+        [TestMethod]
+        public void TextoPagado_CuandoEsImpagadoSinGastos_MuestraImpagado()
+        {
+            var vencimiento = new VencimientoFactura
+            {
+                Importe = 223.42M,
+                ImportePendiente = 223.42M,
+                EsImpagado = true,
+                GastosImpagado = 0
+            };
+
+            Assert.AreEqual("Impagado", vencimiento.TextoPagado);
+        }
+
+        [TestMethod]
+        public void TextoPagado_CuandoEsImpagadoConGastos_MuestraDesglose()
+        {
+            var vencimiento = new VencimientoFactura
+            {
+                Importe = 226.42M,
+                ImportePendiente = 226.42M,
+                EsImpagado = true,
+                GastosImpagado = 3.00M
+            };
+
+            string texto = vencimiento.TextoPagado;
+            Assert.IsTrue(texto.StartsWith("Impagado ("));
+            Assert.IsTrue(texto.Contains("gastos"));
+        }
+
+        [TestMethod]
+        public void TextoPagado_CuandoNoEsImpagado_FuncionaComoAntes()
+        {
+            var pagado = new VencimientoFactura { Importe = 100, ImportePendiente = 0 };
+            var pendiente = new VencimientoFactura { Importe = 100, ImportePendiente = 100 };
+            var parcial = new VencimientoFactura { Importe = 100, ImportePendiente = 40 };
+            var oculto = new VencimientoFactura { Importe = 100, ImportePendiente = 100, OcultarEstadoPago = true };
+
+            Assert.AreEqual("Pagado", pagado.TextoPagado);
+            Assert.AreEqual("Pendiente de pago", pendiente.TextoPagado);
+            Assert.IsTrue(parcial.TextoPagado.Contains("40"));
+            Assert.AreEqual(string.Empty, oculto.TextoPagado);
+        }
+
+        #endregion
+
+        #region Tests de integración LeerFactura con impagados (Issue #96)
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_ConImpagadoPendiente_MuestraEfectosOriginalesConImpagado()
+        {
+            // Arrange - Reproduce el caso real NV2515520
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "IM";
+            cab.Nº_Cliente = "25104";
+            cab.Serie = "NV";
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2025, 9, 30),
+                Cantidad = 1,
+                Texto = "PRODUCTO TEST",
+                Precio = 738.43M,
+                Producto = "12345",
+                Base_Imponible = 738.43M,
+                ImporteIVA = 155.07M,
+                ImporteRE = 0,
+                Total = 893.50M,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV2515520")).Returns(cab);
+
+            // Efectos originales (del asiento de la factura)
+            List<VencimientoFactura> vencimientosOriginales = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 223.25M, ImportePendiente = 0, Vencimiento = new DateTime(2025, 9, 19), FormaPago = "TRN", CCC = null },
+                new VencimientoFactura { Importe = 223.42M, ImportePendiente = 0, Vencimiento = new DateTime(2025, 10, 19), FormaPago = "RCB", CCC = "1" },
+                new VencimientoFactura { Importe = 223.42M, ImportePendiente = 0, Vencimiento = new DateTime(2025, 11, 19), FormaPago = "RCB", CCC = "2" },
+                new VencimientoFactura { Importe = 223.41M, ImportePendiente = 223.41M, Vencimiento = new DateTime(2025, 12, 19), FormaPago = "RCB", CCC = "2" }
+            };
+            A.CallTo(() => servicio.CargarVencimientosOriginales("1", A<string>.Ignored, "NV2515520")).Returns(vencimientosOriginales);
+
+            // Impagados pendientes: efecto 3 devuelto con gastos
+            List<ImpagadoPendiente> impagados = new List<ImpagadoPendiente>
+            {
+                new ImpagadoPendiente { FechaVto = new DateTime(2025, 11, 19), ImportePendiente = 223.42M, EsGastos = false },
+                new ImpagadoPendiente { FechaVto = new DateTime(2025, 11, 19), ImportePendiente = 3.00M, EsGastos = true }
+            };
+            A.CallTo(() => servicio.CargarImpagadosPendientes("1", A<string>.Ignored, "NV2515520")).Returns(impagados);
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV2515520");
+
+            // Assert - 4 vencimientos: pagado, pagado, impagado, pendiente
+            Assert.AreEqual(4, factura.Vencimientos.Count);
+
+            // Efecto 1: TRN, pagado
+            Assert.AreEqual(223.25M, factura.Vencimientos[0].Importe);
+            Assert.AreEqual("Pagado", factura.Vencimientos[0].TextoPagado);
+            Assert.IsFalse(factura.Vencimientos[0].EsImpagado);
+
+            // Efecto 2: RCB, pagado
+            Assert.AreEqual(223.42M, factura.Vencimientos[1].Importe);
+            Assert.AreEqual("Pagado", factura.Vencimientos[1].TextoPagado);
+
+            // Efecto 3: RCB, impagado con gastos
+            Assert.IsTrue(factura.Vencimientos[2].EsImpagado);
+            Assert.AreEqual(226.42M, factura.Vencimientos[2].Importe);
+            Assert.AreEqual(3.00M, factura.Vencimientos[2].GastosImpagado);
+            Assert.IsTrue(factura.Vencimientos[2].TextoPagado.Contains("Impagado"));
+            Assert.IsTrue(factura.Vencimientos[2].TextoPagado.Contains("gastos"));
+
+            // Efecto 4: RCB, pendiente
+            Assert.AreEqual(223.41M, factura.Vencimientos[3].Importe);
+            Assert.AreEqual(223.41M, factura.Vencimientos[3].ImportePendiente);
+            Assert.IsFalse(factura.Vencimientos[3].EsImpagado);
+        }
+
+        [TestMethod]
+        public void GestorFacturas_LeerFactura_SinImpagados_FuncionaIgualQueAntes()
+        {
+            // Arrange - Caso sin impagados, un solo vencimiento
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = 1,
+                Fecha_Albarán = new DateTime(2025, 1, 15),
+                Cantidad = 1,
+                Texto = "PRODUCTO",
+                Precio = 100,
+                Producto = "12345",
+                Base_Imponible = 82.64M,
+                ImporteIVA = 17.36M,
+                ImporteRE = 0,
+                Total = 100,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+
+            List<VencimientoFactura> vencimientos = new List<VencimientoFactura>
+            {
+                new VencimientoFactura { Importe = 100, ImportePendiente = 100, Vencimiento = new DateTime(2025, 1, 15), FormaPago = "RCB", CCC = "10" }
+            };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(vencimientos);
+            // CargarImpagadosPendientes no configurado → devuelve null (FakeItEasy default)
+
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            // Act
+            Factura factura = gestor.LeerFactura("1", "NV11111");
+
+            // Assert - Funciona como antes
+            Assert.AreEqual(1, factura.Vencimientos.Count);
+            Assert.AreEqual(100, factura.Vencimientos.First().Importe);
+            Assert.AreEqual("Pendiente de pago", factura.Vencimientos.First().TextoPagado);
+            Assert.IsFalse(factura.Vencimientos.First().EsImpagado);
+        }
+
+        #endregion
+
         #region Tests para Datos Fiscales Persistidos (Verifactu - Issue #88)
 
         [TestMethod]

@@ -931,6 +931,7 @@
     <Compile Include="Models\Facturas\SeriesFactura\SerieNV.cs" />
     <Compile Include="Models\Facturas\SeriesFactura\SerieUL.cs" />
     <Compile Include="Models\Facturas\TotalFactura.cs" />
+    <Compile Include="Models\Facturas\ImpagadoPendiente.cs" />
     <Compile Include="Models\Facturas\VencimientoFactura.cs" />
     <Compile Include="Models\Facturas\VendedorFactura.cs" />
     <Compile Include="Models\Facturas\WebForm1.aspx.cs">

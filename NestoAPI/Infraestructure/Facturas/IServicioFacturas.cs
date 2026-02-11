@@ -18,6 +18,7 @@ namespace NestoAPI.Infraestructure.Facturas
         Producto CargarProducto(string empresa, string numeroProducto);
         List<VencimientoFactura> CargarVencimientosExtracto(string empresa, string cliente, string numeroFactura);
         List<VencimientoFactura> CargarVencimientosOriginales(string empresa, string cliente, string numeroFactura);
+        List<ImpagadoPendiente> CargarImpagadosPendientes(string empresa, string cliente, string numeroFactura);
         List<VendedorFactura> CargarVendedoresFactura(string empresa, string numeroFactura);
         string CuentaBancoEmpresa(string empresa);
         IEnumerable<FacturaCorreo> LeerFacturasDia(DateTime dia);

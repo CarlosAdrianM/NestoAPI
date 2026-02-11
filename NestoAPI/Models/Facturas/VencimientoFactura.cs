@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 
 namespace NestoAPI.Models.Facturas
 {
@@ -16,6 +16,16 @@ namespace NestoAPI.Models.Facturas
         /// </summary>
         public bool OcultarEstadoPago { get; set; }
 
+        /// <summary>
+        /// Indica si este vencimiento tiene un impagado pendiente (TipoApunte=4 con ImportePdte!=0).
+        /// </summary>
+        public bool EsImpagado { get; set; }
+
+        /// <summary>
+        /// Importe de gastos bancarios asociados al impagado.
+        /// </summary>
+        public decimal GastosImpagado { get; set; }
+
         public string TextoPagado
         {
             get
@@ -24,6 +34,13 @@ namespace NestoAPI.Models.Facturas
                 if (OcultarEstadoPago)
                 {
                     return string.Empty;
+                }
+
+                if (EsImpagado)
+                {
+                    return GastosImpagado > 0
+                        ? string.Format("Impagado ({0:C2} + {1:C2} gastos)", Importe - GastosImpagado, GastosImpagado)
+                        : "Impagado";
                 }
 
                 return ImportePendiente == 0 ? "Pagado" :
