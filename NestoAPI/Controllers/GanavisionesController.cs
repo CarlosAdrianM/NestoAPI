@@ -67,6 +67,39 @@ namespace NestoAPI.Controllers
 
             var dtos = ganavisiones.Select(g => MapToDTO(g)).ToList();
 
+            // Enriquecer con Stock y CantidadRegalada
+            var productosIds = dtos.Select(d => d.ProductoId.PadRight(15)).ToList();
+
+            // Stock: suma de extractos en todas las sedes
+            var stocks = await db.ExtractosProducto
+                .Where(e => productosIds.Contains(e.Número) && Constantes.Sedes.ListaSedes.Contains(e.Almacén))
+                .GroupBy(e => e.Número)
+                .Select(g => new { ProductoId = g.Key, Stock = g.Sum(e => (int)e.Cantidad) })
+                .ToListAsync().ConfigureAwait(false);
+
+            // CantidadRegalada: líneas con Base_Imponible = 0 y Cantidad != 0 (albaraneadas)
+            var lineasRegaladas = await db.LinPedidoVtas
+                .Where(l => productosIds.Contains(l.Producto)
+                    && l.Cantidad != 0
+                    && l.Base_Imponible == 0
+                    && l.Fecha_Albarán != null)
+                .Select(l => new { l.Producto, l.Cantidad, l.Fecha_Albarán })
+                .ToListAsync().ConfigureAwait(false);
+
+            foreach (var dto in dtos)
+            {
+                var prodPadded = dto.ProductoId.PadRight(15);
+                dto.Stock = stocks
+                    .Where(s => s.ProductoId == prodPadded)
+                    .Select(s => s.Stock)
+                    .FirstOrDefault();
+                dto.CantidadRegalada = lineasRegaladas
+                    .Where(l => l.Producto == prodPadded
+                        && l.Fecha_Albarán >= dto.FechaDesde
+                        && (dto.FechaHasta == null || l.Fecha_Albarán <= dto.FechaHasta))
+                    .Sum(l => (int)(l.Cantidad ?? 0));
+            }
+
             return Ok(dtos);
         }
 

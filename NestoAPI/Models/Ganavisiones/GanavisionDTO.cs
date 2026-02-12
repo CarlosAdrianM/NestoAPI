@@ -20,6 +20,8 @@ namespace NestoAPI.Models.Ganavisiones
         public DateTime FechaCreacion { get; set; }
         public DateTime FechaModificacion { get; set; }
         public string Usuario { get; set; }
+        public int Stock { get; set; }
+        public int CantidadRegalada { get; set; }
     }
 
     /// <summary>

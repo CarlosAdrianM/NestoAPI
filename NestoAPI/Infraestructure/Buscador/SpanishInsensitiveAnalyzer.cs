@@ -70,6 +70,7 @@ namespace NestoAPI.Infraestructure.Buscador
                 new[] { "aluminio", "papel plata" },
                 new[] { "serum", "suero", "booster", "fluido" },
                 new[] { "pañuelos faciales", "tissues", "kleenex" },
+                new[] { "pyruvic", "pirúvico" },
             };
 
             foreach (var grupo in sinonimos)

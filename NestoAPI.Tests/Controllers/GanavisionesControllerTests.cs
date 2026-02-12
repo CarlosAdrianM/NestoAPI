@@ -1595,6 +1595,121 @@ namespace NestoAPI.Tests.Controllers
 
         #endregion
 
+        #region Stock y CantidadRegalada Tests
+
+        [TestMethod]
+        public async Task GetGanavisiones_IncluyeStockDelProducto()
+        {
+            // Arrange
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision { Id = 1, Empresa = "1  ", ProductoId = "PROD1          ", Ganavisiones = 10, FechaDesde = DateTime.Today }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var extractos = new List<ExtractoProducto>
+            {
+                new ExtractoProducto { Número = "PROD1          ", Almacén = "ALG", Cantidad = 5 },
+                new ExtractoProducto { Número = "PROD1          ", Almacén = "REI", Cantidad = 3 }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+
+            // Act
+            var resultado = await controller.GetGanavisiones("1");
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<List<GanavisionDTO>>)resultado;
+            Assert.AreEqual(8, okResult.Content[0].Stock, "Stock debe ser la suma de todos los almacenes (5+3=8)");
+        }
+
+        [TestMethod]
+        public async Task GetGanavisiones_IncluyeCantidadRegalada()
+        {
+            // Arrange
+            var fechaDesde = DateTime.Today.AddDays(-30);
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision { Id = 1, Empresa = "1  ", ProductoId = "PROD1          ", Ganavisiones = 10, FechaDesde = fechaDesde, FechaHasta = null }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Producto = "PROD1          ", Cantidad = 2, Base_Imponible = 0, Fecha_Albarán = DateTime.Today.AddDays(-10) },
+                new LinPedidoVta { Producto = "PROD1          ", Cantidad = 1, Base_Imponible = 0, Fecha_Albarán = DateTime.Today.AddDays(-5) }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, lineas);
+
+            // Act
+            var resultado = await controller.GetGanavisiones("1");
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<List<GanavisionDTO>>)resultado;
+            Assert.AreEqual(3, okResult.Content[0].CantidadRegalada, "CantidadRegalada debe sumar las líneas con BaseImponible=0 (2+1=3)");
+        }
+
+        [TestMethod]
+        public async Task GetGanavisiones_CantidadRegalada_RespetaRangoFechas()
+        {
+            // Arrange
+            var fechaDesde = DateTime.Today.AddDays(-10);
+            var fechaHasta = DateTime.Today.AddDays(-1);
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision { Id = 1, Empresa = "1  ", ProductoId = "PROD1          ", Ganavisiones = 10, FechaDesde = fechaDesde, FechaHasta = fechaHasta }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var lineas = new List<LinPedidoVta>
+            {
+                // Dentro del rango
+                new LinPedidoVta { Producto = "PROD1          ", Cantidad = 2, Base_Imponible = 0, Fecha_Albarán = DateTime.Today.AddDays(-5) },
+                // Fuera del rango (antes de FechaDesde)
+                new LinPedidoVta { Producto = "PROD1          ", Cantidad = 3, Base_Imponible = 0, Fecha_Albarán = DateTime.Today.AddDays(-20) },
+                // Fuera del rango (después de FechaHasta)
+                new LinPedidoVta { Producto = "PROD1          ", Cantidad = 4, Base_Imponible = 0, Fecha_Albarán = DateTime.Today }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, lineas);
+
+            // Act
+            var resultado = await controller.GetGanavisiones("1");
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<List<GanavisionDTO>>)resultado;
+            Assert.AreEqual(2, okResult.Content[0].CantidadRegalada, "Solo debe sumar líneas dentro del rango de fechas");
+        }
+
+        [TestMethod]
+        public async Task GetGanavisiones_CantidadRegalada_SinFechaHasta_SumaTodoDesdeFechaDesde()
+        {
+            // Arrange
+            var fechaDesde = DateTime.Today.AddDays(-10);
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision { Id = 1, Empresa = "1  ", ProductoId = "PROD1          ", Ganavisiones = 10, FechaDesde = fechaDesde, FechaHasta = null }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            var lineas = new List<LinPedidoVta>
+            {
+                // Dentro del rango (desde FechaDesde en adelante)
+                new LinPedidoVta { Producto = "PROD1          ", Cantidad = 2, Base_Imponible = 0, Fecha_Albarán = DateTime.Today.AddDays(-5) },
+                new LinPedidoVta { Producto = "PROD1          ", Cantidad = 1, Base_Imponible = 0, Fecha_Albarán = DateTime.Today },
+                // Fuera del rango (antes de FechaDesde)
+                new LinPedidoVta { Producto = "PROD1          ", Cantidad = 10, Base_Imponible = 0, Fecha_Albarán = DateTime.Today.AddDays(-20) }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeLinPedidoVtas, lineas);
+
+            // Act
+            var resultado = await controller.GetGanavisiones("1");
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<List<GanavisionDTO>>)resultado;
+            Assert.AreEqual(3, okResult.Content[0].CantidadRegalada, "Sin FechaHasta debe sumar todo desde FechaDesde (2+1=3, no incluir el 10 anterior)");
+        }
+
+        #endregion
+
         #region Helper Methods
 
         private void ConfigurarFakeDbSet<T>(IDbSet<T> fakeDbSet, IQueryable<T> data) where T : class
