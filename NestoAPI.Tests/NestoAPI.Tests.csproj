@@ -186,6 +186,7 @@
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorLimiteRegalosTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ExtractoAdaptersTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\CalculadorSaldoMayorTests.cs" />
+    <Compile Include="Infrastructure\Ventas\GestorVentasClienteTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnualesBaseTests.cs" />
     <Compile Include="Models\Comisiones\EtiquetaClientesNuevosTests.cs" />

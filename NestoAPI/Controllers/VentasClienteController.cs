@@ -86,5 +86,58 @@ namespace NestoAPI.Controllers
             }
 
         }
+
+        [HttpGet]
+        [Route("resumen/detalle")]
+        public IHttpActionResult GetDetalleVentasProducto(
+            string clienteId,
+            string filtro,
+            string modoComparativa = "anual",
+            string agruparPor = "grupo")
+        {
+            if (string.IsNullOrWhiteSpace(clienteId))
+            {
+                return BadRequest("Debe proporcionar el identificador del cliente.");
+            }
+
+            if (string.IsNullOrWhiteSpace(filtro))
+            {
+                return BadRequest("Debe proporcionar el filtro de agrupación.");
+            }
+
+            if (!new[] { "anual", "ultimos12meses" }.Contains(modoComparativa.ToLower()))
+            {
+                return BadRequest("El modo de comparativa debe ser 'anual' o 'ultimos12meses'.");
+            }
+
+            if (!new[] { "grupo", "subgrupo", "familia" }.Contains(agruparPor.ToLower()))
+            {
+                return BadRequest("El campo de agrupación debe ser 'grupo', 'subgrupo' o 'familia'.");
+            }
+
+            try
+            {
+                var resultado = _gestor.ObtenerDetalleVentasProducto(
+                    clienteId,
+                    filtro,
+                    modoComparativa.ToLower(),
+                    agruparPor.ToLower());
+
+                return Ok(resultado);
+            }
+            catch (Exception ex)
+            {
+                var telemetry = new TelemetryClient();
+                telemetry.TrackException(ex, new Dictionary<string, string>
+                {
+                    { "ClienteId", clienteId },
+                    { "Filtro", filtro },
+                    { "ModoComparativa", modoComparativa },
+                    { "AgruparPor", agruparPor }
+                });
+
+                return InternalServerError(ex);
+            }
+        }
     }
 }
