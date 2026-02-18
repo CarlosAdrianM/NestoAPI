@@ -1,4 +1,5 @@
 using NestoAPI.Models.Sincronizacion;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Sincronizacion
@@ -28,6 +29,11 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         /// Genera información descriptiva para logs (versión polimórfica)
         /// </summary>
         string GetLogInfo(SyncMessageBase message);
+
+        /// <summary>
+        /// Deserializa un JSON al tipo de mensaje específico de este handler
+        /// </summary>
+        SyncMessageBase Deserialize(string json, JsonSerializerOptions options);
     }
 
     /// <summary>

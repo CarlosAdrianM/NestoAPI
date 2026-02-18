@@ -166,6 +166,7 @@ namespace NestoAPI
             // Push Subscription: usa SyncWebhookController
             _ = services.AddSingleton<ISyncTableHandlerBase, ClientesSyncHandler>();
             _ = services.AddSingleton<ISyncTableHandlerBase, ProductosSyncHandler>();
+            _ = services.AddSingleton<ISyncTableHandlerBase, PrestashopProductosSyncHandler>();
             _ = services.AddSingleton<SyncTableRouter>(sp =>
             {
                 var handlers = sp.GetServices<ISyncTableHandlerBase>();

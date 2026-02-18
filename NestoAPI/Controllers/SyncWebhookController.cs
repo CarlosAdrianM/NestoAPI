@@ -51,12 +51,12 @@ namespace NestoAPI.Controllers
 
         /// <summary>
         /// Deserializa el mensaje JSON al tipo correcto según el campo "Tabla"
+        /// Delega la deserialización al handler correspondiente
         /// </summary>
         private SyncMessageBase DeserializeSyncMessage(string messageJson)
         {
             var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
 
-            // Primero deserializar a un JsonDocument para leer el campo "Tabla"
             using (var document = JsonDocument.Parse(messageJson))
             {
                 if (!document.RootElement.TryGetProperty("Tabla", out var tablaElement))
@@ -66,20 +66,15 @@ namespace NestoAPI.Controllers
                 }
 
                 string tabla = tablaElement.GetString();
+                var handler = _router.GetHandler(tabla);
 
-                // Deserializar al tipo correcto según la tabla
-                switch (tabla?.ToUpperInvariant())
+                if (handler == null)
                 {
-                    case "CLIENTES":
-                        return JsonSerializer.Deserialize<ClienteSyncMessage>(messageJson, options);
-
-                    case "PRODUCTOS":
-                        return JsonSerializer.Deserialize<ProductoSyncMessage>(messageJson, options);
-
-                    default:
-                        Log($"⚠️ Tabla desconocida: {tabla}");
-                        return null;
+                    Log($"⚠️ Tabla desconocida: {tabla}");
+                    return null;
                 }
+
+                return handler.Deserialize(messageJson, options);
             }
         }
 

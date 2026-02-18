@@ -94,5 +94,18 @@ namespace NestoAPI.Infraestructure.Sincronizacion
 
             return _handlers.ContainsKey(message.Tabla) ? _handlers[message.Tabla] : null;
         }
+
+        /// <summary>
+        /// Obtiene el handler por nombre de tabla
+        /// </summary>
+        public ISyncTableHandlerBase GetHandler(string tableName)
+        {
+            if (string.IsNullOrEmpty(tableName))
+            {
+                return null;
+            }
+
+            return _handlers.ContainsKey(tableName) ? _handlers[tableName] : null;
+        }
     }
 }

@@ -55,7 +55,7 @@ namespace NestoAPI.Infraestructure
                             ProductoDTO productoDTO = new ProductoDTO()
                             {
                                 UrlFoto = await ProductoDTO.RutaImagen(productoId).ConfigureAwait(false),
-                                PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(productoId).ConfigureAwait(false),
+                                PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(productoId, db).ConfigureAwait(false),
                                 UrlEnlace = await ProductoDTO.RutaEnlace(productoId).ConfigureAwait(false),
                                 Producto = producto.Número?.Trim(),
                                 Nombre = producto.Nombre?.Trim(),

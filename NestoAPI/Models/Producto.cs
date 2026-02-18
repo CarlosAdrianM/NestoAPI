@@ -90,5 +90,6 @@ namespace NestoAPI.Models
         public virtual ICollection<GruposProducto> GruposProductoes { get; set; }
         public virtual GruposProducto GruposProducto { get; set; }
         public virtual ICollection<Ganavision> Ganavisiones { get; set; }
+        public virtual PrestashopProducto PrestashopProducto { get; set; }
     }
 }

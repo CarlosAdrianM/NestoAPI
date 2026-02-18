@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Data.Entity;
 using System.Globalization;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -111,7 +113,23 @@ namespace NestoAPI.Models
             }
         }
 
-        public static async Task<decimal> LeerPrecioPublicoFinal(string producto)
+        public static async Task<decimal> LeerPrecioPublicoFinal(string producto, NVEntities db)
+        {
+            // Issue #104: Consultar primero PrestashopProductos en BBDD
+            var prestashopProducto = await db.PrestashopProductos
+                .FirstOrDefaultAsync(pp => pp.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && pp.Número == producto)
+                .ConfigureAwait(false);
+
+            if (prestashopProducto?.PVP_IVA_Incluido != null && prestashopProducto.PVP_IVA_Incluido != 0)
+            {
+                return prestashopProducto.PVP_IVA_Incluido.Value;
+            }
+
+            // Fallback: llamar a la API de Prestashop
+            return await LeerPrecioPublicoFinalDesdePrestashop(producto).ConfigureAwait(false);
+        }
+
+        private static async Task<decimal> LeerPrecioPublicoFinalDesdePrestashop(string producto)
         {
             string urlPrestashop = $"http://www.productosdeesteticaypeluqueriaprofesional.com/api/products?filter[reference]={producto}";
             decimal precioPublico = 0;

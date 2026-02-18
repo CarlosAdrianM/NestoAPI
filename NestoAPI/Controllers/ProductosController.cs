@@ -147,7 +147,7 @@ namespace NestoAPI.Controllers
             ProductoDTO productoDTO = new ProductoDTO()
             {
                 UrlFoto = fichaCompleta ? await ProductoDTO.RutaImagen(id).ConfigureAwait(false) : null,
-                PrecioPublicoFinal = fichaCompleta ? await ProductoDTO.LeerPrecioPublicoFinal(id).ConfigureAwait(false) : 0,
+                PrecioPublicoFinal = fichaCompleta ? await ProductoDTO.LeerPrecioPublicoFinal(id, db).ConfigureAwait(false) : 0,
                 UrlEnlace = fichaCompleta ? await ProductoDTO.RutaEnlace(id).ConfigureAwait(false) : null,
                 Producto = producto.Número?.Trim(),
                 Nombre = producto.Nombre?.Trim(),
@@ -260,7 +260,7 @@ namespace NestoAPI.Controllers
                 {
                     porcentajeIVA = 1.1m;
                 }
-                precio.precioCalculado = await ProductoDTO.LeerPrecioPublicoFinal(producto.Número.Trim()) / porcentajeIVA;
+                precio.precioCalculado = await ProductoDTO.LeerPrecioPublicoFinal(producto.Número.Trim(), db) / porcentajeIVA;
             }
             else
             {
@@ -533,7 +533,7 @@ namespace NestoAPI.Controllers
                     ProductoDTO productoDTO = new ProductoDTO()
                     {
                         UrlFoto = await ProductoDTO.RutaImagen(productoId).ConfigureAwait(false),
-                        PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(productoId).ConfigureAwait(false),
+                        PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(productoId, db).ConfigureAwait(false),
                         UrlEnlace = await ProductoDTO.RutaEnlace(productoId).ConfigureAwait(false),
                         Producto = producto.Número?.Trim(),
                         Nombre = producto.Nombre?.Trim(),
@@ -604,7 +604,7 @@ namespace NestoAPI.Controllers
                 ProductoDTO productoDTO = new ProductoDTO()
                 {
                     UrlFoto = await ProductoDTO.RutaImagen(id).ConfigureAwait(false),
-                    PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(id).ConfigureAwait(false),
+                    PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(id, db).ConfigureAwait(false),
                     UrlEnlace = await ProductoDTO.RutaEnlace(id).ConfigureAwait(false),
                     Producto = producto.Número?.Trim(),
                     Nombre = producto.Nombre?.Trim(),
@@ -646,6 +646,103 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest($"Error al publicar producto: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// POST: api/Productos/PublicarTodos
+        /// Publica en Google Pub/Sub todos los productos con stock positivo (actualización inicial masiva).
+        /// Construye el DTO completo de cada producto (UrlFoto, UrlEnlace, PrecioPublicoFinal, stocks, kits).
+        /// Procesa por lotes de 50 con pausa de 5 segundos entre lotes para no saturar el servidor.
+        /// </summary>
+        [HttpPost]
+        [Route("api/Productos/PublicarTodos")]
+        public async Task<IHttpActionResult> PostPublicarProductosConStock()
+        {
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            string empresaEspejo = Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO;
+
+            // 1. Obtener los números de producto con stock positivo
+            var productosConStockIds = await db.ExtractosProducto
+                .Where(e => e.Empresa == empresa || e.Empresa == empresaEspejo)
+                .GroupBy(e => e.Número)
+                .Where(g => g.Sum(e => (int)e.Cantidad) > 0)
+                .Select(g => g.Key)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            // 2. Cargar los productos con sus relaciones
+            var productos = await db.Productos
+                .Include(p => p.Kits)
+                .Include(p => p.Familia1)
+                .Include(p => p.SubGruposProducto)
+                .Where(p => p.Empresa == empresa && productosConStockIds.Contains(p.Número) && !p.Ficticio)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            // 3. Publicar por lotes
+            bool todosOK = true;
+            int batchSize = 50;
+            int totalProductos = productos.Count;
+            int delayMs = 5000;
+            string usuario = User?.Identity?.Name;
+
+            for (int i = 0; i < totalProductos; i += batchSize)
+            {
+                List<Producto> lote = productos.Skip(i).Take(batchSize).ToList();
+
+                foreach (Producto producto in lote)
+                {
+                    try
+                    {
+                        string productoId = producto.Número?.Trim();
+
+                        ProductoDTO productoDTO = new ProductoDTO
+                        {
+                            UrlFoto = await ProductoDTO.RutaImagen(productoId).ConfigureAwait(false),
+                            PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(productoId, db).ConfigureAwait(false),
+                            UrlEnlace = await ProductoDTO.RutaEnlace(productoId).ConfigureAwait(false),
+                            Producto = productoId,
+                            Nombre = producto.Nombre?.Trim(),
+                            Tamanno = producto.Tamaño,
+                            UnidadMedida = producto.UnidadMedida?.Trim(),
+                            Familia = producto.Familia1?.Descripción?.Trim(),
+                            PrecioProfesional = (decimal)producto.PVP,
+                            Estado = (short)producto.Estado,
+                            Grupo = producto.Grupo,
+                            Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
+                            RoturaStockProveedor = producto.RoturaStockProveedor,
+                            CodigoBarras = producto.CodBarras?.Trim()
+                        };
+
+                        foreach (var kit in producto.Kits)
+                        {
+                            productoDTO.ProductosKit.Add(new ProductoKit
+                            {
+                                ProductoId = kit.NúmeroAsociado.Trim(),
+                                Cantidad = kit.Cantidad
+                            });
+                        }
+
+                        productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Productos.ALMACEN_POR_DEFECTO));
+                        productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Productos.ALMACEN_TIENDA));
+                        productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Almacenes.ALCOBENDAS));
+
+                        await _gestorProductos.PublicarProductoSincronizar(productoDTO, "PublicarTodos", usuario);
+                    }
+                    catch
+                    {
+                        todosOK = false;
+                    }
+                }
+
+                // Esperar antes de procesar el siguiente lote (si no es el último)
+                if (i + batchSize < totalProductos)
+                {
+                    await Task.Delay(delayMs);
+                }
+            }
+
+            return Ok(todosOK);
         }
 
         protected override void Dispose(bool disposing)

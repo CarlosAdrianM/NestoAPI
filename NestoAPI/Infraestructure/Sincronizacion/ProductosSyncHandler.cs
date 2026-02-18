@@ -3,6 +3,7 @@ using NestoAPI.Models.Sincronizacion;
 using System;
 using System.Data.Entity;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.Sincronizacion
@@ -36,6 +37,11 @@ namespace NestoAPI.Infraestructure.Sincronizacion
         string ISyncTableHandlerBase.GetLogInfo(SyncMessageBase message)
         {
             return GetLogInfo(message as ProductoSyncMessage);
+        }
+
+        public SyncMessageBase Deserialize(string json, JsonSerializerOptions options)
+        {
+            return JsonSerializer.Deserialize<ProductoSyncMessage>(json, options);
         }
 
         // Implementación tipada

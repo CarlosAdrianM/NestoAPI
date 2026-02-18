@@ -523,6 +523,7 @@
     <Compile Include="Controllers\PickingController.cs" />
     <Compile Include="Controllers\PlanCuentasController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
+    <Compile Include="Controllers\PrestashopProductosController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\PreContabilidadesController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
@@ -654,6 +655,7 @@
     <Compile Include="Infraestructure\Sincronizacion\ClienteChangeDetector.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClientesSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ProductoChangeDetector.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\PrestashopProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ISyncTableHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SincronizacionEventWrapper.cs" />
@@ -1103,9 +1105,13 @@
     <Compile Include="Models\Prepago.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PrestashopProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\Producto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PrestashopProductoDTO.cs" />
     <Compile Include="Models\ProductoDTO.cs" />
     <Compile Include="Models\Productos\ControlStockAlmacenModel.cs" />
     <Compile Include="Models\Productos\ControlStockBase.cs" />
@@ -1170,6 +1176,7 @@
     <Compile Include="Models\Sincronizacion\ChangeStatusRequest.cs" />
     <Compile Include="Models\Sincronizacion\SyncMessageBase.cs" />
     <Compile Include="Models\Sincronizacion\ClienteSyncMessage.cs" />
+    <Compile Include="Models\Sincronizacion\PrestashopProductoSyncMessage.cs" />
     <Compile Include="Models\Sincronizacion\ProductoSyncMessage.cs" />
     <Compile Include="Models\SubGruposProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
