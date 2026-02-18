@@ -51,10 +51,16 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             // Calcular los Ganavisiones consumidos en el pedido
             // Son las líneas con productos que tienen Ganavisiones configurados y están bonificadas (BaseImponible = 0)
+            // Se excluyen líneas con oferta asignada (ej: 5+5), ya que esas bonificaciones no son Ganavisiones
             int ganavisionesConsumidos = 0;
             foreach (var linea in pedido.Lineas)
             {
                 if (linea.BaseImponible != 0)
+                {
+                    continue;
+                }
+
+                if (linea.oferta != null && linea.oferta != 0)
                 {
                     continue;
                 }
