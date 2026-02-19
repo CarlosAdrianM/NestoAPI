@@ -505,6 +505,7 @@
     <Compile Include="Controllers\FormasPagoController.cs" />
     <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\GanavisionesController.cs" />
+    <Compile Include="Controllers\DeepLinkController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
     <Compile Include="Controllers\InventariosController.cs" />
@@ -1499,6 +1500,7 @@
     <Content Include="secretos.config">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="Views\DeepLink\Pedido.cshtml" />
     <Content Include="Views\Home\ResetPassword.cshtml" />
     <Content Include="Views\Home\ResetPasswordConfirmation.cshtml" />
     <Content Include="Scripts\umd\popper.min.js.map" />

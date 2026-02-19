@@ -13,6 +13,9 @@ namespace NestoAPI
         {
             routes.IgnoreRoute("{resource}.axd/{*pathInfo}");
 
+            // Issue #107: Habilitar attribute routing para DeepLinkController
+            routes.MapMvcAttributeRoutes();
+
             routes.MapRoute(
                 name: "Default",
                 url: "{controller}/{action}/{id}",
