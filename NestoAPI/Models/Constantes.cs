@@ -353,5 +353,12 @@ namespace NestoAPI.Models
         {
             public const string TIPO_RUTA_PEDIDO = "P";
         }
+
+        public static class Redsys
+        {
+            public const string MERCHANT_CODE = "329515704";
+            public const string TERMINAL_P2F = "2";
+            public const string TERMINAL_TPV_VIRTUAL = "1";
+        }
     }
 }

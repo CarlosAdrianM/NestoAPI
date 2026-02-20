@@ -119,6 +119,7 @@ namespace NestoAPI.Models
         public virtual DbSet<LinFacturaVtaRectificacion> LinFacturaVtaRectificaciones { get; set; }
         public virtual DbSet<Ganavision> Ganavisiones { get; set; }
         public virtual DbSet<PrestashopProducto> PrestashopProductos { get; set; }
+        public virtual DbSet<PagoTPV> PagosTPV { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

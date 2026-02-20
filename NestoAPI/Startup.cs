@@ -16,7 +16,9 @@ using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infraestructure.Videos;
+using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.CorreosPostCompra;
+using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using NestoAPI.Providers;
@@ -161,6 +163,13 @@ namespace NestoAPI
             _ = services.AddScoped<IServicioTraspasoEmpresa, ServicioTraspasoEmpresa>();
             _ = services.AddScoped<IServicioNotasEntrega, ServicioNotasEntrega>();
             _ = services.AddScoped<IServicioExtractoRuta, ServicioExtractoRuta>();
+
+            // Servicios de Pagos y Redsys (Issues #93, #92, #59)
+            _ = services.AddScoped<IRedsysService, RedsysService>();
+            _ = services.AddScoped<IServicioReclamacionDeuda, ServicioReclamacionDeuda>();
+            _ = services.AddScoped<IServicioPagos, ServicioPagos>();
+            _ = services.AddScoped<IContabilidadService, ContabilidadService>();
+            _ = services.AddScoped<ILectorParametrosUsuario, LectorParametrosUsuario>();
 
             // Servicios de sincronización bidireccional (External Systems <-> Nesto)
             // Push Subscription: usa SyncWebhookController

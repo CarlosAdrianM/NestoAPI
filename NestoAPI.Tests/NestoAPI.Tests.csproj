@@ -193,6 +193,10 @@
     <Compile Include="Infrastructure\Sincronizacion\SyncTableRouterTests.cs" />
     <Compile Include="Infrastructure\ClientesSyncHandlerVendedorTests.cs" />
     <Compile Include="Infrastructure\Ventas\GestorVentasClienteTests.cs" />
+    <Compile Include="Infrastructure\Pagos\FormatoCorreoReclamacionTests.cs" />
+    <Compile Include="Infrastructure\Pagos\RedsysServiceTests.cs" />
+    <Compile Include="Infrastructure\Pagos\ServicioReclamacionDeudaTests.cs" />
+    <Compile Include="Infrastructure\Pagos\ServicioPagosTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnualesBaseTests.cs" />
     <Compile Include="Models\Comisiones\EtiquetaClientesNuevosTests.cs" />

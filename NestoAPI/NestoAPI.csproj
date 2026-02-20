@@ -529,6 +529,7 @@
     <Compile Include="Controllers\PreContabilidadesController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
     <Compile Include="Controllers\ProveedoresController.cs" />
+    <Compile Include="Controllers\PagosController.cs" />
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />
     <Compile Include="Controllers\RecursosHumanosController.cs" />
     <Compile Include="Controllers\RolesController.cs" />
@@ -653,6 +654,10 @@
     <Compile Include="Infraestructure\ServicioPlantillaVenta.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
     <Compile Include="Infraestructure\ServicioReclamacionDeuda.cs" />
+    <Compile Include="Infraestructure\Pagos\IRedsysService.cs" />
+    <Compile Include="Infraestructure\Pagos\RedsysService.cs" />
+    <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
+    <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClienteChangeDetector.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClientesSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ProductoChangeDetector.cs" />
@@ -994,6 +999,9 @@
     <Compile Include="Models\MovimientoTPV.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PagoTPV.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\NestoDTO.cs" />
     <Compile Include="Models\NestoEntities.Context.cs">
       <AutoGen>True</AutoGen>
@@ -1129,6 +1137,15 @@
     </Compile>
     <Compile Include="Models\Rapports\ClienteSeguimientoLookup.cs" />
     <Compile Include="Models\Rapports\CodigoPostalSeguimientoLookup.cs" />
+    <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
+    <Compile Include="Models\Pagos\NotificacionRedsys.cs" />
+    <Compile Include="Models\Pagos\PagoTPVDTO.cs" />
+    <Compile Include="Models\Pagos\ParametrosRedsysFirmados.cs" />
+    <Compile Include="Models\Pagos\PeticionRedsys.cs" />
+    <Compile Include="Models\Pagos\RespuestaIniciarPago.cs" />
+    <Compile Include="Models\Pagos\RespuestaRedsys.cs" />
+    <Compile Include="Models\Pagos\ResultadoValidacionNotificacion.cs" />
+    <Compile Include="Models\Pagos\SolicitudPagoTPV.cs" />
     <Compile Include="Models\ReclamacionDeuda.cs" />
     <Compile Include="Models\RecursosHumanos\Accion.cs" />
     <Compile Include="Models\RecursosHumanos\Empleado.cs" />

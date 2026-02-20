@@ -1300,6 +1300,26 @@
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
           <Property Name="FechaModificacion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
         </EntityType>
+        <EntityType Name="PagosTPV">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="NumeroOrden" Type="nvarchar" MaxLength="12" Nullable="false" />
+          <Property Name="Tipo" Type="nvarchar" MaxLength="20" Nullable="false" />
+          <Property Name="Empresa" Type="nvarchar" MaxLength="2" Nullable="false" />
+          <Property Name="Cliente" Type="nvarchar" MaxLength="10" />
+          <Property Name="Importe" Type="decimal" Precision="18" Scale="2" Nullable="false" />
+          <Property Name="Descripcion" Type="nvarchar" MaxLength="500" />
+          <Property Name="Correo" Type="nvarchar" MaxLength="256" />
+          <Property Name="Movil" Type="nvarchar" MaxLength="20" />
+          <Property Name="Estado" Type="nvarchar" MaxLength="20" Nullable="false" />
+          <Property Name="CodigoRespuesta" Type="nvarchar" MaxLength="10" />
+          <Property Name="CodigoAutorizacion" Type="nvarchar" MaxLength="50" />
+          <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+          <Property Name="FechaActualizacion" Type="datetime" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="256" />
+        </EntityType>
         <EntityType Name="ParámetrosIVA">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -5116,6 +5136,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasProveedores" EntityType="Self.OfertasProveedores" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="PagosTPV" EntityType="Self.PagosTPV" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PedidosEspeciales" EntityType="Self.PedidosEspeciales" Schema="dbo" store:Type="Tables" />
@@ -7137,6 +7158,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Producto" EntitySet="Productos" />
             <End Role="PrestashopProducto" EntitySet="PrestashopProductos" />
           </AssociationSet>
+          <EntitySet Name="PagosTPV" EntityType="NVModel.PagoTPV" />
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -12595,6 +12617,26 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="PagoTPV">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="NumeroOrden" Type="String" Nullable="false" MaxLength="12" FixedLength="false" Unicode="true" />
+          <Property Name="Tipo" Type="String" Nullable="false" MaxLength="20" FixedLength="false" Unicode="true" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="2" FixedLength="false" Unicode="true" />
+          <Property Name="Cliente" Type="String" MaxLength="10" FixedLength="false" Unicode="true" />
+          <Property Name="Importe" Type="Decimal" Nullable="false" Precision="18" Scale="2" />
+          <Property Name="Descripcion" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
+          <Property Name="Correo" Type="String" MaxLength="256" FixedLength="false" Unicode="true" />
+          <Property Name="Movil" Type="String" MaxLength="20" FixedLength="false" Unicode="true" />
+          <Property Name="Estado" Type="String" Nullable="false" MaxLength="20" FixedLength="false" Unicode="true" />
+          <Property Name="CodigoRespuesta" Type="String" MaxLength="10" FixedLength="false" Unicode="true" />
+          <Property Name="CodigoAutorizacion" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="FechaActualizacion" Type="DateTime" Precision="3" />
+          <Property Name="Usuario" Type="String" MaxLength="256" FixedLength="false" Unicode="true" />
+        </EntityType>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -14523,6 +14565,27 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Nombre" ColumnName="Nombre" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="PagosTPV">
+            <EntityTypeMapping TypeName="NVModel.PagoTPV">
+              <MappingFragment StoreEntitySet="PagosTPV">
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaActualizacion" ColumnName="FechaActualizacion" />
+                <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />
+                <ScalarProperty Name="CodigoAutorizacion" ColumnName="CodigoAutorizacion" />
+                <ScalarProperty Name="CodigoRespuesta" ColumnName="CodigoRespuesta" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Movil" ColumnName="Movil" />
+                <ScalarProperty Name="Correo" ColumnName="Correo" />
+                <ScalarProperty Name="Descripcion" ColumnName="Descripcion" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="Cliente" ColumnName="Cliente" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Tipo" ColumnName="Tipo" />
+                <ScalarProperty Name="NumeroOrden" ColumnName="NumeroOrden" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
