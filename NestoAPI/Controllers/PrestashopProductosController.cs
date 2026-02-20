@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
@@ -17,6 +18,7 @@ namespace NestoAPI.Controllers
     {
         private readonly NVEntities db;
         private readonly IGestorProductos _gestorProductos;
+        private readonly IProductoService _productoService;
         private readonly SincronizacionEventWrapper _sincronizacionEventWrapper;
 
         public PrestashopProductosController()
@@ -25,14 +27,16 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
             var eventWrapper = new SincronizacionEventWrapper(new GooglePubSubEventPublisher());
             _gestorProductos = new GestorProductos(eventWrapper);
+            _productoService = new ProductoService();
             _sincronizacionEventWrapper = eventWrapper;
         }
 
-        public PrestashopProductosController(NVEntities db, IGestorProductos gestorProductos = null, SincronizacionEventWrapper sincronizacionEventWrapper = null)
+        public PrestashopProductosController(NVEntities db, IGestorProductos gestorProductos = null, IProductoService productoService = null, SincronizacionEventWrapper sincronizacionEventWrapper = null)
         {
             this.db = db;
             this.db.Configuration.LazyLoadingEnabled = false;
             _gestorProductos = gestorProductos;
+            _productoService = productoService;
             _sincronizacionEventWrapper = sincronizacionEventWrapper;
         }
 
@@ -199,8 +203,15 @@ namespace NestoAPI.Controllers
                 });
             }
 
+            if (_productoService != null && !productoEntity.Ficticio)
+            {
+                productoDTO.Stocks.Add(await _productoService.CalcularStockProducto(productoId, Constantes.Almacenes.ALGETE));
+                productoDTO.Stocks.Add(await _productoService.CalcularStockProducto(productoId, Constantes.Almacenes.REINA));
+                productoDTO.Stocks.Add(await _productoService.CalcularStockProducto(productoId, Constantes.Almacenes.ALCOBENDAS));
+            }
+
             string usuario = User?.Identity?.Name;
-            await _gestorProductos.PublicarProductoSincronizar(productoDTO, "PrestashopProductos", usuario);
+            await _gestorProductos.PublicarProductoSincronizar(productoDTO, "Nesto", usuario);
         }
 
         private async Task PublicarPrestashopProductoSync(PrestashopProducto producto)
