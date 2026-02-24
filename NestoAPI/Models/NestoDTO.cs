@@ -105,6 +105,7 @@ namespace NestoAPI.Models
         public string empresa { get; set; }
         public int asiento { get; set; }
         public string cliente { get; set; }
+        public string nombre { get; set; }
         public string contacto { get; set; }
         public System.DateTime fecha { get; set; }
         public string tipo { get; set; }

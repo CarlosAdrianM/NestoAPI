@@ -233,8 +233,7 @@ namespace NestoAPI.Controllers
             return extractoCliente == null ? NotFound() : (IHttpActionResult)Ok(extractoCliente);
         }
 
-        /*
-        // GET: api/ExtractosCliente/5
+        // GET: api/ExtractosCliente?empresa=1&asiento=123
         [ResponseType(typeof(List<ExtractoClienteDTO>))]
         public async Task<IHttpActionResult> GetExtractoCliente(string empresa, int asiento)
         {
@@ -243,34 +242,34 @@ namespace NestoAPI.Controllers
                 .Select(e => new ExtractoClienteDTO
                 {
                     id = e.Nº_Orden,
-                    empresa = e.Empresa,
+                    empresa = e.Empresa.Trim(),
                     asiento = e.Asiento,
-                    cliente = e.Número,
-                    contacto = e.Contacto,
+                    cliente = e.Número.Trim(),
+                    nombre = e.Cliente != null ? e.Cliente.Nombre.Trim() : e.Número.Trim(),
+                    contacto = e.Contacto.Trim(),
                     fecha = e.Fecha,
-                    tipo = e.TipoApunte,
-                    documento = e.Nº_Documento,
-                    efecto = e.Efecto,
-                    concepto = e.Concepto,
+                    tipo = e.TipoApunte.Trim(),
+                    documento = e.Nº_Documento.Trim(),
+                    efecto = e.Efecto.Trim(),
+                    concepto = e.Concepto.Trim(),
                     importe = e.Importe,
                     importePendiente = e.ImportePdte,
-                    vendedor = e.Vendedor,
+                    vendedor = e.Vendedor.Trim(),
                     vencimiento = e.FechaVto ?? e.Fecha,
-                    ccc = e.CCC,
-                    ruta = e.Ruta,
-                    estado = e.Estado,
-                    formaPago = e.FormaPago
+                    ccc = e.CCC.Trim(),
+                    ruta = e.Ruta.Trim(),
+                    estado = e.Estado.Trim(),
+                    formaPago = e.FormaPago.Trim()
                 })
                 .ToListAsync();
 
             if (extractoCliente == null || !extractoCliente.Any())
             {
-                return NotFound();
+                return Ok(new List<ExtractoClienteDTO>());
             }
 
             return Ok(extractoCliente);
         }
-        */
 
         [HttpGet]
         [Route("api/ExtractosCliente/EnviarCorreoDomiciliacionDia")]

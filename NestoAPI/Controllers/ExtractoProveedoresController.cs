@@ -51,6 +51,7 @@ namespace NestoAPI.Controllers
                 .Select(e => new ExtractoProveedorDTO {
                     Empresa = e.Empresa.Trim(),
                     Proveedor = e.Número.Trim(),
+                    Nombre = e.Proveedore != null ? e.Proveedore.Nombre.Trim() : e.Número.Trim(),
                     Contacto = e.Contacto.Trim(),
                     Documento = e.NºDocumento.Trim(),
                     DocumentoProveedor = e.NºDocumentoProv.Trim(),
