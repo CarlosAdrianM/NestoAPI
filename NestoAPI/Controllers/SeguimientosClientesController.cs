@@ -862,6 +862,96 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             return Ok(seguimientoCliente);
         }
         */
+        // POST: api/SeguimientosClientes/Copiar
+        [HttpPost]
+        [Route("api/SeguimientosClientes/Copiar")]
+        public async Task<IHttpActionResult> CopiarSeguimientos(CopiarSeguimientosRequest request)
+        {
+            if (request == null)
+            {
+                return BadRequest("La solicitud no puede ser nula.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Empresa) ||
+                string.IsNullOrWhiteSpace(request.ClienteOrigen) ||
+                string.IsNullOrWhiteSpace(request.ClienteDestino))
+            {
+                return BadRequest("Empresa, ClienteOrigen y ClienteDestino son obligatorios.");
+            }
+
+            string usuario = User?.Identity?.Name ?? "API";
+            string permitirCopiar = ParametrosUsuarioController.LeerParametro(request.Empresa, usuario, "PermitirCopiarSeguimientos");
+            if (permitirCopiar != "1")
+            {
+                return BadRequest("No tiene permisos para copiar seguimientos. Contacte con el administrador.");
+            }
+
+            bool mismoCliente = request.ClienteOrigen.Trim() == request.ClienteDestino.Trim();
+            string contactoOrigen = request.ContactoOrigen?.Trim();
+            string contactoDestino = request.ContactoDestino?.Trim();
+
+            if (mismoCliente && (string.IsNullOrEmpty(contactoOrigen) || string.IsNullOrEmpty(contactoDestino) || contactoOrigen == contactoDestino))
+            {
+                return BadRequest("Para el mismo cliente, debe indicar contactos origen y destino distintos.");
+            }
+
+            var query = db.SeguimientosClientes
+                .Where(s => s.Empresa == request.Empresa && s.Número == request.ClienteOrigen);
+
+            if (!string.IsNullOrEmpty(contactoOrigen))
+            {
+                query = query.Where(s => s.Contacto == request.ContactoOrigen);
+            }
+
+            var seguimientosOrigen = await query.ToListAsync();
+
+            if (!seguimientosOrigen.Any())
+            {
+                return NotFound();
+            }
+
+            string prefijoComentario = string.IsNullOrEmpty(contactoOrigen)
+                ? $"[Viene del c/ {request.ClienteOrigen.Trim()}]"
+                : $"[Viene del c/ {request.ClienteOrigen.Trim()}/{contactoOrigen}]";
+
+            foreach (var origen in seguimientosOrigen)
+            {
+                var copia = new SeguimientoCliente
+                {
+                    Empresa = origen.Empresa,
+                    Número = request.ClienteDestino,
+                    Contacto = !string.IsNullOrEmpty(contactoDestino) ? request.ContactoDestino : origen.Contacto,
+                    Fecha = origen.Fecha,
+                    Tipo = origen.Tipo,
+                    Vendedor = origen.Vendedor,
+                    Pedido = origen.Pedido,
+                    ClienteNuevo = origen.ClienteNuevo,
+                    Aviso = origen.Aviso,
+                    Aparatos = origen.Aparatos,
+                    DatosBanco = origen.DatosBanco,
+                    GestiónAparatos = origen.GestiónAparatos,
+                    PrimeraVisita = origen.PrimeraVisita,
+                    Comentarios = $"{prefijoComentario} {origen.Comentarios}",
+                    Estado = origen.Estado,
+                    NumOrdenExtracto = origen.NumOrdenExtracto,
+                    Cosmetica = origen.Cosmetica,
+                    PersonaQueDecide = origen.PersonaQueDecide,
+                    PosibleVenta = origen.PosibleVenta,
+                    Usuario = usuario
+                };
+                db.SeguimientosClientes.Add(copia);
+            }
+
+            if (request.EliminarOrigen)
+            {
+                db.SeguimientosClientes.RemoveRange(seguimientosOrigen);
+            }
+
+            await db.SaveChangesAsync();
+
+            return Ok(seguimientosOrigen.Count);
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)

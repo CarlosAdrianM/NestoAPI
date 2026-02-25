@@ -1135,6 +1135,7 @@
     <Compile Include="Models\ProveedoresProducto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Rapports\CopiarSeguimientosRequest.cs" />
     <Compile Include="Models\Rapports\ClienteSeguimientoLookup.cs" />
     <Compile Include="Models\Rapports\CodigoPostalSeguimientoLookup.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
