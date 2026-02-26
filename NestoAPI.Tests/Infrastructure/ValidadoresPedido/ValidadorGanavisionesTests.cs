@@ -672,5 +672,157 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
         }
 
         #endregion
+
+        #region Bug: GrupoProducto null al ampliar pedido (Issue #118)
+
+        [TestMethod]
+        public void EsPedidoValido_LineasSinGrupoProducto_BuscaGrupoDelServicio()
+        {
+            // Bug #118: Al ampliar un pedido, las líneas nuevas llegan con GrupoProducto = null
+            // porque ni NestoApp ni Nesto envían ese campo en el DTO.
+            // El validador debe buscar el grupo del producto vía servicio cuando GrupoProducto es null.
+            //
+            // Escenario: pedido original (100 EUR COS con GrupoProducto) + ampliación (100 EUR COS sin GrupoProducto)
+            // + 2 regalos de 10 Ganavisiones cada uno = 20 consumidos
+            // Disponibles esperados: 200 EUR / 10 = 20 → debe pasar
+            // Bug actual: solo cuenta 100 EUR (la línea con GrupoProducto) → 10 disponibles < 20 consumidos → falla
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    // Línea original: tiene GrupoProducto (viene de LeerPedido)
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "PROD_COS",
+                        GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 100m
+                    },
+                    // Línea de ampliación: NO tiene GrupoProducto (viene de NestoApp/Nesto)
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "PROD_COS2",
+                        GrupoProducto = null, // <-- el bug: NestoApp no envía GrupoProducto
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 100m
+                    },
+                    // Regalo original
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "REGALO01",
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 0m
+                    },
+                    // Regalo de la ampliación
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "REGALO02",
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 0m
+                    }
+                }
+            };
+
+            // PROD_COS2 es cosmética pero GrupoProducto es null → el validador debe buscarlo
+            A.CallTo(() => _servicioPrecios.BuscarProducto("PROD_COS2"))
+                .Returns(new Producto { Número = "PROD_COS2", Grupo = Constantes.Productos.GRUPO_COSMETICA });
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("PROD_COS")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("PROD_COS2")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(10);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO02")).Returns(10);
+
+            // Act
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            // Assert - 200 EUR / 10 = 20 GV disponibles, 20 consumidos (10+10): debe pasar
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                $"200 EUR bonificables (100 con grupo + 100 sin grupo) = 20 GV disponibles, " +
+                $"20 consumidos: debe ser válido. Resultado: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_TodasLineasSinGrupoProducto_BuscaTodosDelServicio()
+        {
+            // Caso extremo: NINGUNA línea tiene GrupoProducto (ej: pedido creado 100% desde la app)
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "COS01",
+                        GrupoProducto = null,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 100m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "REGALO01",
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 0m
+                    }
+                }
+            };
+
+            A.CallTo(() => _servicioPrecios.BuscarProducto("COS01"))
+                .Returns(new Producto { Número = "COS01", Grupo = Constantes.Productos.GRUPO_COSMETICA });
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("COS01")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                $"100 EUR COS (grupo resuelto vía servicio) = 10 GV, 5 consumidos: debe ser válido. " +
+                $"Resultado: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_ProductoSinGrupoYNoBonificable_NoGeneraGanavisiones()
+        {
+            // Verificar que si el servicio devuelve un grupo no bonificable, no se cuentan
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "APARATO01",
+                        GrupoProducto = null, // Sin grupo en DTO
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 200m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "REGALO01",
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 0m
+                    }
+                }
+            };
+
+            // El servicio dice que es Aparatos (no bonificable)
+            A.CallTo(() => _servicioPrecios.BuscarProducto("APARATO01"))
+                .Returns(new Producto { Número = "APARATO01", Grupo = Constantes.Productos.GRUPO_APARATOS });
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("APARATO01")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada,
+                "Aparatos no generan Ganavisiones aunque se resuelva el grupo vía servicio");
+        }
+
+        #endregion
     }
 }

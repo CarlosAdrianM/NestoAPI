@@ -43,8 +43,18 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             // Calcular los Ganavisiones disponibles en el pedido
             // Se generan a partir de las líneas de grupos bonificables (COS, ACC, PEL)
+            // Fix #118: GrupoProducto puede ser null en líneas de ampliación (NestoApp/Nesto no lo envían),
+            // así que lo resolvemos vía servicio cuando no está presente en el DTO
             decimal baseImponibleBonificable = pedido.Lineas
-                .Where(l => Constantes.Productos.GRUPOS_BONIFICABLES_CON_GANAVISIONES.Contains(l.GrupoProducto))
+                .Where(l =>
+                {
+                    string grupo = l.GrupoProducto;
+                    if (grupo == null)
+                    {
+                        grupo = servicio.BuscarProducto(l.Producto)?.Grupo;
+                    }
+                    return Constantes.Productos.GRUPOS_BONIFICABLES_CON_GANAVISIONES.Contains(grupo);
+                })
                 .Sum(l => l.BaseImponible);
 
             int ganavisionesDisponibles = (int)(baseImponibleBonificable / Constantes.Productos.VALOR_GANAVISION_EN_EUROS);
