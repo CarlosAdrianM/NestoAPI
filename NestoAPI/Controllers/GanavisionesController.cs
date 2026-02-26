@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Models;
 using NestoAPI.Models.Ganavisiones;
 using System;
@@ -18,15 +19,24 @@ namespace NestoAPI.Controllers
     public class GanavisionesController : ApiController
     {
         private NVEntities db;
+        private readonly IProductoService productoService;
 
         public GanavisionesController()
         {
             db = new NVEntities();
+            productoService = new ProductoService();
         }
 
         public GanavisionesController(NVEntities context)
         {
             db = context;
+            productoService = new ProductoService();
+        }
+
+        public GanavisionesController(NVEntities context, IProductoService productoService)
+        {
+            db = context;
+            this.productoService = productoService;
         }
 
         /// <summary>
@@ -251,28 +261,22 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            // Obtener stocks de todos los almacenes para estos productos
-            var stocksPorProducto = await db.ExtractosProducto
-                .Where(e => productosIds.Contains(e.Número) && Constantes.Sedes.ListaSedes.Contains(e.Almacén))
-                .GroupBy(e => new { e.Número, e.Almacén })
-                .Select(g => new { ProductoId = g.Key.Número, Almacen = g.Key.Almacén, Stock = g.Sum(e => (int)e.Cantidad) })
-                .ToListAsync()
-                .ConfigureAwait(false);
-
-            // Construir DTOs con stocks
+            // Obtener disponibilidad (stock - pendientes entregar) via IProductoService
+            // Issue #117: Usar disponibilidad real en vez de stock bruto
             var productosBonificables = new List<ProductoBonificableDTO>();
             foreach (var g in ganavisionesQuery)
             {
-                var stocks = Constantes.Sedes.ListaSedes
-                    .Select(sede => new StockAlmacenDTO
+                var stocks = new List<StockAlmacenDTO>();
+                foreach (var sede in Constantes.Sedes.ListaSedes)
+                {
+                    var stockProducto = await productoService.CalcularStockProducto(g.ProductoId, sede).ConfigureAwait(false);
+                    stocks.Add(new StockAlmacenDTO
                     {
                         almacen = sede,
-                        stock = stocksPorProducto
-                            .Where(s => s.ProductoId == g.ProductoId && s.Almacen == sede)
-                            .Select(s => s.Stock)
-                            .FirstOrDefault()
-                    })
-                    .ToList();
+                        stock = stockProducto.Stock,
+                        cantidadDisponible = stockProducto.CantidadDisponible
+                    });
+                }
 
                 var dto = new ProductoBonificableDTO
                 {
@@ -287,19 +291,20 @@ namespace NestoAPI.Controllers
                 productosBonificables.Add(dto);
             }
 
-            // Filtrar por stock segun servirJunto
+            // Filtrar por disponibilidad segun servirJunto
+            // Issue #117: Usar cantidadDisponible en vez de stock bruto
             if (!servirJunto && !string.IsNullOrEmpty(almacen))
             {
-                // Solo productos con stock en el almacen especificado
+                // Solo productos con disponibilidad en el almacen especificado
                 productosBonificables = productosBonificables
-                    .Where(p => p.Stocks.Any(s => s.almacen == almacen && s.stock > 0))
+                    .Where(p => p.Stocks.Any(s => s.almacen == almacen && s.cantidadDisponible > 0))
                     .ToList();
             }
             else
             {
-                // Productos con stock en cualquier almacen
+                // Productos con disponibilidad en cualquier almacen
                 productosBonificables = productosBonificables
-                    .Where(p => p.StockTotal > 0)
+                    .Where(p => p.DisponibleTotal > 0)
                     .ToList();
             }
 
@@ -341,14 +346,9 @@ namespace NestoAPI.Controllers
                 });
             }
 
-            // Obtener stocks de los productos bonificados en todos los almacenes
+            // Obtener disponibilidad de los productos bonificados via IProductoService
+            // Issue #117: Usar disponibilidad real en vez de stock bruto
             var productosIds = request.ProductosBonificados;
-            var stocksPorProducto = await db.ExtractosProducto
-                .Where(e => productosIds.Contains(e.Número) && Constantes.Sedes.ListaSedes.Contains(e.Almacén))
-                .GroupBy(e => new { e.Número, e.Almacén })
-                .Select(g => new { ProductoId = g.Key.Número, Almacen = g.Key.Almacén, Stock = g.Sum(e => (int)e.Cantidad) })
-                .ToListAsync()
-                .ConfigureAwait(false);
 
             // Obtener nombres de productos
             var productos = await db.Productos
@@ -357,23 +357,27 @@ namespace NestoAPI.Controllers
                 .ToListAsync()
                 .ConfigureAwait(false);
 
-            // Identificar productos sin stock en el almacen del pedido
+            // Identificar productos sin disponibilidad en el almacen del pedido
             var productosProblematicos = new List<ProductoSinStockDTO>();
             foreach (var productoId in productosIds)
             {
                 var productoIdTrimmed = productoId?.Trim();
-                var stockEnAlmacen = stocksPorProducto
-                    .Where(s => s.ProductoId.Trim() == productoIdTrimmed && s.Almacen.Trim() == request.Almacen.Trim())
-                    .Select(s => s.Stock)
-                    .FirstOrDefault();
+                var stockEnAlmacen = await productoService.CalcularStockProducto(productoId, request.Almacen.Trim()).ConfigureAwait(false);
 
-                if (stockEnAlmacen <= 0)
+                if (stockEnAlmacen.CantidadDisponible <= 0)
                 {
-                    // Buscar en que almacen SI tiene stock
-                    var almacenConStock = stocksPorProducto
-                        .Where(s => s.ProductoId.Trim() == productoIdTrimmed && s.Stock > 0)
-                        .Select(s => s.Almacen)
-                        .FirstOrDefault();
+                    // Buscar en que almacen SI tiene disponibilidad
+                    string almacenConStock = null;
+                    foreach (var sede in Constantes.Sedes.ListaSedes)
+                    {
+                        if (sede.Trim() == request.Almacen.Trim()) continue;
+                        var stockOtroAlmacen = await productoService.CalcularStockProducto(productoId, sede).ConfigureAwait(false);
+                        if (stockOtroAlmacen.CantidadDisponible > 0)
+                        {
+                            almacenConStock = sede;
+                            break;
+                        }
+                    }
 
                     var nombreProducto = productos
                         .Where(p => p.Número.Trim() == productoIdTrimmed)

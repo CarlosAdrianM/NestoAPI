@@ -53,6 +53,7 @@ namespace NestoAPI.Models.Ganavisiones
         public string Iva { get; set; }
         public List<StockAlmacenDTO> Stocks { get; set; }
         public int StockTotal => Stocks?.Sum(s => s.stock) ?? 0;
+        public int DisponibleTotal => Stocks?.Sum(s => s.cantidadDisponible) ?? 0;
     }
 
     /// <summary>

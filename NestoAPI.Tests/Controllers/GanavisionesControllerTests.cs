@@ -1,11 +1,14 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Models;
 using NestoAPI.Models.Ganavisiones;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Http.Results;
@@ -21,30 +24,41 @@ namespace NestoAPI.Tests.Controllers
     {
         private NVEntities db;
         private GanavisionesController controller;
-        private IDbSet<Ganavision> fakeGanavisiones;
-        private IDbSet<Producto> fakeProductos;
-        private IDbSet<ExtractoProducto> fakeExtractosProducto;
-        private IDbSet<LinPedidoVta> fakeLinPedidoVtas;
+        private IProductoService fakeProductoService;
+        private DbSet<Ganavision> fakeGanavisiones;
+        private DbSet<Producto> fakeProductos;
+        private DbSet<ExtractoProducto> fakeExtractosProducto;
+        private DbSet<LinPedidoVta> fakeLinPedidoVtas;
 
         [TestInitialize]
         public void Setup()
         {
             db = A.Fake<NVEntities>();
-            fakeGanavisiones = A.Fake<IDbSet<Ganavision>>();
-            fakeProductos = A.Fake<IDbSet<Producto>>();
-            fakeExtractosProducto = A.Fake<IDbSet<ExtractoProducto>>();
-            fakeLinPedidoVtas = A.Fake<IDbSet<LinPedidoVta>>();
+            fakeProductoService = A.Fake<IProductoService>();
+            fakeGanavisiones = A.Fake<DbSet<Ganavision>>(o => o.Implements<IQueryable<Ganavision>>().Implements<IDbAsyncEnumerable<Ganavision>>());
+            fakeProductos = A.Fake<DbSet<Producto>>(o => o.Implements<IQueryable<Producto>>().Implements<IDbAsyncEnumerable<Producto>>());
+            fakeExtractosProducto = A.Fake<DbSet<ExtractoProducto>>(o => o.Implements<IQueryable<ExtractoProducto>>().Implements<IDbAsyncEnumerable<ExtractoProducto>>());
+            fakeLinPedidoVtas = A.Fake<DbSet<LinPedidoVta>>(o => o.Implements<IQueryable<LinPedidoVta>>().Implements<IDbAsyncEnumerable<LinPedidoVta>>());
 
             A.CallTo(() => db.Ganavisiones).Returns(fakeGanavisiones);
             A.CallTo(() => db.Productos).Returns(fakeProductos);
             A.CallTo(() => db.ExtractosProducto).Returns(fakeExtractosProducto);
             A.CallTo(() => db.LinPedidoVtas).Returns(fakeLinPedidoVtas);
 
-            // Por defecto, extractos vacios y lineas de pedido vacias
+            // Include() debe devolver el mismo DbSet para que las queries LINQ funcionen
+            A.CallTo(() => fakeGanavisiones.Include(A<string>.Ignored)).Returns(fakeGanavisiones);
+
+            // Por defecto, todos los DbSets vacios
+            ConfigurarFakeDbSet(fakeGanavisiones, new List<Ganavision>().AsQueryable());
+            ConfigurarFakeDbSet(fakeProductos, new List<Producto>().AsQueryable());
             ConfigurarFakeDbSet(fakeExtractosProducto, new List<ExtractoProducto>().AsQueryable());
             ConfigurarFakeDbSet(fakeLinPedidoVtas, new List<LinPedidoVta>().AsQueryable());
 
-            controller = new GanavisionesController(db);
+            // Por defecto, CalcularStockProducto devuelve stock 0 para cualquier producto/almacen
+            A.CallTo(() => fakeProductoService.CalcularStockProducto(A<string>._, A<string>._))
+                .Returns(Task.FromResult(new ProductoDTO.StockProducto()));
+
+            controller = new GanavisionesController(db, fakeProductoService);
         }
 
         #region GET Tests
@@ -695,6 +709,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
 
             // Act
             var resultado = await controller.GetProductosBonificables("1", 100m);
@@ -774,6 +789,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
 
             // Act
             var resultado = await controller.GetProductosBonificables("1", 19.99m);
@@ -823,6 +839,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD_ACTIVO", "ALG", 10);
 
             // Act
             var resultado = await controller.GetProductosBonificables("1", 100m);
@@ -872,6 +889,9 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD_CARO", "ALG", 10);
+            MockStock("PROD_BARATO", "ALG", 10);
+            MockStock("PROD_MEDIO", "ALG", 10);
 
             // Act
             var resultado = await controller.GetProductosBonificables("1", 100m);
@@ -903,17 +923,12 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "REI", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "REI", 10);
 
             // Act: servirJunto=true (default)
             var resultado = await controller.GetProductosBonificables("1", 100m, "ALG", servirJunto: true);
 
-            // Assert: Debe mostrar el producto aunque no tenga stock en ALG
+            // Assert: Debe mostrar el producto aunque no tenga disponibilidad en ALG
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
             var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
             Assert.AreEqual(1, okResult.Content.Productos.Count);
@@ -937,17 +952,12 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "REI", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "REI", 10);
 
             // Act: servirJunto=false, almacen=ALG
             var resultado = await controller.GetProductosBonificables("1", 100m, "ALG", servirJunto: false);
 
-            // Assert: No debe mostrar el producto porque no tiene stock en ALG
+            // Assert: No debe mostrar el producto porque no tiene disponibilidad en ALG
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
             var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
             Assert.AreEqual(0, okResult.Content.Productos.Count);
@@ -1002,13 +1012,8 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 5 },
-                new ExtractoProducto { Número = "PROD1", Almacén = "REI", Cantidad = 3 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "ALG", 5);
+            MockStock("PROD1", "REI", 3);
 
             // Act
             var resultado = await controller.GetProductosBonificables("1", 100m);
@@ -1057,12 +1062,8 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task ValidarServirJunto_ProductosConStockEnAlmacen_PuedeDesmarcar()
         {
-            // Arrange: Producto con stock en ALG
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            // Arrange: Producto con disponibilidad en ALG
+            MockStock("PROD1", "ALG", 10);
 
             var productos = new List<Producto>
             {
@@ -1088,16 +1089,12 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task ValidarServirJunto_ProductoSinStockEnAlmacen_NoPuedeDesmarcar()
         {
-            // Arrange: Producto con stock en REI pero no en ALG
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "REI", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            // Arrange: Producto con disponibilidad en REI pero no en ALG
+            MockStock("PROD1", "REI", 10);
 
             var productos = new List<Producto>
             {
-                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto Test" }
+                new Producto { Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, Número = "PROD1", Nombre = "Producto Test" }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeProductos, productos);
 
@@ -1151,13 +1148,9 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task ValidarServirJunto_VariosProductos_AlgunosSinStock_RetornaProblematicos()
         {
-            // Arrange: PROD1 con stock en ALG, PROD2 sin stock en ALG (solo REI)
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 },
-                new ExtractoProducto { Número = "PROD2", Almacén = "REI", Cantidad = 5 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            // Arrange: PROD1 con disponibilidad en ALG, PROD2 sin disponibilidad en ALG (solo REI)
+            MockStock("PROD1", "ALG", 10);
+            MockStock("PROD2", "REI", 5);
 
             var productos = new List<Producto>
             {
@@ -1186,8 +1179,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task ValidarServirJunto_ProductoSinStockEnNingunAlmacen_RetornaProblematico()
         {
-            // Arrange: Producto sin stock en ningun sitio
-            ConfigurarFakeDbSet(fakeExtractosProducto, new List<ExtractoProducto>().AsQueryable());
+            // Arrange: Producto sin disponibilidad en ningun sitio (default mock devuelve stock 0)
 
             var productos = new List<Producto>
             {
@@ -1215,14 +1207,10 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task ValidarServirJunto_TodosProductosConStockEnAlmacen_PuedeDesmarcar()
         {
-            // Arrange: Todos los productos con stock en ALG
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 },
-                new ExtractoProducto { Número = "PROD2", Almacén = "ALG", Cantidad = 5 },
-                new ExtractoProducto { Número = "PROD3", Almacén = "ALG", Cantidad = 3 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            // Arrange: Todos los productos con disponibilidad en ALG
+            MockStock("PROD1", "ALG", 10);
+            MockStock("PROD2", "ALG", 5);
+            MockStock("PROD3", "ALG", 3);
 
             var productos = new List<Producto>
             {
@@ -1280,13 +1268,8 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 },
-                new ExtractoProducto { Número = "PROD2", Almacén = "ALG", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "ALG", 10);
+            MockStock("PROD2", "ALG", 10);
 
             // Sin lineas de pedido para este cliente
             ConfigurarFakeDbSet(fakeLinPedidoVtas, new List<LinPedidoVta>().AsQueryable());
@@ -1328,13 +1311,8 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 },
-                new ExtractoProducto { Número = "PROD2", Almacén = "ALG", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "ALG", 10);
+            MockStock("PROD2", "ALG", 10);
 
             // Cliente 15000 compro PROD1 con BaseImponible = 25
             var lineas = new List<LinPedidoVta>
@@ -1371,12 +1349,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "ALG", 10);
 
             // Cliente 15000 recibio PROD1 como bonificacion (BaseImponible = 0)
             var lineas = new List<LinPedidoVta>
@@ -1413,12 +1386,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "ALG", 10);
 
             // Cliente 15000: una vez lo compro, otra vez lo recibio gratis
             var lineas = new List<LinPedidoVta>
@@ -1455,12 +1423,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "ALG", 10);
 
             // Hay un cliente que compro, pero no especificamos cliente
             var lineas = new List<LinPedidoVta>
@@ -1496,12 +1459,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
-
-            var extractos = new List<ExtractoProducto>
-            {
-                new ExtractoProducto { Número = "PROD1", Almacén = "ALG", Cantidad = 10 }
-            }.AsQueryable();
-            ConfigurarFakeDbSet(fakeExtractosProducto, extractos);
+            MockStock("PROD1", "ALG", 10);
 
             // Cliente 99999 compro, pero consultamos para cliente 15000
             var lineas = new List<LinPedidoVta>
@@ -1545,6 +1503,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
 
             // Act
             var resultado = await controller.GetProductosBonificables("1", 100m);
@@ -1581,6 +1540,7 @@ namespace NestoAPI.Tests.Controllers
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
 
             // Act
             var resultado = await controller.GetProductosBonificables("1", 100m);
@@ -1591,6 +1551,141 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(1, okResult.Content.Productos.Count);
             Assert.IsNull(okResult.Content.Productos[0].Iva,
                 "Si el producto no tiene IVA_Repercutido, el campo Iva debe ser null");
+        }
+
+        #endregion
+
+        #region Disponibilidad (stock - pendientes entregar) Tests - Issue #117
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ProductoConStockPeroSinDisponibilidad_NoAparece()
+        {
+            // Arrange: Producto con 3 en stock pero 3 pendientes de entregar = 0 disponible
+            // Issue #117: Ganavisiones no debe ofrecer productos sin disponibilidad real
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Sin Disponible", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Stock = 3, PendienteEntregar = 3 → CantidadDisponible = 0
+            MockStock("PROD1", "ALG", stock: 3, pendienteEntregar: 3);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert: No debe aparecer porque disponible = stock(3) - pendientes(3) = 0
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(0, okResult.Content.Productos.Count,
+                "No debe ofrecer productos con disponibilidad 0 (stock 3 - pendientes entregar 3)");
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ProductoConStockYDisponibilidadParcial_SiAparece()
+        {
+            // Arrange: Producto con 5 en stock y 2 pendientes = 3 disponible
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Con Disponible", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Stock = 5, PendienteEntregar = 2 → CantidadDisponible = 3
+            MockStock("PROD1", "ALG", stock: 5, pendienteEntregar: 2);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert: Debe aparecer porque disponible = 5 - 2 = 3 > 0
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count,
+                "Debe ofrecer producto con disponibilidad positiva (stock 5 - pendientes 2 = 3)");
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ServirJuntoFalse_ProductoSinDisponibilidadEnAlmacen_NoAparece()
+        {
+            // Arrange: Producto con stock en ALG pero todo pendiente de entregar
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Stock = 10, PendienteEntregar = 10 → CantidadDisponible = 0 en ALG
+            MockStock("PROD1", "ALG", stock: 10, pendienteEntregar: 10);
+
+            // Act: servirJunto=false, almacen=ALG
+            var resultado = await controller.GetProductosBonificables("1", 100m, "ALG", servirJunto: false);
+
+            // Assert: No debe aparecer porque disponible en ALG = 10 - 10 = 0
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(0, okResult.Content.Productos.Count,
+                "No debe ofrecer productos sin disponibilidad en el almacen especificado");
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_PendientesEntregarEstadoAlbaran_NoSeRestan()
+        {
+            // Arrange: Producto con 5 stock y 3 en estado ALBARAN (ya entregadas, no pendientes)
+            // IProductoService.CalcularStockProducto solo cuenta PENDIENTE y EN_CURSO como pendientes,
+            // por lo que ALBARAN no se resta de la disponibilidad
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+
+            // Stock = 5, PendienteEntregar = 0 (ALBARAN no cuenta) → CantidadDisponible = 5
+            MockStock("PROD1", "ALG", stock: 5, pendienteEntregar: 0);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert: Debe aparecer porque ALBARAN no se resta (disponible = 5)
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count,
+                "Las lineas en estado ALBARAN no deben restarse de la disponibilidad");
         }
 
         #endregion
@@ -1712,12 +1807,31 @@ namespace NestoAPI.Tests.Controllers
 
         #region Helper Methods
 
-        private void ConfigurarFakeDbSet<T>(IDbSet<T> fakeDbSet, IQueryable<T> data) where T : class
+        private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
-            A.CallTo(() => fakeDbSet.Provider).Returns(data.Provider);
-            A.CallTo(() => fakeDbSet.Expression).Returns(data.Expression);
-            A.CallTo(() => fakeDbSet.ElementType).Returns(data.ElementType);
-            A.CallTo(() => fakeDbSet.GetEnumerator()).Returns(data.GetEnumerator());
+            var asyncData = new TestDbAsyncEnumerable<T>(data);
+
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+                .Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
+        }
+
+        /// <summary>
+        /// Configura el mock de IProductoService.CalcularStockProducto para un producto y almacen.
+        /// </summary>
+        private void MockStock(string productoId, string almacen, int stock, int pendienteEntregar = 0)
+        {
+            A.CallTo(() => fakeProductoService.CalcularStockProducto(productoId, almacen))
+                .Returns(Task.FromResult(new ProductoDTO.StockProducto
+                {
+                    Almacen = almacen,
+                    Stock = stock,
+                    PendienteEntregar = pendienteEntregar
+                }));
         }
 
         #endregion
