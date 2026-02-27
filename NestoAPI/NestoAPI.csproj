@@ -505,6 +505,8 @@
     <Compile Include="Controllers\FormasPagoController.cs" />
     <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\GanavisionesController.cs" />
+    <Compile Include="Controllers\OfertasCombinadasController.cs" />
+    <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />
     <Compile Include="Controllers\DeepLinkController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
     <Compile Include="Controllers\InventarioCuadresController.cs" />
@@ -956,6 +958,8 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Ganavisiones\GanavisionDTO.cs" />
+    <Compile Include="Models\OfertasCombinadas\OfertaCombinadaDTO.cs" />
+    <Compile Include="Models\OfertasCombinadas\OfertaPermitidaFamiliaDTO.cs" />
     <Compile Include="Models\FicheroCuaderno43.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
