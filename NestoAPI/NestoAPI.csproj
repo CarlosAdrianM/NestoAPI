@@ -484,6 +484,7 @@
     <Compile Include="Controllers\AgenciasLlamadasWebController.cs" />
     <Compile Include="Controllers\AlbaranesVentaController.cs" />
     <Compile Include="Controllers\AuthController.cs" />
+    <Compile Include="Controllers\PagoRedirectController.cs" />
     <Compile Include="Controllers\BancosController.cs" />
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\BuscadorController.cs" />
