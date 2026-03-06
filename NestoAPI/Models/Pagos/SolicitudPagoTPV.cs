@@ -7,5 +7,7 @@ namespace NestoAPI.Models.Pagos
         public decimal Importe { get; set; }
         public string Descripcion { get; set; }
         public string Correo { get; set; }
+        public string UrlOk { get; set; }
+        public string UrlKo { get; set; }
     }
 }
