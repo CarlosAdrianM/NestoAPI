@@ -1,3 +1,4 @@
+using Elmah;
 using NestoAPI.Models.Pagos;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -8,27 +9,31 @@ using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web;
 using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure.Pagos
 {
     public class RedsysService : IRedsysService
     {
-        private readonly string _secretKey;
+        private readonly string _secretKeyP2F;
+        private readonly string _secretKeyTPVVirtual;
         private readonly string _merchantCode;
         private readonly bool _modoPruebas;
 
         public RedsysService()
             : this(
                 ConfigurationManager.AppSettings["RedsysSHA256"],
+                ConfigurationManager.AppSettings["RedsysSHA256Terminal1"],
                 Redsys.MERCHANT_CODE,
                 false)
         {
         }
 
-        internal RedsysService(string secretKey, string merchantCode, bool modoPruebas)
+        internal RedsysService(string secretKeyP2F, string secretKeyTPVVirtual, string merchantCode, bool modoPruebas)
         {
-            _secretKey = secretKey;
+            _secretKeyP2F = secretKeyP2F;
+            _secretKeyTPVVirtual = secretKeyTPVVirtual;
             _merchantCode = merchantCode;
             _modoPruebas = modoPruebas;
         }
@@ -97,7 +102,7 @@ namespace NestoAPI.Infraestructure.Pagos
             }
 
             string parametros = r.createMerchantParameters();
-            string firma = r.createMerchantSignature(_secretKey);
+            string firma = r.createMerchantSignature(_secretKeyP2F);
 
             return new ParametrosRedsysFirmados
             {
@@ -131,8 +136,21 @@ namespace NestoAPI.Infraestructure.Pagos
                 r.SetParameter("DS_MERCHANT_PRODUCTDESCRIPTION", descripcion);
             }
 
+            try
+            {
+                ErrorSignal.FromCurrentContext().Raise(new Exception(
+                    $"[RedsysService] CrearParametrosTPVVirtual - Importe: {importe}, " +
+                    $"NumeroOrden: {numeroOrden}, MerchantCode: {_merchantCode}, " +
+                    $"Terminal: {Redsys.TERMINAL_TPV_VIRTUAL}, UrlOk: {urlOk}, UrlKo: {urlKo}, " +
+                    $"ModoPruebas: {_modoPruebas}"));
+            }
+            catch
+            {
+                // No bloquear el pago si falla el logging
+            }
+
             string parametros = r.createMerchantParameters();
-            string firma = r.createMerchantSignature(_secretKey);
+            string firma = r.createMerchantSignature(_secretKeyTPVVirtual);
 
             return new ParametrosRedsysFirmados
             {
@@ -202,8 +220,15 @@ namespace NestoAPI.Infraestructure.Pagos
 
         public ResultadoValidacionNotificacion ValidarNotificacion(NotificacionRedsys notificacion)
         {
+            string decoded = DecodificarParametrosInterno(notificacion.Ds_MerchantParameters);
+            RespuestaRedsys respuesta = JsonConvert.DeserializeObject<RespuestaRedsys>(decoded);
+
+            string secretKey = respuesta.Ds_Terminal?.Trim() == Redsys.TERMINAL_TPV_VIRTUAL
+                ? _secretKeyTPVVirtual
+                : _secretKeyP2F;
+
             RedsysAPI r = new RedsysAPI();
-            string expectedSignature = r.createMerchantSignatureNotif(_secretKey, notificacion.Ds_MerchantParameters);
+            string expectedSignature = r.createMerchantSignatureNotif(secretKey, notificacion.Ds_MerchantParameters);
 
             bool firmaValida = string.Equals(expectedSignature, notificacion.Ds_Signature, StringComparison.OrdinalIgnoreCase);
 
@@ -216,9 +241,6 @@ namespace NestoAPI.Infraestructure.Pagos
                     MensajeError = "Firma de notificación inválida"
                 };
             }
-
-            string decoded = DecodificarParametrosInterno(notificacion.Ds_MerchantParameters);
-            RespuestaRedsys respuesta = JsonConvert.DeserializeObject<RespuestaRedsys>(decoded);
 
             int codigoRespuesta;
             bool pagoAutorizado = int.TryParse(respuesta.Ds_Response, out codigoRespuesta)

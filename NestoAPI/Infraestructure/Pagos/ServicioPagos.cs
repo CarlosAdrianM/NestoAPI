@@ -29,10 +29,10 @@ namespace NestoAPI.Infraestructure.Pagos
                 throw new ArgumentException("El importe debe ser mayor que cero");
             }
 
-            string urlBase = "https://www.nuevavision.es";
+            string urlBase = "https://api.nuevavision.es";
             string urlNotificacion = urlBase + "/api/Pagos/NotificacionRedsys";
-            string urlOk = urlBase + "/pago/ok";
-            string urlKo = urlBase + "/pago/ko";
+            string urlOk = solicitud.UrlOk ?? urlBase + "/pago/ok.html";
+            string urlKo = solicitud.UrlKo ?? urlBase + "/pago/ko.html";
 
             ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosTPVVirtual(
                 solicitud.Importe,

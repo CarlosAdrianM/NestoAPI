@@ -166,6 +166,90 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         [TestMethod]
+        public void IniciarPago_ConUrlsCustom_PasaUrlsCustomARedsys()
+        {
+            // Arrange
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros);
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 50m,
+                Descripcion = "Test URLs custom",
+                Correo = "test@test.com",
+                UrlOk = "nestotiendas://pago/ok",
+                UrlKo = "nestotiendas://pago/ko"
+            };
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                .Returns(new ParametrosRedsysFirmados
+                {
+                    Ds_SignatureVersion = "HMAC_SHA256_V1",
+                    Ds_MerchantParameters = "params",
+                    Ds_Signature = "firma",
+                    NumeroOrden = "TEST12345678"
+                });
+
+            // Act
+            try
+            {
+                servicio.IniciarPago(solicitud, "usuario").Wait();
+            }
+            catch (AggregateException)
+            {
+                // Esperado: falla al acceder a BD, pero la llamada a RedsysService ya se hizo
+            }
+
+            // Assert
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                50m, "Test URLs custom", "test@test.com",
+                A<string>.That.Contains("NotificacionRedsys"),
+                "nestotiendas://pago/ok",
+                "nestotiendas://pago/ko"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void IniciarPago_SinUrlsCustom_PasaUrlsPorDefectoARedsys()
+        {
+            // Arrange
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros);
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 75m,
+                Descripcion = "Test URLs defecto",
+                Correo = "test@test.com"
+            };
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                .Returns(new ParametrosRedsysFirmados
+                {
+                    Ds_SignatureVersion = "HMAC_SHA256_V1",
+                    Ds_MerchantParameters = "params",
+                    Ds_Signature = "firma",
+                    NumeroOrden = "TEST12345678"
+                });
+
+            // Act
+            try
+            {
+                servicio.IniciarPago(solicitud, "usuario").Wait();
+            }
+            catch (AggregateException)
+            {
+                // Esperado: falla al acceder a BD, pero la llamada a RedsysService ya se hizo
+            }
+
+            // Assert
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                75m, "Test URLs defecto", "test@test.com",
+                A<string>.That.Contains("NotificacionRedsys"),
+                "https://api.nuevavision.es/pago/ok.html",
+                "https://api.nuevavision.es/pago/ko.html"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public void MapearADTO_ConPagoCompleto_DevuelveDTOCorrecto()
         {
             // Arrange
