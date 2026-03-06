@@ -10,5 +10,12 @@ namespace NestoAPI.Models.Pagos
         public string Correo { get; set; }
         public string UrlOk { get; set; }
         public string UrlKo { get; set; }
+        public int? Liquidado { get; set; }
+        public string Documento { get; set; }
+        public string Efecto { get; set; }
+        public string Vendedor { get; set; }
+        public string FormaVenta { get; set; }
+        public string Delegacion { get; set; }
+        public string TipoApunteEfecto { get; set; }
     }
 }

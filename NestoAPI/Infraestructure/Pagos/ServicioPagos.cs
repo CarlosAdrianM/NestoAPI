@@ -57,6 +57,13 @@ namespace NestoAPI.Infraestructure.Pagos
                     Importe = solicitud.Importe,
                     Descripcion = solicitud.Descripcion,
                     Correo = solicitud.Correo,
+                    Liquidado = solicitud.Liquidado,
+                    Documento = solicitud.Documento,
+                    Efecto = solicitud.Efecto,
+                    Vendedor = solicitud.Vendedor,
+                    FormaVenta = solicitud.FormaVenta,
+                    Delegacion = solicitud.Delegacion,
+                    TipoApunteEfecto = solicitud.TipoApunteEfecto,
                     Estado = "Pendiente",
                     FechaCreacion = DateTime.Now,
                     Usuario = usuario
@@ -138,15 +145,21 @@ namespace NestoAPI.Infraestructure.Pagos
             }
 
             string empresa = pago.Empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO;
+            string delegacion = pago.Delegacion?.Trim() ?? "ALG";
+            string formaVenta = pago.FormaVenta?.Trim() ?? Constantes.FormasVenta.TIENDA_ONLINE;
+            string documento = pago.Documento?.Trim();
+            if (string.IsNullOrWhiteSpace(documento))
+            {
+                // Fallback: últimos 10 chars del NumeroOrden
+                documento = pago.NumeroOrden?.Length > 10
+                    ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
+                    : pago.NumeroOrden;
+            }
             string concepto = $"Pago TPV {pago.Descripcion}";
             if (concepto.Length > 50)
             {
                 concepto = concepto.Substring(0, 50);
             }
-            // Nº_Documento tiene MaxLength=10 en BD, NumeroOrden tiene 12
-            string documento = pago.NumeroOrden?.Length > 10
-                ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
-                : pago.NumeroOrden;
 
             var lineas = new List<PreContabilidad>
             {
@@ -165,8 +178,8 @@ namespace NestoAPI.Infraestructure.Pagos
                     FechaVto = DateTime.Today,
                     Asiento = 1,
                     Asiento_Automático = true,
-                    Delegación = "ALG",
-                    FormaVenta = Constantes.FormasVenta.TIENDA_ONLINE,
+                    Delegación = delegacion,
+                    FormaVenta = formaVenta,
                     FormaPago = Constantes.FormasPago.TARJETA,
                     Origen = Empresas.EMPRESA_POR_DEFECTO,
                     Usuario = "NestoAPI",
@@ -183,14 +196,17 @@ namespace NestoAPI.Infraestructure.Pagos
                     Haber = pago.Importe,
                     Concepto = concepto,
                     Nº_Documento = documento,
+                    Efecto = pago.Efecto,
                     Diario = "_CobrosTPV",
                     Fecha = DateTime.Today,
                     FechaVto = DateTime.Today,
                     Asiento = 1,
                     Asiento_Automático = true,
-                    Delegación = "ALG",
-                    FormaVenta = Constantes.FormasVenta.TIENDA_ONLINE,
+                    Delegación = delegacion,
+                    FormaVenta = formaVenta,
                     FormaPago = Constantes.FormasPago.TARJETA,
+                    Vendedor = pago.Vendedor,
+                    Liquidado = pago.Liquidado,
                     Origen = Empresas.EMPRESA_POR_DEFECTO,
                     Usuario = "NestoAPI",
                     Fecha_Modificación = DateTime.Now
@@ -245,7 +261,14 @@ namespace NestoAPI.Infraestructure.Pagos
                 CodigoAutorizacion = pago.CodigoAutorizacion,
                 FechaCreacion = pago.FechaCreacion,
                 FechaActualizacion = pago.FechaActualizacion,
-                Usuario = pago.Usuario
+                Usuario = pago.Usuario,
+                Liquidado = pago.Liquidado,
+                Documento = pago.Documento?.Trim(),
+                Efecto = pago.Efecto?.Trim(),
+                Vendedor = pago.Vendedor?.Trim(),
+                FormaVenta = pago.FormaVenta?.Trim(),
+                Delegacion = pago.Delegacion?.Trim(),
+                TipoApunteEfecto = pago.TipoApunteEfecto?.Trim()
             };
         }
 
