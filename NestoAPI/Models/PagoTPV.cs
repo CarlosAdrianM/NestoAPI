@@ -30,12 +30,12 @@ namespace NestoAPI.Models
         public System.DateTime FechaCreacion { get; set; }
         public Nullable<System.DateTime> FechaActualizacion { get; set; }
         public string Usuario { get; set; }
-        public Nullable<int> Liquidado { get; set; }
+        public Nullable<int> ExtractoClienteId { get; set; }
         public string Documento { get; set; }
         public string Efecto { get; set; }
         public string Vendedor { get; set; }
         public string FormaVenta { get; set; }
         public string Delegacion { get; set; }
-        public string TipoApunteEfecto { get; set; }
+        public string TipoApunte { get; set; }
     }
 }

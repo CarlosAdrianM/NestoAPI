@@ -1321,13 +1321,13 @@
           <Property Name="FechaActualizacion" Type="datetime" />
           <Property Name="Usuario" Type="nvarchar" MaxLength="256" />
           <Property Name="Contacto" Type="nvarchar" MaxLength="3" />
-          <Property Name="Liquidado" Type="int" />
+          <Property Name="ExtractoClienteId" Type="int" />
           <Property Name="Documento" Type="nvarchar" MaxLength="10" />
           <Property Name="Efecto" Type="nvarchar" MaxLength="3" />
           <Property Name="Vendedor" Type="nvarchar" MaxLength="3" />
           <Property Name="FormaVenta" Type="nvarchar" MaxLength="3" />
           <Property Name="Delegacion" Type="nvarchar" MaxLength="3" />
-          <Property Name="TipoApunteEfecto" Type="nvarchar" MaxLength="3" />
+          <Property Name="TipoApunte" Type="nvarchar" MaxLength="3" />
         </EntityType>
         <EntityType Name="ParámetrosIVA">
           <Key>
@@ -12647,13 +12647,13 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="FechaActualizacion" Type="DateTime" Precision="3" />
           <Property Name="Usuario" Type="String" MaxLength="256" FixedLength="false" Unicode="true" />
-          <Property Name="Liquidado" Type="Int32" />
+          <Property Name="ExtractoClienteId" Type="Int32" />
           <Property Name="Documento" Type="String" MaxLength="10" FixedLength="false" Unicode="true" />
           <Property Name="Efecto" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
           <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
           <Property Name="FormaVenta" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
           <Property Name="Delegacion" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
-          <Property Name="TipoApunteEfecto" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
+          <Property Name="TipoApunte" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
         </EntityType>
       </Schema>
     </edmx:ConceptualModels>
@@ -14590,13 +14590,13 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="PagosTPV">
             <EntityTypeMapping TypeName="NVModel.PagoTPV">
               <MappingFragment StoreEntitySet="PagosTPV">
-                <ScalarProperty Name="TipoApunteEfecto" ColumnName="TipoApunteEfecto" />
+                <ScalarProperty Name="TipoApunte" ColumnName="TipoApunte" />
                 <ScalarProperty Name="Delegacion" ColumnName="Delegacion" />
                 <ScalarProperty Name="FormaVenta" ColumnName="FormaVenta" />
                 <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
                 <ScalarProperty Name="Efecto" ColumnName="Efecto" />
                 <ScalarProperty Name="Documento" ColumnName="Documento" />
-                <ScalarProperty Name="Liquidado" ColumnName="Liquidado" />
+                <ScalarProperty Name="ExtractoClienteId" ColumnName="ExtractoClienteId" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="FechaActualizacion" ColumnName="FechaActualizacion" />
                 <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />

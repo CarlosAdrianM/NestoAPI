@@ -57,13 +57,13 @@ namespace NestoAPI.Infraestructure.Pagos
                     Importe = solicitud.Importe,
                     Descripcion = solicitud.Descripcion,
                     Correo = solicitud.Correo,
-                    Liquidado = solicitud.Liquidado,
+                    ExtractoClienteId = solicitud.ExtractoClienteId,
                     Documento = solicitud.Documento,
                     Efecto = solicitud.Efecto,
                     Vendedor = solicitud.Vendedor,
                     FormaVenta = solicitud.FormaVenta,
                     Delegacion = solicitud.Delegacion,
-                    TipoApunteEfecto = solicitud.TipoApunteEfecto,
+                    TipoApunte = solicitud.TipoApunte,
                     Estado = "Pendiente",
                     FechaCreacion = DateTime.Now,
                     Usuario = usuario
@@ -206,7 +206,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     FormaVenta = formaVenta,
                     FormaPago = Constantes.FormasPago.TARJETA,
                     Vendedor = pago.Vendedor,
-                    Liquidado = pago.Liquidado,
+                    Liquidado = pago.ExtractoClienteId,
                     Origen = Empresas.EMPRESA_POR_DEFECTO,
                     Usuario = "NestoAPI",
                     Fecha_Modificación = DateTime.Now
@@ -262,13 +262,13 @@ namespace NestoAPI.Infraestructure.Pagos
                 FechaCreacion = pago.FechaCreacion,
                 FechaActualizacion = pago.FechaActualizacion,
                 Usuario = pago.Usuario,
-                Liquidado = pago.Liquidado,
+                ExtractoClienteId = pago.ExtractoClienteId,
                 Documento = pago.Documento?.Trim(),
                 Efecto = pago.Efecto?.Trim(),
                 Vendedor = pago.Vendedor?.Trim(),
                 FormaVenta = pago.FormaVenta?.Trim(),
                 Delegacion = pago.Delegacion?.Trim(),
-                TipoApunteEfecto = pago.TipoApunteEfecto?.Trim()
+                TipoApunte = pago.TipoApunte?.Trim()
             };
         }
 

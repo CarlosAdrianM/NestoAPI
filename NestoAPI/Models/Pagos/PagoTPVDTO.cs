@@ -20,12 +20,12 @@ namespace NestoAPI.Models.Pagos
         public DateTime FechaCreacion { get; set; }
         public DateTime? FechaActualizacion { get; set; }
         public string Usuario { get; set; }
-        public int? Liquidado { get; set; }
+        public int? ExtractoClienteId { get; set; }
         public string Documento { get; set; }
         public string Efecto { get; set; }
         public string Vendedor { get; set; }
         public string FormaVenta { get; set; }
         public string Delegacion { get; set; }
-        public string TipoApunteEfecto { get; set; }
+        public string TipoApunte { get; set; }
     }
 }
