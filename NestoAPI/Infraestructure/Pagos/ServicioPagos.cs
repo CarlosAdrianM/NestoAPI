@@ -1,3 +1,4 @@
+using Elmah;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
@@ -5,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Threading.Tasks;
+using System.Web;
 using static NestoAPI.Models.Constantes;
 
 namespace NestoAPI.Infraestructure.Pagos
@@ -79,6 +81,7 @@ namespace NestoAPI.Infraestructure.Pagos
 
             if (!resultado.FirmaValida)
             {
+                LogElmah($"[ProcesarNotificacion] Firma inválida. Orden: {resultado.NumeroOrden}, Error: {resultado.MensajeError}");
                 return false;
             }
 
@@ -90,6 +93,7 @@ namespace NestoAPI.Infraestructure.Pagos
 
                 if (pago == null)
                 {
+                    LogElmah($"[ProcesarNotificacion] Pago no encontrado. Orden: {resultado.NumeroOrden}");
                     return false;
                 }
 
@@ -224,6 +228,18 @@ namespace NestoAPI.Infraestructure.Pagos
                 FechaActualizacion = pago.FechaActualizacion,
                 Usuario = pago.Usuario
             };
+        }
+
+        private static void LogElmah(string mensaje)
+        {
+            try
+            {
+                ErrorSignal.FromCurrentContext().Raise(new Exception(mensaje));
+            }
+            catch
+            {
+                // No bloquear si falla el logging
+            }
         }
     }
 }

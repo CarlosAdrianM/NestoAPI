@@ -223,7 +223,10 @@ namespace NestoAPI.Infraestructure.Pagos
             string decoded = DecodificarParametrosInterno(notificacion.Ds_MerchantParameters);
             RespuestaRedsys respuesta = JsonConvert.DeserializeObject<RespuestaRedsys>(decoded);
 
-            string secretKey = respuesta.Ds_Terminal?.Trim() == Redsys.TERMINAL_TPV_VIRTUAL
+            // Redsys devuelve terminal con ceros (ej: "001"), comparar como entero
+            int.TryParse(respuesta.Ds_Terminal?.Trim(), out int terminalRecibido);
+            int.TryParse(Redsys.TERMINAL_TPV_VIRTUAL, out int terminalTPV);
+            string secretKey = terminalRecibido == terminalTPV
                 ? _secretKeyTPVVirtual
                 : _secretKeyP2F;
 
