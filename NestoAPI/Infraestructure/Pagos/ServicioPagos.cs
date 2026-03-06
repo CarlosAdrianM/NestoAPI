@@ -142,6 +142,10 @@ namespace NestoAPI.Infraestructure.Pagos
             {
                 concepto = concepto.Substring(0, 50);
             }
+            // Nº_Documento tiene MaxLength=10 en BD, NumeroOrden tiene 12
+            string documento = pago.NumeroOrden?.Length > 10
+                ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
+                : pago.NumeroOrden;
 
             var lineas = new List<PreContabilidad>
             {
@@ -153,11 +157,12 @@ namespace NestoAPI.Infraestructure.Pagos
                     TipoApunte = TiposExtractoCliente.SIN_ESPECIFICAR,
                     Debe = pago.Importe,
                     Concepto = concepto,
-                    Nº_Documento = pago.NumeroOrden,
+                    Nº_Documento = documento,
                     Diario = "_CobrosTPV",
                     Fecha = DateTime.Today,
                     Asiento = 1,
                     Asiento_Automático = true,
+                    Delegación = "ALG",
                     Usuario = "NestoAPI",
                     Fecha_Modificación = DateTime.Now
                 },
@@ -169,11 +174,12 @@ namespace NestoAPI.Infraestructure.Pagos
                     TipoApunte = TiposExtractoCliente.PAGO,
                     Haber = pago.Importe,
                     Concepto = concepto,
-                    Nº_Documento = pago.NumeroOrden,
+                    Nº_Documento = documento,
                     Diario = "_CobrosTPV",
                     Fecha = DateTime.Today,
                     Asiento = 1,
                     Asiento_Automático = true,
+                    Delegación = "ALG",
                     Usuario = "NestoAPI",
                     Fecha_Modificación = DateTime.Now
                 }
