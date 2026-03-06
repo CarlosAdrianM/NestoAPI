@@ -150,23 +150,29 @@ namespace NestoAPI.Infraestructure.Pagos
 
             var lineas = new List<PreContabilidad>
             {
+                // Línea banco (DEBE)
                 new PreContabilidad
                 {
                     Empresa = empresa,
                     Nº_Cuenta = cuentaBanco,
                     TipoCuenta = Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE,
-                    TipoApunte = TiposExtractoCliente.SIN_ESPECIFICAR,
+                    TipoApunte = TiposExtractoCliente.PAGO,
                     Debe = pago.Importe,
                     Concepto = concepto,
                     Nº_Documento = documento,
                     Diario = "_CobrosTPV",
                     Fecha = DateTime.Today,
+                    FechaVto = DateTime.Today,
                     Asiento = 1,
                     Asiento_Automático = true,
                     Delegación = "ALG",
+                    FormaVenta = Constantes.FormasVenta.TIENDA_ONLINE,
+                    FormaPago = Constantes.FormasPago.TARJETA,
+                    Origen = Empresas.EMPRESA_POR_DEFECTO,
                     Usuario = "NestoAPI",
                     Fecha_Modificación = DateTime.Now
                 },
+                // Línea cliente (HABER)
                 new PreContabilidad
                 {
                     Empresa = empresa,
@@ -179,9 +185,13 @@ namespace NestoAPI.Infraestructure.Pagos
                     Nº_Documento = documento,
                     Diario = "_CobrosTPV",
                     Fecha = DateTime.Today,
+                    FechaVto = DateTime.Today,
                     Asiento = 1,
                     Asiento_Automático = true,
                     Delegación = "ALG",
+                    FormaVenta = Constantes.FormasVenta.TIENDA_ONLINE,
+                    FormaPago = Constantes.FormasPago.TARJETA,
+                    Origen = Empresas.EMPRESA_POR_DEFECTO,
                     Usuario = "NestoAPI",
                     Fecha_Modificación = DateTime.Now
                 }
