@@ -954,6 +954,7 @@
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="ImporteMinimoPedido" Type="decimal" Precision="18" Scale="2" Nullable="false" />
         </EntityType>
         <EntityType Name="GruposProducto">
           <Key>
@@ -12571,6 +12572,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="ImporteMinimoPedido" Type="Decimal" Nullable="false" Precision="18" Scale="2" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_Ganavisiones_Productos" FromRole="Ganavisione" ToRole="Producto" />
         </EntityType>
         <Association Name="FK_Ganavisiones_Productos">
@@ -14541,6 +14543,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="Ganavisiones">
             <EntityTypeMapping TypeName="NVModel.Ganavision">
               <MappingFragment StoreEntitySet="Ganavisiones">
+                <ScalarProperty Name="ImporteMinimoPedido" ColumnName="ImporteMinimoPedido" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
                 <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />

@@ -23,6 +23,7 @@ namespace NestoAPI.Models
         public System.DateTime FechaCreacion { get; set; }
         public System.DateTime FechaModificacion { get; set; }
         public string Usuario { get; set; }
+        public decimal ImporteMinimoPedido { get; set; }
     
         public virtual Producto Producto { get; set; }
     }

@@ -1035,6 +1035,139 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(3, stockREI.stock);
         }
 
+        [TestMethod]
+        public async Task GetProductosBonificables_ImporteMinimoMayorQueBase_ExcluyeProducto()
+        {
+            // Arrange: Producto con ImporteMinimoPedido=200, base=100 → no aparece
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    ImporteMinimoPedido = 200m,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Caro", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert: No debe aparecer porque ImporteMinimoPedido (200) > baseImponibleBonificable (100)
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(0, okResult.Content.Productos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ImporteMinimoIgualABase_IncluyeProducto()
+        {
+            // Arrange: Producto con ImporteMinimoPedido=100, base=100 → aparece
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    ImporteMinimoPedido = 100m,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Exacto", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert: Debe aparecer porque ImporteMinimoPedido (100) <= baseImponibleBonificable (100)
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ImporteMinimoCero_SiempreAparece()
+        {
+            // Arrange: Producto con ImporteMinimoPedido=0 → aparece siempre (retrocompatibilidad)
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    ImporteMinimoPedido = 0m,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Sin Minimo", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
+
+            // Act: base imponible suficiente para los Ganavisiones, ImporteMinimoPedido=0 no restringe
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert: Debe aparecer porque ImporteMinimoPedido=0 no impone restriccion
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ProductosMixtos_SoloMuestraLosQueCumplenMinimo()
+        {
+            // Arrange: 2 productos, uno con minimo=0 y otro con minimo=500, base=100
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 3,
+                    ImporteMinimoPedido = 0m,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Barato", PVP = 3m }
+                },
+                new Ganavision
+                {
+                    Id = 2,
+                    Empresa = "1  ",
+                    ProductoId = "PROD2",
+                    Ganavisiones = 5,
+                    ImporteMinimoPedido = 500m,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD2", Nombre = "Producto Premium", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
+            MockStock("PROD2", "ALG", 10);
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert: Solo PROD1 (minimo=0) debe aparecer, PROD2 (minimo=500) no
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("PROD1", okResult.Content.Productos[0].ProductoId);
+        }
+
         #endregion
 
         #region ValidarServirJunto Tests
