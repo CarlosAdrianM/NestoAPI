@@ -9,6 +9,7 @@ namespace NestoAPI.Models.Pagos
         public string Tipo { get; set; }
         public string Empresa { get; set; }
         public string Cliente { get; set; }
+        public string Contacto { get; set; }
         public decimal Importe { get; set; }
         public string Descripcion { get; set; }
         public string Correo { get; set; }

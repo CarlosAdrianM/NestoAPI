@@ -53,6 +53,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     Tipo = "TPVVirtual",
                     Empresa = solicitud.Empresa ?? Empresas.EMPRESA_POR_DEFECTO,
                     Cliente = solicitud.Cliente,
+                    Contacto = solicitud.Contacto,
                     Importe = solicitud.Importe,
                     Descripcion = solicitud.Descripcion,
                     Correo = solicitud.Correo,
@@ -170,7 +171,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 {
                     Empresa = empresa,
                     Nº_Cuenta = pago.Cliente,
-                    Contacto = "0", // TODO Issue #121: usar pago.Contacto cuando se añada la columna a PagosTPV
+                    Contacto = pago.Contacto ?? "0",
                     TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
                     TipoApunte = TiposExtractoCliente.PAGO,
                     Haber = pago.Importe,
@@ -224,6 +225,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 Tipo = pago.Tipo,
                 Empresa = pago.Empresa?.Trim(),
                 Cliente = pago.Cliente?.Trim(),
+                Contacto = pago.Contacto?.Trim(),
                 Importe = pago.Importe,
                 Descripcion = pago.Descripcion,
                 Correo = pago.Correo,
