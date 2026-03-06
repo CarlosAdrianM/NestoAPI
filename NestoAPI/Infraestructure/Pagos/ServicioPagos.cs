@@ -38,6 +38,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 solicitud.Importe,
                 solicitud.Descripcion,
                 solicitud.Correo,
+                solicitud.Cliente,
                 urlNotificacion,
                 urlOk,
                 urlKo);

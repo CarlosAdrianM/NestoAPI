@@ -31,7 +31,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // Arrange
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -45,7 +45,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // Este test verifica la lógica de creación de parámetros.
             // La persistencia en BD requiere la tabla PagosTPV (test de integración).
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                100m, "Pago pedido 123", "test@test.com",
+                100m, "Pago pedido 123", "test@test.com", "15191",
                 A<string>.That.Contains("NotificacionRedsys"),
                 A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados
@@ -68,7 +68,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // El IniciarPago accede a BD, así que solo verificamos que no lanza excepción
             // en la parte de parámetros antes de BD
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                100m, "Pago pedido 123", "test@test.com",
+                100m, "Pago pedido 123", "test@test.com", "15191",
                 A<string>._, A<string>._, A<string>._))
                 .MustNotHaveHappened(); // Aún no hemos llamado
 
@@ -180,7 +180,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -201,7 +201,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
 
             // Assert
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                50m, "Test URLs custom", "test@test.com",
+                50m, "Test URLs custom", "test@test.com", A<string>._,
                 A<string>.That.Contains("NotificacionRedsys"),
                 "nestotiendas://pago/ok",
                 "nestotiendas://pago/ko"))
@@ -221,7 +221,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -242,7 +242,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
 
             // Assert
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                75m, "Test URLs defecto", "test@test.com",
+                75m, "Test URLs defecto", "test@test.com", A<string>._,
                 A<string>.That.Contains("NotificacionRedsys"),
                 "https://api.nuevavision.es/pago/ok.html",
                 "https://api.nuevavision.es/pago/ko.html"))
