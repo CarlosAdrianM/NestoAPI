@@ -14,6 +14,7 @@ namespace NestoAPI.Models.Ganavisiones
         public string Empresa { get; set; }
         public string ProductoId { get; set; }
         public string ProductoNombre { get; set; }
+        public string Familia { get; set; }
         public int Ganavisiones { get; set; }
         public DateTime FechaDesde { get; set; }
         public DateTime? FechaHasta { get; set; }
@@ -22,6 +23,7 @@ namespace NestoAPI.Models.Ganavisiones
         public string Usuario { get; set; }
         public int Stock { get; set; }
         public int CantidadRegalada { get; set; }
+        public decimal ImporteMinimoPedido { get; set; }
     }
 
     /// <summary>
@@ -34,6 +36,7 @@ namespace NestoAPI.Models.Ganavisiones
         public int? Ganavisiones { get; set; }
         public DateTime FechaDesde { get; set; }
         public DateTime? FechaHasta { get; set; }
+        public decimal ImporteMinimoPedido { get; set; }
     }
 
     /// <summary>

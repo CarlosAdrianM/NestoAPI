@@ -51,7 +51,7 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<GanavisionDTO>))]
         public async Task<IHttpActionResult> GetGanavisiones(string empresa, string productoId = null, bool soloActivos = false)
         {
-            var query = db.Ganavisiones.AsQueryable();
+            var query = db.Ganavisiones.Include("Producto").AsQueryable();
 
             // Filtrar por empresa (con padding para comparar con CHAR(3))
             string empresaPadded = empresa.PadRight(3);
@@ -229,7 +229,8 @@ namespace NestoAPI.Controllers
                 .Where(g => g.Empresa == empresaPadded &&
                             g.FechaDesde <= hoy &&
                             (g.FechaHasta == null || g.FechaHasta >= hoy) &&
-                            g.Ganavisiones <= ganavisionesDisponibles)
+                            g.Ganavisiones <= ganavisionesDisponibles &&
+                            g.ImporteMinimoPedido <= baseImponibleBonificable)
                 .OrderBy(g => g.Ganavisiones)
                 .ThenBy(g => g.Producto.Nombre)
                 .ToListAsync()
@@ -475,6 +476,7 @@ namespace NestoAPI.Controllers
                 Ganavisiones = ganavisiones,
                 FechaDesde = dto.FechaDesde,
                 FechaHasta = dto.FechaHasta,
+                ImporteMinimoPedido = dto.ImporteMinimoPedido,
                 FechaCreacion = DateTime.Now,
                 FechaModificacion = DateTime.Now,
                 Usuario = usuario
@@ -520,6 +522,7 @@ namespace NestoAPI.Controllers
             }
             ganavision.FechaDesde = dto.FechaDesde;
             ganavision.FechaHasta = dto.FechaHasta;
+            ganavision.ImporteMinimoPedido = dto.ImporteMinimoPedido;
             ganavision.FechaModificacion = DateTime.Now;
             ganavision.Usuario = usuario;
 
@@ -569,12 +572,14 @@ namespace NestoAPI.Controllers
                 Empresa = ganavision.Empresa?.Trim(),
                 ProductoId = ganavision.ProductoId?.Trim(),
                 ProductoNombre = ganavision.Producto?.Nombre?.Trim(),
+                Familia = ganavision.Producto?.Familia?.Trim(),
                 Ganavisiones = ganavision.Ganavisiones,
                 FechaDesde = ganavision.FechaDesde,
                 FechaHasta = ganavision.FechaHasta,
                 FechaCreacion = ganavision.FechaCreacion,
                 FechaModificacion = ganavision.FechaModificacion,
-                Usuario = ganavision.Usuario
+                Usuario = ganavision.Usuario,
+                ImporteMinimoPedido = ganavision.ImporteMinimoPedido
             };
         }
     }
