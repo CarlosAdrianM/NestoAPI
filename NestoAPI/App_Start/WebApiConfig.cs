@@ -22,7 +22,6 @@ namespace NestoAPI
             // Verificar la configuración global de Web API
             config.Formatters.Clear();  // Limpiar todos los formatters
             config.Formatters.Add(new JsonMediaTypeFormatter());  // Añadir solo el JSON formatter
-            config.Formatters.Add(new JQueryMvcFormUrlEncodedFormatter()); // Redsys envia notificaciones como form-urlencoded (soporta binding a POCOs)
 
             // Rutas de API web
             config.MapHttpAttributeRoutes();

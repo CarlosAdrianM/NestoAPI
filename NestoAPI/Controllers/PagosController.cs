@@ -1,5 +1,7 @@
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models.Pagos;
+using System.Collections.Specialized;
+using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
 
@@ -33,13 +35,25 @@ namespace NestoAPI.Controllers
         [HttpPost]
         [Route("NotificacionRedsys")]
         [AllowAnonymous]
-        public async Task<IHttpActionResult> NotificacionRedsys([FromBody] NotificacionRedsys notificacion)
+        public async Task<IHttpActionResult> NotificacionRedsys()
         {
-            // Siempre devolver 200 para que Redsys no reintente
-            if (notificacion != null)
+            // Redsys envia la notificacion como application/x-www-form-urlencoded
+            NameValueCollection formData = await Request.Content.ReadAsFormDataAsync().ConfigureAwait(false);
+
+            if (formData == null)
             {
-                await _servicioPagos.ProcesarNotificacion(notificacion).ConfigureAwait(false);
+                return Ok();
             }
+
+            var notificacion = new NotificacionRedsys
+            {
+                Ds_SignatureVersion = formData["Ds_SignatureVersion"],
+                Ds_MerchantParameters = formData["Ds_MerchantParameters"],
+                Ds_Signature = formData["Ds_Signature"]
+            };
+
+            // Siempre devolver 200 para que Redsys no reintente
+            await _servicioPagos.ProcesarNotificacion(notificacion).ConfigureAwait(false);
 
             return Ok();
         }
