@@ -170,6 +170,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 {
                     Empresa = empresa,
                     Nº_Cuenta = pago.Cliente,
+                    Contacto = "0", // TODO Issue #121: usar pago.Contacto cuando se añada la columna a PagosTPV
                     TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
                     TipoApunte = TiposExtractoCliente.PAGO,
                     Haber = pago.Importe,
