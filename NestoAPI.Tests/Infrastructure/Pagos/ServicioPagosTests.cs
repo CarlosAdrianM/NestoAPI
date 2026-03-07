@@ -7,6 +7,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure.Pagos
@@ -284,5 +285,150 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             Assert.AreEqual("Autorizado", dto.Estado);
             Assert.AreEqual("0000", dto.CodigoRespuesta);
         }
+
+        #region NormalizarEfectos
+
+        [TestMethod]
+        public void NormalizarEfectos_ConListaEfectos_DevuelveLista()
+        {
+            // Arrange
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 450m,
+                Cliente = "15191",
+                Efectos = new List<EfectoAPagar>
+                {
+                    new EfectoAPagar { ExtractoClienteId = 123, Importe = 100m, Documento = "NV2411001", Efecto = "0", Contacto = "0", Vendedor = "NV", FormaVenta = "WEB", Delegacion = "ALG", TipoApunte = "1" },
+                    new EfectoAPagar { ExtractoClienteId = 456, Importe = 200m, Documento = "NV2411002", Efecto = "0", Contacto = "0", Vendedor = "NV", FormaVenta = "WEB", Delegacion = "ALG", TipoApunte = "1" },
+                    new EfectoAPagar { ExtractoClienteId = 789, Importe = 150m, Documento = "NV2411003", Efecto = "0", Contacto = "0", Vendedor = "NV", FormaVenta = "WEB", Delegacion = "ALG", TipoApunte = "2" }
+                }
+            };
+
+            // Act
+            var resultado = ServicioPagos.NormalizarEfectos(solicitud);
+
+            // Assert
+            Assert.AreEqual(3, resultado.Count);
+            Assert.AreEqual(123, resultado[0].ExtractoClienteId);
+            Assert.AreEqual(456, resultado[1].ExtractoClienteId);
+            Assert.AreEqual(789, resultado[2].ExtractoClienteId);
+            Assert.AreEqual(450m, resultado.Sum(e => e.Importe));
+        }
+
+        [TestMethod]
+        public void NormalizarEfectos_SinEfectosConExtractoClienteId_CreaUnEfecto()
+        {
+            // Arrange
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 100m,
+                Cliente = "15191",
+                Contacto = "0",
+                ExtractoClienteId = 123,
+                Documento = "NV2411001",
+                Efecto = "0",
+                Vendedor = "NV",
+                FormaVenta = "WEB",
+                Delegacion = "ALG",
+                TipoApunte = "1"
+            };
+
+            // Act
+            var resultado = ServicioPagos.NormalizarEfectos(solicitud);
+
+            // Assert
+            Assert.AreEqual(1, resultado.Count);
+            Assert.AreEqual(123, resultado[0].ExtractoClienteId);
+            Assert.AreEqual(100m, resultado[0].Importe);
+            Assert.AreEqual("NV2411001", resultado[0].Documento);
+        }
+
+        [TestMethod]
+        public void NormalizarEfectos_SinEfectosSinExtractoClienteId_DevuelveListaVacia()
+        {
+            // Arrange
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 100m,
+                Cliente = "15191"
+            };
+
+            // Act
+            var resultado = ServicioPagos.NormalizarEfectos(solicitud);
+
+            // Assert
+            Assert.AreEqual(0, resultado.Count);
+        }
+
+        #endregion
+
+        #region MapearADTO con Efectos
+
+        [TestMethod]
+        public void MapearADTO_ConEfectos_IncluyeEfectosEnDTO()
+        {
+            // Arrange
+            var pago = new PagoTPV
+            {
+                Id = 1,
+                NumeroOrden = "ABC123456789",
+                Tipo = "TPVVirtual",
+                Empresa = "1 ",
+                Cliente = "15191 ",
+                Importe = 300m,
+                Estado = "Autorizado",
+                FechaCreacion = DateTime.Now
+            };
+            pago.PagosTPV_Efectos.Add(new PagoTPV_Efecto
+            {
+                Id = 1, IdPago = 1, ExtractoClienteId = 100, Importe = 100m,
+                Documento = "NV001 ", Efecto = "0 ", Contacto = "0 ",
+                Vendedor = "NV ", FormaVenta = "WEB", Delegacion = "ALG", TipoApunte = "1  "
+            });
+            pago.PagosTPV_Efectos.Add(new PagoTPV_Efecto
+            {
+                Id = 2, IdPago = 1, ExtractoClienteId = 200, Importe = 200m,
+                Documento = "NV002 ", Efecto = "0 ", Contacto = "0 ",
+                Vendedor = "NV ", FormaVenta = "WEB", Delegacion = "ALG", TipoApunte = "2  "
+            });
+
+            // Act
+            PagoTPVDTO dto = ServicioPagos.MapearADTO(pago);
+
+            // Assert
+            Assert.IsNotNull(dto.Efectos);
+            Assert.AreEqual(2, dto.Efectos.Count);
+            Assert.AreEqual(100, dto.Efectos[0].ExtractoClienteId);
+            Assert.AreEqual(100m, dto.Efectos[0].Importe);
+            Assert.AreEqual("NV001", dto.Efectos[0].Documento);
+            Assert.AreEqual("1", dto.Efectos[0].TipoApunte);
+            Assert.AreEqual(200, dto.Efectos[1].ExtractoClienteId);
+            Assert.AreEqual(200m, dto.Efectos[1].Importe);
+        }
+
+        [TestMethod]
+        public void MapearADTO_SinEfectos_EfectosEsNull()
+        {
+            // Arrange
+            var pago = new PagoTPV
+            {
+                Id = 1,
+                NumeroOrden = "ABC123456789",
+                Tipo = "TPVVirtual",
+                Empresa = "1 ",
+                Cliente = "15191 ",
+                Importe = 100m,
+                Estado = "Pendiente",
+                FechaCreacion = DateTime.Now
+            };
+
+            // Act
+            PagoTPVDTO dto = ServicioPagos.MapearADTO(pago);
+
+            // Assert
+            Assert.IsNull(dto.Efectos);
+        }
+
+        #endregion
     }
 }

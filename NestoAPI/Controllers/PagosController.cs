@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models.Pagos;
 using System.Collections.Specialized;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -25,6 +26,15 @@ namespace NestoAPI.Controllers
             if (solicitud == null)
             {
                 return BadRequest("La solicitud de pago es obligatoria");
+            }
+
+            if (solicitud.Efectos != null && solicitud.Efectos.Any())
+            {
+                decimal sumaEfectos = solicitud.Efectos.Sum(e => e.Importe);
+                if (sumaEfectos != solicitud.Importe)
+                {
+                    return BadRequest($"La suma de los efectos ({sumaEfectos}) no coincide con el importe total ({solicitud.Importe})");
+                }
             }
 
             string usuario = User?.Identity?.Name ?? "Desconocido";

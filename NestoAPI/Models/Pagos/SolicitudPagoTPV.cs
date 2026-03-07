@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace NestoAPI.Models.Pagos
 {
     public class SolicitudPagoTPV
@@ -10,6 +12,9 @@ namespace NestoAPI.Models.Pagos
         public string Correo { get; set; }
         public string UrlOk { get; set; }
         public string UrlKo { get; set; }
+        public List<EfectoAPagar> Efectos { get; set; }
+
+        // Campos legacy para compatibilidad con pago individual sin Efectos
         public int? ExtractoClienteId { get; set; }
         public string Documento { get; set; }
         public string Efecto { get; set; }

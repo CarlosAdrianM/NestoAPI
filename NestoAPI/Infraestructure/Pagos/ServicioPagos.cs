@@ -5,6 +5,7 @@ using NestoAPI.Models.Pagos;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Web;
 using static NestoAPI.Models.Constantes;
@@ -45,6 +46,9 @@ namespace NestoAPI.Infraestructure.Pagos
                 urlOk,
                 urlKo);
 
+            // Normalizar: si vienen campos legacy sin Efectos, crear un efecto a partir de ellos
+            List<EfectoAPagar> efectos = NormalizarEfectos(solicitud);
+
             using (NVEntities db = new NVEntities())
             {
                 var pago = new PagoTPV
@@ -57,6 +61,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     Importe = solicitud.Importe,
                     Descripcion = solicitud.Descripcion,
                     Correo = solicitud.Correo,
+                    // Campos legacy se mantienen para compatibilidad
                     ExtractoClienteId = solicitud.ExtractoClienteId,
                     Documento = solicitud.Documento,
                     Efecto = solicitud.Efecto,
@@ -70,6 +75,26 @@ namespace NestoAPI.Infraestructure.Pagos
                 };
 
                 db.PagosTPV.Add(pago);
+                await db.SaveChangesAsync().ConfigureAwait(false);
+
+                foreach (var efecto in efectos)
+                {
+                    var pagoEfecto = new PagoTPV_Efecto
+                    {
+                        IdPago = pago.Id,
+                        ExtractoClienteId = efecto.ExtractoClienteId,
+                        Importe = efecto.Importe,
+                        Documento = efecto.Documento,
+                        Efecto = efecto.Efecto,
+                        Contacto = efecto.Contacto,
+                        Vendedor = efecto.Vendedor,
+                        FormaVenta = efecto.FormaVenta,
+                        Delegacion = efecto.Delegacion,
+                        TipoApunte = efecto.TipoApunte
+                    };
+                    db.PagosTPV_Efectos.Add(pagoEfecto);
+                }
+
                 await db.SaveChangesAsync().ConfigureAwait(false);
 
                 return new RespuestaIniciarPago
@@ -96,6 +121,7 @@ namespace NestoAPI.Infraestructure.Pagos
             using (NVEntities db = new NVEntities())
             {
                 PagoTPV pago = await db.PagosTPV
+                    .Include(p => p.PagosTPV_Efectos)
                     .FirstOrDefaultAsync(p => p.NumeroOrden == resultado.NumeroOrden)
                     .ConfigureAwait(false);
 
@@ -145,48 +171,68 @@ namespace NestoAPI.Infraestructure.Pagos
             }
 
             string empresa = pago.Empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO;
-            string delegacion = pago.Delegacion?.Trim() ?? "ALG";
-            string formaVenta = pago.FormaVenta?.Trim() ?? Constantes.FormasVenta.TIENDA_ONLINE;
-            string documento = pago.Documento?.Trim();
-            if (string.IsNullOrWhiteSpace(documento))
-            {
-                // Fallback: últimos 10 chars del NumeroOrden
-                documento = pago.NumeroOrden?.Length > 10
-                    ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
-                    : pago.NumeroOrden;
-            }
             string concepto = $"Pago TPV {pago.Descripcion}";
             if (concepto.Length > 50)
             {
                 concepto = concepto.Substring(0, 50);
             }
 
-            var lineas = new List<PreContabilidad>
+            var lineas = new List<PreContabilidad>();
+
+            if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
             {
-                // Línea banco (DEBE)
-                new PreContabilidad
+                // Pagos multiples: una linea HABER por cada efecto
+                foreach (var efecto in pago.PagosTPV_Efectos)
                 {
-                    Empresa = empresa,
-                    Nº_Cuenta = cuentaBanco,
-                    TipoCuenta = Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE,
-                    TipoApunte = TiposExtractoCliente.PAGO,
-                    Debe = pago.Importe,
-                    Concepto = concepto,
-                    Nº_Documento = documento,
-                    Diario = "_CobrosTPV",
-                    Fecha = DateTime.Today,
-                    FechaVto = DateTime.Today,
-                    Asiento = 1,
-                    Asiento_Automático = true,
-                    Delegación = delegacion,
-                    FormaVenta = formaVenta,
-                    FormaPago = Constantes.FormasPago.TARJETA,
-                    Origen = Empresas.EMPRESA_POR_DEFECTO,
-                    Usuario = "NestoAPI",
-                    Fecha_Modificación = DateTime.Now
-                },
-                // Línea cliente (HABER)
-                new PreContabilidad
+                    string docEfecto = efecto.Documento?.Trim();
+                    if (string.IsNullOrWhiteSpace(docEfecto))
+                    {
+                        docEfecto = pago.NumeroOrden?.Length > 10
+                            ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
+                            : pago.NumeroOrden;
+                    }
+
+                    lineas.Add(new PreContabilidad
+                    {
+                        Empresa = empresa,
+                        Nº_Cuenta = pago.Cliente,
+                        Contacto = efecto.Contacto?.Trim() ?? pago.Contacto ?? "0",
+                        TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
+                        TipoApunte = TiposExtractoCliente.PAGO,
+                        Haber = efecto.Importe,
+                        Concepto = concepto,
+                        Nº_Documento = docEfecto,
+                        Efecto = efecto.Efecto?.Trim(),
+                        Diario = "_CobrosTPV",
+                        Fecha = DateTime.Today,
+                        FechaVto = DateTime.Today,
+                        Asiento = 1,
+                        Asiento_Automático = true,
+                        Delegación = efecto.Delegacion?.Trim() ?? "ALG",
+                        FormaVenta = efecto.FormaVenta?.Trim() ?? Constantes.FormasVenta.TIENDA_ONLINE,
+                        FormaPago = Constantes.FormasPago.TARJETA,
+                        Vendedor = efecto.Vendedor?.Trim(),
+                        Liquidado = efecto.ExtractoClienteId,
+                        Origen = Empresas.EMPRESA_POR_DEFECTO,
+                        Usuario = "NestoAPI",
+                        Fecha_Modificación = DateTime.Now
+                    });
+                }
+            }
+            else
+            {
+                // Pago individual legacy (sin tabla de efectos)
+                string delegacion = pago.Delegacion?.Trim() ?? "ALG";
+                string formaVenta = pago.FormaVenta?.Trim() ?? Constantes.FormasVenta.TIENDA_ONLINE;
+                string documento = pago.Documento?.Trim();
+                if (string.IsNullOrWhiteSpace(documento))
+                {
+                    documento = pago.NumeroOrden?.Length > 10
+                        ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
+                        : pago.NumeroOrden;
+                }
+
+                lineas.Add(new PreContabilidad
                 {
                     Empresa = empresa,
                     Nº_Cuenta = pago.Cliente,
@@ -210,10 +256,67 @@ namespace NestoAPI.Infraestructure.Pagos
                     Origen = Empresas.EMPRESA_POR_DEFECTO,
                     Usuario = "NestoAPI",
                     Fecha_Modificación = DateTime.Now
-                }
-            };
+                });
+            }
+
+            // Linea banco (DEBE) - siempre una sola linea por el total
+            string docBanco = pago.NumeroOrden?.Length > 10
+                ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
+                : pago.NumeroOrden;
+
+            lineas.Insert(0, new PreContabilidad
+            {
+                Empresa = empresa,
+                Nº_Cuenta = cuentaBanco,
+                TipoCuenta = Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE,
+                TipoApunte = TiposExtractoCliente.PAGO,
+                Debe = pago.Importe,
+                Concepto = concepto,
+                Nº_Documento = docBanco,
+                Diario = "_CobrosTPV",
+                Fecha = DateTime.Today,
+                FechaVto = DateTime.Today,
+                Asiento = 1,
+                Asiento_Automático = true,
+                Delegación = "ALG",
+                FormaVenta = Constantes.FormasVenta.TIENDA_ONLINE,
+                FormaPago = Constantes.FormasPago.TARJETA,
+                Origen = Empresas.EMPRESA_POR_DEFECTO,
+                Usuario = "NestoAPI",
+                Fecha_Modificación = DateTime.Now
+            });
 
             await _contabilidadService.CrearLineasYContabilizarDiario(lineas).ConfigureAwait(false);
+        }
+
+        internal static List<EfectoAPagar> NormalizarEfectos(SolicitudPagoTPV solicitud)
+        {
+            if (solicitud.Efectos != null && solicitud.Efectos.Any())
+            {
+                return solicitud.Efectos;
+            }
+
+            // Compatibilidad: si no hay Efectos pero hay ExtractoClienteId, crear uno
+            if (solicitud.ExtractoClienteId.HasValue)
+            {
+                return new List<EfectoAPagar>
+                {
+                    new EfectoAPagar
+                    {
+                        ExtractoClienteId = solicitud.ExtractoClienteId.Value,
+                        Importe = solicitud.Importe,
+                        Documento = solicitud.Documento,
+                        Efecto = solicitud.Efecto,
+                        Contacto = solicitud.Contacto,
+                        Vendedor = solicitud.Vendedor,
+                        FormaVenta = solicitud.FormaVenta,
+                        Delegacion = solicitud.Delegacion,
+                        TipoApunte = solicitud.TipoApunte
+                    }
+                };
+            }
+
+            return new List<EfectoAPagar>();
         }
 
         public async Task<PagoTPVDTO> ConsultarPago(int idPago)
@@ -221,6 +324,7 @@ namespace NestoAPI.Infraestructure.Pagos
             using (NVEntities db = new NVEntities())
             {
                 PagoTPV pago = await db.PagosTPV
+                    .Include(p => p.PagosTPV_Efectos)
                     .AsNoTracking()
                     .FirstOrDefaultAsync(p => p.Id == idPago)
                     .ConfigureAwait(false);
@@ -234,6 +338,7 @@ namespace NestoAPI.Infraestructure.Pagos
             using (NVEntities db = new NVEntities())
             {
                 PagoTPV pago = await db.PagosTPV
+                    .Include(p => p.PagosTPV_Efectos)
                     .AsNoTracking()
                     .FirstOrDefaultAsync(p => p.NumeroOrden == numeroOrden)
                     .ConfigureAwait(false);
@@ -244,7 +349,7 @@ namespace NestoAPI.Infraestructure.Pagos
 
         internal static PagoTPVDTO MapearADTO(PagoTPV pago)
         {
-            return new PagoTPVDTO
+            var dto = new PagoTPVDTO
             {
                 Id = pago.Id,
                 NumeroOrden = pago.NumeroOrden,
@@ -270,6 +375,25 @@ namespace NestoAPI.Infraestructure.Pagos
                 Delegacion = pago.Delegacion?.Trim(),
                 TipoApunte = pago.TipoApunte?.Trim()
             };
+
+            if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
+            {
+                dto.Efectos = pago.PagosTPV_Efectos.Select(e => new EfectoTPVDTO
+                {
+                    Id = e.Id,
+                    ExtractoClienteId = e.ExtractoClienteId,
+                    Importe = e.Importe,
+                    Documento = e.Documento?.Trim(),
+                    Efecto = e.Efecto?.Trim(),
+                    Contacto = e.Contacto?.Trim(),
+                    Vendedor = e.Vendedor?.Trim(),
+                    FormaVenta = e.FormaVenta?.Trim(),
+                    Delegacion = e.Delegacion?.Trim(),
+                    TipoApunte = e.TipoApunte?.Trim()
+                }).ToList();
+            }
+
+            return dto;
         }
 
         private static void LogElmah(string mensaje)

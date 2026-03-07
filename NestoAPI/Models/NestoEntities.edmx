@@ -1329,6 +1329,22 @@
           <Property Name="Delegacion" Type="nvarchar" MaxLength="3" />
           <Property Name="TipoApunte" Type="nvarchar" MaxLength="3" />
         </EntityType>
+        <EntityType Name="PagosTPV_Efectos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="IdPago" Type="int" Nullable="false" />
+          <Property Name="ExtractoClienteId" Type="int" Nullable="false" />
+          <Property Name="Importe" Type="decimal" Precision="18" Scale="2" Nullable="false" />
+          <Property Name="Documento" Type="nvarchar" MaxLength="10" />
+          <Property Name="Efecto" Type="nvarchar" MaxLength="3" />
+          <Property Name="Contacto" Type="nvarchar" MaxLength="3" />
+          <Property Name="Vendedor" Type="nvarchar" MaxLength="3" />
+          <Property Name="FormaVenta" Type="nvarchar" MaxLength="3" />
+          <Property Name="Delegacion" Type="nvarchar" MaxLength="3" />
+          <Property Name="TipoApunte" Type="nvarchar" MaxLength="3" />
+        </EntityType>
         <EntityType Name="ParámetrosIVA">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -4228,6 +4244,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_PagosTPV_Efectos_Pago">
+          <End Role="PagosTPV" Type="Self.PagosTPV" Multiplicity="1" />
+          <End Role="PagosTPV_Efectos" Type="Self.PagosTPV_Efectos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PagosTPV">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="PagosTPV_Efectos">
+              <PropertyRef Name="IdPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_ParámetrosIVA_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="ParámetrosIVA" Type="Self.ParámetrosIVA" Multiplicity="*" />
@@ -5146,6 +5174,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasProveedores" EntityType="Self.OfertasProveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PagosTPV" EntityType="Self.PagosTPV" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="PagosTPV_Efectos" EntityType="Self.PagosTPV_Efectos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosIVA" EntityType="Self.ParámetrosIVA" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ParámetrosUsuario" EntityType="Self.ParámetrosUsuario" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PedidosEspeciales" EntityType="Self.PedidosEspeciales" Schema="dbo" store:Type="Tables" />
@@ -5873,6 +5902,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_OfertasProveedores_Proveedores" Association="Self.FK_OfertasProveedores_Proveedores">
             <End Role="Proveedores" EntitySet="Proveedores" />
             <End Role="OfertasProveedores" EntitySet="OfertasProveedores" />
+          </AssociationSet>
+          <AssociationSet Name="FK_PagosTPV_Efectos_Pago" Association="Self.FK_PagosTPV_Efectos_Pago">
+            <End Role="PagosTPV" EntitySet="PagosTPV" />
+            <End Role="PagosTPV_Efectos" EntitySet="PagosTPV_Efectos" />
           </AssociationSet>
           <AssociationSet Name="FK_ParámetrosIVA_Empresas" Association="Self.FK_ParámetrosIVA_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -7168,6 +7201,11 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="PrestashopProducto" EntitySet="PrestashopProductos" />
           </AssociationSet>
           <EntitySet Name="PagosTPV" EntityType="NVModel.PagoTPV" />
+          <EntitySet Name="PagosTPV_Efectos" EntityType="NVModel.PagoTPV_Efecto" />
+          <AssociationSet Name="FK_PagosTPV_Efectos_Pago" Association="NVModel.FK_PagosTPV_Efectos_Pago">
+            <End Role="PagoTPV" EntitySet="PagosTPV" />
+            <End Role="PagosTPV_Efectos" EntitySet="PagosTPV_Efectos" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -12654,7 +12692,37 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FormaVenta" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
           <Property Name="Delegacion" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
           <Property Name="TipoApunte" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
+          <NavigationProperty Name="PagosTPV_Efectos" Relationship="NVModel.FK_PagosTPV_Efectos_Pago" FromRole="PagoTPV" ToRole="PagosTPV_Efectos" />
         </EntityType>
+        <EntityType Name="PagoTPV_Efecto">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="IdPago" Type="Int32" Nullable="false" />
+          <Property Name="ExtractoClienteId" Type="Int32" Nullable="false" />
+          <Property Name="Importe" Type="Decimal" Nullable="false" Precision="18" Scale="2" />
+          <Property Name="Documento" Type="String" MaxLength="10" FixedLength="false" Unicode="true" />
+          <Property Name="Efecto" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
+          <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
+          <Property Name="FormaVenta" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
+          <Property Name="Delegacion" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
+          <Property Name="TipoApunte" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
+          <NavigationProperty Name="PagosTPV" Relationship="NVModel.FK_PagosTPV_Efectos_Pago" FromRole="PagosTPV_Efectos" ToRole="PagoTPV" />
+        </EntityType>
+        <Association Name="FK_PagosTPV_Efectos_Pago">
+          <End Type="NVModel.PagoTPV" Role="PagoTPV" Multiplicity="1" />
+          <End Type="NVModel.PagoTPV_Efecto" Role="PagosTPV_Efectos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="PagoTPV">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="PagosTPV_Efectos">
+              <PropertyRef Name="IdPago" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -14612,6 +14680,23 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Tipo" ColumnName="Tipo" />
                 <ScalarProperty Name="NumeroOrden" ColumnName="NumeroOrden" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="PagosTPV_Efectos">
+            <EntityTypeMapping TypeName="NVModel.PagoTPV_Efecto">
+              <MappingFragment StoreEntitySet="PagosTPV_Efectos">
+                <ScalarProperty Name="TipoApunte" ColumnName="TipoApunte" />
+                <ScalarProperty Name="Delegacion" ColumnName="Delegacion" />
+                <ScalarProperty Name="FormaVenta" ColumnName="FormaVenta" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Efecto" ColumnName="Efecto" />
+                <ScalarProperty Name="Documento" ColumnName="Documento" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="ExtractoClienteId" ColumnName="ExtractoClienteId" />
+                <ScalarProperty Name="IdPago" ColumnName="IdPago" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>

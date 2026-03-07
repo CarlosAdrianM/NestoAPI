@@ -14,6 +14,11 @@ namespace NestoAPI.Models
     
     public partial class PagoTPV
     {
+        public PagoTPV()
+        {
+            this.PagosTPV_Efectos = new HashSet<PagoTPV_Efecto>();
+        }
+    
         public int Id { get; set; }
         public string NumeroOrden { get; set; }
         public string Tipo { get; set; }
@@ -37,5 +42,7 @@ namespace NestoAPI.Models
         public string FormaVenta { get; set; }
         public string Delegacion { get; set; }
         public string TipoApunte { get; set; }
+    
+        public virtual ICollection<PagoTPV_Efecto> PagosTPV_Efectos { get; set; }
     }
 }

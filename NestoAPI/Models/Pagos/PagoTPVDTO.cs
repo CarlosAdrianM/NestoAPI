@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace NestoAPI.Models.Pagos
 {
@@ -20,6 +21,9 @@ namespace NestoAPI.Models.Pagos
         public DateTime FechaCreacion { get; set; }
         public DateTime? FechaActualizacion { get; set; }
         public string Usuario { get; set; }
+        public List<EfectoTPVDTO> Efectos { get; set; }
+
+        // Campos legacy (solo se usan si no hay Efectos)
         public int? ExtractoClienteId { get; set; }
         public string Documento { get; set; }
         public string Efecto { get; set; }

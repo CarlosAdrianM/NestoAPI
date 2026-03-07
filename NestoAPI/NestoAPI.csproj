@@ -1151,7 +1151,12 @@
     <Compile Include="Models\Pagos\RespuestaIniciarPago.cs" />
     <Compile Include="Models\Pagos\RespuestaRedsys.cs" />
     <Compile Include="Models\Pagos\ResultadoValidacionNotificacion.cs" />
+    <Compile Include="Models\Pagos\EfectoAPagar.cs" />
+    <Compile Include="Models\Pagos\EfectoTPVDTO.cs" />
     <Compile Include="Models\Pagos\SolicitudPagoTPV.cs" />
+    <Compile Include="Models\PagoTPV_Efecto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\ReclamacionDeuda.cs" />
     <Compile Include="Models\RecursosHumanos\Accion.cs" />
     <Compile Include="Models\RecursosHumanos\Empleado.cs" />

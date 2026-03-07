@@ -300,6 +300,8 @@
         <EntityTypeShape EntityType="NVModel.PrestashopProducto" Width="1.5" PointX="25.375" PointY="57.25" />
         <AssociationConnector Association="NVModel.FK_PrestashopProductos_Productos" />
         <EntityTypeShape EntityType="NVModel.PagoTPV" Width="1.5" PointX="13.375" PointY="17.75" />
+        <EntityTypeShape EntityType="NVModel.PagoTPV_Efecto" Width="1.5" PointX="15.625" PointY="18.875" />
+        <AssociationConnector Association="NVModel.FK_PagosTPV_Efectos_Pago" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
