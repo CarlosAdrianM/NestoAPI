@@ -21,5 +21,12 @@ namespace NestoAPI.Infraestructure
         /// <param name="numeroProducto">ID del producto</param>
         /// <returns>Número de Ganavisiones del producto, o null si no tiene configurado</returns>
         int? BuscarGanavisionesProducto(string numeroProducto);
+
+        /// <summary>
+        /// Obtiene el stock disponible total (todas las sedes) de un producto.
+        /// Issue #117: Validar stock de Ganavisiones al crear pedido
+        /// Disponible = Stock - PendienteEntregar + PendienteRecibir + PendienteReposicion
+        /// </summary>
+        int BuscarStockDisponibleTotal(string numeroProducto);
     }
 }

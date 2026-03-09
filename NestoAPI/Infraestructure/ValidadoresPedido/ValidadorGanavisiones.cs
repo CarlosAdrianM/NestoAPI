@@ -85,6 +85,27 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // Validar que hay suficientes Ganavisiones
             if (ganavisionesConsumidos <= ganavisionesDisponibles)
             {
+                // Issue #117: Validar stock disponible del producto bonificado
+                int cantidadBonificada = pedido.Lineas
+                    .Where(l => l.Producto == numeroProducto && l.BaseImponible == 0
+                        && (l.oferta == null || l.oferta == 0))
+                    .Sum(l => l.Cantidad);
+
+                if (cantidadBonificada > 0)
+                {
+                    int stockDisponible = servicio.BuscarStockDisponibleTotal(numeroProducto);
+                    if (stockDisponible < cantidadBonificada)
+                    {
+                        return new RespuestaValidacion
+                        {
+                            ValidacionSuperada = false,
+                            ProductoId = numeroProducto,
+                            Motivo = $"El producto {numeroProducto} no puede bonificarse porque no hay stock disponible suficiente " +
+                                     $"(disponible: {stockDisponible}, solicitado: {cantidadBonificada})"
+                        };
+                    }
+                }
+
                 return new RespuestaValidacion
                 {
                     ValidacionSuperada = true,

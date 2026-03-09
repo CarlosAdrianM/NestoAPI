@@ -27,6 +27,8 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
         public void Setup()
         {
             _servicioPrecios = A.Fake<IServicioPrecios>();
+            // Por defecto, stock suficiente para que los tests existentes no fallen
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal(A<string>.Ignored)).Returns(999);
             _validador = new ValidadorGanavisiones();
         }
 
@@ -821,6 +823,113 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
 
             Assert.IsFalse(resultado.ValidacionSuperada,
                 "Aparatos no generan Ganavisiones aunque se resuelva el grupo vía servicio");
+        }
+
+        #endregion
+
+        #region Issue #117: Validar stock disponible de productos Ganavisiones
+
+        [TestMethod]
+        public void EsPedidoValido_ProductoBonificadoSinStock_Invalido()
+        {
+            // Hay suficientes Ganavisiones pero no hay stock del producto regalo
+            var pedido = CrearPedidoConBonificado(100m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(0);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada,
+                "No debe permitir bonificar un producto sin stock disponible");
+            Assert.IsTrue(resultado.Motivo.Contains("stock"),
+                $"El motivo debe mencionar stock. Motivo: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_ProductoBonificadoConStockSuficiente_Valido()
+        {
+            var pedido = CrearPedidoConBonificado(100m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(10);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                "Debe permitir bonificar si hay stock suficiente y Ganavisiones suficientes");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_ProductoBonificadoConStockJusto_Valido()
+        {
+            // Stock = 1 y cantidad bonificada = 1 → justo
+            var pedido = CrearPedidoConBonificado(100m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(1);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                "Stock = 1, cantidad = 1: debe ser valido");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_MultiplesUnidadesBonificadasSinStockSuficiente_Invalido()
+        {
+            // Pide 3 unidades bonificadas pero solo hay 2 en stock
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "PROD01",
+                        GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 200m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "REGALO01",
+                        tipoLinea = 1,
+                        Cantidad = 3,
+                        PrecioUnitario = 0m
+                    }
+                }
+            };
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("PROD01")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(2);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada,
+                "Pide 3 unidades pero solo hay 2 en stock: debe ser invalido");
+            Assert.IsTrue(resultado.Motivo.Contains("2") && resultado.Motivo.Contains("3"),
+                $"El motivo debe incluir disponible (2) y solicitado (3). Motivo: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_StockNoSeValidaSiNoHayGanavisionesSuficientes()
+        {
+            // Si no hay suficientes Ganavisiones, no deberia llegar a validar stock
+            var pedido = CrearPedidoConBonificado(10m, Constantes.Productos.GRUPO_COSMETICA, "REGALO01");
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("REGALO01")).Returns(0);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada);
+            // El error debe ser de Ganavisiones insuficientes, no de stock
+            Assert.IsTrue(resultado.Motivo.Contains("Ganavisiones"),
+                $"El error debe ser de Ganavisiones, no de stock. Motivo: {resultado.Motivo}");
+            // No deberia haber llamado a BuscarStockDisponibleTotal
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal(A<string>.Ignored)).MustNotHaveHappened();
         }
 
         #endregion
