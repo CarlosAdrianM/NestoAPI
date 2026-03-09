@@ -1630,6 +1630,45 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// Busca líneas de pedido de venta por texto para un cliente.
+        /// Issue Nesto#308: Buscar producto comprado por cliente desde el selector de facturas.
+        /// </summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/BuscarLineas")]
+        [ResponseType(typeof(List<LineaPedidoVentaBusquedaDTO>))]
+        public async Task<IHttpActionResult> GetBuscarLineas(string cliente, string texto)
+        {
+            if (string.IsNullOrWhiteSpace(texto) || texto.Trim().Length < 3)
+            {
+                return BadRequest("El texto de búsqueda debe tener al menos 3 caracteres");
+            }
+
+            string textoTrimmed = texto.Trim();
+
+            var lineas = await db.LinPedidoVtas
+                .Where(l => l.Nº_Cliente == cliente
+                    && (l.Producto == textoTrimmed || l.Texto.Contains(textoTrimmed))
+                    && l.Estado >= Constantes.EstadosLineaVenta.EN_CURSO)
+                .OrderByDescending(l => l.Fecha_Entrega)
+                .Take(100)
+                .Select(l => new LineaPedidoVentaBusquedaDTO
+                {
+                    Empresa = l.Empresa,
+                    Pedido = l.Número,
+                    Factura = l.Nº_Factura,
+                    FechaFactura = l.Fecha_Factura,
+                    Producto = l.Producto,
+                    Texto = l.Texto,
+                    Cantidad = l.Cantidad,
+                    BaseImponible = l.Base_Imponible
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return Ok(lineas);
+        }
+
+        /// <summary>
         /// Loguea el JSON del pedido en ELMAH cuando falla la creación.
         /// Issue #95: Borradores de PlantillaVenta
         ///
