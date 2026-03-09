@@ -99,6 +99,23 @@ namespace NestoAPI.Tests.Infrastructure
                 SubGrupo = "MMP"
             });
 
+            _ = A.CallTo(() => servicio.BuscarProducto("COBRADO")).Returns(new Producto
+            {
+                Número = "COBRADO",
+                PVP = 100,
+                Grupo = "COS",
+                SubGrupo = "CER",
+                Familia = "DeMarca"
+            });
+            _ = A.CallTo(() => servicio.BuscarProducto("40133")).Returns(new Producto
+            {
+                Número = "40133",
+                PVP = 100,
+                Grupo = "COS",
+                SubGrupo = "CER",
+                Familia = "DeMarca"
+            });
+
             _ = A.CallTo(() => servicio.BuscarOfertasPermitidas("AA21")).Returns(new List<OfertaPermitida>
             {
                 new OfertaPermitida
@@ -567,10 +584,11 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void GestorPrecios_EsOfertaPermitida_SiHayOfertaParaLaFamiliaNoEsValidaParaProductosDeDistintoPrecio()
+        public void GestorPrecios_EsOfertaPermitida_RegaloConProductoMismoPrecioPasaValidacionOfertas()
         {
-            Producto producto = GestorPrecios.servicio.BuscarProducto("OF_FAMILIA");
-
+            // Un producto regalo (PrecioUnitario=0) con otro producto cobrado del mismo PVP/Familia
+            // NO debe ser tratado como oferta. Pasa la validación de ofertas (ValidacionSuperada=true)
+            // y será validado por otros validadores (ej: ValidadorDescuentosPermitidos, ValidadorGanavisiones).
             _ = A.CallTo(() => GestorPrecios.servicio.BuscarProducto("MISMO_PRECIO")).Returns(new Producto
             {
                 Número = "MISMO_PRECIO",
@@ -582,31 +600,27 @@ namespace NestoAPI.Tests.Infrastructure
             Producto mismoPrecio = GestorPrecios.servicio.BuscarProducto("MISMO_PRECIO");
 
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
-            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
             {
                 tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
                 Producto = "OF_FAMILIA",
                 AplicarDescuento = true,
                 Cantidad = 6,
                 PrecioUnitario = 130.01M
-            };
-            //linea.BaseImponible = 960;
-            pedido.Lineas.Add(linea);
-
-            LineaPedidoVentaDTO linea2 = new LineaPedidoVentaDTO
+            });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
             {
                 tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
                 Producto = "MISMO_PRECIO",
                 AplicarDescuento = true,
                 Cantidad = 1,
                 PrecioUnitario = 0
-            };
-            //linea2.BaseImponible = 0;
-            pedido.Lineas.Add(linea2);
+            });
 
             RespuestaValidacion respuesta = ValidadorOfertasPermitidas.EsOfertaPermitida(mismoPrecio, pedido, GestorPrecios.servicio);
 
-            Assert.IsFalse(respuesta.ValidacionSuperada);
+            // El regalo no tiene líneas cobradas propias → cantidad=0 → no es una oferta
+            Assert.IsTrue(respuesta.ValidacionSuperada);
         }
 
         [TestMethod]
@@ -3063,9 +3077,75 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, ofertaFamyprod.cantidadOferta);
             Assert.AreEqual(1, ofertaFamyprod.cantidad);
 
-            // REGALO sí debe tener la oferta agregada
+            // REGALO no debe contaminarse con la cantidad cobrada de FAMYPROD
             Assert.AreEqual(1, ofertaRegalo.cantidadOferta);
-            Assert.AreEqual(1, ofertaRegalo.cantidad);
+            Assert.AreEqual(0, ofertaRegalo.cantidad);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_MontarOfertaProducto_RegaloConProductoMismoPrecioNoCogeCantidadDelOtro()
+        {
+            // Escenario: producto regalo (Ganavision) con BaseImponible=0 comparte PVP y Familia
+            // con otro producto cobrado. MontarOfertaPedido del regalo no debe incluir la cantidad
+            // cobrada del otro producto, para evitar que ValidadorOfertasPermitidas lo trate como oferta.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+
+            // Producto cobrado (genera Ganavisiones)
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "COBRADO",
+                AplicarDescuento = false,
+                Cantidad = 6,
+                PrecioUnitario = 10
+            });
+
+            // Producto regalo (Ganavision) - mismo PVP y Familia
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "40133",
+                AplicarDescuento = false,
+                Cantidad = 1,
+                PrecioUnitario = 0
+            });
+
+            PrecioDescuentoProducto ofertaRegalo = GestorOfertasPedido.MontarOfertaPedido("40133", pedido);
+
+            // El regalo debe tener cantidadOferta=1 y cantidad=0 (no contaminar con COBRADO)
+            Assert.AreEqual(1, ofertaRegalo.cantidadOferta);
+            Assert.AreEqual(0, ofertaRegalo.cantidad);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_MontarOfertaProducto_OfertaMismoProductoCantidadesCorrectas()
+        {
+            // Escenario: oferta 2+1 del mismo producto (2 cobradas, 1 gratis)
+            // La cantidad de la oferta debe ser correcta incluso con la corrección
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "PROD1",
+                AplicarDescuento = false,
+                Cantidad = 2,
+                PrecioUnitario = 10
+            });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "PROD1",
+                AplicarDescuento = false,
+                Cantidad = 1,
+                PrecioUnitario = 0
+            });
+
+            PrecioDescuentoProducto oferta = GestorOfertasPedido.MontarOfertaPedido("PROD1", pedido);
+
+            // Oferta 2+1 del mismo producto
+            Assert.AreEqual(1, oferta.cantidadOferta);
+            Assert.AreEqual(2, oferta.cantidad);
         }
 
         [TestMethod]

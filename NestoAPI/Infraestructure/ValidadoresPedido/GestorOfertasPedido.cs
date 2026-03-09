@@ -44,11 +44,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             return new PrecioDescuentoProducto
             {
-                cantidadOferta = (short)lineasSinPrecio.Sum(l => l.Cantidad),
-                cantidad = (short)lineasConPrecio.Sum(l => l.Cantidad),
+                cantidadOferta = (short)lineasSinPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad),
+                cantidad = (short)lineasConPrecio.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad),
                 producto = producto,
-                precioCalculado = lineasConPrecio.Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(),
-                descuentoCalculado = lineasConPrecio.Select(l => 1 - ((1 - l.DescuentoLinea) * (1 - l.DescuentoProducto))).DefaultIfEmpty().Average()
+                precioCalculado = Math.Round(lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => l.PrecioUnitario).DefaultIfEmpty().Average(), 2, MidpointRounding.AwayFromZero),
+                descuentoCalculado = lineasConPrecio.Where(l => l.Producto == numeroProducto).Select(l => 1 - ((1 - l.DescuentoLinea) * (1 - l.DescuentoProducto))).DefaultIfEmpty().Average()
             };
 
         }
