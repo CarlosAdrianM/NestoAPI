@@ -1,8 +1,10 @@
+using NestoAPI.Infraestructure.OpenAI;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
-using System.Data.Entity;
+using System.Configuration;
 using System.Linq;
+using System.Net.Mail;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.CorreosPostCompra
@@ -10,150 +12,153 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     /// <summary>
     /// Servicio con métodos estáticos para jobs de Hangfire de correos post-compra.
     /// Issue #74: Sistema de correos automáticos con videos personalizados post-compra.
+    /// Se ejecuta los miércoles a las 20:30, procesa albaranes de la semana y programa
+    /// envíos individuales para el sábado a las 10:00.
     /// </summary>
     public class CorreosPostCompraJobsService
     {
         /// <summary>
-        /// Job que se ejecuta diariamente después de las 20h.
-        /// Obtiene todos los albaranes del día y programa el envío de correos para dentro de 3 días.
+        /// Job semanal (miércoles 20:30). Obtiene los albaranes de la semana,
+        /// agrupa por cliente y programa los envíos para 3 días después (sábado 10:00).
         /// </summary>
-        public static async Task ProcesarAlbaranesDiarios()
+        public static async Task ProcesarCorreosSemanales()
         {
-            Console.WriteLine("🚀 [Hangfire] Iniciando procesamiento de albaranes para correos post-compra...");
-
             try
             {
-                using (var db = new NVEntities())
+                DateTime hoy = DateTime.Today;
+                DateTime fechaDesde = hoy.AddDays(-6);
+                DateTime fechaHasta = hoy;
+
+                var servicio = new ServicioRecomendacionesPostCompra();
+                var correos = await servicio
+                    .ObtenerCorreosSemana(Constantes.Empresas.EMPRESA_POR_DEFECTO, fechaDesde, fechaHasta)
+                    .ConfigureAwait(false);
+
+                if (!correos.Any())
                 {
-                    db.Configuration.LazyLoadingEnabled = false;
+                    return;
+                }
 
-                    // Obtener los números de pedido con albaranes de hoy
-                    DateTime hoy = DateTime.Today;
+                // Modo test: redirigir todos los correos a los emails de prueba
+                bool modoTest = ConfigurationManager.AppSettings["CorreosPostCompra:ModoTest"]?.ToLower() == "true";
+                if (modoTest)
+                {
+                    string emailsTestConfig = ConfigurationManager.AppSettings["CorreosPostCompra:EmailsTest"] ?? "";
+                    correos = AplicarModoTest(correos, emailsTestConfig);
+                }
 
-                    var pedidosConAlbaran = await db.LinPedidoVtas
-                        .Where(l => l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
-                                    DbFunctions.TruncateTime(l.Fecha_Albarán) == hoy &&
-                                    l.TipoLinea == 1 &&
-                                    l.Cantidad >= 1)
-                        .Select(l => new { l.Empresa, l.Número })
-                        .Distinct()
-                        .ToListAsync()
-                        .ConfigureAwait(false);
+                // Programar envíos para el sábado a las 10:00 (3 días después del miércoles)
+                DateTime fechaEnvio = hoy.AddDays(3).Date.AddHours(10);
 
-                    Console.WriteLine($"📦 [Hangfire] Encontrados {pedidosConAlbaran.Count} pedidos con albarán hoy");
-
-                    if (!pedidosConAlbaran.Any())
+                foreach (var correo in correos)
+                {
+                    try
                     {
-                        Console.WriteLine("✅ [Hangfire] No hay albaranes que procesar hoy");
-                        return;
+                        Hangfire.BackgroundJob.Schedule(
+                            () => EnviarCorreoPostCompra(correo),
+                            fechaEnvio);
                     }
-
-                    // Programar el envío para dentro de 3 días
-                    DateTime fechaEnvio = DateTime.Now.AddDays(3).Date.AddHours(10); // A las 10:00 de dentro de 3 días
-
-                    foreach (var pedido in pedidosConAlbaran)
+                    catch (Exception)
                     {
-                        try
-                        {
-                            // Programar el job de envío de correo para dentro de 3 días
-                            Hangfire.BackgroundJob.Schedule(
-                                () => EnviarCorreoPostCompra(pedido.Empresa, pedido.Número),
-                                fechaEnvio
-                            );
-
-                            Console.WriteLine($"📧 [Hangfire] Programado correo para pedido {pedido.Número} - Fecha envío: {fechaEnvio}");
-                        }
-                        catch (Exception ex)
-                        {
-                            Console.WriteLine($"⚠️ [Hangfire] Error programando correo para pedido {pedido.Número}: {ex.Message}");
-                            // Continuar con los demás pedidos
-                        }
+                        // Continuar con los demás correos
                     }
-
-                    Console.WriteLine($"✅ [Hangfire] Procesamiento completado. {pedidosConAlbaran.Count} correos programados para {fechaEnvio}");
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"❌ [Hangfire] Error en procesamiento de albaranes: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 throw; // Re-lanzar para que Hangfire lo registre y reintente
             }
         }
 
         /// <summary>
-        /// Job que envía el correo post-compra para un pedido específico.
-        /// Se ejecuta 3 días después de crear el albarán.
+        /// Genera el contenido HTML con OpenAI y envía el correo por SMTP.
         /// </summary>
-        public static async Task EnviarCorreoPostCompra(string empresa, int numeroPedido)
+        public static async Task EnviarCorreoPostCompra(CorreoPostCompraClienteDTO datos)
         {
-            Console.WriteLine($"📧 [Hangfire] Enviando correo post-compra para pedido {empresa}/{numeroPedido}...");
-
             try
             {
-                var servicioRecomendaciones = new ServicioRecomendacionesPostCompra();
-
-                // Obtener recomendaciones
-                var recomendaciones = await servicioRecomendaciones
-                    .ObtenerRecomendaciones(empresa, numeroPedido)
-                    .ConfigureAwait(false);
-
-                if (recomendaciones == null)
+                if (string.IsNullOrWhiteSpace(datos?.ClienteEmail))
                 {
-                    Console.WriteLine($"⚠️ [Hangfire] Pedido {numeroPedido} no encontrado");
                     return;
                 }
 
-                if (string.IsNullOrWhiteSpace(recomendaciones.ClienteEmail))
+                if (datos.ProductosComprados == null || !datos.ProductosComprados.Any())
                 {
-                    Console.WriteLine($"⚠️ [Hangfire] Cliente {recomendaciones.ClienteId} sin email. No se envía correo.");
                     return;
                 }
 
-                if (recomendaciones.Videos == null || recomendaciones.Videos.Count == 0)
-                {
-                    Console.WriteLine($"⚠️ [Hangfire] Pedido {numeroPedido} sin videos relacionados. No se envía correo.");
-                    return;
-                }
-
-                // Generar contenido del correo
-                var generador = new GeneradorContenidoCorreoPostCompra(
-                    new OpenAI.ServicioOpenAI()
-                );
-
+                var generador = new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI());
                 string htmlCorreo = await generador
-                    .GenerarContenidoHtml(recomendaciones)
+                    .GenerarContenidoHtml(datos)
                     .ConfigureAwait(false);
 
                 if (string.IsNullOrEmpty(htmlCorreo))
                 {
-                    Console.WriteLine($"⚠️ [Hangfire] Error generando contenido HTML para pedido {numeroPedido}");
                     return;
                 }
 
-                // TODO: Enviar correo con Mailchimp
-                // Por ahora solo logueamos que lo enviaríamos
-                Console.WriteLine($"📧 [Hangfire] Correo generado para {recomendaciones.ClienteEmail}:");
-                Console.WriteLine($"   - Cliente: {recomendaciones.ClienteNombre}");
-                Console.WriteLine($"   - Videos incluidos: {recomendaciones.Videos.Count}");
-                Console.WriteLine($"   - HTML generado: {htmlCorreo.Length} caracteres");
+                string asunto = $"Saca el máximo partido a tu compra, {datos.ClienteNombre}";
+                string remitente = ConfigurationManager.AppSettings["CorreosPostCompra:Remitente"]
+                    ?? "nuevavision@nuevavision.es";
 
-                // Aquí irá la integración con Mailchimp:
-                // var servicioMailchimp = new ServicioMailchimp();
-                // await servicioMailchimp.EnviarCorreo(
-                //     recomendaciones.ClienteEmail,
-                //     $"Saca el máximo partido a tu compra, {recomendaciones.ClienteNombre}",
-                //     htmlCorreo
-                // );
+                string htmlCompleto = $@"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=""utf-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>{asunto}</title>
+</head>
+<body style=""margin: 0; padding: 0; font-family: Arial, sans-serif;"">
+    {htmlCorreo}
+</body>
+</html>";
 
-                Console.WriteLine($"✅ [Hangfire] Correo procesado para pedido {numeroPedido}");
+                using (var mail = new MailMessage())
+                {
+                    mail.From = new MailAddress(remitente, "El equipo de Nueva Visión");
+                    mail.To.Add(datos.ClienteEmail);
+                    mail.Subject = asunto;
+                    mail.Body = htmlCompleto;
+                    mail.IsBodyHtml = true;
+
+                    var servicioCorreo = new ServicioCorreoElectronico();
+                    servicioCorreo.EnviarCorreoSMTP(mail);
+                }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"❌ [Hangfire] Error enviando correo para pedido {numeroPedido}: {ex.Message}");
-                Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 throw; // Re-lanzar para que Hangfire lo registre y reintente
             }
+        }
+
+        /// <summary>
+        /// En modo test, redirige todos los correos al primer email de la lista de test.
+        /// Si no hay emails de test configurados, devuelve lista vacía (no se envía nada).
+        /// </summary>
+        internal static List<CorreoPostCompraClienteDTO> AplicarModoTest(
+            List<CorreoPostCompraClienteDTO> correos, string emailsTestConfig)
+        {
+            if (string.IsNullOrWhiteSpace(emailsTestConfig))
+            {
+                return new List<CorreoPostCompraClienteDTO>();
+            }
+
+            var emailPrincipal = emailsTestConfig
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(e => e.Trim())
+                .FirstOrDefault();
+
+            if (string.IsNullOrWhiteSpace(emailPrincipal))
+            {
+                return new List<CorreoPostCompraClienteDTO>();
+            }
+
+            foreach (var correo in correos)
+            {
+                correo.ClienteEmail = emailPrincipal;
+            }
+
+            return correos;
         }
     }
 }

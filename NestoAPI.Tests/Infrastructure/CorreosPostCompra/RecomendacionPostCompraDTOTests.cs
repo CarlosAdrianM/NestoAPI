@@ -1,161 +1,67 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.CorreosPostCompra;
+using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
 {
     [TestClass]
-    public class RecomendacionPostCompraDTOTests
+    public class CorreoPostCompraClienteDTOTests
     {
         [TestMethod]
-        public void VideoRecomendadoDTO_ProductosComprados_CuentaCorrectamente()
+        public void CorreoPostCompraClienteDTO_SeInicializaConListasVacias()
         {
-            // Arrange
-            var video = new VideoRecomendadoDTO
-            {
-                VideoId = 1,
-                Titulo = "Video de prueba",
-                Productos = new List<ProductoEnVideoDTO>
-                {
-                    new ProductoEnVideoDTO { ProductoId = "PROD1", YaComprado = true },
-                    new ProductoEnVideoDTO { ProductoId = "PROD2", YaComprado = true },
-                    new ProductoEnVideoDTO { ProductoId = "PROD3", YaComprado = false },
-                    new ProductoEnVideoDTO { ProductoId = "PROD4", YaComprado = false },
-                    new ProductoEnVideoDTO { ProductoId = "PROD5", YaComprado = false }
-                }
-            };
+            var dto = new CorreoPostCompraClienteDTO();
 
-            // Act & Assert
-            Assert.AreEqual(2, video.ProductosComprados, "Debería contar 2 productos comprados");
-            Assert.AreEqual(3, video.ProductosNoComprados, "Debería contar 3 productos no comprados");
+            Assert.IsNotNull(dto.ProductosComprados);
+            Assert.IsNotNull(dto.ProductosRecomendados);
+            Assert.AreEqual(0, dto.ProductosComprados.Count);
+            Assert.AreEqual(0, dto.ProductosRecomendados.Count);
         }
 
         [TestMethod]
-        public void VideoRecomendadoDTO_SinProductos_DevuelveCero()
+        public void CorreoPostCompraClienteDTO_EstructuraCompleta_SeInicializaCorrectamente()
         {
-            // Arrange
-            var video = new VideoRecomendadoDTO
-            {
-                VideoId = 1,
-                Titulo = "Video vacío",
-                Productos = new List<ProductoEnVideoDTO>()
-            };
-
-            // Act & Assert
-            Assert.AreEqual(0, video.ProductosComprados);
-            Assert.AreEqual(0, video.ProductosNoComprados);
-        }
-
-        [TestMethod]
-        public void VideoRecomendadoDTO_ProductosNull_DevuelveCero()
-        {
-            // Arrange
-            var video = new VideoRecomendadoDTO
-            {
-                VideoId = 1,
-                Titulo = "Video sin productos",
-                Productos = null
-            };
-
-            // Act & Assert
-            Assert.AreEqual(0, video.ProductosComprados);
-            Assert.AreEqual(0, video.ProductosNoComprados);
-        }
-
-        [TestMethod]
-        public void ProductoEnVideoDTO_DistingueEntrePedidoActualYHistorico()
-        {
-            // Arrange - Producto comprado antes pero no en este pedido
-            var productoHistorico = new ProductoEnVideoDTO
-            {
-                ProductoId = "PROD1",
-                YaComprado = true,
-                EnPedidoActual = false
-            };
-
-            // Arrange - Producto del pedido actual
-            var productoPedidoActual = new ProductoEnVideoDTO
-            {
-                ProductoId = "PROD2",
-                YaComprado = true, // También está en histórico porque lo acaba de comprar
-                EnPedidoActual = true
-            };
-
-            // Arrange - Producto que nunca ha comprado
-            var productoNuevo = new ProductoEnVideoDTO
-            {
-                ProductoId = "PROD3",
-                YaComprado = false,
-                EnPedidoActual = false
-            };
-
-            // Assert
-            Assert.IsTrue(productoHistorico.YaComprado);
-            Assert.IsFalse(productoHistorico.EnPedidoActual);
-
-            Assert.IsTrue(productoPedidoActual.YaComprado);
-            Assert.IsTrue(productoPedidoActual.EnPedidoActual);
-
-            Assert.IsFalse(productoNuevo.YaComprado);
-            Assert.IsFalse(productoNuevo.EnPedidoActual);
-        }
-
-        [TestMethod]
-        public void RecomendacionPostCompraDTO_EstructuraCompleta_SeInicializaCorrectamente()
-        {
-            // Arrange & Act
-            var recomendacion = new RecomendacionPostCompraDTO
+            var dto = new CorreoPostCompraClienteDTO
             {
                 Empresa = "1",
                 ClienteId = "12345",
                 ClienteNombre = "Cliente de Prueba S.L.",
                 ClienteEmail = "cliente@ejemplo.com",
-                PedidoNumero = 98765,
-                FechaPedido = new System.DateTime(2025, 1, 15),
-                Videos = new List<VideoRecomendadoDTO>
+                SemanaDesde = new DateTime(2026, 3, 4),
+                SemanaHasta = new DateTime(2026, 3, 10),
+                ProductosComprados = new List<ProductoCompradoConVideoDTO>
                 {
-                    new VideoRecomendadoDTO
+                    new ProductoCompradoConVideoDTO
                     {
-                        VideoId = 1,
+                        ProductoId = "PROD-X",
+                        NombreProducto = "Producto X Premium",
+                        BaseImponibleTotal = 150.50m,
                         VideoYoutubeId = "abc123xyz",
-                        Titulo = "Cómo usar el producto X",
-                        Productos = new List<ProductoEnVideoDTO>
-                        {
-                            new ProductoEnVideoDTO
-                            {
-                                ProductoId = "PROD-X",
-                                NombreProducto = "Producto X Premium",
-                                TiempoAparicion = "1:30",
-                                EnlaceVideo = "https://youtube.com/watch?v=abc123xyz&t=90",
-                                EnlaceTienda = "https://tienda.com/producto-x",
-                                YaComprado = true,
-                                EnPedidoActual = true
-                            },
-                            new ProductoEnVideoDTO
-                            {
-                                ProductoId = "PROD-Y",
-                                NombreProducto = "Producto Y Complementario",
-                                TiempoAparicion = "3:45",
-                                EnlaceVideo = "https://youtube.com/watch?v=abc123xyz&t=225",
-                                EnlaceTienda = "https://tienda.com/producto-y",
-                                YaComprado = false,
-                                EnPedidoActual = false
-                            }
-                        }
+                        VideoTitulo = "Tutorial Producto X",
+                        EnlaceVideoProducto = "https://youtube.com/watch?v=abc123xyz&t=90",
+                        EnlaceTienda = "https://tienda.com/producto-x"
+                    }
+                },
+                ProductosRecomendados = new List<ProductoRecomendadoDTO>
+                {
+                    new ProductoRecomendadoDTO
+                    {
+                        ProductoId = "PROD-Y",
+                        NombreProducto = "Producto Y Complementario",
+                        VideoYoutubeId = "abc123xyz",
+                        VideoTitulo = "Tutorial Producto X",
+                        EnlaceVideoProducto = "https://youtube.com/watch?v=abc123xyz&t=225",
+                        EnlaceTienda = "https://tienda.com/producto-y"
                     }
                 }
             };
 
-            // Assert
-            Assert.AreEqual("1", recomendacion.Empresa);
-            Assert.AreEqual("12345", recomendacion.ClienteId);
-            Assert.AreEqual("Cliente de Prueba S.L.", recomendacion.ClienteNombre);
-            Assert.AreEqual("cliente@ejemplo.com", recomendacion.ClienteEmail);
-            Assert.AreEqual(98765, recomendacion.PedidoNumero);
-            Assert.AreEqual(1, recomendacion.Videos.Count);
-            Assert.AreEqual(2, recomendacion.Videos[0].Productos.Count);
-            Assert.AreEqual(1, recomendacion.Videos[0].ProductosComprados);
-            Assert.AreEqual(1, recomendacion.Videos[0].ProductosNoComprados);
+            Assert.AreEqual("1", dto.Empresa);
+            Assert.AreEqual("12345", dto.ClienteId);
+            Assert.AreEqual(1, dto.ProductosComprados.Count);
+            Assert.AreEqual(150.50m, dto.ProductosComprados[0].BaseImponibleTotal);
+            Assert.AreEqual(1, dto.ProductosRecomendados.Count);
         }
     }
 }

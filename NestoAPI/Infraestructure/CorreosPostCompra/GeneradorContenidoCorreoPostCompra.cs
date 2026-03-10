@@ -16,141 +16,126 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             _servicioOpenAI = servicioOpenAI;
         }
 
-        public async Task<string> GenerarContenidoHtml(RecomendacionPostCompraDTO recomendacion)
+        public async Task<string> GenerarContenidoHtml(CorreoPostCompraClienteDTO correo)
         {
-            if (recomendacion == null || recomendacion.Videos == null || !recomendacion.Videos.Any())
+            if (correo == null ||
+                correo.ProductosComprados == null ||
+                !correo.ProductosComprados.Any())
             {
                 return null;
             }
 
-            // Obtener URLs de Prestashop para los productos (en paralelo)
-            var urlsProductos = await ObtenerUrlsProductosPrestashop(recomendacion).ConfigureAwait(false);
-
             var systemPrompt = CrearSystemPrompt();
-            var userMessage = CrearUserMessage(recomendacion, urlsProductos);
+            var userMessage = CrearUserMessage(correo);
 
             return await _servicioOpenAI.GenerarCorreoHtmlAsync(systemPrompt, userMessage).ConfigureAwait(false);
         }
 
-        /// <summary>
-        /// Obtiene las URLs de Prestashop para todos los productos de los videos.
-        /// Se ejecuta en paralelo para minimizar el tiempo de espera.
-        /// </summary>
-        private async Task<Dictionary<string, string>> ObtenerUrlsProductosPrestashop(RecomendacionPostCompraDTO recomendacion)
+        internal string CrearSystemPrompt()
         {
-            var productosUnicos = recomendacion.Videos
-                .SelectMany(v => v.Productos)
-                .Select(p => p.ProductoId)
-                .Where(id => !string.IsNullOrWhiteSpace(id))
-                .Distinct()
-                .ToList();
+            return @"Eres un experto en email marketing para una empresa de productos de estética y peluquería profesional llamada Nueva Visión.
 
-            var tareas = productosUnicos.Select(async productoId =>
-            {
-                var url = await ProductoDTO.LeerUrlTiendaOnline(productoId).ConfigureAwait(false);
-                return new { ProductoId = productoId, Url = url };
-            });
-
-            var resultados = await Task.WhenAll(tareas).ConfigureAwait(false);
-
-            return resultados
-                .Where(r => !string.IsNullOrEmpty(r.Url))
-                .ToDictionary(r => r.ProductoId, r => r.Url);
-        }
-
-        private string CrearSystemPrompt()
-        {
-            return @"Eres un experto en email marketing para una empresa de productos de estética y peluquería profesional.
-
-Tu objetivo es generar un correo HTML que ayude al cliente a sacar el máximo partido a los productos que acaba de comprar, mostrándole videos tutoriales.
+Tu objetivo es generar un correo HTML que ayude al cliente a sacar el máximo partido a los productos que ha comprado recientemente, mostrándole vídeos tutoriales.
 
 PRINCIPIOS CLAVE (muy importantes):
 - El cliente NO debe sentir que le quieres vender nada
 - El correo debe parecer una AYUDA genuina, no una promoción
-- Primero mostrar valor (videos de lo que YA compró), luego sutilmente mencionar otros productos del video
-- NO distinguir explícitamente entre productos que tiene y que no tiene
+- Primero mostrar valor (vídeos de lo que YA compró)
+- Si hay productos recomendados, mencionarlos de forma sutil como ""otros productos que aparecen en estos vídeos""
 - Tono amigable y profesional, como un asesor de confianza
 
 ESTRUCTURA DEL CORREO:
 1. Saludo breve y personalizado
-2. Mensaje de valor: ""Hemos preparado esto para que saques el máximo partido a tu compra""
-3. Mostrar el/los video(s) con thumbnail y enlace
-4. Mencionar de forma natural qué técnicas/productos verá en el video (sin distinguir si los tiene o no)
-5. CTA suave: ""Ver video"" (NO ""Comprar ahora"")
-6. Despedida cálida
+2. Mensaje de valor: ""Hemos preparado estos vídeos para que saques el máximo partido a tu compra""
+3. Para cada producto comprado (máximo 3): mostrar nombre del producto, thumbnail del vídeo y botón ""Ver vídeo""
+4. Si hay productos recomendados: sección ""Otros productos que aparecen en estos vídeos"" con enlaces sutiles
+5. Firma: ""El equipo de Nueva Visión"" con teléfono 916 28 19 14 (WhatsApp)
 
 RESTRICCIONES:
-- Máximo 120 palabras de texto (sin contar HTML)
-- Diseño limpio, mobile-first
-- Colores suaves, sin urgencias ni descuentos
-- Un solo botón CTA principal por video
+- Máximo 150 palabras de texto (sin contar HTML)
+- Diseño limpio, mobile-first, ancho máximo 600px
+- Colores suaves (principal: #2C5F7C), sin urgencias ni descuentos
+- Botones CTA suaves: ""Ver vídeo"" (NO ""Comprar ahora"")
 - NO usar palabras como ""oferta"", ""descuento"", ""compra"", ""promoción""
+- Thumbnail del vídeo: https://img.youtube.com/vi/{YOUTUBE_ID}/maxresdefault.jpg
+- Usar SOLO las URLs proporcionadas, NO inventar enlaces
+- Todos los enlaces deben incluir los parámetros UTM que se proporcionan
 
 Devuelve SOLO el HTML del cuerpo del correo, sin etiquetas <html>, <head> o <body>.";
         }
 
-        private string CrearUserMessage(RecomendacionPostCompraDTO recomendacion, Dictionary<string, string> urlsProductos)
+        internal string CrearUserMessage(CorreoPostCompraClienteDTO correo)
         {
             var sb = new StringBuilder();
 
-            sb.AppendLine($"CLIENTE: {recomendacion.ClienteNombre}");
+            sb.AppendLine($"CLIENTE: {correo.ClienteNombre}");
             sb.AppendLine();
 
-            // Productos que compró en este pedido
-            var productosComprados = recomendacion.Videos
-                .SelectMany(v => v.Productos)
-                .Where(p => p.EnPedidoActual)
-                .Select(p => p.NombreProducto)
-                .Distinct()
-                .ToList();
-
-            sb.AppendLine("PRODUCTOS QUE ACABA DE COMPRAR:");
-            foreach (var producto in productosComprados)
+            sb.AppendLine("PRODUCTOS COMPRADOS RECIENTEMENTE (mostrar con vídeo tutorial):");
+            foreach (var producto in correo.ProductosComprados)
             {
-                sb.AppendLine($"- {producto}");
-            }
-            sb.AppendLine();
+                sb.AppendLine($"- Producto: {producto.NombreProducto}");
+                sb.AppendLine($"  Vídeo: {producto.VideoTitulo}");
+                sb.AppendLine($"  YouTube ID: {producto.VideoYoutubeId}");
+                sb.AppendLine($"  Thumbnail: https://img.youtube.com/vi/{producto.VideoYoutubeId}/maxresdefault.jpg");
 
-            sb.AppendLine("VIDEOS DISPONIBLES:");
-            foreach (var video in recomendacion.Videos.Take(2)) // Máximo 2 videos
-            {
-                sb.AppendLine($"Video: {video.Titulo}");
-                sb.AppendLine($"YouTube ID: {video.VideoYoutubeId}");
-                sb.AppendLine($"Thumbnail: https://img.youtube.com/vi/{video.VideoYoutubeId}/maxresdefault.jpg");
-                sb.AppendLine($"Link video: https://www.youtube.com/watch?v={video.VideoYoutubeId}");
-                sb.AppendLine("Productos en el video:");
-
-                foreach (var producto in video.Productos)
+                if (!string.IsNullOrEmpty(producto.EnlaceVideoProducto))
                 {
-                    var marca = producto.YaComprado ? "(tiene)" : "(no tiene)";
-                    // Solo informamos internamente, el prompt dice que no debe distinguir en el texto
-                    sb.AppendLine($"  - {producto.NombreProducto} {marca}");
+                    sb.AppendLine($"  Link vídeo: {AgregarUtm(producto.EnlaceVideoProducto)}");
+                }
+                else
+                {
+                    sb.AppendLine($"  Link vídeo: {AgregarUtm($"https://www.youtube.com/watch?v={producto.VideoYoutubeId}")}");
+                }
 
-                    // Enlace al momento exacto del video donde aparece el producto
-                    if (!string.IsNullOrEmpty(producto.EnlaceVideo))
+                if (!string.IsNullOrEmpty(producto.EnlaceTienda))
+                {
+                    sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
+                }
+
+                sb.AppendLine();
+            }
+
+            if (correo.ProductosRecomendados != null && correo.ProductosRecomendados.Any())
+            {
+                sb.AppendLine("PRODUCTOS RECOMENDADOS (aparecen en los mismos vídeos, el cliente NO los ha comprado):");
+                foreach (var producto in correo.ProductosRecomendados)
+                {
+                    sb.AppendLine($"- Producto: {producto.NombreProducto}");
+
+                    if (!string.IsNullOrEmpty(producto.EnlaceVideoProducto))
                     {
-                        sb.AppendLine($"    Link momento video: {producto.EnlaceVideo}");
+                        sb.AppendLine($"  Link vídeo: {AgregarUtm(producto.EnlaceVideoProducto)}");
                     }
 
-                    // Enlace a la tienda online (de Prestashop, no de VideosProductos)
-                    if (!string.IsNullOrWhiteSpace(producto.ProductoId) &&
-                        urlsProductos.TryGetValue(producto.ProductoId, out string urlTienda))
+                    if (!string.IsNullOrEmpty(producto.EnlaceTienda))
                     {
-                        sb.AppendLine($"    Link tienda: {urlTienda}");
+                        sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
                     }
                 }
                 sb.AppendLine();
             }
 
-            sb.AppendLine("IMPORTANTE: En el HTML, NO menciones cuáles tiene y cuáles no. Menciona todos los productos del video de forma natural, como si fueran técnicas que aprenderá.");
-            sb.AppendLine("IMPORTANTE: Si incluyes enlaces a productos de la tienda, usa SOLO los enlaces proporcionados arriba (Link tienda). NO inventes URLs.");
+            sb.AppendLine("IMPORTANTE: NO distinguir entre productos comprados y recomendados en el texto visible. Menciona los recomendados de forma natural como \"otros productos que aparecen en estos vídeos\".");
+            sb.AppendLine("IMPORTANTE: Usa SOLO los enlaces proporcionados. NO inventes URLs.");
 
             return sb.ToString();
+        }
+
+        internal static string AgregarUtm(string url)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                return url;
+            }
+
+            var separator = url.Contains("?") ? "&" : "?";
+            return $"{url}{separator}utm_source=correo_postcompra&utm_medium=email&utm_campaign=tutoriales_postcompra";
         }
     }
 
     public interface IGeneradorContenidoCorreoPostCompra
     {
-        Task<string> GenerarContenidoHtml(RecomendacionPostCompraDTO recomendacion);
+        Task<string> GenerarContenidoHtml(CorreoPostCompraClienteDTO correo);
     }
 }

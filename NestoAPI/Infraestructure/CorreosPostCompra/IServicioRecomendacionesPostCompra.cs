@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.CorreosPostCompra
@@ -5,13 +7,12 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
     public interface IServicioRecomendacionesPostCompra
     {
         /// <summary>
-        /// Obtiene las recomendaciones de videos y productos para un pedido.
-        /// Incluye videos donde aparecen los productos comprados, y para cada video
-        /// lista todos sus productos indicando cuáles tiene el cliente y cuáles no.
+        /// Obtiene los datos de correo post-compra para todos los clientes que tuvieron
+        /// albaranes en el rango de fechas especificado y cumplen los filtros
+        /// (tienen email, Estado distinto de 8, CP empieza por 28/45/19).
+        /// Para cada cliente devuelve los top 3 productos por BaseImponible que tienen vídeo,
+        /// y hasta 4 productos recomendados de esos vídeos que el cliente nunca ha comprado.
         /// </summary>
-        /// <param name="empresa">Código de empresa</param>
-        /// <param name="pedidoNumero">Número del pedido</param>
-        /// <returns>Datos completos para generar el correo post-compra</returns>
-        Task<RecomendacionPostCompraDTO> ObtenerRecomendaciones(string empresa, int pedidoNumero);
+        Task<List<CorreoPostCompraClienteDTO>> ObtenerCorreosSemana(string empresa, DateTime fechaDesde, DateTime fechaHasta);
     }
 }

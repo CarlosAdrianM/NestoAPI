@@ -1,6 +1,10 @@
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.OpenAI;
+using NestoAPI.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Mail;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -28,7 +32,6 @@ namespace NestoAPI.Controllers
             _servicioCorreo = new ServicioCorreoElectronico();
         }
 
-        // Constructor para inyección de dependencias / testing
         public CorreosPostCompraController(
             IServicioRecomendacionesPostCompra servicioRecomendaciones,
             IGeneradorContenidoCorreoPostCompra generadorContenido,
@@ -40,110 +43,135 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// Obtiene las recomendaciones de videos y productos para un pedido.
-        /// Útil para ver qué datos se enviarían en el correo sin generar el contenido.
+        /// Obtiene los correos post-compra que se generarían para la semana especificada.
+        /// Si no se indican fechas, usa los últimos 7 días.
         /// </summary>
-        /// <param name="empresa">Código de empresa</param>
-        /// <param name="pedido">Número de pedido</param>
-        /// <returns>Videos recomendados con productos (marcados como comprados o no)</returns>
         [HttpGet]
         [Route("Recomendaciones")]
-        [ResponseType(typeof(RecomendacionPostCompraDTO))]
-        public async Task<IHttpActionResult> GetRecomendaciones(string empresa, int pedido)
+        [ResponseType(typeof(List<CorreoPostCompraClienteDTO>))]
+        public async Task<IHttpActionResult> GetRecomendaciones(
+            string empresa = "1",
+            string fechaDesde = null,
+            string fechaHasta = null)
         {
-            var recomendaciones = await _servicioRecomendaciones.ObtenerRecomendaciones(empresa, pedido).ConfigureAwait(false);
+            DateTime desde = string.IsNullOrEmpty(fechaDesde)
+                ? DateTime.Today.AddDays(-7)
+                : DateTime.Parse(fechaDesde);
+            DateTime hasta = string.IsNullOrEmpty(fechaHasta)
+                ? DateTime.Today
+                : DateTime.Parse(fechaHasta);
 
-            if (recomendaciones == null)
-            {
-                return NotFound();
-            }
+            var correos = await _servicioRecomendaciones
+                .ObtenerCorreosSemana(empresa, desde, hasta)
+                .ConfigureAwait(false);
 
-            return Ok(recomendaciones);
+            return Ok(correos);
         }
 
         /// <summary>
-        /// Genera una vista previa del correo HTML que se enviaría al cliente.
-        /// NO envía el correo, solo devuelve el HTML generado por OpenAI.
+        /// Genera una vista previa del correo HTML para un cliente específico.
         /// </summary>
-        /// <param name="empresa">Código de empresa</param>
-        /// <param name="pedido">Número de pedido</param>
-        /// <returns>HTML del correo generado</returns>
         [HttpGet]
         [Route("Preview")]
         [ResponseType(typeof(PreviewCorreoDTO))]
-        public async Task<IHttpActionResult> GetPreviewCorreo(string empresa, int pedido)
+        public async Task<IHttpActionResult> GetPreviewCorreo(
+            string empresa = "1",
+            string cliente = null,
+            string fechaDesde = null,
+            string fechaHasta = null)
         {
-            var recomendaciones = await _servicioRecomendaciones.ObtenerRecomendaciones(empresa, pedido).ConfigureAwait(false);
-
-            if (recomendaciones == null)
+            if (string.IsNullOrEmpty(cliente))
             {
-                return NotFound();
+                return BadRequest("El parámetro 'cliente' es obligatorio");
             }
 
-            if (recomendaciones.Videos == null || recomendaciones.Videos.Count == 0)
+            DateTime desde = string.IsNullOrEmpty(fechaDesde)
+                ? DateTime.Today.AddDays(-7)
+                : DateTime.Parse(fechaDesde);
+            DateTime hasta = string.IsNullOrEmpty(fechaHasta)
+                ? DateTime.Today
+                : DateTime.Parse(fechaHasta);
+
+            var correos = await _servicioRecomendaciones
+                .ObtenerCorreosSemana(empresa, desde, hasta)
+                .ConfigureAwait(false);
+
+            var correoCliente = correos?.FirstOrDefault(c =>
+                c.ClienteId?.Trim() == cliente.Trim());
+
+            if (correoCliente == null)
             {
                 return Ok(new PreviewCorreoDTO
                 {
-                    ClienteNombre = recomendaciones.ClienteNombre,
-                    ClienteEmail = recomendaciones.ClienteEmail,
-                    PedidoNumero = recomendaciones.PedidoNumero,
+                    ClienteId = cliente,
                     HtmlGenerado = null,
-                    Mensaje = "No hay videos disponibles para los productos de este pedido"
+                    Mensaje = "No se encontraron datos para este cliente en el rango de fechas indicado"
                 });
             }
 
-            var htmlGenerado = await _generadorContenido.GenerarContenidoHtml(recomendaciones).ConfigureAwait(false);
+            var htmlGenerado = await _generadorContenido
+                .GenerarContenidoHtml(correoCliente)
+                .ConfigureAwait(false);
 
             return Ok(new PreviewCorreoDTO
             {
-                ClienteNombre = recomendaciones.ClienteNombre,
-                ClienteEmail = recomendaciones.ClienteEmail,
-                PedidoNumero = recomendaciones.PedidoNumero,
-                VideosIncluidos = recomendaciones.Videos.Count,
-                ProductosComprados = recomendaciones.Videos.Count > 0
-                    ? recomendaciones.Videos[0].ProductosComprados
-                    : 0,
-                ProductosSugeridos = recomendaciones.Videos.Count > 0
-                    ? recomendaciones.Videos[0].ProductosNoComprados
-                    : 0,
+                ClienteId = correoCliente.ClienteId,
+                ClienteNombre = correoCliente.ClienteNombre,
+                ClienteEmail = correoCliente.ClienteEmail,
+                ProductosComprados = correoCliente.ProductosComprados?.Count ?? 0,
+                ProductosRecomendados = correoCliente.ProductosRecomendados?.Count ?? 0,
                 HtmlGenerado = htmlGenerado,
-                Mensaje = htmlGenerado != null ? "Correo generado correctamente" : "Error al generar el contenido"
+                Mensaje = htmlGenerado != null
+                    ? "Correo generado correctamente"
+                    : "Error al generar el contenido"
             });
         }
 
         /// <summary>
         /// ENDPOINT DE PRUEBA: Genera y envía el correo a carlosadrian@nuevavision.es
-        /// para poder ver cómo quedaría el correo real que recibiría el cliente.
-        /// NO envía al cliente, solo a la dirección de pruebas.
-        /// Usa GET para poder probarlo fácilmente desde el navegador.
+        /// para un cliente específico en el rango de fechas indicado.
         /// </summary>
-        /// <param name="empresa">Código de empresa</param>
-        /// <param name="pedido">Número de pedido</param>
-        /// <returns>Resultado del envío</returns>
         [HttpGet]
         [Route("EnviarPrueba")]
         [ResponseType(typeof(ResultadoEnvioPruebaDTO))]
-        public async Task<IHttpActionResult> GetEnviarPrueba(string empresa, int pedido)
+        public async Task<IHttpActionResult> GetEnviarPrueba(
+            string empresa = "1",
+            string cliente = null,
+            string fechaDesde = null,
+            string fechaHasta = null)
         {
-            var recomendaciones = await _servicioRecomendaciones.ObtenerRecomendaciones(empresa, pedido).ConfigureAwait(false);
-
-            if (recomendaciones == null)
+            if (string.IsNullOrEmpty(cliente))
             {
-                return NotFound();
+                return BadRequest("El parámetro 'cliente' es obligatorio");
             }
 
-            if (recomendaciones.Videos == null || recomendaciones.Videos.Count == 0)
+            DateTime desde = string.IsNullOrEmpty(fechaDesde)
+                ? DateTime.Today.AddDays(-7)
+                : DateTime.Parse(fechaDesde);
+            DateTime hasta = string.IsNullOrEmpty(fechaHasta)
+                ? DateTime.Today
+                : DateTime.Parse(fechaHasta);
+
+            var correos = await _servicioRecomendaciones
+                .ObtenerCorreosSemana(empresa, desde, hasta)
+                .ConfigureAwait(false);
+
+            var correoCliente = correos?.FirstOrDefault(c =>
+                c.ClienteId?.Trim() == cliente.Trim());
+
+            if (correoCliente == null)
             {
                 return Ok(new ResultadoEnvioPruebaDTO
                 {
                     Enviado = false,
-                    Mensaje = "No hay videos disponibles para los productos de este pedido",
+                    Mensaje = "No se encontraron datos para este cliente en el rango de fechas indicado",
                     EmailDestino = EMAIL_PRUEBAS
                 });
             }
 
-            // Generar el HTML del correo
-            var htmlGenerado = await _generadorContenido.GenerarContenidoHtml(recomendaciones).ConfigureAwait(false);
+            var htmlGenerado = await _generadorContenido
+                .GenerarContenidoHtml(correoCliente)
+                .ConfigureAwait(false);
 
             if (string.IsNullOrEmpty(htmlGenerado))
             {
@@ -155,10 +183,8 @@ namespace NestoAPI.Controllers
                 });
             }
 
-            // Construir el correo
-            string asunto = $"[PRUEBA] Saca el máximo partido a tu compra, {recomendaciones.ClienteNombre}";
+            string asunto = $"[PRUEBA] Saca el máximo partido a tu compra, {correoCliente.ClienteNombre}";
 
-            // Envolver el HTML en una estructura completa de email
             string htmlCompleto = $@"<!DOCTYPE html>
 <html>
 <head>
@@ -167,21 +193,19 @@ namespace NestoAPI.Controllers
     <title>{asunto}</title>
 </head>
 <body style=""margin: 0; padding: 0; font-family: Arial, sans-serif;"">
-    <!-- DATOS DE PRUEBA -->
     <div style=""background-color: #fff3cd; padding: 10px; margin-bottom: 20px; border: 1px solid #ffc107;"">
         <strong>CORREO DE PRUEBA</strong><br/>
-        Cliente original: {recomendaciones.ClienteNombre} ({recomendaciones.ClienteEmail})<br/>
-        Pedido: {recomendaciones.PedidoNumero}<br/>
-        Videos incluidos: {recomendaciones.Videos.Count}
+        Cliente original: {correoCliente.ClienteNombre} ({correoCliente.ClienteEmail})<br/>
+        Productos comprados: {correoCliente.ProductosComprados?.Count ?? 0}<br/>
+        Productos recomendados: {correoCliente.ProductosRecomendados?.Count ?? 0}
     </div>
-    <!-- CONTENIDO DEL CORREO -->
     {htmlGenerado}
 </body>
 </html>";
 
             using (var mail = new MailMessage())
             {
-                mail.From = new MailAddress("nesto@nuevavision.es", "Nueva Visión");
+                mail.From = new MailAddress("nesto@nuevavision.es", "El equipo de Nueva Visión");
                 mail.To.Add(EMAIL_PRUEBAS);
                 mail.Subject = asunto;
                 mail.Body = htmlCompleto;
@@ -196,10 +220,8 @@ namespace NestoAPI.Controllers
                         ? $"Correo enviado correctamente a {EMAIL_PRUEBAS}"
                         : "Error al enviar el correo por SMTP",
                     EmailDestino = EMAIL_PRUEBAS,
-                    ClienteOriginal = recomendaciones.ClienteNombre,
-                    ClienteEmailOriginal = recomendaciones.ClienteEmail,
-                    PedidoNumero = recomendaciones.PedidoNumero,
-                    VideosIncluidos = recomendaciones.Videos.Count,
+                    ClienteOriginal = correoCliente.ClienteNombre,
+                    ClienteEmailOriginal = correoCliente.ClienteEmail,
                     Asunto = asunto
                 });
             }
@@ -213,19 +235,16 @@ namespace NestoAPI.Controllers
         public string EmailDestino { get; set; }
         public string ClienteOriginal { get; set; }
         public string ClienteEmailOriginal { get; set; }
-        public int PedidoNumero { get; set; }
-        public int VideosIncluidos { get; set; }
         public string Asunto { get; set; }
     }
 
     public class PreviewCorreoDTO
     {
+        public string ClienteId { get; set; }
         public string ClienteNombre { get; set; }
         public string ClienteEmail { get; set; }
-        public int PedidoNumero { get; set; }
-        public int VideosIncluidos { get; set; }
         public int ProductosComprados { get; set; }
-        public int ProductosSugeridos { get; set; }
+        public int ProductosRecomendados { get; set; }
         public string HtmlGenerado { get; set; }
         public string Mensaje { get; set; }
     }

@@ -21,184 +21,205 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         }
 
         [TestMethod]
-        public async Task GenerarContenidoHtml_ConRecomendacionNull_DevuelveNull()
+        public async Task GenerarContenidoHtml_ConCorreoNull_DevuelveNull()
         {
-            // Act
             var resultado = await _generador.GenerarContenidoHtml(null);
 
-            // Assert
             Assert.IsNull(resultado);
         }
 
         [TestMethod]
-        public async Task GenerarContenidoHtml_SinVideos_DevuelveNull()
+        public async Task GenerarContenidoHtml_SinProductosComprados_DevuelveNull()
         {
-            // Arrange
-            var recomendacion = new RecomendacionPostCompraDTO
+            var correo = new CorreoPostCompraClienteDTO
             {
                 ClienteNombre = "Test Cliente",
-                Videos = new List<VideoRecomendadoDTO>()
+                ProductosComprados = new List<ProductoCompradoConVideoDTO>()
             };
 
-            // Act
-            var resultado = await _generador.GenerarContenidoHtml(recomendacion);
+            var resultado = await _generador.GenerarContenidoHtml(correo);
 
-            // Assert
             Assert.IsNull(resultado);
         }
 
         [TestMethod]
-        public async Task GenerarContenidoHtml_ConVideosNull_DevuelveNull()
+        public async Task GenerarContenidoHtml_ProductosCompradosNull_DevuelveNull()
         {
-            // Arrange
-            var recomendacion = new RecomendacionPostCompraDTO
+            var correo = new CorreoPostCompraClienteDTO
             {
                 ClienteNombre = "Test Cliente",
-                Videos = null
+                ProductosComprados = null
             };
 
-            // Act
-            var resultado = await _generador.GenerarContenidoHtml(recomendacion);
+            var resultado = await _generador.GenerarContenidoHtml(correo);
 
-            // Assert
             Assert.IsNull(resultado);
         }
 
         [TestMethod]
-        public async Task GenerarContenidoHtml_ConVideosYProductos_LlamaAOpenAI()
+        public async Task GenerarContenidoHtml_ConProductosComprados_LlamaAOpenAI()
         {
-            // Arrange
-            var recomendacion = CrearRecomendacionValida();
+            var correo = CrearCorreoValido();
 
             A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(
-                A<string>.Ignored,
-                A<string>.Ignored))
+                A<string>.Ignored, A<string>.Ignored))
                 .Returns("<div>HTML generado</div>");
 
-            // Act
-            var resultado = await _generador.GenerarContenidoHtml(recomendacion);
+            var resultado = await _generador.GenerarContenidoHtml(correo);
 
-            // Assert
             Assert.IsNotNull(resultado);
             Assert.AreEqual("<div>HTML generado</div>", resultado);
             A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(
-                A<string>.Ignored,
-                A<string>.Ignored))
+                A<string>.Ignored, A<string>.Ignored))
                 .MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
-        public async Task GenerarContenidoHtml_ConProductoIdNull_NoLanzaExcepcion()
+        public async Task GenerarContenidoHtml_IncluyeNombreClienteEnMensaje()
         {
-            // Arrange - Este test documenta el bug encontrado
-            var recomendacion = new RecomendacionPostCompraDTO
-            {
-                ClienteNombre = "Test Cliente",
-                Videos = new List<VideoRecomendadoDTO>
-                {
-                    new VideoRecomendadoDTO
-                    {
-                        VideoYoutubeId = "abc123",
-                        Titulo = "Video Test",
-                        Productos = new List<ProductoEnVideoDTO>
-                        {
-                            new ProductoEnVideoDTO
-                            {
-                                ProductoId = null, // Producto con ID null
-                                NombreProducto = "Producto sin ID",
-                                YaComprado = true,
-                                EnPedidoActual = true
-                            },
-                            new ProductoEnVideoDTO
-                            {
-                                ProductoId = "12345",
-                                NombreProducto = "Producto con ID",
-                                YaComprado = false,
-                                EnPedidoActual = false
-                            }
-                        }
-                    }
-                }
-            };
+            var correo = CrearCorreoValido();
+            correo.ClienteNombre = "Peluquería María";
 
+            string mensajeCapturado = null;
             A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(
-                A<string>.Ignored,
-                A<string>.Ignored))
+                A<string>.Ignored, A<string>.Ignored))
+                .Invokes((string system, string user) => mensajeCapturado = user)
                 .Returns("<div>HTML</div>");
 
-            // Act & Assert - No debería lanzar excepción
-            // NOTA: Este test fallará hasta que se aplique el fix del bug
-            var resultado = await _generador.GenerarContenidoHtml(recomendacion);
+            await _generador.GenerarContenidoHtml(correo);
 
-            Assert.IsNotNull(resultado);
+            Assert.IsTrue(mensajeCapturado.Contains("Peluquería María"));
         }
 
         [TestMethod]
-        public async Task GenerarContenidoHtml_LimitaA2Videos()
+        public async Task GenerarContenidoHtml_IncluyeProductosCompradosEnMensaje()
         {
-            // Arrange
-            var recomendacion = new RecomendacionPostCompraDTO
+            var correo = CrearCorreoValido();
+
+            string mensajeCapturado = null;
+            A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(
+                A<string>.Ignored, A<string>.Ignored))
+                .Invokes((string system, string user) => mensajeCapturado = user)
+                .Returns("<div>HTML</div>");
+
+            await _generador.GenerarContenidoHtml(correo);
+
+            Assert.IsTrue(mensajeCapturado.Contains("Champú Profesional"));
+            Assert.IsTrue(mensajeCapturado.Contains("abc123"));
+        }
+
+        [TestMethod]
+        public async Task GenerarContenidoHtml_IncluyeProductosRecomendadosEnMensaje()
+        {
+            var correo = CrearCorreoValido();
+            correo.ProductosRecomendados = new List<ProductoRecomendadoDTO>
             {
-                ClienteNombre = "Test Cliente",
-                Videos = new List<VideoRecomendadoDTO>
+                new ProductoRecomendadoDTO
                 {
-                    CrearVideoConProducto("video1", "Video 1"),
-                    CrearVideoConProducto("video2", "Video 2"),
-                    CrearVideoConProducto("video3", "Video 3") // Este no debería incluirse
+                    ProductoId = "RECO1",
+                    NombreProducto = "Mascarilla Premium",
+                    VideoYoutubeId = "abc123",
+                    VideoTitulo = "Tutorial",
+                    EnlaceVideoProducto = "https://youtube.com/watch?v=abc123&t=200"
                 }
             };
 
             string mensajeCapturado = null;
             A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(
-                A<string>.Ignored,
-                A<string>.Ignored))
+                A<string>.Ignored, A<string>.Ignored))
                 .Invokes((string system, string user) => mensajeCapturado = user)
                 .Returns("<div>HTML</div>");
 
-            // Act
-            await _generador.GenerarContenidoHtml(recomendacion);
+            await _generador.GenerarContenidoHtml(correo);
 
-            // Assert - El mensaje no debería contener "Video 3"
-            Assert.IsNotNull(mensajeCapturado);
-            Assert.IsTrue(mensajeCapturado.Contains("Video 1"));
-            Assert.IsTrue(mensajeCapturado.Contains("Video 2"));
-            Assert.IsFalse(mensajeCapturado.Contains("Video 3"));
+            Assert.IsTrue(mensajeCapturado.Contains("Mascarilla Premium"));
         }
 
-        private RecomendacionPostCompraDTO CrearRecomendacionValida()
+        [TestMethod]
+        public async Task GenerarContenidoHtml_SinProductosRecomendados_NoIncluyeSeccionRecomendados()
         {
-            return new RecomendacionPostCompraDTO
+            var correo = CrearCorreoValido();
+            correo.ProductosRecomendados = new List<ProductoRecomendadoDTO>();
+
+            string mensajeCapturado = null;
+            A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(
+                A<string>.Ignored, A<string>.Ignored))
+                .Invokes((string system, string user) => mensajeCapturado = user)
+                .Returns("<div>HTML</div>");
+
+            await _generador.GenerarContenidoHtml(correo);
+
+            Assert.IsFalse(mensajeCapturado.Contains("PRODUCTOS RECOMENDADOS"));
+        }
+
+        [TestMethod]
+        public void AgregarUtm_UrlSinParametros_AgregaConInterrogacion()
+        {
+            var url = "https://youtube.com/watch?v=abc123&t=90";
+
+            var resultado = GeneradorContenidoCorreoPostCompra.AgregarUtm(url);
+
+            Assert.IsTrue(resultado.Contains("&utm_source=correo_postcompra"));
+            Assert.IsTrue(resultado.Contains("&utm_medium=email"));
+            Assert.IsTrue(resultado.Contains("&utm_campaign=tutoriales_postcompra"));
+        }
+
+        [TestMethod]
+        public void AgregarUtm_UrlSinQueryString_AgregaConInterrogacion()
+        {
+            var url = "https://tienda.nuevavision.es/producto.html";
+
+            var resultado = GeneradorContenidoCorreoPostCompra.AgregarUtm(url);
+
+            Assert.IsTrue(resultado.Contains("?utm_source=correo_postcompra"));
+        }
+
+        [TestMethod]
+        public void AgregarUtm_UrlNull_DevuelveNull()
+        {
+            var resultado = GeneradorContenidoCorreoPostCompra.AgregarUtm(null);
+
+            Assert.IsNull(resultado);
+        }
+
+        [TestMethod]
+        public async Task GenerarContenidoHtml_SystemPromptMencionaNuevaVision()
+        {
+            var correo = CrearCorreoValido();
+
+            string systemCapturado = null;
+            A.CallTo(() => _servicioOpenAIMock.GenerarCorreoHtmlAsync(
+                A<string>.Ignored, A<string>.Ignored))
+                .Invokes((string system, string user) => systemCapturado = system)
+                .Returns("<div>HTML</div>");
+
+            await _generador.GenerarContenidoHtml(correo);
+
+            Assert.IsTrue(systemCapturado.Contains("Nueva Visi"));
+            Assert.IsTrue(systemCapturado.Contains("916"));
+        }
+
+        private CorreoPostCompraClienteDTO CrearCorreoValido()
+        {
+            return new CorreoPostCompraClienteDTO
             {
                 Empresa = "1",
                 ClienteId = "00001",
                 ClienteNombre = "Cliente Test",
                 ClienteEmail = "test@test.com",
-                PedidoNumero = 12345,
-                Videos = new List<VideoRecomendadoDTO>
+                ProductosComprados = new List<ProductoCompradoConVideoDTO>
                 {
-                    CrearVideoConProducto("abc123", "Video Tutorial Test")
-                }
-            };
-        }
-
-        private VideoRecomendadoDTO CrearVideoConProducto(string youtubeId, string titulo)
-        {
-            return new VideoRecomendadoDTO
-            {
-                VideoId = 1,
-                VideoYoutubeId = youtubeId,
-                Titulo = titulo,
-                Productos = new List<ProductoEnVideoDTO>
-                {
-                    new ProductoEnVideoDTO
+                    new ProductoCompradoConVideoDTO
                     {
                         ProductoId = "PROD001",
-                        NombreProducto = "Producto Test",
-                        YaComprado = true,
-                        EnPedidoActual = true,
-                        EnlaceVideo = "https://youtube.com/watch?v=abc123&t=120"
+                        NombreProducto = "Champú Profesional",
+                        BaseImponibleTotal = 50m,
+                        VideoYoutubeId = "abc123",
+                        VideoTitulo = "Tutorial Champú",
+                        EnlaceVideoProducto = "https://youtube.com/watch?v=abc123&t=120"
                     }
-                }
+                },
+                ProductosRecomendados = new List<ProductoRecomendadoDTO>()
             };
         }
     }
