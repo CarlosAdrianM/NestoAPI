@@ -732,6 +732,14 @@ namespace NestoAPI.Controllers
                 respuestaValidacion = GestorPrecios.EsPedidoValido(pedido);
             }
 
+            // Issue #130: Impedir añadir prepago si alguna línea ya tiene picking
+            bool pedidoTeniaPrepago = cabPedidoVta.Prepagos.Any(p => p.Factura == null);
+            bool pedidoQuierePrepago = pedido.Prepagos.Any(p => p.Factura == null);
+            if (!pedidoTeniaPrepago && pedidoQuierePrepago && algunaLineaTienePicking)
+            {
+                return BadRequest("No se puede añadir prepago porque el pedido ya tiene líneas con picking. Anule el picking primero.");
+            }
+
             // Carlos 27/08/20: comprobamos solo un prepago. Para comprobar todos hay que poner Id en PrepagoDTO
             // Carlos 12/01/22: usamos el concepto como Id
             if (pedido.Prepagos.Where(p => p.Factura == null).Any())
