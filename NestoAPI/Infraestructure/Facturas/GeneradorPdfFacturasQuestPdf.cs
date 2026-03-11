@@ -17,8 +17,9 @@ namespace NestoAPI.Infraestructure.Facturas
     {
         private byte[] _logoBytes;
         private bool _papelConMembrete;
+        private Dictionary<string, byte[]> _imagenesProductos;
 
-        public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false)
+        public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
             _papelConMembrete = papelConMembrete;
 
@@ -28,7 +29,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 throw new ArgumentException("No se proporcionaron facturas para generar el PDF");
             }
 
-            // Si usa formato ticket, generar con plantilla simplificada
+            // Si usa formato ticket, generar con plantilla simplificada (sin imágenes)
             if (factura.UsaFormatoTicket)
             {
                 return GenerarPdfTicket(factura);
@@ -44,6 +45,13 @@ namespace NestoAPI.Infraestructure.Facturas
 
             CargarImagenes(factura.UrlLogo);
 
+            // Issue #111: Cargar imágenes de productos si se solicitan
+            bool mostrarColumnaImagen = mostrarImagenes || factura.MostrarImagenes;
+            if (mostrarColumnaImagen)
+            {
+                CargarImagenesProductos(factura);
+            }
+
             // Determinar si hay descuentos en alguna línea
             bool mostrarColumnaDescuento = factura.Lineas?.Any(l => l.Descuento != 0) ?? false;
 
@@ -57,7 +65,7 @@ namespace NestoAPI.Infraestructure.Facturas
                     page.DefaultTextStyle(x => x.FontSize(8));
 
                     page.Header().Element(c => ComponerCabecera(c, factura));
-                    page.Content().Element(c => ComponerContenido(c, factura, mostrarColumnaDescuento));
+                    page.Content().Element(c => ComponerContenido(c, factura, mostrarColumnaDescuento, mostrarColumnaImagen));
                     page.Footer().Element(c => ComponerPie(c, factura));
                 });
             });
@@ -84,6 +92,59 @@ namespace NestoAPI.Infraestructure.Facturas
                 catch
                 {
                     _logoBytes = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Issue #111: Descarga en paralelo las imágenes de los productos de la factura.
+        /// Usa timeout corto y fallback silencioso para productos sin imagen.
+        /// </summary>
+        private void CargarImagenesProductos(Factura factura)
+        {
+            _imagenesProductos = new Dictionary<string, byte[]>();
+
+            if (factura.Lineas == null) return;
+
+            var urlsUnicas = factura.Lineas
+                .Where(l => !string.IsNullOrWhiteSpace(l.UrlImagen))
+                .GroupBy(l => l.UrlImagen)
+                .Select(g => new { Url = g.Key, Producto = g.First().Producto?.Trim() })
+                .ToList();
+
+            if (!urlsUnicas.Any()) return;
+
+            // Task.Run evita deadlock por SynchronizationContext de ASP.NET
+            var resultados = System.Threading.Tasks.Task.Run(async () =>
+            {
+                using (var client = new HttpClient())
+                {
+                    client.Timeout = TimeSpan.FromSeconds(15);
+
+                    var tareas = urlsUnicas.ToDictionary(
+                        u => u.Producto,
+                        u => client.GetByteArrayAsync(u.Url)
+                    );
+
+                    try
+                    {
+                        await System.Threading.Tasks.Task.WhenAll(tareas.Values);
+                    }
+                    catch
+                    {
+                        // Continuar con las imágenes que se pudieron descargar
+                    }
+
+                    return tareas;
+                }
+            }).GetAwaiter().GetResult();
+
+            foreach (var tarea in resultados)
+            {
+                if (tarea.Value.Status == System.Threading.Tasks.TaskStatus.RanToCompletion
+                    && tarea.Value.Result?.Length > 0)
+                {
+                    _imagenesProductos[tarea.Key] = tarea.Value.Result;
                 }
             }
         }
@@ -252,12 +313,12 @@ namespace NestoAPI.Infraestructure.Facturas
             });
         }
 
-        private void ComponerContenido(IContainer container, Factura factura, bool mostrarColumnaDescuento)
+        private void ComponerContenido(IContainer container, Factura factura, bool mostrarColumnaDescuento, bool mostrarColumnaImagen = false)
         {
             container.Column(column =>
             {
                 // Tabla de líneas
-                column.Item().Element(c => ComponerTablaLineas(c, factura, mostrarColumnaDescuento));
+                column.Item().Element(c => ComponerTablaLineas(c, factura, mostrarColumnaDescuento, mostrarColumnaImagen));
 
                 column.Item().PaddingVertical(5);
 
@@ -280,38 +341,49 @@ namespace NestoAPI.Infraestructure.Facturas
             });
         }
 
-        private void ComponerTablaLineas(IContainer container, Factura factura, bool mostrarColumnaDescuento)
+        private void ComponerTablaLineas(IContainer container, Factura factura, bool mostrarColumnaDescuento, bool mostrarColumnaImagen = false)
         {
+            // Calcular número total de columnas para colspan
+            int totalColumnas = 5; // Base: Ref, Desc, Cant, Precio, Importe
+            if (mostrarColumnaImagen) totalColumnas++;
+            if (mostrarColumnaDescuento) totalColumnas++;
+
             container.Table(table =>
             {
-                // Definir columnas según RDLC: Ref., Descripción, Cant., Precio Unitario, Dtos., Importe
-                if (mostrarColumnaDescuento)
+                // Issue #111: Definir columnas con imagen condicional
+                table.ColumnsDefinition(columns =>
                 {
-                    table.ColumnsDefinition(columns =>
+                    if (mostrarColumnaImagen)
                     {
-                        columns.ConstantColumn(55);   // Ref.
-                        columns.RelativeColumn(3);    // Descripción
-                        columns.ConstantColumn(40);   // Cant.
-                        columns.ConstantColumn(60);   // Precio Unitario
-                        columns.ConstantColumn(45);   // Dtos.
-                        columns.ConstantColumn(65);   // Importe
-                    });
-                }
-                else
-                {
-                    table.ColumnsDefinition(columns =>
+                        columns.ConstantColumn(50);   // Imagen
+                    }
+                    if (mostrarColumnaDescuento)
                     {
-                        columns.ConstantColumn(60);   // Ref.
+                        columns.ConstantColumn(50);   // Ref.
                         columns.RelativeColumn(3);    // Descripción
-                        columns.ConstantColumn(45);   // Cant.
-                        columns.ConstantColumn(65);   // Precio Unitario
-                        columns.ConstantColumn(70);   // Importe
-                    });
-                }
+                        columns.ConstantColumn(38);   // Cant.
+                        columns.ConstantColumn(55);   // Precio Unitario
+                        columns.ConstantColumn(42);   // Dtos.
+                        columns.ConstantColumn(60);   // Importe
+                    }
+                    else
+                    {
+                        columns.ConstantColumn(mostrarColumnaImagen ? 55 : 60);   // Ref.
+                        columns.RelativeColumn(3);    // Descripción
+                        columns.ConstantColumn(mostrarColumnaImagen ? 40 : 45);   // Cant.
+                        columns.ConstantColumn(mostrarColumnaImagen ? 60 : 65);   // Precio Unitario
+                        columns.ConstantColumn(mostrarColumnaImagen ? 65 : 70);   // Importe
+                    }
+                });
 
                 // Cabecera con nombres igual que RDLC - centrados verticalmente
                 table.Header(header =>
                 {
+                    if (mostrarColumnaImagen)
+                    {
+                        header.Cell().Border(1).BorderColor(Colors.Grey.Lighten1).Padding(3)
+                            .AlignMiddle().AlignCenter().Text("").FontSize(8);
+                    }
                     header.Cell().Border(1).BorderColor(Colors.Grey.Lighten1).Padding(3)
                         .AlignMiddle().Text("Ref.").Bold().FontSize(8);
                     header.Cell().Border(1).BorderColor(Colors.Grey.Lighten1).Padding(3)
@@ -341,30 +413,50 @@ namespace NestoAPI.Infraestructure.Facturas
                             // Si no es el primer albarán, añadir línea separadora
                             if (albaranAnterior != null)
                             {
-                                int colspanSep = mostrarColumnaDescuento ? 6 : 5;
-                                table.Cell().ColumnSpan((uint)colspanSep)
+                                table.Cell().ColumnSpan((uint)totalColumnas)
                                     .BorderTop(1).BorderColor(Colors.Grey.Lighten1)
                                     .Height(1);
                             }
 
                             albaranAnterior = linea.TextoAlbaran;
-                            int colspan = mostrarColumnaDescuento ? 6 : 5;
-                            table.Cell().ColumnSpan((uint)colspan)
+                            table.Cell().ColumnSpan((uint)totalColumnas)
                                 .PaddingVertical(3).PaddingLeft(3)
                                 .Text(linea.TextoAlbaran).Bold().FontSize(8);
                         }
 
+                        // Issue #111: Columna de imagen del producto
+                        if (mostrarColumnaImagen)
+                        {
+                            string productoKey = linea.Producto?.Trim();
+                            byte[] imagenBytes = null;
+                            if (productoKey != null && _imagenesProductos != null)
+                            {
+                                _imagenesProductos.TryGetValue(productoKey, out imagenBytes);
+                            }
+
+                            if (imagenBytes != null && imagenBytes.Length > 0)
+                            {
+                                table.Cell().Padding(2).AlignCenter().AlignMiddle()
+                                    .Height(45).Width(45)
+                                    .Image(imagenBytes, ImageScaling.FitArea);
+                            }
+                            else
+                            {
+                                table.Cell().Padding(2).Text("");
+                            }
+                        }
+
                         // Fila de producto - SIN líneas entre filas
-                        table.Cell().Padding(2).Text(linea.Producto ?? "").FontSize(8);
-                        table.Cell().Padding(2).Text(linea.DescripcionCompleta ?? "").FontSize(8);
-                        table.Cell().Padding(2).AlignRight().Text(linea.Cantidad?.ToString() ?? "").FontSize(8);
-                        table.Cell().Padding(2).AlignRight().Text(linea.PrecioUnitario?.ToString("N2") ?? "").FontSize(8);
+                        table.Cell().Padding(2).AlignMiddle().Text(linea.Producto ?? "").FontSize(8);
+                        table.Cell().Padding(2).AlignMiddle().Text(linea.DescripcionCompleta ?? "").FontSize(8);
+                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.Cantidad?.ToString() ?? "").FontSize(8);
+                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.PrecioUnitario?.ToString("N2") ?? "").FontSize(8);
                         if (mostrarColumnaDescuento)
                         {
-                            table.Cell().Padding(2).AlignRight()
+                            table.Cell().Padding(2).AlignMiddle().AlignRight()
                                 .Text(linea.Descuento != 0 ? linea.Descuento.ToString("P2") : "").FontSize(8);
                         }
-                        table.Cell().Padding(2).AlignRight().Text(linea.Importe.ToString("N2")).FontSize(8);
+                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.Importe.ToString("N2")).FontSize(8);
                     }
                 }
             });

@@ -50,11 +50,76 @@ namespace NestoAPI.Infraestructure.Facturas
             return FacturasEnPDF(facturas);
         }
 
-        public ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false, string usuario = null)
+        public ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false, string usuario = null, bool mostrarImagenes = false)
         {
+            if (mostrarImagenes)
+            {
+                CargarUrlsImagenProductos(facturas);
+            }
+
             // Determinar qué motor usar según el parámetro del usuario
             IGeneradorPdfFacturas generador = ObtenerGeneradorPdf(usuario);
-            return generador.GenerarPdf(facturas, papelConMembrete);
+            return generador.GenerarPdf(facturas, papelConMembrete, mostrarImagenes);
+        }
+
+        /// <summary>
+        /// Carga en paralelo las URLs de imagen de todos los productos de las facturas.
+        /// Issue #111: Usa ProductoDTO.RutaImagen() para obtener la URL desde el servicio externo.
+        /// </summary>
+        private void CargarUrlsImagenProductos(List<Factura> facturas)
+        {
+            // Recopilar todas las líneas con producto
+            var lineasConProducto = facturas
+                .Where(f => f.Lineas != null)
+                .SelectMany(f => f.Lineas)
+                .Where(l => !string.IsNullOrWhiteSpace(l.Producto))
+                .ToList();
+
+            if (!lineasConProducto.Any()) return;
+
+            // Obtener productos únicos para no duplicar llamadas HTTP
+            var productosUnicos = lineasConProducto
+                .Select(l => l.Producto.Trim())
+                .Distinct()
+                .ToList();
+
+            // Cargar URLs en paralelo (Task.Run evita deadlock por SynchronizationContext de ASP.NET)
+            var urlsPorProducto = Task.Run(async () =>
+            {
+                var tareas = productosUnicos.ToDictionary(
+                    p => p,
+                    p => ProductoDTO.RutaImagen(p)
+                );
+
+                try
+                {
+                    await Task.WhenAll(tareas.Values);
+                }
+                catch
+                {
+                    // Si falla alguna, continuar con las que se pudieron cargar
+                }
+
+                return tareas.ToDictionary(
+                    t => t.Key,
+                    t => t.Value.Status == TaskStatus.RanToCompletion ? t.Value.Result : null
+                );
+            }).GetAwaiter().GetResult();
+
+            foreach (var linea in lineasConProducto)
+            {
+                string productoKey = linea.Producto.Trim();
+                if (urlsPorProducto.TryGetValue(productoKey, out string url) && !string.IsNullOrEmpty(url))
+                {
+                    linea.UrlImagen = url;
+                }
+            }
+
+            // Marcar las facturas para que el generador sepa que debe mostrar imágenes
+            foreach (var factura in facturas)
+            {
+                factura.MostrarImagenes = true;
+            }
         }
 
         /// <summary>

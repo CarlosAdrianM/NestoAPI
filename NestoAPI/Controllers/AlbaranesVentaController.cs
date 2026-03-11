@@ -27,7 +27,7 @@ namespace NestoAPI.Controllers
 
         // GET api/AlbaranesVenta
         [HttpGet]
-        public async Task<HttpResponseMessage> GetAlbaran(string empresa, int numeroAlbaran, bool papelConMembrete = false)
+        public async Task<HttpResponseMessage> GetAlbaran(string empresa, int numeroAlbaran, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
             FacturaLookup albaran = new FacturaLookup { Empresa = empresa, Factura = numeroAlbaran.ToString() };
             List<FacturaLookup> lista = new List<FacturaLookup>
@@ -38,7 +38,7 @@ namespace NestoAPI.Controllers
 
             var result = new HttpResponseMessage(HttpStatusCode.OK)
             {
-                Content = _gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete, User.Identity.Name)
+                Content = _gestorFacturas.FacturasEnPDF(albaranes, papelConMembrete, User.Identity.Name, mostrarImagenes)
             };
             result.Content.Headers.ContentType =
                 new MediaTypeHeaderValue("application/pdf");

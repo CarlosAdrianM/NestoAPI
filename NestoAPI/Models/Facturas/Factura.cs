@@ -20,6 +20,7 @@ namespace NestoAPI.Models.Facturas
         public string Serie { get; set; }
         public string UrlLogo { get; set; }
         public bool UsaFormatoTicket { get; set; }
+        public bool MostrarImagenes { get; set; }
         public string TipoDocumento { get; set; }
         public List<DireccionFactura> Direcciones { get; set; }
         public List<LineaFactura> Lineas { get; set; }

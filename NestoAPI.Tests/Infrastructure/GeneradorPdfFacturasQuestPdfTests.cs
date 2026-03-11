@@ -221,12 +221,14 @@ namespace NestoAPI.Tests.Infrastructure
                     new LineaFactura
                     {
                         Producto = "PROD01",
-                        DescripcionCompleta = "Producto de prueba",
+                        Descripcion = "Producto de prueba",
                         Cantidad = 1,
                         PrecioUnitario = 100m,
                         Descuento = 0,
                         Importe = 100m,
-                        TextoAlbaran = "Albarán 1"
+                        Albaran = 1,
+                        FechaAlbaran = DateTime.Today,
+                        Pedido = 100
                     }
                 },
                 Totales = new List<TotalFactura>
@@ -244,6 +246,111 @@ namespace NestoAPI.Tests.Infrastructure
                 Vendedores = new List<VendedorFactura>(),
                 NotasAlPie = new List<NotaFactura>()
             };
+        }
+
+        #endregion
+
+        #region Issue #111 - Mostrar imágenes de productos
+
+        [TestMethod]
+        public void GenerarPdf_MostrarImagenesFalse_GeneraPdfSinImagenes()
+        {
+            // Arrange
+            var factura = CrearFacturaBasica();
+            factura.UrlLogo = "https://example.com/logo.png";
+            factura.UsaFormatoTicket = false;
+
+            // Act: Sin imágenes (comportamiento por defecto)
+            var resultado = _generador.GenerarPdf(new List<Factura> { factura }, mostrarImagenes: false);
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            var bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+        }
+
+        [TestMethod]
+        public void GenerarPdf_MostrarImagenesTrue_SinUrlsImagen_GeneraPdfConColumnaVacia()
+        {
+            // Arrange: Imágenes activadas pero las líneas no tienen UrlImagen
+            var factura = CrearFacturaBasica();
+            factura.UrlLogo = "https://example.com/logo.png";
+            factura.UsaFormatoTicket = false;
+            factura.MostrarImagenes = true;
+
+            // Act
+            var resultado = _generador.GenerarPdf(new List<Factura> { factura }, mostrarImagenes: true);
+
+            // Assert: Debe generar PDF válido aunque no haya imágenes de productos
+            Assert.IsNotNull(resultado);
+            var bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+            Assert.AreEqual(0x25, bytes[0], "Debe ser PDF válido");
+        }
+
+        [TestMethod]
+        public void GenerarPdf_MostrarImagenesTrue_ConDescuentos_GeneraPdfValido()
+        {
+            // Arrange: Imágenes activadas Y descuentos visibles
+            var factura = CrearFacturaBasica();
+            factura.UrlLogo = "https://example.com/logo.png";
+            factura.UsaFormatoTicket = false;
+            factura.MostrarImagenes = true;
+            factura.Lineas[0].Descuento = 0.10m; // 10% para activar columna descuento
+
+            // Act
+            var resultado = _generador.GenerarPdf(new List<Factura> { factura }, mostrarImagenes: true);
+
+            // Assert
+            Assert.IsNotNull(resultado);
+            var bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+        }
+
+        [TestMethod]
+        public void GenerarPdf_FormatoTicket_IgnoraMostrarImagenes()
+        {
+            // Arrange: Tickets no deben mostrar imágenes
+            var factura = CrearFacturaBasica();
+            factura.UrlLogo = null;
+            factura.UsaFormatoTicket = true;
+            factura.MostrarImagenes = true; // Se ignora en tickets
+
+            // Act
+            var resultado = _generador.GenerarPdf(new List<Factura> { factura }, mostrarImagenes: true);
+
+            // Assert: PDF válido, sin error
+            Assert.IsNotNull(resultado);
+            var bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+        }
+
+        [TestMethod]
+        public void LineaFactura_UrlImagen_PuedeSerNull()
+        {
+            // Arrange & Act
+            var linea = new LineaFactura
+            {
+                Producto = "PROD01",
+                Descripcion = "Test",
+                Cantidad = 1,
+                PrecioUnitario = 10m,
+                Importe = 10m,
+                UrlImagen = null
+            };
+
+            // Assert
+            Assert.IsNull(linea.UrlImagen);
+        }
+
+        [TestMethod]
+        public void Factura_MostrarImagenes_DefaultFalse()
+        {
+            // Arrange & Act
+            var factura = new Factura();
+
+            // Assert
+            Assert.IsFalse(factura.MostrarImagenes);
         }
 
         #endregion

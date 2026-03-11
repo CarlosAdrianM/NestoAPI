@@ -12,7 +12,7 @@ namespace NestoAPI.Infraestructure.Facturas
     /// </summary>
     public class GeneradorPdfFacturasRdlc : IGeneradorPdfFacturas
     {
-        public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false)
+        public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
             ReportViewer viewer = new ReportViewer();
             viewer.LocalReport.ReportPath = facturas.FirstOrDefault().RutaInforme;

@@ -34,5 +34,6 @@ namespace NestoAPI.Models.Facturas
         public int Pedido { get; set; }
         public int Estado { get; set; }
         public int Picking { get; set; }
+        public string UrlImagen { get; set; }
     }
 }

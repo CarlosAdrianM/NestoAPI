@@ -16,6 +16,6 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <param name="facturas">Lista de facturas a incluir en el PDF</param>
         /// <param name="papelConMembrete">Si true, el PDF se genera para papel con membrete preimpreso</param>
         /// <returns>ByteArrayContent con el PDF generado</returns>
-        ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false);
+        ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false, bool mostrarImagenes = false);
     }
 }
