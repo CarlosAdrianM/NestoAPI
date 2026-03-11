@@ -200,7 +200,7 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("api/Ganavisiones/ProductosBonificables")]
         [ResponseType(typeof(ProductosBonificablesResponse))]
-        public async Task<IHttpActionResult> GetProductosBonificables(string empresa, decimal baseImponibleBonificable, string almacen = null, bool servirJunto = true, string cliente = null)
+        public async Task<IHttpActionResult> GetProductosBonificables(string empresa, decimal baseImponibleBonificable, string almacen = null, bool servirJunto = true, string cliente = null, string productosExcluir = null)
         {
             if (baseImponibleBonificable < 0)
             {
@@ -260,6 +260,19 @@ namespace NestoAPI.Controllers
                         .ToList();
                     productosIds = ganavisionesQuery.Select(g => g.ProductoId).ToList();
                 }
+            }
+
+            // Issue #122: Excluir productos que ya están en el pedido actual
+            if (!string.IsNullOrEmpty(productosExcluir))
+            {
+                var productosExcluirList = productosExcluir
+                    .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(p => p.Trim().PadRight(15))
+                    .ToList();
+
+                ganavisionesQuery = ganavisionesQuery
+                    .Where(g => !productosExcluirList.Contains(g.ProductoId))
+                    .ToList();
             }
 
             // Obtener disponibilidad (stock - pendientes entregar) via IProductoService

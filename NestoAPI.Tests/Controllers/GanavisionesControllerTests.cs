@@ -1821,6 +1821,102 @@ namespace NestoAPI.Tests.Controllers
                 "Las lineas en estado ALBARAN no deben restarse de la disponibilidad");
         }
 
+        [TestMethod]
+        public async Task GetProductosBonificables_ProductosExcluir_ExcluyeProductosDelPedidoActual()
+        {
+            // Arrange: Issue #122 - excluir productos que ya están en el pedido
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1, Empresa = "1  ", ProductoId = "PROD1          ",
+                    Ganavisiones = 5, FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1          ", Nombre = "Producto 1", PVP = 5m }
+                },
+                new Ganavision
+                {
+                    Id = 2, Empresa = "1  ", ProductoId = "PROD2          ",
+                    Ganavisiones = 3, FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD2          ", Nombre = "Producto 2", PVP = 3m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1          ", "ALG", 10);
+            MockStock("PROD2          ", "ALG", 10);
+
+            // Act: excluir PROD1
+            var resultado = await controller.GetProductosBonificables("1", 100m, productosExcluir: "PROD1");
+
+            // Assert: solo PROD2 aparece
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("PROD2", okResult.Content.Productos[0].ProductoId.Trim());
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ProductosExcluirVarios_ExcluyeTodos()
+        {
+            // Arrange
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1, Empresa = "1  ", ProductoId = "PROD1          ",
+                    Ganavisiones = 5, FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1          ", Nombre = "Producto 1", PVP = 5m }
+                },
+                new Ganavision
+                {
+                    Id = 2, Empresa = "1  ", ProductoId = "PROD2          ",
+                    Ganavisiones = 3, FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD2          ", Nombre = "Producto 2", PVP = 3m }
+                },
+                new Ganavision
+                {
+                    Id = 3, Empresa = "1  ", ProductoId = "PROD3          ",
+                    Ganavisiones = 2, FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD3          ", Nombre = "Producto 3", PVP = 2m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD3          ", "ALG", 10);
+
+            // Act: excluir PROD1 y PROD2
+            var resultado = await controller.GetProductosBonificables("1", 100m, productosExcluir: "PROD1,PROD2");
+
+            // Assert: solo PROD3 aparece
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("PROD3", okResult.Content.Productos[0].ProductoId.Trim());
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_ProductosExcluirNull_NoFiltra()
+        {
+            // Arrange
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1, Empresa = "1  ", ProductoId = "PROD1          ",
+                    Ganavisiones = 5, FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1          ", Nombre = "Producto 1", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1          ", "ALG", 10);
+
+            // Act: sin excluir nada
+            var resultado = await controller.GetProductosBonificables("1", 100m, productosExcluir: null);
+
+            // Assert: PROD1 aparece
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<ProductosBonificablesResponse>));
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+        }
+
         #endregion
 
         #region Stock y CantidadRegalada Tests
