@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Linq;
 using System.Net.Mail;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Infraestructure.CorreosPostCompra
@@ -101,6 +102,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 string remitente = ConfigurationManager.AppSettings["CorreosPostCompra:Remitente"]
                     ?? "nuevavision@nuevavision.es";
 
+                string pieApp = GenerarPieDescargaApp();
+
                 string htmlCompleto = $@"<!DOCTYPE html>
 <html>
 <head>
@@ -110,6 +113,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 </head>
 <body style=""margin: 0; padding: 0; font-family: Arial, sans-serif;"">
     {htmlCorreo}
+    {pieApp}
 </body>
 </html>";
 
@@ -159,6 +163,60 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             }
 
             return correos;
+        }
+
+        /// <summary>
+        /// Genera el pie del correo post-compra con enlace de descarga de la app
+        /// y mención a los vídeos con protocolos disponibles.
+        /// </summary>
+        internal static string GenerarPieDescargaApp()
+        {
+            const string urlGooglePlay = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+
+            var s = new StringBuilder();
+
+            s.AppendLine("<br/>");
+            s.AppendLine("<hr style=\"border: none; border-top: 1px solid #ddd; margin: 20px 0;\" />");
+
+            s.AppendLine("<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" width=\"100%\" style=\"max-width: 600px;\">");
+            s.AppendLine("<tr><td style=\"padding: 20px; background-color: #f8f9fa; border-radius: 8px;\">");
+
+            s.AppendLine("<p style=\"font-size: 14px; color: #333; margin: 0 0 15px 0; font-family: Arial, sans-serif;\">");
+            s.AppendLine("<strong>Todos los v&iacute;deos y protocolos en tu m&oacute;vil</strong>");
+            s.AppendLine("</p>");
+
+            s.AppendLine("<p style=\"font-size: 13px; color: #666; margin: 0 0 15px 0; font-family: Arial, sans-serif;\">");
+            s.AppendLine("Descarga nuestra app y accede a todos los v&iacute;deos con sus protocolos paso a paso, ");
+            s.AppendLine("fichas t&eacute;cnicas de productos y mucho m&aacute;s. &iexcl;Todo gratis!");
+            s.AppendLine("</p>");
+
+            s.AppendLine("<table role=\"presentation\" cellspacing=\"0\" cellpadding=\"0\" border=\"0\" width=\"100%\">");
+            s.AppendLine("<tr>");
+
+            s.AppendLine("<td style=\"vertical-align: middle;\">");
+            s.AppendLine($"<a href=\"{urlGooglePlay}\" target=\"_blank\" style=\"text-decoration: none;\">");
+            s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" ");
+            s.AppendLine("alt=\"Descargar en Google Play\" style=\"width: 135px; height: auto; display: inline-block;\" />");
+            s.AppendLine("</a>");
+            s.AppendLine("</td>");
+
+            s.AppendLine("<td style=\"vertical-align: middle; padding-left: 15px;\">");
+            s.AppendLine("<p style=\"font-size: 13px; color: #333; margin: 0; font-family: Arial, sans-serif;\">");
+            s.AppendLine("<strong>Descarga la app</strong> y accede a todos los contenidos.");
+            s.AppendLine("</p>");
+            s.AppendLine("</td>");
+
+            s.AppendLine("</tr>");
+            s.AppendLine("</table>");
+
+            s.AppendLine($"<p style=\"font-size: 11px; color: #999; margin: 15px 0 0 0; font-family: Arial, sans-serif;\">");
+            s.AppendLine($"&iquest;No ve la imagen? Descargue la app aqu&iacute;: <a href=\"{urlGooglePlay}\" style=\"color: #007bff;\">{urlGooglePlay}</a>");
+            s.AppendLine("</p>");
+
+            s.AppendLine("</td></tr>");
+            s.AppendLine("</table>");
+
+            return s.ToString();
         }
     }
 }
