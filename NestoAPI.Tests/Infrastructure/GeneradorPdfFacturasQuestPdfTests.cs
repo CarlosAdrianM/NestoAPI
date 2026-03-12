@@ -199,21 +199,27 @@ namespace NestoAPI.Tests.Infrastructure
                         Tipo = "Empresa",
                         Nombre = "Empresa Test",
                         Direccion = "Calle Test 1",
-                        PoblacionCompleta = "28000 Madrid"
+                        CodigoPostal = "28000",
+                        Poblacion = "Madrid",
+                        Provincia = "Madrid"
                     },
                     new DireccionFactura
                     {
                         Tipo = "Fiscal",
                         Nombre = "Cliente Test",
                         Direccion = "Calle Cliente 1",
-                        PoblacionCompleta = "28001 Madrid"
+                        CodigoPostal = "28001",
+                        Poblacion = "Madrid",
+                        Provincia = "Madrid"
                     },
                     new DireccionFactura
                     {
                         Tipo = "Entrega",
                         Nombre = "Cliente Test",
                         Direccion = "Calle Entrega 1",
-                        PoblacionCompleta = "28002 Madrid"
+                        CodigoPostal = "28002",
+                        Poblacion = "Madrid",
+                        Provincia = "Madrid"
                     }
                 },
                 Lineas = new List<LineaFactura>

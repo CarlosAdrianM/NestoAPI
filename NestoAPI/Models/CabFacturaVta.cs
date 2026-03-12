@@ -52,7 +52,8 @@ namespace NestoAPI.Models
         public string VerifactuURL { get; set; }
         public string VerifactuEstado { get; set; }
         public string TipoRectificativa { get; set; }
-    
+        public string SuPedido { get; set; }
+
         public virtual CCC CCC1 { get; set; }
         public virtual Cliente Cliente { get; set; }
         public virtual Empresa Empresa1 { get; set; }

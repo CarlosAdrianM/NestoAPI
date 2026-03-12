@@ -302,6 +302,13 @@ namespace NestoAPI.Infraestructure.Facturas
                     });
                 });
 
+                // ========== Su Pedido / P.O. (Issue #58) ==========
+                if (!string.IsNullOrWhiteSpace(factura.SuPedido))
+                {
+                    column.Item().PaddingVertical(2).PaddingHorizontal(2)
+                        .Text($"Su Pedido / P.O.: {factura.SuPedido}").Bold().FontSize(9);
+                }
+
                 // ========== Comentarios del pedido (después del cuadro FACTURA) ==========
                 if (!string.IsNullOrWhiteSpace(factura.Comentarios))
                 {
@@ -693,6 +700,13 @@ namespace NestoAPI.Infraestructure.Facturas
                         }
                     });
                 });
+
+                // ========== Su Pedido / P.O. en tickets (Issue #58) ==========
+                if (!string.IsNullOrWhiteSpace(factura.SuPedido))
+                {
+                    column.Item().PaddingHorizontal(2)
+                        .Text($"Su Pedido / P.O.: {factura.SuPedido}").Bold().FontSize(8);
+                }
             });
         }
 

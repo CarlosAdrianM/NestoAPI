@@ -563,6 +563,9 @@ namespace NestoAPI.Infraestructure.Facturas
             // Copiar tipo rectificativa del pedido
             factura.TipoRectificativa = cabPedido.TipoRectificativa;
 
+            // Copiar referencia de compra del cliente (PO) del pedido a la factura (congelado)
+            factura.SuPedido = cabPedido.SuPedido;
+
             await db.SaveChangesAsync();
         }
 

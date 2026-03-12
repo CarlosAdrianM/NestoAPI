@@ -468,6 +468,7 @@ namespace NestoAPI.Controllers
             cabPedidoVta.Vendedor = pedido.vendedor;
             cabPedidoVta.Comentarios = pedido.comentarios;
             cabPedidoVta.ComentarioPicking = pedido.comentarioPicking;
+            cabPedidoVta.SuPedido = pedido.suPedido;
             cabPedidoVta.Ruta = pedido.ruta;
             cabPedidoVta.Serie = pedido.serie;
             cabPedidoVta.Origen = pedido.origen;
@@ -1016,6 +1017,7 @@ namespace NestoAPI.Controllers
                 ServirJunto = pedido.servirJunto,
                 ComentarioPicking = pedido.comentarioPicking,
                 Comentarios = pedido.comentarios,
+                SuPedido = pedido.suPedido,
                 Usuario = pedido.Usuario
             };
 

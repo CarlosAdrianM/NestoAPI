@@ -416,6 +416,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         mantenerJunto = cabPedidoVta.MantenerJunto,
                         servirJunto = cabPedidoVta.ServirJunto,
                         notaEntrega = cabPedidoVta.NotaEntrega,
+                        suPedido = cabPedidoVta.SuPedido,
                         Usuario = cabPedidoVta.Usuario
                     };
                 }

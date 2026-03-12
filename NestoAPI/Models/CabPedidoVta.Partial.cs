@@ -47,7 +47,8 @@ namespace NestoAPI.Models
                 MantenerJunto = this.MantenerJunto,
                 ServirJunto = this.ServirJunto,
                 Usuario = this.Usuario,
-                Fecha_Modificación = this.Fecha_Modificación
+                Fecha_Modificación = this.Fecha_Modificación,
+                SuPedido = this.SuPedido
                 // NO copiamos: LinPedidoVtas, Cliente, VendedoresPedidoGrupoProductoes,
                 // EnviosAgencias, Prepagos, EfectosPedidoVentas (propiedades de navegación)
                 // NO copiamos: RowVersion (debe ser nuevo)

@@ -378,13 +378,13 @@ namespace NestoAPI.Infraestructure.Traspasos
                                       Empresa, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
                                       IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
                                       Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
-                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación]
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación], SuPedido
                                     )
                                     SELECT
                                       @EmpresaDestino, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
                                       @IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
                                       Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
-                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación]
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación], SuPedido
                                     FROM CabPedidoVta
                                     WHERE Empresa = @EmpresaOrigen
                                       AND Número = @NumeroPedido"
@@ -392,13 +392,13 @@ namespace NestoAPI.Infraestructure.Traspasos
                                       Empresa, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
                                       IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, Serie, CCC, Origen,
                                       Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
-                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación]
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación], SuPedido
                                     )
                                     SELECT
                                       @EmpresaDestino, Número, [Nº Cliente], Contacto, Fecha, [Forma Pago], PlazosPago, [Primer Vencimiento],
                                       @IVA, Vendedor, Comentarios, ComentarioPicking, [Periodo Facturacion], Ruta, @Serie, CCC, Origen,
                                       Agrupada, MotivoDevolución, ContactoCobro, NoComisiona, NotaEntrega, vtoBuenoPlazosPago,
-                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación]
+                                      Operador, FijarPrimerVto, MantenerJunto, ServirJunto, Usuario, [Fecha Modificación], SuPedido
                                     FROM CabPedidoVta
                                     WHERE Empresa = @EmpresaOrigen
                                       AND Número = @NumeroPedido";

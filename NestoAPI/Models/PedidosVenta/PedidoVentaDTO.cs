@@ -43,6 +43,7 @@ namespace NestoAPI.Models.PedidosVenta
         public string ruta { get; set; }
         public string serie { get; set; }
         public bool servirJunto { get; set; }
+        public string suPedido { get; set; }
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }
         public bool CreadoSinPasarValidacion { get; set; }

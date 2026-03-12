@@ -54,7 +54,8 @@ namespace NestoAPI.Models
         public System.DateTime Fecha_Modificación { get; set; }
         public byte[] RowVersion { get; set; }
         public string TipoRectificativa { get; set; }
-    
+        public string SuPedido { get; set; }
+
         public virtual ICollection<LinPedidoVta> LinPedidoVtas { get; set; }
         public virtual Cliente Cliente { get; set; }
         public virtual ICollection<VendedorPedidoGrupoProducto> VendedoresPedidoGrupoProductoes { get; set; }

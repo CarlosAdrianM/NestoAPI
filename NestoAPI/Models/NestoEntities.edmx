@@ -162,6 +162,7 @@
           <Property Name="VerifactuURL" Type="varchar" MaxLength="500" />
           <Property Name="VerifactuEstado" Type="varchar" MaxLength="50" />
           <Property Name="TipoRectificativa" Type="char" MaxLength="2" />
+          <Property Name="SuPedido" Type="nvarchar" MaxLength="50" />
         </EntityType>
         <EntityType Name="CabPedidoCmp">
           <Key>
@@ -225,6 +226,7 @@
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
           <Property Name="TipoRectificativa" Type="char" MaxLength="2" />
+          <Property Name="SuPedido" Type="nvarchar" MaxLength="50" />
         </EntityType>
         <EntityType Name="CabRemesaPagos">
           <Key>
@@ -7433,6 +7435,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Prepagos" Relationship="NVModel.FK_Prepagos_CabPedidoVta" FromRole="CabPedidoVta" ToRole="Prepago" />
           <NavigationProperty Name="EfectosPedidoVentas" Relationship="NVModel.FK_EfectosPedidoVenta_CabPedidoVta" FromRole="CabPedidoVta" ToRole="EfectosPedidoVenta" />
           <Property Name="TipoRectificativa" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
+          <Property Name="SuPedido" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
         </EntityType>
         <EntityType Name="LinPedidoVta">
           <Key>
@@ -10956,6 +10959,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="VerifactuURL" Type="String" MaxLength="500" FixedLength="false" Unicode="false" />
           <Property Name="VerifactuEstado" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
           <Property Name="TipoRectificativa" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
+          <Property Name="SuPedido" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
         </EntityType>
         <Association Name="FK_CabFacturaVta_CCC">
           <End Type="NVModel.CCC" Role="CCC" Multiplicity="0..1" />
@@ -12867,6 +12871,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="CabPedidoVtas">
             <EntityTypeMapping TypeName="NVModel.CabPedidoVta">
               <MappingFragment StoreEntitySet="CabPedidoVta">
+                <ScalarProperty Name="SuPedido" ColumnName="SuPedido" />
                 <ScalarProperty Name="TipoRectificativa" ColumnName="TipoRectificativa" />
                 <ScalarProperty Name="RowVersion" ColumnName="RowVersion" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
@@ -14025,6 +14030,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="CabsFacturasVtas">
             <EntityTypeMapping TypeName="NVModel.CabFacturaVta">
               <MappingFragment StoreEntitySet="CabFacturaVta">
+                <ScalarProperty Name="SuPedido" ColumnName="SuPedido" />
                 <ScalarProperty Name="TipoRectificativa" ColumnName="TipoRectificativa" />
                 <ScalarProperty Name="VerifactuEstado" ColumnName="VerifactuEstado" />
                 <ScalarProperty Name="VerifactuURL" ColumnName="VerifactuURL" />
