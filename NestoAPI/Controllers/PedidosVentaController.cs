@@ -838,6 +838,150 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // Gestionar portes automáticos en PUT (si no es Glovo)
+            if (pedido.ruta != Constantes.Pedidos.RUTA_GLOVO)
+            {
+                bool esTiendaOnline = pedido.Lineas.Any(l => l.formaVenta?.Trim() == Constantes.FormasVenta.TIENDA_ONLINE);
+                string codigoPostalPut = "";
+                try
+                {
+                    codigoPostalPut = cliente.CodPostal?.Trim() ?? "";
+                }
+                catch { }
+
+                decimal baseImponibleProductosPut = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas);
+                var inputPortesPut = new PedidoPortesInput
+                {
+                    CodigoPostal = codigoPostalPut,
+                    Ruta = pedido.ruta?.Trim(),
+                    FormaPago = pedido.formaPago?.Trim(),
+                    PlazosPago = pedido.plazosPago?.Trim(),
+                    CCC = pedido.ccc,
+                    PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
+                    NotaEntrega = pedido.notaEntrega,
+                    EsTiendaOnline = esTiendaOnline,
+                    Iva = pedido.iva?.Trim(),
+                    BaseImponibleProductos = baseImponibleProductosPut,
+                    AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())
+                };
+                var resultadoPortesPut = GestorPortes.CalcularPortes(inputPortesPut);
+
+                // Verificar si ya tiene línea de portes en BD
+                bool yaLlevaPortesBD = cabPedidoVta.LinPedidoVtas.Any(l =>
+                    l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                    l.Producto != null &&
+                    l.Producto.Trim().StartsWith("624") &&
+                    l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
+                    l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
+
+                // Añadir portes si no los tiene y los necesita
+                if (resultadoPortesPut.ImportePortes > 0 && !resultadoPortesPut.PortesGratis && !yaLlevaPortesBD)
+                {
+                    var lineaRefPut = pedido.Lineas.FirstOrDefault();
+                    if (lineaRefPut != null)
+                    {
+                        var lineaPortesPut = new LineaPedidoVentaDTO
+                        {
+                            tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                            almacen = lineaRefPut.almacen,
+                            Producto = resultadoPortesPut.CuentaPortes,
+                            Cantidad = 1,
+                            delegacion = lineaRefPut.delegacion,
+                            formaVenta = lineaRefPut.formaVenta,
+                            estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                            texto = "Portes",
+                            PrecioUnitario = resultadoPortesPut.ImportePortes,
+                            iva = pedido.iva,
+                            vistoBueno = true,
+                            usuario = lineaRefPut.usuario,
+                            fechaEntrega = lineaRefPut.fechaEntrega
+                        };
+                        var linPedidoPortes = this.gestor.CrearLineaVta(lineaPortesPut, pedido.empresa, pedido.numero);
+                        _ = db.LinPedidoVtas.Add(linPedidoPortes);
+                        pedido.Lineas.Add(lineaPortesPut);
+                    }
+                }
+                // Quitar portes si ya no los necesita
+                else if ((resultadoPortesPut.PortesGratis || resultadoPortesPut.ImportePortes == 0) && yaLlevaPortesBD)
+                {
+                    var lineaPortesBD = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l =>
+                        l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                        l.Producto != null &&
+                        l.Producto.Trim().StartsWith("624") &&
+                        l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
+                        l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
+                        l.Picking == 0);
+                    if (lineaPortesBD != null)
+                    {
+                        _ = db.LinPedidoVtas.Remove(lineaPortesBD);
+                        var lineaPortesDTO = pedido.Lineas.FirstOrDefault(l =>
+                            l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                            l.Producto != null &&
+                            l.Producto.Trim().StartsWith("624"));
+                        if (lineaPortesDTO != null)
+                        {
+                            pedido.Lineas.Remove(lineaPortesDTO);
+                        }
+                    }
+                }
+
+                // Gestionar comisión reembolso (solo si INCREMENTO_REEMBOLSO > 0)
+                if (Constantes.Portes.INCREMENTO_REEMBOLSO > 0)
+                {
+                    bool yaLlevaReembolsoBD = cabPedidoVta.LinPedidoVtas.Any(l =>
+                        l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                        l.Producto != null &&
+                        l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
+                        l.Texto != null &&
+                        l.Texto.Contains("reembolso") &&
+                        l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
+                        l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
+
+                    if (resultadoPortesPut.EsContraReembolso && resultadoPortesPut.ComisionReembolso > 0 && !yaLlevaReembolsoBD)
+                    {
+                        var lineaRefReemb = pedido.Lineas.FirstOrDefault();
+                        if (lineaRefReemb != null)
+                        {
+                            var lineaReembolso = new LineaPedidoVentaDTO
+                            {
+                                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                                almacen = lineaRefReemb.almacen,
+                                Producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL,
+                                Cantidad = 1,
+                                delegacion = lineaRefReemb.delegacion,
+                                formaVenta = lineaRefReemb.formaVenta,
+                                estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                                texto = "Comisión contra reembolso",
+                                PrecioUnitario = resultadoPortesPut.ComisionReembolso,
+                                iva = pedido.iva,
+                                vistoBueno = true,
+                                usuario = lineaRefReemb.usuario,
+                                fechaEntrega = lineaRefReemb.fechaEntrega
+                            };
+                            var linPedidoReemb = this.gestor.CrearLineaVta(lineaReembolso, pedido.empresa, pedido.numero);
+                            _ = db.LinPedidoVtas.Add(linPedidoReemb);
+                            pedido.Lineas.Add(lineaReembolso);
+                        }
+                    }
+                    else if ((!resultadoPortesPut.EsContraReembolso || resultadoPortesPut.ComisionReembolso == 0) && yaLlevaReembolsoBD)
+                    {
+                        var lineaReembBD = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l =>
+                            l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                            l.Producto != null &&
+                            l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
+                            l.Texto != null &&
+                            l.Texto.Contains("reembolso") &&
+                            l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
+                            l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
+                            l.Picking == 0);
+                        if (lineaReembBD != null)
+                        {
+                            _ = db.LinPedidoVtas.Remove(lineaReembBD);
+                        }
+                    }
+                }
+            }
+
             // Validación: verificar que ninguna línea tenga TipoLinea NULL
             var lineasConTipoNull = cabPedidoVta.LinPedidoVtas
                 .Where(l => l.TipoLinea == null
@@ -1119,6 +1263,50 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // Añadir portes automáticos (si no es Glovo, que tiene su propia lógica arriba)
+            if (pedido.ruta != Constantes.Pedidos.RUTA_GLOVO)
+            {
+                bool esTiendaOnline = pedido.Lineas.Any(l => l.formaVenta?.Trim() == Constantes.FormasVenta.TIENDA_ONLINE);
+                string codigoPostalPortes = "";
+                try
+                {
+                    var clientePortes = db.Clientes.SingleOrDefault(c =>
+                        c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
+                    codigoPostalPortes = clientePortes?.CodPostal?.Trim() ?? "";
+                }
+                catch { }
+
+                decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas);
+                var inputPortes = new PedidoPortesInput
+                {
+                    CodigoPostal = codigoPostalPortes,
+                    Ruta = pedido.ruta?.Trim(),
+                    FormaPago = pedido.formaPago?.Trim(),
+                    PlazosPago = pedido.plazosPago?.Trim(),
+                    CCC = pedido.ccc,
+                    PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
+                    NotaEntrega = pedido.notaEntrega,
+                    EsTiendaOnline = esTiendaOnline,
+                    Iva = pedido.iva?.Trim(),
+                    BaseImponibleProductos = baseImponibleProductos,
+                    AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())
+                };
+                var resultadoPortes = GestorPortes.CalcularPortes(inputPortes);
+                if (GestorPortes.GestionarLineasPortes(pedido.Lineas, resultadoPortes, pedido.iva, pedido.ParametrosIva))
+                {
+                    // Crear las LinPedidoVta para las líneas nuevas de portes/reembolso
+                    foreach (var lineaNueva in pedido.Lineas.Where(l => l.id == 0 &&
+                        l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                        l.Producto != null &&
+                        (l.Producto.Trim().StartsWith("624") || l.texto?.Contains("reembolso") == true) &&
+                        !lineasPedidoInsertar.Any(li => li.Producto?.Trim() == l.Producto?.Trim())))
+                    {
+                        linPedido = this.gestor.CrearLineaVta(lineaNueva, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
+                        lineasPedidoInsertar.Add(linPedido);
+                    }
+                }
+            }
+
             _ = db.LinPedidoVtas.AddRange(lineasPedidoInsertar);
 
             // Actualizamos el contador de ofertas
@@ -1349,6 +1537,79 @@ namespace NestoAPI.Controllers
         {
             var importeReembolso = gestor.ImporteReembolso(empresa, pedido);
             return Ok(importeReembolso);
+        }
+
+        [HttpPost]
+        [ResponseType(typeof(ResultadoPortes))]
+        [Route("api/PedidosVenta/CalcularPortes")]
+        public IHttpActionResult CalcularPortes(PedidoPortesInput input)
+        {
+            if (input == null)
+            {
+                return BadRequest("Se requiere la información del pedido");
+            }
+            var resultado = GestorPortes.CalcularPortes(input);
+            return Ok(resultado);
+        }
+
+        [HttpGet]
+        [ResponseType(typeof(ResultadoPortes))]
+        [Route("api/PedidosVenta/CalcularPortes")]
+        public IHttpActionResult CalcularPortesPedido(string empresa, int pedido)
+        {
+            var cabecera = db.CabPedidoVtas.Include(c => c.LinPedidoVtas)
+                .SingleOrDefault(c => c.Empresa == empresa && c.Número == pedido);
+            if (cabecera == null)
+            {
+                return NotFound();
+            }
+
+            var cliente = db.Clientes.SingleOrDefault(c =>
+                c.Empresa == empresa && c.Nº_Cliente == cabecera.Nº_Cliente && c.Contacto == cabecera.Contacto);
+            string codigoPostal = cliente?.CodPostal?.Trim() ?? "";
+
+            bool esTiendaOnline = cabecera.Serie != null && cabecera.Serie.Trim() == "NV" &&
+                (cabecera.Ruta?.Trim() == Constantes.Pedidos.RUTA_GLOVO ||
+                 cabecera.LinPedidoVtas.Any(l => l.Forma_Venta?.Trim() == Constantes.FormasVenta.TIENDA_ONLINE));
+
+            // Excluir líneas sobre-pedido (EstadoProducto != 0 y no parcial) y líneas de portes/reembolso
+            decimal baseImponibleProductos = cabecera.LinPedidoVtas
+                .Where(l => l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
+                            l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
+                            (l.EstadoProducto == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO || l.LineaParcial) &&
+                            (l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO ||
+                             (l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                              l.Producto != null &&
+                              !l.Producto.Trim().StartsWith("624") &&
+                              l.Producto.Trim() != Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL)))
+                .Sum(l => l.Base_Imponible);
+
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = codigoPostal,
+                Ruta = cabecera.Ruta?.Trim(),
+                FormaPago = cabecera.Forma_Pago?.Trim(),
+                PlazosPago = cabecera.PlazosPago?.Trim(),
+                CCC = cabecera.CCC,
+                PeriodoFacturacion = cabecera.Periodo_Facturacion?.Trim(),
+                NotaEntrega = cabecera.NotaEntrega,
+                EsTiendaOnline = esTiendaOnline,
+                EsPrecioPublicoFinal = cabecera.LinPedidoVtas.Any(l =>
+                    l.Forma_Venta?.Trim() == "QRU" || l.Forma_Venta?.Trim() == Constantes.FormasVenta.TIENDA_ONLINE || l.Forma_Venta?.Trim() == Constantes.FormasVenta.AMAZON) &&
+                    cliente?.Estado == 8 && cabecera.Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL,
+                Iva = cabecera.IVA?.Trim(),
+                BaseImponibleProductos = baseImponibleProductos,
+                AnadirPortes = !EsAlmacenSinPortes(cabecera.LinPedidoVtas.FirstOrDefault()?.Almacén?.Trim())
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+            return Ok(resultado);
+        }
+
+        private static bool EsAlmacenSinPortes(string almacen)
+        {
+            return almacen == Constantes.Almacenes.REINA ||
+                   almacen == Constantes.Almacenes.ALCOBENDAS;
         }
 
         /// <summary>

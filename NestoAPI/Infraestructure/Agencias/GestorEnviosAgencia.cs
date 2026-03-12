@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Videos;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
@@ -255,32 +256,17 @@ namespace NestoAPI.Infraestructure.Agencias
             decimal importeDeuda = 0;
 
             // Miramos los casos en los que no hay contra reembolso
-            if (pedidoSeleccionado == null) 
-            {
-                return importeDeuda;
-            }
-            if (pedidoSeleccionado.CCC != null)
-            {
-                return importeDeuda;
-            }
-            if (pedidoSeleccionado.Periodo_Facturacion == "FDM")
-            {
-                return importeDeuda;
-            }
-            if (pedidoSeleccionado.Forma_Pago == "CNF" ||
-                pedidoSeleccionado.Forma_Pago == "TRN" ||
-                pedidoSeleccionado.Forma_Pago == "CHC" ||
-                pedidoSeleccionado.Forma_Pago == "TAR")
+            if (pedidoSeleccionado == null)
             {
                 return importeDeuda;
             }
 
-            if (pedidoSeleccionado.NotaEntrega)
-            {
-                return importeDeuda;
-            }
-
-            if (pedidoSeleccionado.PlazosPago != null && pedidoSeleccionado.PlazosPago.Trim() == "PRE")
+            if (!GestorPortes.EsContraReembolso(
+                pedidoSeleccionado.Forma_Pago?.Trim(),
+                pedidoSeleccionado.PlazosPago,
+                pedidoSeleccionado.CCC,
+                pedidoSeleccionado.Periodo_Facturacion?.Trim(),
+                pedidoSeleccionado.NotaEntrega))
             {
                 return importeDeuda;
             }

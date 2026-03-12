@@ -628,6 +628,7 @@
     <Compile Include="Infraestructure\Pedidos\IServicioPedidosParaFacturacion.cs" />
     <Compile Include="Infraestructure\Pedidos\ServicioPedidosParaFacturacion.cs" />
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidosVenta.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\GestorPortes.cs" />
     <Compile Include="Infraestructure\PedidosVenta\IServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ServicioPedidosVenta.cs" />
     <Compile Include="Infraestructure\PrincipalExtensions.cs" />

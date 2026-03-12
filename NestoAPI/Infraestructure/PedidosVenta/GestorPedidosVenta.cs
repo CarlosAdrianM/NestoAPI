@@ -555,16 +555,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return RoundingHelper.DosDecimalesRound(importeEfectivo + importeDeuda);
             }
 
-            // Si no hay efectos manuales, usamos la lógica original basada en la cabecera
-            // Miramos los casos en los que no hay contra reembolso
-            if (pedidoBD.CCC != null ||
-                pedidoBD.Periodo_Facturacion == "FDM" ||
-                pedidoBD.Forma_Pago == "CNF" ||
-                 pedidoBD.Forma_Pago == "TRN" ||
-                 pedidoBD.Forma_Pago == "CHC" ||
-                 pedidoBD.Forma_Pago == "TAR" ||
-                pedidoBD.NotaEntrega ||
-                (!string.IsNullOrWhiteSpace(pedidoBD.PlazosPago) && pedidoBD.PlazosPago.Trim() == "PRE"))
+            // Si no hay efectos manuales, usamos la lógica centralizada de EsContraReembolso
+            if (!GestorPortes.EsContraReembolso(
+                pedidoBD.Forma_Pago?.Trim(),
+                pedidoBD.PlazosPago,
+                pedidoBD.CCC,
+                pedidoBD.Periodo_Facturacion?.Trim(),
+                pedidoBD.NotaEntrega))
             {
                 return importeDeuda;
             }

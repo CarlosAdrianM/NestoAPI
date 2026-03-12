@@ -191,6 +191,7 @@
     <Compile Include="Infrastructure\CorreosPostCompra\CorreosPostCompraJobsServiceTests.cs" />
     <Compile Include="Infrastructure\CorreosPostCompra\CorreosPostCompraControllerTests.cs" />
     <Compile Include="Infrastructure\OpenAI\ServicioOpenAITests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\GestorPortesTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />
     <Compile Include="Infrastructure\Rectificativas\GestorCopiaPedidosTests.cs" />

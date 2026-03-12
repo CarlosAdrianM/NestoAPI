@@ -1,0 +1,343 @@
+using NestoAPI.Models;
+using NestoAPI.Models.Picking;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace NestoAPI.Infraestructure.PedidosVenta
+{
+    public class ResultadoPortes
+    {
+        public decimal ImportePortes { get; set; }
+        public decimal ComisionReembolso { get; set; }
+        public decimal ImporteMinimoPedidoSinPortes { get; set; }
+        public decimal ImporteActualPedido { get; set; }
+        public decimal ImporteFaltaParaPortesGratis { get; set; }
+        public bool PortesGratis { get; set; }
+        public bool EsContraReembolso { get; set; }
+        public string CuentaPortes { get; set; }
+        public string CuentaReembolso { get; set; }
+    }
+
+    public class PedidoPortesInput
+    {
+        public string CodigoPostal { get; set; }
+        public string Ruta { get; set; }
+        public string FormaPago { get; set; }
+        public string PlazosPago { get; set; }
+        public string CCC { get; set; }
+        public string PeriodoFacturacion { get; set; }
+        public bool NotaEntrega { get; set; }
+        public bool EsTiendaOnline { get; set; }
+        public bool EsPrecioPublicoFinal { get; set; }
+        public string Iva { get; set; }
+        public decimal BaseImponibleProductos { get; set; }
+        public bool AnadirPortes { get; set; } = true;
+    }
+
+    public class GestorPortes
+    {
+        /// <summary>
+        /// Determina si un pedido es contra reembolso basándose en los datos de la cabecera.
+        /// Centraliza la lógica que antes estaba duplicada en GestorPedidosVenta.ImporteReembolso()
+        /// y GestorEnviosAgencia.ImporteReembolso().
+        /// </summary>
+        public static bool EsContraReembolso(string formaPago, string plazosPago,
+            string ccc, string periodoFacturacion, bool notaEntrega)
+        {
+            if (ccc != null)
+                return false;
+
+            if (periodoFacturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
+                return false;
+
+            if (formaPago == "CNF" ||
+                formaPago == Constantes.FormasPago.TRANSFERENCIA ||
+                formaPago == "CHC" ||
+                formaPago == Constantes.FormasPago.TARJETA)
+                return false;
+
+            if (notaEntrega)
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(plazosPago) && plazosPago.Trim() == Constantes.PlazosPago.PREPAGO)
+                return false;
+
+            return true;
+        }
+
+        /// <summary>
+        /// Calcula portes y comisión de reembolso de forma pura (sin acceso a BD).
+        /// </summary>
+        public static ResultadoPortes CalcularPortes(PedidoPortesInput input)
+        {
+            var resultado = new ResultadoPortes
+            {
+                ImporteActualPedido = input.BaseImponibleProductos
+            };
+
+            // Tienda online y Glovo no llevan portes ni reembolso
+            if (input.EsTiendaOnline || input.Ruta == Constantes.Pedidos.RUTA_GLOVO)
+            {
+                resultado.PortesGratis = true;
+                resultado.ImporteFaltaParaPortesGratis = 0;
+                return resultado;
+            }
+
+            // Nota de entrega no lleva portes ni reembolso
+            if (input.NotaEntrega)
+            {
+                resultado.PortesGratis = true;
+                resultado.ImporteFaltaParaPortesGratis = 0;
+                return resultado;
+            }
+
+            // Si no se deben añadir portes (ej: almacén REI/ALC, o desactivado manualmente)
+            if (!input.AnadirPortes)
+            {
+                resultado.PortesGratis = true;
+                resultado.ImporteFaltaParaPortesGratis = 0;
+                return resultado;
+            }
+
+            // Comisión contra reembolso (independiente de la ruta)
+            resultado.EsContraReembolso = EsContraReembolso(
+                input.FormaPago, input.PlazosPago,
+                input.CCC, input.PeriodoFacturacion, input.NotaEntrega);
+
+            if (resultado.EsContraReembolso && Constantes.Portes.INCREMENTO_REEMBOLSO > 0)
+            {
+                resultado.ComisionReembolso = Constantes.Portes.INCREMENTO_REEMBOLSO;
+                resultado.CuentaReembolso = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL;
+            }
+
+            // Rutas sin portes: no llevan portes pero sí pueden llevar reembolso
+            if (!GestorImportesMinimos.esRutaConPortes(input.Ruta))
+            {
+                resultado.PortesGratis = true;
+                resultado.ImporteFaltaParaPortesGratis = 0;
+                return resultado;
+            }
+
+            // Determinar umbral según tipo de pedido
+            decimal umbralPortesGratis = ObtenerUmbralPortesGratis(
+                input.CodigoPostal, input.EsPrecioPublicoFinal, input.Iva);
+            resultado.ImporteMinimoPedidoSinPortes = umbralPortesGratis;
+            resultado.PortesGratis = input.BaseImponibleProductos >= umbralPortesGratis;
+            resultado.ImporteFaltaParaPortesGratis = resultado.PortesGratis
+                ? 0
+                : umbralPortesGratis - input.BaseImponibleProductos;
+
+            if (!resultado.PortesGratis)
+            {
+                // Determinar importe y cuenta según código postal
+                if (EsProvincial(input.CodigoPostal))
+                {
+                    resultado.ImportePortes = Constantes.Portes.PROVINCIAL;
+                    resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_ONTIME;
+                }
+                else
+                {
+                    resultado.ImportePortes = Constantes.Portes.PENINSULAR;
+                    resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_CEX;
+                }
+            }
+
+            return resultado;
+        }
+
+        /// <summary>
+        /// Determina si el código postal corresponde a envío provincial (más barato).
+        /// Provincias: Madrid (28), Guadalajara (19), Toledo (45).
+        /// </summary>
+        public static bool EsProvincial(string codigoPostal)
+        {
+            if (string.IsNullOrEmpty(codigoPostal))
+                return false;
+
+            return codigoPostal.StartsWith("28") ||
+                   codigoPostal.StartsWith("19") ||
+                   codigoPostal.StartsWith("45");
+        }
+
+        /// <summary>
+        /// Obtiene el umbral de importe a partir del cual los portes son gratis,
+        /// teniendo en cuenta el tipo de pedido.
+        /// Replica la lógica de GestorImportesMinimos del picking.
+        /// Los casos de tienda online y Glovo se gestionan antes (early return con PortesGratis=true).
+        /// </summary>
+        public static decimal ObtenerUmbralPortesGratis(string codigoPostal,
+            bool esPrecioPublicoFinal = false, string iva = "")
+        {
+            // Espejo: IVA vacío/null → umbral más alto
+            if (string.IsNullOrEmpty(iva))
+            {
+                return GestorImportesMinimos.IMPORTE_MINIMO_ESPEJO;
+            }
+
+            // Precio público final (caso especial de tienda online que sí pasa por aquí)
+            if (esPrecioPublicoFinal)
+            {
+                return GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL;
+            }
+
+            // Estándar: 75€ (mismo que GestorImportesMinimos.IMPORTE_MINIMO)
+            return GestorImportesMinimos.IMPORTE_MINIMO;
+        }
+
+        /// <summary>
+        /// Gestiona las líneas de portes y comisión reembolso en un pedido DTO.
+        /// Añade o quita líneas según corresponda.
+        /// Devuelve true si se modificaron las líneas.
+        /// </summary>
+        public static bool GestionarLineasPortes(
+            ICollection<Models.PedidosVenta.LineaPedidoVentaDTO> lineas,
+            ResultadoPortes resultado,
+            string iva,
+            IEnumerable<Models.PedidosBase.ParametrosIvaBase> parametrosIva)
+        {
+            bool modificado = false;
+
+            // Buscar líneas existentes de portes (cuentas 624xxx)
+            var lineaPortesExistente = lineas.FirstOrDefault(l =>
+                l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                l.Producto != null &&
+                l.Producto.Trim().StartsWith("624"));
+
+            // Buscar línea existente de comisión reembolso
+            var lineaReembolsoExistente = lineas.FirstOrDefault(l =>
+                l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                l.Producto != null &&
+                l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
+                l.texto != null &&
+                l.texto.Contains("reembolso"));
+
+            // Gestionar línea de portes
+            if (resultado.ImportePortes > 0 && !resultado.PortesGratis)
+            {
+                if (lineaPortesExistente == null)
+                {
+                    var lineaReferencia = lineas.FirstOrDefault();
+                    if (lineaReferencia != null)
+                    {
+                        var lineaPortes = CrearLineaPortes(resultado, lineaReferencia, iva, parametrosIva);
+                        lineas.Add(lineaPortes);
+                        modificado = true;
+                    }
+                }
+            }
+            else if (lineaPortesExistente != null && lineaPortesExistente.id == 0)
+            {
+                // Solo quitar si es línea nueva (id == 0), no tocar líneas ya guardadas
+                lineas.Remove(lineaPortesExistente);
+                modificado = true;
+            }
+
+            // Gestionar línea de comisión reembolso
+            if (resultado.ComisionReembolso > 0 && resultado.EsContraReembolso)
+            {
+                if (lineaReembolsoExistente == null)
+                {
+                    var lineaReferencia = lineas.FirstOrDefault();
+                    if (lineaReferencia != null)
+                    {
+                        var lineaReembolso = CrearLineaReembolso(resultado, lineaReferencia, iva, parametrosIva);
+                        lineas.Add(lineaReembolso);
+                        modificado = true;
+                    }
+                }
+            }
+            else if (lineaReembolsoExistente != null && lineaReembolsoExistente.id == 0)
+            {
+                lineas.Remove(lineaReembolsoExistente);
+                modificado = true;
+            }
+
+            return modificado;
+        }
+
+        private static Models.PedidosVenta.LineaPedidoVentaDTO CrearLineaPortes(
+            ResultadoPortes resultado,
+            Models.PedidosVenta.LineaPedidoVentaDTO lineaReferencia,
+            string iva,
+            IEnumerable<Models.PedidosBase.ParametrosIvaBase> parametrosIva)
+        {
+            var linea = new Models.PedidosVenta.LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                almacen = lineaReferencia.almacen,
+                Producto = resultado.CuentaPortes,
+                Cantidad = 1,
+                delegacion = lineaReferencia.delegacion,
+                formaVenta = lineaReferencia.formaVenta,
+                estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                texto = "Portes",
+                PrecioUnitario = resultado.ImportePortes,
+                iva = iva,
+                vistoBueno = true,
+                usuario = lineaReferencia.usuario,
+                fechaEntrega = lineaReferencia.fechaEntrega
+            };
+
+            AsignarIva(linea, iva, parametrosIva);
+            return linea;
+        }
+
+        private static Models.PedidosVenta.LineaPedidoVentaDTO CrearLineaReembolso(
+            ResultadoPortes resultado,
+            Models.PedidosVenta.LineaPedidoVentaDTO lineaReferencia,
+            string iva,
+            IEnumerable<Models.PedidosBase.ParametrosIvaBase> parametrosIva)
+        {
+            var linea = new Models.PedidosVenta.LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                almacen = lineaReferencia.almacen,
+                Producto = resultado.CuentaReembolso,
+                Cantidad = 1,
+                delegacion = lineaReferencia.delegacion,
+                formaVenta = lineaReferencia.formaVenta,
+                estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                texto = "Comisión contra reembolso",
+                PrecioUnitario = resultado.ComisionReembolso,
+                iva = iva,
+                vistoBueno = true,
+                usuario = lineaReferencia.usuario,
+                fechaEntrega = lineaReferencia.fechaEntrega
+            };
+
+            AsignarIva(linea, iva, parametrosIva);
+            return linea;
+        }
+
+        private static void AsignarIva(
+            Models.PedidosVenta.LineaPedidoVentaDTO linea,
+            string iva,
+            IEnumerable<Models.PedidosBase.ParametrosIvaBase> parametrosIva)
+        {
+            if (parametrosIva != null && parametrosIva.Any() && !string.IsNullOrEmpty(iva))
+            {
+                var parametro = parametrosIva.SingleOrDefault(p => p.CodigoIvaProducto == iva.Trim());
+                if (parametro != null)
+                {
+                    linea.PorcentajeIva = parametro.PorcentajeIvaProducto;
+                    linea.PorcentajeRecargoEquivalencia = parametro.PorcentajeRecargoEquivalencia;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Calcula la base imponible de solo productos (excluyendo líneas de cuentas contables tipo portes).
+        /// </summary>
+        public static decimal CalcularBaseImponibleProductos(IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> lineas)
+        {
+            return lineas
+                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ||
+                           (l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                            l.Producto != null &&
+                            !l.Producto.Trim().StartsWith("624") &&
+                            l.Producto.Trim() != Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL))
+                .Sum(l => l.BaseImponible);
+        }
+    }
+}
