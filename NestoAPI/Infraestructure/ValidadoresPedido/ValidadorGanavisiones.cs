@@ -46,6 +46,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // Fix #118: GrupoProducto puede ser null en líneas de ampliación (NestoApp/Nesto no lo envían),
             // así que lo resolvemos vía servicio cuando no está presente en el DTO
             decimal baseImponibleBonificable = pedido.Lineas
+                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 .Where(l =>
                 {
                     string grupo = l.GrupoProducto;
@@ -63,7 +64,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // Son las líneas con productos que tienen Ganavisiones configurados y están bonificadas (BaseImponible = 0)
             // Se excluyen líneas con oferta asignada (ej: 5+5), ya que esas bonificaciones no son Ganavisiones
             int ganavisionesConsumidos = 0;
-            foreach (var linea in pedido.Lineas)
+            foreach (var linea in pedido.Lineas.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO))
             {
                 if (linea.BaseImponible != 0)
                 {
