@@ -111,13 +111,13 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         #region CalcularPortes
 
         [TestMethod]
-        public void GestorPortes_CalcularPortes_TiendaOnline_PortesGratis()
+        public void GestorPortes_CalcularPortes_CanalExterno_PortesGratis()
         {
             var input = new PedidoPortesInput
             {
                 CodigoPostal = "28100",
                 Ruta = "FW",
-                EsTiendaOnline = true,
+                EsCanalExterno = true,
                 BaseImponibleProductos = 50
             };
 
@@ -125,6 +125,24 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
             Assert.IsTrue(resultado.PortesGratis);
             Assert.AreEqual(0, resultado.ImportePortes);
+        }
+
+        [TestMethod]
+        public void GestorPortes_EsCanalExterno_Amazon_DevuelveTrue()
+        {
+            Assert.IsTrue(Constantes.FormasVenta.EsCanalExterno(Constantes.FormasVenta.AMAZON));
+        }
+
+        [TestMethod]
+        public void GestorPortes_EsCanalExterno_TiendaOnline_DevuelveTrue()
+        {
+            Assert.IsTrue(Constantes.FormasVenta.EsCanalExterno(Constantes.FormasVenta.TIENDA_ONLINE));
+        }
+
+        [TestMethod]
+        public void GestorPortes_EsCanalExterno_FormaVentaNormal_DevuelveFalse()
+        {
+            Assert.IsFalse(Constantes.FormasVenta.EsCanalExterno("EFC"));
         }
 
         [TestMethod]
@@ -331,9 +349,8 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         [TestMethod]
-        public void GestorPortes_CalcularPortes_Estandar_Umbral75()
+        public void GestorPortes_CalcularPortes_Peninsular_Umbral100()
         {
-            // Pedido estándar con IVA → umbral 75€ independiente del CP
             var input = new PedidoPortesInput
             {
                 CodigoPostal = "08001",
@@ -344,9 +361,9 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
             var resultado = GestorPortes.CalcularPortes(input);
 
-            Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO, resultado.ImporteMinimoPedidoSinPortes);
+            Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO_PENINSULAR, resultado.ImporteMinimoPedidoSinPortes);
             Assert.IsFalse(resultado.PortesGratis);
-            Assert.AreEqual(25, resultado.ImporteFaltaParaPortesGratis);
+            Assert.AreEqual(50, resultado.ImporteFaltaParaPortesGratis);
         }
 
         [TestMethod]
@@ -390,10 +407,31 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         [TestMethod]
-        public void GestorPortes_ObtenerUmbralPortesGratis_Estandar_Devuelve75()
+        public void GestorPortes_ObtenerUmbralPortesGratis_Provincial_Devuelve75()
         {
             Assert.AreEqual(75, GestorPortes.ObtenerUmbralPortesGratis("28001", iva: "G21"));
-            Assert.AreEqual(75, GestorPortes.ObtenerUmbralPortesGratis("08001", iva: "G21"));
+            Assert.AreEqual(75, GestorPortes.ObtenerUmbralPortesGratis("19001", iva: "G21"));
+            Assert.AreEqual(75, GestorPortes.ObtenerUmbralPortesGratis("45001", iva: "G21"));
+        }
+
+        [TestMethod]
+        public void GestorPortes_ObtenerUmbralPortesGratis_Peninsular_Devuelve100()
+        {
+            Assert.AreEqual(100, GestorPortes.ObtenerUmbralPortesGratis("08001", iva: "G21"));
+            Assert.AreEqual(100, GestorPortes.ObtenerUmbralPortesGratis("41001", iva: "G21"));
+        }
+
+        [TestMethod]
+        public void GestorPortes_ObtenerUmbralPortesGratis_Baleares_Devuelve150()
+        {
+            Assert.AreEqual(150, GestorPortes.ObtenerUmbralPortesGratis("07001", iva: "G21"));
+        }
+
+        [TestMethod]
+        public void GestorPortes_ObtenerUmbralPortesGratis_Canarias_Devuelve400()
+        {
+            Assert.AreEqual(400, GestorPortes.ObtenerUmbralPortesGratis("35001", iva: "G21"));
+            Assert.AreEqual(400, GestorPortes.ObtenerUmbralPortesGratis("38001", iva: "G21"));
         }
 
         [TestMethod]

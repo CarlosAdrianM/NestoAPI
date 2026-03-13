@@ -28,7 +28,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public string CCC { get; set; }
         public string PeriodoFacturacion { get; set; }
         public bool NotaEntrega { get; set; }
-        public bool EsTiendaOnline { get; set; }
+        public bool EsCanalExterno { get; set; }
         public bool EsPrecioPublicoFinal { get; set; }
         public string Iva { get; set; }
         public decimal BaseImponibleProductos { get; set; }
@@ -77,7 +77,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             };
 
             // Tienda online y Glovo no llevan portes ni reembolso
-            if (input.EsTiendaOnline || input.Ruta == Constantes.Pedidos.RUTA_GLOVO)
+            if (input.EsCanalExterno || input.Ruta == Constantes.Pedidos.RUTA_GLOVO)
             {
                 resultado.PortesGratis = true;
                 resultado.ImporteFaltaParaPortesGratis = 0;
@@ -160,11 +160,28 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                    codigoPostal.StartsWith("45");
         }
 
+        public static bool EsBaleares(string codigoPostal)
+        {
+            if (string.IsNullOrEmpty(codigoPostal))
+                return false;
+
+            return codigoPostal.StartsWith("07");
+        }
+
+        public static bool EsCanarias(string codigoPostal)
+        {
+            if (string.IsNullOrEmpty(codigoPostal))
+                return false;
+
+            return codigoPostal.StartsWith("35") ||
+                   codigoPostal.StartsWith("38");
+        }
+
         /// <summary>
         /// Obtiene el umbral de importe a partir del cual los portes son gratis,
-        /// teniendo en cuenta el tipo de pedido.
-        /// Replica la lógica de GestorImportesMinimos del picking.
-        /// Los casos de tienda online y Glovo se gestionan antes (early return con PortesGratis=true).
+        /// teniendo en cuenta el tipo de pedido y la zona geográfica.
+        /// Provincial (28, 19, 45): 75€, Peninsular: 100€, Baleares: 150€, Canarias: 400€.
+        /// Los casos de canal externo y Glovo se gestionan antes (early return con PortesGratis=true).
         /// </summary>
         public static decimal ObtenerUmbralPortesGratis(string codigoPostal,
             bool esPrecioPublicoFinal = false, string iva = "")
@@ -181,8 +198,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL;
             }
 
-            // Estándar: 75€ (mismo que GestorImportesMinimos.IMPORTE_MINIMO)
-            return GestorImportesMinimos.IMPORTE_MINIMO;
+            // Por zona geográfica
+            if (EsCanarias(codigoPostal))
+            {
+                return GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS;
+            }
+
+            if (EsBaleares(codigoPostal))
+            {
+                return GestorImportesMinimos.IMPORTE_MINIMO_BALEARES;
+            }
+
+            if (EsProvincial(codigoPostal))
+            {
+                return GestorImportesMinimos.IMPORTE_MINIMO;
+            }
+
+            // Resto peninsular
+            return GestorImportesMinimos.IMPORTE_MINIMO_PENINSULAR;
         }
 
         /// <summary>

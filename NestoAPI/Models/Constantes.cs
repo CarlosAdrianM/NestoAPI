@@ -169,6 +169,18 @@ namespace NestoAPI.Models
         {
             public const string AMAZON = "STK";
             public const string TIENDA_ONLINE = "WEB";
+            public const string PERFUMES_CLUB = "QRU";
+            public const string MIRAVIA = "BLT";
+
+            private static readonly HashSet<string> _canalesExternos = new HashSet<string>
+            {
+                AMAZON, TIENDA_ONLINE, PERFUMES_CLUB, MIRAVIA
+            };
+
+            public static bool EsCanalExterno(string formaVenta)
+            {
+                return !string.IsNullOrWhiteSpace(formaVenta) && _canalesExternos.Contains(formaVenta.Trim());
+            }
         }
 
         public class GruposSeguridad

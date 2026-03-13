@@ -841,7 +841,7 @@ namespace NestoAPI.Controllers
             // Gestionar portes automáticos en PUT (si no es Glovo)
             if (pedido.ruta != Constantes.Pedidos.RUTA_GLOVO)
             {
-                bool esTiendaOnline = pedido.Lineas.Any(l => l.formaVenta?.Trim() == Constantes.FormasVenta.TIENDA_ONLINE);
+                bool esCanalExterno = pedido.Lineas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.formaVenta));
                 string codigoPostalPut = "";
                 try
                 {
@@ -859,7 +859,7 @@ namespace NestoAPI.Controllers
                     CCC = pedido.ccc,
                     PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
                     NotaEntrega = pedido.notaEntrega,
-                    EsTiendaOnline = esTiendaOnline,
+                    EsCanalExterno = esCanalExterno,
                     Iva = pedido.iva?.Trim(),
                     BaseImponibleProductos = baseImponibleProductosPut,
                     AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())
@@ -1266,7 +1266,7 @@ namespace NestoAPI.Controllers
             // Añadir portes automáticos (si no es Glovo, que tiene su propia lógica arriba)
             if (pedido.ruta != Constantes.Pedidos.RUTA_GLOVO)
             {
-                bool esTiendaOnline = pedido.Lineas.Any(l => l.formaVenta?.Trim() == Constantes.FormasVenta.TIENDA_ONLINE);
+                bool esCanalExterno = pedido.Lineas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.formaVenta));
                 string codigoPostalPortes = "";
                 try
                 {
@@ -1286,7 +1286,7 @@ namespace NestoAPI.Controllers
                     CCC = pedido.ccc,
                     PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
                     NotaEntrega = pedido.notaEntrega,
-                    EsTiendaOnline = esTiendaOnline,
+                    EsCanalExterno = esCanalExterno,
                     Iva = pedido.iva?.Trim(),
                     BaseImponibleProductos = baseImponibleProductos,
                     AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())
@@ -1568,9 +1568,9 @@ namespace NestoAPI.Controllers
                 c.Empresa == empresa && c.Nº_Cliente == cabecera.Nº_Cliente && c.Contacto == cabecera.Contacto);
             string codigoPostal = cliente?.CodPostal?.Trim() ?? "";
 
-            bool esTiendaOnline = cabecera.Serie != null && cabecera.Serie.Trim() == "NV" &&
+            bool esCanalExterno = cabecera.Serie != null && cabecera.Serie.Trim() == "NV" &&
                 (cabecera.Ruta?.Trim() == Constantes.Pedidos.RUTA_GLOVO ||
-                 cabecera.LinPedidoVtas.Any(l => l.Forma_Venta?.Trim() == Constantes.FormasVenta.TIENDA_ONLINE));
+                 cabecera.LinPedidoVtas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.Forma_Venta)));
 
             // Excluir líneas sobre-pedido (EstadoProducto != 0 y no parcial) y líneas de portes/reembolso
             decimal baseImponibleProductos = cabecera.LinPedidoVtas
@@ -1593,9 +1593,8 @@ namespace NestoAPI.Controllers
                 CCC = cabecera.CCC,
                 PeriodoFacturacion = cabecera.Periodo_Facturacion?.Trim(),
                 NotaEntrega = cabecera.NotaEntrega,
-                EsTiendaOnline = esTiendaOnline,
-                EsPrecioPublicoFinal = cabecera.LinPedidoVtas.Any(l =>
-                    l.Forma_Venta?.Trim() == "QRU" || l.Forma_Venta?.Trim() == Constantes.FormasVenta.TIENDA_ONLINE || l.Forma_Venta?.Trim() == Constantes.FormasVenta.AMAZON) &&
+                EsCanalExterno = esCanalExterno,
+                EsPrecioPublicoFinal = esCanalExterno &&
                     cliente?.Estado == 8 && cabecera.Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL,
                 Iva = cabecera.IVA?.Trim(),
                 BaseImponibleProductos = baseImponibleProductos,
