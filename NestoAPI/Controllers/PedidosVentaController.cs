@@ -838,10 +838,11 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            // Gestionar portes automáticos en PUT (si no es Glovo)
-            if (pedido.ruta != Constantes.Pedidos.RUTA_GLOVO)
+            // Gestionar portes automáticos en PUT (si no es Glovo ni canal externo)
+            // Canales externos gestionan sus propios portes: si los traen se respetan.
+            bool esCanalExternoPut = pedido.Lineas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.formaVenta));
+            if (pedido.ruta != Constantes.Pedidos.RUTA_GLOVO && !esCanalExternoPut)
             {
-                bool esCanalExterno = pedido.Lineas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.formaVenta));
                 string codigoPostalPut = "";
                 try
                 {
@@ -859,7 +860,7 @@ namespace NestoAPI.Controllers
                     CCC = pedido.ccc,
                     PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
                     NotaEntrega = pedido.notaEntrega,
-                    EsCanalExterno = esCanalExterno,
+                    EsCanalExterno = false,
                     Iva = pedido.iva?.Trim(),
                     BaseImponibleProductos = baseImponibleProductosPut,
                     AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())
@@ -1263,10 +1264,13 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            // Añadir portes automáticos (si no es Glovo, que tiene su propia lógica arriba)
-            if (pedido.ruta != Constantes.Pedidos.RUTA_GLOVO)
+            // Añadir portes automáticos (si no es Glovo ni canal externo)
+            // Glovo tiene su propia lógica arriba.
+            // Canales externos (Amazon, TiendaOnline, etc.) gestionan sus propios portes:
+            // si los traen se respetan, no debemos añadir ni quitar.
+            bool esCanalExternoPost = pedido.Lineas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.formaVenta));
+            if (pedido.ruta != Constantes.Pedidos.RUTA_GLOVO && !esCanalExternoPost)
             {
-                bool esCanalExterno = pedido.Lineas.Any(l => Constantes.FormasVenta.EsCanalExterno(l.formaVenta));
                 string codigoPostalPortes = "";
                 try
                 {
@@ -1286,7 +1290,7 @@ namespace NestoAPI.Controllers
                     CCC = pedido.ccc,
                     PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
                     NotaEntrega = pedido.notaEntrega,
-                    EsCanalExterno = esCanalExterno,
+                    EsCanalExterno = false,
                     Iva = pedido.iva?.Trim(),
                     BaseImponibleProductos = baseImponibleProductos,
                     AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())

@@ -4,6 +4,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.Picking;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 {
@@ -447,6 +448,20 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             Assert.AreEqual(10, GestorPortes.ObtenerUmbralPortesGratis("28001", esPrecioPublicoFinal: true, iva: "G21"));
         }
 
+        [TestMethod]
+        public void GestorPortes_ObtenerUmbralPortesGratis_CodigoPostalNulo_DevuelveUmbralMasAlto()
+        {
+            // Sin código postal no podemos determinar la zona geográfica.
+            // Devolvemos el umbral más alto (Canarias, 400€) como valor conservador.
+            // El cliente debe hacer una nueva llamada cuando disponga del CP real.
+            Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS,
+                GestorPortes.ObtenerUmbralPortesGratis(null, iva: "G21"),
+                "CP null debe devolver el umbral más alto (Canarias)");
+            Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS,
+                GestorPortes.ObtenerUmbralPortesGratis("", iva: "G21"),
+                "CP vacío debe devolver el umbral más alto (Canarias)");
+        }
+
         #endregion
 
         #region CalcularBaseImponibleProductos
@@ -671,6 +686,167 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
             Assert.IsFalse(resultado.PortesGratis);
             Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes);
+        }
+
+        #endregion
+
+        #region Escenarios integración POST/PUT
+
+        [TestMethod]
+        public void GestorPortes_PUT_SuperaMinimo_DebeQuitarPortesExistentesEnBD()
+        {
+            // BUG REAL (pedido 912479): POST crea pedido con 2 líneas (36.90+13.63=50.53€ < 75€)
+            // → se añaden portes. Luego se añade otra línea (36.90€) → total 87.43€ > 75€.
+            // Los portes (ya guardados en BD, id > 0) deberían eliminarse en el PUT.
+            //
+            // Este test simula el PUT donde las líneas de portes ya están en BD (id > 0).
+            // GestionarLineasPortes solo borra líneas con id=0, así que el PUT del controller
+            // tiene lógica inline para borrar las de BD. Aquí verificamos que CalcularPortes
+            // devuelve PortesGratis=true para que el controller pueda actuar.
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "28210", // Valdemorillo, Madrid
+                Ruta = "FW",
+                FormaPago = "EFC",
+                PlazosPago = "CONTADO",
+                PeriodoFacturacion = "NRM",
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 87.43M // 36.90 + 13.63 + 36.90
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.PortesGratis,
+                "Con 87.43€ > 75€ umbral, PortesGratis debe ser true para que el PUT borre los portes de BD");
+            Assert.AreEqual(0, resultado.ImportePortes,
+                "No debe cobrar portes");
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularPortes_SinProductos_BaseImponibleCero_DebeIndicarPortesInnecesarios()
+        {
+            // BUG REAL (pedido 912267): El usuario borra todas las líneas de producto para
+            // desactivar el pedido. Al quedar BaseImponible=0, CalcularPortes dice PortesGratis=false
+            // (porque 0 < 75) y el PUT no borra los portes. El pedido se factura con solo portes.
+            //
+            // Comportamiento esperado: si no hay productos (base=0), los portes no tienen sentido.
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "28210",
+                Ruta = "FW",
+                FormaPago = "RCB",
+                PlazosPago = "1/7",
+                CCC = "5",
+                PeriodoFacturacion = "NRM",
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 0 // No hay productos
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.PortesGratis,
+                "Sin productos (base=0), no se deben cobrar portes");
+            Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes,
+                "Debe devolver el importe de portes aunque no los cobre, para que el cliente " +
+                "pueda mostrarlo cuando se añadan productos y no se llegue al mínimo");
+            Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO, resultado.ImporteMinimoPedidoSinPortes,
+                "El umbral debe calcularse aunque no haya productos (para que los clientes comparen localmente)");
+            Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO, resultado.ImporteFaltaParaPortesGratis,
+                "Falta el umbral completo porque base es 0");
+        }
+
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_CanalExternoConPortes_NoDebeBorrarlos()
+        {
+            // BUG REAL (pedido 912302): Amazon envía un pedido con portes (cuenta 62400003).
+            // En el POST, GestionarLineasPortes se llama con PortesGratis=true (canal externo).
+            // Como la línea de portes tiene id=0 (nueva), el método la BORRA.
+            // Los portes de Amazon se pierden.
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = 1, Producto = "41214", PrecioUnitario = 5.67M, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "STK",
+                    estado = 1, usuario = "test", fechaEntrega = System.DateTime.Today
+                },
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = 1, Producto = "42269", PrecioUnitario = 5.66M, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "STK",
+                    estado = 1, usuario = "test", fechaEntrega = System.DateTime.Today
+                },
+                new LineaPedidoVentaDTO
+                {
+                    // Portes que vienen de Amazon (id=0 porque es línea nueva del POST)
+                    id = 0,
+                    tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                    Producto = "62400003",
+                    PrecioUnitario = 3.99M,
+                    Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "STK",
+                    estado = 1, usuario = "test", fechaEntrega = System.DateTime.Today,
+                    texto = "Portes"
+                }
+            };
+
+            // Para canal externo, CalcularPortes devuelve PortesGratis=true
+            var resultado = new ResultadoPortes
+            {
+                PortesGratis = true,
+                ImportePortes = 0
+            };
+
+            GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            // BUG: GestionarLineasPortes borra la línea de portes de Amazon porque
+            // tiene id=0 y el resultado dice PortesGratis=true (rama else if).
+            Assert.AreEqual(3, lineas.Count,
+                "Los portes de Amazon (canal externo) deben preservarse. " +
+                "Actualmente GestionarLineasPortes los borra porque id=0 y PortesGratis=true.");
+        }
+
+        [TestMethod]
+        public void GestorPortes_PedidoTarjetaPrepago_SiAñadePortes()
+        {
+            // Escenario 4: Pedido con FormaPago=TAR y PlazosPago=PRE.
+            // Verifica que CalcularPortes SÍ añade portes para pedidos de tarjeta.
+            // El bug real está en NestoApp (plantilla-venta.component.ts:464) que envía
+            // el enlace de pago usando totalPedido del FRONTEND (sin portes) antes de que
+            // el backend los añada en el POST. Pero al menos el backend los añade correctamente.
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 50, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "EFC",
+                    estado = 1, usuario = "test", fechaEntrega = System.DateTime.Today
+                }
+            };
+
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "28100",
+                Ruta = "FW",
+                FormaPago = Constantes.FormasPago.TARJETA,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 50
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsFalse(resultado.PortesGratis, "No llega al mínimo, debe cobrar portes");
+            Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes, "Portes provinciales");
+            Assert.IsFalse(resultado.EsContraReembolso, "TAR no es contra reembolso");
+
+            bool modificado = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.IsTrue(modificado, "Debe añadir línea de portes");
+            Assert.AreEqual(2, lineas.Count, "1 producto + 1 portes");
+            Assert.IsTrue(lineas.Any(l => l.Producto != null && l.Producto.StartsWith("624")),
+                "El backend SÍ añade portes. El bug está en NestoApp que calcula el importe " +
+                "del enlace de pago ANTES de crear el pedido (sin portes incluidos).");
         }
 
         #endregion

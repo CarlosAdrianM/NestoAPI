@@ -100,6 +100,33 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return resultado;
             }
 
+            // Sin productos no tiene sentido cobrar portes ni reembolso,
+            // pero calculamos umbral e importe para que los clientes puedan
+            // usarlos en comparaciones locales cuando se añadan productos.
+            if (input.BaseImponibleProductos <= 0 && GestorImportesMinimos.esRutaConPortes(input.Ruta))
+            {
+                resultado.PortesGratis = true;
+                resultado.ImporteMinimoPedidoSinPortes = ObtenerUmbralPortesGratis(
+                    input.CodigoPostal, input.EsPrecioPublicoFinal, input.Iva);
+                resultado.ImporteFaltaParaPortesGratis = resultado.ImporteMinimoPedidoSinPortes;
+                if (EsProvincial(input.CodigoPostal))
+                {
+                    resultado.ImportePortes = Constantes.Portes.PROVINCIAL;
+                    resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_ONTIME;
+                }
+                else
+                {
+                    resultado.ImportePortes = Constantes.Portes.PENINSULAR;
+                    resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_CEX;
+                }
+                return resultado;
+            }
+            else if (input.BaseImponibleProductos <= 0)
+            {
+                resultado.PortesGratis = true;
+                return resultado;
+            }
+
             // Comisión contra reembolso (independiente de la ruta)
             resultado.EsContraReembolso = EsContraReembolso(
                 input.FormaPago, input.PlazosPago,
@@ -198,6 +225,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return GestorImportesMinimos.IMPORTE_MINIMO_TIENDA_ONLINE_PRECIO_PUBLICO_FINAL;
             }
 
+            // Código postal desconocido: devolver el umbral más alto (Canarias).
+            // El cliente debe hacer una nueva llamada cuando disponga del CP real.
+            if (string.IsNullOrEmpty(codigoPostal))
+            {
+                return GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS;
+            }
+
             // Por zona geográfica
             if (EsCanarias(codigoPostal))
             {
@@ -259,9 +293,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                 }
             }
-            else if (lineaPortesExistente != null && lineaPortesExistente.id == 0)
+            else if (lineaPortesExistente != null && lineaPortesExistente.id == 0 &&
+                     !Constantes.FormasVenta.EsCanalExterno(lineaPortesExistente.formaVenta))
             {
-                // Solo quitar si es línea nueva (id == 0), no tocar líneas ya guardadas
+                // Solo quitar si es línea nueva (id == 0) y no viene de un canal externo.
+                // Los canales externos (Amazon, TiendaOnline, etc.) gestionan sus propios portes.
                 lineas.Remove(lineaPortesExistente);
                 modificado = true;
             }

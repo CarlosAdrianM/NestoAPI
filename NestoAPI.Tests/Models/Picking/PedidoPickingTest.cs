@@ -5,6 +5,7 @@ using NestoAPI.Models.PedidosVenta;
 using NestoAPI.Models.Picking;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Tests.Models.Picking
 {
@@ -805,6 +806,56 @@ namespace NestoAPI.Tests.Models.Picking
             // Prepago 80€ - Deuda vencida 10€ = 70€ >= 60€ → SÍ sale
             Assert.IsTrue(pedido.saleEnPicking(), "Debería salir: prepago menos deuda vencida aún cubre el total");
             Assert.IsFalse(pedido.RetenidoPorPrepago);
+        }
+
+        [TestMethod]
+        public void PedidoPicking_hayQueSumarPortes_siEsTiendaOnlineYYaLlevaPortes_NoLosBorra()
+        {
+            // Escenario: pedido de Amazon/TiendaOnline que ya trae portes desde el canal externo.
+            // Al sacar picking NO debe intentar añadir más portes (hayQueSumarPortes=false),
+            // y los portes existentes se preservan (picking nunca borra líneas de portes).
+            LineaPedidoPicking lineaProducto = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "A",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                BaseImponible = 30,
+                EsSobrePedido = false
+            };
+            LineaPedidoPicking lineaPortes = new LineaPedidoPicking
+            {
+                Id = 2,
+                TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = Constantes.Cuentas.CUENTA_PORTES_ONTIME,
+                Cantidad = 1,
+                CantidadReservada = 1,
+                BaseImponible = Constantes.Portes.PROVINCIAL,
+                EsSobrePedido = false
+            };
+            PedidoPicking pedido = new PedidoPicking
+            {
+                Id = 1,
+                ServirJunto = false,
+                EsTiendaOnline = true,
+                ImporteOriginalNoSobrePedido = 30,
+                Ruta = RUTA_CON_PORTES,
+                Lineas = new List<LineaPedidoPicking>()
+            };
+            pedido.Lineas.Add(lineaProducto);
+            pedido.Lineas.Add(lineaPortes);
+
+            // hayQueSumarPortes devuelve false → no se llama a GeneradorPortes.Ejecutar()
+            // Por tanto los portes existentes se preservan intactos
+            Assert.IsFalse(pedido.hayQueSumarPortes(),
+                "Tienda online: no debe intentar añadir portes (los gestiona el canal externo)");
+            Assert.AreEqual(2, pedido.Lineas.Count,
+                "Las líneas (producto + portes del canal externo) se preservan intactas");
+            Assert.IsTrue(pedido.Lineas.Any(l =>
+                l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                l.Producto == Constantes.Cuentas.CUENTA_PORTES_ONTIME),
+                "La línea de portes del canal externo sigue presente");
         }
     }
 }
