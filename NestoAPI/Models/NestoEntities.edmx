@@ -1347,6 +1347,7 @@
           <Property Name="FormaVenta" Type="nvarchar" MaxLength="3" />
           <Property Name="Delegacion" Type="nvarchar" MaxLength="3" />
           <Property Name="TipoApunte" Type="nvarchar" MaxLength="3" />
+          <Property Name="TokenAcceso" Type="uniqueidentifier" Nullable="false" />
         </EntityType>
         <EntityType Name="PagosTPV_Efectos">
           <Key>
@@ -12716,6 +12717,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Delegacion" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
           <Property Name="TipoApunte" Type="String" MaxLength="3" FixedLength="false" Unicode="true" />
           <NavigationProperty Name="PagosTPV_Efectos" Relationship="NVModel.FK_PagosTPV_Efectos_Pago" FromRole="PagoTPV" ToRole="PagosTPV_Efectos" />
+          <Property Name="TokenAcceso" Type="Guid" Nullable="false" />
         </EntityType>
         <EntityType Name="PagoTPV_Efecto">
           <Key>
@@ -14700,6 +14702,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="PagosTPV">
             <EntityTypeMapping TypeName="NVModel.PagoTPV">
               <MappingFragment StoreEntitySet="PagosTPV">
+                <ScalarProperty Name="TokenAcceso" ColumnName="TokenAcceso" />
                 <ScalarProperty Name="TipoApunte" ColumnName="TipoApunte" />
                 <ScalarProperty Name="Delegacion" ColumnName="Delegacion" />
                 <ScalarProperty Name="FormaVenta" ColumnName="FormaVenta" />

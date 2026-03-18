@@ -103,7 +103,9 @@ namespace NestoAPI.Infraestructure.Pagos
                     UrlRedsys = _redsysService.UrlFormularioRedsys,
                     Ds_SignatureVersion = parametros.Ds_SignatureVersion,
                     Ds_MerchantParameters = parametros.Ds_MerchantParameters,
-                    Ds_Signature = parametros.Ds_Signature
+                    Ds_Signature = parametros.Ds_Signature,
+                    TokenAcceso = pago.TokenAcceso,
+                    UrlPaginaPago = $"https://api.nuevavision.es/pago/{pago.TokenAcceso}"
                 };
             }
         }
