@@ -659,6 +659,7 @@
     <Compile Include="Infraestructure\Verifactu\Verifacti\VerifactiDTOs.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
+    <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\ServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
@@ -1160,6 +1161,7 @@
     <Compile Include="Models\EnviarNotificacionDTO.cs" />
     <Compile Include="Models\NotificacionPushDTO.cs" />
     <Compile Include="Models\RegistrarDispositivoDTO.cs" />
+    <Compile Include="Models\Informes\ClienteNuevoVendedorDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
     <Compile Include="Models\Pagos\NotificacionRedsys.cs" />
     <Compile Include="Models\Pagos\PagoTPVDTO.cs" />

@@ -19,6 +19,7 @@ using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infraestructure.Videos;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.CorreosPostCompra;
+using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
@@ -304,6 +305,18 @@ namespace NestoAPI
             );
 
             Console.WriteLine("✅ Job recurrente 'correos-postcompra-semanal' configurado (miércoles a las 20:30)");
+
+            // Issue #137: Informe semanal de clientes nuevos por vendedor
+            RecurringJob.AddOrUpdate(
+                "informe-clientes-nuevos-semanal",
+                () => InformeClientesNuevosJobsService.ProcesarInformeSemanal(),
+                "0 9 * * 5", // Cron: viernes a las 9:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'informe-clientes-nuevos-semanal' configurado (viernes a las 9:00)");
 
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
