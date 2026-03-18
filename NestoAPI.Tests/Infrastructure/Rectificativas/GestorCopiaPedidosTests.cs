@@ -102,6 +102,7 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             Assert.IsFalse(request.InvertirCantidades, "Por defecto no invierte cantidades");
             Assert.IsFalse(request.AnadirAPedidoOriginal, "Por defecto crea pedido nuevo");
             Assert.IsFalse(request.CrearAlbaranYFactura, "Por defecto no crea albaran/factura automaticamente");
+            Assert.IsTrue(request.UsarVendedorFacturaOriginal, "Por defecto usa vendedor de la factura original");
         }
 
         #endregion

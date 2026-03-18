@@ -502,7 +502,9 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 PlazosPago = plazosPagoFinal,
                 Primer_Vencimiento = vencimientoFinal,
                 IVA = clienteDb.IVA,
-                Vendedor = clienteDb.Vendedor,
+                Vendedor = request.UsarVendedorFacturaOriginal && pedidoOriginal != null
+                    ? pedidoOriginal.Vendedor
+                    : clienteDb.Vendedor,
                 Periodo_Facturacion = clienteDb.PeriodoFacturación,
                 Ruta = clienteDb.Ruta,
                 Serie = pedidoOriginal?.Serie ?? "NV", // TODO: Usar serie rectificativa cuando exista

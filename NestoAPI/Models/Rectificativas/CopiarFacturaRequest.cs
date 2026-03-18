@@ -93,5 +93,12 @@ namespace NestoAPI.Models.Rectificativas
         /// Se concatenan con el comentario automático de trazabilidad.
         /// </summary>
         public string Comentarios { get; set; }
+
+        /// <summary>
+        /// Si true, usa el vendedor de la factura original en ambos documentos (rectificativa y cargo).
+        /// Si false, usa el vendedor de la ficha del cliente de cada documento.
+        /// Por defecto true.
+        /// </summary>
+        public bool UsarVendedorFacturaOriginal { get; set; } = true;
     }
 }
