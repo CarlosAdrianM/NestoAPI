@@ -118,7 +118,7 @@ namespace NestoAPI.Infraestructure
                 correoUsuario = parametroUsuario != null ? parametroUsuario.Valor : Constantes.Correos.INFORMATICA;
                 if (correoUsuario != null && correoUsuario.Trim() != "")
                 {
-                    correoUsuario = correoUsuario.Trim().ToLower();
+                    correoUsuario = correoUsuario.Trim().ToLower(); 
                     mail.CC.Add(correoUsuario);
                 }
             }

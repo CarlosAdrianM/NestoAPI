@@ -71,7 +71,8 @@ namespace NestoAPI.Infraestructure.Pagos
                     TipoApunte = solicitud.TipoApunte,
                     Estado = "Pendiente",
                     FechaCreacion = DateTime.Now,
-                    Usuario = usuario
+                    Usuario = usuario,
+                    TokenAcceso = Guid.NewGuid()
                 };
 
                 db.PagosTPV.Add(pago);

@@ -18,6 +18,7 @@ namespace NestoAPI.Controllers
 
         [HttpPost]
         [Route("")]
+        [Authorize]
         [ResponseType(typeof(ReclamacionDeuda))]
         public async Task<IHttpActionResult> Post([FromBody] ReclamacionDeuda reclamacion)
         {
