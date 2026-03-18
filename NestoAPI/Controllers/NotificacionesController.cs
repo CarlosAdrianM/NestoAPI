@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
 using System;
+using static NestoAPI.Models.Constantes;
 using System.Threading.Tasks;
 using System.Web.Http;
 
@@ -82,6 +83,51 @@ namespace NestoAPI.Controllers
             ).ConfigureAwait(false);
 
             return Ok(dispositivos);
+        }
+
+        [HttpPost]
+        [Route("Enviar")]
+        [Authorize]
+        public async Task<IHttpActionResult> Enviar([FromBody] EnviarNotificacionDTO dto)
+        {
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Destinatario))
+            {
+                return BadRequest("El destinatario es obligatorio");
+            }
+
+            if (dto.Notificacion == null || string.IsNullOrWhiteSpace(dto.Notificacion.Titulo))
+            {
+                return BadRequest("El título de la notificación es obligatorio");
+            }
+
+            int enviados = 0;
+
+            switch (dto.TipoDestinatario?.ToLower())
+            {
+                case "vendedor":
+                    enviados = await _servicio.EnviarAVendedor(
+                        dto.Empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                        dto.Destinatario,
+                        dto.Notificacion
+                    ).ConfigureAwait(false);
+                    break;
+                case "cliente":
+                    enviados = await _servicio.EnviarACliente(
+                        dto.Empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                        dto.Destinatario,
+                        dto.Notificacion
+                    ).ConfigureAwait(false);
+                    break;
+                default:
+                    enviados = await _servicio.EnviarAUsuario(
+                        dto.Destinatario,
+                        dto.Aplicacion ?? "NestoApp",
+                        dto.Notificacion
+                    ).ConfigureAwait(false);
+                    break;
+            }
+
+            return Ok(enviados);
         }
     }
 }

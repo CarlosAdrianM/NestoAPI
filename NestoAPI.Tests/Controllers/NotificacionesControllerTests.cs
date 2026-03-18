@@ -156,5 +156,103 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("15191     ", okResult.Content.Cliente);
             Assert.AreEqual("0  ", okResult.Content.Contacto);
         }
+
+        [TestMethod]
+        public async Task Enviar_SinDestinatario_DevuelveBadRequest()
+        {
+            var dto = new EnviarNotificacionDTO
+            {
+                Destinatario = null,
+                Notificacion = new NotificacionPushDTO { Titulo = "Test" }
+            };
+
+            var resultado = await _controller.Enviar(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task Enviar_SinTitulo_DevuelveBadRequest()
+        {
+            var dto = new EnviarNotificacionDTO
+            {
+                Destinatario = "NV",
+                TipoDestinatario = "vendedor",
+                Notificacion = new NotificacionPushDTO { Titulo = null }
+            };
+
+            var resultado = await _controller.Enviar(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task Enviar_AVendedor_LlamaAlServicioCorrectamente()
+        {
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = "Pedido enviado",
+                Cuerpo = "Tu pedido 12345 ha sido entregado a la agencia"
+            };
+            var dto = new EnviarNotificacionDTO
+            {
+                Destinatario = "NV ",
+                TipoDestinatario = "vendedor",
+                Empresa = "1  ",
+                Notificacion = notificacion
+            };
+
+            A.CallTo(() => _servicio.EnviarAVendedor("1  ", "NV ", notificacion)).Returns(2);
+
+            var resultado = await _controller.Enviar(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
+            A.CallTo(() => _servicio.EnviarAVendedor("1  ", "NV ", notificacion))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Enviar_ACliente_LlamaAlServicioCorrectamente()
+        {
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = "Factura emitida",
+                Cuerpo = "Nueva factura disponible"
+            };
+            var dto = new EnviarNotificacionDTO
+            {
+                Destinatario = "15191     ",
+                TipoDestinatario = "cliente",
+                Empresa = "1  ",
+                Notificacion = notificacion
+            };
+
+            A.CallTo(() => _servicio.EnviarACliente("1  ", "15191     ", notificacion)).Returns(1);
+
+            var resultado = await _controller.Enviar(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
+            A.CallTo(() => _servicio.EnviarACliente("1  ", "15191     ", notificacion))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Enviar_SinTipoDestinatario_EnviaPorUsuario()
+        {
+            var notificacion = new NotificacionPushDTO { Titulo = "Test" };
+            var dto = new EnviarNotificacionDTO
+            {
+                Destinatario = "testuser",
+                Notificacion = notificacion
+            };
+
+            A.CallTo(() => _servicio.EnviarAUsuario("testuser", "NestoApp", notificacion)).Returns(1);
+
+            var resultado = await _controller.Enviar(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
+            A.CallTo(() => _servicio.EnviarAUsuario("testuser", "NestoApp", notificacion))
+                .MustHaveHappenedOnceExactly();
+        }
     }
 }
