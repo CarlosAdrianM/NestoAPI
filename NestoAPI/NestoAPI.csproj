@@ -532,6 +532,7 @@
     <Compile Include="Controllers\PreContabilidadesController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
     <Compile Include="Controllers\ProveedoresController.cs" />
+    <Compile Include="Controllers\NotificacionesController.cs" />
     <Compile Include="Controllers\PagosController.cs" />
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />
     <Compile Include="Controllers\RecursosHumanosController.cs" />
@@ -658,6 +659,8 @@
     <Compile Include="Infraestructure\ServicioPlantillaVenta.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
     <Compile Include="Infraestructure\ServicioReclamacionDeuda.cs" />
+    <Compile Include="Infraestructure\Notificaciones\IServicioNotificacionesPush.cs" />
+    <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPush.cs" />
     <Compile Include="Infraestructure\Pagos\IRedsysService.cs" />
     <Compile Include="Infraestructure\Pagos\RedsysService.cs" />
     <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
@@ -707,6 +710,9 @@
     </Compile>
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Models\AccountBindingModels.cs" />
+    <Compile Include="Models\DispositivoNotificacion.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\Entidad.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -1145,6 +1151,7 @@
     <Compile Include="Models\Rapports\CopiarSeguimientosRequest.cs" />
     <Compile Include="Models\Rapports\ClienteSeguimientoLookup.cs" />
     <Compile Include="Models\Rapports\CodigoPostalSeguimientoLookup.cs" />
+    <Compile Include="Models\RegistrarDispositivoDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
     <Compile Include="Models\Pagos\NotificacionRedsys.cs" />
     <Compile Include="Models\Pagos\PagoTPVDTO.cs" />

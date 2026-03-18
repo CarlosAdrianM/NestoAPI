@@ -302,6 +302,7 @@
         <EntityTypeShape EntityType="NVModel.PagoTPV" Width="1.5" PointX="13.375" PointY="17.75" />
         <EntityTypeShape EntityType="NVModel.PagoTPV_Efecto" Width="1.5" PointX="15.625" PointY="18.875" />
         <AssociationConnector Association="NVModel.FK_PagosTPV_Efectos_Pago" />
+        <EntityTypeShape EntityType="NVModel.DispositivoNotificacion" Width="1.5" PointX="18.375" PointY="4.75" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

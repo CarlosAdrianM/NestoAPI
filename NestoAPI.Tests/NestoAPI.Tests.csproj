@@ -172,6 +172,8 @@
     <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Controllers\SeguimientosClientesControllerTests.cs" />
+    <Compile Include="Controllers\NotificacionesControllerTests.cs" />
+    <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />
     <Compile Include="Infrastructure\GestorEnviosAgenciaTests.cs" />

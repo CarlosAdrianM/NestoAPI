@@ -11,6 +11,7 @@ using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.NotasEntrega;
+using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Infraestructure.Pedidos;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Traspasos;
@@ -170,6 +171,9 @@ namespace NestoAPI
             _ = services.AddScoped<IServicioPagos, ServicioPagos>();
             _ = services.AddScoped<IContabilidadService, ContabilidadService>();
             _ = services.AddScoped<ILectorParametrosUsuario, LectorParametrosUsuario>();
+
+            // Servicios de Notificaciones Push (Issue #108)
+            _ = services.AddScoped<IServicioNotificacionesPush, ServicioNotificacionesPush>();
 
             // Servicios de sincronización bidireccional (External Systems <-> Nesto)
             // Push Subscription: usa SyncWebhookController
