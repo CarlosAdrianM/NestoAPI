@@ -28,40 +28,110 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             var systemPrompt = CrearSystemPrompt();
             var userMessage = CrearUserMessage(correo);
 
-            return await _servicioOpenAI.GenerarCorreoHtmlAsync(systemPrompt, userMessage).ConfigureAwait(false);
+            var respuesta = await _servicioOpenAI.GenerarCorreoHtmlAsync(systemPrompt, userMessage).ConfigureAwait(false);
+
+            if (ExtraerAsuntoYCuerpo(respuesta, out _))
+            {
+                return respuesta.Substring(respuesta.IndexOf('\n') + 1).TrimStart();
+            }
+
+            return respuesta;
+        }
+
+        /// <summary>
+        /// Genera el contenido HTML y extrae el asunto generado por OpenAI.
+        /// </summary>
+        public async Task<(string Asunto, string Html)> GenerarContenidoConAsunto(CorreoPostCompraClienteDTO correo)
+        {
+            if (correo == null ||
+                correo.ProductosComprados == null ||
+                !correo.ProductosComprados.Any())
+            {
+                return (null, null);
+            }
+
+            var systemPrompt = CrearSystemPrompt();
+            var userMessage = CrearUserMessage(correo);
+
+            var respuesta = await _servicioOpenAI.GenerarCorreoHtmlAsync(systemPrompt, userMessage).ConfigureAwait(false);
+
+            if (string.IsNullOrEmpty(respuesta))
+            {
+                return (null, null);
+            }
+
+            if (ExtraerAsuntoYCuerpo(respuesta, out string asunto))
+            {
+                var html = respuesta.Substring(respuesta.IndexOf('\n') + 1).TrimStart();
+                return (asunto, html);
+            }
+
+            return (null, respuesta);
+        }
+
+        /// <summary>
+        /// Extrae el asunto de la primera línea si tiene el formato "ASUNTO: ..."
+        /// </summary>
+        internal static bool ExtraerAsuntoYCuerpo(string respuesta, out string asunto)
+        {
+            asunto = null;
+            if (string.IsNullOrEmpty(respuesta))
+            {
+                return false;
+            }
+
+            var primeraLinea = respuesta.Split('\n')[0].Trim();
+            if (primeraLinea.StartsWith("ASUNTO:", System.StringComparison.OrdinalIgnoreCase))
+            {
+                asunto = primeraLinea.Substring("ASUNTO:".Length).Trim();
+                return true;
+            }
+
+            return false;
         }
 
         internal string CrearSystemPrompt()
         {
             return @"Eres un experto en email marketing para una empresa de productos de estética y peluquería profesional llamada Nueva Visión.
 
-Tu objetivo es generar un correo HTML que ayude al cliente a sacar el máximo partido a los productos que ha comprado recientemente, mostrándole vídeos tutoriales.
+Tu objetivo es generar un correo HTML personalizado que ayude al cliente a sacar partido a los productos que ha comprado recientemente, mostrándole vídeos tutoriales.
 
-PRINCIPIOS CLAVE (muy importantes):
+PRINCIPIOS CLAVE:
+- El correo debe parecer escrito por una persona REAL, no generado automáticamente
+- CADA correo debe ser DIFERENTE: varía el saludo, el tono, las frases, la estructura. Sé creativo
+- Si el nombre del cliente parece una empresa (contiene S.L., S.A., siglas, etc.), NO uses el nombre en el saludo. Usa algo genérico como ""Hola"", ""Buenos días"", etc.
+- Si el nombre parece de persona, úsalo de forma natural (solo el nombre de pila, no apellidos)
 - El cliente NO debe sentir que le quieres vender nada
-- El correo debe parecer una AYUDA genuina, no una promoción
-- Primero mostrar valor (vídeos de lo que YA compró)
-- Si hay productos recomendados, mencionarlos de forma sutil como ""otros productos que aparecen en estos vídeos""
-- Tono amigable y profesional, como un asesor de confianza
+- Tono cercano y profesional, como un asesor de confianza que escribe un email personal
+- NO repitas fórmulas: evita usar siempre ""sacar el máximo partido"" u otras muletillas
 
-ESTRUCTURA DEL CORREO:
-1. Saludo breve y personalizado
-2. Mensaje de valor: ""Hemos preparado estos vídeos para que saques el máximo partido a tu compra""
-3. Para cada producto comprado (máximo 3): mostrar nombre del producto, thumbnail del vídeo y botón ""Ver vídeo""
-4. Si hay productos recomendados: sección ""Otros productos que aparecen en estos vídeos"" con enlaces sutiles
+FORMATO DE RESPUESTA:
+La PRIMERA línea debe ser el asunto del correo, precedida por ""ASUNTO: "". El asunto debe ser natural, variado y personalizado. NO uses siempre la misma fórmula. Ejemplos de variación:
+- ""Tus vídeos de esta semana""
+- ""Mira lo que puedes hacer con [producto]""
+- ""Te dejamos unos tutoriales que te van a encantar""
+- ""[Nombre], estos vídeos son para ti""
+El resto es el HTML del cuerpo del correo.
+
+CONTENIDO:
+1. Saludo personalizado y variado
+2. Breve intro explicando por qué le escribes (que le envías vídeos de los productos que ha comprado). Varía la redacción en cada correo
+3. Para cada producto comprado: nombre del producto, thumbnail del vídeo (como enlace clicable) y botón ""Ver vídeo""
+4. Si hay productos recomendados: mencionarlos de forma sutil y natural (aparecen en los mismos vídeos)
 5. Firma: ""El equipo de Nueva Visión"" con teléfono 916 28 19 14 (WhatsApp)
 
-RESTRICCIONES:
+RESTRICCIONES TÉCNICAS:
 - Máximo 150 palabras de texto (sin contar HTML)
 - Diseño limpio, mobile-first, ancho máximo 600px
 - Colores suaves (principal: #2C5F7C), sin urgencias ni descuentos
 - Botones CTA suaves: ""Ver vídeo"" (NO ""Comprar ahora"")
 - NO usar palabras como ""oferta"", ""descuento"", ""compra"", ""promoción""
-- Thumbnail del vídeo: https://img.youtube.com/vi/{YOUTUBE_ID}/maxresdefault.jpg
+- Thumbnail del vídeo: https://img.youtube.com/vi/{YOUTUBE_ID}/hqdefault.jpg (enlazar a la URL del vídeo)
 - Usar SOLO las URLs proporcionadas, NO inventar enlaces
-- Todos los enlaces deben incluir los parámetros UTM que se proporcionan
+- Todos los enlaces deben incluir los parámetros UTM proporcionados
+- Las imágenes deben tener siempre alt descriptivo y un ancho fijo en píxeles (no %)
 
-Devuelve SOLO el HTML del cuerpo del correo, sin etiquetas <html>, <head> o <body>.";
+Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <html>, <head> o <body>.";
         }
 
         internal string CrearUserMessage(CorreoPostCompraClienteDTO correo)
@@ -77,7 +147,7 @@ Devuelve SOLO el HTML del cuerpo del correo, sin etiquetas <html>, <head> o <bod
                 sb.AppendLine($"- Producto: {producto.NombreProducto}");
                 sb.AppendLine($"  Vídeo: {producto.VideoTitulo}");
                 sb.AppendLine($"  YouTube ID: {producto.VideoYoutubeId}");
-                sb.AppendLine($"  Thumbnail: https://img.youtube.com/vi/{producto.VideoYoutubeId}/maxresdefault.jpg");
+                sb.AppendLine($"  Thumbnail: https://img.youtube.com/vi/{producto.VideoYoutubeId}/hqdefault.jpg");
 
                 if (!string.IsNullOrEmpty(producto.EnlaceVideoProducto))
                 {

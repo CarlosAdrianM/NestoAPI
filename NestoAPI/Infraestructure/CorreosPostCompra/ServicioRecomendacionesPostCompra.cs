@@ -262,6 +262,13 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     });
                 }
 
+                // Deduplicar por email: si varios clientes comparten email,
+                // quedarse con el que tiene más productos (evita correos duplicados)
+                resultado = resultado
+                    .GroupBy(c => c.ClienteEmail?.Trim().ToLowerInvariant())
+                    .Select(g => g.OrderByDescending(c => c.ProductosComprados.Count).First())
+                    .ToList();
+
                 return resultado;
             }
             finally

@@ -106,8 +106,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 }
 
                 var generador = new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI());
-                string htmlCorreo = await generador
-                    .GenerarContenidoHtml(datos)
+                var (asuntoGenerado, htmlCorreo) = await generador
+                    .GenerarContenidoConAsunto(datos)
                     .ConfigureAwait(false);
 
                 if (string.IsNullOrEmpty(htmlCorreo))
@@ -115,7 +115,9 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     return;
                 }
 
-                string asunto = $"Saca el máximo partido a tu compra, {datos.ClienteNombre}";
+                string asunto = !string.IsNullOrWhiteSpace(asuntoGenerado)
+                    ? asuntoGenerado
+                    : "Tus vídeos tutoriales de esta semana";
                 string remitente = ConfigurationManager.AppSettings["CorreosPostCompra:Remitente"]
                     ?? "nuevavision@nuevavision.es";
 
@@ -228,8 +230,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
             s.AppendLine("<td style=\"vertical-align: middle;\">");
             s.AppendLine($"<a href=\"{urlGooglePlay}\" target=\"_blank\" style=\"text-decoration: none;\">");
-            s.AppendLine("<img src=\"https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg\" ");
-            s.AppendLine("alt=\"Descargar en Google Play\" style=\"width: 135px; height: auto; display: inline-block;\" />");
+            s.AppendLine("<img src=\"https://play.google.com/intl/en_us/badges/static/images/badges/es_badge_web_generic.png\" ");
+            s.AppendLine("alt=\"Descargar en Google Play\" width=\"135\" style=\"width: 135px; height: auto; display: inline-block;\" />");
             s.AppendLine("</a>");
             s.AppendLine("</td>");
 
