@@ -6,6 +6,7 @@ using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
+using System.Net.Mail;
 using System.Threading.Tasks;
 using System.Web;
 using static NestoAPI.Models.Constantes;
@@ -17,12 +18,19 @@ namespace NestoAPI.Infraestructure.Pagos
         private readonly IRedsysService _redsysService;
         private readonly IContabilidadService _contabilidadService;
         private readonly ILectorParametrosUsuario _lectorParametros;
+        private readonly IServicioCorreoElectronico _servicioCorreo;
 
         public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros)
+            : this(redsysService, contabilidadService, lectorParametros, new ServicioCorreoElectronico())
+        {
+        }
+
+        public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros, IServicioCorreoElectronico servicioCorreo)
         {
             _redsysService = redsysService;
             _contabilidadService = contabilidadService;
             _lectorParametros = lectorParametros;
+            _servicioCorreo = servicioCorreo;
         }
 
         public async Task<RespuestaIniciarPago> IniciarPago(SolicitudPagoTPV solicitud, string usuario)
@@ -98,6 +106,11 @@ namespace NestoAPI.Infraestructure.Pagos
 
                 await db.SaveChangesAsync().ConfigureAwait(false);
 
+                string urlPaginaPago = $"https://api.nuevavision.es/pago/{pago.TokenAcceso}";
+
+                // Issue #139: Correo pre-cobro al cliente
+                EnviarCorreoPreCobro(pago, efectos, urlPaginaPago);
+
                 return new RespuestaIniciarPago
                 {
                     IdPago = pago.Id,
@@ -106,7 +119,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     Ds_MerchantParameters = parametros.Ds_MerchantParameters,
                     Ds_Signature = parametros.Ds_Signature,
                     TokenAcceso = pago.TokenAcceso,
-                    UrlPaginaPago = $"https://api.nuevavision.es/pago/{pago.TokenAcceso}"
+                    UrlPaginaPago = urlPaginaPago
                 };
             }
         }
@@ -145,6 +158,9 @@ namespace NestoAPI.Infraestructure.Pagos
 
                     // Contabilizar el cobro
                     await ContabilizarCobro(pago).ConfigureAwait(false);
+
+                    // Issue #139: Correo post-cobro a administración
+                    EnviarCorreoPostCobro(pago);
                 }
                 else
                 {
@@ -415,6 +431,128 @@ namespace NestoAPI.Infraestructure.Pagos
             }
 
             return dto;
+        }
+
+        /// <summary>
+        /// Envía correo al cliente con el enlace de pago generado.
+        /// Issue #139: Correo pre-cobro. Si el correo es null, no envía.
+        /// </summary>
+        internal void EnviarCorreoPreCobro(PagoTPV pago, List<EfectoAPagar> efectos, string urlPaginaPago)
+        {
+            if (string.IsNullOrWhiteSpace(pago.Correo))
+            {
+                return;
+            }
+
+            try
+            {
+                string filasEfectos = "";
+                if (efectos != null && efectos.Any())
+                {
+                    filasEfectos = string.Join("", efectos.Select(e =>
+                        $"<tr><td style='padding:6px;border:1px solid #ddd'>{e.Documento?.Trim()}</td>" +
+                        $"<td style='padding:6px;border:1px solid #ddd'>{e.Efecto?.Trim()}</td>" +
+                        $"<td style='padding:6px;border:1px solid #ddd;text-align:right'>{e.Importe:C}</td></tr>"));
+                }
+
+                string tablaEfectos = efectos != null && efectos.Any()
+                    ? $@"<table style='border-collapse:collapse;width:100%;margin:15px 0'>
+                        <tr style='background:#f5f5f5'>
+                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Documento</th>
+                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Efecto</th>
+                            <th style='padding:8px;border:1px solid #ddd;text-align:right'>Importe</th>
+                        </tr>
+                        {filasEfectos}
+                    </table>"
+                    : "";
+
+                string html = $@"<html><body style='font-family:Arial,sans-serif;color:#333'>
+                    <h2 style='color:#2c3e50'>Enlace de pago - Nueva Visi&oacute;n</h2>
+                    <p>Se ha generado un enlace de pago por importe de <strong>{pago.Importe:C}</strong>.</p>
+                    {tablaEfectos}
+                    <p style='margin:20px 0'>
+                        <a href='{urlPaginaPago}' style='background:#3498db;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;font-size:16px'>
+                            Realizar pago
+                        </a>
+                    </p>
+                    <p style='color:#888;font-size:12px'>Si tiene alguna duda, contacte con nosotros en administracion@nuevavision.es</p>
+                </body></html>";
+
+                using (var mail = new MailMessage())
+                {
+                    mail.From = new MailAddress(Correos.CORREO_ADMON, "Nueva Visión - Administración");
+                    mail.To.Add(pago.Correo);
+                    mail.Subject = $"Enlace de pago - {pago.Descripcion ?? "Nueva Visión"}";
+                    mail.Body = html;
+                    mail.IsBodyHtml = true;
+                    _servicioCorreo.EnviarCorreoSMTP(mail);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogElmah($"[EnviarCorreoPreCobro] Error enviando correo a {pago.Correo}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Envía correo a administración con los detalles del cobro realizado.
+        /// Issue #139: Correo post-cobro.
+        /// </summary>
+        internal void EnviarCorreoPostCobro(PagoTPV pago)
+        {
+            try
+            {
+                string filasEfectos = "";
+                if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
+                {
+                    filasEfectos = string.Join("", pago.PagosTPV_Efectos.Select(e =>
+                        $"<tr><td style='padding:6px;border:1px solid #ddd'>{e.Documento?.Trim()}</td>" +
+                        $"<td style='padding:6px;border:1px solid #ddd'>{e.Efecto?.Trim()}</td>" +
+                        $"<td style='padding:6px;border:1px solid #ddd'>{e.Contacto?.Trim()}</td>" +
+                        $"<td style='padding:6px;border:1px solid #ddd;text-align:right'>{e.Importe:C}</td></tr>"));
+                }
+
+                string tablaEfectos = pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any()
+                    ? $@"<h3>Efectos cobrados</h3>
+                    <table style='border-collapse:collapse;width:100%;margin:10px 0'>
+                        <tr style='background:#f5f5f5'>
+                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Documento</th>
+                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Efecto</th>
+                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Contacto</th>
+                            <th style='padding:8px;border:1px solid #ddd;text-align:right'>Importe</th>
+                        </tr>
+                        {filasEfectos}
+                    </table>"
+                    : "";
+
+                string html = $@"<html><body style='font-family:Arial,sans-serif;color:#333'>
+                    <h2 style='color:#27ae60'>Cobro NestoPago realizado</h2>
+                    <table style='margin:10px 0'>
+                        <tr><td><strong>Cliente:</strong></td><td>{pago.Cliente?.Trim()}</td></tr>
+                        <tr><td><strong>Importe:</strong></td><td>{pago.Importe:C}</td></tr>
+                        <tr><td><strong>N&ordm; Orden:</strong></td><td>{pago.NumeroOrden}</td></tr>
+                        <tr><td><strong>Autorizaci&oacute;n:</strong></td><td>{pago.CodigoAutorizacion}</td></tr>
+                        <tr><td><strong>Fecha:</strong></td><td>{pago.FechaActualizacion:g}</td></tr>
+                        <tr><td><strong>Correo cliente:</strong></td><td>{pago.Correo}</td></tr>
+                        <tr><td><strong>Usuario:</strong></td><td>{pago.Usuario}</td></tr>
+                    </table>
+                    {tablaEfectos}
+                </body></html>";
+
+                using (var mail = new MailMessage())
+                {
+                    mail.From = new MailAddress(Correos.CORREO_ADMON, "NestoPago");
+                    mail.To.Add(Correos.CORREO_ADMON);
+                    mail.Subject = $"Cobro NestoPago: {pago.Importe:C} - Cliente {pago.Cliente?.Trim()}";
+                    mail.Body = html;
+                    mail.IsBodyHtml = true;
+                    _servicioCorreo.EnviarCorreoSMTP(mail);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogElmah($"[EnviarCorreoPostCobro] Error enviando correo post-cobro: {ex.Message}");
+            }
         }
 
         private static void LogElmah(string mensaje)
