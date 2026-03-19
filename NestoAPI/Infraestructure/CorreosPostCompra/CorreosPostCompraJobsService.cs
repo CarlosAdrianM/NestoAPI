@@ -1,3 +1,4 @@
+using Elmah;
 using NestoAPI.Infraestructure.OpenAI;
 using NestoAPI.Models;
 using System;
@@ -30,8 +31,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 DateTime fechaDesde = hoy.AddDays(-6);
                 DateTime fechaHasta = hoy;
 
-                Elmah.ErrorSignal.FromCurrentContext()?.Raise(
-                    new Exception($"[CorreosPostCompra] Iniciando ProcesarCorreosSemanales. Fechas: {fechaDesde:dd/MM/yyyy} - {fechaHasta:dd/MM/yyyy}"));
+                ErrorLog.GetDefault(null)?.Log(new Error(
+                    new Exception($"[CorreosPostCompra] Iniciando ProcesarCorreosSemanales. Fechas: {fechaDesde:dd/MM/yyyy} - {fechaHasta:dd/MM/yyyy}")));
 
                 var servicio = new ServicioRecomendacionesPostCompra();
                 var correos = await servicio
@@ -40,13 +41,13 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
                 if (!correos.Any())
                 {
-                    Elmah.ErrorSignal.FromCurrentContext()?.Raise(
-                        new Exception("[CorreosPostCompra] ObtenerCorreosSemana devolvió 0 correos. No se programa nada."));
+                    ErrorLog.GetDefault(null)?.Log(new Error(
+                        new Exception("[CorreosPostCompra] ObtenerCorreosSemana devolvió 0 correos. No se programa nada.")));
                     return;
                 }
 
-                Elmah.ErrorSignal.FromCurrentContext()?.Raise(
-                    new Exception($"[CorreosPostCompra] ObtenerCorreosSemana devolvió {correos.Count} correos."));
+                ErrorLog.GetDefault(null)?.Log(new Error(
+                    new Exception($"[CorreosPostCompra] ObtenerCorreosSemana devolvió {correos.Count} correos.")));
 
                 // Modo test: redirigir todos los correos a los emails de prueba
                 bool modoTest = ConfigurationManager.AppSettings["CorreosPostCompra:ModoTest"]?.ToLower() == "true";
@@ -54,8 +55,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 {
                     string emailsTestConfig = ConfigurationManager.AppSettings["CorreosPostCompra:EmailsTest"] ?? "";
                     correos = AplicarModoTest(correos, emailsTestConfig);
-                    Elmah.ErrorSignal.FromCurrentContext()?.Raise(
-                        new Exception($"[CorreosPostCompra] Modo test activo. EmailsTest='{emailsTestConfig}'. Correos tras filtro: {correos.Count}"));
+                    ErrorLog.GetDefault(null)?.Log(new Error(
+                        new Exception($"[CorreosPostCompra] Modo test activo. EmailsTest='{emailsTestConfig}'. Correos tras filtro: {correos.Count}")));
                 }
 
                 // Programar envíos para el sábado a las 10:00 (3 días después del miércoles)
@@ -73,13 +74,13 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     }
                     catch (Exception ex)
                     {
-                        Elmah.ErrorSignal.FromCurrentContext()?.Raise(
-                            new Exception($"[CorreosPostCompra] Error programando correo para {correo.ClienteEmail}: {ex.Message}", ex));
+                        ErrorLog.GetDefault(null)?.Log(new Error(
+                            new Exception($"[CorreosPostCompra] Error programando correo para {correo.ClienteEmail}: {ex.Message}", ex)));
                     }
                 }
 
-                Elmah.ErrorSignal.FromCurrentContext()?.Raise(
-                    new Exception($"[CorreosPostCompra] Programados {programados} correos para {fechaEnvio:dd/MM/yyyy HH:mm}"));
+                ErrorLog.GetDefault(null)?.Log(new Error(
+                    new Exception($"[CorreosPostCompra] Programados {programados} correos para {fechaEnvio:dd/MM/yyyy HH:mm}")));
             }
             catch (Exception)
             {
