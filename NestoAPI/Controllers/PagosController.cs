@@ -1,5 +1,6 @@
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models.Pagos;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
 using System.Net.Http;
@@ -96,6 +97,19 @@ namespace NestoAPI.Controllers
             }
 
             return Ok(pago);
+        }
+
+        /// <summary>
+        /// Obtiene el historial de pagos TPV de un cliente.
+        /// Issue Nesto#322: Mostrar histórico de enlaces de pago NestoPago en ventana de Clientes.
+        /// </summary>
+        [HttpGet]
+        [Route("Cliente/{empresa}/{cliente}")]
+        [Authorize]
+        public async Task<IHttpActionResult> ListarPorCliente(string empresa, string cliente, int limite = 20)
+        {
+            List<PagoTPVDTO> pagos = await _servicioPagos.ListarPorCliente(empresa, cliente, limite).ConfigureAwait(false);
+            return Ok(pagos);
         }
     }
 }

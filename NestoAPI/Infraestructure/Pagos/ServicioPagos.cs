@@ -350,6 +350,24 @@ namespace NestoAPI.Infraestructure.Pagos
             }
         }
 
+        public async Task<List<PagoTPVDTO>> ListarPorCliente(string empresa, string cliente, int limite = 20)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                string empresaPadded = empresa.PadRight(3);
+                var pagos = await db.PagosTPV
+                    .Include(p => p.PagosTPV_Efectos)
+                    .AsNoTracking()
+                    .Where(p => p.Empresa == empresaPadded && p.Cliente == cliente)
+                    .OrderByDescending(p => p.FechaCreacion)
+                    .Take(limite)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                return pagos.Select(p => MapearADTO(p)).ToList();
+            }
+        }
+
         internal static PagoTPVDTO MapearADTO(PagoTPV pago)
         {
             var dto = new PagoTPVDTO
