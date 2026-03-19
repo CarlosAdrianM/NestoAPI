@@ -142,6 +142,22 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     mail.Body = htmlCompleto;
                     mail.IsBodyHtml = true;
 
+                    // En modo test, añadir el resto de emails como CC
+                    bool modoTest = ConfigurationManager.AppSettings["CorreosPostCompra:ModoTest"]?.ToLower() == "true";
+                    if (modoTest)
+                    {
+                        string emailsTestConfig = ConfigurationManager.AppSettings["CorreosPostCompra:EmailsTest"] ?? "";
+                        var emailsExtra = emailsTestConfig
+                            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(e => e.Trim())
+                            .Skip(1) // El primero ya es el destinatario principal
+                            .Where(e => !string.IsNullOrWhiteSpace(e));
+                        foreach (var emailCc in emailsExtra)
+                        {
+                            mail.CC.Add(emailCc);
+                        }
+                    }
+
                     var servicioCorreo = new ServicioCorreoElectronico();
                     servicioCorreo.EnviarCorreoSMTP(mail);
                 }
