@@ -1369,6 +1369,356 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(0, okResult.Content.ProductosProblematicos.Count);
         }
 
+        [TestMethod]
+        public async Task ValidarServirJunto_GanavisionSinDisponibilidad_NoPuedeDesmarcar()
+        {
+            // Arrange: Issue #141 - Producto con cantidad=1 pero disponibilidad=0
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Regalo Sin Stock" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 1 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar);
+            Assert.AreEqual(1, okResult.Content.ProductosProblematicos.Count);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_GanavisionCantidad5_Disponibilidad3_NoPuedeDesmarcar()
+        {
+            // Arrange: Issue #141 - Pide 5 unidades pero solo hay 3 disponibles
+            MockStock("PROD1", "ALG", 3);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Regalo Parcial" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 5 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar);
+            Assert.AreEqual(1, okResult.Content.ProductosProblematicos.Count);
+            Assert.AreEqual("PROD1", okResult.Content.ProductosProblematicos[0].ProductoId.Trim());
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_GanavisionConDisponibilidadSuficiente_PuedeDesmarcar()
+        {
+            // Arrange: Issue #141 - Pide 3 unidades, hay 5 disponibles
+            MockStock("PROD1", "ALG", 5);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Regalo OK" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 3 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsTrue(okResult.Content.PuedeDesmarcar);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_FormatoAntiguoStringList_FuncionaConCantidad1()
+        {
+            // Arrange: Issue #141 - Retrocompatibilidad NestoApp (formato antiguo string[])
+            // Con formato antiguo, cada producto asume cantidad=1
+            // Si disponibilidad >= 1, puede desmarcar
+            MockStock("PROD1", "ALG", 1);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto Antiguo" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificados = new List<string> { "PROD1" }
+                // ProductosBonificadosConCantidad = null (formato antiguo)
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsTrue(okResult.Content.PuedeDesmarcar,
+                "El formato antiguo (string[]) debe funcionar asumiendo cantidad=1 por retrocompatibilidad con NestoApp");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_FormatoAntiguoSinStock_NoPuedeDesmarcar()
+        {
+            // Arrange: Issue #141 - Formato antiguo con disponibilidad=0 debe bloquear (cantidad implícita=1)
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto Sin Stock" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificados = new List<string> { "PROD1" }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar,
+                "Formato antiguo con disponibilidad=0 debe bloquear (cantidad implícita=1 > disponible=0)");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_CantidadExactaIgualADisponibilidad_PuedeDesmarcar()
+        {
+            // Arrange: Issue #141 - Frontera: pide exactamente lo que hay disponible
+            MockStock("PROD1", "ALG", 3);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto Exacto" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 3 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsTrue(okResult.Content.PuedeDesmarcar,
+                "Si la cantidad solicitada es exactamente igual a la disponibilidad, debe permitir desmarcar");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_AmbosFormatosPresentes_PriorizaNuevoFormato()
+        {
+            // Arrange: Issue #141 - Si vienen ambos campos, usar ProductosBonificadosConCantidad
+            MockStock("PROD1", "ALG", 2);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto Doble" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificados = new List<string> { "PROD1" }, // formato antiguo: cantidad=1 → pasaría
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 5 } // formato nuevo: cantidad=5 → bloquea
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar,
+                "Si vienen ambos formatos, debe usar ProductosBonificadosConCantidad (cantidad=5 > disponible=2)");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_AmbosNulos_PuedeDesmarcar()
+        {
+            // Arrange: Issue #141 - Ni ProductosBonificados ni ProductosBonificadosConCantidad
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificados = null,
+                ProductosBonificadosConCantidad = null
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsTrue(okResult.Content.PuedeDesmarcar,
+                "Sin productos en ningún formato, debe permitir desmarcar");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_NuevoFormato_VariosProductos_AlgunosSinStockSuficiente()
+        {
+            // Arrange: Issue #141 - Varios productos con cantidades, uno sin stock suficiente
+            MockStock("PROD1", "ALG", 10);
+            MockStock("PROD2", "ALG", 2);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto OK" },
+                new Producto { Empresa = "1  ", Número = "PROD2", Nombre = "Producto Insuficiente" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 3 },
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD2", Cantidad = 5 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar);
+            Assert.AreEqual(1, okResult.Content.ProductosProblematicos.Count);
+            Assert.AreEqual("PROD2", okResult.Content.ProductosProblematicos[0].ProductoId.Trim(),
+                "Solo PROD2 es problemático (pide 5 pero solo hay 2 disponibles)");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_MensajeIndicaStockSuficiente()
+        {
+            // Arrange: Issue #141 - El mensaje debe decir "stock suficiente" (no solo "stock")
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 1 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsTrue(okResult.Content.Mensaje.Contains("stock suficiente"),
+                "El mensaje debe indicar 'stock suficiente' para reflejar que se valida cantidad, no solo existencia");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_AlmacenAlternativo_DebeSerSuficienteParaCantidad()
+        {
+            // Arrange: Issue #141 - El almacén alternativo solo se muestra si tiene stock >= cantidad
+            // PROD1: pide 5, ALG tiene 0, REI tiene 3 (insuficiente), ALC no se mockea (0)
+            MockStock("PROD1", "REI", 3);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 5 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar);
+            Assert.IsNull(okResult.Content.ProductosProblematicos[0].AlmacenConStock,
+                "REI tiene 3 unidades pero se piden 5, así que no debe sugerirse como alternativa");
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_AlmacenAlternativo_ConStockSuficiente_SeMuestra()
+        {
+            // Arrange: Issue #141 - Si otro almacén tiene cantidad suficiente, se muestra
+            MockStock("PROD1", "REI", 5);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 5 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.ValidarServirJunto(request);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar);
+            Assert.AreEqual("REI", okResult.Content.ProductosProblematicos[0].AlmacenConStock.Trim(),
+                "REI tiene 5 unidades y se piden 5, debe sugerirse como alternativa");
+        }
+
         #endregion
 
         #region Filtro por historial de compras del cliente Tests

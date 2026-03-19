@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure.Kits;
+using NestoAPI.Infraestructure.ValidadoresServirJunto;
 using NestoAPI.Models;
 using NestoAPI.Models.Ganavisiones;
 using System;
@@ -333,9 +334,8 @@ namespace NestoAPI.Controllers
         /// <summary>
         /// Valida si se puede desmarcar la opcion ServirJunto en un pedido con productos bonificados.
         /// Issue #94: Sistema Ganavisiones - FASE 3
-        ///
-        /// Regla: Si los productos bonificados (regalos) no tienen stock en el almacen del pedido,
-        /// no se puede desmarcar ServirJunto porque no tiene sentido pagar portes dos veces para enviar un regalo.
+        /// Issue #141: Retrocompatible con NestoApp (string[]) y Nesto (con cantidades).
+        /// Compara disponibilidad vs cantidad solicitada.
         /// </summary>
         /// <param name="request">Almacen del pedido y lista de productos bonificados</param>
         /// <returns>Resultado de la validacion con productos problematicos si los hay</returns>
@@ -349,9 +349,11 @@ namespace NestoAPI.Controllers
                 return BadRequest("Debe especificar el almacen del pedido");
             }
 
-            if (request.ProductosBonificados == null || !request.ProductosBonificados.Any())
+            // Unificar formatos: si viene el nuevo formato, usarlo; si no, convertir el antiguo a cantidad=1
+            var productosUnificados = UnificarProductosBonificados(request);
+
+            if (!productosUnificados.Any())
             {
-                // Sin productos bonificados, se puede desmarcar sin problema
                 return Ok(new ValidarServirJuntoResponse
                 {
                     PuedeDesmarcar = true,
@@ -360,68 +362,19 @@ namespace NestoAPI.Controllers
                 });
             }
 
-            // Obtener disponibilidad de los productos bonificados via IProductoService
-            // Issue #117: Usar disponibilidad real en vez de stock bruto
-            var productosIds = request.ProductosBonificados;
-
-            // Obtener nombres de productos
-            var productos = await db.Productos
-                .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && productosIds.Contains(p.Número))
-                .Select(p => new { p.Número, p.Nombre })
-                .ToListAsync()
-                .ConfigureAwait(false);
-
-            // Identificar productos sin disponibilidad en el almacen del pedido
-            var productosProblematicos = new List<ProductoSinStockDTO>();
-            foreach (var productoId in productosIds)
+            // Recorrer validadores
+            var validadores = new List<IValidadorServirJunto>
             {
-                var productoIdTrimmed = productoId?.Trim();
-                var stockEnAlmacen = await productoService.CalcularStockProducto(productoId, request.Almacen.Trim()).ConfigureAwait(false);
+                new ValidadorDisponibilidadRegalos(db, productoService)
+            };
 
-                if (stockEnAlmacen.CantidadDisponible <= 0)
+            foreach (var validador in validadores)
+            {
+                var resultado = await validador.Validar(request.Almacen, productosUnificados).ConfigureAwait(false);
+                if (!resultado.PuedeDesmarcar)
                 {
-                    // Buscar en que almacen SI tiene disponibilidad
-                    string almacenConStock = null;
-                    foreach (var sede in Constantes.Sedes.ListaSedes)
-                    {
-                        if (sede.Trim() == request.Almacen.Trim()) continue;
-                        var stockOtroAlmacen = await productoService.CalcularStockProducto(productoId, sede).ConfigureAwait(false);
-                        if (stockOtroAlmacen.CantidadDisponible > 0)
-                        {
-                            almacenConStock = sede;
-                            break;
-                        }
-                    }
-
-                    var nombreProducto = productos
-                        .Where(p => p.Número.Trim() == productoIdTrimmed)
-                        .Select(p => p.Nombre?.Trim())
-                        .FirstOrDefault() ?? productoIdTrimmed;
-
-                    productosProblematicos.Add(new ProductoSinStockDTO
-                    {
-                        ProductoId = productoId?.Trim(),
-                        ProductoNombre = nombreProducto,
-                        AlmacenConStock = almacenConStock?.Trim()
-                    });
+                    return Ok(resultado);
                 }
-            }
-
-            if (productosProblematicos.Any())
-            {
-                var listaProductos = string.Join(", ", productosProblematicos.Select(p =>
-                    string.IsNullOrEmpty(p.AlmacenConStock)
-                        ? p.ProductoNombre
-                        : $"{p.ProductoNombre} (stock en {p.AlmacenConStock})"));
-
-                return Ok(new ValidarServirJuntoResponse
-                {
-                    PuedeDesmarcar = false,
-                    ProductosProblematicos = productosProblematicos,
-                    Mensaje = $"No se puede desmarcar 'Servir junto' porque los siguientes productos bonificados " +
-                              $"no tienen stock en {request.Almacen}: {listaProductos}. " +
-                              $"Cambie los productos bonificados por otros con stock en {request.Almacen} o mantenga 'Servir junto' marcado."
-                });
             }
 
             return Ok(new ValidarServirJuntoResponse
@@ -430,6 +383,23 @@ namespace NestoAPI.Controllers
                 ProductosProblematicos = new List<ProductoSinStockDTO>(),
                 Mensaje = null
             });
+        }
+
+        internal static List<ProductoBonificadoConCantidadRequest> UnificarProductosBonificados(ValidarServirJuntoRequest request)
+        {
+            if (request.ProductosBonificadosConCantidad != null && request.ProductosBonificadosConCantidad.Any())
+            {
+                return request.ProductosBonificadosConCantidad;
+            }
+
+            if (request.ProductosBonificados != null)
+            {
+                return request.ProductosBonificados
+                    .Select(id => new ProductoBonificadoConCantidadRequest { ProductoId = id, Cantidad = 1 })
+                    .ToList();
+            }
+
+            return new List<ProductoBonificadoConCantidadRequest>();
         }
 
         /// <summary>

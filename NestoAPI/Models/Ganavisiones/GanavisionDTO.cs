@@ -73,11 +73,30 @@ namespace NestoAPI.Models.Ganavisiones
     /// <summary>
     /// Request para validar si se puede desmarcar ServirJunto.
     /// Issue #94: Sistema Ganavisiones - FASE 3
+    /// Issue #141: Retrocompatible - NestoApp envía ProductosBonificados (string[]),
+    /// Nesto envía ProductosBonificadosConCantidad con cantidades reales.
     /// </summary>
     public class ValidarServirJuntoRequest
     {
         public string Almacen { get; set; }
+        /// <summary>
+        /// Formato antiguo (NestoApp): solo IDs de productos, asume cantidad=1.
+        /// </summary>
         public List<string> ProductosBonificados { get; set; }
+        /// <summary>
+        /// Formato nuevo (Nesto): IDs con cantidades reales.
+        /// </summary>
+        public List<ProductoBonificadoConCantidadRequest> ProductosBonificadosConCantidad { get; set; }
+    }
+
+    /// <summary>
+    /// Producto bonificado con cantidad solicitada.
+    /// Issue #141: Permite validar disponibilidad vs cantidad real.
+    /// </summary>
+    public class ProductoBonificadoConCantidadRequest
+    {
+        public string ProductoId { get; set; }
+        public int Cantidad { get; set; }
     }
 
     /// <summary>
