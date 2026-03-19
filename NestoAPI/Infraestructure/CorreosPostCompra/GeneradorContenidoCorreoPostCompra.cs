@@ -117,8 +117,14 @@ CONTENIDO:
 1. Saludo personalizado y variado
 2. Breve intro explicando por qué le escribes (que le envías vídeos de los productos que ha comprado). Varía la redacción en cada correo
 3. Para cada producto comprado: nombre del producto, thumbnail del vídeo (como enlace clicable) y botón ""Ver vídeo""
-4. Si hay productos recomendados: mencionarlos de forma sutil y natural (aparecen en los mismos vídeos)
+4. Si hay productos recomendados: mostrarlos con ENLACES CLICABLES al vídeo donde aparecen. NUNCA mencionar un producto sin enlace. Cada producto recomendado debe ser un enlace <a href> al vídeo correspondiente
 5. Firma: ""El equipo de Nueva Visión"" con teléfono 916 28 19 14 (WhatsApp)
+
+REGLA CRÍTICA SOBRE ENLACES:
+- TODOS los productos mencionados en el correo DEBEN tener un enlace clicable
+- NUNCA menciones un producto como texto plano sin enlace
+- Los productos recomendados deben enlazar al vídeo donde aparecen (usa el ""Link vídeo"" proporcionado)
+- Si un producto no tiene enlace en los datos, NO lo menciones en el correo
 
 RESTRICCIONES TÉCNICAS:
 - Máximo 150 palabras de texto (sin contar HTML)
@@ -168,25 +174,30 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
 
             if (correo.ProductosRecomendados != null && correo.ProductosRecomendados.Any())
             {
-                sb.AppendLine("PRODUCTOS RECOMENDADOS (aparecen en los mismos vídeos, el cliente NO los ha comprado):");
-                foreach (var producto in correo.ProductosRecomendados)
+                // Solo incluir recomendados que tengan enlace al vídeo
+                var recomendadosConEnlace = correo.ProductosRecomendados
+                    .Where(p => !string.IsNullOrEmpty(p.EnlaceVideoProducto))
+                    .ToList();
+
+                if (recomendadosConEnlace.Any())
                 {
-                    sb.AppendLine($"- Producto: {producto.NombreProducto}");
-
-                    if (!string.IsNullOrEmpty(producto.EnlaceVideoProducto))
+                    sb.AppendLine("PRODUCTOS RECOMENDADOS (aparecen en los mismos vídeos, el cliente NO los ha comprado):");
+                    sb.AppendLine("CADA producto DEBE mostrarse como enlace <a href> clicable al vídeo. NUNCA como texto plano.");
+                    foreach (var producto in recomendadosConEnlace)
                     {
-                        sb.AppendLine($"  Link vídeo: {AgregarUtm(producto.EnlaceVideoProducto)}");
-                    }
+                        sb.AppendLine($"- Producto: {producto.NombreProducto}");
+                        sb.AppendLine($"  ENLACE OBLIGATORIO al vídeo: {AgregarUtm(producto.EnlaceVideoProducto)}");
 
-                    if (!string.IsNullOrEmpty(producto.EnlaceTienda))
-                    {
-                        sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
+                        if (!string.IsNullOrEmpty(producto.EnlaceTienda))
+                        {
+                            sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
+                        }
                     }
+                    sb.AppendLine();
                 }
-                sb.AppendLine();
             }
 
-            sb.AppendLine("IMPORTANTE: NO distinguir entre productos comprados y recomendados en el texto visible. Menciona los recomendados de forma natural como \"otros productos que aparecen en estos vídeos\".");
+            sb.AppendLine("IMPORTANTE: TODOS los productos mencionados DEBEN tener enlace clicable. Si no tienes enlace para un producto, NO lo menciones.");
             sb.AppendLine("IMPORTANTE: Usa SOLO los enlaces proporcionados. NO inventes URLs.");
 
             return sb.ToString();

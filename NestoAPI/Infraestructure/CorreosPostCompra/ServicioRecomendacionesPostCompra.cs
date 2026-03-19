@@ -36,6 +36,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             try
             {
                 // 1. Obtener líneas de albarán de la semana con producto que tiene vídeo
+                const decimal PRECIO_MINIMO_CORREO = 30m;
+
                 var lineasSemana = await _db.LinPedidoVtas
                     .Where(l => l.Empresa == empresa &&
                                 l.TipoLinea == 1 &&
@@ -43,6 +45,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                                 l.Fecha_Albarán >= fechaDesde &&
                                 l.Fecha_Albarán <= fechaHasta &&
                                 l.Producto != null &&
+                                l.Precio >= PRECIO_MINIMO_CORREO &&
                                 _db.VideosProductos.Any(vp => vp.Referencia == l.Producto))
                     .Select(l => new
                     {
