@@ -136,18 +136,8 @@ namespace NestoAPI.Infraestructure.Pagos
                 r.SetParameter("DS_MERCHANT_PRODUCTDESCRIPTION", descripcion);
             }
 
-            try
-            {
-                ErrorSignal.FromCurrentContext().Raise(new Exception(
-                    $"[RedsysService] CrearParametrosTPVVirtual - Importe: {importe}, " +
-                    $"NumeroOrden: {numeroOrden}, MerchantCode: {_merchantCode}, " +
-                    $"Terminal: {Redsys.TERMINAL_TPV_VIRTUAL}, UrlOk: {urlOk}, UrlKo: {urlKo}, " +
-                    $"ModoPruebas: {_modoPruebas}"));
-            }
-            catch
-            {
-                // No bloquear el pago si falla el logging
-            }
+            // Habilitar Bizum y tarjeta como métodos de pago (Issue #140)
+            r.SetParameter("DS_MERCHANT_PAYMETHODS", "C,T,B");
 
             string parametros = r.createMerchantParameters();
             string firma = r.createMerchantSignature(_secretKeyTPVVirtual);
