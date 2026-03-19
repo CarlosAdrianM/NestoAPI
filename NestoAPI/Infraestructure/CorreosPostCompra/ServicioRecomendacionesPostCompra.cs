@@ -46,7 +46,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                                 l.Fecha_Albarán <= fechaHasta &&
                                 l.Producto != null &&
                                 l.Precio >= PRECIO_MINIMO_CORREO &&
-                                _db.VideosProductos.Any(vp => vp.Referencia == l.Producto))
+                                _db.VideosProductos.Any(vp => vp.Referencia == l.Producto && vp.Video.EsUnProtocolo))
                     .Select(l => new
                     {
                         l.Nº_Cliente,
@@ -109,7 +109,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 var productosIds = lineasSemana.Select(l => l.Producto.Trim()).Distinct().ToList();
 
                 var videosProductos = await _db.VideosProductos
-                    .Where(vp => productosIds.Contains(vp.Referencia))
+                    .Where(vp => productosIds.Contains(vp.Referencia) &&
+                                 vp.Video.EsUnProtocolo)
                     .Select(vp => new
                     {
                         vp.Referencia,
@@ -138,7 +139,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 var videoYoutubeIds = videosProductos.Select(vp => vp.VideoId).Distinct().ToList();
 
                 var todosProductosEnVideos = await _db.VideosProductos
-                    .Where(vp => videoYoutubeIds.Contains(vp.Video.VideoId))
+                    .Where(vp => videoYoutubeIds.Contains(vp.Video.VideoId) &&
+                                 vp.Video.EsUnProtocolo)
                     .Select(vp => new DatosProductoEnVideo
                     {
                         ProductoId = vp.Referencia,
