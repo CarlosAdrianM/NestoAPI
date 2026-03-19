@@ -433,6 +433,8 @@ namespace NestoAPI.Infraestructure.Pagos
             return dto;
         }
 
+        private const string URL_LOGO = "https://www.productosdeesteticaypeluqueriaprofesional.com/img/cms/Landing/logo.png";
+
         /// <summary>
         /// Envía correo al cliente con el enlace de pago generado.
         /// Issue #139: Correo pre-cobro. Si el correo es null, no envía.
@@ -447,40 +449,89 @@ namespace NestoAPI.Infraestructure.Pagos
             try
             {
                 string filasEfectos = "";
+                bool alternar = false;
                 if (efectos != null && efectos.Any())
                 {
-                    filasEfectos = string.Join("", efectos.Select(e =>
-                        $"<tr><td style='padding:6px;border:1px solid #ddd'>{e.Documento?.Trim()}</td>" +
-                        $"<td style='padding:6px;border:1px solid #ddd'>{e.Efecto?.Trim()}</td>" +
-                        $"<td style='padding:6px;border:1px solid #ddd;text-align:right'>{e.Importe:C}</td></tr>"));
+                    foreach (var e in efectos)
+                    {
+                        string bgColor = alternar ? "background-color:#faf5f7;" : "";
+                        filasEfectos +=
+                            $"<tr style='{bgColor}'>" +
+                            $"<td style='padding:10px;border-bottom:1px solid #f0e8ec'>{e.Documento?.Trim()}</td>" +
+                            $"<td style='padding:10px;border-bottom:1px solid #f0e8ec;text-align:right;white-space:nowrap'>{e.Importe:N2} &euro;</td></tr>";
+                        alternar = !alternar;
+                    }
                 }
 
-                string tablaEfectos = efectos != null && efectos.Any()
-                    ? $@"<table style='border-collapse:collapse;width:100%;margin:15px 0'>
-                        <tr style='background:#f5f5f5'>
-                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Documento</th>
-                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Efecto</th>
-                            <th style='padding:8px;border:1px solid #ddd;text-align:right'>Importe</th>
+                string seccionEfectos = efectos != null && efectos.Any()
+                    ? $@"<table style='border-collapse:collapse;width:100%;margin:20px 0'>
+                        <tr style='background:#f8f4f6'>
+                            <th style='padding:10px;text-align:left;border-bottom:2px solid #d4a5b5;color:#6b3a5d'>Documento</th>
+                            <th style='padding:10px;text-align:right;border-bottom:2px solid #d4a5b5;color:#6b3a5d'>Importe</th>
                         </tr>
                         {filasEfectos}
+                        <tr style='background:#f8f4f6'>
+                            <td style='padding:10px;font-weight:bold;color:#6b3a5d'>Total</td>
+                            <td style='padding:10px;font-weight:bold;text-align:right;color:#6b3a5d'>{pago.Importe:N2} &euro;</td>
+                        </tr>
                     </table>"
-                    : "";
+                    : $"<p style='font-size:24px;font-weight:bold;color:#6b3a5d;text-align:center;margin:20px 0'>{pago.Importe:N2} &euro;</p>";
 
-                string html = $@"<html><body style='font-family:Arial,sans-serif;color:#333'>
-                    <h2 style='color:#2c3e50'>Enlace de pago - Nueva Visi&oacute;n</h2>
-                    <p>Se ha generado un enlace de pago por importe de <strong>{pago.Importe:C}</strong>.</p>
-                    {tablaEfectos}
-                    <p style='margin:20px 0'>
-                        <a href='{urlPaginaPago}' style='background:#3498db;color:white;padding:12px 24px;text-decoration:none;border-radius:4px;font-size:16px'>
-                            Realizar pago
-                        </a>
-                    </p>
-                    <p style='color:#888;font-size:12px'>Si tiene alguna duda, contacte con nosotros en administracion@nuevavision.es</p>
-                </body></html>";
+                string html = $@"<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'></head>
+<body style='margin:0;padding:0;background-color:#f8f4f6;font-family:-apple-system,BlinkMacSystemFont,""Segoe UI"",Roboto,Arial,sans-serif'>
+    <table width='100%' cellpadding='0' cellspacing='0' style='background-color:#f8f4f6;padding:20px 0'>
+        <tr><td align='center'>
+            <table width='600' cellpadding='0' cellspacing='0' style='background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)'>
+                <!-- Cabecera con logo -->
+                <tr>
+                    <td style='background:linear-gradient(135deg,#8b5a6b 0%,#6b3a5d 100%);padding:30px;text-align:center'>
+                        <img src='{URL_LOGO}' alt='Nueva Visi&oacute;n' style='max-width:180px;height:auto' />
+                    </td>
+                </tr>
+                <!-- Contenido -->
+                <tr>
+                    <td style='padding:30px 35px'>
+                        <h1 style='color:#6b3a5d;font-size:22px;margin:0 0 15px 0'>Enlace de pago</h1>
+                        <p style='color:#555;font-size:15px;line-height:1.6;margin:0 0 5px 0'>
+                            Estimado cliente,
+                        </p>
+                        <p style='color:#555;font-size:15px;line-height:1.6;margin:0 0 20px 0'>
+                            Le hemos preparado un enlace de pago seguro para que pueda realizar su abono de forma r&aacute;pida y c&oacute;moda.
+                        </p>
+                        {seccionEfectos}
+                        <p style='text-align:center;margin:25px 0'>
+                            <a href='{urlPaginaPago}' style='display:inline-block;background:linear-gradient(135deg,#8b5a6b 0%,#6b3a5d 100%);color:white;padding:14px 40px;text-decoration:none;border-radius:8px;font-size:16px;font-weight:bold;letter-spacing:0.5px'>
+                                Realizar pago seguro
+                            </a>
+                        </p>
+                        <p style='color:#999;font-size:12px;text-align:center;margin:15px 0 0 0'>
+                            El pago se realiza a trav&eacute;s de la pasarela segura Redsys, con la m&aacute;xima protecci&oacute;n para sus datos.
+                        </p>
+                    </td>
+                </tr>
+                <!-- Pie -->
+                <tr>
+                    <td style='background:#f8f4f6;padding:20px 35px;border-top:1px solid #f0e8ec'>
+                        <p style='color:#999;font-size:12px;margin:0;text-align:center'>
+                            &iquest;Tiene alguna duda? Contacte con nosotros en
+                            <a href='mailto:administracion@nuevavision.es' style='color:#8b5a6b'>administracion@nuevavision.es</a>
+                        </p>
+                        <p style='color:#ccc;font-size:11px;margin:8px 0 0 0;text-align:center'>
+                            Nueva Visi&oacute;n &middot; Distribuci&oacute;n de productos de est&eacute;tica y peluquer&iacute;a profesional
+                        </p>
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+</body>
+</html>";
 
                 using (var mail = new MailMessage())
                 {
-                    mail.From = new MailAddress(Correos.CORREO_ADMON, "Nueva Visión - Administración");
+                    mail.From = new MailAddress(Correos.CORREO_ADMON, "Nueva Visión");
                     mail.To.Add(pago.Correo);
                     mail.Subject = $"Enlace de pago - {pago.Descripcion ?? "Nueva Visión"}";
                     mail.Body = html;
@@ -505,39 +556,67 @@ namespace NestoAPI.Infraestructure.Pagos
                 string filasEfectos = "";
                 if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
                 {
-                    filasEfectos = string.Join("", pago.PagosTPV_Efectos.Select(e =>
-                        $"<tr><td style='padding:6px;border:1px solid #ddd'>{e.Documento?.Trim()}</td>" +
-                        $"<td style='padding:6px;border:1px solid #ddd'>{e.Efecto?.Trim()}</td>" +
-                        $"<td style='padding:6px;border:1px solid #ddd'>{e.Contacto?.Trim()}</td>" +
-                        $"<td style='padding:6px;border:1px solid #ddd;text-align:right'>{e.Importe:C}</td></tr>"));
+                    bool alternar = false;
+                    foreach (var e in pago.PagosTPV_Efectos)
+                    {
+                        string bgColor = alternar ? "background-color:#f9f9f9;" : "";
+                        filasEfectos +=
+                            $"<tr style='{bgColor}'>" +
+                            $"<td style='padding:8px;border-bottom:1px solid #eee'>{e.Documento?.Trim()}</td>" +
+                            $"<td style='padding:8px;border-bottom:1px solid #eee'>{e.Efecto?.Trim()}</td>" +
+                            $"<td style='padding:8px;border-bottom:1px solid #eee'>{e.Contacto?.Trim()}</td>" +
+                            $"<td style='padding:8px;border-bottom:1px solid #eee;text-align:right'>{e.Importe:N2} &euro;</td></tr>";
+                        alternar = !alternar;
+                    }
                 }
 
-                string tablaEfectos = pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any()
-                    ? $@"<h3>Efectos cobrados</h3>
-                    <table style='border-collapse:collapse;width:100%;margin:10px 0'>
+                string seccionEfectos = pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any()
+                    ? $@"<h3 style='color:#333;font-size:14px;margin:20px 0 10px 0'>Efectos cobrados</h3>
+                    <table style='border-collapse:collapse;width:100%'>
                         <tr style='background:#f5f5f5'>
-                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Documento</th>
-                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Efecto</th>
-                            <th style='padding:8px;border:1px solid #ddd;text-align:left'>Contacto</th>
-                            <th style='padding:8px;border:1px solid #ddd;text-align:right'>Importe</th>
+                            <th style='padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:12px'>Documento</th>
+                            <th style='padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:12px'>Efecto</th>
+                            <th style='padding:8px;text-align:left;border-bottom:2px solid #ddd;font-size:12px'>Contacto</th>
+                            <th style='padding:8px;text-align:right;border-bottom:2px solid #ddd;font-size:12px'>Importe</th>
                         </tr>
                         {filasEfectos}
                     </table>"
                     : "";
 
-                string html = $@"<html><body style='font-family:Arial,sans-serif;color:#333'>
-                    <h2 style='color:#27ae60'>Cobro NestoPago realizado</h2>
-                    <table style='margin:10px 0'>
-                        <tr><td><strong>Cliente:</strong></td><td>{pago.Cliente?.Trim()}</td></tr>
-                        <tr><td><strong>Importe:</strong></td><td>{pago.Importe:C}</td></tr>
-                        <tr><td><strong>N&ordm; Orden:</strong></td><td>{pago.NumeroOrden}</td></tr>
-                        <tr><td><strong>Autorizaci&oacute;n:</strong></td><td>{pago.CodigoAutorizacion}</td></tr>
-                        <tr><td><strong>Fecha:</strong></td><td>{pago.FechaActualizacion:g}</td></tr>
-                        <tr><td><strong>Correo cliente:</strong></td><td>{pago.Correo}</td></tr>
-                        <tr><td><strong>Usuario:</strong></td><td>{pago.Usuario}</td></tr>
-                    </table>
-                    {tablaEfectos}
-                </body></html>";
+                string html = $@"<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'></head>
+<body style='margin:0;padding:0;background-color:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,""Segoe UI"",Roboto,Arial,sans-serif'>
+    <table width='100%' cellpadding='0' cellspacing='0' style='background-color:#f4f4f4;padding:20px 0'>
+        <tr><td align='center'>
+            <table width='600' cellpadding='0' cellspacing='0' style='background:white;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)'>
+                <!-- Cabecera -->
+                <tr>
+                    <td style='background:#27ae60;padding:20px 30px;text-align:center'>
+                        <img src='{URL_LOGO}' alt='Nueva Visi&oacute;n' style='max-width:120px;height:auto;margin-bottom:8px' />
+                        <h1 style='color:white;font-size:18px;margin:0'>Cobro NestoPago realizado</h1>
+                    </td>
+                </tr>
+                <!-- Datos del cobro -->
+                <tr>
+                    <td style='padding:25px 30px'>
+                        <table style='width:100%;font-size:14px'>
+                            <tr><td style='padding:6px 0;color:#888;width:140px'>Cliente</td><td style='padding:6px 0;font-weight:bold'>{pago.Cliente?.Trim()}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Importe</td><td style='padding:6px 0;font-weight:bold;color:#27ae60;font-size:18px'>{pago.Importe:N2} &euro;</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>N&ordm; Orden</td><td style='padding:6px 0'>{pago.NumeroOrden}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Autorizaci&oacute;n</td><td style='padding:6px 0'>{pago.CodigoAutorizacion}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Fecha</td><td style='padding:6px 0'>{pago.FechaActualizacion:g}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Correo cliente</td><td style='padding:6px 0'>{pago.Correo}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Usuario</td><td style='padding:6px 0'>{pago.Usuario}</td></tr>
+                        </table>
+                        {seccionEfectos}
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+</body>
+</html>";
 
                 using (var mail = new MailMessage())
                 {
