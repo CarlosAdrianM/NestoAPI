@@ -61,17 +61,28 @@ namespace NestoAPI.Controllers
                 string urlOk = urlBase + "/pago/ok.html";
                 string urlKo = urlBase + "/pago/ko.html";
 
-                var parametros = _redsysService.CrearParametrosTPVVirtual(
+                var parametrosTarjeta = _redsysService.CrearParametrosTPVVirtual(
                     pago.Importe,
                     pago.Descripcion ?? $"Pago {pago.NumeroOrden}",
                     pago.Correo,
                     pago.Cliente?.Trim(),
                     urlNotificacion,
                     urlOk,
-                    urlKo);
+                    urlKo,
+                    "C");
 
-                // Actualizar NumeroOrden con el nuevo generado (para que coincida con la notificacion)
-                pago.NumeroOrden = parametros.NumeroOrden;
+                var parametrosBizum = _redsysService.CrearParametrosTPVVirtual(
+                    pago.Importe,
+                    pago.Descripcion ?? $"Pago {pago.NumeroOrden}",
+                    pago.Correo,
+                    pago.Cliente?.Trim(),
+                    urlNotificacion,
+                    urlOk,
+                    urlKo,
+                    "z");
+
+                // Actualizar NumeroOrden con el de tarjeta (referencia principal)
+                pago.NumeroOrden = parametrosTarjeta.NumeroOrden;
                 pago.Estado = "Pendiente";
                 pago.FechaActualizacion = DateTime.Now;
                 await db.SaveChangesAsync().ConfigureAwait(false);
@@ -88,7 +99,7 @@ namespace NestoAPI.Controllers
                 }
                 catch { }
 
-                string html = GenerarHtmlPaginaPago(pago, nombreCliente, parametros);
+                string html = GenerarHtmlPaginaPago(pago, nombreCliente, parametrosTarjeta, parametrosBizum);
 
                 var response = Request.CreateResponse(HttpStatusCode.OK);
                 response.Content = new StringContent(html, Encoding.UTF8, "text/html");
@@ -194,7 +205,7 @@ namespace NestoAPI.Controllers
 
         private const string URL_LOGO = "https://www.productosdeesteticaypeluqueriaprofesional.com/img/cms/Landing/logo.png";
 
-        private string GenerarHtmlPaginaPago(PagoTPV pago, string nombreCliente, Models.Pagos.ParametrosRedsysFirmados parametros)
+        private string GenerarHtmlPaginaPago(PagoTPV pago, string nombreCliente, Models.Pagos.ParametrosRedsysFirmados parametrosTarjeta, Models.Pagos.ParametrosRedsysFirmados parametrosBizum)
         {
             string filasEfectos = "";
             if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
@@ -295,19 +306,25 @@ namespace NestoAPI.Controllers
             display: block;
             width: 100%;
             padding: 16px;
-            background: linear-gradient(135deg, #9B8EAE 0%, #7B6E8E 100%);
             color: white;
             border: none;
             border-radius: 10px;
             font-size: 18px;
             font-weight: bold;
             cursor: pointer;
-            margin-top: 20px;
+            margin-top: 12px;
             transition: background 0.2s, transform 0.1s;
             letter-spacing: 0.3px;
         }}
-        .btn-pagar:hover {{ background: linear-gradient(135deg, #8A7D9E 0%, #6B5E7E 100%); }}
         .btn-pagar:active {{ transform: scale(0.98); }}
+        .btn-tarjeta {{
+            background: linear-gradient(135deg, #9B8EAE 0%, #7B6E8E 100%);
+        }}
+        .btn-tarjeta:hover {{ background: linear-gradient(135deg, #8A7D9E 0%, #6B5E7E 100%); }}
+        .btn-bizum {{
+            background: linear-gradient(135deg, #05C3DD 0%, #0A9AB0 100%);
+        }}
+        .btn-bizum:hover {{ background: linear-gradient(135deg, #04B0C8 0%, #0889A0 100%); }}
         .footer {{
             text-align: center;
             padding: 18px;
@@ -354,14 +371,20 @@ namespace NestoAPI.Controllers
                 <span>Total</span>
                 <span>{pago.Importe:N2} &euro;</span>
             </div>
-            <form action=""{parametros.UrlRedsys}"" method=""POST"">
-                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametros.Ds_SignatureVersion}"" />
-                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametros.Ds_MerchantParameters}"" />
-                <input type=""hidden"" name=""Ds_Signature"" value=""{parametros.Ds_Signature}"" />
-                <button type=""submit"" class=""btn-pagar"">Pagar {pago.Importe:N2} &euro;</button>
+            <form action=""{parametrosTarjeta.UrlRedsys}"" method=""POST"">
+                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametrosTarjeta.Ds_SignatureVersion}"" />
+                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametrosTarjeta.Ds_MerchantParameters}"" />
+                <input type=""hidden"" name=""Ds_Signature"" value=""{parametrosTarjeta.Ds_Signature}"" />
+                <button type=""submit"" class=""btn-pagar btn-tarjeta"">&#128179; Pagar con tarjeta</button>
+            </form>
+            <form action=""{parametrosBizum.UrlRedsys}"" method=""POST"">
+                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametrosBizum.Ds_SignatureVersion}"" />
+                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametrosBizum.Ds_MerchantParameters}"" />
+                <input type=""hidden"" name=""Ds_Signature"" value=""{parametrosBizum.Ds_Signature}"" />
+                <button type=""submit"" class=""btn-pagar btn-bizum"">Pagar con Bizum</button>
             </form>
             <div class=""secure"">
-                &#128274; Pago seguro con tarjeta via Redsys
+                &#128274; Pago seguro via Redsys
             </div>
         </div>
         <div class=""footer"">

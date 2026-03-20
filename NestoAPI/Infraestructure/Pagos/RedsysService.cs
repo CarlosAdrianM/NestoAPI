@@ -115,7 +115,8 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         public ParametrosRedsysFirmados CrearParametrosTPVVirtual(decimal importe, string descripcion,
-            string correo, string cliente, string urlNotificacion, string urlOk, string urlKo)
+            string correo, string cliente, string urlNotificacion, string urlOk, string urlKo,
+            string metodoPago = null)
         {
             string numeroOrden = GenerarNumeroPedido(string.IsNullOrWhiteSpace(cliente) ? null : "C" + cliente.Trim());
 
@@ -136,9 +137,12 @@ namespace NestoAPI.Infraestructure.Pagos
                 r.SetParameter("DS_MERCHANT_PRODUCTDESCRIPTION", descripcion);
             }
 
-            // Issue #140: No enviar DS_MERCHANT_PAYMETHODS para que Redsys muestre
-            // todos los métodos habilitados en el terminal (tarjeta + Bizum).
-            // Enviar "z" mostraría solo Bizum, "C" solo tarjeta.
+            // Issue #140: DS_MERCHANT_PAYMETHODS controla qué método muestra Redsys.
+            // "C" = solo tarjeta, "z" = solo Bizum. No se pueden combinar.
+            if (!string.IsNullOrWhiteSpace(metodoPago))
+            {
+                r.SetParameter("DS_MERCHANT_PAYMETHODS", metodoPago);
+            }
 
             string parametros = r.createMerchantParameters();
             string firma = r.createMerchantSignature(_secretKeyTPVVirtual);
