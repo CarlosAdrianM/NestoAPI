@@ -303,6 +303,10 @@
         <EntityTypeShape EntityType="NVModel.PagoTPV_Efecto" Width="1.5" PointX="15.625" PointY="18.875" />
         <AssociationConnector Association="NVModel.FK_PagosTPV_Efectos_Pago" />
         <EntityTypeShape EntityType="NVModel.DispositivoNotificacion" Width="1.5" PointX="18.375" PointY="4.75" />
+        <EntityTypeShape EntityType="NVModel.LiquidacionCliente" Width="1.5" PointX="23.375" PointY="42.875" />
+        <AssociationConnector Association="NVModel.FK_LiquidacionesClientes_Empresas" />
+        <AssociationConnector Association="NVModel.FK_LiquidacionesClientes_ExtractoCliente" />
+        <AssociationConnector Association="NVModel.FK_LiquidacionesClientes_ExtractoCliente1" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

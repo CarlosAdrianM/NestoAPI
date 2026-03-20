@@ -69,6 +69,7 @@ namespace NestoAPI.Models
             this.CabAlbaránVta = new HashSet<CabAlbaranVta>();
             this.GruposProductoes = new HashSet<GruposProducto>();
             this.ExtractoRutas = new HashSet<ExtractoRuta>();
+            this.LiquidacionesClientes = new HashSet<LiquidacionCliente>();
         }
     
         public string Número { get; set; }
@@ -227,5 +228,6 @@ namespace NestoAPI.Models
         public virtual ICollection<CabAlbaranVta> CabAlbaránVta { get; set; }
         public virtual ICollection<GruposProducto> GruposProductoes { get; set; }
         public virtual ICollection<ExtractoRuta> ExtractoRutas { get; set; }
+        public virtual ICollection<LiquidacionCliente> LiquidacionesClientes { get; set; }
     }
 }

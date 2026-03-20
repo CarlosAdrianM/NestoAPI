@@ -198,6 +198,7 @@
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />
+    <Compile Include="Infrastructure\Domiciliaciones\GestorDomiciliacionesTests.cs" />
     <Compile Include="Infrastructure\Rectificativas\GestorCopiaPedidosTests.cs" />
     <Compile Include="Infrastructure\Seguridad\ClaimsVendedorHelperTests.cs" />
     <Compile Include="Infrastructure\Seguridad\ValidadorAccesoClienteTests.cs" />

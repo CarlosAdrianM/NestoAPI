@@ -25,7 +25,10 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                     Ccc = e.CCC.Trim(),
                     Concepto = e.Concepto.Trim(),
                     Importe = -e.Importe,
-                    Fecha = e.Fecha
+                    Fecha = e.Fecha,
+                    NOrden = e.Nº_Orden,
+                    NumeroDocumento = e.Nº_Documento != null ? e.Nº_Documento.Trim() : null,
+                    Efecto = e.Efecto != null ? e.Efecto.Trim() : null
                 }).ToList();
 
                 foreach(var efecto in listaEfectos)
@@ -48,6 +51,46 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                     efecto.NombrePersona = String.Join(", ", personasCobros.Where(p => p.Saludo != null && p.Saludo.Trim() != string.Empty).Select(p => p.Saludo.Trim()));
                 }
                 return listaEfectos.ToList();
+            }
+        }
+
+        public List<DocumentoRelacionado> BuscarDocumentosRelacionados(string empresa, int nOrden)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                var liquidaciones = db.LiquidacionesClientes
+                    .Where(l => l.Empresa == empresa && (l.Nº_Orden == nOrden || l.Nº_Orden_Liq == nOrden))
+                    .ToList();
+
+                var documentos = new List<DocumentoRelacionado>();
+
+                foreach (var liquidacion in liquidaciones)
+                {
+                    int nOrdenRelacionado = liquidacion.Nº_Orden == nOrden
+                        ? liquidacion.Nº_Orden_Liq
+                        : liquidacion.Nº_Orden;
+
+                    decimal importe = liquidacion.Nº_Orden == nOrden
+                        ? liquidacion.Importe
+                        : -liquidacion.Importe;
+
+                    var extracto = db.ExtractosCliente
+                        .FirstOrDefault(e => e.Empresa == empresa && e.Nº_Orden == nOrdenRelacionado);
+
+                    if (extracto != null && !string.IsNullOrWhiteSpace(extracto.Nº_Documento))
+                    {
+                        documentos.Add(new DocumentoRelacionado
+                        {
+                            NumeroDocumento = extracto.Nº_Documento.Trim(),
+                            Importe = importe,
+                            Descripcion = importe >= 0
+                                ? $"Factura {extracto.Nº_Documento.Trim()} ({importe:N2} €)"
+                                : $"Abono {extracto.Nº_Documento.Trim()} ({importe:N2} €)"
+                        });
+                    }
+                }
+
+                return documentos;
             }
         }
     }

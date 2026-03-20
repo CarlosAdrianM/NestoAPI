@@ -18,5 +18,8 @@ namespace NestoAPI.Models.Domiciliaciones
         public DateTime Fecha { get; set; }
         public string NombrePersona { get; set; }
         public Iban Iban { get; set; }
+        public int NOrden { get; set; }
+        public string NumeroDocumento { get; set; }
+        public string Efecto { get; set; }
     }
 }

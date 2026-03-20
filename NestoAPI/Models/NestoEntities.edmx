@@ -1205,6 +1205,19 @@
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
         </EntityType>
+        <EntityType Name="LiquidacionesClientes">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº Orden" />
+            <PropertyRef Name="Nº Orden Liq" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nº Orden" Type="int" Nullable="false" />
+          <Property Name="Nº Orden Liq" Type="int" Nullable="false" />
+          <Property Name="Fecha" Type="datetime" Nullable="false" />
+          <Property Name="Importe" Type="money" Nullable="false" />
+          <Property Name="Asiento" Type="int" />
+        </EntityType>
         <EntityType Name="LogVideosProductos">
           <Key>
             <PropertyRef Name="Id" />
@@ -4128,6 +4141,46 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_LiquidacionesClientes_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="LiquidacionesClientes" Type="Self.LiquidacionesClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LiquidacionesClientes">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LiquidacionesClientes_ExtractoCliente">
+          <End Role="ExtractoCliente" Type="Self.ExtractoCliente" Multiplicity="1" />
+          <End Role="LiquidacionesClientes" Type="Self.LiquidacionesClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="ExtractoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Orden" />
+            </Principal>
+            <Dependent Role="LiquidacionesClientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Orden" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LiquidacionesClientes_ExtractoCliente1">
+          <End Role="ExtractoCliente" Type="Self.ExtractoCliente" Multiplicity="1" />
+          <End Role="LiquidacionesClientes" Type="Self.LiquidacionesClientes" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="ExtractoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Orden" />
+            </Principal>
+            <Dependent Role="LiquidacionesClientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Orden Liq" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_OfertasCombinadas_Empresas">
           <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
           <End Role="OfertasCombinadas" Type="Self.OfertasCombinadas" Multiplicity="*" />
@@ -5186,6 +5239,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="LinFacturaVtaRectificacion" EntityType="Self.LinFacturaVtaRectificacion" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoCmp" EntityType="Self.LinPedidoCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LinPedidoVta" EntityType="Self.LinPedidoVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="LiquidacionesClientes" EntityType="Self.LiquidacionesClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="LogVideosProductos" EntityType="Self.LogVideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="MovimientoTPV" EntityType="Self.MovimientoTPV" Schema="dbo" store:Type="Tables" />
@@ -5883,6 +5937,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_LinPedidoVta_SubGruposProducto" Association="Self.FK_LinPedidoVta_SubGruposProducto">
             <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
             <End Role="LinPedidoVta" EntitySet="LinPedidoVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LiquidacionesClientes_Empresas" Association="Self.FK_LiquidacionesClientes_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="LiquidacionesClientes" EntitySet="LiquidacionesClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LiquidacionesClientes_ExtractoCliente" Association="Self.FK_LiquidacionesClientes_ExtractoCliente">
+            <End Role="ExtractoCliente" EntitySet="ExtractoCliente" />
+            <End Role="LiquidacionesClientes" EntitySet="LiquidacionesClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LiquidacionesClientes_ExtractoCliente1" Association="Self.FK_LiquidacionesClientes_ExtractoCliente1">
+            <End Role="ExtractoCliente" EntitySet="ExtractoCliente" />
+            <End Role="LiquidacionesClientes" EntitySet="LiquidacionesClientes" />
           </AssociationSet>
           <AssociationSet Name="FK_OfertasCombinadas_Empresas" Association="Self.FK_OfertasCombinadas_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -7228,6 +7294,19 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="PagosTPV_Efectos" EntitySet="PagosTPV_Efectos" />
           </AssociationSet>
           <EntitySet Name="DispositivosNotificaciones" EntityType="NVModel.DispositivoNotificacion" />
+          <EntitySet Name="LiquidacionesClientes" EntityType="NVModel.LiquidacionCliente" />
+          <AssociationSet Name="FK_LiquidacionesClientes_Empresas" Association="NVModel.FK_LiquidacionesClientes_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="LiquidacionesCliente" EntitySet="LiquidacionesClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LiquidacionesClientes_ExtractoCliente" Association="NVModel.FK_LiquidacionesClientes_ExtractoCliente">
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
+            <End Role="LiquidacionesCliente" EntitySet="LiquidacionesClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_LiquidacionesClientes_ExtractoCliente1" Association="NVModel.FK_LiquidacionesClientes_ExtractoCliente1">
+            <End Role="ExtractoCliente" EntitySet="ExtractosCliente" />
+            <End Role="LiquidacionesCliente" EntitySet="LiquidacionesClientes" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -7388,6 +7467,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="CabAlbaránVta" Relationship="NVModel.FK_CabAlbaránVta_Empresas" FromRole="Empresa" ToRole="CabAlbaránVta" />
           <NavigationProperty Name="GruposProductoes" Relationship="NVModel.FK_GruposProducto_Empresas" FromRole="Empresa" ToRole="GruposProducto" />
           <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_Empresas" FromRole="Empresa" ToRole="ExtractoRuta" />
+          <NavigationProperty Name="LiquidacionesClientes" Relationship="NVModel.FK_LiquidacionesClientes_Empresas" FromRole="Empresa" ToRole="LiquidacionesCliente" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -9171,6 +9251,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="CCC1" Relationship="NVModel.FK_ExtractoCliente_CCC" FromRole="ExtractoCliente" ToRole="CCC" />
           <NavigationProperty Name="Ruta1" Relationship="NVModel.FK_ExtractoCliente_Rutas" FromRole="ExtractoCliente" ToRole="Ruta" />
           <NavigationProperty Name="Vendedore" Relationship="NVModel.FK_ExtractoCliente_Vendedores" FromRole="ExtractoCliente" ToRole="Vendedore" />
+          <NavigationProperty Name="LiquidacionesClientes" Relationship="NVModel.FK_LiquidacionesClientes_ExtractoCliente" FromRole="ExtractoCliente" ToRole="LiquidacionesCliente" />
+          <NavigationProperty Name="LiquidacionesClientes1" Relationship="NVModel.FK_LiquidacionesClientes_ExtractoCliente1" FromRole="ExtractoCliente" ToRole="LiquidacionesCliente" />
         </EntityType>
         <Association Name="FK_ExtractoCliente_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="1" />
@@ -12765,6 +12847,62 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaUltimaActividad" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="Activo" Type="Boolean" Nullable="false" />
         </EntityType>
+        <EntityType Name="LiquidacionCliente">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Nº_Orden" />
+            <PropertyRef Name="Nº_Orden_Liq" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nº_Orden" Type="Int32" Nullable="false" />
+          <Property Name="Nº_Orden_Liq" Type="Int32" Nullable="false" />
+          <Property Name="Fecha" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Importe" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Asiento" Type="Int32" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_LiquidacionesClientes_Empresas" FromRole="LiquidacionesCliente" ToRole="Empresa" />
+          <NavigationProperty Name="ExtractoCliente" Relationship="NVModel.FK_LiquidacionesClientes_ExtractoCliente" FromRole="LiquidacionesCliente" ToRole="ExtractoCliente" />
+          <NavigationProperty Name="ExtractoCliente1" Relationship="NVModel.FK_LiquidacionesClientes_ExtractoCliente1" FromRole="LiquidacionesCliente" ToRole="ExtractoCliente" />
+        </EntityType>
+        <Association Name="FK_LiquidacionesClientes_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.LiquidacionCliente" Role="LiquidacionesCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="LiquidacionesCliente">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LiquidacionesClientes_ExtractoCliente">
+          <End Type="NVModel.ExtractoCliente" Role="ExtractoCliente" Multiplicity="1" />
+          <End Type="NVModel.LiquidacionCliente" Role="LiquidacionesCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="ExtractoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Orden" />
+            </Principal>
+            <Dependent Role="LiquidacionesCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Orden" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_LiquidacionesClientes_ExtractoCliente1">
+          <End Type="NVModel.ExtractoCliente" Role="ExtractoCliente" Multiplicity="1" />
+          <End Type="NVModel.LiquidacionCliente" Role="LiquidacionesCliente" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="ExtractoCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Orden" />
+            </Principal>
+            <Dependent Role="LiquidacionesCliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Orden_Liq" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -14761,6 +14899,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="LiquidacionesClientes">
+            <EntityTypeMapping TypeName="NVModel.LiquidacionCliente">
+              <MappingFragment StoreEntitySet="LiquidacionesClientes">
+                <ScalarProperty Name="Asiento" ColumnName="Asiento" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="Fecha" ColumnName="Fecha" />
+                <ScalarProperty Name="Nº_Orden_Liq" ColumnName="Nº Orden Liq" />
+                <ScalarProperty Name="Nº_Orden" ColumnName="Nº Orden" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

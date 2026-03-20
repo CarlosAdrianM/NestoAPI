@@ -14,6 +14,12 @@ namespace NestoAPI.Models
     
     public partial class ExtractoCliente
     {
+        public ExtractoCliente()
+        {
+            this.LiquidacionesClientes = new HashSet<LiquidacionCliente>();
+            this.LiquidacionesClientes1 = new HashSet<LiquidacionCliente>();
+        }
+    
         public string Empresa { get; set; }
         public int Nº_Orden { get; set; }
         public int Asiento { get; set; }
@@ -49,5 +55,7 @@ namespace NestoAPI.Models
         public virtual CCC CCC1 { get; set; }
         public virtual Ruta Ruta1 { get; set; }
         public virtual Vendedor Vendedore { get; set; }
+        public virtual ICollection<LiquidacionCliente> LiquidacionesClientes { get; set; }
+        public virtual ICollection<LiquidacionCliente> LiquidacionesClientes1 { get; set; }
     }
 }
