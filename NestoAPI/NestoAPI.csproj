@@ -909,6 +909,7 @@
     <Compile Include="Models\EnvioAgenciaCoordenada.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\CrearEtiquetaPendienteDTO.cs" />
     <Compile Include="Models\EnvioAgenciaDTO.cs" />
     <Compile Include="Models\UltimoEnvioClienteDTO.cs" />
     <Compile Include="Models\EnviosAgencia.cs">

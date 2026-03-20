@@ -7,6 +7,7 @@ namespace NestoAPI.Models
         public class Agencias
         {
             public const int AGENCIA_GLOVO = 7;
+            public const int ESTADO_PENDIENTE = -1;
             public const int ESTADO_EN_CURSO = 0;
         }
 

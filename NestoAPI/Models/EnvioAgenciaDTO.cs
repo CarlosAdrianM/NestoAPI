@@ -12,22 +12,26 @@ namespace NestoAPI.Models
             {
                 throw new Exception("No se puede crear un envío nuevo desde un parámetro nulo");
             }
+            Numero = envio.Numero;
             AgenciaId = envio.Agencia;
             AgenciaNombre = envio.AgenciasTransporte?.Nombre;
             AgenciaIdentificador = envio.AgenciasTransporte?.Identificador;
             Cliente = envio.Cliente;
             Pedido = (int)envio.Pedido;
             Estado = envio.Estado;
+            Retorno = envio.Retorno;
             Fecha = envio.Fecha;
             CodigoBarras = envio.CodigoBarras;
             CodigoPostal = envio.CodPostal;
         }
+        public int Numero { get; set; }
         public int AgenciaId { get; set; }
         public string AgenciaIdentificador { get; set; }
         public string AgenciaNombre { get; set; }
         public string Cliente { get; set; }
         public int Pedido { get; set; }
         public short Estado { get; set; }
+        public short Retorno { get; set; }
         public DateTime Fecha { get; set; }
         public string CodigoBarras { get; set; }
         public string CodigoPostal { get; set; }

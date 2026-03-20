@@ -25,10 +25,17 @@ namespace NestoAPI.Controllers
     {
         public EnviosAgenciasController()
         {
+            db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
         }
 
-        private NVEntities db = new NVEntities();
+        public EnviosAgenciasController(NVEntities db)
+        {
+            this.db = db;
+            db.Configuration.LazyLoadingEnabled = false;
+        }
+
+        private NVEntities db;
 
         /*
         // GET: api/EnviosAgencias
@@ -70,10 +77,12 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> GetEnviosAgencia(string empresa, int pedido)
         {
             List<EnvioAgenciaDTO> enviosAgencia = await db.EnviosAgencias.Where(e => e.Empresa == empresa && e.Pedido == pedido).Include("AgenciasTransportes").Select(e => new EnvioAgenciaDTO {
+                Numero = e.Numero,
                 AgenciaId = e.Agencia,
                 AgenciaIdentificador = e.AgenciasTransporte.Identificador,
                 AgenciaNombre = e.AgenciasTransporte.Nombre,
                 Estado = e.Estado,
+                Retorno = e.Retorno,
                 Fecha = e.Fecha,
                 CodigoBarras = e.CodigoBarras,
                 CodigoPostal = e.CodPostal,
@@ -166,8 +175,8 @@ namespace NestoAPI.Controllers
         */
 
 
-        /*
         // DELETE: api/EnviosAgencias/5
+        [Authorize]
         [ResponseType(typeof(EnviosAgencia))]
         public async Task<IHttpActionResult> DeleteEnviosAgencia(int id)
         {
@@ -177,12 +186,84 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
+            if (enviosAgencia.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                return BadRequest("Solo se pueden eliminar etiquetas pendientes (Estado < 0)");
+            }
+
             db.EnviosAgencias.Remove(enviosAgencia);
             await db.SaveChangesAsync();
 
             return Ok(enviosAgencia);
         }
-        */
+
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/CrearEtiquetaPendiente")]
+        [ResponseType(typeof(EnvioAgenciaDTO))]
+        public async Task<IHttpActionResult> CrearEtiquetaPendiente(CrearEtiquetaPendienteDTO request)
+        {
+            if (request == null)
+            {
+                return BadRequest("El request no puede ser nulo");
+            }
+
+            var pedido = await db.CabPedidoVtas
+                .Include(p => p.LinPedidoVtas)
+                .FirstOrDefaultAsync(p => p.Empresa == request.Empresa && p.Número == request.Pedido);
+
+            if (pedido == null)
+            {
+                return NotFound();
+            }
+
+            bool yaExisteEtiquetaPendiente = await db.EnviosAgencias
+                .AnyAsync(e => e.Empresa == request.Empresa && e.Pedido == request.Pedido && e.Estado < Constantes.Agencias.ESTADO_EN_CURSO);
+
+            if (yaExisteEtiquetaPendiente)
+            {
+                return Conflict();
+            }
+
+            var direccion = await db.Clientes
+                .FirstOrDefaultAsync(c => c.Empresa == pedido.Empresa && c.Nº_Cliente == pedido.Nº_Cliente && c.Contacto == pedido.Contacto);
+
+            if (direccion == null)
+            {
+                return BadRequest("No se encontró la dirección del contacto del pedido");
+            }
+
+            var envio = new EnviosAgencia
+            {
+                Empresa = request.Empresa,
+                Pedido = request.Pedido,
+                Cliente = pedido.Nº_Cliente,
+                Contacto = pedido.Contacto,
+                Agencia = request.Agencia,
+                Estado = (short)Constantes.Agencias.ESTADO_PENDIENTE,
+                Retorno = request.Retorno,
+                Reembolso = 0,
+                Fecha = DateTime.Today,
+                FechaModificacion = DateTime.Now,
+                Bultos = 1,
+                Servicio = 0,
+                Horario = 0,
+                Nombre = direccion.Nombre,
+                Direccion = direccion.Dirección,
+                CodPostal = direccion.CodPostal,
+                Poblacion = direccion.Población,
+                Provincia = direccion.Provincia,
+                Telefono = direccion.Teléfono,
+                Pais = 1
+            };
+
+            db.EnviosAgencias.Add(envio);
+            await db.SaveChangesAsync();
+
+            var dto = new EnvioAgenciaDTO(envio);
+            return CreatedAtRoute("DefaultApi", new { id = envio.Numero }, dto);
+        }
+
         protected override void Dispose(bool disposing)
         {
             if (disposing)

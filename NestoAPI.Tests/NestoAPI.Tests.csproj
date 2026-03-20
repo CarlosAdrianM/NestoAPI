@@ -170,6 +170,7 @@
     <Compile Include="Helpers\TestDbAsyncQueryProvider.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerTest.cs" />
+    <Compile Include="Controllers\CrearEtiquetaPendienteTests.cs" />
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Controllers\SeguimientosClientesControllerTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
