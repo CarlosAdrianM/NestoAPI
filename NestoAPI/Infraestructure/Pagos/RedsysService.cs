@@ -136,8 +136,9 @@ namespace NestoAPI.Infraestructure.Pagos
                 r.SetParameter("DS_MERCHANT_PRODUCTDESCRIPTION", descripcion);
             }
 
-            // Habilitar Bizum y tarjeta como métodos de pago (Issue #140)
-            r.SetParameter("DS_MERCHANT_PAYMETHODS", "C,T,B");
+            // Habilitar tarjeta y Bizum como métodos de pago (Issue #140)
+            // Códigos Redsys: C=tarjeta, z=Bizum, T=transferencia
+            r.SetParameter("DS_MERCHANT_PAYMETHODS", "C,z");
 
             string parametros = r.createMerchantParameters();
             string firma = r.createMerchantSignature(_secretKeyTPVVirtual);
