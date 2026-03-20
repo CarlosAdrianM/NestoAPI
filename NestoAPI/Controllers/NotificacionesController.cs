@@ -19,6 +19,7 @@ namespace NestoAPI.Controllers
 
         [HttpPost]
         [Route("Dispositivos")]
+        [Route("RegistrarDispositivo")]
         [Authorize]
         public async Task<IHttpActionResult> RegistrarDispositivo([FromBody] RegistrarDispositivoDTO registro)
         {
