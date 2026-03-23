@@ -143,6 +143,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     mail.Subject = asunto;
                     mail.Body = htmlCompleto;
                     mail.IsBodyHtml = true;
+                    mail.Bcc.Add("carlosadrian@nuevavision.es");
 
                     // En modo test, añadir el resto de emails como CC
                     bool modoTest = ConfigurationManager.AppSettings["CorreosPostCompra:ModoTest"]?.ToLower() == "true";

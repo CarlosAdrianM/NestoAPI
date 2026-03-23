@@ -278,10 +278,39 @@ namespace NestoAPI.Infraestructure.Pagos
                 });
             }
 
+            // Si hay Liquidado, copiar Nº_Documento, Vendedor y Ruta del movimiento original
+            var lineasConLiquidado = lineas.Where(l => l.Liquidado.HasValue).ToList();
+            if (lineasConLiquidado.Any())
+            {
+                var numerosOrden = lineasConLiquidado.Select(l => l.Liquidado.Value).Distinct().ToList();
+                using (NVEntities db = new NVEntities())
+                {
+                    var movimientosOriginales = await db.ExtractosCliente
+                        .Where(e => e.Empresa == empresa && numerosOrden.Contains(e.Nº_Orden))
+                        .ToListAsync()
+                        .ConfigureAwait(false);
+
+                    foreach (var linea in lineasConLiquidado)
+                    {
+                        var original = movimientosOriginales.FirstOrDefault(e => e.Nº_Orden == linea.Liquidado.Value);
+                        if (original != null)
+                        {
+                            linea.Nº_Documento = original.Nº_Documento?.Trim();
+                            linea.Vendedor = original.Vendedor?.Trim();
+                            linea.Ruta = original.Ruta?.Trim();
+                        }
+                    }
+                }
+            }
+
             // Linea banco (DEBE) - siempre una sola linea por el total
             string docBanco = pago.NumeroOrden?.Length > 10
                 ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
                 : pago.NumeroOrden;
+
+            // Si hay líneas con Liquidado, usar el Nº_Documento del movimiento original (como hace Cajas)
+            var lineaConDocumentoOriginal = lineas.FirstOrDefault(l => l.Liquidado.HasValue && !string.IsNullOrWhiteSpace(l.Nº_Documento));
+            string docBancoFinal = lineaConDocumentoOriginal?.Nº_Documento ?? docBanco;
 
             lineas.Insert(0, new PreContabilidad
             {
@@ -291,7 +320,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 TipoApunte = TiposExtractoCliente.PAGO,
                 Debe = pago.Importe,
                 Concepto = concepto,
-                Nº_Documento = docBanco,
+                Nº_Documento = docBancoFinal,
                 Diario = "_CobrosTPV",
                 Fecha = DateTime.Today,
                 FechaVto = DateTime.Today,
