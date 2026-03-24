@@ -620,6 +620,32 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             Assert.AreEqual(3, lineas.Count); // producto + portes + reembolso
         }
 
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_Presupuesto_PortesEnEstadoPresupuesto()
+        {
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 50, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "EFC",
+                    estado = Constantes.EstadosLineaVenta.PRESUPUESTO, usuario = "test", fechaEntrega = System.DateTime.Today
+                }
+            };
+            var resultado = new ResultadoPortes
+            {
+                ImportePortes = 3.5M,
+                PortesGratis = false,
+                CuentaPortes = "62400002"
+            };
+
+            bool modificado = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.IsTrue(modificado);
+            var lineaPortes = lineas.Single(l => l.Producto == "62400002");
+            Assert.AreEqual(Constantes.EstadosLineaVenta.PRESUPUESTO, lineaPortes.estado);
+        }
+
         #endregion
 
         #region AnadirPortes
