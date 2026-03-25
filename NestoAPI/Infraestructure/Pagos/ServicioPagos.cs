@@ -156,11 +156,20 @@ namespace NestoAPI.Infraestructure.Pagos
                     pago.Estado = "Autorizado";
                     await db.SaveChangesAsync().ConfigureAwait(false);
 
-                    // Contabilizar el cobro
-                    await ContabilizarCobro(pago).ConfigureAwait(false);
+                    // Issue #143: Contabilizar con resiliencia - si falla, el correo debe enviarse igualmente
+                    string errorContabilizacion = null;
+                    try
+                    {
+                        await ContabilizarCobro(pago).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        errorContabilizacion = ex.Message;
+                        LogElmah($"[ProcesarNotificacion] Error al contabilizar cobro. Orden: {pago.NumeroOrden}, Error: {ex.Message}");
+                    }
 
-                    // Issue #139: Correo post-cobro a administración
-                    EnviarCorreoPostCobro(pago);
+                    // Issue #139/#142/#143: Correo post-cobro a administración (siempre, incluso si falló la contabilización)
+                    EnviarCorreoPostCobro(pago, errorContabilizacion);
                 }
                 else
                 {
@@ -182,7 +191,7 @@ namespace NestoAPI.Infraestructure.Pagos
             string cuentaBanco = _lectorParametros.LeerParametro(
                 pago.Empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO,
                 "(defecto)",
-                "CuentaBancoTarjeta");
+                ParametrosUsuario.CUENTA_BANCO_TARJETA);
 
             if (string.IsNullOrWhiteSpace(cuentaBanco))
             {
@@ -578,7 +587,7 @@ namespace NestoAPI.Infraestructure.Pagos
         /// Envía correo a administración con los detalles del cobro realizado.
         /// Issue #139: Correo post-cobro.
         /// </summary>
-        internal void EnviarCorreoPostCobro(PagoTPV pago)
+        internal void EnviarCorreoPostCobro(PagoTPV pago, string errorContabilizacion = null)
         {
             try
             {
@@ -598,6 +607,14 @@ namespace NestoAPI.Infraestructure.Pagos
                         alternar = !alternar;
                     }
                 }
+
+                // Issue #143: Alerta de error de contabilización
+                string seccionError = !string.IsNullOrEmpty(errorContabilizacion)
+                    ? $@"<div style='background:#fdecea;border:1px solid #f5c6cb;border-radius:6px;padding:15px;margin:0 0 15px 0'>
+                        <strong style='color:#c0392b'>ERROR: No se ha podido contabilizar el cobro</strong>
+                        <p style='color:#721c24;margin:8px 0 0 0;font-size:13px'>{HttpUtility.HtmlEncode(errorContabilizacion)}</p>
+                    </div>"
+                    : "";
 
                 string seccionEfectos = pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any()
                     ? $@"<h3 style='color:#333;font-size:14px;margin:20px 0 10px 0'>Efectos cobrados</h3>
@@ -629,6 +646,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 <!-- Datos del cobro -->
                 <tr>
                     <td style='padding:25px 30px'>
+                        {seccionError}
                         <table style='width:100%;font-size:14px'>
                             <tr><td style='padding:6px 0;color:#888;width:140px'>Cliente</td><td style='padding:6px 0;font-weight:bold'>{pago.Cliente?.Trim()}</td></tr>
                             <tr><td style='padding:6px 0;color:#888'>Importe</td><td style='padding:6px 0;font-weight:bold;color:#27ae60;font-size:18px'>{pago.Importe:N2} &euro;</td></tr>
@@ -651,7 +669,23 @@ namespace NestoAPI.Infraestructure.Pagos
                 {
                     mail.From = new MailAddress(Correos.CORREO_ADMON, "NestoPago");
                     mail.To.Add(Correos.CORREO_ADMON);
-                    mail.Subject = $"Cobro NestoPago: {pago.Importe:C} - Cliente {pago.Cliente?.Trim()}";
+
+                    // Issue #142: CC al creador del enlace de pago
+                    string correoCreador = ObtenerCorreoUsuario(pago.Usuario);
+                    if (!string.IsNullOrEmpty(correoCreador))
+                    {
+                        try
+                        {
+                            mail.CC.Add(correoCreador);
+                        }
+                        catch
+                        {
+                            // Si el correo no es válido, ignorar
+                        }
+                    }
+
+                    string prefijoAsunto = !string.IsNullOrEmpty(errorContabilizacion) ? "ERROR " : "";
+                    mail.Subject = $"{prefijoAsunto}Cobro NestoPago: {pago.Importe:C} - Cliente {pago.Cliente?.Trim()}";
                     mail.Body = html;
                     mail.IsBodyHtml = true;
                     _servicioCorreo.EnviarCorreoSMTP(mail);
@@ -660,6 +694,40 @@ namespace NestoAPI.Infraestructure.Pagos
             catch (Exception ex)
             {
                 LogElmah($"[EnviarCorreoPostCobro] Error enviando correo post-cobro: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Obtiene el correo electrónico de un usuario.
+        /// Si el usuario ya es un email, lo devuelve directamente.
+        /// Si es un usuario de Windows (DOMINIO\Usuario), lee el parámetro ParametrosUsuario.CORREO_DEFECTO.
+        /// </summary>
+        internal string ObtenerCorreoUsuario(string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+
+            // Si ya parece un email, devolverlo directamente
+            if (usuario.Contains("@"))
+            {
+                return usuario.Trim();
+            }
+
+            // Extraer nombre de usuario sin dominio (NUEVAVISION\Lidia → Lidia)
+            string nombreUsuario = usuario.Contains("\\")
+                ? usuario.Substring(usuario.IndexOf('\\') + 1)
+                : usuario;
+
+            try
+            {
+                return _lectorParametros.LeerParametro(
+                    Empresas.EMPRESA_POR_DEFECTO, nombreUsuario, ParametrosUsuario.CORREO_DEFECTO);
+            }
+            catch
+            {
+                return null;
             }
         }
 

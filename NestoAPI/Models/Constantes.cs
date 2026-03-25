@@ -118,6 +118,12 @@ namespace NestoAPI.Models
             public const string IVA_REDUCIDO = "R10";
         }
 
+        public static class ParametrosUsuario
+        {
+            public const string CORREO_DEFECTO = "CorreoDefecto";
+            public const string CUENTA_BANCO_TARJETA = "CuentaBancoTarjeta";
+        }
+
         public static class EstadosLineaVenta
         {
             public const int PRESUPUESTO = -3;

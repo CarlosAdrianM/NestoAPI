@@ -432,5 +432,203 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         #endregion
+
+        #region Issue #143: Resiliencia contabilización + Issue #142: CC al creador
+
+        [TestMethod]
+        public void EnviarCorreoPostCobro_SinError_EnviaCorreoNormal()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191 ",
+                Importe = 100m,
+                NumeroOrden = "TEST123",
+                CodigoAutorizacion = "AUTH1",
+                FechaActualizacion = DateTime.Now,
+                Correo = "cliente@test.com",
+                Usuario = "admin@nuevavision.es"
+            };
+
+            // Act
+            servicio.EnviarCorreoPostCobro(pago);
+
+            // Assert
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>.That.Matches(
+                m => m.Subject.StartsWith("Cobro NestoPago:") && !m.Subject.StartsWith("ERROR"))
+            )).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void EnviarCorreoPostCobro_ConErrorContabilizacion_EnviaCorreoConAlertaError()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191 ",
+                Importe = 50m,
+                NumeroOrden = "TEST456",
+                FechaActualizacion = DateTime.Now
+            };
+
+            // Act
+            servicio.EnviarCorreoPostCobro(pago, "Error de conexión a la base de datos");
+
+            // Assert: el correo debe enviarse con prefijo ERROR en el asunto
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>.That.Matches(
+                m => m.Subject.StartsWith("ERROR Cobro NestoPago:"))
+            )).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void EnviarCorreoPostCobro_ConErrorContabilizacion_CuerpoContieneError()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            string cuerpoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => cuerpoCapturado = m.Body);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191 ",
+                Importe = 50m,
+                NumeroOrden = "TEST789",
+                FechaActualizacion = DateTime.Now
+            };
+
+            // Act
+            servicio.EnviarCorreoPostCobro(pago, "Timeout en contabilización");
+
+            // Assert
+            Assert.IsNotNull(cuerpoCapturado);
+            Assert.IsTrue(cuerpoCapturado.Contains("No se ha podido contabilizar"), "Debe incluir mensaje de error");
+            Assert.IsTrue(cuerpoCapturado.Contains("Timeout"), "Debe incluir el detalle del error");
+        }
+
+        [TestMethod]
+        public void EnviarCorreoPostCobro_ConUsuarioEmail_AñadeCCDirectamente()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            System.Net.Mail.MailMessage correoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191 ",
+                Importe = 75m,
+                NumeroOrden = "TESTCC1",
+                FechaActualizacion = DateTime.Now,
+                Usuario = "vendedor@nuevavision.es"
+            };
+
+            // Act
+            servicio.EnviarCorreoPostCobro(pago);
+
+            // Assert: usuario ya es email, se usa directamente como CC
+            Assert.IsNotNull(correoCapturado);
+            Assert.AreEqual(1, correoCapturado.CC.Count, "Debe tener un CC");
+            Assert.AreEqual("vendedor@nuevavision.es", correoCapturado.CC[0].Address);
+        }
+
+        [TestMethod]
+        public void EnviarCorreoPostCobro_ConUsuarioWindows_BuscaCorreoEnParametros()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            System.Net.Mail.MailMessage correoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
+
+            // El lector de parámetros devuelve el correo para el usuario "Lidia"
+            A.CallTo(() => _lectorParametros.LeerParametro("1", "Lidia", "CorreoDefecto"))
+                .Returns("lidia@nuevavision.es");
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191 ",
+                Importe = 75m,
+                NumeroOrden = "TESTCC3",
+                FechaActualizacion = DateTime.Now,
+                Usuario = @"NUEVAVISION\Lidia"
+            };
+
+            // Act
+            servicio.EnviarCorreoPostCobro(pago);
+
+            // Assert: debe buscar "CorreoDefecto" para usuario "Lidia" y ponerlo en CC
+            Assert.IsNotNull(correoCapturado);
+            Assert.AreEqual(1, correoCapturado.CC.Count, "Debe tener un CC");
+            Assert.AreEqual("lidia@nuevavision.es", correoCapturado.CC[0].Address);
+        }
+
+        [TestMethod]
+        public void EnviarCorreoPostCobro_SinUsuario_NoAñadeCC()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            System.Net.Mail.MailMessage correoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191 ",
+                Importe = 75m,
+                NumeroOrden = "TESTCC2",
+                FechaActualizacion = DateTime.Now,
+                Usuario = null
+            };
+
+            // Act
+            servicio.EnviarCorreoPostCobro(pago);
+
+            // Assert
+            Assert.IsNotNull(correoCapturado);
+            Assert.AreEqual(0, correoCapturado.CC.Count, "No debe tener CC sin usuario");
+        }
+
+        [TestMethod]
+        public void EnviarCorreoPostCobro_ConUsuarioWindowsSinCorreo_NoAñadeCC()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            System.Net.Mail.MailMessage correoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
+
+            // El lector no encuentra correo para este usuario
+            A.CallTo(() => _lectorParametros.LeerParametro("1", "UsuarioSinCorreo", "CorreoDefecto"))
+                .Returns(null);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191 ",
+                Importe = 75m,
+                NumeroOrden = "TESTCC4",
+                FechaActualizacion = DateTime.Now,
+                Usuario = @"NUEVAVISION\UsuarioSinCorreo"
+            };
+
+            // Act
+            servicio.EnviarCorreoPostCobro(pago);
+
+            // Assert
+            Assert.IsNotNull(correoCapturado);
+            Assert.AreEqual(0, correoCapturado.CC.Count, "No debe tener CC si no hay correo");
+        }
+
+        #endregion
     }
 }
