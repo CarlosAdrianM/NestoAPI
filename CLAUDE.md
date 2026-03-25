@@ -6,6 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 NestoAPI is an ASP.NET Web API project built with .NET Framework 4.8 using Entity Framework 6.x for data access. The application provides a REST API for managing sales orders (pedidos de venta), customer management, invoicing, inventory, commissions, and various business operations for a distribution company.
 
+### Estrategia de migración progresiva: Nesto (VB.NET) → NestoAPI (C#)
+
+Siempre que sea conveniente o necesario, se debe extraer lógica de negocio del cliente de escritorio Nesto (VB.NET) y moverla a NestoAPI (C#). Esto persigue dos objetivos:
+1. **Eliminar progresivamente el legacy VB.NET**, consolidando la lógica en el backend
+2. **Hacer la funcionalidad accesible a todos los clientes** (Nesto, NestoApp, TiendasNuevaVision) a través de la API, en vez de tenerla atrapada en un solo cliente
+
+Al implementar funcionalidad nueva en NestoAPI que ya exista en Nesto, revisar si el código VB.NET correspondiente puede eliminarse y sustituirse por una llamada a la API.
+
 ## Related Repositories (Ecosistema Nesto)
 
 El usuario Carlos tiene varios repositorios relacionados que forman el ecosistema completo:

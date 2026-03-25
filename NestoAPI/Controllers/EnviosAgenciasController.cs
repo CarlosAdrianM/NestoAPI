@@ -12,6 +12,7 @@ using System.Web.Http.Description;
 using NestoAPI.Models;
 using System.Net.Mail;
 using System.Text;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
 using System.Web.Http.Cors;
 using System.Security.Claims;
@@ -104,6 +105,13 @@ namespace NestoAPI.Controllers
             if (id != enviosAgencia.Numero)
             {
                 return BadRequest();
+            }
+
+            // Issue #135: Si la etiqueta pasa a estado >= en_curso, convertir el sentinel
+            // de reembolso a 0 para evitar enviar valores negativos a la agencia
+            if (enviosAgencia.Estado >= Constantes.Agencias.ESTADO_EN_CURSO && enviosAgencia.Reembolso < 0)
+            {
+                enviosAgencia.Reembolso = 0;
             }
 
             db.Entry(enviosAgencia).State = EntityState.Modified;
@@ -226,11 +234,29 @@ namespace NestoAPI.Controllers
             }
 
             var direccion = await db.Clientes
+                .Include(c => c.PersonasContactoClientes)
                 .FirstOrDefaultAsync(c => c.Empresa == pedido.Empresa && c.Nº_Cliente == pedido.Nº_Cliente && c.Contacto == pedido.Contacto);
 
             if (direccion == null)
             {
                 return BadRequest("No se encontró la dirección del contacto del pedido");
+            }
+
+            var telefono = new Telefono(direccion.Teléfono);
+            var correo = new CorreoCliente(direccion.PersonasContactoClientes);
+
+            decimal reembolso;
+            if (!request.CobrarReembolso)
+            {
+                reembolso = Constantes.Agencias.REEMBOLSO_NO_COBRAR;
+            }
+            else if (request.ImporteReembolso.HasValue)
+            {
+                reembolso = request.ImporteReembolso.Value;
+            }
+            else
+            {
+                reembolso = 0;
             }
 
             var envio = new EnviosAgencia
@@ -242,18 +268,22 @@ namespace NestoAPI.Controllers
                 Agencia = request.Agencia,
                 Estado = (short)Constantes.Agencias.ESTADO_PENDIENTE,
                 Retorno = request.Retorno,
-                Reembolso = 0,
+                Reembolso = reembolso,
                 Fecha = DateTime.Today,
                 FechaModificacion = DateTime.Now,
                 Bultos = 1,
                 Servicio = 0,
                 Horario = 0,
-                Nombre = direccion.Nombre,
-                Direccion = direccion.Dirección,
-                CodPostal = direccion.CodPostal,
-                Poblacion = direccion.Población,
-                Provincia = direccion.Provincia,
-                Telefono = direccion.Teléfono,
+                Nombre = direccion.Nombre?.Trim() ?? "",
+                Direccion = direccion.Dirección?.Trim() ?? "",
+                CodPostal = direccion.CodPostal?.Trim() ?? "",
+                Poblacion = direccion.Población?.Trim() ?? "",
+                Provincia = direccion.Provincia?.Trim() ?? "",
+                Telefono = telefono.FijoUnico(),
+                Movil = telefono.MovilUnico(),
+                Email = correo.CorreoAgencia(),
+                Atencion = direccion.Nombre?.Trim() ?? "",
+                Observaciones = pedido.Comentarios,
                 Pais = 1
             };
 
@@ -262,6 +292,56 @@ namespace NestoAPI.Controllers
 
             var dto = new EnvioAgenciaDTO(envio);
             return CreatedAtRoute("DefaultApi", new { id = envio.Numero }, dto);
+        }
+
+        [HttpPut]
+        [Authorize]
+        [Route("api/EnviosAgencias/ActualizarDireccionEtiqueta/{id}")]
+        public async Task<IHttpActionResult> ActualizarDireccionEtiqueta(int id, ActualizarDireccionEtiquetaDTO request)
+        {
+            if (request == null)
+            {
+                return BadRequest("El request no puede ser nulo");
+            }
+
+            var envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+
+            if (envio.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                return BadRequest("Solo se puede actualizar la dirección de etiquetas pendientes");
+            }
+
+            var direccion = await db.Clientes
+                .Include(c => c.PersonasContactoClientes)
+                .FirstOrDefaultAsync(c => c.Empresa == request.Empresa && c.Nº_Cliente == request.Cliente && c.Contacto == request.Contacto);
+
+            if (direccion == null)
+            {
+                return BadRequest("No se encontró la dirección del contacto");
+            }
+
+            var telefono = new Telefono(direccion.Teléfono);
+            var correo = new CorreoCliente(direccion.PersonasContactoClientes);
+
+            envio.Contacto = request.Contacto;
+            envio.Nombre = direccion.Nombre?.Trim() ?? "";
+            envio.Direccion = direccion.Dirección?.Trim() ?? "";
+            envio.CodPostal = direccion.CodPostal?.Trim() ?? "";
+            envio.Poblacion = direccion.Población?.Trim() ?? "";
+            envio.Provincia = direccion.Provincia?.Trim() ?? "";
+            envio.Telefono = telefono.FijoUnico();
+            envio.Movil = telefono.MovilUnico();
+            envio.Email = correo.CorreoAgencia();
+            envio.Atencion = direccion.Nombre?.Trim() ?? "";
+            envio.FechaModificacion = DateTime.Now;
+
+            await db.SaveChangesAsync();
+
+            return Ok(new EnvioAgenciaDTO(envio));
         }
 
         protected override void Dispose(bool disposing)

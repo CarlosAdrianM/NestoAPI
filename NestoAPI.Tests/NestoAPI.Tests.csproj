@@ -171,6 +171,8 @@
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Controllers\CrearEtiquetaPendienteTests.cs" />
+    <Compile Include="Infraestructure\TelefonoTests.cs" />
+    <Compile Include="Infraestructure\CorreoClienteTests.cs" />
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Controllers\SeguimientosClientesControllerTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />

@@ -6,5 +6,7 @@ namespace NestoAPI.Models
         public int Pedido { get; set; }
         public int Agencia { get; set; }
         public short Retorno { get; set; }
+        public bool CobrarReembolso { get; set; } = true;
+        public decimal? ImporteReembolso { get; set; }
     }
 }

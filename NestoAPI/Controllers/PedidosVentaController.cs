@@ -281,9 +281,10 @@ namespace NestoAPI.Controllers
         }
 
         // PUT: api/PedidosVenta/5
-        [ResponseType(typeof(void))]
+        [ResponseType(typeof(RespuestaModificacionPedidoDTO))]
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
         {
+            var avisos = new List<AvisoPedidoDTO>();
 
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
@@ -397,6 +398,44 @@ namespace NestoAPI.Controllers
                 if (etiquetaAgencia != null)
                 {
                     errorPersonalizado("No se puede cambiar el contacto " + pedido.numero + " porque ya tiene lo tiene la agencia");
+                }
+
+                // Issue #135: Comprobar si hay etiqueta pendiente y avisar al cliente
+                var etiquetaPendiente = db.EnviosAgencias
+                    .FirstOrDefault(e => e.Empresa == pedido.empresa && e.Pedido == pedido.numero && e.Estado < Constantes.Agencias.ESTADO_EN_CURSO);
+                if (etiquetaPendiente != null)
+                {
+                    var direccionNuevoContacto = db.Clientes
+                        .FirstOrDefault(c => c.Empresa == pedido.empresa && c.Nº_Cliente == pedido.cliente && c.Contacto == pedido.contacto);
+                    avisos.Add(new AvisoPedidoDTO
+                    {
+                        Tipo = "EtiquetaPendienteDireccion",
+                        Mensaje = "El pedido tiene una etiqueta pendiente. ¿Desea actualizar la dirección de la etiqueta con la del nuevo contacto?",
+                        Datos = new AvisoEtiquetaPendienteDTO
+                        {
+                            EtiquetaId = etiquetaPendiente.Numero,
+                            DireccionActual = new DireccionDTO
+                            {
+                                Contacto = etiquetaPendiente.Contacto?.Trim(),
+                                Nombre = etiquetaPendiente.Nombre?.Trim(),
+                                Direccion = etiquetaPendiente.Direccion?.Trim(),
+                                CodPostal = etiquetaPendiente.CodPostal?.Trim(),
+                                Poblacion = etiquetaPendiente.Poblacion?.Trim(),
+                                Provincia = etiquetaPendiente.Provincia?.Trim(),
+                                Telefono = etiquetaPendiente.Telefono?.Trim()
+                            },
+                            DireccionNuevoContacto = direccionNuevoContacto != null ? new DireccionDTO
+                            {
+                                Contacto = pedido.contacto?.Trim(),
+                                Nombre = direccionNuevoContacto.Nombre?.Trim(),
+                                Direccion = direccionNuevoContacto.Dirección?.Trim(),
+                                CodPostal = direccionNuevoContacto.CodPostal?.Trim(),
+                                Poblacion = direccionNuevoContacto.Población?.Trim(),
+                                Provincia = direccionNuevoContacto.Provincia?.Trim(),
+                                Telefono = direccionNuevoContacto.Teléfono?.Trim()
+                            } : null
+                        }
+                    });
                 }
 
                 cabPedidoVta.Contacto = pedido.contacto;
@@ -1053,6 +1092,10 @@ namespace NestoAPI.Controllers
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion);
             await gestor.EnviarCorreo("Modificación");
 
+            if (avisos.Count > 0)
+            {
+                return Ok(new RespuestaModificacionPedidoDTO { Avisos = avisos });
+            }
             return StatusCode(HttpStatusCode.NoContent);
         }
 
@@ -1428,15 +1471,25 @@ namespace NestoAPI.Controllers
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);
         }
 
-        /*
         // DELETE: api/PedidosVenta/5
+        [Authorize]
         [ResponseType(typeof(CabPedidoVta))]
-        public async Task<IHttpActionResult> DeleteCabPedidoVta(string id)
+        public async Task<IHttpActionResult> DeleteCabPedidoVta(string empresa, int numero)
         {
-            CabPedidoVta cabPedidoVta = await db.CabPedidoVtas.FindAsync(id);
+            CabPedidoVta cabPedidoVta = await db.CabPedidoVtas
+                .FirstOrDefaultAsync(p => p.Empresa == empresa && p.Número == numero);
             if (cabPedidoVta == null)
             {
                 return NotFound();
+            }
+
+            // Issue #135: Eliminar etiquetas pendientes asociadas al pedido
+            var etiquetasPendientes = await db.EnviosAgencias
+                .Where(e => e.Empresa == empresa && e.Pedido == numero && e.Estado < Constantes.Agencias.ESTADO_EN_CURSO)
+                .ToListAsync();
+            foreach (var etiqueta in etiquetasPendientes)
+            {
+                db.EnviosAgencias.Remove(etiqueta);
             }
 
             db.CabPedidoVtas.Remove(cabPedidoVta);
@@ -1444,7 +1497,6 @@ namespace NestoAPI.Controllers
 
             return Ok(cabPedidoVta);
         }
-        */
 
         // GET: api/PonerDescuentoTodasLasLineas
         [HttpGet]
