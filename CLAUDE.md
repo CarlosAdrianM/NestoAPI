@@ -39,6 +39,14 @@ El usuario Carlos tiene varios repositorios relacionados que forman el ecosistem
 - **Autenticación**: Usa `/api/auth/token` de NestoAPI
 - **Ruta local típica**: `C:\Users\Carlos\source\repos\TiendasNuevaVision`
 
+### NVIA (Gestión de vídeo-protocolos)
+- **URL**: https://github.com/CarlosAdrianM/NVIA
+- **Tecnologías**: C#, Blazor Server, .NET 8
+- **Descripción**: Descarga transcripciones de YouTube, genera protocolos con OpenAI, inserta en tabla Videos de NestoAPI y envía push notifications de nuevos protocolos
+- **Ruta local**: `C:\Users\Carlos\source\repos\ConsolaNVIA`
+- **Relación con NestoAPI**: Llama a `POST /api/Notificaciones/NuevoProtocolo` para push de nuevos protocolos. Inserta directamente en las tablas Videos y VideosProductos de la BD de NestoAPI.
+- **Proyectos Firebase**: Usa proyecto `NestoTiendas` (distinto de `nestoapp-c9c4c` que usa NestoApp)
+
 ### odoo-custom-addons (Integración Odoo)
 - **URL**: https://github.com/CarlosAdrianM/odoo-custom-addons
 - **Tecnologías**: Python (97%), TSQL
@@ -53,12 +61,12 @@ El usuario Carlos tiene varios repositorios relacionados que forman el ecosistem
 │   (Escritorio)  │     │   (Backend)     │     │    NestoApp     │
 │   WPF/VB.NET    │     │  ASP.NET 4.8    │     │  Angular/Ionic  │
 └─────────────────┘     └────────┬────────┘     └─────────────────┘
-                                 │
-                                 ▼
-┌─────────────────┐     ┌─────────────────┐
-│ TiendasNueva    │────▶│  odoo-custom    │
-│    Vision       │     │    -addons      │
-│ (Tienda online) │     │   (Python)      │
+                                 │ ▲
+                                 ▼ │
+┌─────────────────┐     ┌────────┴────────┐
+│ TiendasNueva    │     │      NVIA       │
+│    Vision       │     │ (Protocolos     │
+│ (Tienda online) │     │  YouTube+OpenAI)│
 └─────────────────┘     └─────────────────┘
 ```
 
