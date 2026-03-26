@@ -114,6 +114,7 @@ namespace NestoAPI.Controllers
                 enviosAgencia.Reembolso = 0;
             }
 
+            enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
             db.Entry(enviosAgencia).State = EntityState.Modified;
 
             try
@@ -284,7 +285,8 @@ namespace NestoAPI.Controllers
                 Email = correo.CorreoAgencia(),
                 Atencion = direccion.Nombre?.Trim() ?? "",
                 Observaciones = pedido.Comentarios,
-                Pais = 1
+                Pais = 1,
+                Usuario = User?.Identity?.Name ?? "NestoAPI"
             };
 
             db.EnviosAgencias.Add(envio);
@@ -337,6 +339,7 @@ namespace NestoAPI.Controllers
             envio.Movil = telefono.MovilUnico();
             envio.Email = correo.CorreoAgencia();
             envio.Atencion = direccion.Nombre?.Trim() ?? "";
+            envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
             envio.FechaModificacion = DateTime.Now;
 
             await db.SaveChangesAsync();
