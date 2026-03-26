@@ -293,7 +293,7 @@ namespace NestoAPI.Controllers
             await db.SaveChangesAsync();
 
             var dto = new EnvioAgenciaDTO(envio);
-            return CreatedAtRoute("DefaultApi", new { id = envio.Numero }, dto);
+            return Created(new Uri(Request.RequestUri, envio.Numero.ToString()), dto);
         }
 
         [HttpPut]
