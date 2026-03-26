@@ -4,8 +4,12 @@ using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
 using System;
+using System.Configuration;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Principal;
 using System.Threading.Tasks;
+using System.Web.Http;
 using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Controllers
@@ -254,5 +258,158 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => _servicio.EnviarAUsuario("testuser", "NestoApp", notificacion))
                 .MustHaveHappenedOnceExactly();
         }
+
+        #region NotificarNuevoProtocolo
+
+        private NotificacionesController CrearControllerConApiKey(string apiKey)
+        {
+            var controller = new NotificacionesController(_servicio);
+            var config = new HttpConfiguration();
+            var request = new HttpRequestMessage();
+            request.SetConfiguration(config);
+
+            if (!string.IsNullOrEmpty(apiKey))
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+            }
+
+            controller.Request = request;
+            return controller;
+        }
+
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_SinApiKey_DevuelveUnauthorized()
+        {
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = "clave-secreta";
+            var controller = CrearControllerConApiKey(null);
+            var dto = new NuevoProtocoloDTO { Titulo = "Test" };
+
+            var resultado = await controller.NotificarNuevoProtocolo(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_ConApiKeyIncorrecta_DevuelveUnauthorized()
+        {
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = "clave-secreta";
+            var controller = CrearControllerConApiKey("clave-incorrecta");
+            var dto = new NuevoProtocoloDTO { Titulo = "Test" };
+
+            var resultado = await controller.NotificarNuevoProtocolo(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(UnauthorizedResult));
+        }
+
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_ConBodyNull_DevuelveBadRequest()
+        {
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = "clave-secreta";
+            var controller = CrearControllerConApiKey("clave-secreta");
+
+            var resultado = await controller.NotificarNuevoProtocolo(null);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_SinTitulo_DevuelveBadRequest()
+        {
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = "clave-secreta";
+            var controller = CrearControllerConApiKey("clave-secreta");
+            var dto = new NuevoProtocoloDTO { Titulo = "" };
+
+            var resultado = await controller.NotificarNuevoProtocolo(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_ConDatosValidos_EnviaATodosDeAplicacion()
+        {
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = "clave-secreta";
+            var controller = CrearControllerConApiKey("clave-secreta");
+            var dto = new NuevoProtocoloDTO
+            {
+                Titulo = "Nuevo protocolo de tinte",
+                Descripcion = "Como aplicar el tinte correctamente",
+                ImagenUrl = "https://img.youtube.com/vi/abc123/0.jpg",
+                VideoId = 42
+            };
+
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
+                "TiendasNuevaVision", A<NotificacionPushDTO>.Ignored)).Returns(5);
+
+            var resultado = await controller.NotificarNuevoProtocolo(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
+                "TiendasNuevaVision",
+                A<NotificacionPushDTO>.That.Matches(n =>
+                    n.Titulo == "Nuevo protocolo disponible" &&
+                    n.Cuerpo == "Nuevo protocolo de tinte" &&
+                    n.Datos["tipo"] == "protocolo" &&
+                    n.Datos["videoId"] == "42" &&
+                    n.Datos["imagenUrl"] == "https://img.youtube.com/vi/abc123/0.jpg"
+                ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_SinVideoId_NoIncluyeVideoIdEnDatos()
+        {
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = "clave-secreta";
+            var controller = CrearControllerConApiKey("clave-secreta");
+            var dto = new NuevoProtocoloDTO { Titulo = "Protocolo sin video" };
+
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
+                A<string>.Ignored, A<NotificacionPushDTO>.Ignored)).Returns(0);
+
+            var resultado = await controller.NotificarNuevoProtocolo(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
+                "TiendasNuevaVision",
+                A<NotificacionPushDTO>.That.Matches(n =>
+                    !n.Datos.ContainsKey("videoId") &&
+                    !n.Datos.ContainsKey("imagenUrl")
+                ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_SinDispositivosRegistrados_DevuelveOkConCeroEnviados()
+        {
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = "clave-secreta";
+            var controller = CrearControllerConApiKey("clave-secreta");
+            var dto = new NuevoProtocoloDTO { Titulo = "Protocolo nuevo" };
+
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
+                A<string>.Ignored, A<NotificacionPushDTO>.Ignored)).Returns(0);
+
+            var resultado = await controller.NotificarNuevoProtocolo(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
+        }
+
+        [TestMethod]
+        public async Task NotificarNuevoProtocolo_NoEnviaANestoApp()
+        {
+            ConfigurationManager.AppSettings["NotificacionesApiKey"] = "clave-secreta";
+            var controller = CrearControllerConApiKey("clave-secreta");
+            var dto = new NuevoProtocoloDTO { Titulo = "Solo tiendas" };
+
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
+                A<string>.Ignored, A<NotificacionPushDTO>.Ignored)).Returns(3);
+
+            await controller.NotificarNuevoProtocolo(dto);
+
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
+                "TiendasNuevaVision", A<NotificacionPushDTO>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
+                "NestoApp", A<NotificacionPushDTO>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        #endregion
     }
 }

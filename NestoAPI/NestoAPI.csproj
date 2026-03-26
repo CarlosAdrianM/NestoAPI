@@ -1171,6 +1171,7 @@
     <Compile Include="Models\Rapports\CodigoPostalSeguimientoLookup.cs" />
     <Compile Include="Models\EnviarNotificacionDTO.cs" />
     <Compile Include="Models\NotificacionPushDTO.cs" />
+    <Compile Include="Models\NuevoProtocoloDTO.cs" />
     <Compile Include="Models\RegistrarDispositivoDTO.cs" />
     <Compile Include="Models\Informes\ClienteNuevoVendedorDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />

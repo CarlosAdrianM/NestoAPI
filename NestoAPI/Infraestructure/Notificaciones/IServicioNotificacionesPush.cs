@@ -14,5 +14,6 @@ namespace NestoAPI.Infraestructure.Notificaciones
         Task<int> EnviarAUsuario(string usuario, string aplicacion, NotificacionPushDTO notificacion);
         Task<int> EnviarAVendedor(string empresa, string vendedor, NotificacionPushDTO notificacion);
         Task<int> EnviarACliente(string empresa, string cliente, NotificacionPushDTO notificacion);
+        Task<int> EnviarATodosDeAplicacion(string aplicacion, NotificacionPushDTO notificacion);
     }
 }

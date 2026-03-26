@@ -1,6 +1,8 @@
 using NestoAPI.Infraestructure.Notificaciones;
 using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
+using System.Configuration;
 using static NestoAPI.Models.Constantes;
 using System.Threading.Tasks;
 using System.Web.Http;
@@ -127,6 +129,51 @@ namespace NestoAPI.Controllers
                     ).ConfigureAwait(false);
                     break;
             }
+
+            return Ok(enviados);
+        }
+
+        [HttpPost]
+        [Route("NuevoProtocolo")]
+        public async Task<IHttpActionResult> NotificarNuevoProtocolo([FromBody] NuevoProtocoloDTO dto)
+        {
+            string apiKeyEsperada = ConfigurationManager.AppSettings["NotificacionesApiKey"];
+            string apiKeyRecibida = Request?.Headers?.Authorization?.Parameter
+                ?? Request?.Headers?.Authorization?.Scheme;
+
+            if (string.IsNullOrWhiteSpace(apiKeyEsperada) ||
+                !string.Equals(apiKeyEsperada, apiKeyRecibida, StringComparison.Ordinal))
+            {
+                return Unauthorized();
+            }
+
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Titulo))
+            {
+                return BadRequest("El titulo del protocolo es obligatorio");
+            }
+
+            var notificacion = new NotificacionPushDTO
+            {
+                Titulo = "Nuevo protocolo disponible",
+                Cuerpo = dto.Titulo,
+                Datos = new Dictionary<string, string>
+                {
+                    { "tipo", "protocolo" }
+                }
+            };
+
+            if (dto.VideoId.HasValue)
+            {
+                notificacion.Datos["videoId"] = dto.VideoId.Value.ToString();
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.ImagenUrl))
+            {
+                notificacion.Datos["imagenUrl"] = dto.ImagenUrl;
+            }
+
+            int enviados = await _servicio.EnviarATodosDeAplicacion(
+                "TiendasNuevaVision", notificacion).ConfigureAwait(false);
 
             return Ok(enviados);
         }

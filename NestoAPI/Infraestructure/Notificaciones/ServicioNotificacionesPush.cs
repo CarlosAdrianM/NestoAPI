@@ -232,6 +232,19 @@ namespace NestoAPI.Infraestructure.Notificaciones
             return await EnviarADispositivos(dispositivos, notificacion).ConfigureAwait(false);
         }
 
+        public async Task<int> EnviarATodosDeAplicacion(string aplicacion, NotificacionPushDTO notificacion)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                var dispositivos = await db.DispositivosNotificaciones
+                    .Where(d => d.Aplicacion == aplicacion && d.Activo)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                return await EnviarADispositivos(dispositivos, notificacion).ConfigureAwait(false);
+            }
+        }
+
         private async Task<int> EnviarADispositivos(List<DispositivoNotificacion> dispositivos, NotificacionPushDTO notificacion)
         {
             if (dispositivos == null || !dispositivos.Any())
