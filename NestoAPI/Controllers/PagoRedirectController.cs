@@ -69,7 +69,8 @@ namespace NestoAPI.Controllers
                     urlNotificacion,
                     urlOk,
                     urlKo,
-                    "C");
+                    "C",
+                    pago.NumeroOrden);
 
                 var parametrosBizum = _redsysService.CrearParametrosTPVVirtual(
                     pago.Importe,
@@ -79,11 +80,10 @@ namespace NestoAPI.Controllers
                     urlNotificacion,
                     urlOk,
                     urlKo,
-                    "z");
+                    "z",
+                    pago.NumeroOrden);
 
-                // Actualizar NumeroOrden con el de tarjeta (referencia principal)
-                pago.NumeroOrden = parametrosTarjeta.NumeroOrden;
-                pago.Estado = "Pendiente";
+                // NumeroOrden se mantiene estable desde la creacion del pago
                 pago.FechaActualizacion = DateTime.Now;
                 await db.SaveChangesAsync().ConfigureAwait(false);
 

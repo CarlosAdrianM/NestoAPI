@@ -32,7 +32,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // Arrange
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -48,7 +48,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
                 100m, "Pago pedido 123", "test@test.com", "15191",
                 A<string>.That.Contains("NotificacionRedsys"),
-                A<string>._, A<string>._, A<string>._))
+                A<string>._, A<string>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -70,7 +70,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // en la parte de parámetros antes de BD
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
                 100m, "Pago pedido 123", "test@test.com", "15191",
-                A<string>._, A<string>._, A<string>._, A<string>._))
+                A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
                 .MustNotHaveHappened(); // Aún no hemos llamado
 
             Assert.IsNotNull(solicitud);
@@ -181,7 +181,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -206,7 +206,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 A<string>.That.Contains("NotificacionRedsys"),
                 "nestotiendas://pago/ok",
                 "nestotiendas://pago/ko",
-                A<string>._))
+                A<string>._, A<string>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -223,7 +223,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -248,7 +248,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 A<string>.That.Contains("NotificacionRedsys"),
                 "https://api.nuevavision.es/pago/ok.html",
                 "https://api.nuevavision.es/pago/ko.html",
-                A<string>._))
+                A<string>._, A<string>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -627,6 +627,65 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // Assert
             Assert.IsNotNull(correoCapturado);
             Assert.AreEqual(0, correoCapturado.CC.Count, "No debe tener CC si no hay correo");
+        }
+
+        #endregion
+
+        #region EnviarCorreoAlertaPago
+
+        [TestMethod]
+        public void EnviarCorreoAlertaPago_PagoNoEncontrado_EnviaCorreoConDetalles()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            System.Net.Mail.MailMessage correoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var resultado = new ResultadoValidacionNotificacion
+            {
+                FirmaValida = true,
+                PagoAutorizado = true,
+                CodigoRespuesta = "0000",
+                CodigoAutorizacion = "476194",
+                NumeroOrden = "ABC123C15191"
+            };
+
+            // Act
+            servicio.EnviarCorreoAlertaPago(
+                "Pago Redsys recibido pero NO encontrado en base de datos",
+                "[ProcesarNotificacion] Pago no encontrado. Orden: ABC123C15191",
+                resultado);
+
+            // Assert
+            Assert.IsNotNull(correoCapturado);
+            Assert.IsTrue(correoCapturado.Subject.Contains("ALERTA NestoPago"));
+            Assert.IsTrue(correoCapturado.Subject.Contains("ABC123C15191"));
+            Assert.IsTrue(correoCapturado.Body.Contains("NO encontrado"));
+            Assert.IsTrue(correoCapturado.Body.Contains("476194"));
+            Assert.IsTrue(correoCapturado.Body.Contains("investigar y actuar manualmente"));
+        }
+
+        [TestMethod]
+        public void EnviarCorreoAlertaPago_FirmaInvalida_EnviaCorreo()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var resultado = new ResultadoValidacionNotificacion
+            {
+                FirmaValida = false,
+                NumeroOrden = "FAKE12345678"
+            };
+
+            // Act
+            servicio.EnviarCorreoAlertaPago("Firma invalida", "Detalle", resultado);
+
+            // Assert
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>.That.Matches(
+                m => m.Subject.Contains("ALERTA") && m.Subject.Contains("FAKE12345678"))
+            )).MustHaveHappenedOnceExactly();
         }
 
         #endregion

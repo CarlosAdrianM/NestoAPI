@@ -130,7 +130,9 @@ namespace NestoAPI.Infraestructure.Pagos
 
             if (!resultado.FirmaValida)
             {
-                LogElmah($"[ProcesarNotificacion] Firma inválida. Orden: {resultado.NumeroOrden}, Error: {resultado.MensajeError}");
+                string mensajeFirma = $"[ProcesarNotificacion] Firma inválida. Orden: {resultado.NumeroOrden}, Error: {resultado.MensajeError}";
+                LogElmah(mensajeFirma);
+                EnviarCorreoAlertaPago("Firma invalida en notificacion Redsys", mensajeFirma, resultado);
                 return false;
             }
 
@@ -143,7 +145,16 @@ namespace NestoAPI.Infraestructure.Pagos
 
                 if (pago == null)
                 {
-                    LogElmah($"[ProcesarNotificacion] Pago no encontrado. Orden: {resultado.NumeroOrden}");
+                    string mensajeNoEncontrado = $"[ProcesarNotificacion] Pago no encontrado. " +
+                        $"Orden: {resultado.NumeroOrden}, " +
+                        $"Codigo respuesta: {resultado.CodigoRespuesta}, " +
+                        $"Codigo autorizacion: {resultado.CodigoAutorizacion}, " +
+                        $"Pago autorizado: {resultado.PagoAutorizado}";
+                    LogElmah(mensajeNoEncontrado);
+                    EnviarCorreoAlertaPago(
+                        "Pago Redsys recibido pero NO encontrado en base de datos",
+                        mensajeNoEncontrado,
+                        resultado);
                     return false;
                 }
 
@@ -728,6 +739,65 @@ namespace NestoAPI.Infraestructure.Pagos
             catch
             {
                 return null;
+            }
+        }
+
+        internal void EnviarCorreoAlertaPago(string titulo, string detalle, ResultadoValidacionNotificacion resultado)
+        {
+            try
+            {
+                string html = $@"<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'></head>
+<body style='margin:0;padding:0;background-color:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,""Segoe UI"",Roboto,Arial,sans-serif'>
+    <table width='100%' cellpadding='0' cellspacing='0' style='background-color:#f4f4f4;padding:20px 0'>
+        <tr><td align='center'>
+            <table width='600' cellpadding='0' cellspacing='0' style='background:white;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)'>
+                <tr>
+                    <td style='background:#c0392b;padding:20px 30px;text-align:center'>
+                        <img src='{URL_LOGO}' alt='Nueva Visi&oacute;n' style='max-width:120px;height:auto;margin-bottom:8px' />
+                        <h1 style='color:white;font-size:18px;margin:0'>ALERTA NestoPago</h1>
+                    </td>
+                </tr>
+                <tr>
+                    <td style='padding:25px 30px'>
+                        <div style='background:#fdecea;border:1px solid #f5c6cb;border-radius:6px;padding:15px;margin:0 0 15px 0'>
+                            <strong style='color:#c0392b'>{HttpUtility.HtmlEncode(titulo)}</strong>
+                        </div>
+                        <table style='width:100%;font-size:14px'>
+                            <tr><td style='padding:6px 0;color:#888;width:160px'>N&ordm; Orden Redsys</td><td style='padding:6px 0;font-weight:bold'>{resultado?.NumeroOrden}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Pago autorizado</td><td style='padding:6px 0;font-weight:bold'>{(resultado?.PagoAutorizado == true ? "SI" : "NO")}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>C&oacute;digo respuesta</td><td style='padding:6px 0'>{resultado?.CodigoRespuesta}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>C&oacute;digo autorizaci&oacute;n</td><td style='padding:6px 0'>{resultado?.CodigoAutorizacion}</td></tr>
+                        </table>
+                        <p style='color:#555;font-size:13px;margin:15px 0 0 0;padding:10px;background:#f9f9f9;border-radius:4px;word-break:break-all'>
+                            {HttpUtility.HtmlEncode(detalle)}
+                        </p>
+                        <p style='color:#999;font-size:12px;margin:15px 0 0 0'>
+                            Este correo se ha generado autom&aacute;ticamente porque se ha recibido una notificaci&oacute;n de Redsys
+                            que no se ha podido procesar correctamente. Es necesario investigar y actuar manualmente.
+                        </p>
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+</body>
+</html>";
+
+                using (var mail = new MailMessage())
+                {
+                    mail.From = new MailAddress(Correos.CORREO_ADMON, "NestoPago");
+                    mail.To.Add(Correos.CORREO_ADMON);
+                    mail.Subject = $"ALERTA NestoPago: {titulo} - Orden {resultado?.NumeroOrden}";
+                    mail.Body = html;
+                    mail.IsBodyHtml = true;
+                    _servicioCorreo.EnviarCorreoSMTP(mail);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogElmah($"[EnviarCorreoAlertaPago] Error enviando correo de alerta: {ex.Message}. Alerta original: {detalle}");
             }
         }
 

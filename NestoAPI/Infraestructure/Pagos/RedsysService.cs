@@ -116,9 +116,11 @@ namespace NestoAPI.Infraestructure.Pagos
 
         public ParametrosRedsysFirmados CrearParametrosTPVVirtual(decimal importe, string descripcion,
             string correo, string cliente, string urlNotificacion, string urlOk, string urlKo,
-            string metodoPago = null)
+            string metodoPago = null, string numeroOrdenExistente = null)
         {
-            string numeroOrden = GenerarNumeroPedido(string.IsNullOrWhiteSpace(cliente) ? null : "C" + cliente.Trim());
+            string numeroOrden = !string.IsNullOrWhiteSpace(numeroOrdenExistente)
+                ? numeroOrdenExistente
+                : GenerarNumeroPedido(string.IsNullOrWhiteSpace(cliente) ? null : "C" + cliente.Trim());
 
             RedsysAPI r = new RedsysAPI();
             r.SetParameter("DS_MERCHANT_AMOUNT", ((int)(importe * 100)).ToString());
