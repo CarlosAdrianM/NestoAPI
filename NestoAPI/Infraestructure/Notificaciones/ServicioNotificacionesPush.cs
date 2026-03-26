@@ -18,8 +18,15 @@ namespace NestoAPI.Infraestructure.Notificaciones
     {
         private static readonly object _lockInit = new object();
         private static bool _firebaseInitialized = false;
+        private static readonly Dictionary<string, FirebaseApp> _firebaseApps = new Dictionary<string, FirebaseApp>();
 
         public static bool EstaInicializado => _firebaseInitialized;
+
+        private static readonly Dictionary<string, string> _credencialesPorAplicacion = new Dictionary<string, string>
+        {
+            { Constantes.Aplicaciones.NESTO_APP, "firebase-adminsdk-nestoapp.json" },
+            { Constantes.Aplicaciones.NESTO_TIENDAS, "firebase-adminsdk-nestotiendas.json" }
+        };
 
         public ServicioNotificacionesPush()
         {
@@ -40,65 +47,68 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     return;
                 }
 
-                try
+                bool alMenosUnoInicializado = false;
+
+                foreach (var kvp in _credencialesPorAplicacion)
                 {
-                    string credentialPath = BuscarCredenciales();
-                    if (credentialPath != null)
+                    try
                     {
-                        FirebaseApp.Create(new AppOptions
+                        string credentialPath = BuscarCredenciales(kvp.Value);
+                        if (credentialPath != null)
                         {
-                            Credential = GoogleCredential.FromFile(credentialPath)
-                        });
-                        _firebaseInitialized = true;
+                            var app = FirebaseApp.Create(new AppOptions
+                            {
+                                Credential = GoogleCredential.FromFile(credentialPath)
+                            }, kvp.Key);
+                            _firebaseApps[kvp.Key] = app;
+                            alMenosUnoInicializado = true;
+                        }
+                        else
+                        {
+                            LogearEnElmah(new FileNotFoundException(
+                                $"No se encontró credenciales Firebase para {kvp.Key}: {kvp.Value}"));
+                        }
                     }
-                    else
+                    catch (Exception ex)
                     {
-                        string rutasBuscadas = ObtenerRutasBuscadas();
-                        LogearEnElmah(new FileNotFoundException(
-                            $"No se encontró el fichero de credenciales de Firebase. Rutas buscadas: {rutasBuscadas}"));
+                        LogearEnElmah(new Exception(
+                            $"Error inicializando Firebase para {kvp.Key}: {ex.Message}", ex));
                     }
                 }
-                catch (Exception ex)
-                {
-                    LogearEnElmah(new Exception($"Error inicializando Firebase Admin SDK: {ex.Message}", ex));
-                }
+
+                _firebaseInitialized = alMenosUnoInicializado;
             }
         }
 
-        private const string NOMBRE_FICHERO_CREDENCIALES = "firebase-adminsdk-nestoapp.json";
-
-        private static string BuscarCredenciales()
+        private static string BuscarCredenciales(string nombreFichero)
         {
-            // 1. appSettings explícito
-            string ruta = ConfigurationManager.AppSettings["FirebaseServiceAccountKeyPath"];
-            if (!string.IsNullOrWhiteSpace(ruta) && File.Exists(ruta))
-            {
-                return ruta;
-            }
-
-            // 2. Secrets/firebase-adminsdk-nestoapp.json relativo a la app
             string baseDir = HostingEnvironment.MapPath("~/Secrets");
             if (baseDir != null)
             {
-                string rutaRelativa = Path.Combine(baseDir, NOMBRE_FICHERO_CREDENCIALES);
-                if (File.Exists(rutaRelativa))
+                string ruta = Path.Combine(baseDir, nombreFichero);
+                if (File.Exists(ruta))
                 {
-                    return rutaRelativa;
+                    return ruta;
                 }
             }
 
             return null;
         }
 
-        private static string ObtenerRutasBuscadas()
+        private static FirebaseMessaging ObtenerMessaging(string aplicacion)
         {
-            string rutaAppSettings = ConfigurationManager.AppSettings["FirebaseServiceAccountKeyPath"] ?? "(no configurada)";
-            string baseDir = HostingEnvironment.MapPath("~/Secrets") ?? "(no disponible)";
-            string rutaRelativa = baseDir != "(no disponible)"
-                ? Path.Combine(baseDir, NOMBRE_FICHERO_CREDENCIALES)
-                : "(no disponible)";
+            if (_firebaseApps.TryGetValue(aplicacion, out FirebaseApp app))
+            {
+                return FirebaseMessaging.GetMessaging(app);
+            }
 
-            return $"1) appSettings 'FirebaseServiceAccountKeyPath': {rutaAppSettings} | 2) Ruta relativa: {rutaRelativa}";
+            // Fallback: intentar con la primera app disponible
+            if (_firebaseApps.Count > 0)
+            {
+                return FirebaseMessaging.GetMessaging(_firebaseApps.Values.First());
+            }
+
+            return null;
         }
 
         public async Task<DispositivoNotificacion> RegistrarDispositivo(RegistrarDispositivoDTO registro, string usuario)
@@ -219,19 +229,21 @@ namespace NestoAPI.Infraestructure.Notificaciones
         public async Task<int> EnviarAUsuario(string usuario, string aplicacion, NotificacionPushDTO notificacion)
         {
             var dispositivos = await ObtenerDispositivosUsuario(usuario, aplicacion).ConfigureAwait(false);
-            return await EnviarADispositivos(dispositivos, notificacion).ConfigureAwait(false);
+            return await EnviarADispositivos(dispositivos, notificacion, aplicacion).ConfigureAwait(false);
         }
 
         public async Task<int> EnviarAVendedor(string empresa, string vendedor, NotificacionPushDTO notificacion)
         {
-            var dispositivos = await ObtenerDispositivosVendedor(empresa, vendedor, Constantes.Aplicaciones.NESTO_APP).ConfigureAwait(false);
-            return await EnviarADispositivos(dispositivos, notificacion).ConfigureAwait(false);
+            string aplicacion = Constantes.Aplicaciones.NESTO_APP;
+            var dispositivos = await ObtenerDispositivosVendedor(empresa, vendedor, aplicacion).ConfigureAwait(false);
+            return await EnviarADispositivos(dispositivos, notificacion, aplicacion).ConfigureAwait(false);
         }
 
         public async Task<int> EnviarACliente(string empresa, string cliente, NotificacionPushDTO notificacion)
         {
-            var dispositivos = await ObtenerDispositivosCliente(empresa, cliente, Constantes.Aplicaciones.NESTO_TIENDAS).ConfigureAwait(false);
-            return await EnviarADispositivos(dispositivos, notificacion).ConfigureAwait(false);
+            string aplicacion = Constantes.Aplicaciones.NESTO_TIENDAS;
+            var dispositivos = await ObtenerDispositivosCliente(empresa, cliente, aplicacion).ConfigureAwait(false);
+            return await EnviarADispositivos(dispositivos, notificacion, aplicacion).ConfigureAwait(false);
         }
 
         public async Task<int> EnviarATodosDeAplicacion(string aplicacion, NotificacionPushDTO notificacion)
@@ -243,11 +255,11 @@ namespace NestoAPI.Infraestructure.Notificaciones
                     .ToListAsync()
                     .ConfigureAwait(false);
 
-                return await EnviarADispositivos(dispositivos, notificacion).ConfigureAwait(false);
+                return await EnviarADispositivos(dispositivos, notificacion, aplicacion).ConfigureAwait(false);
             }
         }
 
-        private async Task<int> EnviarADispositivos(List<DispositivoNotificacion> dispositivos, NotificacionPushDTO notificacion)
+        private async Task<int> EnviarADispositivos(List<DispositivoNotificacion> dispositivos, NotificacionPushDTO notificacion, string aplicacion)
         {
             if (dispositivos == null || !dispositivos.Any())
             {
@@ -268,26 +280,43 @@ namespace NestoAPI.Infraestructure.Notificaciones
                 Notification = new Notification
                 {
                     Title = notificacion.Titulo,
-                    Body = notificacion.Cuerpo
+                    Body = notificacion.Cuerpo,
+                    ImageUrl = notificacion.Datos != null && notificacion.Datos.ContainsKey("imagenUrl")
+                        ? notificacion.Datos["imagenUrl"]
+                        : null
                 },
                 Data = notificacion.Datos
             };
 
             try
             {
-                var response = await FirebaseMessaging.DefaultInstance
+                var messaging = ObtenerMessaging(aplicacion);
+                if (messaging == null)
+                {
+                    LogearEnElmah(new Exception($"[Push] No hay instancia Firebase para aplicación: {aplicacion}"));
+                    return 0;
+                }
+
+                var response = await messaging
                     .SendEachForMulticastAsync(message)
                     .ConfigureAwait(false);
 
                 enviados = response.SuccessCount;
 
-                // Desactivar tokens inválidos
+                // Log detallado de cada respuesta para diagnóstico
                 for (int i = 0; i < response.Responses.Count; i++)
                 {
-                    if (!response.Responses[i].IsSuccess &&
-                        response.Responses[i].Exception?.MessagingErrorCode == MessagingErrorCode.Unregistered)
+                    if (!response.Responses[i].IsSuccess)
                     {
-                        await DesregistrarDispositivo(tokens[i]).ConfigureAwait(false);
+                        var ex = response.Responses[i].Exception;
+                        LogearEnElmah(new Exception(
+                            $"[Push] Token {i} falló. ErrorCode: {ex?.MessagingErrorCode}, " +
+                            $"Message: {ex?.Message}, Token: {tokens[i]?.Substring(0, Math.Min(20, tokens[i]?.Length ?? 0))}..."));
+
+                        if (ex?.MessagingErrorCode == MessagingErrorCode.Unregistered)
+                        {
+                            await DesregistrarDispositivo(tokens[i]).ConfigureAwait(false);
+                        }
                     }
                 }
             }
