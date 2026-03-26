@@ -140,7 +140,11 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
                 var todosProductosEnVideos = await _db.VideosProductos
                     .Where(vp => videoYoutubeIds.Contains(vp.Video.VideoId) &&
-                                 vp.Video.EsUnProtocolo)
+                                 vp.Video.EsUnProtocolo &&
+                                 vp.Referencia != null &&
+                                 _db.Productos.Any(p => p.Empresa == empresa &&
+                                     p.Número == vp.Referencia &&
+                                     p.Estado >= 0))
                     .Select(vp => new DatosProductoEnVideo
                     {
                         ProductoId = vp.Referencia,
@@ -394,13 +398,12 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             HashSet<string> productosCompradosHistorico,
             HashSet<string> productosPrincipales)
         {
-            return productosEnVideos
+            var candidatos = productosEnVideos
                 .Where(p => !string.IsNullOrWhiteSpace(p.ProductoId) &&
                             !productosCompradosHistorico.Contains(p.ProductoId.Trim()) &&
                             !productosPrincipales.Contains(p.ProductoId.Trim()))
                 .GroupBy(p => p.ProductoId.Trim(), StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
-                .Take(4)
                 .Select(p => new ProductoRecomendadoDTO
                 {
                     ProductoId = p.ProductoId?.Trim(),
@@ -410,6 +413,24 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                     EnlaceVideoProducto = p.EnlaceVideo
                 })
                 .ToList();
+
+            // Eliminar duplicados por enlace de vídeo (mismo enlace para productos diferentes)
+            var enlacesVistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var resultado = new List<ProductoRecomendadoDTO>();
+            foreach (var producto in candidatos)
+            {
+                string enlace = producto.EnlaceVideoProducto?.Trim() ?? "";
+                if (string.IsNullOrEmpty(enlace) || enlacesVistos.Add(enlace))
+                {
+                    resultado.Add(producto);
+                    if (resultado.Count >= 4)
+                    {
+                        break;
+                    }
+                }
+            }
+
+            return resultado;
         }
 
         private static bool EsCodigoPostalValido(string codPostal)
