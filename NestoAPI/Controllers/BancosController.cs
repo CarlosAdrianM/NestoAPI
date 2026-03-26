@@ -8,6 +8,7 @@ using System.Data;
 using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Transactions;
 using System.Web.Http;
 using System.Web.Http.Description;
 
@@ -192,10 +193,14 @@ namespace NestoAPI.Controllers
             List<MovimientoTPVDTO> movimientosTPV = GestorContabilidad.LeerMovimientosTPV(contenido, usuario);
             if (movimientosTPV != null && movimientosTPV.Any())
             {
-                ContabilidadService servicio = new ContabilidadService();
-                GestorContabilidad gestorContabilidad = new GestorContabilidad(servicio);
-                _ = await gestorContabilidad.PersistirMovimientosTPV(movimientosTPV);
-                await gestorContabilidad.ContabilizarComisionesTarjetas(movimientosTPV);
+                using (var scope = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
+                {
+                    ContabilidadService servicio = new ContabilidadService();
+                    GestorContabilidad gestorContabilidad = new GestorContabilidad(servicio);
+                    _ = await gestorContabilidad.PersistirMovimientosTPV(movimientosTPV);
+                    await gestorContabilidad.ContabilizarComisionesTarjetas(movimientosTPV);
+                    scope.Complete();
+                }
             }
 
             return Ok(movimientosTPV);
