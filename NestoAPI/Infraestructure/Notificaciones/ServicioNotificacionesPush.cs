@@ -222,13 +222,13 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
         public async Task<int> EnviarAVendedor(string empresa, string vendedor, NotificacionPushDTO notificacion)
         {
-            var dispositivos = await ObtenerDispositivosVendedor(empresa, vendedor, "NestoApp").ConfigureAwait(false);
+            var dispositivos = await ObtenerDispositivosVendedor(empresa, vendedor, Constantes.Aplicaciones.NESTO_APP).ConfigureAwait(false);
             return await EnviarADispositivos(dispositivos, notificacion).ConfigureAwait(false);
         }
 
         public async Task<int> EnviarACliente(string empresa, string cliente, NotificacionPushDTO notificacion)
         {
-            var dispositivos = await ObtenerDispositivosCliente(empresa, cliente, "TiendasNuevaVision").ConfigureAwait(false);
+            var dispositivos = await ObtenerDispositivosCliente(empresa, cliente, Constantes.Aplicaciones.NESTO_TIENDAS).ConfigureAwait(false);
             return await EnviarADispositivos(dispositivos, notificacion).ConfigureAwait(false);
         }
 

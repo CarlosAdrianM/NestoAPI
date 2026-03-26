@@ -4,6 +4,12 @@ namespace NestoAPI.Models
 {
     public class Constantes
     {
+        public static class Aplicaciones
+        {
+            public const string NESTO_APP = "NestoApp";
+            public const string NESTO_TIENDAS = "NestoTiendas";
+        }
+
         public class Agencias
         {
             public const int AGENCIA_GLOVO = 7;

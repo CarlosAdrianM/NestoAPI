@@ -43,7 +43,7 @@ namespace NestoAPI.Tests.Controllers
             {
                 Token = "token123",
                 Plataforma = "Android",
-                Aplicacion = "NestoApp",
+                Aplicacion = Constantes.Aplicaciones.NESTO_APP,
                 Empresa = "1  ",
                 Vendedor = "NV "
             };
@@ -54,7 +54,7 @@ namespace NestoAPI.Tests.Controllers
                 Usuario = "testuser",
                 Token = "token123",
                 Plataforma = "Android",
-                Aplicacion = "NestoApp",
+                Aplicacion = Constantes.Aplicaciones.NESTO_APP,
                 Empresa = "1  ",
                 Vendedor = "NV ",
                 FechaRegistro = DateTime.Now,
@@ -70,7 +70,7 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<DispositivoNotificacion>));
             var okResult = (OkNegotiatedContentResult<DispositivoNotificacion>)resultado;
             Assert.AreEqual("token123", okResult.Content.Token);
-            Assert.AreEqual("NestoApp", okResult.Content.Aplicacion);
+            Assert.AreEqual(Constantes.Aplicaciones.NESTO_APP, okResult.Content.Aplicacion);
         }
 
         [TestMethod]
@@ -80,7 +80,7 @@ namespace NestoAPI.Tests.Controllers
             {
                 Token = "",
                 Plataforma = "Android",
-                Aplicacion = "NestoApp"
+                Aplicacion = Constantes.Aplicaciones.NESTO_APP
             };
 
             A.CallTo(() => _servicio.RegistrarDispositivo(registro, A<string>.Ignored))
@@ -128,7 +128,7 @@ namespace NestoAPI.Tests.Controllers
             {
                 Token = "tokenTienda456",
                 Plataforma = "Android",
-                Aplicacion = "TiendasNuevaVision",
+                Aplicacion = Constantes.Aplicaciones.NESTO_TIENDAS,
                 Empresa = "1  ",
                 Cliente = "15191     ",
                 Contacto = "0  "
@@ -140,7 +140,7 @@ namespace NestoAPI.Tests.Controllers
                 Usuario = "testuser",
                 Token = "tokenTienda456",
                 Plataforma = "Android",
-                Aplicacion = "TiendasNuevaVision",
+                Aplicacion = Constantes.Aplicaciones.NESTO_TIENDAS,
                 Empresa = "1  ",
                 Cliente = "15191     ",
                 Contacto = "0  ",
@@ -156,7 +156,7 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<DispositivoNotificacion>));
             var okResult = (OkNegotiatedContentResult<DispositivoNotificacion>)resultado;
-            Assert.AreEqual("TiendasNuevaVision", okResult.Content.Aplicacion);
+            Assert.AreEqual(Constantes.Aplicaciones.NESTO_TIENDAS, okResult.Content.Aplicacion);
             Assert.AreEqual("15191     ", okResult.Content.Cliente);
             Assert.AreEqual("0  ", okResult.Content.Contacto);
         }
@@ -250,12 +250,12 @@ namespace NestoAPI.Tests.Controllers
                 Notificacion = notificacion
             };
 
-            A.CallTo(() => _servicio.EnviarAUsuario("testuser", "NestoApp", notificacion)).Returns(1);
+            A.CallTo(() => _servicio.EnviarAUsuario("testuser", Constantes.Aplicaciones.NESTO_APP, notificacion)).Returns(1);
 
             var resultado = await _controller.Enviar(dto);
 
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
-            A.CallTo(() => _servicio.EnviarAUsuario("testuser", "NestoApp", notificacion))
+            A.CallTo(() => _servicio.EnviarAUsuario("testuser", Constantes.Aplicaciones.NESTO_APP, notificacion))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -338,13 +338,13 @@ namespace NestoAPI.Tests.Controllers
             };
 
             A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
-                "TiendasNuevaVision", A<NotificacionPushDTO>.Ignored)).Returns(5);
+                Constantes.Aplicaciones.NESTO_TIENDAS, A<NotificacionPushDTO>.Ignored)).Returns(5);
 
             var resultado = await controller.NotificarNuevoProtocolo(dto);
 
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
             A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
-                "TiendasNuevaVision",
+                Constantes.Aplicaciones.NESTO_TIENDAS,
                 A<NotificacionPushDTO>.That.Matches(n =>
                     n.Titulo == "Nuevo protocolo disponible" &&
                     n.Cuerpo == "Nuevo protocolo de tinte" &&
@@ -368,7 +368,7 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
             A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
-                "TiendasNuevaVision",
+                Constantes.Aplicaciones.NESTO_TIENDAS,
                 A<NotificacionPushDTO>.That.Matches(n =>
                     !n.Datos.ContainsKey("videoId") &&
                     !n.Datos.ContainsKey("imagenUrl")
@@ -403,10 +403,10 @@ namespace NestoAPI.Tests.Controllers
             await controller.NotificarNuevoProtocolo(dto);
 
             A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
-                "TiendasNuevaVision", A<NotificacionPushDTO>.Ignored))
+                Constantes.Aplicaciones.NESTO_TIENDAS, A<NotificacionPushDTO>.Ignored))
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => _servicio.EnviarATodosDeAplicacion(
-                "NestoApp", A<NotificacionPushDTO>.Ignored))
+                Constantes.Aplicaciones.NESTO_APP, A<NotificacionPushDTO>.Ignored))
                 .MustNotHaveHappened();
         }
 

@@ -82,7 +82,7 @@ namespace NestoAPI.Controllers
 
             var dispositivos = await _servicio.ObtenerDispositivosUsuario(
                 usuario,
-                aplicacion ?? "NestoApp"
+                aplicacion ?? Constantes.Aplicaciones.NESTO_APP
             ).ConfigureAwait(false);
 
             return Ok(dispositivos);
@@ -124,7 +124,7 @@ namespace NestoAPI.Controllers
                 default:
                     enviados = await _servicio.EnviarAUsuario(
                         dto.Destinatario,
-                        dto.Aplicacion ?? "NestoApp",
+                        dto.Aplicacion ?? Constantes.Aplicaciones.NESTO_APP,
                         dto.Notificacion
                     ).ConfigureAwait(false);
                     break;
@@ -173,7 +173,7 @@ namespace NestoAPI.Controllers
             }
 
             int enviados = await _servicio.EnviarATodosDeAplicacion(
-                "TiendasNuevaVision", notificacion).ConfigureAwait(false);
+                Constantes.Aplicaciones.NESTO_TIENDAS, notificacion).ConfigureAwait(false);
 
             return Ok(enviados);
         }
