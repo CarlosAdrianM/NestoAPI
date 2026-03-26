@@ -19,6 +19,8 @@ namespace NestoAPI.Infraestructure.Notificaciones
         private static readonly object _lockInit = new object();
         private static bool _firebaseInitialized = false;
 
+        public static bool EstaInicializado => _firebaseInitialized;
+
         public ServicioNotificacionesPush()
         {
             InicializarFirebase();
