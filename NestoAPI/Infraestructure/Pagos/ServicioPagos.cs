@@ -175,8 +175,8 @@ namespace NestoAPI.Infraestructure.Pagos
                     }
                     catch (Exception ex)
                     {
-                        errorContabilizacion = ex.Message;
-                        LogElmah($"[ProcesarNotificacion] Error al contabilizar cobro. Orden: {pago.NumeroOrden}, Error: {ex.Message}");
+                        errorContabilizacion = ObtenerMensajeCompletoExcepcion(ex);
+                        LogElmah($"[ProcesarNotificacion] Error al contabilizar cobro. Orden: {pago.NumeroOrden}, Error: {errorContabilizacion}", ex);
                     }
 
                     // Issue #139/#142/#143: Correo post-cobro a administración (siempre, incluso si falló la contabilización)
@@ -801,16 +801,43 @@ namespace NestoAPI.Infraestructure.Pagos
             }
         }
 
-        private static void LogElmah(string mensaje)
+        private static void LogElmah(string mensaje, Exception excepcionOriginal = null)
         {
             try
             {
-                ErrorSignal.FromCurrentContext().Raise(new Exception(mensaje));
+                var excepcion = excepcionOriginal != null
+                    ? new Exception(mensaje, excepcionOriginal)
+                    : new Exception(mensaje);
+                ErrorSignal.FromCurrentContext().Raise(excepcion);
             }
             catch
             {
-                // No bloquear si falla el logging
+                try
+                {
+                    // Fallback si no hay HttpContext (ej: callback Redsys tras finalizar el request)
+                    var excepcion = excepcionOriginal != null
+                        ? new Exception(mensaje, excepcionOriginal)
+                        : new Exception(mensaje);
+                    Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(excepcion));
+                }
+                catch
+                {
+                    // No bloquear si falla el logging
+                }
             }
+        }
+
+        private static string ObtenerMensajeCompletoExcepcion(Exception ex)
+        {
+            var mensajes = new System.Text.StringBuilder();
+            var actual = ex;
+            while (actual != null)
+            {
+                if (mensajes.Length > 0) mensajes.Append(" → ");
+                mensajes.Append(actual.Message);
+                actual = actual.InnerException;
+            }
+            return mensajes.ToString();
         }
     }
 }
