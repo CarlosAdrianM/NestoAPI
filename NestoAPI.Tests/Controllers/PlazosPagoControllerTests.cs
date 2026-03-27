@@ -14,13 +14,13 @@ namespace NestoAPI.Tests.Controllers
     {
         private NVEntities db;
         private PlazosPagoController controller;
-        private IDbSet<ExtractoCliente> fakeExtractosCliente;
+        private DbSet<ExtractoCliente> fakeExtractosCliente;
 
         [TestInitialize]
         public void Setup()
         {
             db = A.Fake<NVEntities>();
-            fakeExtractosCliente = A.Fake<IDbSet<ExtractoCliente>>();
+            fakeExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(o => o.Implements<IQueryable<ExtractoCliente>>());
             A.CallTo(() => db.ExtractosCliente).Returns(fakeExtractosCliente);
 
             controller = new PlazosPagoController(db);
@@ -231,6 +231,116 @@ namespace NestoAPI.Tests.Controllers
 
             // Assert
             Assert.AreEqual(15, resultado.DiasVencimiento); // Desde la más antigua (15 días)
+        }
+
+        [TestMethod]
+        public void ObtenerInfoDeuda_EfectoPendienteRemesar_NoEsVencido()
+        {
+            // Arrange: Factura creada ayer con vencimiento ayer (FechaVto == Fecha)
+            // La remesa se hace hoy, así que no debe contar como vencida
+            DateTime ayer = DateTime.Today.AddDays(-1);
+            var extractos = new List<ExtractoCliente>
+            {
+                new ExtractoCliente
+                {
+                    Número = "123",
+                    ImportePdte = 500m,
+                    TipoApunte = "FACTURA",
+                    Fecha = ayer,
+                    FechaVto = ayer
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosCliente, extractos);
+
+            // Act
+            var resultado = controller.ObtenerInfoDeuda("123");
+
+            // Assert
+            Assert.IsFalse(resultado.TieneDeudaVencida);
+        }
+
+        [TestMethod]
+        public void ObtenerInfoDeuda_EfectoVencidoAyerFechaFacturaDiferente_SiEsVencido()
+        {
+            // Arrange: Factura creada hace una semana con vencimiento ayer
+            // FechaVto != Fecha, así que sí es deuda vencida normal
+            var extractos = new List<ExtractoCliente>
+            {
+                new ExtractoCliente
+                {
+                    Número = "123",
+                    ImportePdte = 500m,
+                    TipoApunte = "FACTURA",
+                    Fecha = DateTime.Today.AddDays(-7),
+                    FechaVto = DateTime.Today.AddDays(-1)
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosCliente, extractos);
+
+            // Act
+            var resultado = controller.ObtenerInfoDeuda("123");
+
+            // Assert
+            Assert.IsTrue(resultado.TieneDeudaVencida);
+            Assert.AreEqual(500m, resultado.ImporteDeudaVencida);
+        }
+
+        [TestMethod]
+        public void ObtenerInfoDeuda_EfectoPendienteRemesarDeDosLaborablesAtras_SiEsVencido()
+        {
+            // Arrange: Factura de hace 3 días con FechaVto == Fecha
+            // Ya tuvo que haberse remesado, así que sí es vencida
+            DateTime hace3Dias = DateTime.Today.AddDays(-3);
+            var extractos = new List<ExtractoCliente>
+            {
+                new ExtractoCliente
+                {
+                    Número = "123",
+                    ImportePdte = 500m,
+                    TipoApunte = "FACTURA",
+                    Fecha = hace3Dias,
+                    FechaVto = hace3Dias
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosCliente, extractos);
+
+            // Act
+            var resultado = controller.ObtenerInfoDeuda("123");
+
+            // Assert
+            Assert.IsTrue(resultado.TieneDeudaVencida);
+        }
+
+        #endregion
+
+        #region CalcularDiaLaborableAnterior Tests
+
+        [TestMethod]
+        public void CalcularDiaLaborableAnterior_Martes_DevuelveLunes()
+        {
+            // Martes 2026-03-31 → día laborable anterior = Lunes 2026-03-30
+            var martes = new DateTime(2026, 3, 31);
+            var resultado = PlazosPagoController.CalcularDiaLaborableAnterior(martes);
+            Assert.AreEqual(new DateTime(2026, 3, 30), resultado); // Lunes
+        }
+
+        [TestMethod]
+        public void CalcularDiaLaborableAnterior_Lunes_DevuelveViernes()
+        {
+            // Lunes 2026-03-30 → día laborable anterior = Viernes 2026-03-27
+            var lunes = new DateTime(2026, 3, 30);
+            var resultado = PlazosPagoController.CalcularDiaLaborableAnterior(lunes);
+            Assert.AreEqual(new DateTime(2026, 3, 27), resultado); // Viernes
+        }
+
+        [TestMethod]
+        public void CalcularDiaLaborableAnterior_DespuesFestivo_SaltaFestivo()
+        {
+            // Jueves 2 enero 2026 → miércoles 1 enero es festivo → devuelve martes 31 diciembre
+            // Pero 31 dic no es festivo nacional (solo en alguna delegación)
+            var jueves2Enero = new DateTime(2026, 1, 2);
+            var resultado = PlazosPagoController.CalcularDiaLaborableAnterior(jueves2Enero);
+            Assert.AreEqual(new DateTime(2025, 12, 31), resultado);
         }
 
         #endregion

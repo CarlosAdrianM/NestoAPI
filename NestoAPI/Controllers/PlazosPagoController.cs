@@ -10,6 +10,7 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using System.Web.Http.Results;
 using NestoAPI.Models;
+using NestoAPI.Models.RecursosHumanos;
 
 namespace NestoAPI.Controllers
 {
@@ -85,9 +86,11 @@ namespace NestoAPI.Controllers
             } 
 
             // Si el cliente tiene impagados o facturas vencidas, solo admitimos formas de pago de contado
-            DateTime fechaDesdeVencida = System.DateTime.Today; // Vencidas son las de ayer o antes (FechaVto < Today)
+            DateTime fechaDesdeVencida = System.DateTime.Today;
+            DateTime diaLaborableAnterior = CalcularDiaLaborableAnterior(fechaDesdeVencida);
             ExtractoCliente impagado = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO).FirstOrDefault();
-            ExtractoCliente deudaVencida = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.FechaVto < fechaDesdeVencida).FirstOrDefault();
+            ExtractoCliente deudaVencida = db.ExtractosCliente.Where(e => e.Número == cliente && e.ImportePdte > 0 && e.FechaVto < fechaDesdeVencida
+                && !(e.FechaVto == e.Fecha && e.FechaVto >= diaLaborableAnterior)).FirstOrDefault();
 
             if (impagado != null || deudaVencida != null)
             {
@@ -356,7 +359,8 @@ namespace NestoAPI.Controllers
 
         internal InfoDeudaClienteDTO ObtenerInfoDeuda(string cliente)
         {
-            DateTime fechaDesdeVencida = System.DateTime.Today; // Vencidas son las de ayer o antes (FechaVto < Today)
+            DateTime fechaDesdeVencida = System.DateTime.Today;
+            DateTime diaLaborableAnterior = CalcularDiaLaborableAnterior(fechaDesdeVencida);
 
             // Buscar impagados
             var impagados = db.ExtractosCliente
@@ -365,11 +369,12 @@ namespace NestoAPI.Controllers
                     && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
                 .ToList();
 
-            // Buscar cartera vencida (excluyendo impagados para evitar doble contabilización)
+            // Buscar cartera vencida (excluyendo impagados y efectos pendientes de remesar)
             var deudasVencidas = db.ExtractosCliente
                 .Where(e => e.Número == cliente
                     && e.ImportePdte > 0
                     && e.FechaVto < fechaDesdeVencida
+                    && !(e.FechaVto == e.Fecha && e.FechaVto >= diaLaborableAnterior)
                     && e.TipoApunte != Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
                 .OrderBy(e => e.FechaVto)
                 .ToList();
@@ -416,6 +421,21 @@ namespace NestoAPI.Controllers
         private bool PlazoPagoExists(string id)
         {
             return db.PlazosPago.Count(e => e.Empresa == id) > 0;
+        }
+
+        /// <summary>
+        /// Calcula el día laborable anterior a la fecha dada, retrocediendo fines de semana y festivos.
+        /// Se usa para no contar como vencidos efectos que aún no han podido ser remesados
+        /// (no se remesa el mismo día de la factura, sino el siguiente día laborable).
+        /// </summary>
+        internal static DateTime CalcularDiaLaborableAnterior(DateTime fecha)
+        {
+            DateTime dia = fecha.AddDays(-1);
+            while (GestorFestivos.EsFestivo(dia, ""))
+            {
+                dia = dia.AddDays(-1);
+            }
+            return dia;
         }
     }
 }
