@@ -260,6 +260,9 @@ namespace NestoAPI.Controllers
                 reembolso = 0;
             }
 
+            var codPostal = direccion.CodPostal?.Trim() ?? "";
+            var defaultsAgencia = ObtenerDefaultsAgencia(request.Agencia, codPostal);
+
             var envio = new EnviosAgencia
             {
                 Empresa = request.Empresa,
@@ -272,12 +275,12 @@ namespace NestoAPI.Controllers
                 Reembolso = reembolso,
                 Fecha = DateTime.Today,
                 FechaModificacion = DateTime.Now,
-                Bultos = 1,
-                Servicio = 0,
-                Horario = 0,
+                Bultos = 0,
+                Servicio = defaultsAgencia.Servicio,
+                Horario = defaultsAgencia.Horario,
                 Nombre = direccion.Nombre?.Trim() ?? "",
                 Direccion = direccion.Dirección?.Trim() ?? "",
-                CodPostal = direccion.CodPostal?.Trim() ?? "",
+                CodPostal = codPostal,
                 Poblacion = direccion.Población?.Trim() ?? "",
                 Provincia = direccion.Provincia?.Trim() ?? "",
                 Telefono = telefono.FijoUnico(),
@@ -285,7 +288,8 @@ namespace NestoAPI.Controllers
                 Email = correo.CorreoAgencia(),
                 Atencion = direccion.Nombre?.Trim() ?? "",
                 Observaciones = pedido.Comentarios,
-                Pais = 1,
+                FechaEntrega = pedido.Fecha,
+                Pais = defaultsAgencia.Pais,
                 Usuario = User?.Identity?.Name ?? "NestoAPI"
             };
 
@@ -294,6 +298,42 @@ namespace NestoAPI.Controllers
 
             var dto = new EnvioAgenciaDTO(envio);
             return Created(new Uri(Request.RequestUri, envio.Numero.ToString()), dto);
+        }
+
+        private static (short Servicio, short Horario, int Pais) ObtenerDefaultsAgencia(int agencia, string codPostal)
+        {
+            switch (agencia)
+            {
+                case Constantes.Agencias.AGENCIA_GLS:
+                    return (Servicio: 96, Horario: 18, Pais: 34); // BusinessParcel, Economy, España
+                case Constantes.Agencias.AGENCIA_CORREOS_EXPRESS:
+                    if (EsCodigoPostalPortugues(codPostal))
+                    {
+                        return (Servicio: 63, Horario: 0, Pais: 724); // Paq24, Portugal
+                    }
+                    if (EsCodigoPostalEspanol(codPostal))
+                    {
+                        return (Servicio: 93, Horario: 0, Pais: 724); // ePaq24, España
+                    }
+                    return (Servicio: 90, Horario: 0, Pais: 724); // Internacional monobulto
+                case Constantes.Agencias.AGENCIA_SENDING:
+                    return (Servicio: 1, Horario: 1, Pais: 34); // Send Express, Normal, España
+                default:
+                    return (Servicio: 0, Horario: 0, Pais: 1);
+            }
+        }
+
+        private static bool EsCodigoPostalEspanol(string codPostal)
+        {
+            return codPostal.Length == 5 && int.TryParse(codPostal, out int cp) && cp >= 1000 && cp <= 52999;
+        }
+
+        private static bool EsCodigoPostalPortugues(string codPostal)
+        {
+            // Formato portugués: 4 dígitos o 4 dígitos-3 dígitos (ej: "1000" o "1000-001")
+            var sinGuion = codPostal.Replace("-", "");
+            return (codPostal.Length == 4 || codPostal.Length == 8)
+                && int.TryParse(sinGuion, out int cp) && cp >= 1000 && cp <= 9999999;
         }
 
         [HttpPut]

@@ -41,6 +41,10 @@ namespace NestoAPI.Tests.Controllers
             ConfigurarFakeDbSet(fakeClientes, new List<Cliente>().AsQueryable());
 
             controller = new EnviosAgenciasController(db);
+            controller.Request = new System.Net.Http.HttpRequestMessage
+            {
+                RequestUri = new System.Uri("http://localhost/api/EnviosAgencias/CrearEtiquetaPendiente")
+            };
         }
 
         [TestMethod]
@@ -95,7 +99,7 @@ namespace NestoAPI.Tests.Controllers
             var resultado = await controller.CrearEtiquetaPendiente(request);
 
             // Assert
-            Assert.IsInstanceOfType(resultado, typeof(CreatedAtRouteNegotiatedContentResult<EnvioAgenciaDTO>));
+            Assert.IsInstanceOfType(resultado, typeof(CreatedNegotiatedContentResult<EnvioAgenciaDTO>));
             Assert.IsNotNull(envioCreado);
             Assert.AreEqual((short)-1, envioCreado.Estado);
             Assert.AreEqual((short)1, envioCreado.Retorno);
@@ -111,7 +115,7 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("agencia@test.com", envioCreado.Email);
             Assert.AreEqual("Cliente Test", envioCreado.Atencion);
             Assert.AreEqual(0, envioCreado.Reembolso);
-            Assert.AreEqual((short)1, envioCreado.Bultos);
+            Assert.AreEqual((short)0, envioCreado.Bultos);
         }
 
         [TestMethod]
@@ -527,6 +531,168 @@ namespace NestoAPI.Tests.Controllers
             }
 
             Assert.AreEqual(0M, envio.Reembolso);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaGLS_DefaultsBusinessParcelEconomy()
+        {
+            // Arrange
+            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_GLS, "28001");
+
+            // Assert
+            Assert.AreEqual((short)96, envioCreado.Servicio); // BusinessParcel
+            Assert.AreEqual((short)18, envioCreado.Horario);  // Economy
+            Assert.AreEqual(34, envioCreado.Pais);             // España
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalEspanol_DefaultsEpaq24()
+        {
+            // Arrange
+            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, "28001");
+
+            // Assert
+            Assert.AreEqual((short)93, envioCreado.Servicio); // ePaq24
+            Assert.AreEqual((short)0, envioCreado.Horario);
+            Assert.AreEqual(724, envioCreado.Pais);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalPortugues_DefaultsPaq24()
+        {
+            // Arrange
+            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, "1000-001");
+
+            // Assert
+            Assert.AreEqual((short)63, envioCreado.Servicio); // Paq24 Portugal
+            Assert.AreEqual((short)0, envioCreado.Horario);
+            Assert.AreEqual(724, envioCreado.Pais);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalInternacional_DefaultsMonobulto()
+        {
+            // Arrange
+            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_CORREOS_EXPRESS, "75008");
+
+            // Assert
+            Assert.AreEqual((short)90, envioCreado.Servicio); // Internacional monobulto
+            Assert.AreEqual((short)0, envioCreado.Horario);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaSending_DefaultsExpressNormal()
+        {
+            // Arrange
+            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_SENDING, "28001");
+
+            // Assert
+            Assert.AreEqual((short)1, envioCreado.Servicio); // Send Express
+            Assert.AreEqual((short)1, envioCreado.Horario);  // Normal
+            Assert.AreEqual(34, envioCreado.Pais);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_FechaEntrega_UsaFechaPedido()
+        {
+            // Arrange
+            var fechaPedido = new System.DateTime(2026, 3, 15);
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1  ",
+                Número = 12345,
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Fecha = fechaPedido,
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            var direccion = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Nombre = "Test",
+                CodPostal = "28001",
+                PersonasContactoClientes = new List<PersonaContactoCliente>()
+            };
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente> { direccion }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>().AsQueryable());
+
+            EnviosAgencia envioCreado = null;
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored))
+                .Invokes((EnviosAgencia e) => envioCreado = e)
+                .ReturnsLazily((EnviosAgencia e) => e);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+
+            var request = new CrearEtiquetaPendienteDTO
+            {
+                Empresa = "1  ",
+                Pedido = 12345,
+                Agencia = 1,
+                Retorno = 1
+            };
+
+            // Act
+            await controller.CrearEtiquetaPendiente(request);
+
+            // Assert
+            Assert.IsNotNull(envioCreado);
+            Assert.AreEqual(fechaPedido, envioCreado.FechaEntrega);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_Bultos_SiempreCero()
+        {
+            // Arrange
+            var envioCreado = await CrearEtiquetaConAgenciaYCodPostal(Constantes.Agencias.AGENCIA_GLS, "28001");
+
+            // Assert
+            Assert.AreEqual((short)0, envioCreado.Bultos);
+        }
+
+        private async Task<EnviosAgencia> CrearEtiquetaConAgenciaYCodPostal(int agencia, string codPostal)
+        {
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1  ",
+                Número = 12345,
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            var direccion = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Nombre = "Test",
+                CodPostal = codPostal,
+                PersonasContactoClientes = new List<PersonaContactoCliente>()
+            };
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente> { direccion }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>().AsQueryable());
+
+            EnviosAgencia envioCreado = null;
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored))
+                .Invokes((EnviosAgencia e) => envioCreado = e)
+                .ReturnsLazily((EnviosAgencia e) => e);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+
+            var request = new CrearEtiquetaPendienteDTO
+            {
+                Empresa = "1  ",
+                Pedido = 12345,
+                Agencia = agencia,
+                Retorno = 1
+            };
+
+            await controller.CrearEtiquetaPendiente(request);
+            Assert.IsNotNull(envioCreado, "No se creó el envío");
+            return envioCreado;
         }
 
         #region Helpers

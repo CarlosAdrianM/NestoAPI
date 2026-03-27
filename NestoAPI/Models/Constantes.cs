@@ -12,7 +12,10 @@ namespace NestoAPI.Models
 
         public class Agencias
         {
+            public const int AGENCIA_GLS = 1;
             public const int AGENCIA_GLOVO = 7;
+            public const int AGENCIA_CORREOS_EXPRESS = 8;
+            public const int AGENCIA_SENDING = 10;
             public const int ESTADO_PENDIENTE = -1;
             public const int ESTADO_EN_CURSO = 0;
             public const decimal REEMBOLSO_NO_COBRAR = -1M;
