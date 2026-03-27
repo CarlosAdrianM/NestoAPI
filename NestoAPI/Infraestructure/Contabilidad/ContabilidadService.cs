@@ -439,6 +439,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
             { "51570001329", "Bizum tienda online" },
             { "51570002329", "Bizum Paygold" },
             { "00022126270", "Almacén" },
+            { "91901357047", "Almacén" },
         };
         private string ObtenerUsuarioTerminal(string terminal)
         {
