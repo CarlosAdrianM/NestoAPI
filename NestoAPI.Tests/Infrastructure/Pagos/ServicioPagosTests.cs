@@ -18,6 +18,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         private IRedsysService _redsysService;
         private IContabilidadService _contabilidadService;
         private ILectorParametrosUsuario _lectorParametros;
+        private IServicioCorreoElectronico _servicioCorreo;
 
         [TestInitialize]
         public void Setup()
@@ -25,6 +26,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             _redsysService = A.Fake<IRedsysService>();
             _contabilidadService = A.Fake<IContabilidadService>();
             _lectorParametros = A.Fake<ILectorParametrosUsuario>();
+            _servicioCorreo = A.Fake<IServicioCorreoElectronico>();
         }
 
         [TestMethod]
@@ -81,7 +83,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public async Task IniciarPago_ConImporteCero_LanzaExcepcion()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
             var solicitud = new SolicitudPagoTPV
             {
                 Importe = 0m,
@@ -97,7 +99,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public async Task IniciarPago_ConImporteNegativo_LanzaExcepcion()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
             var solicitud = new SolicitudPagoTPV
             {
                 Importe = -50m,
@@ -109,10 +111,10 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         [TestMethod]
-        public void ProcesarNotificacion_FirmaInvalida_DevuelveFalse()
+        public async Task ProcesarNotificacion_FirmaInvalida_DevuelveFalse()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
             var notificacion = new NotificacionRedsys
             {
                 Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -129,7 +131,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 });
 
             // Act
-            bool resultado = servicio.ProcesarNotificacion(notificacion).Result;
+            bool resultado = await servicio.ProcesarNotificacion(notificacion);
 
             // Assert
             Assert.IsFalse(resultado);
@@ -141,7 +143,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public void ProcesarNotificacion_PagoDenegado_NoContabiliza()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
             var notificacion = new NotificacionRedsys
             {
                 Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -170,7 +172,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public void IniciarPago_ConUrlsCustom_PasaUrlsCustomARedsys()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
             var solicitud = new SolicitudPagoTPV
             {
                 Importe = 50m,
@@ -214,7 +216,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public void IniciarPago_SinUrlsCustom_PasaUrlsPorDefectoARedsys()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
             var solicitud = new SolicitudPagoTPV
             {
                 Importe = 75m,
