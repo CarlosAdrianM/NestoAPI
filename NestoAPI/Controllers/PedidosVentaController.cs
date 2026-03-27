@@ -824,6 +824,9 @@ namespace NestoAPI.Controllers
             }
 
 
+            // Issue #326: cuadrar efectos antes de guardar y enviar correo
+            pedido.CuadrarEfectos();
+
             // Carlos 21/07/22: guardamos los efectos
             if (pedido.crearEfectosManualmente && pedido.Efectos.Any())
             {
@@ -1373,6 +1376,9 @@ namespace NestoAPI.Controllers
                     Usuario = pedido.Usuario
                 });
             }
+
+            // Issue #326: cuadrar efectos antes de guardar y enviar correo
+            pedido.CuadrarEfectos();
 
             // Carlos 20/07/22: guardamos los efectos manuales
             if (pedido.crearEfectosManualmente)

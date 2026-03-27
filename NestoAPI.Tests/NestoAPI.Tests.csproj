@@ -172,6 +172,7 @@
     <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Controllers\CrearEtiquetaPendienteTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
+    <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
     <Compile Include="Infraestructure\CorreoClienteTests.cs" />
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />

@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
+using System.Linq;
 using System.Runtime.Serialization;
 
 namespace NestoAPI.Models.PedidosVenta
@@ -12,7 +13,7 @@ namespace NestoAPI.Models.PedidosVenta
         {
             Lineas = new HashSet<LineaPedidoVentaDTO>();
             Prepagos = new HashSet<PrepagoDTO>();
-            Efectos = new HashSet<EfectoPedidoVentaDTO>();
+            Efectos = new List<EfectoPedidoVentaDTO>();
         }
         public string ccc { get; set; }
         public string cliente { get; set; }
@@ -51,6 +52,24 @@ namespace NestoAPI.Models.PedidosVenta
         public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
         public virtual ICollection<EfectoPedidoVentaDTO> Efectos { get; set; }
+
+        /// <summary>
+        /// Ajusta el último efecto manual para que la suma de efectos coincida con el total del pedido.
+        /// Evita descuadres por redondeo (ej: 100.01 / 2 = 50.005 → 50.01 + 50.01 = 100.02).
+        /// </summary>
+        public void CuadrarEfectos()
+        {
+            if (!crearEfectosManualmente || Efectos == null || !Efectos.Any())
+            {
+                return;
+            }
+            decimal sumaEfectos = Efectos.Sum(e => e.Importe);
+            decimal diferencia = Total - sumaEfectos;
+            if (diferencia != 0)
+            {
+                Efectos.Last().Importe += diferencia;
+            }
+        }
 
         [OnDeserialized]
         private void OnDeserializedMethod(StreamingContext context)
