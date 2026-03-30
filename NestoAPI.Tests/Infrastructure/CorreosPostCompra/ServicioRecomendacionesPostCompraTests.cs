@@ -253,7 +253,8 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             var productosPrincipales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var resultado = ServicioRecomendacionesPostCompra.SeleccionarProductosRecomendados(
-                productosEnVideos, productosCompradosHistorico, productosPrincipales);
+                productosEnVideos, productosCompradosHistorico, productosPrincipales,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
             Assert.AreEqual(1, resultado.Count);
             Assert.AreEqual("NUEVO1", resultado[0].ProductoId);
@@ -271,7 +272,8 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             var productosPrincipales = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "PRINCIPAL1" };
 
             var resultado = ServicioRecomendacionesPostCompra.SeleccionarProductosRecomendados(
-                productosEnVideos, productosCompradosHistorico, productosPrincipales);
+                productosEnVideos, productosCompradosHistorico, productosPrincipales,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
             Assert.AreEqual(1, resultado.Count);
             Assert.AreEqual("OTRO1", resultado[0].ProductoId);
@@ -296,7 +298,8 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             var productosPrincipales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var resultado = ServicioRecomendacionesPostCompra.SeleccionarProductosRecomendados(
-                productosEnVideos, productosCompradosHistorico, productosPrincipales);
+                productosEnVideos, productosCompradosHistorico, productosPrincipales,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
             Assert.AreEqual(4, resultado.Count);
         }
@@ -314,7 +317,8 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             var productosPrincipales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var resultado = ServicioRecomendacionesPostCompra.SeleccionarProductosRecomendados(
-                productosEnVideos, productosCompradosHistorico, productosPrincipales);
+                productosEnVideos, productosCompradosHistorico, productosPrincipales,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
             Assert.AreEqual(2, resultado.Count);
         }
@@ -332,10 +336,102 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
             var productosPrincipales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var resultado = ServicioRecomendacionesPostCompra.SeleccionarProductosRecomendados(
-                productosEnVideos, productosCompradosHistorico, productosPrincipales);
+                productosEnVideos, productosCompradosHistorico, productosPrincipales,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
             Assert.AreEqual(1, resultado.Count);
             Assert.AreEqual("VALIDO", resultado[0].ProductoId);
+        }
+
+        #endregion
+
+        #region EsProductoRecomendable
+
+        [TestMethod]
+        public void EsProductoRecomendable_MismaFamiliaQueComprado_SiEsRecomendable()
+        {
+            var producto = new DatosProductoEnVideo { Familia = "ANUBIS", TipoExclusiva = "MAD" };
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ANUBIS" };
+
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsProductoRecomendable(producto, familiasCompradas));
+        }
+
+        [TestMethod]
+        public void EsProductoRecomendable_FamiliaPRP_SiEsRecomendable()
+        {
+            var producto = new DatosProductoEnVideo { Familia = "EVA_VISNU", TipoExclusiva = "PRP" };
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ANUBIS" };
+
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsProductoRecomendable(producto, familiasCompradas));
+        }
+
+        [TestMethod]
+        public void EsProductoRecomendable_FamiliaNAC_SiEsRecomendable()
+        {
+            var producto = new DatosProductoEnVideo { Familia = "MAX2", TipoExclusiva = "NAC" };
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ANUBIS" };
+
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsProductoRecomendable(producto, familiasCompradas));
+        }
+
+        [TestMethod]
+        public void EsProductoRecomendable_FamiliaMADDistinta_NoEsRecomendable()
+        {
+            var producto = new DatosProductoEnVideo { Familia = "MAYSTAR", TipoExclusiva = "MAD" };
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ANUBIS" };
+
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.EsProductoRecomendable(producto, familiasCompradas));
+        }
+
+        [TestMethod]
+        public void EsProductoRecomendable_FamiliaNIG_NoEsRecomendable()
+        {
+            var producto = new DatosProductoEnVideo { Familia = "FAMAFAHRE", TipoExclusiva = "NIG" };
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ANUBIS" };
+
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.EsProductoRecomendable(producto, familiasCompradas));
+        }
+
+        [TestMethod]
+        public void EsProductoRecomendable_SinFamiliasCompradas_SiEsRecomendable()
+        {
+            var producto = new DatosProductoEnVideo { Familia = "MAYSTAR", TipoExclusiva = "MAD" };
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsProductoRecomendable(producto, familiasCompradas));
+        }
+
+        [TestMethod]
+        public void EsProductoRecomendable_SinTipoExclusivaNiFamilia_NoEsRecomendable()
+        {
+            var producto = new DatosProductoEnVideo { Familia = null, TipoExclusiva = null };
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ANUBIS" };
+
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.EsProductoRecomendable(producto, familiasCompradas));
+        }
+
+        [TestMethod]
+        public void SeleccionarProductosRecomendados_ConFiltroExclusiva_SoloIncluyePermitidos()
+        {
+            var productosEnVideos = new List<DatosProductoEnVideo>
+            {
+                new DatosProductoEnVideo { ProductoId = "P1", NombreProducto = "Misma Familia", VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link1", Familia = "ANUBIS", TipoExclusiva = "MAD" },
+                new DatosProductoEnVideo { ProductoId = "P2", NombreProducto = "Propia", VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link2", Familia = "EVA", TipoExclusiva = "PRP" },
+                new DatosProductoEnVideo { ProductoId = "P3", NombreProducto = "Nacional", VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link3", Familia = "MAX2", TipoExclusiva = "NAC" },
+                new DatosProductoEnVideo { ProductoId = "P4", NombreProducto = "Exclusiva MAD", VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link4", Familia = "MAYSTAR", TipoExclusiva = "MAD" },
+                new DatosProductoEnVideo { ProductoId = "P5", NombreProducto = "Exclusiva NIG", VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link5", Familia = "FAMA", TipoExclusiva = "NIG" }
+            };
+            var comprados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var principales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ANUBIS" };
+
+            var resultado = ServicioRecomendacionesPostCompra.SeleccionarProductosRecomendados(
+                productosEnVideos, comprados, principales, familiasCompradas);
+
+            Assert.AreEqual(3, resultado.Count);
+            Assert.IsTrue(resultado.Any(r => r.ProductoId == "P1")); // Misma familia
+            Assert.IsTrue(resultado.Any(r => r.ProductoId == "P2")); // PRP
+            Assert.IsTrue(resultado.Any(r => r.ProductoId == "P3")); // NAC
         }
 
         #endregion

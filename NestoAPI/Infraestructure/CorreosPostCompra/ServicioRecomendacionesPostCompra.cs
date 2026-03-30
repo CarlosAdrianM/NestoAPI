@@ -151,7 +151,19 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         NombreProducto = vp.NombreProducto,
                         VideoYoutubeId = vp.Video.VideoId,
                         VideoTitulo = vp.Video.Titulo,
-                        EnlaceVideo = vp.EnlaceVideo
+                        EnlaceVideo = vp.EnlaceVideo,
+                        Familia = _db.Productos
+                            .Where(p => p.Empresa == empresa && p.Número == vp.Referencia)
+                            .Select(p => p.Familia)
+                            .FirstOrDefault(),
+                        TipoExclusiva = _db.Familias
+                            .Where(f => f.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                                        f.Número == _db.Productos
+                                            .Where(p => p.Empresa == empresa && p.Número == vp.Referencia)
+                                            .Select(p => p.Familia)
+                                            .FirstOrDefault())
+                            .Select(f => f.TipoExclusiva)
+                            .FirstOrDefault()
                     })
                     .ToListAsync()
                     .ConfigureAwait(false);
@@ -230,8 +242,17 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         .Where(p => videoIdsCliente.Contains(p.VideoYoutubeId))
                         .ToList();
 
+                    // Familias de los productos comprados por el cliente (para filtrar recomendados)
+                    var familiasCompradas = new HashSet<string>(
+                        productosEnVideosCliente
+                            .Where(p => productosPrincipalesSet.Contains(p.ProductoId?.Trim()))
+                            .Where(p => !string.IsNullOrWhiteSpace(p.Familia))
+                            .Select(p => p.Familia.Trim()),
+                        StringComparer.OrdinalIgnoreCase);
+
                     var recomendados = SeleccionarProductosRecomendados(
-                        productosEnVideosCliente, productosCompradosSet, productosPrincipalesSet);
+                        productosEnVideosCliente, productosCompradosSet, productosPrincipalesSet,
+                        familiasCompradas);
 
                     // Obtener URLs de Prestashop para todos los productos (comprados + recomendados)
                     var todosProductoIds = topProductos.Select(p => p.ProductoId)
@@ -403,18 +424,22 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         }
 
         /// <summary>
-        /// Selecciona hasta 4 productos de los vídeos que el cliente nunca ha comprado
-        /// y que no están entre los productos principales del correo.
+        /// Selecciona hasta 4 productos de los vídeos que el cliente nunca ha comprado,
+        /// que no están entre los productos principales del correo y que cumplen las
+        /// reglas de exclusividad: misma familia que algún producto comprado, o
+        /// familia con TipoExclusiva PRP (propia) o NAC (nacional).
         /// </summary>
         internal static List<ProductoRecomendadoDTO> SeleccionarProductosRecomendados(
             List<DatosProductoEnVideo> productosEnVideos,
             HashSet<string> productosCompradosHistorico,
-            HashSet<string> productosPrincipales)
+            HashSet<string> productosPrincipales,
+            HashSet<string> familiasCompradas)
         {
             var candidatos = productosEnVideos
                 .Where(p => !string.IsNullOrWhiteSpace(p.ProductoId) &&
                             !productosCompradosHistorico.Contains(p.ProductoId.Trim()) &&
-                            !productosPrincipales.Contains(p.ProductoId.Trim()))
+                            !productosPrincipales.Contains(p.ProductoId.Trim()) &&
+                            EsProductoRecomendable(p, familiasCompradas))
                 .GroupBy(p => p.ProductoId.Trim(), StringComparer.OrdinalIgnoreCase)
                 .Select(g => g.First())
                 .Select(p => new ProductoRecomendadoDTO
@@ -444,6 +469,38 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             }
 
             return resultado;
+        }
+
+        /// <summary>
+        /// Un producto es recomendable si pertenece a la misma familia que algún
+        /// producto comprado por el cliente, o si su familia tiene TipoExclusiva
+        /// PRP (propia) o NAC (nacional). Esto evita recomendar productos con
+        /// exclusivas territoriales (MAD, NIG, etc.) a clientes de otras zonas.
+        /// </summary>
+        internal static bool EsProductoRecomendable(DatosProductoEnVideo producto, HashSet<string> familiasCompradas)
+        {
+            if (familiasCompradas == null || !familiasCompradas.Any())
+            {
+                return true;
+            }
+
+            string familia = producto.Familia?.Trim();
+            string tipoExclusiva = producto.TipoExclusiva?.Trim();
+
+            // Misma familia que algún producto comprado
+            if (!string.IsNullOrWhiteSpace(familia) && familiasCompradas.Contains(familia))
+            {
+                return true;
+            }
+
+            // Familia con exclusiva propia o nacional (sin restricción territorial)
+            if (string.Equals(tipoExclusiva, "PRP", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(tipoExclusiva, "NAC", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return false;
         }
 
         private static bool EsCodigoPostalValido(string codPostal)
@@ -503,6 +560,8 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         public string VideoYoutubeId { get; set; }
         public string VideoTitulo { get; set; }
         public string EnlaceVideo { get; set; }
+        public string Familia { get; set; }
+        public string TipoExclusiva { get; set; }
     }
 
     #endregion
