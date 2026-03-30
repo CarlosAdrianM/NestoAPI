@@ -164,10 +164,7 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
                     sb.AppendLine($"  Link vídeo: {AgregarUtm($"https://www.youtube.com/watch?v={producto.VideoYoutubeId}")}");
                 }
 
-                if (!string.IsNullOrEmpty(producto.EnlaceTienda))
-                {
-                    sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
-                }
+                sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
 
                 sb.AppendLine();
             }
@@ -187,11 +184,7 @@ Devuelve ASUNTO en la primera línea y luego el HTML del cuerpo, sin etiquetas <
                     {
                         sb.AppendLine($"- Producto: {producto.NombreProducto}");
                         sb.AppendLine($"  ENLACE OBLIGATORIO al vídeo: {AgregarUtm(producto.EnlaceVideoProducto)}");
-
-                        if (!string.IsNullOrEmpty(producto.EnlaceTienda))
-                        {
-                            sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
-                        }
+                        sb.AppendLine($"  Link tienda: {AgregarUtm(producto.EnlaceTienda)}");
                     }
                     sb.AppendLine();
                 }

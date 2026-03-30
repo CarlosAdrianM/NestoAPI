@@ -244,18 +244,16 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
 
                     foreach (var producto in topProductos)
                     {
-                        if (urlsPrestashop.TryGetValue(producto.ProductoId, out string url))
-                        {
-                            producto.EnlaceTienda = url;
-                        }
+                        producto.EnlaceTienda = urlsPrestashop.TryGetValue(producto.ProductoId, out string url)
+                            ? url
+                            : GenerarUrlBusquedaTienda(producto.NombreProducto);
                     }
 
                     foreach (var producto in recomendados)
                     {
-                        if (urlsPrestashop.TryGetValue(producto.ProductoId, out string url))
-                        {
-                            producto.EnlaceTienda = url;
-                        }
+                        producto.EnlaceTienda = urlsPrestashop.TryGetValue(producto.ProductoId, out string urlRec)
+                            ? urlRec
+                            : GenerarUrlBusquedaTienda(producto.NombreProducto);
                     }
 
                     resultado.Add(new CorreoPostCompraClienteDTO
@@ -307,6 +305,21 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             return resultados
                 .Where(r => !string.IsNullOrEmpty(r.Url))
                 .ToDictionary(r => r.ProductoId, r => r.Url);
+        }
+
+        /// <summary>
+        /// Genera una URL de búsqueda en la tienda online para un producto
+        /// cuya URL directa no se ha podido obtener de Prestashop.
+        /// </summary>
+        internal static string GenerarUrlBusquedaTienda(string nombreProducto)
+        {
+            if (string.IsNullOrWhiteSpace(nombreProducto))
+            {
+                return null;
+            }
+
+            var termino = Uri.EscapeDataString(nombreProducto.Trim());
+            return $"https://www.productosdeesteticaypeluqueriaprofesional.com/buscar?controller=search&s={termino}";
         }
 
         /// <summary>

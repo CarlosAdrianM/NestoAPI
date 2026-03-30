@@ -400,6 +400,43 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
 
         #endregion
 
+        #region GenerarUrlBusquedaTienda
+
+        [TestMethod]
+        public void GenerarUrlBusquedaTienda_NombreProducto_DevuelveUrlBusqueda()
+        {
+            var resultado = ServicioRecomendacionesPostCompra.GenerarUrlBusquedaTienda("Crema Hidratante Anubis");
+
+            Assert.IsTrue(resultado.StartsWith("https://www.productosdeesteticaypeluqueriaprofesional.com/buscar?controller=search&s="));
+            Assert.IsTrue(resultado.Contains("Crema"));
+        }
+
+        [TestMethod]
+        public void GenerarUrlBusquedaTienda_NombreNull_DevuelveNull()
+        {
+            var resultado = ServicioRecomendacionesPostCompra.GenerarUrlBusquedaTienda(null);
+
+            Assert.IsNull(resultado);
+        }
+
+        [TestMethod]
+        public void GenerarUrlBusquedaTienda_NombreVacio_DevuelveNull()
+        {
+            var resultado = ServicioRecomendacionesPostCompra.GenerarUrlBusquedaTienda("   ");
+
+            Assert.IsNull(resultado);
+        }
+
+        [TestMethod]
+        public void GenerarUrlBusquedaTienda_NombreConEspacios_LosCodea()
+        {
+            var resultado = ServicioRecomendacionesPostCompra.GenerarUrlBusquedaTienda("Crema Facial");
+
+            Assert.IsTrue(resultado.Contains("Crema%20Facial"));
+        }
+
+        #endregion
+
         #region Helpers
 
         private DatosClienteCorreo CrearCliente(string clienteId, string nombre, string email, int estado, string codPostal)
