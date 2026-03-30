@@ -274,7 +274,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         .ToList();
 
                     if (RequiereFiltroGeografico(todosProductosCorreo) &&
-                        !EsCodigoPostalValido(cliente.CodPostal))
+                        !EstaEnZonaExclusivaMadrid(cliente.CodPostal))
                     {
                         continue;
                     }
@@ -568,7 +568,7 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 string.Equals(p.TipoExclusiva?.Trim(), "MAD", StringComparison.OrdinalIgnoreCase));
         }
 
-        internal static bool EsCodigoPostalValido(string codPostal)
+        internal static bool EstaEnZonaExclusivaMadrid(string codPostal)
         {
             if (string.IsNullOrWhiteSpace(codPostal))
             {

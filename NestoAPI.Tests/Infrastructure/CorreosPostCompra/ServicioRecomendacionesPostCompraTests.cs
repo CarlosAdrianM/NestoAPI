@@ -296,7 +296,7 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
 
         #endregion
 
-        #region RequiereFiltroGeografico y EsCodigoPostalValido
+        #region RequiereFiltroGeografico y EstaEnZonaExclusivaMadrid
 
         [TestMethod]
         public void RequiereFiltroGeografico_ProductoConMAD_SiRequiere()
@@ -330,39 +330,39 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         }
 
         [TestMethod]
-        public void EsCodigoPostalValido_Madrid28_Valido()
+        public void EstaEnZonaExclusivaMadrid_Madrid28_SiEsta()
         {
-            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("28001"));
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EstaEnZonaExclusivaMadrid("28001"));
         }
 
         [TestMethod]
-        public void EsCodigoPostalValido_Toledo45_Valido()
+        public void EstaEnZonaExclusivaMadrid_Toledo45_SiEsta()
         {
-            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("45100"));
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EstaEnZonaExclusivaMadrid("45100"));
         }
 
         [TestMethod]
-        public void EsCodigoPostalValido_Guadalajara19_Valido()
+        public void EstaEnZonaExclusivaMadrid_Guadalajara19_SiEsta()
         {
-            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("19001"));
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EstaEnZonaExclusivaMadrid("19001"));
         }
 
         [TestMethod]
-        public void EsCodigoPostalValido_Barcelona08_NoValido()
+        public void EstaEnZonaExclusivaMadrid_Barcelona08_NoEsta()
         {
-            Assert.IsFalse(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("08001"));
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.EstaEnZonaExclusivaMadrid("08001"));
         }
 
         [TestMethod]
-        public void EsCodigoPostalValido_ConEspacios_Valido()
+        public void EstaEnZonaExclusivaMadrid_ConEspacios_SiEsta()
         {
-            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("  28001  "));
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EstaEnZonaExclusivaMadrid("  28001  "));
         }
 
         [TestMethod]
-        public void EsCodigoPostalValido_Null_NoValido()
+        public void EstaEnZonaExclusivaMadrid_Null_NoEsta()
         {
-            Assert.IsFalse(ServicioRecomendacionesPostCompra.EsCodigoPostalValido(null));
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.EstaEnZonaExclusivaMadrid(null));
         }
 
         #endregion
