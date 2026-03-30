@@ -286,11 +286,12 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void ObtenerInfoDeuda_EfectoPendienteRemesarDeDosLaborablesAtras_SiEsVencido()
+        public void ObtenerInfoDeuda_EfectoPendienteRemesarDeSemanaAnterior_SiEsVencido()
         {
-            // Arrange: Factura de hace 3 días con FechaVto == Fecha
-            // Ya tuvo que haberse remesado, así que sí es vencida
-            DateTime hace3Dias = DateTime.Today.AddDays(-3);
+            // Arrange: Factura del lunes de la semana pasada con FechaVto == Fecha
+            // Una semana entera siempre supera el margen de remesa (1 día laborable),
+            // independientemente del día en que se ejecute el test
+            DateTime lunesPasado = DateTime.Today.AddDays(-7 - ((int)DateTime.Today.DayOfWeek + 6) % 7);
             var extractos = new List<ExtractoCliente>
             {
                 new ExtractoCliente
@@ -298,8 +299,8 @@ namespace NestoAPI.Tests.Controllers
                     Número = "123",
                     ImportePdte = 500m,
                     TipoApunte = "FACTURA",
-                    Fecha = hace3Dias,
-                    FechaVto = hace3Dias
+                    Fecha = lunesPasado,
+                    FechaVto = lunesPasado
                 }
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeExtractosCliente, extractos);
@@ -309,6 +310,44 @@ namespace NestoAPI.Tests.Controllers
 
             // Assert
             Assert.IsTrue(resultado.TieneDeudaVencida);
+        }
+
+        [TestMethod]
+        public void ObtenerInfoDeuda_EfectoPendienteRemesarDeViernesSiendoLunes_NoEsVencido()
+        {
+            // Arrange: Factura del viernes con FechaVto == Fecha, y hoy es lunes
+            // El viernes es el día laborable anterior al lunes, así que el efecto
+            // aún está pendiente de remesar y NO debe contar como vencido.
+            // Usamos fechas fijas: lunes 2026-03-30 y viernes 2026-03-27
+            DateTime lunes = new DateTime(2026, 3, 30);
+            DateTime viernes = new DateTime(2026, 3, 27);
+
+            // Solo ejecutar si hoy es ese lunes concreto, sino el test
+            // no puede controlar DateTime.Today del código bajo test
+            if (DateTime.Today != lunes)
+            {
+                // En cualquier otro día, verificamos con el día laborable anterior real
+                viernes = PlazosPagoController.CalcularDiaLaborableAnterior(DateTime.Today);
+            }
+
+            var extractos = new List<ExtractoCliente>
+            {
+                new ExtractoCliente
+                {
+                    Número = "123",
+                    ImportePdte = 500m,
+                    TipoApunte = "FACTURA",
+                    Fecha = viernes,
+                    FechaVto = viernes
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeExtractosCliente, extractos);
+
+            // Act
+            var resultado = controller.ObtenerInfoDeuda("123");
+
+            // Assert: efecto del día laborable anterior no es vencido (pendiente de remesar)
+            Assert.IsFalse(resultado.TieneDeudaVencida);
         }
 
         #endregion
