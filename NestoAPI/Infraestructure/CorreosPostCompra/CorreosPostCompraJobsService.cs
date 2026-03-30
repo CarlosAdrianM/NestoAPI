@@ -59,6 +59,23 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         new Exception($"[CorreosPostCompra] Modo test activo. EmailsTest='{emailsTestConfig}'. Correos tras filtro: {correos.Count}")));
                 }
 
+                // Issue #152: Generar plantilla y saludos con OpenAI (2 llamadas en vez de N)
+                var generador = new GeneradorContenidoCorreoPostCompra(new ServicioOpenAI());
+
+                var plantilla = await generador.GenerarPlantillaSemanalAsync().ConfigureAwait(false);
+                if (plantilla == null)
+                {
+                    ErrorLog.GetDefault(null)?.Log(new Error(
+                        new Exception("[CorreosPostCompra] No se pudo generar la plantilla semanal con OpenAI.")));
+                    return;
+                }
+
+                var nombres = correos.Select(c => c.ClienteNombre ?? "").Distinct().ToList();
+                var saludos = await generador.GenerarSaludosAsync(nombres).ConfigureAwait(false);
+
+                ErrorLog.GetDefault(null)?.Log(new Error(
+                    new Exception($"[CorreosPostCompra] Plantilla generada. Saludos generados para {saludos.Count} nombres.")));
+
                 // Programar envíos para el sábado a las 10:00 (3 días después del miércoles)
                 DateTimeOffset fechaEnvio = new DateTimeOffset(hoy.AddDays(3).AddHours(10), TimeZoneInfo.Local.GetUtcOffset(hoy));
                 int programados = 0;
@@ -67,8 +84,9 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                 {
                     try
                     {
+                        string saludo = saludos.TryGetValue(correo.ClienteNombre ?? "", out string s) ? s : "Hola";
                         Hangfire.BackgroundJob.Schedule(
-                            () => EnviarCorreoPostCompra(correo),
+                            () => EnviarCorreoPostCompraConPlantilla(correo, plantilla, saludo),
                             fechaEnvio);
                         programados++;
                     }
@@ -168,6 +186,92 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             catch (Exception)
             {
                 throw; // Re-lanzar para que Hangfire lo registre y reintente
+            }
+        }
+
+        /// <summary>
+        /// Envía un correo post-compra usando la plantilla semanal pre-generada.
+        /// Issue #152: No llama a OpenAI, solo aplica la plantilla con los datos del cliente.
+        /// </summary>
+        public static async Task EnviarCorreoPostCompraConPlantilla(
+            CorreoPostCompraClienteDTO datos, PlantillaSemanal plantilla, string saludo)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(datos?.ClienteEmail))
+                {
+                    return;
+                }
+
+                if (datos.ProductosComprados == null || !datos.ProductosComprados.Any())
+                {
+                    return;
+                }
+
+                string htmlCorreo = GeneradorContenidoCorreoPostCompra.AplicarPlantilla(
+                    plantilla.HtmlPlantilla, saludo, datos);
+
+                if (string.IsNullOrEmpty(htmlCorreo))
+                {
+                    return;
+                }
+
+                string asunto = plantilla.Asunto;
+                // Sustituir placeholders en el asunto si los hay
+                if (datos.ProductosComprados.Any())
+                {
+                    asunto = asunto.Replace("{{NOMBRE_PRODUCTO}}", datos.ProductosComprados.First().NombreProducto ?? "");
+                }
+
+                string remitente = ConfigurationManager.AppSettings["CorreosPostCompra:Remitente"]
+                    ?? "nuevavision@nuevavision.es";
+
+                string pieApp = GenerarPieDescargaApp();
+
+                string htmlCompleto = $@"<!DOCTYPE html>
+<html>
+<head>
+    <meta charset=""utf-8"">
+    <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <title>{asunto}</title>
+</head>
+<body style=""margin: 0; padding: 0; font-family: Arial, sans-serif;"">
+    {htmlCorreo}
+    {pieApp}
+</body>
+</html>";
+
+                using (var mail = new MailMessage())
+                {
+                    mail.From = new MailAddress(remitente, "El equipo de Nueva Visión");
+                    mail.To.Add(datos.ClienteEmail);
+                    mail.Subject = asunto;
+                    mail.Body = htmlCompleto;
+                    mail.IsBodyHtml = true;
+                    mail.Bcc.Add("carlosadrian@nuevavision.es");
+
+                    bool modoTest = ConfigurationManager.AppSettings["CorreosPostCompra:ModoTest"]?.ToLower() == "true";
+                    if (modoTest)
+                    {
+                        string emailsTestConfig = ConfigurationManager.AppSettings["CorreosPostCompra:EmailsTest"] ?? "";
+                        var emailsExtra = emailsTestConfig
+                            .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                            .Select(e => e.Trim())
+                            .Skip(1)
+                            .Where(e => !string.IsNullOrWhiteSpace(e));
+                        foreach (var emailCc in emailsExtra)
+                        {
+                            mail.CC.Add(emailCc);
+                        }
+                    }
+
+                    var servicioCorreo = new ServicioCorreoElectronico();
+                    servicioCorreo.EnviarCorreoSMTP(mail);
+                }
+            }
+            catch (Exception)
+            {
+                throw;
             }
         }
 
