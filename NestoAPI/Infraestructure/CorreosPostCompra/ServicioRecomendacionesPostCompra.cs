@@ -155,18 +155,30 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         Familia = _db.Productos
                             .Where(p => p.Empresa == empresa && p.Número == vp.Referencia)
                             .Select(p => p.Familia)
-                            .FirstOrDefault(),
-                        TipoExclusiva = _db.Familias
-                            .Where(f => f.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
-                                        f.Número == _db.Productos
-                                            .Where(p => p.Empresa == empresa && p.Número == vp.Referencia)
-                                            .Select(p => p.Familia)
-                                            .FirstOrDefault())
-                            .Select(f => f.TipoExclusiva)
                             .FirstOrDefault()
                     })
                     .ToListAsync()
                     .ConfigureAwait(false);
+
+                // Resolver TipoExclusiva siempre desde empresa "1"
+                var familiasIds = todosProductosEnVideos
+                    .Where(p => !string.IsNullOrWhiteSpace(p.Familia))
+                    .Select(p => p.Familia.Trim())
+                    .Distinct()
+                    .ToList();
+
+                var tiposExclusivaPorFamilia = await _db.Familias
+                    .Where(f => f.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                                familiasIds.Contains(f.Número))
+                    .Select(f => new { f.Número, f.TipoExclusiva })
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                var mapaTipoExclusiva = tiposExclusivaPorFamilia
+                    .ToDictionary(f => f.Número.Trim(), f => f.TipoExclusiva?.Trim(),
+                        StringComparer.OrdinalIgnoreCase);
+
+                AsignarTipoExclusiva(todosProductosEnVideos, mapaTipoExclusiva);
 
                 // 6. Construir resultado por cliente
                 var resultado = new List<CorreoPostCompraClienteDTO>();
@@ -469,6 +481,30 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             }
 
             return resultado;
+        }
+
+        /// <summary>
+        /// Asigna TipoExclusiva a cada producto en base al mapa familia → tipoExclusiva.
+        /// El mapa debe haberse construido siempre desde la empresa "1".
+        /// </summary>
+        internal static void AsignarTipoExclusiva(
+            List<DatosProductoEnVideo> productos,
+            Dictionary<string, string> tipoExclusivaPorFamilia)
+        {
+            if (productos == null || tipoExclusivaPorFamilia == null)
+            {
+                return;
+            }
+
+            foreach (var producto in productos)
+            {
+                string familia = producto.Familia?.Trim();
+                if (!string.IsNullOrWhiteSpace(familia) &&
+                    tipoExclusivaPorFamilia.TryGetValue(familia, out string tipoExclusiva))
+                {
+                    producto.TipoExclusiva = tipoExclusiva;
+                }
+            }
         }
 
         /// <summary>

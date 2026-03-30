@@ -345,6 +345,131 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
 
         #endregion
 
+        #region AsignarTipoExclusiva
+
+        [TestMethod]
+        public void AsignarTipoExclusiva_UsaDatosEmpresa1_NoEmpresa3()
+        {
+            // Arrange: Dos empresas con la misma familia pero TipoExclusiva diferente.
+            // Empresa "1" tiene ANUBIS con TipoExclusiva = "MAD"
+            // Empresa "3" tiene ANUBIS con TipoExclusiva = "NAC"
+            // El mapa debe construirse SOLO con datos de empresa "1".
+
+            // Simulamos productos de venta de empresa "3" (familia ANUBIS)
+            var productos = new List<DatosProductoEnVideo>
+            {
+                new DatosProductoEnVideo
+                {
+                    ProductoId = "PROD1", NombreProducto = "Crema Anubis",
+                    Familia = "ANUBIS", VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link1"
+                },
+                new DatosProductoEnVideo
+                {
+                    ProductoId = "PROD2", NombreProducto = "Sérum Eva",
+                    Familia = "EVA", VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link2"
+                }
+            };
+
+            // Mapa de empresa "1": ANUBIS=MAD, EVA=PRP
+            var mapaEmpresa1 = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "ANUBIS", "MAD" },
+                { "EVA", "PRP" }
+            };
+
+            // Mapa hipotético de empresa "3": ANUBIS=NAC, EVA=NAC (datos incorrectos/desactualizados)
+            var mapaEmpresa3 = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "ANUBIS", "NAC" },
+                { "EVA", "NAC" }
+            };
+
+            // Act: Asignar usando mapa de empresa "1" (correcto)
+            ServicioRecomendacionesPostCompra.AsignarTipoExclusiva(productos, mapaEmpresa1);
+
+            // Assert: TipoExclusiva debe ser el de empresa "1", no el de empresa "3"
+            Assert.AreEqual("MAD", productos[0].TipoExclusiva); // ANUBIS = MAD en empresa "1"
+            Assert.AreEqual("PRP", productos[1].TipoExclusiva); // EVA = PRP en empresa "1"
+
+            // Verificación adicional: si hubiéramos usado empresa "3", sería incorrecto
+            Assert.AreNotEqual("NAC", productos[0].TipoExclusiva); // No es NAC (empresa "3")
+        }
+
+        [TestMethod]
+        public void AsignarTipoExclusiva_VentaEmpresa3_FamiliaEmpresa1_FiltraCorrectamente()
+        {
+            // Arrange: Escenario completo end-to-end
+            // Cliente compra productos de empresa "3", familias ANUBIS y MAX2
+            // Empresa "1" tiene: ANUBIS=MAD, MAX2=NAC, MAYSTAR=MAD, EVA=PRP
+            // Producto recomendado de MAYSTAR (MAD, familia distinta) NO debe pasar el filtro
+
+            var productosEnVideos = new List<DatosProductoEnVideo>
+            {
+                // Producto de ANUBIS (misma familia que comprado)
+                new DatosProductoEnVideo { ProductoId = "P1", NombreProducto = "Otro Anubis", Familia = "ANUBIS",
+                    VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link1" },
+                // Producto de EVA (PRP → permitido)
+                new DatosProductoEnVideo { ProductoId = "P2", NombreProducto = "Eva Sérum", Familia = "EVA",
+                    VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link2" },
+                // Producto de MAYSTAR (MAD, familia distinta → NO permitido)
+                new DatosProductoEnVideo { ProductoId = "P3", NombreProducto = "Maystar Gel", Familia = "MAYSTAR",
+                    VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link3" },
+                // Producto de MAX2 (NAC → permitido)
+                new DatosProductoEnVideo { ProductoId = "P4", NombreProducto = "Max2 Color", Familia = "MAX2",
+                    VideoYoutubeId = "v1", VideoTitulo = "V1", EnlaceVideo = "link4" }
+            };
+
+            // Mapa de TipoExclusiva de empresa "1"
+            var mapaEmpresa1 = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "ANUBIS", "MAD" },
+                { "EVA", "PRP" },
+                { "MAYSTAR", "MAD" },
+                { "MAX2", "NAC" }
+            };
+
+            // Act: Asignar TipoExclusiva desde empresa "1"
+            ServicioRecomendacionesPostCompra.AsignarTipoExclusiva(productosEnVideos, mapaEmpresa1);
+
+            // Familias compradas (cliente compró ANUBIS en empresa "3")
+            var familiasCompradas = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "ANUBIS" };
+            var comprados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var principales = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var resultado = ServicioRecomendacionesPostCompra.SeleccionarProductosRecomendados(
+                productosEnVideos, comprados, principales, familiasCompradas);
+
+            // Assert: P1 (ANUBIS=misma familia), P2 (EVA=PRP), P4 (MAX2=NAC) pasan
+            //         P3 (MAYSTAR=MAD, familia distinta) NO pasa
+            Assert.AreEqual(3, resultado.Count);
+            Assert.IsTrue(resultado.Any(r => r.ProductoId == "P1"));
+            Assert.IsTrue(resultado.Any(r => r.ProductoId == "P2"));
+            Assert.IsTrue(resultado.Any(r => r.ProductoId == "P4"));
+            Assert.IsFalse(resultado.Any(r => r.ProductoId == "P3"));
+        }
+
+        [TestMethod]
+        public void AsignarTipoExclusiva_ProductosSinFamilia_NoFalla()
+        {
+            var productos = new List<DatosProductoEnVideo>
+            {
+                new DatosProductoEnVideo { ProductoId = "P1", Familia = null },
+                new DatosProductoEnVideo { ProductoId = "P2", Familia = "  " }
+            };
+
+            var mapa = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "ANUBIS", "MAD" }
+            };
+
+            ServicioRecomendacionesPostCompra.AsignarTipoExclusiva(productos, mapa);
+
+            Assert.IsNull(productos[0].TipoExclusiva);
+            Assert.IsNull(productos[1].TipoExclusiva);
+        }
+
+        #endregion
+
         #region EsProductoRecomendable
 
         [TestMethod]
