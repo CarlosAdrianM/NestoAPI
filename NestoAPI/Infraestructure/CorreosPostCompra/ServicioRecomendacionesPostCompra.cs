@@ -266,6 +266,19 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
                         productosEnVideosCliente, productosCompradosSet, productosPrincipalesSet,
                         familiasCompradas);
 
+                    // Filtro geográfico: si algún producto del correo tiene TipoExclusiva MAD,
+                    // el cliente debe ser de Madrid/Toledo/Guadalajara
+                    var todosProductosCorreo = productosEnVideosCliente
+                        .Where(p => productosPrincipalesSet.Contains(p.ProductoId?.Trim()) ||
+                                    recomendados.Any(r => r.ProductoId == p.ProductoId?.Trim()))
+                        .ToList();
+
+                    if (RequiereFiltroGeografico(todosProductosCorreo) &&
+                        !EsCodigoPostalValido(cliente.CodPostal))
+                    {
+                        continue;
+                    }
+
                     // Obtener URLs de Prestashop para todos los productos (comprados + recomendados)
                     var todosProductoIds = topProductos.Select(p => p.ProductoId)
                         .Concat(recomendados.Select(p => p.ProductoId))
@@ -387,17 +400,17 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
         }
 
         /// <summary>
-        /// Filtra clientes que cumplen los requisitos para recibir correo post-compra:
+        /// Filtra clientes que cumplen los requisitos básicos para recibir correo post-compra:
         /// - Tienen email
         /// - Estado distinto de 8 (baja)
-        /// - Código postal empieza por 28, 45 o 19
+        /// Nota: el filtro geográfico se aplica después, por cliente, según los productos
+        /// del correo (ver RequiereFiltroGeografico).
         /// </summary>
         internal static List<DatosClienteCorreo> FiltrarClientesValidos(List<DatosClienteCorreo> clientes)
         {
             return clientes
                 .Where(c => !string.IsNullOrWhiteSpace(c.Email) &&
-                            c.Estado != 8 &&
-                            EsCodigoPostalValido(c.CodPostal))
+                            c.Estado != 8)
                 .ToList();
         }
 
@@ -539,7 +552,23 @@ namespace NestoAPI.Infraestructure.CorreosPostCompra
             return false;
         }
 
-        private static bool EsCodigoPostalValido(string codPostal)
+        /// <summary>
+        /// Determina si los productos del correo requieren filtro geográfico.
+        /// Si algún producto tiene TipoExclusiva MAD, solo se puede enviar a
+        /// clientes de Madrid/Toledo/Guadalajara.
+        /// </summary>
+        internal static bool RequiereFiltroGeografico(List<DatosProductoEnVideo> productosCorreo)
+        {
+            if (productosCorreo == null || !productosCorreo.Any())
+            {
+                return false;
+            }
+
+            return productosCorreo.Any(p =>
+                string.Equals(p.TipoExclusiva?.Trim(), "MAD", StringComparison.OrdinalIgnoreCase));
+        }
+
+        internal static bool EsCodigoPostalValido(string codPostal)
         {
             if (string.IsNullOrWhiteSpace(codPostal))
             {

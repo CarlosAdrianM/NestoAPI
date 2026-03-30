@@ -65,68 +65,19 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
         }
 
         [TestMethod]
-        public void FiltrarClientesValidos_CPEmpieza28_LoIncluye()
+        public void FiltrarClientesValidos_CualquierCP_LoIncluye()
         {
+            // El filtro geográfico ya no se aplica aquí, sino por cliente según productos
             var clientes = new List<DatosClienteCorreo>
             {
-                CrearCliente("00001", "Madrid", "c@test.com", estado: 0, codPostal: "28100")
+                CrearCliente("00001", "Barcelona", "c@test.com", estado: 0, codPostal: "08001"),
+                CrearCliente("00002", "Madrid", "m@test.com", estado: 0, codPostal: "28001"),
+                CrearCliente("00003", "Sevilla", "s@test.com", estado: 0, codPostal: "41001")
             };
 
             var resultado = ServicioRecomendacionesPostCompra.FiltrarClientesValidos(clientes);
 
-            Assert.AreEqual(1, resultado.Count);
-        }
-
-        [TestMethod]
-        public void FiltrarClientesValidos_CPEmpieza45_LoIncluye()
-        {
-            var clientes = new List<DatosClienteCorreo>
-            {
-                CrearCliente("00001", "Toledo", "c@test.com", estado: 0, codPostal: "45001")
-            };
-
-            var resultado = ServicioRecomendacionesPostCompra.FiltrarClientesValidos(clientes);
-
-            Assert.AreEqual(1, resultado.Count);
-        }
-
-        [TestMethod]
-        public void FiltrarClientesValidos_CPEmpieza19_LoIncluye()
-        {
-            var clientes = new List<DatosClienteCorreo>
-            {
-                CrearCliente("00001", "Guadalajara", "c@test.com", estado: 0, codPostal: "19001")
-            };
-
-            var resultado = ServicioRecomendacionesPostCompra.FiltrarClientesValidos(clientes);
-
-            Assert.AreEqual(1, resultado.Count);
-        }
-
-        [TestMethod]
-        public void FiltrarClientesValidos_CPDeBarcelona_LoExcluye()
-        {
-            var clientes = new List<DatosClienteCorreo>
-            {
-                CrearCliente("00001", "Barcelona", "c@test.com", estado: 0, codPostal: "08001")
-            };
-
-            var resultado = ServicioRecomendacionesPostCompra.FiltrarClientesValidos(clientes);
-
-            Assert.AreEqual(0, resultado.Count);
-        }
-
-        [TestMethod]
-        public void FiltrarClientesValidos_CPConEspacios_LoIncluye()
-        {
-            var clientes = new List<DatosClienteCorreo>
-            {
-                CrearCliente("00001", "Madrid espacios", "c@test.com", estado: 0, codPostal: "  28001  ")
-            };
-
-            var resultado = ServicioRecomendacionesPostCompra.FiltrarClientesValidos(clientes);
-
-            Assert.AreEqual(1, resultado.Count);
+            Assert.AreEqual(3, resultado.Count);
         }
 
         #endregion
@@ -341,6 +292,77 @@ namespace NestoAPI.Tests.Infrastructure.CorreosPostCompra
 
             Assert.AreEqual(1, resultado.Count);
             Assert.AreEqual("VALIDO", resultado[0].ProductoId);
+        }
+
+        #endregion
+
+        #region RequiereFiltroGeografico y EsCodigoPostalValido
+
+        [TestMethod]
+        public void RequiereFiltroGeografico_ProductoConMAD_SiRequiere()
+        {
+            var productos = new List<DatosProductoEnVideo>
+            {
+                new DatosProductoEnVideo { ProductoId = "P1", TipoExclusiva = "PRP" },
+                new DatosProductoEnVideo { ProductoId = "P2", TipoExclusiva = "MAD" }
+            };
+
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.RequiereFiltroGeografico(productos));
+        }
+
+        [TestMethod]
+        public void RequiereFiltroGeografico_SinProductosMAD_NoRequiere()
+        {
+            var productos = new List<DatosProductoEnVideo>
+            {
+                new DatosProductoEnVideo { ProductoId = "P1", TipoExclusiva = "PRP" },
+                new DatosProductoEnVideo { ProductoId = "P2", TipoExclusiva = "NAC" }
+            };
+
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.RequiereFiltroGeografico(productos));
+        }
+
+        [TestMethod]
+        public void RequiereFiltroGeografico_ListaVacia_NoRequiere()
+        {
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.RequiereFiltroGeografico(
+                new List<DatosProductoEnVideo>()));
+        }
+
+        [TestMethod]
+        public void EsCodigoPostalValido_Madrid28_Valido()
+        {
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("28001"));
+        }
+
+        [TestMethod]
+        public void EsCodigoPostalValido_Toledo45_Valido()
+        {
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("45100"));
+        }
+
+        [TestMethod]
+        public void EsCodigoPostalValido_Guadalajara19_Valido()
+        {
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("19001"));
+        }
+
+        [TestMethod]
+        public void EsCodigoPostalValido_Barcelona08_NoValido()
+        {
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("08001"));
+        }
+
+        [TestMethod]
+        public void EsCodigoPostalValido_ConEspacios_Valido()
+        {
+            Assert.IsTrue(ServicioRecomendacionesPostCompra.EsCodigoPostalValido("  28001  "));
+        }
+
+        [TestMethod]
+        public void EsCodigoPostalValido_Null_NoValido()
+        {
+            Assert.IsFalse(ServicioRecomendacionesPostCompra.EsCodigoPostalValido(null));
         }
 
         #endregion
