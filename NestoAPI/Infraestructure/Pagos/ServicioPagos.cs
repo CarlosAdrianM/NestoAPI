@@ -186,6 +186,16 @@ namespace NestoAPI.Infraestructure.Pagos
                 {
                     pago.Estado = "Denegado";
                     await db.SaveChangesAsync().ConfigureAwait(false);
+
+                    // Issue #156: Regenerar enlace de pago si no se ha superado el límite de reintentos
+                    try
+                    {
+                        await RegenerarPagoDenegado(pago, db).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        LogElmah($"[ProcesarNotificacion] Error al regenerar pago denegado. Orden: {pago.NumeroOrden}, Error: {ex.Message}", ex);
+                    }
                 }
 
                 return true;
@@ -459,7 +469,8 @@ namespace NestoAPI.Infraestructure.Pagos
                 Vendedor = pago.Vendedor?.Trim(),
                 FormaVenta = pago.FormaVenta?.Trim(),
                 Delegacion = pago.Delegacion?.Trim(),
-                TipoApunte = pago.TipoApunte?.Trim()
+                TipoApunte = pago.TipoApunte?.Trim(),
+                PagoOriginalId = pago.PagoOriginalId
             };
 
             if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
@@ -798,6 +809,265 @@ namespace NestoAPI.Infraestructure.Pagos
             catch (Exception ex)
             {
                 LogElmah($"[EnviarCorreoAlertaPago] Error enviando correo de alerta: {ex.Message}. Alerta original: {detalle}");
+            }
+        }
+
+        internal const int LIMITE_REINTENTOS_PAGO = 3;
+
+        internal async Task RegenerarPagoDenegado(PagoTPV pagoDenegado, NVEntities db)
+        {
+            // Buscar el pago raíz de la cadena de reintentos
+            int pagoRaizId = pagoDenegado.PagoOriginalId ?? pagoDenegado.Id;
+
+            // Contar reintentos previos vinculados al pago raíz
+            int reintentosPrevios = await db.PagosTPV
+                .CountAsync(p => p.PagoOriginalId == pagoRaizId)
+                .ConfigureAwait(false);
+
+            if (reintentosPrevios >= LIMITE_REINTENTOS_PAGO)
+            {
+                EnviarCorreoLimiteReintentos(pagoDenegado);
+                return;
+            }
+
+            // Crear nuevos parámetros Redsys
+            string urlBase = "https://api.nuevavision.es";
+            string urlNotificacion = urlBase + "/api/Pagos/NotificacionRedsys";
+            string urlOk = urlBase + "/pago/ok.html";
+            string urlKo = urlBase + "/pago/ko.html";
+
+            ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosTPVVirtual(
+                pagoDenegado.Importe,
+                pagoDenegado.Descripcion,
+                pagoDenegado.Correo,
+                pagoDenegado.Cliente,
+                urlNotificacion,
+                urlOk,
+                urlKo);
+
+            // Crear nuevo PagoTPV con los mismos datos
+            var nuevoPago = new PagoTPV
+            {
+                NumeroOrden = parametros.NumeroOrden,
+                Tipo = pagoDenegado.Tipo,
+                Empresa = pagoDenegado.Empresa,
+                Cliente = pagoDenegado.Cliente,
+                Contacto = pagoDenegado.Contacto,
+                Importe = pagoDenegado.Importe,
+                Descripcion = pagoDenegado.Descripcion,
+                Correo = pagoDenegado.Correo,
+                Movil = pagoDenegado.Movil,
+                ExtractoClienteId = pagoDenegado.ExtractoClienteId,
+                Documento = pagoDenegado.Documento,
+                Efecto = pagoDenegado.Efecto,
+                Vendedor = pagoDenegado.Vendedor,
+                FormaVenta = pagoDenegado.FormaVenta,
+                Delegacion = pagoDenegado.Delegacion,
+                TipoApunte = pagoDenegado.TipoApunte,
+                Estado = "Pendiente",
+                FechaCreacion = DateTime.Now,
+                Usuario = pagoDenegado.Usuario,
+                TokenAcceso = Guid.NewGuid(),
+                PagoOriginalId = pagoRaizId
+            };
+
+            db.PagosTPV.Add(nuevoPago);
+            await db.SaveChangesAsync().ConfigureAwait(false);
+
+            // Duplicar efectos
+            if (pagoDenegado.PagosTPV_Efectos != null)
+            {
+                foreach (var efecto in pagoDenegado.PagosTPV_Efectos)
+                {
+                    db.PagosTPV_Efectos.Add(new PagoTPV_Efecto
+                    {
+                        IdPago = nuevoPago.Id,
+                        ExtractoClienteId = efecto.ExtractoClienteId,
+                        Importe = efecto.Importe,
+                        Documento = efecto.Documento,
+                        Efecto = efecto.Efecto,
+                        Contacto = efecto.Contacto,
+                        Vendedor = efecto.Vendedor,
+                        FormaVenta = efecto.FormaVenta,
+                        Delegacion = efecto.Delegacion,
+                        TipoApunte = efecto.TipoApunte
+                    });
+                }
+                await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+
+            string urlPaginaPago = $"https://api.nuevavision.es/pago/{nuevoPago.TokenAcceso}";
+            EnviarCorreoPagoDenegado(pagoDenegado, urlPaginaPago);
+        }
+
+        internal void EnviarCorreoPagoDenegado(PagoTPV pagoDenegado, string urlNuevoPago)
+        {
+            try
+            {
+                string filasEfectos = "";
+                if (pagoDenegado.PagosTPV_Efectos != null && pagoDenegado.PagosTPV_Efectos.Any())
+                {
+                    bool alternar = false;
+                    foreach (var e in pagoDenegado.PagosTPV_Efectos)
+                    {
+                        string bgColor = alternar ? "background-color:#fef5f5;" : "";
+                        filasEfectos +=
+                            $"<tr style='{bgColor}'>" +
+                            $"<td style='padding:10px;border-bottom:1px solid #f0e0e0'>{e.Documento?.Trim()}</td>" +
+                            $"<td style='padding:10px;border-bottom:1px solid #f0e0e0;text-align:right;white-space:nowrap'>{e.Importe:N2} &euro;</td></tr>";
+                        alternar = !alternar;
+                    }
+                }
+
+                string seccionEfectos = pagoDenegado.PagosTPV_Efectos != null && pagoDenegado.PagosTPV_Efectos.Any()
+                    ? $@"<table style='border-collapse:collapse;width:100%;margin:20px 0'>
+                        <tr style='background:#fef5f5'>
+                            <th style='padding:10px;text-align:left;border-bottom:2px solid #e8b4b4;color:#8b3a3a'>Documento</th>
+                            <th style='padding:10px;text-align:right;border-bottom:2px solid #e8b4b4;color:#8b3a3a'>Importe</th>
+                        </tr>
+                        {filasEfectos}
+                        <tr style='background:#fef5f5'>
+                            <td style='padding:10px;font-weight:bold;color:#8b3a3a'>Total</td>
+                            <td style='padding:10px;font-weight:bold;text-align:right;color:#8b3a3a'>{pagoDenegado.Importe:N2} &euro;</td>
+                        </tr>
+                    </table>"
+                    : $"<p style='font-size:24px;font-weight:bold;color:#8b3a3a;text-align:center;margin:20px 0'>{pagoDenegado.Importe:N2} &euro;</p>";
+
+                string html = $@"<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'></head>
+<body style='margin:0;padding:0;background-color:#fef5f5;font-family:-apple-system,BlinkMacSystemFont,""Segoe UI"",Roboto,Arial,sans-serif'>
+    <table width='100%' cellpadding='0' cellspacing='0' style='background-color:#fef5f5;padding:20px 0'>
+        <tr><td align='center'>
+            <table width='600' cellpadding='0' cellspacing='0' style='background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,0.08)'>
+                <!-- Cabecera con logo -->
+                <tr>
+                    <td style='background:linear-gradient(135deg,#c0392b 0%,#8b3a3a 100%);padding:30px;text-align:center'>
+                        <img src='{URL_LOGO}' alt='Nueva Visi&oacute;n' style='max-width:180px;height:auto' />
+                    </td>
+                </tr>
+                <!-- Contenido -->
+                <tr>
+                    <td style='padding:30px 35px'>
+                        <h1 style='color:#8b3a3a;font-size:22px;margin:0 0 15px 0'>Pago no procesado</h1>
+                        <p style='color:#555;font-size:15px;line-height:1.6;margin:0 0 5px 0'>
+                            Estimado cliente,
+                        </p>
+                        <p style='color:#555;font-size:15px;line-height:1.6;margin:0 0 20px 0'>
+                            Le informamos de que su intento de pago no ha podido ser procesado. No se ha realizado ning&uacute;n cargo en su tarjeta.
+                        </p>
+                        <p style='color:#555;font-size:15px;line-height:1.6;margin:0 0 20px 0'>
+                            Hemos generado autom&aacute;ticamente un nuevo enlace de pago para que pueda reintentar la operaci&oacute;n cuando lo desee.
+                        </p>
+                        {seccionEfectos}
+                        <p style='text-align:center;margin:25px 0'>
+                            <a href='{urlNuevoPago}' style='display:inline-block;background:linear-gradient(135deg,#8b5a6b 0%,#6b3a5d 100%);color:white;padding:14px 40px;text-decoration:none;border-radius:8px;font-size:16px;font-weight:bold;letter-spacing:0.5px'>
+                                Reintentar pago seguro
+                            </a>
+                        </p>
+                        <p style='color:#999;font-size:12px;text-align:center;margin:15px 0 0 0'>
+                            El pago se realiza a trav&eacute;s de la pasarela segura Redsys, con la m&aacute;xima protecci&oacute;n para sus datos.
+                        </p>
+                    </td>
+                </tr>
+                <!-- Pie -->
+                <tr>
+                    <td style='background:#fef5f5;padding:20px 35px;border-top:1px solid #f0e0e0'>
+                        <p style='color:#999;font-size:12px;margin:0;text-align:center'>
+                            &iquest;Tiene alguna duda? Contacte con nosotros en
+                            <a href='mailto:administracion@nuevavision.es' style='color:#8b5a6b'>administracion@nuevavision.es</a>
+                        </p>
+                        <p style='color:#ccc;font-size:11px;margin:8px 0 0 0;text-align:center'>
+                            Nueva Visi&oacute;n &middot; Distribuci&oacute;n de productos de est&eacute;tica y peluquer&iacute;a profesional
+                        </p>
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+</body>
+</html>";
+
+                // Enviar al cliente
+                if (!string.IsNullOrWhiteSpace(pagoDenegado.Correo))
+                {
+                    using (var mail = new MailMessage())
+                    {
+                        mail.From = new MailAddress(Correos.CORREO_ADMON, "Nueva Visión");
+                        mail.To.Add(pagoDenegado.Correo);
+                        mail.CC.Add(Correos.CORREO_ADMON);
+                        mail.Subject = $"Pago no procesado - {pagoDenegado.Descripcion ?? "Nueva Visión"} - Nuevo enlace disponible";
+                        mail.Body = html;
+                        mail.IsBodyHtml = true;
+                        _servicioCorreo.EnviarCorreoSMTP(mail);
+                    }
+                }
+                else
+                {
+                    // Sin correo de cliente, avisar solo a administración
+                    EnviarCorreoLimiteReintentos(pagoDenegado);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogElmah($"[EnviarCorreoPagoDenegado] Error enviando correo: {ex.Message}");
+            }
+        }
+
+        internal void EnviarCorreoLimiteReintentos(PagoTPV pago)
+        {
+            try
+            {
+                string html = $@"<!DOCTYPE html>
+<html>
+<head><meta charset='utf-8'></head>
+<body style='margin:0;padding:0;background-color:#f4f4f4;font-family:-apple-system,BlinkMacSystemFont,""Segoe UI"",Roboto,Arial,sans-serif'>
+    <table width='100%' cellpadding='0' cellspacing='0' style='background-color:#f4f4f4;padding:20px 0'>
+        <tr><td align='center'>
+            <table width='600' cellpadding='0' cellspacing='0' style='background:white;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06)'>
+                <tr>
+                    <td style='background:#c0392b;padding:20px 30px;text-align:center'>
+                        <img src='{URL_LOGO}' alt='Nueva Visi&oacute;n' style='max-width:120px;height:auto;margin-bottom:8px' />
+                        <h1 style='color:white;font-size:18px;margin:0'>L&iacute;mite de reintentos NestoPago</h1>
+                    </td>
+                </tr>
+                <tr>
+                    <td style='padding:25px 30px'>
+                        <div style='background:#fdecea;border:1px solid #f5c6cb;border-radius:6px;padding:15px;margin:0 0 15px 0'>
+                            <strong style='color:#c0392b'>Se ha superado el l&iacute;mite de {LIMITE_REINTENTOS_PAGO} reintentos autom&aacute;ticos</strong>
+                            <p style='color:#721c24;margin:8px 0 0 0;font-size:13px'>
+                                El cliente ha agotado los intentos autom&aacute;ticos de pago. Es necesario intervenci&oacute;n manual para generar un nuevo enlace.
+                            </p>
+                        </div>
+                        <table style='width:100%;font-size:14px'>
+                            <tr><td style='padding:6px 0;color:#888;width:140px'>Cliente</td><td style='padding:6px 0;font-weight:bold'>{pago.Cliente?.Trim()}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Importe</td><td style='padding:6px 0;font-weight:bold;color:#c0392b;font-size:18px'>{pago.Importe:N2} &euro;</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>N&ordm; Orden</td><td style='padding:6px 0'>{pago.NumeroOrden}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>C&oacute;digo respuesta</td><td style='padding:6px 0'>{pago.CodigoRespuesta}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Correo cliente</td><td style='padding:6px 0'>{pago.Correo}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Usuario</td><td style='padding:6px 0'>{pago.Usuario}</td></tr>
+                        </table>
+                    </td>
+                </tr>
+            </table>
+        </td></tr>
+    </table>
+</body>
+</html>";
+
+                using (var mail = new MailMessage())
+                {
+                    mail.From = new MailAddress(Correos.CORREO_ADMON, "NestoPago");
+                    mail.To.Add(Correos.CORREO_ADMON);
+                    mail.Subject = $"LIMITE REINTENTOS NestoPago: {pago.Importe:C} - Cliente {pago.Cliente?.Trim()}";
+                    mail.Body = html;
+                    mail.IsBodyHtml = true;
+                    _servicioCorreo.EnviarCorreoSMTP(mail);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogElmah($"[EnviarCorreoLimiteReintentos] Error enviando correo: {ex.Message}");
             }
         }
 

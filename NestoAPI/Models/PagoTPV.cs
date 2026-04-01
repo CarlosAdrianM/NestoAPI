@@ -43,7 +43,8 @@ namespace NestoAPI.Models
         public string Delegacion { get; set; }
         public string TipoApunte { get; set; }
         public System.Guid TokenAcceso { get; set; }
-    
+        public Nullable<int> PagoOriginalId { get; set; }
+
         public virtual ICollection<PagoTPV_Efecto> PagosTPV_Efectos { get; set; }
     }
 }

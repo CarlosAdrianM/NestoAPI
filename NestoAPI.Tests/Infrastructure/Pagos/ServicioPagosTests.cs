@@ -691,5 +691,198 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         #endregion
+
+        #region Issue #156: Regenerar pago denegado
+
+        [TestMethod]
+        public void EnviarCorreoPagoDenegado_ConCorreoCliente_EnviaCorreoConNuevoEnlace()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            System.Net.Mail.MailMessage correoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Id = 1,
+                Cliente = "15191 ",
+                Importe = 100m,
+                NumeroOrden = "DENEGADO1234",
+                Correo = "cliente@test.com",
+                Descripcion = "Pago pedido 500",
+                CodigoRespuesta = "0190"
+            };
+
+            // Act
+            servicio.EnviarCorreoPagoDenegado(pago, "https://api.nuevavision.es/pago/nuevo-guid");
+
+            // Assert
+            Assert.IsNotNull(correoCapturado);
+            Assert.IsTrue(correoCapturado.Subject.Contains("Pago no procesado"));
+            Assert.AreEqual("cliente@test.com", correoCapturado.To[0].Address);
+            Assert.AreEqual(1, correoCapturado.CC.Count, "Debe tener CC a administración");
+            Assert.IsTrue(correoCapturado.Body.Contains("nuevo-guid"), "Debe incluir el enlace del nuevo pago");
+            Assert.IsTrue(correoCapturado.Body.Contains("Reintentar pago seguro"), "Debe incluir botón de reintento");
+        }
+
+        [TestMethod]
+        public void EnviarCorreoPagoDenegado_SinCorreoCliente_EnviaCorreoLimiteReintentos()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            System.Net.Mail.MailMessage correoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Id = 1,
+                Cliente = "15191 ",
+                Importe = 100m,
+                NumeroOrden = "DENEGADO5678",
+                Correo = null,
+                CodigoRespuesta = "0190"
+            };
+
+            // Act
+            servicio.EnviarCorreoPagoDenegado(pago, "https://api.nuevavision.es/pago/nuevo-guid");
+
+            // Assert: sin correo del cliente, envía a admin como fallback
+            Assert.IsNotNull(correoCapturado);
+            Assert.IsTrue(correoCapturado.Subject.Contains("LIMITE REINTENTOS"));
+        }
+
+        [TestMethod]
+        public void EnviarCorreoPagoDenegado_ConEfectos_IncluyeTablaEfectos()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            string cuerpoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => cuerpoCapturado = m.Body);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Id = 1,
+                Cliente = "15191",
+                Importe = 300m,
+                NumeroOrden = "DENEGADO9999",
+                Correo = "cliente@test.com",
+                CodigoRespuesta = "0190"
+            };
+            pago.PagosTPV_Efectos.Add(new PagoTPV_Efecto
+            {
+                Id = 1, IdPago = 1, ExtractoClienteId = 100, Importe = 150m,
+                Documento = "NV001 ", Efecto = "0", Contacto = "0",
+                Vendedor = "NV", FormaVenta = "WEB", Delegacion = "ALG", TipoApunte = "1"
+            });
+            pago.PagosTPV_Efectos.Add(new PagoTPV_Efecto
+            {
+                Id = 2, IdPago = 1, ExtractoClienteId = 200, Importe = 150m,
+                Documento = "NV002 ", Efecto = "0", Contacto = "0",
+                Vendedor = "NV", FormaVenta = "WEB", Delegacion = "ALG", TipoApunte = "1"
+            });
+
+            // Act
+            servicio.EnviarCorreoPagoDenegado(pago, "https://api.nuevavision.es/pago/test-guid");
+
+            // Assert
+            Assert.IsNotNull(cuerpoCapturado);
+            Assert.IsTrue(cuerpoCapturado.Contains("NV001"), "Debe incluir documento del primer efecto");
+            Assert.IsTrue(cuerpoCapturado.Contains("NV002"), "Debe incluir documento del segundo efecto");
+            Assert.IsTrue(cuerpoCapturado.Contains("300,00"), "Debe incluir el total");
+        }
+
+        [TestMethod]
+        public void EnviarCorreoLimiteReintentos_EnviaCorreoAAdministracion()
+        {
+            // Arrange
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            System.Net.Mail.MailMessage correoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var pago = new PagoTPV
+            {
+                Id = 5,
+                Cliente = "15191 ",
+                Importe = 200m,
+                NumeroOrden = "LIMITE123456",
+                Correo = "cliente@test.com",
+                CodigoRespuesta = "0190",
+                Usuario = "admin@nuevavision.es"
+            };
+
+            // Act
+            servicio.EnviarCorreoLimiteReintentos(pago);
+
+            // Assert
+            Assert.IsNotNull(correoCapturado);
+            Assert.IsTrue(correoCapturado.Subject.Contains("LIMITE REINTENTOS"));
+            Assert.IsTrue(correoCapturado.Subject.Contains("15191"));
+            Assert.IsTrue(correoCapturado.Body.Contains("superado"), "Debe mencionar que se ha superado el límite");
+            Assert.IsTrue(correoCapturado.Body.Contains("0190"), "Debe incluir el código de respuesta Redsys");
+        }
+
+        [TestMethod]
+        public void MapearADTO_ConPagoOriginalId_IncluyePagoOriginalIdEnDTO()
+        {
+            // Arrange
+            var pago = new PagoTPV
+            {
+                Id = 3,
+                NumeroOrden = "REINT1234567",
+                Tipo = "TPVVirtual",
+                Empresa = "1 ",
+                Cliente = "15191 ",
+                Importe = 100m,
+                Estado = "Pendiente",
+                FechaCreacion = DateTime.Now,
+                PagoOriginalId = 1
+            };
+
+            // Act
+            PagoTPVDTO dto = ServicioPagos.MapearADTO(pago);
+
+            // Assert
+            Assert.AreEqual(1, dto.PagoOriginalId);
+        }
+
+        [TestMethod]
+        public void MapearADTO_SinPagoOriginalId_PagoOriginalIdEsNull()
+        {
+            // Arrange
+            var pago = new PagoTPV
+            {
+                Id = 1,
+                NumeroOrden = "ORIG12345678",
+                Tipo = "TPVVirtual",
+                Empresa = "1 ",
+                Cliente = "15191 ",
+                Importe = 100m,
+                Estado = "Pendiente",
+                FechaCreacion = DateTime.Now,
+                PagoOriginalId = null
+            };
+
+            // Act
+            PagoTPVDTO dto = ServicioPagos.MapearADTO(pago);
+
+            // Assert
+            Assert.IsNull(dto.PagoOriginalId);
+        }
+
+        [TestMethod]
+        public void LimiteReintentosConstante_EsTres()
+        {
+            Assert.AreEqual(3, ServicioPagos.LIMITE_REINTENTOS_PAGO);
+        }
+
+        #endregion
     }
 }

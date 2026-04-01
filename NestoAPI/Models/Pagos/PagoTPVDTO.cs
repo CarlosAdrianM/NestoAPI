@@ -23,6 +23,8 @@ namespace NestoAPI.Models.Pagos
         public string Usuario { get; set; }
         public List<EfectoTPVDTO> Efectos { get; set; }
 
+        public int? PagoOriginalId { get; set; }
+
         // Campos legacy (solo se usan si no hay Efectos)
         public int? ExtractoClienteId { get; set; }
         public string Documento { get; set; }
