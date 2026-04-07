@@ -510,6 +510,67 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
         #endregion
 
+        #region EsSobrePedidoParaPortes
+
+        [TestMethod]
+        public void GestorPortes_EsSobrePedidoParaPortes_Estado0_NuncaEsSobrePedido()
+        {
+            // Estado 0 = producto normal, nunca es sobre pedido independientemente del stock
+            Assert.IsFalse(GestorPortes.EsSobrePedidoParaPortes(
+                estadoProducto: 0, cantidadPedida: 100,
+                stockDisponibleAlmacen: 0, stockDisponibleTodosAlmacenes: 0,
+                servirJunto: true));
+        }
+
+        [TestMethod]
+        public void GestorPortes_EsSobrePedidoParaPortes_Estado4_ConServirJunto_StockGlobalSuficiente_NoEsSobrePedido()
+        {
+            // Bug real: producto estado 4 (a extinguir), 2 unidades pedidas
+            // Stock almacén Algete: 1 (insuficiente), stock global: 4 (suficiente)
+            // Con servirJunto activo: debe mirar stock global → NO es sobre pedido
+            //
+            // Antes del fix, Nesto y NestoApp solo miraban cantidadDisponible (del almacén),
+            // ignorando servirJunto y StockDisponibleTodosLosAlmacenes.
+            // Eso hacía que la línea se excluyera de baseImponibleParaPortes,
+            // cobrando portes indebidamente (80,96€ en vez de 156,96€).
+            Assert.IsFalse(GestorPortes.EsSobrePedidoParaPortes(
+                estadoProducto: 4, cantidadPedida: 2,
+                stockDisponibleAlmacen: 1, stockDisponibleTodosAlmacenes: 4,
+                servirJunto: true));
+        }
+
+        [TestMethod]
+        public void GestorPortes_EsSobrePedidoParaPortes_Estado4_SinServirJunto_StockAlmacenInsuficiente_EsSobrePedido()
+        {
+            // Mismo caso pero sin servirJunto: debe mirar solo stock almacén → SÍ es sobre pedido
+            Assert.IsTrue(GestorPortes.EsSobrePedidoParaPortes(
+                estadoProducto: 4, cantidadPedida: 2,
+                stockDisponibleAlmacen: 1, stockDisponibleTodosAlmacenes: 4,
+                servirJunto: false));
+        }
+
+        [TestMethod]
+        public void GestorPortes_EsSobrePedidoParaPortes_Estado4_SinServirJunto_StockAlmacenSuficiente_NoEsSobrePedido()
+        {
+            // Sin servirJunto pero el almacén tiene suficiente stock
+            Assert.IsFalse(GestorPortes.EsSobrePedidoParaPortes(
+                estadoProducto: 4, cantidadPedida: 2,
+                stockDisponibleAlmacen: 3, stockDisponibleTodosAlmacenes: 5,
+                servirJunto: false));
+        }
+
+        [TestMethod]
+        public void GestorPortes_EsSobrePedidoParaPortes_Estado4_ConServirJunto_StockGlobalInsuficiente_EsSobrePedido()
+        {
+            // Ni siquiera el stock global es suficiente → sobre pedido en cualquier caso
+            Assert.IsTrue(GestorPortes.EsSobrePedidoParaPortes(
+                estadoProducto: 4, cantidadPedida: 5,
+                stockDisponibleAlmacen: 1, stockDisponibleTodosAlmacenes: 3,
+                servirJunto: true));
+        }
+
+        #endregion
+
         #region GestionarLineasPortes
 
         [TestMethod]

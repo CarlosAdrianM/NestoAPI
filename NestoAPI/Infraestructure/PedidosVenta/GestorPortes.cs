@@ -408,5 +408,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                             l.Producto.Trim() != Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL))
                 .Sum(l => l.BaseImponible);
         }
+
+        /// <summary>
+        /// Determina si una línea es "sobre pedido" a efectos del cálculo de portes.
+        /// Un producto de estado 0 nunca es sobre pedido.
+        /// Un producto de estado != 0 es sobre pedido solo si no hay stock suficiente:
+        /// - Con servirJunto: se mira el stock de todos los almacenes
+        /// - Sin servirJunto: se mira solo el stock del almacén del pedido
+        /// </summary>
+        public static bool EsSobrePedidoParaPortes(short estadoProducto, int cantidadPedida,
+            int stockDisponibleAlmacen, int stockDisponibleTodosAlmacenes, bool servirJunto)
+        {
+            if (estadoProducto == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
+            {
+                return false;
+            }
+
+            int stockRelevante = servirJunto ? stockDisponibleTodosAlmacenes : stockDisponibleAlmacen;
+            return stockRelevante < cantidadPedida;
+        }
     }
 }
