@@ -283,6 +283,7 @@ Para cada nombre de cliente, devuelve un saludo apropiado:
 - Si parece una EMPRESA (contiene S.L., S.A., S.C., C.B., SLU, siglas en mayúsculas, palabras como ""centro"", ""peluquería"", ""estética"", ""distribuciones"", etc.), usa un saludo genérico variado: ""Hola"", ""Buenos días"", ""¡Hola!"", etc.
 - Si parece una PERSONA, usa el nombre de pila de forma natural: ""Hola María"", ""¡Hola Carlos!"", etc.
 - Varía los saludos, no uses siempre el mismo.
+- Cada saludo debe ser COMPLETO y AUTOCONTENIDO, listo para insertar directamente en el correo sin añadir nada más alrededor.
 
 FORMATO: Responde SOLO con un JSON array de strings, en el mismo orden que la entrada. Sin explicaciones.
 Ejemplo: entrada [""MARIA PELUQUEROS S.L."", ""Rosa Martínez""] → respuesta [""Hola"", ""Hola Rosa""]";
@@ -445,8 +446,14 @@ Ejemplo: entrada [""MARIA PELUQUEROS S.L."", ""Rosa Martínez""] → respuesta [
 
 Tu objetivo es generar una PLANTILLA HTML reutilizable para correos post-compra. La plantilla usa placeholders que se sustituirán después con datos reales de cada cliente.
 
+REGLA CRÍTICA SOBRE EL SALUDO:
+- El placeholder {{SALUDO}} ya contiene el saludo completo (ej: ""Hola María"", ""¡Hola!"", ""Buenos días"").
+- El HTML de la plantilla NO debe incluir ningún saludo, ""Hola"", ""Buenos días"" ni texto introductorio alrededor de {{SALUDO}}.
+- Correcto: {{SALUDO}}, te escribimos porque...
+- INCORRECTO: ¡Hola {{SALUDO}}! / Hola {{SALUDO}}, te escribimos...
+
 PLACEHOLDERS DISPONIBLES:
-- {{SALUDO}} → Se reemplaza por un saludo personalizado (ej: ""Hola María"" o ""Hola"")
+- {{SALUDO}} → Se reemplaza por un saludo personalizado completo (ej: ""Hola María"" o ""¡Hola!"")
 - {{#PRODUCTOS_COMPRADOS}}...{{/PRODUCTOS_COMPRADOS}} → Bloque que se repite por cada producto (1-3)
   Dentro del bloque:
   - {{NOMBRE_PRODUCTO}} → Nombre del producto
