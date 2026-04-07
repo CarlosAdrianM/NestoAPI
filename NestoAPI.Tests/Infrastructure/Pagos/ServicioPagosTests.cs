@@ -19,6 +19,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         private IContabilidadService _contabilidadService;
         private ILectorParametrosUsuario _lectorParametros;
         private IServicioCorreoElectronico _servicioCorreo;
+        private ILogService _logService;
 
         [TestInitialize]
         public void Setup()
@@ -27,6 +28,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             _contabilidadService = A.Fake<IContabilidadService>();
             _lectorParametros = A.Fake<ILectorParametrosUsuario>();
             _servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            _logService = A.Fake<ILogService>();
         }
 
         [TestMethod]
@@ -83,7 +85,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public async Task IniciarPago_ConImporteCero_LanzaExcepcion()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
             var solicitud = new SolicitudPagoTPV
             {
                 Importe = 0m,
@@ -99,7 +101,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public async Task IniciarPago_ConImporteNegativo_LanzaExcepcion()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
             var solicitud = new SolicitudPagoTPV
             {
                 Importe = -50m,
@@ -114,7 +116,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public async Task ProcesarNotificacion_FirmaInvalida_DevuelveFalse()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
             var notificacion = new NotificacionRedsys
             {
                 Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -143,7 +145,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public void ProcesarNotificacion_PagoDenegado_NoContabiliza()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
             var notificacion = new NotificacionRedsys
             {
                 Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -172,7 +174,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public void IniciarPago_ConUrlsCustom_PasaUrlsCustomARedsys()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
             var solicitud = new SolicitudPagoTPV
             {
                 Importe = 50m,
@@ -216,7 +218,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         public void IniciarPago_SinUrlsCustom_PasaUrlsPorDefectoARedsys()
         {
             // Arrange
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
             var solicitud = new SolicitudPagoTPV
             {
                 Importe = 75m,
@@ -442,7 +444,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // Arrange
             var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Cliente = "15191 ",
@@ -468,7 +470,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // Arrange
             var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Cliente = "15191 ",
@@ -495,7 +497,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
                 .Invokes((System.Net.Mail.MailMessage m) => cuerpoCapturado = m.Body);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Cliente = "15191 ",
@@ -522,7 +524,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
                 .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Cliente = "15191 ",
@@ -554,7 +556,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => _lectorParametros.LeerParametro("1", "Lidia", "CorreoDefecto"))
                 .Returns("lidia@nuevavision.es");
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Cliente = "15191 ",
@@ -582,7 +584,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
                 .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Cliente = "15191 ",
@@ -613,7 +615,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => _lectorParametros.LeerParametro("1", "UsuarioSinCorreo", "CorreoDefecto"))
                 .Returns(null);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Cliente = "15191 ",
@@ -644,7 +646,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
                 .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var resultado = new ResultadoValidacionNotificacion
             {
                 FirmaValida = true,
@@ -674,7 +676,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // Arrange
             var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var resultado = new ResultadoValidacionNotificacion
             {
                 FirmaValida = false,
@@ -703,7 +705,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
                 .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Id = 1,
@@ -736,7 +738,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
                 .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Id = 1,
@@ -764,7 +766,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
                 .Invokes((System.Net.Mail.MailMessage m) => cuerpoCapturado = m.Body);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Id = 1,
@@ -806,7 +808,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
                 .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
 
-            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo);
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
             var pago = new PagoTPV
             {
                 Id = 5,

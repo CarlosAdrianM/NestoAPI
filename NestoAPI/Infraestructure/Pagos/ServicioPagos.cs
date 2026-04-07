@@ -1,4 +1,3 @@
-using Elmah;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
@@ -19,18 +18,25 @@ namespace NestoAPI.Infraestructure.Pagos
         private readonly IContabilidadService _contabilidadService;
         private readonly ILectorParametrosUsuario _lectorParametros;
         private readonly IServicioCorreoElectronico _servicioCorreo;
+        private readonly ILogService _logService;
 
         public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros)
-            : this(redsysService, contabilidadService, lectorParametros, new ServicioCorreoElectronico())
+            : this(redsysService, contabilidadService, lectorParametros, new ServicioCorreoElectronico(), new ElmahLogService())
         {
         }
 
         public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros, IServicioCorreoElectronico servicioCorreo)
+            : this(redsysService, contabilidadService, lectorParametros, servicioCorreo, new ElmahLogService())
+        {
+        }
+
+        public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros, IServicioCorreoElectronico servicioCorreo, ILogService logService)
         {
             _redsysService = redsysService;
             _contabilidadService = contabilidadService;
             _lectorParametros = lectorParametros;
             _servicioCorreo = servicioCorreo;
+            _logService = logService;
         }
 
         public async Task<RespuestaIniciarPago> IniciarPago(SolicitudPagoTPV solicitud, string usuario)
@@ -131,7 +137,7 @@ namespace NestoAPI.Infraestructure.Pagos
             if (!resultado.FirmaValida)
             {
                 string mensajeFirma = $"[ProcesarNotificacion] Firma inválida. Orden: {resultado.NumeroOrden}, Error: {resultado.MensajeError}";
-                LogElmah(mensajeFirma);
+                _logService.LogError(mensajeFirma);
                 EnviarCorreoAlertaPago("Firma invalida en notificacion Redsys", mensajeFirma, resultado);
                 return false;
             }
@@ -150,7 +156,7 @@ namespace NestoAPI.Infraestructure.Pagos
                         $"Codigo respuesta: {resultado.CodigoRespuesta}, " +
                         $"Codigo autorizacion: {resultado.CodigoAutorizacion}, " +
                         $"Pago autorizado: {resultado.PagoAutorizado}";
-                    LogElmah(mensajeNoEncontrado);
+                    _logService.LogError(mensajeNoEncontrado);
                     EnviarCorreoAlertaPago(
                         "Pago Redsys recibido pero NO encontrado en base de datos",
                         mensajeNoEncontrado,
@@ -176,7 +182,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     catch (Exception ex)
                     {
                         errorContabilizacion = ObtenerMensajeCompletoExcepcion(ex);
-                        LogElmah($"[ProcesarNotificacion] Error al contabilizar cobro. Orden: {pago.NumeroOrden}, Error: {errorContabilizacion}", ex);
+                        _logService.LogError($"[ProcesarNotificacion] Error al contabilizar cobro. Orden: {pago.NumeroOrden}, Error: {errorContabilizacion}", ex);
                     }
 
                     // Issue #139/#142/#143: Correo post-cobro a administración (siempre, incluso si falló la contabilización)
@@ -194,7 +200,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     }
                     catch (Exception ex)
                     {
-                        LogElmah($"[ProcesarNotificacion] Error al regenerar pago denegado. Orden: {pago.NumeroOrden}, Error: {ex.Message}", ex);
+                        _logService.LogError($"[ProcesarNotificacion] Error al regenerar pago denegado. Orden: {pago.NumeroOrden}, Error: {ex.Message}", ex);
                     }
                 }
 
@@ -601,7 +607,7 @@ namespace NestoAPI.Infraestructure.Pagos
             }
             catch (Exception ex)
             {
-                LogElmah($"[EnviarCorreoPreCobro] Error enviando correo a {pago.Correo}: {ex.Message}");
+                _logService.LogError($"[EnviarCorreoPreCobro] Error enviando correo a {pago.Correo}: {ex.Message}");
             }
         }
 
@@ -715,7 +721,7 @@ namespace NestoAPI.Infraestructure.Pagos
             }
             catch (Exception ex)
             {
-                LogElmah($"[EnviarCorreoPostCobro] Error enviando correo post-cobro: {ex.Message}");
+                _logService.LogError($"[EnviarCorreoPostCobro] Error enviando correo post-cobro: {ex.Message}");
             }
         }
 
@@ -808,7 +814,7 @@ namespace NestoAPI.Infraestructure.Pagos
             }
             catch (Exception ex)
             {
-                LogElmah($"[EnviarCorreoAlertaPago] Error enviando correo de alerta: {ex.Message}. Alerta original: {detalle}");
+                _logService.LogError($"[EnviarCorreoAlertaPago] Error enviando correo de alerta: {ex.Message}. Alerta original: {detalle}");
             }
         }
 
@@ -1010,7 +1016,7 @@ namespace NestoAPI.Infraestructure.Pagos
             }
             catch (Exception ex)
             {
-                LogElmah($"[EnviarCorreoPagoDenegado] Error enviando correo: {ex.Message}");
+                _logService.LogError($"[EnviarCorreoPagoDenegado] Error enviando correo: {ex.Message}");
             }
         }
 
@@ -1067,33 +1073,7 @@ namespace NestoAPI.Infraestructure.Pagos
             }
             catch (Exception ex)
             {
-                LogElmah($"[EnviarCorreoLimiteReintentos] Error enviando correo: {ex.Message}");
-            }
-        }
-
-        private static void LogElmah(string mensaje, Exception excepcionOriginal = null)
-        {
-            try
-            {
-                var excepcion = excepcionOriginal != null
-                    ? new Exception(mensaje, excepcionOriginal)
-                    : new Exception(mensaje);
-                ErrorSignal.FromCurrentContext().Raise(excepcion);
-            }
-            catch
-            {
-                try
-                {
-                    // Fallback si no hay HttpContext (ej: callback Redsys tras finalizar el request)
-                    var excepcion = excepcionOriginal != null
-                        ? new Exception(mensaje, excepcionOriginal)
-                        : new Exception(mensaje);
-                    Elmah.ErrorLog.GetDefault(null).Log(new Elmah.Error(excepcion));
-                }
-                catch
-                {
-                    // No bloquear si falla el logging
-                }
+                _logService.LogError($"[EnviarCorreoLimiteReintentos] Error enviando correo: {ex.Message}");
             }
         }
 

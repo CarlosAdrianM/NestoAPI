@@ -620,6 +620,8 @@
     <Compile Include="Infraestructure\Facturas\IServicioFacturas.cs" />
     <Compile Include="Infraestructure\NotasEntrega\IServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\IServicioExtractoRuta.cs" />
+    <Compile Include="Infraestructure\ElmahLogService.cs" />
+    <Compile Include="Infraestructure\ILogService.cs" />
     <Compile Include="Infraestructure\IServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\IServicioGestorStocks.cs" />
