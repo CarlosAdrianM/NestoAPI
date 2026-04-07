@@ -49,10 +49,27 @@ namespace NestoAPI.Controllers
                         "Este enlace no es valido o ha expirado.");
                 }
 
-                if (pago.Estado == "Autorizado")
+                if (pago.Estado == Constantes.EstadosPagoTPV.AUTORIZADO)
                 {
                     return GenerarPaginaError("Pago ya realizado",
                         "Este pago ya fue completado correctamente. No es necesario volver a pagar.");
+                }
+
+                if (pago.Estado == Constantes.EstadosPagoTPV.DENEGADO)
+                {
+                    var pagoRegenerado = await db.PagosTPV
+                        .FirstOrDefaultAsync(p => p.PagoOriginalId == pago.Id)
+                        .ConfigureAwait(false);
+
+                    if (pagoRegenerado != null)
+                    {
+                        var redirectResponse = Request.CreateResponse(HttpStatusCode.Redirect);
+                        redirectResponse.Headers.Location = new Uri($"/pago/{pagoRegenerado.TokenAcceso}", UriKind.Relative);
+                        return redirectResponse;
+                    }
+
+                    return GenerarPaginaError("Pago denegado",
+                        "Este pago fue denegado y no se ha podido generar un nuevo enlace. Por favor, contacte con administracion.");
                 }
 
                 // Generar parametros de Redsys para el formulario

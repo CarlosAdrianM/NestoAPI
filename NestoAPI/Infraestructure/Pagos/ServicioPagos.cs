@@ -77,7 +77,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     FormaVenta = solicitud.FormaVenta,
                     Delegacion = solicitud.Delegacion,
                     TipoApunte = solicitud.TipoApunte,
-                    Estado = "Pendiente",
+                    Estado = Constantes.EstadosPagoTPV.PENDIENTE,
                     FechaCreacion = DateTime.Now,
                     Usuario = usuario,
                     TokenAcceso = Guid.NewGuid()
@@ -164,7 +164,7 @@ namespace NestoAPI.Infraestructure.Pagos
 
                 if (resultado.PagoAutorizado)
                 {
-                    pago.Estado = "Autorizado";
+                    pago.Estado = Constantes.EstadosPagoTPV.AUTORIZADO;
                     await db.SaveChangesAsync().ConfigureAwait(false);
 
                     // Issue #143: Contabilizar con resiliencia - si falla, el correo debe enviarse igualmente
@@ -184,7 +184,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 }
                 else
                 {
-                    pago.Estado = "Denegado";
+                    pago.Estado = Constantes.EstadosPagoTPV.DENEGADO;
                     await db.SaveChangesAsync().ConfigureAwait(false);
 
                     // Issue #156: Regenerar enlace de pago si no se ha superado el límite de reintentos
@@ -864,7 +864,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 FormaVenta = pagoDenegado.FormaVenta,
                 Delegacion = pagoDenegado.Delegacion,
                 TipoApunte = pagoDenegado.TipoApunte,
-                Estado = "Pendiente",
+                Estado = Constantes.EstadosPagoTPV.PENDIENTE,
                 FechaCreacion = DateTime.Now,
                 Usuario = pagoDenegado.Usuario,
                 TokenAcceso = Guid.NewGuid(),

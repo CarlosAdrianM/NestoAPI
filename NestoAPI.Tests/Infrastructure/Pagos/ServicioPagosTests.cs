@@ -268,7 +268,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 Importe = 150.50m,
                 Descripcion = "Pago pedido 100",
                 Correo = "test@test.com",
-                Estado = "Autorizado",
+                Estado = Constantes.EstadosPagoTPV.AUTORIZADO,
                 CodigoRespuesta = "0000",
                 CodigoAutorizacion = "AUTH123",
                 FechaCreacion = new DateTime(2026, 2, 20),
@@ -380,7 +380,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 Empresa = "1 ",
                 Cliente = "15191 ",
                 Importe = 300m,
-                Estado = "Autorizado",
+                Estado = Constantes.EstadosPagoTPV.AUTORIZADO,
                 FechaCreacion = DateTime.Now
             };
             pago.PagosTPV_Efectos.Add(new PagoTPV_Efecto
@@ -422,7 +422,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 Empresa = "1 ",
                 Cliente = "15191 ",
                 Importe = 100m,
-                Estado = "Pendiente",
+                Estado = Constantes.EstadosPagoTPV.PENDIENTE,
                 FechaCreacion = DateTime.Now
             };
 
@@ -841,7 +841,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 Empresa = "1 ",
                 Cliente = "15191 ",
                 Importe = 100m,
-                Estado = "Pendiente",
+                Estado = Constantes.EstadosPagoTPV.PENDIENTE,
                 FechaCreacion = DateTime.Now,
                 PagoOriginalId = 1
             };
@@ -865,7 +865,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 Empresa = "1 ",
                 Cliente = "15191 ",
                 Importe = 100m,
-                Estado = "Pendiente",
+                Estado = Constantes.EstadosPagoTPV.PENDIENTE,
                 FechaCreacion = DateTime.Now,
                 PagoOriginalId = null
             };

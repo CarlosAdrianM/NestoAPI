@@ -211,6 +211,13 @@ namespace NestoAPI.Models
             public const string TIENDAS = "Tiendas";
         }
 
+        public static class EstadosPagoTPV
+        {
+            public const string PENDIENTE = "Pendiente";
+            public const string AUTORIZADO = "Autorizado";
+            public const string DENEGADO = "Denegado";
+        }
+
         public static class NivelRiesgoPagos
         {
             public const short NO_TIENE_DEUDA = 1;
