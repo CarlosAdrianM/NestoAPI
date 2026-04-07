@@ -6,6 +6,12 @@ using System.Linq;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
 {
+    public class ResultadoGestionPortes
+    {
+        public bool Modificado { get; set; }
+        public decimal ImportePortesEliminados { get; set; }
+    }
+
     public class ResultadoPortes
     {
         public decimal ImportePortes { get; set; }
@@ -257,13 +263,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         /// Añade o quita líneas según corresponda.
         /// Devuelve true si se modificaron las líneas.
         /// </summary>
-        public static bool GestionarLineasPortes(
+        public static ResultadoGestionPortes GestionarLineasPortes(
             ICollection<Models.PedidosVenta.LineaPedidoVentaDTO> lineas,
             ResultadoPortes resultado,
             string iva,
             IEnumerable<Models.PedidosBase.ParametrosIvaBase> parametrosIva)
         {
-            bool modificado = false;
+            var resultadoGestion = new ResultadoGestionPortes();
 
             // Buscar líneas existentes de portes (cuentas 624xxx)
             var lineaPortesExistente = lineas.FirstOrDefault(l =>
@@ -289,7 +295,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     {
                         var lineaPortes = CrearLineaPortes(resultado, lineaReferencia, iva, parametrosIva);
                         lineas.Add(lineaPortes);
-                        modificado = true;
+                        resultadoGestion.Modificado = true;
                     }
                 }
             }
@@ -298,8 +304,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 // Solo quitar si es línea nueva (id == 0) y no viene de un canal externo.
                 // Los canales externos (Amazon, TiendaOnline, etc.) gestionan sus propios portes.
+                resultadoGestion.ImportePortesEliminados = lineaPortesExistente.PrecioUnitario;
                 lineas.Remove(lineaPortesExistente);
-                modificado = true;
+                resultadoGestion.Modificado = true;
             }
 
             // Gestionar línea de comisión reembolso
@@ -312,17 +319,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     {
                         var lineaReembolso = CrearLineaReembolso(resultado, lineaReferencia, iva, parametrosIva);
                         lineas.Add(lineaReembolso);
-                        modificado = true;
+                        resultadoGestion.Modificado = true;
                     }
                 }
             }
             else if (lineaReembolsoExistente != null && lineaReembolsoExistente.id == 0)
             {
                 lineas.Remove(lineaReembolsoExistente);
-                modificado = true;
+                resultadoGestion.Modificado = true;
             }
 
-            return modificado;
+            return resultadoGestion;
         }
 
         private static Models.PedidosVenta.LineaPedidoVentaDTO CrearLineaPortes(

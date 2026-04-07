@@ -1342,7 +1342,18 @@ namespace NestoAPI.Controllers
                     AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())
                 };
                 var resultadoPortes = GestorPortes.CalcularPortes(inputPortes);
-                if (GestorPortes.GestionarLineasPortes(pedido.Lineas, resultadoPortes, pedido.iva, pedido.ParametrosIva))
+                var resultadoGestionPortes = GestorPortes.GestionarLineasPortes(pedido.Lineas, resultadoPortes, pedido.iva, pedido.ParametrosIva);
+
+                if (resultadoGestionPortes.ImportePortesEliminados > 0)
+                {
+                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                        $"[Portes eliminados] Pedido {pedido.numero} cliente {pedido.cliente?.Trim()}: " +
+                        $"se eliminaron portes de {resultadoGestionPortes.ImportePortesEliminados:N2}€ " +
+                        $"porque el importe ({inputPortes.BaseImponibleProductos:N2}€) " +
+                        $"supera el umbral de portes gratis ({resultadoPortes.ImporteMinimoPedidoSinPortes:N2}€)")));
+                }
+
+                if (resultadoGestionPortes.Modificado)
                 {
                     // Crear las LinPedidoVta para las líneas nuevas de portes/reembolso
                     foreach (var lineaNueva in pedido.Lineas.Where(l => l.id == 0 &&

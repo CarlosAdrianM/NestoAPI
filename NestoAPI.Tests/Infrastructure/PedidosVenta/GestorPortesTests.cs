@@ -592,7 +592,8 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
                 CuentaPortes = "62400002"
             };
 
-            bool modificado = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            bool modificado = resultadoGestion.Modificado;
 
             Assert.IsTrue(modificado);
             Assert.AreEqual(2, lineas.Count);
@@ -616,7 +617,8 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
                 PortesGratis = true
             };
 
-            bool modificado = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            bool modificado = resultadoGestion.Modificado;
 
             Assert.IsFalse(modificado);
             Assert.AreEqual(1, lineas.Count);
@@ -647,7 +649,8 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
                 CuentaPortes = "62400002"
             };
 
-            bool modificado = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            bool modificado = resultadoGestion.Modificado;
 
             Assert.IsFalse(modificado);
             Assert.AreEqual(2, lineas.Count);
@@ -675,7 +678,8 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
                 CuentaReembolso = "75900000"
             };
 
-            bool modificado = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            bool modificado = resultadoGestion.Modificado;
 
             Assert.IsTrue(modificado);
             Assert.AreEqual(3, lineas.Count); // producto + portes + reembolso
@@ -700,7 +704,8 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
                 CuentaPortes = "62400002"
             };
 
-            bool modificado = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            bool modificado = resultadoGestion.Modificado;
 
             Assert.IsTrue(modificado);
             var lineaPortes = lineas.Single(l => l.Producto == "62400002");
@@ -927,13 +932,64 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             Assert.AreEqual(Constantes.Portes.PROVINCIAL, resultado.ImportePortes, "Portes provinciales");
             Assert.IsFalse(resultado.EsContraReembolso, "TAR no es contra reembolso");
 
-            bool modificado = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+            bool modificado = resultadoGestion.Modificado;
 
             Assert.IsTrue(modificado, "Debe añadir línea de portes");
             Assert.AreEqual(2, lineas.Count, "1 producto + 1 portes");
             Assert.IsTrue(lineas.Any(l => l.Producto != null && l.Producto.StartsWith("624")),
                 "El backend SÍ añade portes. El bug está en NestoApp que calcula el importe " +
                 "del enlace de pago ANTES de crear el pedido (sin portes incluidos).");
+        }
+
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_EliminaPortes_RegistraImporte()
+        {
+            // Línea de portes nueva (id=0) que se eliminará porque PortesGratis=true
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 200, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "EFC",
+                    estado = 1, usuario = "test", fechaEntrega = System.DateTime.Today
+                },
+                new LineaPedidoVentaDTO
+                {
+                    id = 0, tipoLinea = 2, Producto = "62400002", PrecioUnitario = 3.5M, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "EFC",
+                    estado = 1, usuario = "test", fechaEntrega = System.DateTime.Today
+                }
+            };
+            var resultado = new ResultadoPortes { PortesGratis = true, ImportePortes = 0 };
+
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.IsTrue(resultadoGestion.Modificado);
+            Assert.AreEqual(3.5M, resultadoGestion.ImportePortesEliminados,
+                "Debe registrar el importe de portes eliminados para auditoría");
+            Assert.AreEqual(1, lineas.Count, "Solo debe quedar la línea de producto");
+        }
+
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_NoEliminaPortes_ImporteEliminadosCero()
+        {
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 50, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "EFC",
+                    estado = 1, usuario = "test", fechaEntrega = System.DateTime.Today
+                }
+            };
+            var resultado = new ResultadoPortes { ImportePortes = 3.5M, PortesGratis = false };
+
+            var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.IsTrue(resultadoGestion.Modificado, "Debe añadir portes");
+            Assert.AreEqual(0M, resultadoGestion.ImportePortesEliminados,
+                "No se eliminaron portes, el importe debe ser 0");
         }
 
         #endregion
