@@ -15,6 +15,7 @@ namespace NestoAPI.Models.PedidosVenta
             Prepagos = new HashSet<PrepagoDTO>();
             Efectos = new List<EfectoPedidoVentaDTO>();
         }
+        public bool Agrupada { get; set; }
         public string ccc { get; set; }
         public string cliente { get; set; }
         public string comentarios { get; set; }

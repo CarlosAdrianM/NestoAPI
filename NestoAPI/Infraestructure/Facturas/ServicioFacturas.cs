@@ -353,7 +353,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 .Include(p => p.LinPedidoVtas)
                 .Single(p => p.Empresa == empresa && p.Número == pedido);
 
-            if (cabPedido.Periodo_Facturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES)
+            if (cabPedido.Periodo_Facturacion == Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES && !cabPedido.Agrupada)
             {
                 // Caso especial: cliente de fin de mes
                 return new CrearFacturaResponseDTO
