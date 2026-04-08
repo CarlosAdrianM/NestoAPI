@@ -17,7 +17,7 @@ namespace NestoAPI.Models.Picking
                 return String.Empty;
             }
             string usuarioSinDominio = usuario.Contains("\\") ? usuario.Substring(usuario.IndexOf("\\") + 1).Trim() : usuario;
-            return db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Usuario == usuarioSinDominio && p.Clave == "CorreoDefecto")?.Valor;
+            return db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Usuario == usuarioSinDominio && p.Clave == Parametros.Claves.CorreoDefecto)?.Valor;
         }
 
         public List<ExtractoClienteDTO> ExtractosPendientes(int pedido)

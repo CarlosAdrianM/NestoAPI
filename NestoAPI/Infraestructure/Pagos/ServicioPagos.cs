@@ -218,7 +218,7 @@ namespace NestoAPI.Infraestructure.Pagos
             string cuentaBanco = _lectorParametros.LeerParametro(
                 pago.Empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO,
                 "(defecto)",
-                ParametrosUsuario.CUENTA_BANCO_TARJETA);
+                Parametros.Claves.CuentaBancoTarjeta);
 
             if (string.IsNullOrWhiteSpace(cuentaBanco))
             {
@@ -728,7 +728,7 @@ namespace NestoAPI.Infraestructure.Pagos
         /// <summary>
         /// Obtiene el correo electrónico de un usuario.
         /// Si el usuario ya es un email, lo devuelve directamente.
-        /// Si es un usuario de Windows (DOMINIO\Usuario), lee el parámetro ParametrosUsuario.CORREO_DEFECTO.
+        /// Si es un usuario de Windows (DOMINIO\Usuario), lee el parámetro Parametros.Claves.CorreoDefecto.
         /// </summary>
         internal string ObtenerCorreoUsuario(string usuario)
         {
@@ -751,7 +751,7 @@ namespace NestoAPI.Infraestructure.Pagos
             try
             {
                 return _lectorParametros.LeerParametro(
-                    Empresas.EMPRESA_POR_DEFECTO, nombreUsuario, ParametrosUsuario.CORREO_DEFECTO);
+                    Empresas.EMPRESA_POR_DEFECTO, nombreUsuario, Parametros.Claves.CorreoDefecto);
             }
             catch
             {

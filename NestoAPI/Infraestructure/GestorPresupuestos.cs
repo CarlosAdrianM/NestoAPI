@@ -114,7 +114,7 @@ namespace NestoAPI.Infraestructure
             string usuarioParametro = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
             if (usuarioParametro != null)
             {
-                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "CorreoDefecto");
+                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == Parametros.Claves.CorreoDefecto);
                 correoUsuario = parametroUsuario != null ? parametroUsuario.Valor : Constantes.Correos.INFORMATICA;
                 if (correoUsuario != null && correoUsuario.Trim() != "")
                 {

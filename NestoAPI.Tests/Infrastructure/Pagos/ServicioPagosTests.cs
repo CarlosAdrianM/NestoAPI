@@ -553,7 +553,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
 
             // El lector de parámetros devuelve el correo para el usuario "Lidia"
-            A.CallTo(() => _lectorParametros.LeerParametro("1", "Lidia", "CorreoDefecto"))
+            A.CallTo(() => _lectorParametros.LeerParametro("1", "Lidia", Parametros.Claves.CorreoDefecto))
                 .Returns("lidia@nuevavision.es");
 
             var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
@@ -569,7 +569,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // Act
             servicio.EnviarCorreoPostCobro(pago);
 
-            // Assert: debe buscar "CorreoDefecto" para usuario "Lidia" y ponerlo en CC
+            // Assert: debe buscar Parametros.Claves.CorreoDefecto para usuario "Lidia" y ponerlo en CC
             Assert.IsNotNull(correoCapturado);
             Assert.AreEqual(1, correoCapturado.CC.Count, "Debe tener un CC");
             Assert.AreEqual("lidia@nuevavision.es", correoCapturado.CC[0].Address);
@@ -612,7 +612,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 .Invokes((System.Net.Mail.MailMessage m) => correoCapturado = m);
 
             // El lector no encuentra correo para este usuario
-            A.CallTo(() => _lectorParametros.LeerParametro("1", "UsuarioSinCorreo", "CorreoDefecto"))
+            A.CallTo(() => _lectorParametros.LeerParametro("1", "UsuarioSinCorreo", Parametros.Claves.CorreoDefecto))
                 .Returns(null);
 
             var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);

@@ -330,7 +330,7 @@ namespace NestoAPI.Controllers
                 {
                     correo.From = new MailAddress(Constantes.Correos.CORREO_ADMON, "NUEVA VISIÓN (Administración)");
                     IQueryable<SeguimientoCliente> seguimientos = db.SeguimientosClientes.Where(s => s.NumOrdenExtracto == extractoActual.Nº_Orden);
-                    IQueryable<ParametroUsuario> correosPara = db.ParametrosUsuario.Where(p => p.Empresa == extractoActual.Empresa && seguimientos.Where(s => s.Usuario != extractoCliente.usuario).Select(s => s.Usuario.Substring(s.Usuario.IndexOf("\\") + 1).Trim()).Contains(p.Usuario) && p.Clave == "CorreoDefecto");
+                    IQueryable<ParametroUsuario> correosPara = db.ParametrosUsuario.Where(p => p.Empresa == extractoActual.Empresa && seguimientos.Where(s => s.Usuario != extractoCliente.usuario).Select(s => s.Usuario.Substring(s.Usuario.IndexOf("\\") + 1).Trim()).Contains(p.Usuario) && p.Clave == Parametros.Claves.CorreoDefecto);
                     foreach (string correoPara in correosPara.Select(c => c.Valor).Distinct())
                     {
                         correo.To.Add(correoPara);

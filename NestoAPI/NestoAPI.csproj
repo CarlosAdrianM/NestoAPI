@@ -871,6 +871,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Constantes.cs" />
+    <Compile Include="Models\Parametros.cs" />
     <Compile Include="Models\Contabilidad.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
