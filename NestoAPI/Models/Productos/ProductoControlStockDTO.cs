@@ -12,5 +12,6 @@ namespace NestoAPI.Models.Productos
         public string Categoria { get; set; }
         public string Estacionalidad { get; set; }
         public int Multiplos { get; set; }
+        public string SubGrupo { get; set; }
     }
 }

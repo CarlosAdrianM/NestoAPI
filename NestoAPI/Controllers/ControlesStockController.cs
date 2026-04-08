@@ -224,7 +224,8 @@ namespace NestoAPI.Controllers
                     YaExiste = controlStock != null,
                     Categoria = controlStock?.Categoria ?? string.Empty,
                     Estacionalidad = controlStock?.Estacionalidad ?? string.Empty,
-                    Multiplos = controlStock?.Múltiplos ?? 1
+                    Multiplos = controlStock?.Múltiplos ?? 1,
+                    SubGrupo = item.Producto.SubGrupo?.Trim()
                 };
 
                 resultado.Add(dto);
