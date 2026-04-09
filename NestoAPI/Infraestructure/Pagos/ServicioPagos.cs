@@ -500,6 +500,8 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         private const string URL_LOGO = "https://www.productosdeesteticaypeluqueriaprofesional.com/img/cms/Landing/logo.png";
+        private const string URL_GOOGLE_PLAY_NESTOTIENDAS = "https://play.google.com/store/apps/details?id=com.nuevavision.nestotiendas";
+        private const string URL_BADGE_GOOGLE_PLAY = "https://upload.wikimedia.org/wikipedia/commons/7/78/Google_Play_Store_badge_EN.svg";
 
         /// <summary>
         /// Envía correo al cliente con el enlace de pago generado.
@@ -567,11 +569,15 @@ namespace NestoAPI.Infraestructure.Pagos
                             Le hemos preparado un enlace de pago seguro para que pueda realizar su abono de forma r&aacute;pida y c&oacute;moda.
                         </p>
                         {seccionEfectos}
-                        <p style='text-align:center;margin:25px 0'>
-                            <a href='{urlPaginaPago}' style='display:inline-block;background:linear-gradient(135deg,#8b5a6b 0%,#6b3a5d 100%);color:white;padding:14px 40px;text-decoration:none;border-radius:8px;font-size:16px;font-weight:bold;letter-spacing:0.5px'>
-                                Realizar pago seguro
-                            </a>
-                        </p>
+                        <table role='presentation' cellpadding='0' cellspacing='0' border='0' align='center' style='margin:25px auto'>
+                            <tr>
+                                <td bgcolor='#6b3a5d' style='border-radius:8px;background:linear-gradient(135deg,#8b5a6b 0%,#6b3a5d 100%)'>
+                                    <a href='{urlPaginaPago}' style='display:inline-block;padding:14px 40px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:bold;letter-spacing:0.5px;border-radius:8px'>
+                                        Realizar pago seguro
+                                    </a>
+                                </td>
+                            </tr>
+                        </table>
                         <p style='color:#999;font-size:12px;text-align:center;margin:15px 0 0 0'>
                             El pago se realiza a trav&eacute;s de la pasarela segura Redsys, con la m&aacute;xima protecci&oacute;n para sus datos.
                         </p>
@@ -580,6 +586,14 @@ namespace NestoAPI.Infraestructure.Pagos
                 <!-- Pie -->
                 <tr>
                     <td style='background:#f8f4f6;padding:20px 35px;border-top:1px solid #f0e8ec'>
+                        <p style='color:#888;font-size:12px;margin:0 0 8px 0;text-align:center'>
+                            &iquest;Lo sab&iacute;a? Puede pagar todas sus facturas de forma r&aacute;pida y c&oacute;moda desde nuestra app.
+                        </p>
+                        <p style='text-align:center;margin:0 0 16px 0'>
+                            <a href='{URL_GOOGLE_PLAY_NESTOTIENDAS}' target='_blank' style='text-decoration:none'>
+                                <img src='{URL_BADGE_GOOGLE_PLAY}' alt='Disponible en Google Play' style='width:130px;height:auto;display:inline-block;border:0' />
+                            </a>
+                        </p>
                         <p style='color:#999;font-size:12px;margin:0;text-align:center'>
                             &iquest;Tiene alguna duda? Contacte con nosotros en
                             <a href='mailto:administracion@nuevavision.es' style='color:#8b5a6b'>administracion@nuevavision.es</a>
@@ -966,11 +980,15 @@ namespace NestoAPI.Infraestructure.Pagos
                             Hemos generado autom&aacute;ticamente un nuevo enlace de pago para que pueda reintentar la operaci&oacute;n cuando lo desee.
                         </p>
                         {seccionEfectos}
-                        <p style='text-align:center;margin:25px 0'>
-                            <a href='{urlNuevoPago}' style='display:inline-block;background:linear-gradient(135deg,#8b5a6b 0%,#6b3a5d 100%);color:white;padding:14px 40px;text-decoration:none;border-radius:8px;font-size:16px;font-weight:bold;letter-spacing:0.5px'>
-                                Reintentar pago seguro
-                            </a>
-                        </p>
+                        <table role='presentation' cellpadding='0' cellspacing='0' border='0' align='center' style='margin:25px auto'>
+                            <tr>
+                                <td bgcolor='#6b3a5d' style='border-radius:8px;background:linear-gradient(135deg,#8b5a6b 0%,#6b3a5d 100%)'>
+                                    <a href='{urlNuevoPago}' style='display:inline-block;padding:14px 40px;color:#ffffff;text-decoration:none;font-size:16px;font-weight:bold;letter-spacing:0.5px;border-radius:8px'>
+                                        Reintentar pago seguro
+                                    </a>
+                                </td>
+                            </tr>
+                        </table>
                         <p style='color:#999;font-size:12px;text-align:center;margin:15px 0 0 0'>
                             El pago se realiza a trav&eacute;s de la pasarela segura Redsys, con la m&aacute;xima protecci&oacute;n para sus datos.
                         </p>
@@ -979,6 +997,14 @@ namespace NestoAPI.Infraestructure.Pagos
                 <!-- Pie -->
                 <tr>
                     <td style='background:#fef5f5;padding:20px 35px;border-top:1px solid #f0e0e0'>
+                        <p style='color:#888;font-size:12px;margin:0 0 8px 0;text-align:center'>
+                            &iquest;Lo sab&iacute;a? Puede pagar todas sus facturas de forma r&aacute;pida y c&oacute;moda desde nuestra app.
+                        </p>
+                        <p style='text-align:center;margin:0 0 16px 0'>
+                            <a href='{URL_GOOGLE_PLAY_NESTOTIENDAS}' target='_blank' style='text-decoration:none'>
+                                <img src='{URL_BADGE_GOOGLE_PLAY}' alt='Disponible en Google Play' style='width:130px;height:auto;display:inline-block;border:0' />
+                            </a>
+                        </p>
                         <p style='color:#999;font-size:12px;margin:0;text-align:center'>
                             &iquest;Tiene alguna duda? Contacte con nosotros en
                             <a href='mailto:administracion@nuevavision.es' style='color:#8b5a6b'>administracion@nuevavision.es</a>
