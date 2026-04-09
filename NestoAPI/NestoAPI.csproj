@@ -538,6 +538,7 @@
     <Compile Include="Controllers\PreContabilidadesController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
     <Compile Include="Controllers\ProveedoresController.cs" />
+    <Compile Include="Controllers\InformesController.cs" />
     <Compile Include="Controllers\NotificacionesController.cs" />
     <Compile Include="Controllers\PagosController.cs" />
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />
@@ -663,7 +664,9 @@
     <Compile Include="Infraestructure\Verifactu\Verifacti\VerifactiDTOs.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
+    <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
+    <Compile Include="Infraestructure\Informes\InformesService.cs" />
     <Compile Include="Infraestructure\ServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
@@ -1177,6 +1180,7 @@
     <Compile Include="Models\NuevoProtocoloDTO.cs" />
     <Compile Include="Models\RegistrarDispositivoDTO.cs" />
     <Compile Include="Models\Informes\ClienteNuevoVendedorDTO.cs" />
+    <Compile Include="Models\Informes\ResumenVentasDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
     <Compile Include="Models\Pagos\NotificacionRedsys.cs" />
     <Compile Include="Models\Pagos\PagoTPVDTO.cs" />

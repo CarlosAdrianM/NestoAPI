@@ -176,6 +176,9 @@ namespace NestoAPI
             // Servicios de Notificaciones Push (Issue #108)
             _ = services.AddScoped<IServicioNotificacionesPush, ServicioNotificacionesPush>();
 
+            // Servicios de Informes (Nesto#340 Fase 1A)
+            _ = services.AddScoped<IInformesService, InformesService>();
+
             // Servicios de sincronización bidireccional (External Systems <-> Nesto)
             // Push Subscription: usa SyncWebhookController
             _ = services.AddSingleton<ISyncTableHandlerBase, ClientesSyncHandler>();

@@ -179,6 +179,7 @@
     <Compile Include="Infraestructure\CorreoClienteTests.cs" />
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Controllers\SeguimientosClientesControllerTests.cs" />
+    <Compile Include="Controllers\InformesControllerTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
     <Compile Include="Controllers\PagoRedirectControllerTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
