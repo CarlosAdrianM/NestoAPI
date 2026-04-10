@@ -115,7 +115,8 @@ namespace NestoAPI.Infraestructure.Buscador
                     {
                         Tipo = doc.Get("Tipo"),
                         Id = doc.Get("Id"),
-                        Nombre = doc.Get("Nombre")
+                        Nombre = doc.Get("Nombre"),
+                        Familia = doc.Get("Familia")
                     });
                 }
 
