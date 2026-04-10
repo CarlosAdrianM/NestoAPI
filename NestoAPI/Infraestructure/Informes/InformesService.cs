@@ -53,5 +53,28 @@ namespace NestoAPI.Infraestructure.Informes
                 .ToListAsync()
                 .ConfigureAwait(false);
         }
+
+        public async Task<List<DetalleRapportsDTO>> LeerDetalleRapportsAsync(DateTime fechaDesde, DateTime fechaHasta, string listaVendedores)
+        {
+            SqlParameter fechaDesdeParam = new SqlParameter("@FechaDesde", SqlDbType.DateTime)
+            {
+                Value = fechaDesde
+            };
+            SqlParameter fechaHastaParam = new SqlParameter("@FechaHasta", SqlDbType.DateTime)
+            {
+                Value = fechaHasta
+            };
+            SqlParameter listaVendedoresParam = new SqlParameter("@ListaVendedores", SqlDbType.NVarChar)
+            {
+                Value = listaVendedores ?? string.Empty
+            };
+
+            return await db.Database
+                .SqlQuery<DetalleRapportsDTO>(
+                    "prdInformeRapportEstado9 @FechaDesde, @FechaHasta, @ListaVendedores",
+                    fechaDesdeParam, fechaHastaParam, listaVendedoresParam)
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
     }
 }

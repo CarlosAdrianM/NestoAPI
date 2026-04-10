@@ -1181,6 +1181,7 @@
     <Compile Include="Models\RegistrarDispositivoDTO.cs" />
     <Compile Include="Models\Informes\ClienteNuevoVendedorDTO.cs" />
     <Compile Include="Models\Informes\ControlPedidosDTO.cs" />
+    <Compile Include="Models\Informes\DetalleRapportsDTO.cs" />
     <Compile Include="Models\Informes\ResumenVentasDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
     <Compile Include="Models\Pagos\NotificacionRedsys.cs" />

@@ -41,5 +41,17 @@ namespace NestoAPI.Controllers
 
             return Ok(lista);
         }
+
+        [HttpGet]
+        [Route("api/Informes/DetalleRapports")]
+        [ResponseType(typeof(List<DetalleRapportsDTO>))]
+        public async Task<IHttpActionResult> GetDetalleRapports(DateTime fechaDesde, DateTime fechaHasta, string listaVendedores = "")
+        {
+            List<DetalleRapportsDTO> lista = await _servicio
+                .LeerDetalleRapportsAsync(fechaDesde, fechaHasta, listaVendedores)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
     }
 }
