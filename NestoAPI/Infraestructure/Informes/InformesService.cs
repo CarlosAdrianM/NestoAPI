@@ -45,5 +45,13 @@ namespace NestoAPI.Infraestructure.Informes
                 .ToListAsync()
                 .ConfigureAwait(false);
         }
+
+        public async Task<List<ControlPedidosDTO>> LeerControlPedidosAsync()
+        {
+            return await db.Database
+                .SqlQuery<ControlPedidosDTO>("prdInformeControlPedidos")
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
     }
 }

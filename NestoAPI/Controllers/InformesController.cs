@@ -29,5 +29,17 @@ namespace NestoAPI.Controllers
 
             return Ok(lista);
         }
+
+        [HttpGet]
+        [Route("api/Informes/ControlPedidos")]
+        [ResponseType(typeof(List<ControlPedidosDTO>))]
+        public async Task<IHttpActionResult> GetControlPedidos()
+        {
+            List<ControlPedidosDTO> lista = await _servicio
+                .LeerControlPedidosAsync()
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
     }
 }

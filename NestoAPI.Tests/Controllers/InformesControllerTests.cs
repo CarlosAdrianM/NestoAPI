@@ -116,5 +116,87 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsTrue(authorizeAttributes.Length > 0,
                 "InformesController debe tener [Authorize] a nivel de clase");
         }
+
+        // ----- ControlPedidos (1A.2) -----
+
+        [TestMethod]
+        public async Task GetControlPedidos_LlamaAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerControlPedidosAsync())
+                .Returns(new List<ControlPedidosDTO>());
+
+            await _controller.GetControlPedidos();
+
+            A.CallTo(() => _servicio.LeerControlPedidosAsync())
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetControlPedidos_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<ControlPedidosDTO>
+            {
+                new ControlPedidosDTO
+                {
+                    Pedido = 12345,
+                    Producto = "38697",
+                    Ruta = "MAD",
+                    Cliente = "15191",
+                    Vendedor = "AM",
+                    Nombre = "Crema Hidratante",
+                    Familia = "Eva Visnú",
+                    CantidadPedido = 2,
+                    CantidadTotal = 5
+                },
+                new ControlPedidosDTO
+                {
+                    Pedido = 12346,
+                    Producto = "12345",
+                    Ruta = "BCN",
+                    Cliente = "20001",
+                    Vendedor = "JG",
+                    Nombre = "Champú",
+                    Familia = "Lisap",
+                    CantidadPedido = 1,
+                    CantidadTotal = 1
+                }
+            };
+
+            A.CallTo(() => _servicio.LeerControlPedidosAsync())
+                .Returns(lista);
+
+            var resultado = await _controller.GetControlPedidos();
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<ControlPedidosDTO>>));
+            var okResult = (OkNegotiatedContentResult<List<ControlPedidosDTO>>)resultado;
+            Assert.AreEqual(2, okResult.Content.Count);
+            Assert.AreEqual(12345, okResult.Content[0].Pedido);
+            Assert.AreEqual("Crema Hidratante", okResult.Content[0].Nombre);
+            Assert.AreEqual(5, okResult.Content[0].CantidadTotal);
+            Assert.AreEqual("Champú", okResult.Content[1].Nombre);
+        }
+
+        [TestMethod]
+        public async Task GetControlPedidos_CuandoServicioDevuelveListaVacia_DevuelveOkVacia()
+        {
+            A.CallTo(() => _servicio.LeerControlPedidosAsync())
+                .Returns(new List<ControlPedidosDTO>());
+
+            var resultado = await _controller.GetControlPedidos();
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<ControlPedidosDTO>>));
+            var okResult = (OkNegotiatedContentResult<List<ControlPedidosDTO>>)resultado;
+            Assert.AreEqual(0, okResult.Content.Count);
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(InvalidOperationException))]
+        public async Task GetControlPedidos_CuandoServicioLanzaExcepcion_LaPropaga()
+        {
+            A.CallTo(() => _servicio.LeerControlPedidosAsync())
+                .Throws(new InvalidOperationException("Error en el SP"));
+
+            await _controller.GetControlPedidos();
+        }
     }
 }

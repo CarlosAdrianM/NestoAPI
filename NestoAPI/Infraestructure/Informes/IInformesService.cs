@@ -8,5 +8,6 @@ namespace NestoAPI.Infraestructure.Informes
     public interface IInformesService
     {
         Task<List<ResumenVentasDTO>> LeerResumenVentasAsync(DateTime fechaDesde, DateTime fechaHasta, bool soloFacturas);
+        Task<List<ControlPedidosDTO>> LeerControlPedidosAsync();
     }
 }
