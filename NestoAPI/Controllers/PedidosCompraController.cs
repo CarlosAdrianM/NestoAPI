@@ -37,6 +37,14 @@ namespace NestoAPI.Controllers
             _gestor = new GestorFacturas(_servicioFacturas);
             _servicio = new PedidosCompraService();
         }
+
+        internal PedidosCompraController(NVEntities db)
+        {
+            this.db = db;
+            _servicioFacturas = new ServicioFacturas();
+            _gestor = new GestorFacturas(_servicioFacturas);
+            _servicio = new PedidosCompraService();
+        }
         /*
         // GET: api/PedidosCompra
         public IQueryable<CabFacturaCmp> GetCabFacturasCmp()
@@ -546,6 +554,27 @@ namespace NestoAPI.Controllers
         private bool CabPedidoCmpExists(string empresa, int id)
         {
             return db.CabPedidosCmp.Any(e => e.Empresa == empresa && e.Número == id);
+        }
+
+        [HttpGet]
+        [Route("api/PedidosCompra/FacturasContabilizadasProveedor")]
+        [ResponseType(typeof(List<object>))]
+        public async Task<IHttpActionResult> GetFacturasContabilizadasProveedor(string proveedor, DateTime desde, DateTime hasta)
+        {
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            var raw = await db.CabFacturasCmp
+                .Where(f => f.Empresa == empresa
+                    && f.NºProveedor == proveedor
+                    && f.Fecha >= desde && f.Fecha <= hasta
+                    && f.NºDocumentoProv != null)
+                .Select(f => new { f.NºDocumentoProv, f.Número })
+                .ToListAsync();
+            var resultado = raw
+                .Where(f => f.NºDocumentoProv != null && f.NºDocumentoProv.Trim().Length > 0)
+                .GroupBy(f => f.NºDocumentoProv.Trim())
+                .Select(g => new { NumeroDocumentoProv = g.Key, NumeroFactura = g.First().Número })
+                .ToList();
+            return Ok(resultado);
         }
     }
 }

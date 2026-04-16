@@ -56,6 +56,7 @@ namespace NestoAPI.Models.PedidosCompra
                 DíasEnServir = (byte)DiasEnServir,
                 Comentarios = Comentarios,
                 NºDocumentoProv = FacturaProveedor,
+                PathPedido = PathPedido,
                 Usuario = Usuario,
                 Fecha_Modificación = DateTime.Now
             };
@@ -70,7 +71,7 @@ namespace NestoAPI.Models.PedidosCompra
                     Contacto = Contacto,
                     Almacén = Constantes.Almacenes.ALGETE,
                     Delegación = linea.Delegacion ?? Constantes.Empresas.DELEGACION_POR_DEFECTO,
-                    FormaVenta = Constantes.Empresas.FORMA_VENTA_POR_DEFECTO,
+                    FormaVenta = linea.FormaVenta ?? Constantes.Empresas.FORMA_VENTA_POR_DEFECTO,
                     Estado = (short)linea.Estado,
                     TipoLínea = linea.TipoLinea,
                     Producto = linea.Producto,
@@ -110,7 +111,7 @@ namespace NestoAPI.Models.PedidosCompra
                         Contacto = Contacto,
                         Almacén = Constantes.Almacenes.ALGETE,
                         Delegación = linea.Delegacion ?? Constantes.Empresas.DELEGACION_POR_DEFECTO,
-                        FormaVenta = Constantes.Empresas.FORMA_VENTA_POR_DEFECTO,
+                        FormaVenta = linea.FormaVenta ?? Constantes.Empresas.FORMA_VENTA_POR_DEFECTO,
                         Estado = (short)linea.Estado,
                         TipoLínea = linea.TipoLinea,
                         Producto = linea.Producto,

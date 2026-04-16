@@ -63,6 +63,7 @@ namespace NestoAPI.Models.PedidosCompra
         public decimal PrecioTarifa { get; set; }
         public int EstadoProducto { get; set; }
         public string Delegacion { get; set; }
+        public string FormaVenta { get; set; }
         public string CentroCoste { get; set; }
         public string Departamento { get; set; }
         public bool Enviado { get; set; }

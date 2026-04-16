@@ -2,6 +2,7 @@
 using NestoAPI.Models;
 using System;
 using System.Data.Entity.Infrastructure;
+using System.Data.Entity.Validation;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Data.SqlClient;
@@ -206,6 +207,15 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             {
                 await db.SaveChangesAsync();
                 return cabecera;
+            }
+            catch (DbEntityValidationException ex)
+            {
+                // EF se traga los detalles concretos en EntityValidationErrors. Los desplegamos en
+                // el mensaje para que el cliente sepa qué propiedad es la que falla la validación.
+                string detalles = string.Join(" | ", ex.EntityValidationErrors
+                    .SelectMany(e => e.ValidationErrors)
+                    .Select(v => $"{v.PropertyName}: {v.ErrorMessage}"));
+                throw new Exception($"Validación EF al crear el pedido: {detalles}", ex);
             }
             catch (DbUpdateException ex)
             {
