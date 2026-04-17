@@ -197,8 +197,10 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void EsLineaPortesOReembolso_CuentaReembolsoConTextoReembolso_DevuelveTrue()
+        public void EsLineaPortesOReembolso_CuentaReembolso_DevuelveTrue()
         {
+            // Tras el refactor a 62400000, la cuenta reembolso es un 624xxx y se considera
+            // portes/reembolso sin depender del texto.
             var linea = new LineaPedidoVentaDTO
             {
                 tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
@@ -210,15 +212,15 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void EsLineaPortesOReembolso_CuentaReembolsoSinTextoReembolso_DevuelveFalse()
+        public void EsLineaPortesOReembolso_CuentaContableNo624_DevuelveFalse()
         {
-            // La cuenta 75900000 también se usa para otras cuentas contables (no solo reembolso).
-            // Solo debe tratarse como portes/reembolso si el texto contiene "reembolso".
+            // Cuentas contables ajenas a transporte (p. ej. 70000000 ventas, 75900000 ingresos
+            // diversos) no deben tratarse como portes aunque el texto mencione "reembolso".
             var linea = new LineaPedidoVentaDTO
             {
                 tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
-                Producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL,
-                texto = "Otra cosa"
+                Producto = "70000000",
+                texto = "Venta normal"
             };
 
             Assert.IsFalse(GestorPedidosVenta.EsLineaPortesOReembolso(linea));

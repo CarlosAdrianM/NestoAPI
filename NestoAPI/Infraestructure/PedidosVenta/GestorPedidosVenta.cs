@@ -704,13 +704,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return false;
             }
 
-            if (producto.StartsWith("624"))
-            {
-                return true;
-            }
-
-            return producto == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL
-                && linea.texto?.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0;
+            // Cualquier cuenta 624xxx (Transportes) es portes o comisión reembolso.
+            return producto.StartsWith("624");
         }
     }
 }
