@@ -1097,6 +1097,7 @@
     <Compile Include="Models\PedidosVenta\DocumentosImpresionPedidoDTO.cs" />
     <Compile Include="Models\PedidosVenta\SerieDTO.cs" />
     <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />
+    <Compile Include="Models\PedidosVenta\ResumenPedidoVentaCanalExternoDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaBusquedaDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />

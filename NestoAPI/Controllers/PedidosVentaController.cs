@@ -26,6 +26,7 @@ using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
 using System.Web.Http;
@@ -1693,6 +1694,70 @@ namespace NestoAPI.Controllers
         {
             return almacen == Constantes.Almacenes.REINA ||
                    almacen == Constantes.Almacenes.ALCOBENDAS;
+        }
+
+        /// <summary>
+        /// Issue Nesto#349 Fase 3a: pedidos de venta originados en un canal externo (Amazon,
+        /// TiendaOnline…) en un rango de fechas. El cliente desktop guarda el identificador
+        /// del pedido del canal en la primera línea del campo Comentarios; aquí se extrae
+        /// con <see cref="ExtraerAmazonOrderId"/> y se expone como <c>CanalOrderId</c> en el
+        /// DTO para que el cliente de cuadre lo pueda usar como clave de matching.
+        /// </summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/PorCanalExterno")]
+        [ResponseType(typeof(List<Models.PedidosVenta.ResumenPedidoVentaCanalExternoDTO>))]
+        public async Task<IHttpActionResult> GetPedidosPorCanalExterno(
+            string empresa, string canal, DateTime desde, DateTime hasta)
+        {
+            if (string.IsNullOrWhiteSpace(canal) ||
+                !string.Equals(canal, "Amazon", StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest($"Canal '{canal}' no soportado todavía. Solo 'Amazon'.");
+            }
+
+            // Cliente Amazon en Nesto: 32624.
+            const string CLIENTE_AMAZON = "32624";
+
+            var pedidos = await db.CabPedidoVtas
+                .Where(p => p.Empresa == empresa
+                    && p.Nº_Cliente == CLIENTE_AMAZON
+                    && p.Fecha.HasValue
+                    && p.Fecha >= desde
+                    && p.Fecha <= hasta)
+                .Select(p => new { p.Empresa, p.Número, p.Fecha, p.Nº_Cliente, p.Comentarios })
+                .ToListAsync();
+
+            var resultado = pedidos
+                .Select(p => new Models.PedidosVenta.ResumenPedidoVentaCanalExternoDTO
+                {
+                    Empresa = p.Empresa?.Trim(),
+                    Numero = p.Número,
+                    Fecha = p.Fecha ?? DateTime.MinValue,
+                    Cliente = p.Nº_Cliente?.Trim(),
+                    CanalOrderId = ExtraerAmazonOrderId(p.Comentarios)
+                })
+                .ToList();
+
+            return Ok(resultado);
+        }
+
+        private static readonly Regex _regexAmazonOrderId = new Regex(
+            @"\b\d{3}-\d{7}-\d{7}\b",
+            RegexOptions.Compiled);
+
+        /// <summary>
+        /// Extrae el AmazonOrderId (formato 123-4567890-1234567) del texto indicado. Devuelve
+        /// <c>null</c> si no se encuentra ningún identificador con el patrón esperado. Público
+        /// para tests; no se usa desde otros sitios por ahora.
+        /// </summary>
+        public static string ExtraerAmazonOrderId(string texto)
+        {
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                return null;
+            }
+            var match = _regexAmazonOrderId.Match(texto);
+            return match.Success ? match.Value : null;
         }
 
         /// <summary>
