@@ -418,6 +418,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         notaEntrega = cabPedidoVta.NotaEntrega,
                         Agrupada = cabPedidoVta.Agrupada,
                         suPedido = cabPedidoVta.SuPedido,
+                        NoCobrarComisionReembolso = cabPedidoVta.NoCobrarComisionReembolso,
                         Usuario = cabPedidoVta.Usuario
                     };
                 }
@@ -627,18 +628,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         internal async Task<PedidoVentaDTO> UnirPedidos(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
         {
-            bool originalEsPresupuesto = pedidoOriginal.Lineas.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
-
-            foreach (LineaPedidoVentaDTO linea in pedidoAmpliacion.Lineas.Where(l => l.estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.estado <= Constantes.EstadosLineaVenta.EN_CURSO).ToList())
-            {
-                linea.id = 0;
-                if (originalEsPresupuesto)
-                {
-                    linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
-                }
-                pedidoOriginal.Lineas.Add(linea);
-                _ = pedidoAmpliacion.Lineas.Remove(linea);
-            }
+            MoverLineasAmpliacionAPedidoOriginal(pedidoOriginal, pedidoAmpliacion);
 
             using (TransactionScope transaction = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
             {
@@ -669,6 +659,58 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
 
             return pedidoOriginal;
+        }
+
+        /// <summary>
+        /// Issue #346: mueve las líneas pendientes/en curso del pedido de ampliación al pedido
+        /// original, filtrando las de portes/comisión reembolso para evitar duplicados.
+        /// <see cref="EsLineaPortesOReembolso"/> determina qué se filtra. Extraído de
+        /// <see cref="UnirPedidos"/> para poder testear el comportamiento sin tocar la BD.
+        /// </summary>
+        internal static void MoverLineasAmpliacionAPedidoOriginal(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
+        {
+            bool originalEsPresupuesto = pedidoOriginal.Lineas.Any(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+
+            foreach (LineaPedidoVentaDTO linea in pedidoAmpliacion.Lineas
+                .Where(l => l.estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+                .ToList())
+            {
+                if (EsLineaPortesOReembolso(linea))
+                {
+                    _ = pedidoAmpliacion.Lineas.Remove(linea);
+                    continue;
+                }
+
+                linea.id = 0;
+                if (originalEsPresupuesto)
+                {
+                    linea.estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
+                }
+                pedidoOriginal.Lineas.Add(linea);
+                _ = pedidoAmpliacion.Lineas.Remove(linea);
+            }
+        }
+
+        internal static bool EsLineaPortesOReembolso(LineaPedidoVentaDTO linea)
+        {
+            if (linea.tipoLinea != Constantes.TiposLineaVenta.CUENTA_CONTABLE)
+            {
+                return false;
+            }
+
+            string producto = linea.Producto?.Trim();
+            if (string.IsNullOrEmpty(producto))
+            {
+                return false;
+            }
+
+            if (producto.StartsWith("624"))
+            {
+                return true;
+            }
+
+            return producto == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL
+                && linea.texto?.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0;
         }
     }
 }
