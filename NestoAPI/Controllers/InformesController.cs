@@ -53,5 +53,78 @@ namespace NestoAPI.Controllers
 
             return Ok(lista);
         }
+
+        [HttpGet]
+        [Route("api/Informes/ExtractoContable")]
+        [ResponseType(typeof(List<ExtractoContableDTO>))]
+        public async Task<IHttpActionResult> GetExtractoContable(string empresa, string cuenta, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            List<ExtractoContableDTO> lista = await _servicio
+                .LeerExtractoContableAsync(empresa, cuenta, fechaDesde, fechaHasta)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/UbicacionesInventario")]
+        [ResponseType(typeof(List<UbicacionesInventarioDTO>))]
+        public async Task<IHttpActionResult> GetUbicacionesInventario(string empresa = "1")
+        {
+            List<UbicacionesInventarioDTO> lista = await _servicio
+                .LeerUbicacionesInventarioAsync(empresa)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/KitsQueSePuedenMontar")]
+        [ResponseType(typeof(List<KitsQueSePuedenMontarDTO>))]
+        public async Task<IHttpActionResult> GetKitsQueSePuedenMontar(string empresa, string fecha, string almacen, string filtroRutas)
+        {
+            List<KitsQueSePuedenMontarDTO> lista = await _servicio
+                .LeerKitsQueSePuedenMontarAsync(empresa, fecha, almacen, filtroRutas)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/MontarKitProductos")]
+        [ResponseType(typeof(List<MontarKitProductosDTO>))]
+        public async Task<IHttpActionResult> GetMontarKitProductos(int traspaso)
+        {
+            List<MontarKitProductosDTO> lista = await _servicio
+                .LeerMontarKitProductosAsync(traspaso)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/ManifiestoAgencia")]
+        [ResponseType(typeof(List<ManifiestoAgenciaDTO>))]
+        public async Task<IHttpActionResult> GetManifiestoAgencia(string empresa, int agencia, DateTime fecha)
+        {
+            List<ManifiestoAgenciaDTO> lista = await _servicio
+                .LeerManifiestoAgenciaAsync(empresa, agencia, fecha)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/PedidoCompra")]
+        [ResponseType(typeof(PedidoCompraInformeDTO))]
+        public async Task<IHttpActionResult> GetPedidoCompra(string empresa, int pedido)
+        {
+            PedidoCompraInformeDTO resultado = await _servicio
+                .LeerPedidoCompraAsync(empresa, pedido)
+                .ConfigureAwait(false);
+
+            if (resultado == null) return NotFound();
+            return Ok(resultado);
+        }
     }
 }

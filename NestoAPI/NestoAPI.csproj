@@ -1182,7 +1182,13 @@
     <Compile Include="Models\Informes\ClienteNuevoVendedorDTO.cs" />
     <Compile Include="Models\Informes\ControlPedidosDTO.cs" />
     <Compile Include="Models\Informes\DetalleRapportsDTO.cs" />
+    <Compile Include="Models\Informes\ExtractoContableDTO.cs" />
+    <Compile Include="Models\Informes\KitsQueSePuedenMontarDTO.cs" />
+    <Compile Include="Models\Informes\ManifiestoAgenciaDTO.cs" />
+    <Compile Include="Models\Informes\MontarKitProductosDTO.cs" />
+    <Compile Include="Models\Informes\PedidoCompraInformeDTO.cs" />
     <Compile Include="Models\Informes\ResumenVentasDTO.cs" />
+    <Compile Include="Models\Informes\UbicacionesInventarioDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
     <Compile Include="Models\Pagos\NotificacionRedsys.cs" />
     <Compile Include="Models\Pagos\PagoTPVDTO.cs" />

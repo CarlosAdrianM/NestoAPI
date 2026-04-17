@@ -287,5 +287,259 @@ namespace NestoAPI.Tests.Controllers
 
             await _controller.GetDetalleRapports(new DateTime(2026, 4, 1), new DateTime(2026, 4, 10), "AM");
         }
+
+        // ----- ExtractoContable (1A.7) -----
+
+        [TestMethod]
+        public async Task GetExtractoContable_PasaLosParametrosCorrectosAlServicio()
+        {
+            DateTime desde = new DateTime(2026, 1, 1);
+            DateTime hasta = new DateTime(2026, 3, 31);
+
+            A.CallTo(() => _servicio.LeerExtractoContableAsync("1", "43000000", desde, hasta))
+                .Returns(new List<ExtractoContableDTO>());
+
+            await _controller.GetExtractoContable("1", "43000000", desde, hasta);
+
+            A.CallTo(() => _servicio.LeerExtractoContableAsync("1", "43000000", desde, hasta))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetExtractoContable_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<ExtractoContableDTO>
+            {
+                new ExtractoContableDTO
+                {
+                    Id = 1, Empresa = "1", Fecha = new DateTime(2026, 1, 15),
+                    Documento = "FRA/100", Concepto = "Compra material",
+                    Debe = 100m, Haber = 0m, Saldo = 100m,
+                    Delegacion = "ALG", FormaVenta = "VAR"
+                }
+            };
+            A.CallTo(() => _servicio.LeerExtractoContableAsync(A<string>.Ignored, A<string>.Ignored, A<DateTime>.Ignored, A<DateTime>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetExtractoContable("1", "43000000", new DateTime(2026, 1, 1), new DateTime(2026, 3, 31));
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<ExtractoContableDTO>>));
+            var ok = (OkNegotiatedContentResult<List<ExtractoContableDTO>>)resultado;
+            Assert.AreEqual(1, ok.Content.Count);
+            Assert.AreEqual(100m, ok.Content[0].Saldo);
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(InvalidOperationException))]
+        public async Task GetExtractoContable_CuandoServicioLanzaExcepcion_LaPropaga()
+        {
+            A.CallTo(() => _servicio.LeerExtractoContableAsync(A<string>.Ignored, A<string>.Ignored, A<DateTime>.Ignored, A<DateTime>.Ignored))
+                .Throws(new InvalidOperationException("Error en la query"));
+
+            await _controller.GetExtractoContable("1", "43000000", new DateTime(2026, 1, 1), new DateTime(2026, 3, 31));
+        }
+
+        // ----- UbicacionesInventario (1A.9) -----
+
+        [TestMethod]
+        public async Task GetUbicacionesInventario_PasaLaEmpresaAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerUbicacionesInventarioAsync("1"))
+                .Returns(new List<UbicacionesInventarioDTO>());
+
+            await _controller.GetUbicacionesInventario("1");
+
+            A.CallTo(() => _servicio.LeerUbicacionesInventarioAsync("1"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetUbicacionesInventario_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<UbicacionesInventarioDTO>
+            {
+                new UbicacionesInventarioDTO
+                {
+                    Pasillo = "A", Fila = "01", Columna = "03",
+                    Producto = "12345", CodigoBarras = "8400000000001",
+                    Nombre = "Crema manos", Tamanno = 100, UnidadMedida = "ml",
+                    Familia = "Eva Visnu"
+                }
+            };
+            A.CallTo(() => _servicio.LeerUbicacionesInventarioAsync(A<string>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetUbicacionesInventario("1");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<UbicacionesInventarioDTO>>));
+            var ok = (OkNegotiatedContentResult<List<UbicacionesInventarioDTO>>)resultado;
+            Assert.AreEqual(1, ok.Content.Count);
+            Assert.AreEqual("12345", ok.Content[0].Producto);
+        }
+
+        // ----- KitsQueSePuedenMontar (1A.10) -----
+
+        [TestMethod]
+        public async Task GetKitsQueSePuedenMontar_PasaLosParametrosCorrectosAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerKitsQueSePuedenMontarAsync("1", "20/04/26", "ALG", "(ruta='AT ')"))
+                .Returns(new List<KitsQueSePuedenMontarDTO>());
+
+            await _controller.GetKitsQueSePuedenMontar("1", "20/04/26", "ALG", "(ruta='AT ')");
+
+            A.CallTo(() => _servicio.LeerKitsQueSePuedenMontarAsync("1", "20/04/26", "ALG", "(ruta='AT ')"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetKitsQueSePuedenMontar_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<KitsQueSePuedenMontarDTO>
+            {
+                new KitsQueSePuedenMontarDTO
+                {
+                    Tipo = "NORMAL", Kit = "K-001", Nombre = "Pack promoción",
+                    CantidadAMontar = 5, CodigoBarras = "8400000000002"
+                }
+            };
+            A.CallTo(() => _servicio.LeerKitsQueSePuedenMontarAsync(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetKitsQueSePuedenMontar("1", "20/04/26", "ALG", "(ruta='AT ')");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<KitsQueSePuedenMontarDTO>>));
+            var ok = (OkNegotiatedContentResult<List<KitsQueSePuedenMontarDTO>>)resultado;
+            Assert.AreEqual(5, ok.Content[0].CantidadAMontar);
+        }
+
+        // ----- MontarKitProductos (1A.11) -----
+
+        [TestMethod]
+        public async Task GetMontarKitProductos_PasaElTraspasoAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerMontarKitProductosAsync(12345))
+                .Returns(new List<MontarKitProductosDTO>());
+
+            await _controller.GetMontarKitProductos(12345);
+
+            A.CallTo(() => _servicio.LeerMontarKitProductosAsync(12345))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetMontarKitProductos_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<MontarKitProductosDTO>
+            {
+                new MontarKitProductosDTO
+                {
+                    Producto = "12345", Nombre = "Componente", Tamanno = 50,
+                    UnidadMedida = "ml", Familia = "Lisap", Cantidad = 2,
+                    Pasillo = "A", Fila = "01", Columna = "03",
+                    CodigoBarras = "8400000000003"
+                }
+            };
+            A.CallTo(() => _servicio.LeerMontarKitProductosAsync(A<int>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetMontarKitProductos(12345);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<MontarKitProductosDTO>>));
+            var ok = (OkNegotiatedContentResult<List<MontarKitProductosDTO>>)resultado;
+            Assert.AreEqual(2, ok.Content[0].Cantidad);
+        }
+
+        // ----- ManifiestoAgencia (1A.8) -----
+
+        [TestMethod]
+        public async Task GetManifiestoAgencia_PasaLosParametrosCorrectosAlServicio()
+        {
+            DateTime fecha = new DateTime(2026, 4, 16);
+            A.CallTo(() => _servicio.LeerManifiestoAgenciaAsync("1", 7, fecha))
+                .Returns(new List<ManifiestoAgenciaDTO>());
+
+            await _controller.GetManifiestoAgencia("1", 7, fecha);
+
+            A.CallTo(() => _servicio.LeerManifiestoAgenciaAsync("1", 7, fecha))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetManifiestoAgencia_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<ManifiestoAgenciaDTO>
+            {
+                new ManifiestoAgenciaDTO
+                {
+                    Cliente = "15191", Contacto = "0", Nombre = "Peluquería ABC",
+                    Direccion = "Calle Mayor 1", CodigoPostal = "28001",
+                    Poblacion = "Madrid", Provincia = "Madrid", Bultos = 2,
+                    Reembolso = 0m, TelefonoFijo = "915551234",
+                    TelefonoMovil = "600000001", Observaciones = ""
+                }
+            };
+            A.CallTo(() => _servicio.LeerManifiestoAgenciaAsync(A<string>.Ignored, A<int>.Ignored, A<DateTime>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetManifiestoAgencia("1", 7, new DateTime(2026, 4, 16));
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<ManifiestoAgenciaDTO>>));
+            var ok = (OkNegotiatedContentResult<List<ManifiestoAgenciaDTO>>)resultado;
+            Assert.AreEqual("15191", ok.Content[0].Cliente);
+            Assert.AreEqual(2, ok.Content[0].Bultos);
+        }
+
+        // ----- PedidoCompra (1A.6) -----
+
+        [TestMethod]
+        public async Task GetPedidoCompra_PasaLosParametrosCorrectosAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerPedidoCompraAsync("1", 123456))
+                .Returns(new PedidoCompraInformeDTO { Id = 123456 });
+
+            await _controller.GetPedidoCompra("1", 123456);
+
+            A.CallTo(() => _servicio.LeerPedidoCompraAsync("1", 123456))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetPedidoCompra_CuandoExiste_DevuelveOkConElPedido()
+        {
+            var dto = new PedidoCompraInformeDTO
+            {
+                Id = 123456, Proveedor = "999", Nombre = "Amazon EU",
+                Fecha = new DateTime(2026, 3, 31), PedidoValorado = true,
+                Lineas = new List<LineaPedidoCompraInformeDTO>
+                {
+                    new LineaPedidoCompraInformeDTO
+                    {
+                        NuestraReferencia = "60000100", Descripcion = "Operaciones",
+                        Cantidad = 1, PrecioUnitario = 100m, BaseImponible = 100m
+                    }
+                }
+            };
+            A.CallTo(() => _servicio.LeerPedidoCompraAsync(A<string>.Ignored, A<int>.Ignored))
+                .Returns(dto);
+
+            var resultado = await _controller.GetPedidoCompra("1", 123456);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<PedidoCompraInformeDTO>));
+            var ok = (OkNegotiatedContentResult<PedidoCompraInformeDTO>)resultado;
+            Assert.AreEqual(123456, ok.Content.Id);
+            Assert.AreEqual(1, ok.Content.Lineas.Count);
+            Assert.AreEqual(100m, ok.Content.Lineas[0].PrecioUnitario);
+        }
+
+        [TestMethod]
+        public async Task GetPedidoCompra_CuandoNoExiste_DevuelveNotFound()
+        {
+            A.CallTo(() => _servicio.LeerPedidoCompraAsync(A<string>.Ignored, A<int>.Ignored))
+                .Returns((PedidoCompraInformeDTO)null);
+
+            var resultado = await _controller.GetPedidoCompra("1", 999999);
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
     }
 }
