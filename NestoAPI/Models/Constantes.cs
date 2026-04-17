@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 
 namespace NestoAPI.Models
 {
@@ -233,6 +234,10 @@ namespace NestoAPI.Models
             public const string RUTA_PROPIA_AT = "AT";
             public const string RUTA_AGENCIA_FW = "FW";
             public const string RUTA_AGENCIA_00 = "00";
+
+            // Issue #159: a partir de esta fecha el flag NoCobrarComisionReembolso se ignora
+            // y siempre se aplica la comisión cuando procede.
+            public static readonly DateTime FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO = new DateTime(2026, 9, 1);
         }
         public static class PlazosPago
         {
@@ -245,7 +250,7 @@ namespace NestoAPI.Models
         {
             public const decimal PROVINCIAL = 3.5M;
             public const decimal PENINSULAR = 7M;
-            public const decimal INCREMENTO_REEMBOLSO = 0M;
+            public const decimal INCREMENTO_REEMBOLSO = 3M;
         }
 
         public static class Productos

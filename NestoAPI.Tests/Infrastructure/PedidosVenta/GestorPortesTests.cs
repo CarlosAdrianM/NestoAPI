@@ -993,5 +993,133 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         #endregion
+
+        #region Issue #159 - Flag NoCobrarComisionReembolso y corte 2026-09-01
+
+        [TestCleanup]
+        public void LimpiarOverridesReembolso()
+        {
+            GestorPortes.FechaActualParaPruebas = null;
+            GestorPortes.IncrementoReembolsoParaPruebas = null;
+        }
+
+        [TestMethod]
+        public void FlagNoCobrarReembolsoEsEfectivo_FechaAntesDelCorte_DevuelveTrue()
+        {
+            GestorPortes.FechaActualParaPruebas = new System.DateTime(2026, 8, 31, 23, 59, 59);
+
+            Assert.IsTrue(GestorPortes.FlagNoCobrarReembolsoEsEfectivo(),
+                "Antes del 2026-09-01 el flag debe poder usarse.");
+        }
+
+        [TestMethod]
+        public void FlagNoCobrarReembolsoEsEfectivo_FechaExactaDelCorte_DevuelveFalse()
+        {
+            // A partir de FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO (exclusiva del "antes")
+            // el flag ya no tiene efecto.
+            GestorPortes.FechaActualParaPruebas = new System.DateTime(2026, 9, 1, 0, 0, 0);
+
+            Assert.IsFalse(GestorPortes.FlagNoCobrarReembolsoEsEfectivo());
+        }
+
+        [TestMethod]
+        public void FlagNoCobrarReembolsoEsEfectivo_FechaPosteriorAlCorte_DevuelveFalse()
+        {
+            GestorPortes.FechaActualParaPruebas = new System.DateTime(2027, 1, 15);
+
+            Assert.IsFalse(GestorPortes.FlagNoCobrarReembolsoEsEfectivo());
+        }
+
+        private static PedidoPortesInput InputReembolsoTest()
+        {
+            return new PedidoPortesInput
+            {
+                CodigoPostal = "28100",
+                Ruta = "FW",
+                FormaPago = "EFC",
+                PlazosPago = "CONTADO",
+                PeriodoFacturacion = "NRM",
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 50
+            };
+        }
+
+        [TestMethod]
+        public void CalcularPortes_ConIncrementoActivoYFlagFalse_CobraComisionReembolso()
+        {
+            GestorPortes.IncrementoReembolsoParaPruebas = 3M;
+            var input = InputReembolsoTest();
+            input.NoCobrarComisionReembolso = false;
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.EsContraReembolso);
+            Assert.AreEqual(3M, resultado.ComisionReembolso);
+        }
+
+        [TestMethod]
+        public void CalcularPortes_ConFlagTrueAntesDelCorte_NoCobraComisionReembolso()
+        {
+            // Antes del corte, si el vendedor marca el flag, no se aplica la comisión
+            // aunque la forma de pago sea contra reembolso e INCREMENTO > 0.
+            GestorPortes.IncrementoReembolsoParaPruebas = 3M;
+            GestorPortes.FechaActualParaPruebas = new System.DateTime(2026, 4, 20);
+            var input = InputReembolsoTest();
+            input.NoCobrarComisionReembolso = true;
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.EsContraReembolso, "Sigue siendo contra reembolso");
+            Assert.AreEqual(0M, resultado.ComisionReembolso,
+                "El flag antes del corte debe anular el cobro de la comisión");
+        }
+
+        [TestMethod]
+        public void CalcularPortes_ConFlagTrueDespuesDelCorte_SeIgnoraElFlagYSeCobra()
+        {
+            // A partir de 2026-09-01 el flag deja de tener efecto y siempre se cobra.
+            GestorPortes.IncrementoReembolsoParaPruebas = 3M;
+            GestorPortes.FechaActualParaPruebas = new System.DateTime(2026, 9, 1);
+            var input = InputReembolsoTest();
+            input.NoCobrarComisionReembolso = true;
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.AreEqual(3M, resultado.ComisionReembolso,
+                "Tras la fecha de corte el flag debe ignorarse");
+        }
+
+        [TestMethod]
+        public void CalcularPortes_PagoConTarjetaYFlagTrue_NoCobraPorQueNoEsReembolso()
+        {
+            // El flag solo aplica si ya era contra reembolso. Si la forma de pago no lo es,
+            // no hay comisión independientemente del flag.
+            GestorPortes.IncrementoReembolsoParaPruebas = 3M;
+            var input = InputReembolsoTest();
+            input.FormaPago = Constantes.FormasPago.TARJETA;
+            input.NoCobrarComisionReembolso = true;
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsFalse(resultado.EsContraReembolso);
+            Assert.AreEqual(0M, resultado.ComisionReembolso);
+        }
+
+        [TestMethod]
+        public void CalcularPortes_IncrementoCero_NuncaCobraAunSinFlag()
+        {
+            // Estado actual de producción: INCREMENTO_REEMBOLSO = 0 → no se cobra nunca.
+            // Este test documenta el comportamiento "fase de solo visibilidad".
+            GestorPortes.IncrementoReembolsoParaPruebas = 0M;
+            var input = InputReembolsoTest();
+            input.NoCobrarComisionReembolso = false;
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.EsContraReembolso);
+            Assert.AreEqual(0M, resultado.ComisionReembolso);
+        }
+
+        #endregion
     }
 }

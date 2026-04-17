@@ -39,10 +39,49 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         public string Iva { get; set; }
         public decimal BaseImponibleProductos { get; set; }
         public bool AnadirPortes { get; set; } = true;
+
+        /// <summary>
+        /// Issue #159: si es <c>true</c> y la fecha actual es anterior a
+        /// <see cref="Constantes.Pedidos.FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO"/>,
+        /// el cálculo de comisión por contra reembolso se fuerza a 0. A partir de esa
+        /// fecha el flag se ignora. Para testear el corte sin congelar el reloj, el
+        /// cálculo respeta <see cref="GestorPortes.FechaActualParaPruebas"/>.
+        /// </summary>
+        public bool NoCobrarComisionReembolso { get; set; }
     }
 
     public class GestorPortes
     {
+        /// <summary>
+        /// Issue #159: permite a los tests fijar una "fecha actual" distinta de <see cref="DateTime.Now"/>
+        /// para validar el comportamiento alrededor de la fecha de corte
+        /// <see cref="Constantes.Pedidos.FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO"/>.
+        /// En producción siempre es <c>null</c>.
+        /// </summary>
+        internal static DateTime? FechaActualParaPruebas { get; set; }
+
+        /// <summary>
+        /// Issue #159: override del incremento de reembolso para tests. En producción la
+        /// constante <see cref="Constantes.Portes.INCREMENTO_REEMBOLSO"/> está a 0 (fase de
+        /// solo-visibilidad), pero los tests necesitan simular un valor distinto de cero
+        /// para validar el efecto del flag <c>NoCobrarComisionReembolso</c>.
+        /// En producción siempre es <c>null</c>.
+        /// </summary>
+        internal static decimal? IncrementoReembolsoParaPruebas { get; set; }
+
+        private static DateTime FechaActual() => FechaActualParaPruebas ?? DateTime.Now;
+
+        private static decimal IncrementoReembolso()
+            => IncrementoReembolsoParaPruebas ?? Constantes.Portes.INCREMENTO_REEMBOLSO;
+
+        /// <summary>
+        /// Issue #159: devuelve si hoy debemos honrar el flag <c>NoCobrarComisionReembolso</c>.
+        /// Antes de <see cref="Constantes.Pedidos.FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO"/>
+        /// el flag es efectivo; a partir de esa fecha se ignora.
+        /// </summary>
+        internal static bool FlagNoCobrarReembolsoEsEfectivo()
+            => FechaActual() < Constantes.Pedidos.FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO;
+
         /// <summary>
         /// Determina si un pedido es contra reembolso basándose en los datos de la cabecera.
         /// Centraliza la lógica que antes estaba duplicada en GestorPedidosVenta.ImporteReembolso()
@@ -138,9 +177,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 input.FormaPago, input.PlazosPago,
                 input.CCC, input.PeriodoFacturacion, input.NotaEntrega);
 
-            if (resultado.EsContraReembolso && Constantes.Portes.INCREMENTO_REEMBOLSO > 0)
+            decimal incrementoReembolso = IncrementoReembolso();
+            if (resultado.EsContraReembolso && incrementoReembolso > 0
+                && !(input.NoCobrarComisionReembolso && FlagNoCobrarReembolsoEsEfectivo()))
             {
-                resultado.ComisionReembolso = Constantes.Portes.INCREMENTO_REEMBOLSO;
+                resultado.ComisionReembolso = incrementoReembolso;
                 resultado.CuentaReembolso = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL;
             }
 

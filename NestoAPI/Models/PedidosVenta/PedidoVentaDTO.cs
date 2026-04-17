@@ -49,6 +49,13 @@ namespace NestoAPI.Models.PedidosVenta
         public string vendedor { get; set; }
         public bool vistoBuenoPlazosPago { get; set; }
         public bool CreadoSinPasarValidacion { get; set; }
+        /// <summary>
+        /// Issue #159: permite al vendedor marcar un pedido para que no se le cobre la comisión
+        /// por contra reembolso, aunque la forma de pago sea EFC. Solo tiene efecto si la fecha
+        /// actual es anterior a <see cref="Constantes.Pedidos.FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO"/>;
+        /// a partir de esa fecha el backend ignora el flag y siempre aplica la comisión si procede.
+        /// </summary>
+        public bool NoCobrarComisionReembolso { get; set; }
 
         public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }

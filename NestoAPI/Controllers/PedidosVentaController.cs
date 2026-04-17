@@ -514,6 +514,7 @@ namespace NestoAPI.Controllers
             cabPedidoVta.NoComisiona = pedido.noComisiona;
             cabPedidoVta.MantenerJunto = pedido.mantenerJunto;
             cabPedidoVta.ServirJunto = pedido.servirJunto;
+            cabPedidoVta.NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso;
 
             cabPedidoVta.Usuario = pedido.Usuario;
             cabPedidoVta.Fecha_Modificación = DateTime.Now;
@@ -905,7 +906,8 @@ namespace NestoAPI.Controllers
                     EsCanalExterno = false,
                     Iva = pedido.iva?.Trim(),
                     BaseImponibleProductos = baseImponibleProductosPut,
-                    AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())
+                    AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim()),
+                    NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso
                 };
                 var resultadoPortesPut = GestorPortes.CalcularPortes(inputPortesPut);
 
@@ -1209,6 +1211,7 @@ namespace NestoAPI.Controllers
                 ComentarioPicking = pedido.comentarioPicking,
                 Comentarios = pedido.comentarios,
                 SuPedido = pedido.suPedido,
+                NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso,
                 Usuario = pedido.Usuario
             };
 
@@ -1339,7 +1342,8 @@ namespace NestoAPI.Controllers
                     EsCanalExterno = false,
                     Iva = pedido.iva?.Trim(),
                     BaseImponibleProductos = baseImponibleProductos,
-                    AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim())
+                    AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim()),
+                    NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso
                 };
                 var resultadoPortes = GestorPortes.CalcularPortes(inputPortes);
                 var resultadoGestionPortes = GestorPortes.GestionarLineasPortes(pedido.Lineas, resultadoPortes, pedido.iva, pedido.ParametrosIva);
@@ -1671,7 +1675,8 @@ namespace NestoAPI.Controllers
                     cliente?.Estado == 8 && cabecera.Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL,
                 Iva = cabecera.IVA?.Trim(),
                 BaseImponibleProductos = baseImponibleProductos,
-                AnadirPortes = !EsAlmacenSinPortes(cabecera.LinPedidoVtas.FirstOrDefault()?.Almacén?.Trim())
+                AnadirPortes = !EsAlmacenSinPortes(cabecera.LinPedidoVtas.FirstOrDefault()?.Almacén?.Trim()),
+                NoCobrarComisionReembolso = cabecera.NoCobrarComisionReembolso
             };
 
             var resultado = GestorPortes.CalcularPortes(input);
