@@ -1082,6 +1082,7 @@
     <Compile Include="Models\PedidosCompra\CrearFacturaCmpRequest.cs" />
     <Compile Include="Models\PedidosCompra\CrearFacturaCmpResponse.cs" />
     <Compile Include="Models\PedidosCompra\DescuentoCantidadCompra.cs" />
+    <Compile Include="Models\PedidosCompra\FacturaContabilizadaProveedorDTO.cs" />
     <Compile Include="Models\PedidosCompra\LineaPedidoCompraDTO.cs" />
     <Compile Include="Models\PedidosCompra\OfertaCompra.cs" />
     <Compile Include="Models\PedidosCompra\ParametrosIvaCompra.cs" />

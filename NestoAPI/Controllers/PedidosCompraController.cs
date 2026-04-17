@@ -558,21 +558,24 @@ namespace NestoAPI.Controllers
 
         [HttpGet]
         [Route("api/PedidosCompra/FacturasContabilizadasProveedor")]
-        [ResponseType(typeof(List<object>))]
+        [ResponseType(typeof(List<Models.PedidosCompra.FacturaContabilizadaProveedorDTO>))]
         public async Task<IHttpActionResult> GetFacturasContabilizadasProveedor(string proveedor, DateTime desde, DateTime hasta)
         {
             string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
-            var raw = await db.CabFacturasCmp
+            var facturas = await db.CabFacturasCmp
                 .Where(f => f.Empresa == empresa
                     && f.NºProveedor == proveedor
                     && f.Fecha >= desde && f.Fecha <= hasta
                     && f.NºDocumentoProv != null)
-                .Select(f => new { f.NºDocumentoProv, f.Número })
                 .ToListAsync();
-            var resultado = raw
+            var resultado = facturas
                 .Where(f => f.NºDocumentoProv != null && f.NºDocumentoProv.Trim().Length > 0)
                 .GroupBy(f => f.NºDocumentoProv.Trim())
-                .Select(g => new { NumeroDocumentoProv = g.Key, NumeroFactura = g.First().Número })
+                .Select(g => new Models.PedidosCompra.FacturaContabilizadaProveedorDTO
+                {
+                    NumeroDocumentoProv = g.Key,
+                    NumeroFactura = int.TryParse(g.First().Número?.Trim(), out int n) ? n : 0
+                })
                 .ToList();
             return Ok(resultado);
         }

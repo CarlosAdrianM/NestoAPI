@@ -50,10 +50,12 @@ namespace NestoAPI.Tests.Controllers
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeCabFacturasCmp, facturas);
 
-            var result = await controller.GetFacturasContabilizadasProveedor("999", new DateTime(2026, 2, 1), new DateTime(2026, 2, 28)) as OkNegotiatedContentResult<List<string>>;
+            var result = await controller.GetFacturasContabilizadasProveedor("999", new DateTime(2026, 2, 1), new DateTime(2026, 2, 28)) as OkNegotiatedContentResult<List<NestoAPI.Models.PedidosCompra.FacturaContabilizadaProveedorDTO>>;
 
             Assert.IsNotNull(result);
-            CollectionAssert.AreEquivalent(new List<string> { "INV-ES-2026-0001", "INV-ES-2026-0002" }, result.Content);
+            CollectionAssert.AreEquivalent(
+                new List<string> { "INV-ES-2026-0001", "INV-ES-2026-0002" },
+                result.Content.Select(f => f.NumeroDocumentoProv).ToList());
         }
 
         [TestMethod]
@@ -67,11 +69,11 @@ namespace NestoAPI.Tests.Controllers
             }.AsQueryable();
             ConfigurarFakeDbSet(fakeCabFacturasCmp, facturas);
 
-            var result = await controller.GetFacturasContabilizadasProveedor("999", new DateTime(2026, 2, 1), new DateTime(2026, 2, 28)) as OkNegotiatedContentResult<List<string>>;
+            var result = await controller.GetFacturasContabilizadasProveedor("999", new DateTime(2026, 2, 1), new DateTime(2026, 2, 28)) as OkNegotiatedContentResult<List<NestoAPI.Models.PedidosCompra.FacturaContabilizadaProveedorDTO>>;
 
             Assert.IsNotNull(result);
             Assert.AreEqual(1, result.Content.Count);
-            Assert.AreEqual("INV-A", result.Content[0]);
+            Assert.AreEqual("INV-A", result.Content[0].NumeroDocumentoProv);
         }
 
         [TestMethod]
