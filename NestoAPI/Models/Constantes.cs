@@ -99,7 +99,10 @@ namespace NestoAPI.Models
         public static class Cuentas
         {
             public const string COMISIONES_BANCO_COBRO_TPV = "62600008";
-            public const string CUENTA_PORTES_VENTA_GENERAL = "75900000";
+            // Issue #159: cuenta específica para comisión contra reembolso. Antes era 75900000
+            // (Ingresos por servicios diversos), ahora 62400000 para tratarla como minoración
+            // de gasto de transporte, en coherencia con las cuentas 624xxx de las agencias.
+            public const string CUENTA_PORTES_VENTA_GENERAL = "62400000";
             public const string CUENTA_PORTES_GLOVO = "62400017";
             public const string CUENTA_PORTES_CEX = "62400005";
             public const string CUENTA_PORTES_ONTIME = "62400002";

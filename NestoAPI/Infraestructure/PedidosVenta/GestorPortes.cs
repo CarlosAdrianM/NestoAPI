@@ -312,11 +312,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             var resultadoGestion = new ResultadoGestionPortes();
 
-            // Buscar líneas existentes de portes (cuentas 624xxx)
+            // Buscar líneas existentes de portes (cuentas 624xxx). Excluimos las líneas cuyo
+            // texto contiene "reembolso" porque la cuenta de comisión reembolso también empieza
+            // por 624 y, sin este filtro, se confundiría con una línea de portes (issue #159).
             var lineaPortesExistente = lineas.FirstOrDefault(l =>
                 l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                 l.Producto != null &&
-                l.Producto.Trim().StartsWith("624"));
+                l.Producto.Trim().StartsWith("624") &&
+                !(l.texto != null && l.texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0));
 
             // Buscar línea existente de comisión reembolso
             var lineaReembolsoExistente = lineas.FirstOrDefault(l =>
@@ -324,7 +327,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 l.Producto != null &&
                 l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
                 l.texto != null &&
-                l.texto.Contains("reembolso"));
+                l.texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0);
 
             // Gestionar línea de portes
             if (resultado.ImportePortes > 0 && !resultado.PortesGratis)

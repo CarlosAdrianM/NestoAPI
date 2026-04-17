@@ -486,7 +486,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             var lineas = new HashSet<LineaPedidoVentaDTO>
             {
                 new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 100, Cantidad = 1 },
-                new LineaPedidoVentaDTO { tipoLinea = 2, Producto = "75900000", PrecioUnitario = 3, Cantidad = 1 }
+                new LineaPedidoVentaDTO { tipoLinea = 2, Producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL, PrecioUnitario = 3, Cantidad = 1 }
             };
 
             decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas);
@@ -675,7 +675,7 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
                 CuentaPortes = "62400002",
                 EsContraReembolso = true,
                 ComisionReembolso = 3M,
-                CuentaReembolso = "75900000"
+                CuentaReembolso = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL
             };
 
             var resultadoGestion = GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
@@ -683,6 +683,106 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
             Assert.IsTrue(modificado);
             Assert.AreEqual(3, lineas.Count); // producto + portes + reembolso
+        }
+
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_LineaReembolsoExistenteYPortesGratis_NoSeElimina()
+        {
+            // Protege contra la colisión si la cuenta de reembolso empieza por 624:
+            // el filtro lineaPortesExistente (StartsWith "624") podría confundir la línea
+            // de reembolso con una de portes y, al ir PortesGratis=true, eliminarla.
+            var lineaReembolso = new LineaPedidoVentaDTO
+            {
+                id = 0,
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL,
+                texto = "Comisión contra reembolso",
+                PrecioUnitario = 3M,
+                Cantidad = 1,
+                almacen = "ALG",
+                delegacion = "ALG",
+                formaVenta = "EFC",
+                estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                usuario = "test"
+            };
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 500, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "EFC",
+                    estado = 1, usuario = "test"
+                },
+                lineaReembolso
+            };
+            var resultado = new ResultadoPortes
+            {
+                ImportePortes = 0,
+                PortesGratis = true,
+                EsContraReembolso = true,
+                ComisionReembolso = 3M,
+                CuentaReembolso = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL
+            };
+
+            GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.IsTrue(lineas.Contains(lineaReembolso),
+                "La línea de reembolso no debe eliminarse cuando los portes son gratis. " +
+                "Si este test falla tras cambiar CUENTA_PORTES_VENTA_GENERAL a una cuenta 624xxx, " +
+                "es que lineaPortesExistente (StartsWith \"624\") la ha confundido con una línea de portes.");
+        }
+
+        [TestMethod]
+        public void GestorPortes_GestionarLineasPortes_LineaReembolsoExistenteYPortesCobrables_AnadePortesComoLineaSeparada()
+        {
+            // Si ya existe línea de reembolso y los portes NO son gratis, debe añadirse
+            // una línea de portes aparte (total 3 líneas). Con la colisión 624 vs 624,
+            // lineaPortesExistente encontraría la línea de reembolso, creería que ya hay
+            // portes y no añadiría la nueva.
+            var lineaReembolso = new LineaPedidoVentaDTO
+            {
+                id = 0,
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL,
+                texto = "Comisión contra reembolso",
+                PrecioUnitario = 3M,
+                Cantidad = 1,
+                almacen = "ALG",
+                delegacion = "ALG",
+                formaVenta = "EFC",
+                estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                usuario = "test"
+            };
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 50, Cantidad = 1,
+                    almacen = "ALG", delegacion = "ALG", formaVenta = "EFC",
+                    estado = 1, usuario = "test", fechaEntrega = System.DateTime.Today
+                },
+                lineaReembolso
+            };
+            var resultado = new ResultadoPortes
+            {
+                ImportePortes = 3.5M,
+                PortesGratis = false,
+                CuentaPortes = "62400002",
+                EsContraReembolso = true,
+                ComisionReembolso = 3M,
+                CuentaReembolso = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL
+            };
+
+            GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.AreEqual(3, lineas.Count,
+                "Debe haber producto + reembolso existente + portes nueva. " +
+                "Si este test falla tras cambiar a una cuenta 624xxx, es que GestionarLineasPortes " +
+                "ha encontrado la reembolso al buscar lineaPortesExistente y no ha añadido los portes.");
+            Assert.IsTrue(lineas.Any(l => l.Producto?.Trim() == "62400002"),
+                "Debe haberse añadido la línea de portes con su cuenta específica");
+            Assert.IsTrue(lineas.Contains(lineaReembolso),
+                "La línea de reembolso original debe seguir ahí");
         }
 
         [TestMethod]

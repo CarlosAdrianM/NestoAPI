@@ -911,11 +911,13 @@ namespace NestoAPI.Controllers
                 };
                 var resultadoPortesPut = GestorPortes.CalcularPortes(inputPortesPut);
 
-                // Verificar si ya tiene línea de portes en BD
+                // Verificar si ya tiene línea de portes en BD (excluyendo reembolso,
+                // cuya cuenta también empieza por 624).
                 bool yaLlevaPortesBD = cabPedidoVta.LinPedidoVtas.Any(l =>
                     l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                     l.Producto != null &&
                     l.Producto.Trim().StartsWith("624") &&
+                    !(l.Texto != null && l.Texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0) &&
                     l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
                     l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
 
@@ -946,13 +948,16 @@ namespace NestoAPI.Controllers
                         pedido.Lineas.Add(lineaPortesPut);
                     }
                 }
-                // Quitar portes si ya no los necesita
+                // Quitar portes si ya no los necesita. Se excluyen las líneas cuyo texto
+                // contiene "reembolso" porque la cuenta de comisión reembolso también
+                // empieza por 624 (issue #159).
                 else if ((resultadoPortesPut.PortesGratis || resultadoPortesPut.ImportePortes == 0) && yaLlevaPortesBD)
                 {
                     var lineaPortesBD = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l =>
                         l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                         l.Producto != null &&
                         l.Producto.Trim().StartsWith("624") &&
+                        !(l.Texto != null && l.Texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0) &&
                         l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
                         l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
                         l.Picking == 0);
@@ -962,7 +967,8 @@ namespace NestoAPI.Controllers
                         var lineaPortesDTO = pedido.Lineas.FirstOrDefault(l =>
                             l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                             l.Producto != null &&
-                            l.Producto.Trim().StartsWith("624"));
+                            l.Producto.Trim().StartsWith("624") &&
+                            !(l.texto != null && l.texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0));
                         if (lineaPortesDTO != null)
                         {
                             pedido.Lineas.Remove(lineaPortesDTO);
