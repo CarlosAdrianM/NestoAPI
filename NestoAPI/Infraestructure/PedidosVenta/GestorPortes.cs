@@ -172,10 +172,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 return resultado;
             }
 
-            // Comisión contra reembolso (independiente de la ruta)
+            // Comisión contra reembolso (independiente de la ruta).
+            // Si IVA=null, NestoAPI reseteará al guardar CCC/FormaPago/PlazosPago/PeriodoFacturacion
+            // a (null, EFC, CONTADO, NRM) en PutPedidoVenta. El cálculo de portes debe hacer el mismo
+            // supuesto para que los clientes que aún no tienen IVA asignado (ej. NestoApp antes de
+            // completar cliente) reciban un resultado coherente con lo que se persistirá.
+            string formaPagoEfectiva = input.FormaPago;
+            string plazosPagoEfectivo = input.PlazosPago;
+            string cccEfectivo = input.CCC;
+            string periodoFacturacionEfectivo = input.PeriodoFacturacion;
+            if (input.Iva == null)
+            {
+                formaPagoEfectiva = Constantes.FormasPago.EFECTIVO;
+                plazosPagoEfectivo = Constantes.PlazosPago.CONTADO;
+                cccEfectivo = null;
+                periodoFacturacionEfectivo = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
+            }
             resultado.EsContraReembolso = EsContraReembolso(
-                input.FormaPago, input.PlazosPago,
-                input.CCC, input.PeriodoFacturacion, input.NotaEntrega);
+                formaPagoEfectiva, plazosPagoEfectivo,
+                cccEfectivo, periodoFacturacionEfectivo, input.NotaEntrega);
 
             decimal incrementoReembolso = IncrementoReembolso();
             if (resultado.EsContraReembolso && incrementoReembolso > 0

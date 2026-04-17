@@ -1206,6 +1206,38 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         [TestMethod]
+        public void CalcularPortes_ConIvaNull_TratarComoEfectivoContadoSinCCC()
+        {
+            // NestoAPI, al guardar un pedido con IVA=null, resetea CCC, FormaPago, PlazosPago
+            // y PeriodoFacturacion a (null, EFC, CONTADO, NRM) para forzar contado. El cálculo
+            // de portes debe hacer el mismo supuesto al recibir IVA=null, para que clientes
+            // que envíen el pedido sin IVA todavía asignado (p. ej. NestoApp antes de tener
+            // cliente completo) obtengan un resultado coherente con lo que se acabará guardando.
+            // En concreto: aunque los otros campos digan que NO es contra reembolso, con IVA=null
+            // debe tratarse como SÍ contra reembolso.
+            GestorPortes.IncrementoReembolsoParaPruebas = 3M;
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "28100",
+                Ruta = "FW",
+                Iva = null,                 // ← clave del test
+                // Valores que por sí solos descartarían contra reembolso:
+                FormaPago = Constantes.FormasPago.TRANSFERENCIA,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                CCC = "1234",
+                PeriodoFacturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
+                BaseImponibleProductos = 50
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.EsContraReembolso,
+                "Con IVA=null el backend reseteará los otros campos a contado/efectivo/sin CCC, " +
+                "así que CalcularPortes debe hacer el mismo supuesto y considerarlo contra reembolso.");
+            Assert.AreEqual(3M, resultado.ComisionReembolso);
+        }
+
+        [TestMethod]
         public void CalcularPortes_IncrementoCero_NuncaCobraAunSinFlag()
         {
             // Estado actual de producción: INCREMENTO_REEMBOLSO = 0 → no se cobra nunca.
