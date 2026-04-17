@@ -249,5 +249,38 @@ namespace NestoAPI.Infraestructure.Informes
             }
             return pedidoCompra;
         }
+
+        public async Task<List<ExtractoProveedorDTO>> LeerExtractoProveedorAsync(
+            string empresa, string proveedor, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            // Issue Nesto#349 Fase 2a: extracto contable de un proveedor concreto (típicamente
+            // 999 = Amazon) en el rango dado, para alimentar el cuadre de liquidaciones.
+            var apuntes = await db.ExtractosProveedor
+                .Where(e => e.Empresa == empresa
+                    && e.Número == proveedor
+                    && e.Fecha >= fechaDesde
+                    && e.Fecha <= fechaHasta)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return apuntes
+                .OrderBy(e => e.Fecha).ThenBy(e => e.NºOrden)
+                .Select(e => new ExtractoProveedorDTO
+                {
+                    Id = e.NºOrden,
+                    Fecha = e.Fecha,
+                    Documento = e.NºDocumento?.Trim(),
+                    DocumentoProveedor = e.NºDocumentoProv?.Trim(),
+                    Concepto = e.Concepto?.Trim(),
+                    Importe = e.Importe,
+                    ImportePendiente = e.ImportePdte,
+                    TipoApunte = e.TipoApunte?.Trim(),
+                    FormaPago = e.FormaPago?.Trim(),
+                    Efecto = e.Efecto?.Trim(),
+                    Delegacion = e.Delegación?.Trim(),
+                    FormaVenta = e.FormaVenta?.Trim()
+                })
+                .ToList();
+        }
     }
 }

@@ -66,6 +66,23 @@ namespace NestoAPI.Controllers
             return Ok(lista);
         }
 
+        /// <summary>
+        /// Issue Nesto#349 Fase 2a: apuntes del extracto contable de un proveedor concreto
+        /// (p. ej. 999 = Amazon) en el rango indicado. Pensado para alimentar el Cuadre
+        /// Canales Externos en el lado Nesto.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/ExtractoProveedor")]
+        [ResponseType(typeof(List<ExtractoProveedorDTO>))]
+        public async Task<IHttpActionResult> GetExtractoProveedor(string empresa, string proveedor, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            List<ExtractoProveedorDTO> lista = await _servicio
+                .LeerExtractoProveedorAsync(empresa, proveedor, fechaDesde, fechaHasta)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
         [HttpGet]
         [Route("api/Informes/UbicacionesInventario")]
         [ResponseType(typeof(List<UbicacionesInventarioDTO>))]

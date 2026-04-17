@@ -1184,6 +1184,7 @@
     <Compile Include="Models\Informes\ControlPedidosDTO.cs" />
     <Compile Include="Models\Informes\DetalleRapportsDTO.cs" />
     <Compile Include="Models\Informes\ExtractoContableDTO.cs" />
+    <Compile Include="Models\Informes\ExtractoProveedorDTO.cs" />
     <Compile Include="Models\Informes\KitsQueSePuedenMontarDTO.cs" />
     <Compile Include="Models\Informes\ManifiestoAgenciaDTO.cs" />
     <Compile Include="Models\Informes\MontarKitProductosDTO.cs" />

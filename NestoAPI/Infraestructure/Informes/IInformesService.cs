@@ -16,5 +16,6 @@ namespace NestoAPI.Infraestructure.Informes
         Task<List<MontarKitProductosDTO>> LeerMontarKitProductosAsync(int traspaso);
         Task<List<ManifiestoAgenciaDTO>> LeerManifiestoAgenciaAsync(string empresa, int agencia, DateTime fecha);
         Task<PedidoCompraInformeDTO> LeerPedidoCompraAsync(string empresa, int pedido);
+        Task<List<ExtractoProveedorDTO>> LeerExtractoProveedorAsync(string empresa, string proveedor, DateTime fechaDesde, DateTime fechaHasta);
     }
 }

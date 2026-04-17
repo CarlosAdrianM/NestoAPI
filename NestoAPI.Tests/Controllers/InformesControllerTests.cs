@@ -541,5 +541,77 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }
+
+        // ----- ExtractoProveedor (Nesto#349 Fase 2a) -----
+
+        [TestMethod]
+        public async Task GetExtractoProveedor_PasaLosParametrosCorrectosAlServicio()
+        {
+            DateTime desde = new DateTime(2026, 2, 1);
+            DateTime hasta = new DateTime(2026, 2, 28);
+            A.CallTo(() => _servicio.LeerExtractoProveedorAsync("1", "999", desde, hasta))
+                .Returns(new List<ExtractoProveedorDTO>());
+
+            await _controller.GetExtractoProveedor("1", "999", desde, hasta);
+
+            A.CallTo(() => _servicio.LeerExtractoProveedorAsync("1", "999", desde, hasta))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetExtractoProveedor_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<ExtractoProveedorDTO>
+            {
+                new ExtractoProveedorDTO
+                {
+                    Id = 1, Fecha = new DateTime(2026, 2, 15),
+                    Documento = "FRA100", DocumentoProveedor = "AMZ-INV-0001",
+                    Concepto = "Factura Amazon",
+                    Importe = 123.45M, ImportePendiente = 0M,
+                    TipoApunte = "1", FormaPago = "TRN",
+                    Delegacion = "ALG"
+                }
+            };
+            A.CallTo(() => _servicio.LeerExtractoProveedorAsync(
+                    A<string>.Ignored, A<string>.Ignored, A<DateTime>.Ignored, A<DateTime>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetExtractoProveedor(
+                "1", "999", new DateTime(2026, 2, 1), new DateTime(2026, 2, 28));
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<ExtractoProveedorDTO>>));
+            var ok = (OkNegotiatedContentResult<List<ExtractoProveedorDTO>>)resultado;
+            Assert.AreEqual(1, ok.Content.Count);
+            Assert.AreEqual("AMZ-INV-0001", ok.Content[0].DocumentoProveedor);
+            Assert.AreEqual(123.45M, ok.Content[0].Importe);
+        }
+
+        [TestMethod]
+        public async Task GetExtractoProveedor_CuandoServicioDevuelveListaVacia_DevuelveOkVacia()
+        {
+            A.CallTo(() => _servicio.LeerExtractoProveedorAsync(
+                    A<string>.Ignored, A<string>.Ignored, A<DateTime>.Ignored, A<DateTime>.Ignored))
+                .Returns(new List<ExtractoProveedorDTO>());
+
+            var resultado = await _controller.GetExtractoProveedor(
+                "1", "999", new DateTime(2026, 2, 1), new DateTime(2026, 2, 28));
+
+            var ok = resultado as OkNegotiatedContentResult<List<ExtractoProveedorDTO>>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(0, ok.Content.Count);
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(InvalidOperationException))]
+        public async Task GetExtractoProveedor_CuandoServicioLanzaExcepcion_LaPropaga()
+        {
+            A.CallTo(() => _servicio.LeerExtractoProveedorAsync(
+                    A<string>.Ignored, A<string>.Ignored, A<DateTime>.Ignored, A<DateTime>.Ignored))
+                .Throws(new InvalidOperationException("Error de BD"));
+
+            await _controller.GetExtractoProveedor(
+                "1", "999", new DateTime(2026, 2, 1), new DateTime(2026, 2, 28));
+        }
     }
 }
