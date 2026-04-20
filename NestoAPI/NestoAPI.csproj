@@ -667,6 +667,7 @@
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\Informes\InformesService.cs" />
+    <Compile Include="Infraestructure\Informes\MotorSaldoCuenta.cs" />
     <Compile Include="Infraestructure\ServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
@@ -1191,6 +1192,10 @@
     <Compile Include="Models\Informes\MontarKitProductosDTO.cs" />
     <Compile Include="Models\Informes\PedidoCompraInformeDTO.cs" />
     <Compile Include="Models\Informes\ResumenVentasDTO.cs" />
+    <Compile Include="Models\Informes\SaldoCuenta555\ApunteCuentaDto.cs" />
+    <Compile Include="Models\Informes\SaldoCuenta555\GrupoAbiertoDto.cs" />
+    <Compile Include="Models\Informes\SaldoCuenta555\SaldoCuenta555ResultadoDto.cs" />
+    <Compile Include="Models\Informes\SaldoCuenta555\TipoClaveGrupo.cs" />
     <Compile Include="Models\Informes\UbicacionesInventarioDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
     <Compile Include="Models\Pagos\NotificacionRedsys.cs" />

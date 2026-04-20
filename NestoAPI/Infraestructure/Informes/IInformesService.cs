@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using NestoAPI.Models.Informes;
+using NestoAPI.Models.Informes.SaldoCuenta555;
 
 namespace NestoAPI.Infraestructure.Informes
 {
@@ -17,5 +18,6 @@ namespace NestoAPI.Infraestructure.Informes
         Task<List<ManifiestoAgenciaDTO>> LeerManifiestoAgenciaAsync(string empresa, int agencia, DateTime fecha);
         Task<PedidoCompraInformeDTO> LeerPedidoCompraAsync(string empresa, int pedido);
         Task<List<ExtractoProveedorDTO>> LeerExtractoProveedorAsync(string empresa, string proveedor, DateTime fechaDesde, DateTime fechaHasta);
+        Task<SaldoCuenta555ResultadoDto> LeerSaldoCuenta555Async(string empresa, string cuenta, DateTime fechaCorte);
     }
 }

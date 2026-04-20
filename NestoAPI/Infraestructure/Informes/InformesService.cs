@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Models;
 using NestoAPI.Models.Informes;
+using NestoAPI.Models.Informes.SaldoCuenta555;
 
 namespace NestoAPI.Infraestructure.Informes
 {
@@ -281,6 +282,50 @@ namespace NestoAPI.Infraestructure.Informes
                     FormaVenta = e.FormaVenta?.Trim()
                 })
                 .ToList();
+        }
+
+        public async Task<SaldoCuenta555ResultadoDto> LeerSaldoCuenta555Async(
+            string empresa, string cuenta, DateTime fechaCorte)
+        {
+            // Issue NestoAPI#164 (Nesto#349 Fase 4): cuadre por saldo de cuenta 555 con
+            // identificación de movimientos abiertos al corte. Carga apuntes del año de
+            // fechaCorte (incluido el asiento de apertura del 1/1) y delega al motor puro.
+            DateTime inicioAnno = new DateTime(fechaCorte.Year, 1, 1);
+            DateTime finCorte = fechaCorte.Date.AddDays(1);
+
+            const string sql = @"
+                SELECT
+                    [Nº Orden] AS NumeroOrden,
+                    Fecha,
+                    Concepto,
+                    Debe,
+                    Haber,
+                    [Nº Documento] AS NumeroDocumento,
+                    Diario,
+                    TipoApunte
+                FROM Contabilidad
+                WHERE Empresa = @Empresa
+                AND [Nº Cuenta] = @Cuenta
+                AND Fecha >= @Inicio AND Fecha < @Fin";
+
+            var apuntes = await db.Database
+                .SqlQuery<ApunteCuentaDto>(sql,
+                    new SqlParameter("@Empresa", SqlDbType.NVarChar) { Value = empresa },
+                    new SqlParameter("@Cuenta", SqlDbType.NVarChar) { Value = cuenta },
+                    new SqlParameter("@Inicio", SqlDbType.DateTime) { Value = inicioAnno },
+                    new SqlParameter("@Fin", SqlDbType.DateTime) { Value = finCorte })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            // Normalizar strings que vienen con padding desde Sage/legacy.
+            foreach (var a in apuntes)
+            {
+                a.Concepto = a.Concepto?.Trim();
+                a.NumeroDocumento = a.NumeroDocumento?.Trim();
+                a.Diario = a.Diario?.Trim();
+            }
+
+            return MotorSaldoCuenta.Calcular(apuntes, empresa, cuenta, fechaCorte);
         }
     }
 }

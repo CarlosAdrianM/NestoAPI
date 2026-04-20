@@ -5,6 +5,7 @@ using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Models.Informes;
+using NestoAPI.Models.Informes.SaldoCuenta555;
 
 namespace NestoAPI.Controllers
 {
@@ -81,6 +82,23 @@ namespace NestoAPI.Controllers
                 .ConfigureAwait(false);
 
             return Ok(lista);
+        }
+
+        /// <summary>
+        /// Issue NestoAPI#164 (Nesto#349 Fase 4): saldo acumulado de una cuenta 555 a una
+        /// fecha de corte, con identificación de movimientos abiertos (no compensados) y
+        /// su antigüedad. Algoritmo en 3 pasadas: AmazonOrderId / NumeroDocumento / FIFO.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/SaldoCuenta555")]
+        [ResponseType(typeof(SaldoCuenta555ResultadoDto))]
+        public async Task<IHttpActionResult> GetSaldoCuenta555(string empresa, string cuenta, DateTime fechaCorte)
+        {
+            SaldoCuenta555ResultadoDto resultado = await _servicio
+                .LeerSaldoCuenta555Async(empresa, cuenta, fechaCorte)
+                .ConfigureAwait(false);
+
+            return Ok(resultado);
         }
 
         [HttpGet]
