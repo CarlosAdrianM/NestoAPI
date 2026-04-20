@@ -50,13 +50,14 @@ namespace NestoAPI.Controllers
 
         private readonly NVEntities db;
         private readonly ServicioPedidosVenta servicio = new ServicioPedidosVenta(); // inyectar para tests
-        private readonly ServicioVendedores servicioVendedores = new ServicioVendedores();
+        private readonly IServicioVendedores servicioVendedores;
         private readonly GestorPedidosVenta gestor;
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
         {
             db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
+            servicioVendedores = new ServicioVendedores();
             gestor = new GestorPedidosVenta(servicio);
         }
 
@@ -65,6 +66,17 @@ namespace NestoAPI.Controllers
         {
             this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
+            servicioVendedores = new ServicioVendedores();
+            gestor = new GestorPedidosVenta(servicio);
+        }
+
+        // NestoAPI#163: ctor adicional para inyectar IServicioVendedores y testear
+        // la expansión de equipos en la pestaña Pedidos de la ficha de cliente.
+        public PedidosVentaController(NVEntities db, IServicioVendedores servicioVendedores)
+        {
+            this.db = db;
+            db.Configuration.LazyLoadingEnabled = false;
+            this.servicioVendedores = servicioVendedores;
             gestor = new GestorPedidosVenta(servicio);
         }
 
@@ -166,19 +178,32 @@ namespace NestoAPI.Controllers
             return listaPedidos;
         }
 
-        public List<ResumenPedidoVentaDTO> GetPedidosVenta(string vendedor, string cliente)
+        public async Task<List<ResumenPedidoVentaDTO>> GetPedidosVenta(string vendedor, string cliente)
         {
+            // NestoAPI#163: expandir vendedor al equipo del superior (si es jefe) para que
+            // en la ficha de cliente se vean los pedidos de todo su equipo, igual que hace
+            // el overload GetPedidosVenta(vendedor) sin cliente.
+            List<string> vendedoresLista;
+            if (string.IsNullOrWhiteSpace(vendedor))
+            {
+                vendedoresLista = new List<string>();
+            }
+            else
+            {
+                string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+                vendedoresLista = await servicioVendedores
+                    .VendedoresEquipoString(empresa, vendedor)
+                    .ConfigureAwait(false);
+            }
+
             IQueryable<CabPedidoVta> pedidosVendedor = from c in db.CabPedidoVtas
                                                        join v in db.VendedoresPedidosGruposProductos
-
-                                                       //This is how you join by multiple values
                                                        on new { empresa = c.Empresa, pedido = c.Número } equals new { empresa = v.Empresa, pedido = v.Pedido }
                                                        into jointData
-
-                                                       //This is how you actually turn the join into a left-join
                                                        from jointRecord in jointData.DefaultIfEmpty()
-
-                                                       where vendedor == "" || vendedor == null || c.Vendedor == vendedor || jointRecord.Vendedor == vendedor
+                                                       where vendedor == "" || vendedor == null
+                                                           || vendedoresLista.Contains(c.Vendedor)
+                                                           || (jointRecord != null && vendedoresLista.Contains(jointRecord.Vendedor))
                                                        select c;
 
             IQueryable<ResumenPedidoVentaDTO> cabeceraPedidos = pedidosVendedor
