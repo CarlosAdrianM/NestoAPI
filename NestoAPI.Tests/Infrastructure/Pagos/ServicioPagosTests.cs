@@ -171,6 +171,90 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         [TestMethod]
+        public void IniciarPago_ConMetodoPagoTarjeta_PasaCaRedsys()
+        {
+            // NestoAPI#165: NestoTiendas selecciona tarjeta → Redsys solo muestra tarjeta.
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 25m,
+                Descripcion = "Test tarjeta",
+                Correo = "test@test.com",
+                MetodoPago = "C"
+            };
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
+
+            try { servicio.IniciarPago(solicitud, "usuario").Wait(); }
+            catch (AggregateException) { /* BD no disponible en test, ignorar */ }
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._,
+                A<string>._, A<string>._, A<string>._,
+                "C",
+                A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void IniciarPago_ConMetodoPagoBizum_PasaZaRedsys()
+        {
+            // NestoAPI#165: NestoTiendas selecciona Bizum → Redsys solo muestra Bizum.
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 25m,
+                Descripcion = "Test bizum",
+                Correo = "test@test.com",
+                MetodoPago = "z"
+            };
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
+
+            try { servicio.IniciarPago(solicitud, "usuario").Wait(); }
+            catch (AggregateException) { /* BD no disponible en test, ignorar */ }
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._,
+                A<string>._, A<string>._, A<string>._,
+                "z",
+                A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void IniciarPago_SinMetodoPago_PasaNullaRedsys()
+        {
+            // NestoAPI#165 retrocompatibilidad: si no se envía MetodoPago, Redsys recibe null
+            // y muestra todos los métodos (comportamiento actual).
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 25m,
+                Descripcion = "Test default",
+                Correo = "test@test.com"
+            };
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
+
+            try { servicio.IniciarPago(solicitud, "usuario").Wait(); }
+            catch (AggregateException) { /* BD no disponible en test, ignorar */ }
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._,
+                A<string>._, A<string>._, A<string>._,
+                (string)null,
+                A<string>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public void IniciarPago_ConUrlsCustom_PasaUrlsCustomARedsys()
         {
             // Arrange

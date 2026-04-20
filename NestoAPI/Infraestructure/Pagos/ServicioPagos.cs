@@ -58,7 +58,8 @@ namespace NestoAPI.Infraestructure.Pagos
                 solicitud.Cliente,
                 urlNotificacion,
                 urlOk,
-                urlKo);
+                urlKo,
+                solicitud.MetodoPago);
 
             // Normalizar: si vienen campos legacy sin Efectos, crear un efecto a partir de ellos
             List<EfectoAPagar> efectos = NormalizarEfectos(solicitud);
