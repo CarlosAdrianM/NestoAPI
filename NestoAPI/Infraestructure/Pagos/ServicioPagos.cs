@@ -87,7 +87,8 @@ namespace NestoAPI.Infraestructure.Pagos
                     Estado = Constantes.EstadosPagoTPV.PENDIENTE,
                     FechaCreacion = DateTime.Now,
                     Usuario = usuario,
-                    TokenAcceso = Guid.NewGuid()
+                    TokenAcceso = Guid.NewGuid(),
+                    MetodoPago = solicitud.MetodoPago
                 };
 
                 db.PagosTPV.Add(pago);
@@ -864,7 +865,8 @@ namespace NestoAPI.Infraestructure.Pagos
                 pagoDenegado.Cliente,
                 urlNotificacion,
                 urlOk,
-                urlKo);
+                urlKo,
+                pagoDenegado.MetodoPago);
 
             // Crear nuevo PagoTPV con los mismos datos
             var nuevoPago = new PagoTPV
@@ -889,7 +891,8 @@ namespace NestoAPI.Infraestructure.Pagos
                 FechaCreacion = DateTime.Now,
                 Usuario = pagoDenegado.Usuario,
                 TokenAcceso = Guid.NewGuid(),
-                PagoOriginalId = pagoRaizId
+                PagoOriginalId = pagoRaizId,
+                MetodoPago = pagoDenegado.MetodoPago
             };
 
             db.PagosTPV.Add(nuevoPago);

@@ -78,7 +78,14 @@ namespace NestoAPI.Controllers
                 string urlOk = urlBase + "/pago/ok.html";
                 string urlKo = urlBase + "/pago/ko.html";
 
-                var parametrosTarjeta = _redsysService.CrearParametrosTPVVirtual(
+                // Issue #165: si el pago tiene MetodoPago ("C" o "z"), el usuario ya lo
+                // eligió en origen (típicamente desde NestoTiendas). Solo generamos el
+                // formulario de ese método para no ofrecer cambio tras decisión explícita.
+                // Si MetodoPago es null, se generan los dos formularios como antes.
+                bool mostrarTarjeta = pago.MetodoPago == null || pago.MetodoPago == "C";
+                bool mostrarBizum = pago.MetodoPago == null || pago.MetodoPago == "z";
+
+                var parametrosTarjeta = mostrarTarjeta ? _redsysService.CrearParametrosTPVVirtual(
                     pago.Importe,
                     pago.Descripcion ?? $"Pago {pago.NumeroOrden}",
                     pago.Correo,
@@ -87,9 +94,9 @@ namespace NestoAPI.Controllers
                     urlOk,
                     urlKo,
                     "C",
-                    pago.NumeroOrden);
+                    pago.NumeroOrden) : null;
 
-                var parametrosBizum = _redsysService.CrearParametrosTPVVirtual(
+                var parametrosBizum = mostrarBizum ? _redsysService.CrearParametrosTPVVirtual(
                     pago.Importe,
                     pago.Descripcion ?? $"Pago {pago.NumeroOrden}",
                     pago.Correo,
@@ -98,7 +105,7 @@ namespace NestoAPI.Controllers
                     urlOk,
                     urlKo,
                     "z",
-                    pago.NumeroOrden);
+                    pago.NumeroOrden) : null;
 
                 // NumeroOrden se mantiene estable desde la creacion del pago
                 pago.FechaActualizacion = DateTime.Now;
@@ -224,6 +231,24 @@ namespace NestoAPI.Controllers
 
         private string GenerarHtmlPaginaPago(PagoTPV pago, string nombreCliente, Models.Pagos.ParametrosRedsysFirmados parametrosTarjeta, Models.Pagos.ParametrosRedsysFirmados parametrosBizum)
         {
+            // Issue #165: un formulario u otro puede no existir si el MetodoPago del pago
+            // fija la elección del usuario (p.ej. eligió Bizum en NestoTiendas).
+            string formTarjeta = parametrosTarjeta == null ? "" : $@"
+            <form action=""{parametrosTarjeta.UrlRedsys}"" method=""POST"">
+                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametrosTarjeta.Ds_SignatureVersion}"" />
+                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametrosTarjeta.Ds_MerchantParameters}"" />
+                <input type=""hidden"" name=""Ds_Signature"" value=""{parametrosTarjeta.Ds_Signature}"" />
+                <button type=""submit"" class=""btn-pagar btn-tarjeta"">&#128179; Pagar con tarjeta</button>
+            </form>";
+
+            string formBizum = parametrosBizum == null ? "" : $@"
+            <form action=""{parametrosBizum.UrlRedsys}"" method=""POST"">
+                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametrosBizum.Ds_SignatureVersion}"" />
+                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametrosBizum.Ds_MerchantParameters}"" />
+                <input type=""hidden"" name=""Ds_Signature"" value=""{parametrosBizum.Ds_Signature}"" />
+                <button type=""submit"" class=""btn-pagar btn-bizum"">Pagar con Bizum</button>
+            </form>";
+
             string filasEfectos = "";
             if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
             {
@@ -388,18 +413,8 @@ namespace NestoAPI.Controllers
                 <span>Total</span>
                 <span>{pago.Importe:N2} &euro;</span>
             </div>
-            <form action=""{parametrosTarjeta.UrlRedsys}"" method=""POST"">
-                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametrosTarjeta.Ds_SignatureVersion}"" />
-                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametrosTarjeta.Ds_MerchantParameters}"" />
-                <input type=""hidden"" name=""Ds_Signature"" value=""{parametrosTarjeta.Ds_Signature}"" />
-                <button type=""submit"" class=""btn-pagar btn-tarjeta"">&#128179; Pagar con tarjeta</button>
-            </form>
-            <form action=""{parametrosBizum.UrlRedsys}"" method=""POST"">
-                <input type=""hidden"" name=""Ds_SignatureVersion"" value=""{parametrosBizum.Ds_SignatureVersion}"" />
-                <input type=""hidden"" name=""Ds_MerchantParameters"" value=""{parametrosBizum.Ds_MerchantParameters}"" />
-                <input type=""hidden"" name=""Ds_Signature"" value=""{parametrosBizum.Ds_Signature}"" />
-                <button type=""submit"" class=""btn-pagar btn-bizum"">Pagar con Bizum</button>
-            </form>
+            {formTarjeta}
+            {formBizum}
             <div class=""secure"">
                 &#128274; Pago seguro via Redsys
             </div>
