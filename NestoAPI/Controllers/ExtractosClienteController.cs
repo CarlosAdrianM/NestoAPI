@@ -21,13 +21,23 @@ namespace NestoAPI.Controllers
 {
     public class ExtractosClienteController : ApiController
     {
-        private readonly NVEntities db = new NVEntities();
+        private readonly NVEntities db;
         private readonly IServicioCorreoElectronico _servicioCorreo;
 
         // Carlos 25/01/16: lo pongo para desactivar el Lazy Loading
         public ExtractosClienteController(IServicioCorreoElectronico servicioCorreo)
         {
+            db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
+            _servicioCorreo = servicioCorreo;
+        }
+
+        // Internal para tests (InternalsVisibleTo("NestoAPI.Tests")). El caller decide
+        // si hay que desactivar LazyLoading: en tests con NVEntities mockeado no tiene
+        // sentido tocar Configuration (FakeItEasy no lo puede construir).
+        internal ExtractosClienteController(IServicioCorreoElectronico servicioCorreo, NVEntities db)
+        {
+            this.db = db;
             _servicioCorreo = servicioCorreo;
         }
 
@@ -64,9 +74,17 @@ namespace NestoAPI.Controllers
         }
 
         // GET: api/ExtractosCliente
-        public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string empresa, string cliente, string tipoApunte, DateTime fechaDesde, DateTime fechaHasta)
+        // Issue NestoAPI#168 (TiendasNuevaVision#29): filtrarPorEmpresa opcional, default false
+        // para no romper llamadas existentes (Nesto, NestoApp). TiendasNuevaVision lo envía a
+        // true para ver solo movimientos de la empresa 1.
+        public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string empresa, string cliente, string tipoApunte, DateTime fechaDesde, DateTime fechaHasta, bool filtrarPorEmpresa = false)
         {
-            IQueryable<ExtractoClienteDTO> extracto = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == tipoApunte && e.Fecha >= fechaDesde && e.Fecha <= fechaHasta).OrderBy(e => e.Fecha)
+            IQueryable<ExtractoCliente> baseQuery = db.ExtractosCliente.Where(e => e.Número == cliente && e.TipoApunte == tipoApunte && e.Fecha >= fechaDesde && e.Fecha <= fechaHasta);
+            if (filtrarPorEmpresa)
+            {
+                baseQuery = baseQuery.Where(e => e.Empresa == empresa);
+            }
+            IQueryable<ExtractoClienteDTO> extracto = baseQuery.OrderBy(e => e.Fecha)
                 .Select(extractoEncontrado => new ExtractoClienteDTO
                 {
                     id = extractoEncontrado.Nº_Orden,
