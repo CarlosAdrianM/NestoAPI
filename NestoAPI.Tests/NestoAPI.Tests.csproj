@@ -167,6 +167,7 @@
   <ItemGroup>
     <Compile Include="Controllers\GanavisionesControllerTests.cs" />
     <Compile Include="Controllers\OfertasCombinadasControllerTests.cs" />
+    <Compile Include="Controllers\ServirJuntoControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaBuscarLineasTests.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaControllerTests.cs" />
     <Compile Include="Helpers\TestDbAsyncQueryProvider.cs" />

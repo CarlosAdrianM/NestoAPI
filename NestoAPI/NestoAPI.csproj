@@ -539,6 +539,7 @@
     <Compile Include="Controllers\ProductosController.cs" />
     <Compile Include="Controllers\ProveedoresController.cs" />
     <Compile Include="Controllers\InformesController.cs" />
+    <Compile Include="Controllers\ServirJuntoController.cs" />
     <Compile Include="Controllers\NotificacionesController.cs" />
     <Compile Include="Controllers\PagosController.cs" />
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />
@@ -694,8 +695,11 @@
     <Compile Include="Infraestructure\Rectificativas\IGestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\Rectificativas\GestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
+    <Compile Include="Infraestructure\ServirJunto\IServicioValidarServirJunto.cs" />
+    <Compile Include="Infraestructure\ServirJunto\ServicioValidarServirJunto.cs" />
     <Compile Include="Infraestructure\ValidadoresServirJunto\IValidadorServirJunto.cs" />
     <Compile Include="Infraestructure\ValidadoresServirJunto\ValidadorDisponibilidadRegalos.cs" />
+    <Compile Include="Infraestructure\ValidadoresServirJunto\ValidadorMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\GestorOfertasPedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorGanavisiones.cs" />
@@ -1105,6 +1109,10 @@
     <Compile Include="Models\PedidosVenta\ParametroStringIntPedido.cs" />
     <Compile Include="Models\PedidosVenta\PedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\PrepagoDTO.cs" />
+    <Compile Include="Models\PedidosVenta\ServirJunto\ProductoBonificadoConCantidadRequest.cs" />
+    <Compile Include="Models\PedidosVenta\ServirJunto\ProductoSinStockDTO.cs" />
+    <Compile Include="Models\PedidosVenta\ServirJunto\ValidarServirJuntoRequest.cs" />
+    <Compile Include="Models\PedidosVenta\ServirJunto\ValidarServirJuntoResponse.cs" />
     <Compile Include="Models\Rectificativas\CopiarFacturaRequest.cs" />
     <Compile Include="Models\Rectificativas\CopiarFacturaResponse.cs" />
     <Compile Include="Models\Rectificativas\ClienteFacturaDTO.cs" />

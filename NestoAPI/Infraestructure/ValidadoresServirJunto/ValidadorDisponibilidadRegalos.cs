@@ -1,6 +1,6 @@
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Models;
-using NestoAPI.Models.Ganavisiones;
+using NestoAPI.Models.PedidosVenta.ServirJunto;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -23,8 +23,12 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             this.productoService = productoService;
         }
 
-        public async Task<ValidarServirJuntoResponse> Validar(string almacen, List<ProductoBonificadoConCantidadRequest> productos)
+        public async Task<ValidarServirJuntoResponse> Validar(
+            string almacen,
+            List<ProductoBonificadoConCantidadRequest> productos,
+            List<ProductoBonificadoConCantidadRequest> lineasPedido)
         {
+            // lineasPedido no se usa en este validador: sólo validamos bonificados.
             var productosIds = productos.Select(p => p.ProductoId).ToList();
 
             var nombresProductos = await db.Productos

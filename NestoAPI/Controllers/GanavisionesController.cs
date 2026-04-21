@@ -1,7 +1,8 @@
 using NestoAPI.Infraestructure.Kits;
-using NestoAPI.Infraestructure.ValidadoresServirJunto;
+using NestoAPI.Infraestructure.ServirJunto;
 using NestoAPI.Models;
 using NestoAPI.Models.Ganavisiones;
+using NestoAPI.Models.PedidosVenta.ServirJunto;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -332,13 +333,13 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// Valida si se puede desmarcar la opcion ServirJunto en un pedido con productos bonificados.
-        /// Issue #94: Sistema Ganavisiones - FASE 3
-        /// Issue #141: Retrocompatible con NestoApp (string[]) y Nesto (con cantidades).
-        /// Compara disponibilidad vs cantidad solicitada.
+        /// Endpoint obsoleto para validar "Servir junto". Se mantiene temporalmente para
+        /// que NestoApp (y otros clientes que aún apuntan a esta URL) sigan funcionando
+        /// mientras no se actualicen. Los clientes nuevos deben usar
+        /// <c>POST /api/PedidosVenta/ValidarServirJunto</c>.
+        /// Issue NestoAPI#161.
         /// </summary>
-        /// <param name="request">Almacen del pedido y lista de productos bonificados</param>
-        /// <returns>Resultado de la validacion con productos problematicos si los hay</returns>
+        [Obsolete("Usa POST /api/PedidosVenta/ValidarServirJunto (ServirJuntoController). Este endpoint se eliminará cuando NestoApp esté migrado.")]
         [HttpPost]
         [Route("api/Ganavisiones/ValidarServirJunto")]
         [ResponseType(typeof(ValidarServirJuntoResponse))]
@@ -349,57 +350,9 @@ namespace NestoAPI.Controllers
                 return BadRequest("Debe especificar el almacen del pedido");
             }
 
-            // Unificar formatos: si viene el nuevo formato, usarlo; si no, convertir el antiguo a cantidad=1
-            var productosUnificados = UnificarProductosBonificados(request);
-
-            if (!productosUnificados.Any())
-            {
-                return Ok(new ValidarServirJuntoResponse
-                {
-                    PuedeDesmarcar = true,
-                    ProductosProblematicos = new List<ProductoSinStockDTO>(),
-                    Mensaje = null
-                });
-            }
-
-            // Recorrer validadores
-            var validadores = new List<IValidadorServirJunto>
-            {
-                new ValidadorDisponibilidadRegalos(db, productoService)
-            };
-
-            foreach (var validador in validadores)
-            {
-                var resultado = await validador.Validar(request.Almacen, productosUnificados).ConfigureAwait(false);
-                if (!resultado.PuedeDesmarcar)
-                {
-                    return Ok(resultado);
-                }
-            }
-
-            return Ok(new ValidarServirJuntoResponse
-            {
-                PuedeDesmarcar = true,
-                ProductosProblematicos = new List<ProductoSinStockDTO>(),
-                Mensaje = null
-            });
-        }
-
-        internal static List<ProductoBonificadoConCantidadRequest> UnificarProductosBonificados(ValidarServirJuntoRequest request)
-        {
-            if (request.ProductosBonificadosConCantidad != null && request.ProductosBonificadosConCantidad.Any())
-            {
-                return request.ProductosBonificadosConCantidad;
-            }
-
-            if (request.ProductosBonificados != null)
-            {
-                return request.ProductosBonificados
-                    .Select(id => new ProductoBonificadoConCantidadRequest { ProductoId = id, Cantidad = 1 })
-                    .ToList();
-            }
-
-            return new List<ProductoBonificadoConCantidadRequest>();
+            IServicioValidarServirJunto servicio = new ServicioValidarServirJunto(db, productoService);
+            var resultado = await servicio.Validar(request).ConfigureAwait(false);
+            return Ok(resultado);
         }
 
         /// <summary>

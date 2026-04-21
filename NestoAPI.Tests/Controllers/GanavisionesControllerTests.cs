@@ -4,6 +4,7 @@ using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Models;
 using NestoAPI.Models.Ganavisiones;
+using NestoAPI.Models.PedidosVenta.ServirJunto;
 using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;

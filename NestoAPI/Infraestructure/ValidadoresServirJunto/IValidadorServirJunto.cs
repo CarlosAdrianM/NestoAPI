@@ -1,4 +1,4 @@
-using NestoAPI.Models.Ganavisiones;
+using NestoAPI.Models.PedidosVenta.ServirJunto;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -10,6 +10,19 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
     /// </summary>
     public interface IValidadorServirJunto
     {
-        Task<ValidarServirJuntoResponse> Validar(string almacen, List<ProductoBonificadoConCantidadRequest> productos);
+        /// <summary>
+        /// Valida si se puede desmarcar "Servir junto".
+        /// </summary>
+        /// <param name="almacen">Almacén del pedido.</param>
+        /// <param name="productos">Productos bonificados (regalos) seleccionados.</param>
+        /// <param name="lineasPedido">
+        /// Líneas del pedido (tipoLinea=1). Issue #161: opcional — sólo lo usa
+        /// ValidadorMaterialPromocional. Clientes que no lo envíen mantienen el
+        /// comportamiento anterior.
+        /// </param>
+        Task<ValidarServirJuntoResponse> Validar(
+            string almacen,
+            List<ProductoBonificadoConCantidadRequest> productos,
+            List<ProductoBonificadoConCantidadRequest> lineasPedido);
     }
 }

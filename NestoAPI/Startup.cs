@@ -21,6 +21,7 @@ using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.Pagos;
+using NestoAPI.Infraestructure.ServirJunto;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using NestoAPI.Providers;
@@ -178,6 +179,9 @@ namespace NestoAPI
 
             // Servicios de Informes (Nesto#340 Fase 1A)
             _ = services.AddScoped<IInformesService, InformesService>();
+
+            // Validación de "Servir junto" (NestoAPI#161)
+            _ = services.AddScoped<IServicioValidarServirJunto, ServicioValidarServirJunto>();
 
             // Servicios de sincronización bidireccional (External Systems <-> Nesto)
             // Push Subscription: usa SyncWebhookController
