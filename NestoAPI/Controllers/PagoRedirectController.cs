@@ -123,7 +123,9 @@ namespace NestoAPI.Controllers
                 }
                 catch { }
 
-                string html = GenerarHtmlPaginaPago(pago, nombreCliente, parametrosTarjeta, parametrosBizum);
+                string userAgent = Request.Headers.UserAgent?.ToString() ?? "";
+                string urlPagina = Request.RequestUri?.ToString() ?? "";
+                string html = GenerarHtmlPaginaPago(pago, nombreCliente, parametrosTarjeta, parametrosBizum, userAgent, urlPagina);
 
                 var response = Request.CreateResponse(HttpStatusCode.OK);
                 response.Content = new StringContent(html, Encoding.UTF8, "text/html");
@@ -229,8 +231,16 @@ namespace NestoAPI.Controllers
 
         private const string URL_LOGO = "https://www.productosdeesteticaypeluqueriaprofesional.com/img/cms/Landing/logo.png";
 
-        private string GenerarHtmlPaginaPago(PagoTPV pago, string nombreCliente, Models.Pagos.ParametrosRedsysFirmados parametrosTarjeta, Models.Pagos.ParametrosRedsysFirmados parametrosBizum)
+        private string GenerarHtmlPaginaPago(PagoTPV pago, string nombreCliente, Models.Pagos.ParametrosRedsysFirmados parametrosTarjeta, Models.Pagos.ParametrosRedsysFirmados parametrosBizum, string userAgent = "", string urlPagina = "")
         {
+            // Issue #162: iOS Safari deja la página en blanco al pulsar "Pagar con tarjeta" por
+            // restricciones del ITP sobre cookies cross-site que necesita Redsys. Mientras
+            // investigamos el fix definitivo, mostramos un aviso al usuario con el enlace
+            // copiable para que pueda reintentar desde Safari si queda en blanco.
+            bool esIOS = !string.IsNullOrEmpty(userAgent) &&
+                (userAgent.IndexOf("iPhone", StringComparison.OrdinalIgnoreCase) >= 0
+                 || userAgent.IndexOf("iPad", StringComparison.OrdinalIgnoreCase) >= 0
+                 || userAgent.IndexOf("iPod", StringComparison.OrdinalIgnoreCase) >= 0);
             // Issue #165: un formulario u otro puede no existir si el MetodoPago del pago
             // fija la elección del usuario (p.ej. eligió Bizum en NestoTiendas).
             string formTarjeta = parametrosTarjeta == null ? "" : $@"
@@ -273,11 +283,19 @@ namespace NestoAPI.Controllers
                     </tr>";
             }
 
+            string avisoIOS = esIOS ? $@"
+            <div class=""aviso-ios"">
+                <strong>&#9432; &iquest;Problemas al pagar desde iPhone?</strong>
+                <p>Si tras pulsar el bot&oacute;n la p&aacute;gina queda en blanco, copia este enlace y &aacute;brelo en <b>Safari</b>:</p>
+                <input type=""text"" readonly value=""{HttpUtility.HtmlAttributeEncode(urlPagina)}"" onclick=""this.select()"" />
+            </div>" : "";
+
             return $@"<!DOCTYPE html>
 <html>
 <head>
     <meta charset=""utf-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
+    <link rel=""preconnect"" href=""https://sis.redsys.es"">
     <title>Pago - Nueva Visi&oacute;n</title>
     <style>
         * {{ box-sizing: border-box; margin: 0; padding: 0; }}
@@ -383,6 +401,26 @@ namespace NestoAPI.Controllers
             font-size: 12px;
             color: #9B8EAE;
         }}
+        .aviso-ios {{
+            margin-top: 16px;
+            padding: 12px 14px;
+            background: #fff8e6;
+            border: 1px solid #f0d890;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #6b5510;
+        }}
+        .aviso-ios strong {{ display: block; margin-bottom: 4px; }}
+        .aviso-ios p {{ margin: 4px 0 8px 0; }}
+        .aviso-ios input {{
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #e5d29a;
+            border-radius: 6px;
+            font-size: 12px;
+            font-family: monospace;
+            background: white;
+        }}
     </style>
 </head>
 <body>
@@ -415,6 +453,7 @@ namespace NestoAPI.Controllers
             </div>
             {formTarjeta}
             {formBizum}
+            {avisoIOS}
             <div class=""secure"">
                 &#128274; Pago seguro via Redsys
             </div>
