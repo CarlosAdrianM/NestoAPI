@@ -175,6 +175,94 @@ namespace NestoAPI.Infraestructure.Informes
                 .ConfigureAwait(false);
         }
 
+        public async Task<List<PickingDTO>> LeerPickingAsync(int picking, string empresa = "1", int personas = 1)
+        {
+            // El SP prdInformePickingAgrupado devuelve columnas con acentos/ñ (NºProducto,
+            // Tamaño, ProveedorProducto, CodBarras, NombreSubGrupo). SqlQuery<T> no acepta
+            // mapeo por atributos con esos caracteres, así que usamos un DTO intermedio y
+            // lo proyectamos al DTO limpio que consume el RDLC.
+            var crudo = await db.Database
+                .SqlQuery<PickingAntiguoDTO>(
+                    "prdInformePickingAgrupado @empresa, @picking, @personas",
+                    new SqlParameter("@empresa", SqlDbType.NVarChar) { Value = empresa ?? "1" },
+                    new SqlParameter("@picking", SqlDbType.Int) { Value = picking },
+                    new SqlParameter("@personas", SqlDbType.Int) { Value = personas })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return crudo.Select(p => new PickingDTO
+            {
+                Proveedor = p.ProveedorProducto?.Trim(),
+                Producto = p.NºProducto?.Trim(),
+                CodigoBarras = p.CodBarras?.Trim(),
+                Descripcion = p.Descripcion?.Trim(),
+                Tamanno = p.Tamaño,
+                UnidadMedida = p.UnidadMedida?.Trim(),
+                Subgrupo = p.NombreSubGrupo?.Trim(),
+                Cantidad = p.Cantidad,
+                CantidadCajas = p.CantidadCajas,
+                Pasillo = p.Pasillo,
+                Fila = p.Fila,
+                Columna = p.Columna
+            }).ToList();
+        }
+
+        public async Task<int> LeerUltimoPickingAsync()
+        {
+            return await db.LinPedidoVtas
+                .MaxAsync(p => (int)p.Picking)
+                .ConfigureAwait(false);
+        }
+
+        public async Task<List<PackingDTO>> LeerPackingAsync(int picking, int personas = 1)
+        {
+            // El SP prdInformePicking devuelve 26 columnas mezclando cabecera y líneas
+            // con acentos/ñ (Número, NºCliente, NºProducto, Tamaño). El DTO conserva
+            // esos nombres porque el RDLC (Packing.rdlc) bindea por nombre exacto.
+            var lista = await db.Database
+                .SqlQuery<PackingDTO>(
+                    "prdInformePicking @Picking, @Personas",
+                    new SqlParameter("@Picking", SqlDbType.Int) { Value = picking },
+                    new SqlParameter("@Personas", SqlDbType.Int) { Value = personas })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            foreach (var item in lista)
+            {
+                item.ProveedorProducto = item.ProveedorProducto?.Trim();
+                item.NºProducto = item.NºProducto?.Trim();
+                item.CodBarras = item.CodBarras?.Trim();
+                item.UnidadMedida = item.UnidadMedida?.Trim();
+                item.Ampliacion = item.Ampliacion?.Trim();
+                item.Aviso = item.Aviso?.Trim();
+                item.ComentarioPicking = item.ComentarioPicking?.Trim();
+                item.CodPostal = item.CodPostal?.Trim();
+                item.Descripcion = item.Descripcion?.Trim();
+                item.Direccion = item.Direccion?.Trim();
+                item.NombreSubGrupo = item.NombreSubGrupo?.Trim();
+                item.NºCliente = item.NºCliente?.Trim();
+                item.Poblacion = item.Poblacion?.Trim();
+                item.Telefono = item.Telefono?.Trim();
+            }
+            return lista;
+        }
+
+        private class PickingAntiguoDTO
+        {
+            public string ProveedorProducto { get; set; }
+            public string NºProducto { get; set; }
+            public string CodBarras { get; set; }
+            public string Descripcion { get; set; }
+            public short? Tamaño { get; set; }
+            public string UnidadMedida { get; set; }
+            public string NombreSubGrupo { get; set; }
+            public int Cantidad { get; set; }
+            public int CantidadCajas { get; set; }
+            public string Pasillo { get; set; }
+            public string Fila { get; set; }
+            public string Columna { get; set; }
+        }
+
         public async Task<List<ManifiestoAgenciaDTO>> LeerManifiestoAgenciaAsync(string empresa, int agencia, DateTime fecha)
         {
             const string sql = @"

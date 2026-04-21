@@ -1190,7 +1190,9 @@
     <Compile Include="Models\Informes\KitsQueSePuedenMontarDTO.cs" />
     <Compile Include="Models\Informes\ManifiestoAgenciaDTO.cs" />
     <Compile Include="Models\Informes\MontarKitProductosDTO.cs" />
+    <Compile Include="Models\Informes\PackingDTO.cs" />
     <Compile Include="Models\Informes\PedidoCompraInformeDTO.cs" />
+    <Compile Include="Models\Informes\PickingDTO.cs" />
     <Compile Include="Models\Informes\ResumenVentasDTO.cs" />
     <Compile Include="Models\Informes\SaldoCuenta555\ApunteCuentaDto.cs" />
     <Compile Include="Models\Informes\SaldoCuenta555\GrupoAbiertoDto.cs" />

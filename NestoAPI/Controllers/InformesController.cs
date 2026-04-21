@@ -138,6 +138,42 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
+        [Route("api/Informes/Picking")]
+        [ResponseType(typeof(List<PickingDTO>))]
+        public async Task<IHttpActionResult> GetPicking(int picking, string empresa = "1", int personas = 1)
+        {
+            List<PickingDTO> lista = await _servicio
+                .LeerPickingAsync(picking, empresa, personas)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/UltimoPicking")]
+        [ResponseType(typeof(int))]
+        public async Task<IHttpActionResult> GetUltimoPicking()
+        {
+            int ultimo = await _servicio
+                .LeerUltimoPickingAsync()
+                .ConfigureAwait(false);
+
+            return Ok(ultimo);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/Packing")]
+        [ResponseType(typeof(List<PackingDTO>))]
+        public async Task<IHttpActionResult> GetPacking(int picking, int personas = 1)
+        {
+            List<PackingDTO> lista = await _servicio
+                .LeerPackingAsync(picking, personas)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
+        [HttpGet]
         [Route("api/Informes/ManifiestoAgencia")]
         [ResponseType(typeof(List<ManifiestoAgenciaDTO>))]
         public async Task<IHttpActionResult> GetManifiestoAgencia(string empresa, int agencia, DateTime fecha)

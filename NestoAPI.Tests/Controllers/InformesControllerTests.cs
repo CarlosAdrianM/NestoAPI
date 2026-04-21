@@ -449,6 +449,138 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(2, ok.Content[0].Cantidad);
         }
 
+        // ----- Picking (1A.4) -----
+
+        [TestMethod]
+        public async Task GetPicking_PasaLosParametrosCorrectosAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerPickingAsync(12345, "1", 1))
+                .Returns(new List<PickingDTO>());
+
+            await _controller.GetPicking(12345, "1", 1);
+
+            A.CallTo(() => _servicio.LeerPickingAsync(12345, "1", 1))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetPicking_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<PickingDTO>
+            {
+                new PickingDTO
+                {
+                    Proveedor = "1001", Producto = "12345", CodigoBarras = "8400000000001",
+                    Descripcion = "Crema", Tamanno = 500, UnidadMedida = "ml",
+                    Subgrupo = "Cremas", Cantidad = 3, CantidadCajas = 1,
+                    Pasillo = "A", Fila = "01", Columna = "02"
+                }
+            };
+            A.CallTo(() => _servicio.LeerPickingAsync(A<int>.Ignored, A<string>.Ignored, A<int>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetPicking(12345, "1", 1);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<PickingDTO>>));
+            var ok = (OkNegotiatedContentResult<List<PickingDTO>>)resultado;
+            Assert.AreEqual("12345", ok.Content[0].Producto);
+            Assert.AreEqual(3, ok.Content[0].Cantidad);
+        }
+
+        [TestMethod]
+        public async Task GetPicking_ListaVacia_DevuelveOkVacia()
+        {
+            A.CallTo(() => _servicio.LeerPickingAsync(A<int>.Ignored, A<string>.Ignored, A<int>.Ignored))
+                .Returns(new List<PickingDTO>());
+
+            var resultado = await _controller.GetPicking(99999, "1", 1);
+
+            var ok = (OkNegotiatedContentResult<List<PickingDTO>>)resultado;
+            Assert.AreEqual(0, ok.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task GetUltimoPicking_DevuelveOkConElValorDelServicio()
+        {
+            A.CallTo(() => _servicio.LeerUltimoPickingAsync()).Returns(98765);
+
+            var resultado = await _controller.GetUltimoPicking();
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<int>));
+            var ok = (OkNegotiatedContentResult<int>)resultado;
+            Assert.AreEqual(98765, ok.Content);
+        }
+
+        [TestMethod]
+        public async Task GetUltimoPicking_LlamaAlServicioUnaVez()
+        {
+            A.CallTo(() => _servicio.LeerUltimoPickingAsync()).Returns(1);
+
+            await _controller.GetUltimoPicking();
+
+            A.CallTo(() => _servicio.LeerUltimoPickingAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        // ----- Packing (1A.5) -----
+
+        [TestMethod]
+        public async Task GetPacking_PasaLosParametrosCorrectosAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerPackingAsync(12345, 1))
+                .Returns(new List<PackingDTO>());
+
+            await _controller.GetPacking(12345, 1);
+
+            A.CallTo(() => _servicio.LeerPackingAsync(12345, 1))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetPacking_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<PackingDTO>
+            {
+                new PackingDTO
+                {
+                    Número = 555555,
+                    NºCliente = "15191",
+                    Contacto = "0",
+                    Direccion = "Calle Mayor 1",
+                    CodPostal = "28001",
+                    Poblacion = "Madrid",
+                    NºProducto = "12345",
+                    Descripcion = "Crema",
+                    Tamaño = 500,
+                    UnidadMedida = "ml",
+                    Cantidad = 3,
+                    CantidadCajas = 1,
+                    Pasillo = "A", Fila = "01", Columna = "02",
+                    Tipo = "NORMAL"
+                }
+            };
+            A.CallTo(() => _servicio.LeerPackingAsync(A<int>.Ignored, A<int>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetPacking(555555, 1);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<PackingDTO>>));
+            var ok = (OkNegotiatedContentResult<List<PackingDTO>>)resultado;
+            Assert.AreEqual(555555, ok.Content[0].Número);
+            Assert.AreEqual("12345", ok.Content[0].NºProducto);
+        }
+
+        [TestMethod]
+        public async Task GetPacking_ListaVacia_DevuelveOkVacia()
+        {
+            A.CallTo(() => _servicio.LeerPackingAsync(A<int>.Ignored, A<int>.Ignored))
+                .Returns(new List<PackingDTO>());
+
+            var resultado = await _controller.GetPacking(99999);
+
+            var ok = (OkNegotiatedContentResult<List<PackingDTO>>)resultado;
+            Assert.AreEqual(0, ok.Content.Count);
+        }
+
         // ----- ManifiestoAgencia (1A.8) -----
 
         [TestMethod]
