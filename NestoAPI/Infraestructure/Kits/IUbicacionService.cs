@@ -7,6 +7,7 @@ namespace NestoAPI.Infraestructure.Kits
     public interface IUbicacionService
     {
         Task<int> PersistirMontarKit(List<PreExtractoProductoDTO> preExtractosUbicados);
-        Task<List<UbicacionProductoDTO>> LeerUbicacionesProducto(string producto);
+        Task<List<UbicacionProductoDTO>> LeerUbicacionesProducto(string empresa, string almacen, string producto);
+        Task<bool> AlmacenGestionaUbicaciones(string empresa, string almacen);
     }
 }

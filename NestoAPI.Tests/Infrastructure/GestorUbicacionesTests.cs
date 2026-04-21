@@ -22,7 +22,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Id = 1234,
                 Cantidad = 7
             };
-            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion });
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion });
             GestorUbicaciones sut = new GestorUbicaciones(servicio);
             var preExtracto = new PreExtractoProductoDTO
             {
@@ -51,7 +52,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Id = 1234,
                 Cantidad = 7 // ---> esta cantidad es mayor que la que se necesita
             };
-            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion });
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion });
             GestorUbicaciones sut = new GestorUbicaciones(servicio);
             var preExtracto = new PreExtractoProductoDTO
             {
@@ -83,7 +85,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Id = 1234,
                 Cantidad = 5 // ---> esta cantidad es menor que la que se necesita
             };
-            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion });
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion });
             GestorUbicaciones sut = new GestorUbicaciones(servicio);
             var preExtracto = new PreExtractoProductoDTO
             {
@@ -113,7 +116,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Id = 1235,
                 Cantidad = 3
             };
-            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion, ubicacion2 });
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion, ubicacion2 });
             GestorUbicaciones sut = new GestorUbicaciones(servicio);
             var preExtracto = new PreExtractoProductoDTO
             {
@@ -143,7 +147,8 @@ namespace NestoAPI.Tests.Infrastructure
         {
             // Arrange
             IUbicacionService servicio = A.Fake<IUbicacionService>();
-            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._)).Returns(new List<UbicacionProductoDTO>()); // --> No hay ubicaciones
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).Returns(new List<UbicacionProductoDTO>()); // --> No hay ubicaciones
             GestorUbicaciones sut = new GestorUbicaciones(servicio);
             var preExtracto = new PreExtractoProductoDTO
             {
@@ -187,7 +192,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Id = 1235,
                 Cantidad = 3 // --> estas las tenemos, pero no son necesarias
             };
-            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion, ubicacion2 });            
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).Returns(new List<UbicacionProductoDTO> { ubicacion, ubicacion2 });
             GestorUbicaciones sut = new GestorUbicaciones(servicio);
             var preExtracto = new PreExtractoProductoDTO
             {
@@ -209,11 +215,65 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorUbicaciones_AsignarUbicacionesMasAntiguas_SiElAlmacenNoGestionaUbicacionesCreaSoloUbicacionDeRegistroEnMontaje()
+        {
+            // Arrange (Issue #167: almacén REI con ControlUbicaciones=false)
+            IUbicacionService servicio = A.Fake<IUbicacionService>();
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(false);
+            GestorUbicaciones sut = new GestorUbicaciones(servicio);
+            var preExtracto = new PreExtractoProductoDTO
+            {
+                Empresa = "1",
+                Almacen = Constantes.Almacenes.REINA,
+                Producto = "PROD",
+                Cantidad = 3
+            };
+            var preExtractosIn = new List<PreExtractoProductoDTO> { preExtracto };
+
+            // Act
+            var preExtractosOut = sut.AsignarUbicacionesMasAntiguas(preExtractosIn).GetAwaiter().GetResult();
+
+            // Assert
+            Assert.AreEqual(1, preExtractosOut[0].Ubicaciones.Count);
+            Assert.AreEqual(0, preExtractosOut[0].Ubicaciones[0].Id);
+            Assert.AreEqual(3, preExtractosOut[0].Ubicaciones[0].Cantidad);
+            Assert.AreEqual(Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS, preExtractosOut[0].Ubicaciones[0].Estado);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GestorUbicaciones_AsignarUbicacionesMasAntiguas_SiElAlmacenNoGestionaUbicacionesPermiteDesmontajeSinErrorDeStock()
+        {
+            // Arrange (Issue #167: desmontar kit con cantidad negativa en almacén sin ControlUbicaciones)
+            IUbicacionService servicio = A.Fake<IUbicacionService>();
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(false);
+            GestorUbicaciones sut = new GestorUbicaciones(servicio);
+            var preExtracto = new PreExtractoProductoDTO
+            {
+                Empresa = "1",
+                Almacen = Constantes.Almacenes.REINA,
+                Producto = "PROD",
+                Cantidad = -1
+            };
+            var preExtractosIn = new List<PreExtractoProductoDTO> { preExtracto };
+
+            // Act
+            var preExtractosOut = sut.AsignarUbicacionesMasAntiguas(preExtractosIn).GetAwaiter().GetResult();
+
+            // Assert
+            Assert.AreEqual(1, preExtractosOut[0].Ubicaciones.Count);
+            Assert.AreEqual(-1, preExtractosOut[0].Ubicaciones[0].Cantidad);
+            Assert.AreEqual(Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS, preExtractosOut[0].Ubicaciones[0].Estado);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public void GestorUbicaciones_AsignarUbicacionesMasAntiguas_SiNoTieneUbicacionPeroLaCantidadEsNegativaTieneQueDarUnError()
         {
             // Arrange
             IUbicacionService servicio = A.Fake<IUbicacionService>();
-            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._)).Returns(new List<UbicacionProductoDTO>());
+            A.CallTo(() => servicio.AlmacenGestionaUbicaciones(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => servicio.LeerUbicacionesProducto(A<string>._, A<string>._, A<string>._)).Returns(new List<UbicacionProductoDTO>());
             GestorUbicaciones sut = new GestorUbicaciones(servicio);
             var preExtracto = new PreExtractoProductoDTO
             {

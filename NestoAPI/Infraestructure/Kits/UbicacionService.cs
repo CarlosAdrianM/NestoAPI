@@ -26,9 +26,15 @@ namespace NestoAPI.Infraestructure.Kits
                         // Parte 1: Insertar registros en una tabla
                         // ... lógica para crear nuevos registros
 
+                        var controlPorAlmacen = new Dictionary<string, bool>();
+                        foreach (var alm in preExtractosUbicados.Select(p => p.Almacen).Distinct())
+                        {
+                            controlPorAlmacen[alm] = await AlmacenGestionaUbicaciones(preExtractosUbicados[0].Empresa, alm);
+                        }
+
                         foreach (var preExtracto in preExtractosUbicados)
                         {
-                            bool elAlmacenTieneControlDeUbicaciones = preExtracto.Almacen == Constantes.Almacenes.ALGETE;
+                            bool elAlmacenTieneControlDeUbicaciones = controlPorAlmacen[preExtracto.Almacen];
                             foreach (var ubicacion in preExtracto.Ubicaciones)
                             {
                                 if (ubicacion.Estado == Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS)
@@ -112,10 +118,12 @@ namespace NestoAPI.Infraestructure.Kits
                                         db.Entry(ubicacionModificada).Property(x => x.Estado).IsModified = true;
                                     }
                                 }
-                                else
+                                else if (elAlmacenTieneControlDeUbicaciones)
                                 {
                                     throw new Exception("Estado no contemplado en ubicaciones");
                                 }
+                                // Almacén sin control de ubicaciones: basta con haber insertado el PreExtrProducto,
+                                // no se toca la tabla Ubicaciones.
                             }
                         }
                         db.SaveChanges();
@@ -154,13 +162,12 @@ namespace NestoAPI.Infraestructure.Kits
 
         }
 
-        public async Task<List<UbicacionProductoDTO>> LeerUbicacionesProducto(string producto)
+        public async Task<List<UbicacionProductoDTO>> LeerUbicacionesProducto(string empresa, string almacen, string producto)
         {
-            var almacen = Constantes.Almacenes.ALGETE;
             using (var db = new NVEntities())
             {
                 return await db.Ubicaciones
-                    .Where(u => u.Almacén == almacen && u.Número == producto && (u.Estado == Constantes.Ubicaciones.UBICADO || u.Estado == Constantes.Ubicaciones.PENDIENTE_UBICAR))
+                    .Where(u => u.Empresa == empresa && u.Almacén == almacen && u.Número == producto && (u.Estado == Constantes.Ubicaciones.UBICADO || u.Estado == Constantes.Ubicaciones.PENDIENTE_UBICAR))
                     .OrderBy(u => u.NºOrden)
                     .Select(u => new UbicacionProductoDTO
                     {
@@ -174,6 +181,17 @@ namespace NestoAPI.Infraestructure.Kits
                         Columna = u.Columna,
                         Estado = (int)u.Estado
                     }).ToListAsync();
+            }
+        }
+
+        public async Task<bool> AlmacenGestionaUbicaciones(string empresa, string almacen)
+        {
+            using (var db = new NVEntities())
+            {
+                var resultado = await db.Database
+                    .SqlQuery<bool?>("SELECT CAST(ControlUbicaciones AS bit) FROM Almacenes WHERE Empresa = @p0 AND Número = @p1", empresa, almacen)
+                    .FirstOrDefaultAsync();
+                return resultado == true;
             }
         }
     }

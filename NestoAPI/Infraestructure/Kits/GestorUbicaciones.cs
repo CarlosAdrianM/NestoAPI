@@ -20,7 +20,22 @@ namespace NestoAPI.Infraestructure.Kits
         {
             foreach (var preExtracto in preExtractos)
             {
-                var ubicaciones = await _servicioUbicacion.LeerUbicacionesProducto(preExtracto.Producto);
+                bool almacenGestionaUbicaciones = await _servicioUbicacion.AlmacenGestionaUbicaciones(preExtracto.Empresa, preExtracto.Almacen);
+                if (!almacenGestionaUbicaciones)
+                {
+                    preExtracto.Ubicaciones.Add(new UbicacionProductoDTO()
+                    {
+                        Id = 0,
+                        Empresa = preExtracto.Empresa,
+                        Almacen = preExtracto.Almacen,
+                        Producto = preExtracto.Producto,
+                        Cantidad = preExtracto.Cantidad,
+                        Estado = Constantes.Ubicaciones.ESTADO_REGISTRO_MONTAR_KITS
+                    });
+                    continue;
+                }
+
+                var ubicaciones = await _servicioUbicacion.LeerUbicacionesProducto(preExtracto.Empresa, preExtracto.Almacen, preExtracto.Producto);
                 if (preExtracto.Cantidad < 0 && (ubicaciones == null || !ubicaciones.Any()))
                 {
                     throw new Exception($"El producto {preExtracto.Producto} no tiene stock");
