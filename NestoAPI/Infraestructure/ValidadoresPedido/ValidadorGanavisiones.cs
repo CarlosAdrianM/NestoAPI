@@ -86,9 +86,15 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // Validar que hay suficientes Ganavisiones
             if (ganavisionesConsumidos <= ganavisionesDisponibles)
             {
-                // Issue #117: Validar stock disponible del producto bonificado
+                // Issue #117: Validar stock disponible del producto bonificado.
+                // Nesto#346: solo se valida el stock para líneas NUEVAS (id == 0). Las
+                // líneas ya persistidas en el pedido (id != 0) ya pasaron este check al
+                // crearse y su stock ya quedó reservado; re-validarlas devolvería 0
+                // disponible (porque cuenta la propia reserva como stock consumido) y
+                // rechazaría incorrectamente tras cada ampliación o modificación del pedido.
                 int cantidadBonificada = pedido.Lineas
-                    .Where(l => l.Producto == numeroProducto && l.BaseImponible == 0
+                    .Where(l => l.id == 0
+                        && l.Producto == numeroProducto && l.BaseImponible == 0
                         && (l.oferta == null || l.oferta == 0))
                     .Sum(l => l.Cantidad);
 

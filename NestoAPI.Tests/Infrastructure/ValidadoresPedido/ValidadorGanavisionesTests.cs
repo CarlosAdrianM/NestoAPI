@@ -933,5 +933,289 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
         }
 
         #endregion
+
+        #region Bug Nesto#346: reproducción con datos reales pedido 915278
+
+        [TestMethod]
+        public void EsPedidoValido_Pedido915278MasAmpliacion41264_Permite()
+        {
+            // Datos reales pedido 915278 (cliente 8874 CANDI):
+            //   - 41279 (COS) cantidad 3 × 52,17 → Bruto 156,51 → BaseImponible 156,51
+            //   - 28766 (ACC) bonificado 1 × 0,50, DescuentoLinea=1 → BaseImponible 0, GV=1
+            //   - 40538 (ACC) bonificado 1 × 1,20, DescuentoLinea=1 → BaseImponible 0, GV=1
+            //   - 40605 (ACC) bonificado 1 × 3,00, DescuentoLinea=1 → BaseImponible 0, GV=2
+            //   - 40535 (ACC) bonificado 1 × 5,99, DescuentoLinea=1 → BaseImponible 0, GV=4
+            //   - 62400000 (cuenta contable, tipoLinea=2) Comisión reembolso 3,00
+            // Borrador ampliación:
+            //   - 41264 (COS) cantidad 1 × 35,02 → BaseImponible 35,02
+            //
+            // Cálculo esperado:
+            //   - base bonificable = 156,51 + 0×4 + 35,02 = 191,53 → 19 GV disponibles
+            //   - consumidos = 1 + 1 + 2 + 4 = 8 GV
+            //   - 8 ≤ 19 → debe autorizar 40538
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "41279", GrupoProducto = "COS",
+                        tipoLinea = 1, Cantidad = 3, PrecioUnitario = 52.17m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "28766", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 0.50m, DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "40538", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 1.20m, DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "40605", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 3.00m, DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "40535", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 5.99m, DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "62400000", // Cuenta contable (comisión reembolso)
+                        tipoLinea = 2, Cantidad = 1, PrecioUnitario = 3.00m
+                    },
+                    // Línea nueva del borrador ampliación
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "41264", GrupoProducto = "COS",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 35.02m
+                    }
+                }
+            };
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("28766")).Returns(1);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40538")).Returns(1);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40605")).Returns(2);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40535")).Returns(4);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("41279")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("41264")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("62400000")).Returns(null);
+
+            var resultado = _validador.EsPedidoValido(pedido, "40538", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                $"Base bonificable 191,53 EUR → 19 GV, consumidos 8. Debería autorizar 40538. Resultado: {resultado.Motivo}");
+        }
+
+        #endregion
+
+        [TestMethod]
+        public void EsPedidoValido_SiFaltaLineaGeneradoraDelOriginal_NoAutoriza()
+        {
+            // Hipótesis del usuario: quizá al validar el pedido unido solo se considera
+            // la línea de ampliación (35,02) y los 4 bonificados del original, pero NO la
+            // línea generadora del original (156,51). Si fuera así:
+            //   base bonificable = 35,02 → 3 GV disponibles
+            //   consumidos = 1 + 1 + 2 + 4 = 8 GV
+            //   3 < 8 → rechaza → ese sería el bug.
+            // Este test documenta explícitamente ese escenario: si en algún punto se
+            // pierde la línea 41279, el validador rechaza 40538, que es justo lo que
+            // estamos viendo en producción.
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    // FALTA la línea generadora 41279 (156,51)
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "28766", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 0.50m, DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "40538", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 1.20m, DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "40605", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 3.00m, DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "40535", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 5.99m, DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "41264", GrupoProducto = "COS",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 35.02m
+                    }
+                }
+            };
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("28766")).Returns(1);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40538")).Returns(1);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40605")).Returns(2);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40535")).Returns(4);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("41264")).Returns(null);
+
+            var resultado = _validador.EsPedidoValido(pedido, "40538", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada,
+                "Con solo la línea de ampliación como generadora (35,02 → 3 GV), 8 consumidos no pueden autorizarse.");
+            Assert.IsTrue(resultado.Motivo.Contains("3 disponibles"),
+                $"Debe indicar 3 GV disponibles. Motivo: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_RegaloExistenteSinStock_NoSeRevalidaStock()
+        {
+            // Bug Nesto#346 CAUSA RAÍZ. Un regalo Ganavisión ya existente en el pedido
+            // (id != 0) no debe someterse al check de stock del Issue #117: cuando se
+            // creó el pedido ya pasó ese check y su stock quedó reservado (justamente
+            // por esta misma línea). Al re-validar tras UnirPedidos con un ampliación,
+            // BuscarStockDisponibleTotal ahora devuelve 0 porque cuenta la propia
+            // reserva como stock consumido → rechazo incorrecto.
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "41279", GrupoProducto = "COS",
+                        tipoLinea = 1, Cantidad = 3, PrecioUnitario = 52.17m,
+                        id = 323266100 // línea ya persistida del pedido original
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "40538", GrupoProducto = "ACC",
+                        tipoLinea = 1, Cantidad = 1, PrecioUnitario = 1.20m, DescuentoLinea = 1m,
+                        id = 323266300 // línea ya persistida del pedido original
+                    }
+                }
+            };
+
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("40538")).Returns(1);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("41279")).Returns(null);
+            // Stock 0 porque la propia línea del pedido ya reservó la única unidad disponible
+            A.CallTo(() => _servicioPrecios.BuscarStockDisponibleTotal("40538")).Returns(0);
+
+            var resultado = _validador.EsPedidoValido(pedido, "40538", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                $"La línea 40538 ya existía en el pedido (id != 0), no debe someterse al check de stock. Motivo: {resultado.Motivo}");
+        }
+
+        #region Bug Nesto#346: unir pedido que ya tiene un regalo Ganavisión
+
+        [TestMethod]
+        public void EsPedidoValido_OriginalConGanavisionMasAmpliacionNormal_Permite()
+        {
+            // Escenario Nesto#346: un pedido existente que ya tiene un regalo Ganavisión
+            // (ya validado en su momento) se une a un pedido nuevo que solo añade una línea
+            // de producto normal, sin descuento. El validador debe seguir autorizando el
+            // regalo del original porque sigue habiendo Ganavisiones disponibles suficientes.
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    // Línea del pedido original: genera 10 Ganavisiones.
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "GENERADOR",
+                        GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 100m
+                    },
+                    // Línea del pedido original: regalo Ganavisión a 100% descuento.
+                    // Consume 5 Ganavisiones. 10 ≥ 5 → debería pasar.
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "REGALO01",
+                        GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 50m,
+                        DescuentoLinea = 1m
+                    },
+                    // Línea recién incorporada desde la ampliación: producto normal sin
+                    // descuento. Genera otros 2 Ganavisiones. El pedido resultante tiene
+                    // de sobra para mantener el regalo.
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "AMPL",
+                        GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 20m
+                    }
+                }
+            };
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("GENERADOR")).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("AMPL")).Returns(null);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                $"Debería autorizar el regalo (12 Ganavisiones disponibles >= 5 consumidos). Motivo: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_OriginalConGanavisionMasAmpliacionSinGrupo_Permite()
+        {
+            // Variante del caso anterior donde la línea nueva de la ampliación llega sin
+            // GrupoProducto (Nesto no siempre lo rellena — ver Issue #118). Debe resolverlo
+            // vía servicio y, aunque no aportara Ganavisiones, las líneas originales
+            // generan ya suficientes.
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "GENERADOR",
+                        GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 100m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "REGALO01",
+                        GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 50m,
+                        DescuentoLinea = 1m
+                    },
+                    new LineaPedidoVentaDTO
+                    {
+                        Producto = "AMPL",
+                        // GrupoProducto = null (lo típico cuando la línea viene del cliente)
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 20m
+                    }
+                }
+            };
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto(A<string>.Ignored)).Returns(null);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(5);
+            A.CallTo(() => _servicioPrecios.BuscarProducto("AMPL"))
+                .Returns(new Producto { Número = "AMPL", Grupo = Constantes.Productos.GRUPO_COSMETICA });
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                $"Debería autorizar. Motivo: {resultado.Motivo}");
+        }
+
+        #endregion
     }
 }
