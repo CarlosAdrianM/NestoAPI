@@ -745,5 +745,75 @@ namespace NestoAPI.Tests.Controllers
             await _controller.GetExtractoProveedor(
                 "1", "999", new DateTime(2026, 2, 1), new DateTime(2026, 2, 28));
         }
+
+        // ----- EtiquetasTienda (1A.12) -----
+
+        [TestMethod]
+        public async Task GetEtiquetasTienda_ParseaCsvYPasaListaAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerEtiquetasTiendaAsync(A<List<string>>.Ignored))
+                .Returns(new List<EtiquetasTiendaDTO>());
+
+            await _controller.GetEtiquetasTienda("AAA001,BBB002, CCC003 ,,AAA001");
+
+            A.CallTo(() => _servicio.LeerEtiquetasTiendaAsync(
+                    A<List<string>>.That.Matches(l =>
+                        l.Count == 3 && l[0] == "AAA001" && l[1] == "BBB002" && l[2] == "CCC003")))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetEtiquetasTienda_DevuelveOkConLaListaDelServicio()
+        {
+            var lista = new List<EtiquetasTiendaDTO>
+            {
+                new EtiquetasTiendaDTO
+                {
+                    ProductoId = "AAA001",
+                    Nombre = "Champú profesional",
+                    Tamanno = 500,
+                    UnidadMedida = "ml",
+                    PrecioProfesional = 10.50m,
+                    Familia = "PELUQUERIA"
+                }
+            };
+
+            A.CallTo(() => _servicio.LeerEtiquetasTiendaAsync(A<List<string>>.Ignored))
+                .Returns(lista);
+
+            var resultado = await _controller.GetEtiquetasTienda("AAA001");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<EtiquetasTiendaDTO>>));
+            var ok = (OkNegotiatedContentResult<List<EtiquetasTiendaDTO>>)resultado;
+            Assert.AreEqual(1, ok.Content.Count);
+            Assert.AreEqual("AAA001", ok.Content[0].ProductoId);
+            Assert.AreEqual(10.50m, ok.Content[0].PrecioProfesional);
+        }
+
+        [TestMethod]
+        public async Task GetEtiquetasTienda_ConProductosVacio_PasaListaVacia()
+        {
+            A.CallTo(() => _servicio.LeerEtiquetasTiendaAsync(A<List<string>>.Ignored))
+                .Returns(new List<EtiquetasTiendaDTO>());
+
+            var resultado = await _controller.GetEtiquetasTienda("");
+
+            A.CallTo(() => _servicio.LeerEtiquetasTiendaAsync(
+                    A<List<string>>.That.Matches(l => l.Count == 0)))
+                .MustHaveHappenedOnceExactly();
+            var ok = resultado as OkNegotiatedContentResult<List<EtiquetasTiendaDTO>>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(0, ok.Content.Count);
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(InvalidOperationException))]
+        public async Task GetEtiquetasTienda_CuandoServicioLanzaExcepcion_LaPropaga()
+        {
+            A.CallTo(() => _servicio.LeerEtiquetasTiendaAsync(A<List<string>>.Ignored))
+                .Throws(new InvalidOperationException("Error de BD"));
+
+            await _controller.GetEtiquetasTienda("AAA001");
+        }
     }
 }

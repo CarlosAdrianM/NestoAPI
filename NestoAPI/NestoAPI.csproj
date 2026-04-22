@@ -1206,6 +1206,7 @@
     <Compile Include="Models\Informes\SaldoCuenta555\GrupoAbiertoDto.cs" />
     <Compile Include="Models\Informes\SaldoCuenta555\SaldoCuenta555ResultadoDto.cs" />
     <Compile Include="Models\Informes\SaldoCuenta555\TipoClaveGrupo.cs" />
+    <Compile Include="Models\Informes\EtiquetasTiendaDTO.cs" />
     <Compile Include="Models\Informes\UbicacionesInventarioDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
     <Compile Include="Models\Pagos\NotificacionRedsys.cs" />

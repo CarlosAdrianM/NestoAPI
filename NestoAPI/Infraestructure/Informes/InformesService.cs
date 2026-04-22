@@ -415,5 +415,39 @@ namespace NestoAPI.Infraestructure.Informes
 
             return MotorSaldoCuenta.Calcular(apuntes, empresa, cuenta, fechaCorte);
         }
+
+        public async Task<List<EtiquetasTiendaDTO>> LeerEtiquetasTiendaAsync(List<string> productos)
+        {
+            if (productos == null || productos.Count == 0)
+            {
+                return new List<EtiquetasTiendaDTO>();
+            }
+
+            var parametrosProductos = string.Join(",", productos.Select((_, index) => $"@producto{index}"));
+            string sql = $@"
+                SELECT rtrim(p.Número) ProductoId, rtrim(p.Nombre) Nombre,
+                    ISNULL(p.Tamaño, 0) Tamanno, rtrim(ISNULL(p.UnidadMedida, '')) UnidadMedida,
+                    p.PVP PrecioProfesional, rtrim(f.Descripción) Familia
+                FROM Productos p
+                INNER JOIN Familias f
+                    ON p.Empresa = f.Empresa AND p.Familia = f.Número
+                WHERE p.Empresa = '1' AND p.Número IN ({parametrosProductos})";
+
+            var parametros = productos
+                .Select((producto, index) => new SqlParameter($"@producto{index}", producto))
+                .ToArray();
+
+            var lista = await db.Database
+                .SqlQuery<EtiquetasTiendaDTO>(sql, parametros)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            // Preserva el orden solicitado por el cliente: el SQL con IN() lo pierde.
+            var dict = lista.ToDictionary(e => e.ProductoId, StringComparer.Ordinal);
+            return productos
+                .Where(p => dict.ContainsKey(p))
+                .Select(p => dict[p])
+                .ToList();
+        }
     }
 }

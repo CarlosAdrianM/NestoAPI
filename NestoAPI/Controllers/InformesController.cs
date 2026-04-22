@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -195,6 +196,25 @@ namespace NestoAPI.Controllers
                 .ConfigureAwait(false);
 
             if (resultado == null) return NotFound();
+            return Ok(resultado);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/EtiquetasTienda")]
+        [ResponseType(typeof(List<EtiquetasTiendaDTO>))]
+        public async Task<IHttpActionResult> GetEtiquetasTienda(string productos)
+        {
+            var lista = (productos ?? string.Empty)
+                .Split(',')
+                .Select(p => p.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Distinct()
+                .ToList();
+
+            List<EtiquetasTiendaDTO> resultado = await _servicio
+                .LeerEtiquetasTiendaAsync(lista)
+                .ConfigureAwait(false);
+
             return Ok(resultado);
         }
     }
