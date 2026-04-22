@@ -665,6 +665,8 @@
     <Compile Include="Infraestructure\Verifactu\Verifacti\VerifactiDTOs.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
+    <Compile Include="Infraestructure\Comisiones\ComisionesLecturaService.cs" />
+    <Compile Include="Infraestructure\Comisiones\IComisionesLecturaService.cs" />
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\Informes\InformesService.cs" />
@@ -814,7 +816,10 @@
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
     <Compile Include="Models\Comisiones\ClienteVenta.cs" />
+    <Compile Include="Models\Comisiones\ComisionesAntiguasDTO.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnnoParcial.cs" />
+    <Compile Include="Models\Comisiones\PedidoVendedorComisionDTO.cs" />
+    <Compile Include="Models\Comisiones\VentaVendedorComisionDTO.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnualesBase.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnualesCursos2025.cs" />
     <Compile Include="Models\Comisiones\ComisionesHelper.cs" />

@@ -19,6 +19,7 @@ using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infraestructure.Videos;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.CorreosPostCompra;
+using NestoAPI.Infraestructure.Comisiones;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Infraestructure.ServirJunto;
@@ -179,6 +180,9 @@ namespace NestoAPI
 
             // Servicios de Informes (Nesto#340 Fase 1A)
             _ = services.AddScoped<IInformesService, InformesService>();
+
+            // Lecturas del panel de Comisiones del cliente (Nesto#340 Fase 1B)
+            _ = services.AddScoped<IComisionesLecturaService, ComisionesLecturaService>();
 
             // Validación de "Servir junto" (NestoAPI#161)
             _ = services.AddScoped<IServicioValidarServirJunto, ServicioValidarServirJunto>();

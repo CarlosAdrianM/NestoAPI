@@ -1,4 +1,5 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.Comisiones;
+using NestoAPI.Models;
 using NestoAPI.Models.Comisiones;
 using System;
 using System.Collections.Generic;
@@ -12,7 +13,20 @@ namespace NestoAPI.Controllers
 {
     public class ComisionesController : ApiController
     {
-        private readonly NVEntities db = new NVEntities();
+        private readonly NVEntities db;
+        private readonly IComisionesLecturaService _lectura;
+
+        public ComisionesController()
+        {
+            db = new NVEntities();
+            _lectura = new ComisionesLecturaService(db);
+        }
+
+        public ComisionesController(IComisionesLecturaService lectura)
+        {
+            db = new NVEntities();
+            _lectura = lectura;
+        }
 
         // GET: api/Comisiones
         [HttpGet]
@@ -190,6 +204,47 @@ namespace NestoAPI.Controllers
             }
 
             return Ok(comisiones);
+        }
+
+        // Nesto#340 Fase 1B: lecturas para el panel de Comisiones del cliente Nesto.
+
+        [HttpGet]
+        [Route("api/Comisiones/Antiguas")]
+        [ResponseType(typeof(ComisionesAntiguasDTO))]
+        public async Task<IHttpActionResult> GetComisionesAntiguas(
+            DateTime fechaDesde, DateTime fechaHasta, string vendedor, string empresa = "1")
+        {
+            var resultado = await _lectura
+                .LeerComisionesAntiguasAsync(empresa, fechaDesde, fechaHasta, vendedor)
+                .ConfigureAwait(false);
+
+            if (resultado == null) return NotFound();
+            return Ok(resultado);
+        }
+
+        [HttpGet]
+        [Route("api/Comisiones/PedidosVendedor")]
+        [ResponseType(typeof(List<PedidoVendedorComisionDTO>))]
+        public async Task<IHttpActionResult> GetPedidosVendedor(string vendedor)
+        {
+            var lista = await _lectura
+                .LeerPedidosVendedorAsync(vendedor)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
+        }
+
+        [HttpGet]
+        [Route("api/Comisiones/VentasVendedor")]
+        [ResponseType(typeof(List<VentaVendedorComisionDTO>))]
+        public async Task<IHttpActionResult> GetVentasVendedor(
+            DateTime fechaDesde, DateTime fechaHasta, string vendedor)
+        {
+            var lista = await _lectura
+                .LeerVentasVendedorAsync(fechaDesde, fechaHasta, vendedor)
+                .ConfigureAwait(false);
+
+            return Ok(lista);
         }
 
         private List<ResumenComisionesMes> CalcularComisiones()
