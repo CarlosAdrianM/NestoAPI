@@ -173,6 +173,7 @@
     <Compile Include="Controllers\OfertasPermitidasFamiliaControllerTests.cs" />
     <Compile Include="Helpers\TestDbAsyncQueryProvider.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
+    <Compile Include="Controllers\PedidosVentaServirJuntoTests.cs" />
     <Compile Include="Controllers\PedidosCompraControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Controllers\CrearEtiquetaPendienteTests.cs" />

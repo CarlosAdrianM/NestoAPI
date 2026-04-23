@@ -7,6 +7,7 @@ using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.ServirJunto;
 using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Infraestructure.Rectificativas;
 using NestoAPI.Infraestructure.Vendedores;
@@ -15,6 +16,7 @@ using NestoAPI.Infrastructure;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosVenta;
+using NestoAPI.Models.PedidosVenta.ServirJunto;
 using NestoAPI.Models.Picking;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -51,6 +53,7 @@ namespace NestoAPI.Controllers
         private readonly NVEntities db;
         private readonly ServicioPedidosVenta servicio = new ServicioPedidosVenta(); // inyectar para tests
         private readonly IServicioVendedores servicioVendedores;
+        private readonly IServicioValidarServirJunto servicioValidarServirJunto;
         private readonly GestorPedidosVenta gestor;
         // Carlos 04/09/15: lo pongo para desactivar el Lazy Loading
         public PedidosVentaController()
@@ -58,6 +61,7 @@ namespace NestoAPI.Controllers
             db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             servicioVendedores = new ServicioVendedores();
+            servicioValidarServirJunto = new ServicioValidarServirJunto();
             gestor = new GestorPedidosVenta(servicio);
         }
 
@@ -67,6 +71,7 @@ namespace NestoAPI.Controllers
             this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
             servicioVendedores = new ServicioVendedores();
+            servicioValidarServirJunto = new ServicioValidarServirJunto();
             gestor = new GestorPedidosVenta(servicio);
         }
 
@@ -77,6 +82,18 @@ namespace NestoAPI.Controllers
             this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
             this.servicioVendedores = servicioVendedores;
+            servicioValidarServirJunto = new ServicioValidarServirJunto();
+            gestor = new GestorPedidosVenta(servicio);
+        }
+
+        // NestoAPI#176: ctor adicional para inyectar IServicioValidarServirJunto y
+        // testear la validación de servirJunto al crear/modificar pedidos.
+        public PedidosVentaController(NVEntities db, IServicioValidarServirJunto servicioValidarServirJunto)
+        {
+            this.db = db;
+            db.Configuration.LazyLoadingEnabled = false;
+            servicioVendedores = new ServicioVendedores();
+            this.servicioValidarServirJunto = servicioValidarServirJunto;
             gestor = new GestorPedidosVenta(servicio);
         }
 
@@ -343,6 +360,15 @@ namespace NestoAPI.Controllers
             if (pedido.empresa != cabPedidoVta.Empresa.Trim() || pedido.numero != cabPedidoVta.Número)
             {
                 return BadRequest();
+            }
+
+            // NestoAPI#176: bloquear desmarcado de servirJunto si una línea MMP o un
+            // bonificado Ganavisiones se quedaría pendiente. Cierra el agujero de orden
+            // de operaciones sin depender del cliente.
+            var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido).ConfigureAwait(false);
+            if (fallaServirJunto != null)
+            {
+                return BadRequest(fallaServirJunto.Mensaje);
             }
 
             // Carlos 28/11/25: Verificar si pertenece al grupo "Dirección", "Almacén" o "Tiendas" (igual que en POST)
@@ -1154,6 +1180,15 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            // NestoAPI#176: bloquear creación de pedido si servirJunto=false y alguna
+            // línea MMP o bonificado Ganavisiones se quedaría pendiente. Cierra el
+            // agujero de orden de operaciones sin depender del cliente.
+            var fallaServirJunto = await ValidarServirJuntoDesdePedidoAsync(pedido).ConfigureAwait(false);
+            if (fallaServirJunto != null)
+            {
+                return BadRequest(fallaServirJunto.Mensaje);
+            }
+
             // Carlos 12/01/25: Verificar si pertenece al grupo "Dirección", "Almacén" o "Tiendas"
             bool grupoPermitidoSinValidacion;
             bool grupoTiendasConAlmacenCorrecto = false;
@@ -1924,6 +1959,91 @@ namespace NestoAPI.Controllers
             };
 
             return Ok(series);
+        }
+
+        // NestoAPI#176: validación server-side de servirJunto al crear/modificar pedido.
+        // Cierra los agujeros de "orden de operaciones" que el validador cliente no puede
+        // cubrir: desmarcar servirJunto primero y luego añadir MMP/bonificado, o bypass
+        // en pedido-venta de NestoApp. Sólo se ejecuta si servirJunto=false; si está
+        // marcado no hay nada que validar.
+        //
+        // Devuelve null si la validación es irrelevante o pasa; un ValidarServirJuntoResponse
+        // con PuedeDesmarcar=false si hay que rechazar la operación.
+        internal async Task<ValidarServirJuntoResponse> ValidarServirJuntoDesdePedidoAsync(PedidoVentaDTO pedido)
+        {
+            if (pedido == null || pedido.servirJunto || pedido.Lineas == null)
+            {
+                return null;
+            }
+
+            // Sólo miramos líneas no despachadas: presupuesto, pendiente o en curso.
+            // Las ya albaranadas/facturadas están servidas, no pueden "quedar pendientes".
+            var lineasRelevantes = pedido.Lineas
+                .Where(l => l.tipoLinea == TIPO_LINEA_PRODUCTO
+                         && !string.IsNullOrWhiteSpace(l.Producto)
+                         && l.Cantidad > 0
+                         && l.estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+                .ToList();
+
+            if (!lineasRelevantes.Any())
+            {
+                return null;
+            }
+
+            // Detectar bonificados Ganavisiones siguiendo el criterio canónico de
+            // ValidadorGanavisiones: línea a 0€ (BaseImponible==0) sin oferta (oferta
+            // null/0) y producto con registros en tabla Ganavision.
+            var idsBaseCeroSinOferta = lineasRelevantes
+                .Where(l => l.BaseImponible == 0 && (l.oferta == null || l.oferta == 0))
+                .Select(l => l.Producto.Trim())
+                .Distinct()
+                .ToList();
+
+            var idsConGanavisiones = new HashSet<string>();
+            if (idsBaseCeroSinOferta.Any())
+            {
+                var idsEnBd = await db.Ganavisiones
+                    .Where(g => g.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                             && idsBaseCeroSinOferta.Contains(g.ProductoId))
+                    .Select(g => g.ProductoId)
+                    .Distinct()
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                foreach (var id in idsEnBd)
+                {
+                    idsConGanavisiones.Add(id.Trim());
+                }
+            }
+
+            var almacen = lineasRelevantes.First().almacen?.Trim();
+            if (string.IsNullOrEmpty(almacen))
+            {
+                return null;
+            }
+
+            var lineasRequest = lineasRelevantes.Select(l =>
+            {
+                var idTrimmed = l.Producto.Trim();
+                bool esBonificado = idsConGanavisiones.Contains(idTrimmed)
+                    && l.BaseImponible == 0
+                    && (l.oferta == null || l.oferta == 0);
+                return new ProductoBonificadoConCantidadRequest
+                {
+                    ProductoId = idTrimmed,
+                    Cantidad = l.Cantidad,
+                    EsBonificadoGanavisiones = esBonificado
+                };
+            }).ToList();
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = almacen,
+                LineasPedido = lineasRequest
+            };
+
+            var resultado = await servicioValidarServirJunto.Validar(request).ConfigureAwait(false);
+            return resultado.PuedeDesmarcar ? null : resultado;
         }
 
         private bool TieneParametroPermitirOmitirValidacion(string empresa, string usuario)
