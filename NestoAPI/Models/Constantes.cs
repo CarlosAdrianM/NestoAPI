@@ -265,6 +265,12 @@ namespace NestoAPI.Models
             public const decimal PROVINCIAL = 3.5M;
             public const decimal PENINSULAR = 7M;
             public const decimal INCREMENTO_REEMBOLSO = 3M;
+
+            // NestoAPI#174: texto de la línea de comisión por contra reembolso. Es el
+            // identificador real de la línea: la cuenta contable (CUENTA_PORTES_VENTA_GENERAL)
+            // coincide con la de portes, así que el texto es lo que distingue una de otra
+            // al detectar líneas existentes (búsqueda case-insensitive de "reembolso").
+            public const string TEXTO_COMISION_REEMBOLSO = "Comisión contra reembolso";
         }
 
         public static class Productos

@@ -433,7 +433,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 delegacion = lineaReferencia.delegacion,
                 formaVenta = lineaReferencia.formaVenta,
                 estado = lineaReferencia.estado,
-                texto = "Comisión contra reembolso",
+                texto = Constantes.Portes.TEXTO_COMISION_REEMBOLSO,
                 PrecioUnitario = resultado.ComisionReembolso,
                 iva = iva,
                 vistoBueno = true,
