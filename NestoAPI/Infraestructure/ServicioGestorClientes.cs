@@ -105,12 +105,31 @@ namespace NestoAPI.Infraestructure
                 }
             }
 
-            if (resultadoDevuelto.ToUpper() == "IDENTIFICADO-BAJA")
+            return ConstruirRespuestaCifNombre(nifDevuelto, nombreDevuelto, resultadoDevuelto);
+        }
+
+        // NestoAPI#166: extraído para cubrir con tests la interpretación del resultado
+        // que devuelve la AEAT. Códigos manejados:
+        //   IDENTIFICADO               → NIF válido
+        //   NO IDENTIFICADO-SIMILAR    → NIF válido (datos coinciden aproximadamente)
+        //   IDENTIFICADO-BAJA          → NIF válido, empresa dada de baja (prefijo aviso)
+        //   IDENTIFICADO-REVOCADO      → NIF válido, NIF revocado por AEAT (prefijo aviso)
+        internal static RespuestaNifNombreCliente ConstruirRespuestaCifNombre(
+            string nifDevuelto, string nombreDevuelto, string resultadoDevuelto)
+        {
+            string resultadoUpper = resultadoDevuelto?.ToUpper();
+
+            if (resultadoUpper == "IDENTIFICADO-BAJA")
             {
                 nombreDevuelto = "¡EMPRESA DE BAJA! " + nombreDevuelto;
             }
+            else if (resultadoUpper == "IDENTIFICADO-REVOCADO")
+            {
+                // NIF revocado por Hacienda: el cliente debe pedir rehabilitación.
+                nombreDevuelto = "¡NIF REVOCADO! " + nombreDevuelto;
+            }
 
-            if (nombreDevuelto.Length > 50)
+            if (nombreDevuelto != null && nombreDevuelto.Length > 50)
             {
                 nombreDevuelto = nombreDevuelto.Substring(0, 50);
             }
@@ -119,9 +138,10 @@ namespace NestoAPI.Infraestructure
             {
                 NifFormateado = nifDevuelto?.Trim(),
                 NombreFormateado = nombreDevuelto?.Trim(),
-                NifValidado = resultadoDevuelto?.ToUpper() == "IDENTIFICADO" ||
-                resultadoDevuelto?.ToUpper() == "NO IDENTIFICADO-SIMILAR" ||
-                resultadoDevuelto?.ToUpper() == "IDENTIFICADO-BAJA"
+                NifValidado = resultadoUpper == "IDENTIFICADO" ||
+                              resultadoUpper == "NO IDENTIFICADO-SIMILAR" ||
+                              resultadoUpper == "IDENTIFICADO-BAJA" ||
+                              resultadoUpper == "IDENTIFICADO-REVOCADO"
             };
         }
 
