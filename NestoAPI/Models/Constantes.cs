@@ -271,6 +271,12 @@ namespace NestoAPI.Models
             // coincide con la de portes, así que el texto es lo que distingue una de otra
             // al detectar líneas existentes (búsqueda case-insensitive de "reembolso").
             public const string TEXTO_COMISION_REEMBOLSO = "Comisión contra reembolso";
+
+            // NestoAPI#187: aviso que se devuelve al cliente en ValidarServirJunto cuando
+            // el pedido aplica comisión contra reembolso y se está desmarcando servirJunto.
+            // Informa de que, tras NestoAPI#174, cada envío llevará su propia comisión.
+            public const string AVISO_COMISION_REEMBOLSO_SPLIT =
+                "Si desmarcas Servir Junto, se aplicará una comisión de contra reembolso por cada envío que se haga al cliente. ¿Quieres continuar?";
         }
 
         public static class Productos

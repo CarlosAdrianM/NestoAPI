@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure.Kits;
+using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.ValidadoresServirJunto;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta.ServirJunto;
@@ -66,7 +67,29 @@ namespace NestoAPI.Infraestructure.ServirJunto
                 }
             }
 
-            return NuevaRespuestaOK();
+            return ConAvisoSiProcede(NuevaRespuestaOK(), request);
+        }
+
+        // NestoAPI#187: añade Aviso al response si el pedido aplica comisión contra
+        // reembolso. Solo informativo — no cambia PuedeDesmarcar. El cliente mostrará
+        // una confirmación al usuario para que no haya sorpresas con la comisión por
+        // envío que introduce NestoAPI#174.
+        internal static ValidarServirJuntoResponse ConAvisoSiProcede(
+            ValidarServirJuntoResponse response, ValidarServirJuntoRequest request)
+        {
+            if (response == null || !response.PuedeDesmarcar) return response;
+
+            if (GestorPortes.EsContraReembolso(
+                    request.FormaPago,
+                    request.PlazosPago,
+                    request.CCC,
+                    request.PeriodoFacturacion,
+                    request.NotaEntrega.GetValueOrDefault(false)))
+            {
+                response.Aviso = Constantes.Portes.AVISO_COMISION_REEMBOLSO_SPLIT;
+            }
+
+            return response;
         }
 
         private async Task<List<ProductoBonificadoConCantidadRequest>> ConfirmarBonificadosContraBdAsync(
