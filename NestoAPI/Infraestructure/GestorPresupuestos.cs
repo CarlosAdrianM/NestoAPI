@@ -18,6 +18,7 @@ namespace NestoAPI.Infraestructure
         private readonly IServicioVendedores servicioVendedores = new ServicioVendedores();
         private readonly IServicioGestorStocks servicioGestorStocks;
         private readonly IServicioCorreoElectronico servicioCorreo;
+        private readonly Func<string, Task<string>> rutaImagenProvider;
 
         private readonly PedidoVentaDTO pedido;
         private readonly RespuestaValidacion respuestaValidacion;
@@ -37,6 +38,7 @@ namespace NestoAPI.Infraestructure
             TEXTO_PEDIDO = pedido.EsPresupuesto ? "Presupuesto" : "Pedido";
             servicioGestorStocks = new ServicioGestorStocks();
             servicioCorreo = new ServicioCorreoElectronico(); // En producción, sin logger
+            rutaImagenProvider = ProductoDTO.RutaImagen;
         }
 
         public GestorPresupuestos(
@@ -45,7 +47,8 @@ namespace NestoAPI.Infraestructure
             NVEntities db,
             IServicioVendedores servicioVendedores,
             IServicioGestorStocks servicioGestorStocks,
-            IServicioCorreoElectronico servicioCorreo = null)
+            IServicioCorreoElectronico servicioCorreo = null,
+            Func<string, Task<string>> rutaImagenProvider = null)
         {
             this.pedido = pedido;
             this.respuestaValidacion = respuestaValidacion;
@@ -53,6 +56,7 @@ namespace NestoAPI.Infraestructure
             this.servicioVendedores = servicioVendedores;
             this.servicioGestorStocks = servicioGestorStocks;
             this.servicioCorreo = servicioCorreo;
+            this.rutaImagenProvider = rutaImagenProvider ?? ProductoDTO.RutaImagen;
             TEXTO_PEDIDO = pedido.EsPresupuesto ? "Presupuesto" : "Pedido";
         }
 
@@ -162,7 +166,8 @@ namespace NestoAPI.Infraestructure
             }
 
             mail.Subject = string.Format("{0} {1} - c/ {2}", TEXTO_PEDIDO, pedido.numero, pedido.cliente);
-            mail.Body = (await GenerarTablaHTML(pedido, tipoCorreo)).ToString();
+            var (tabla, faltaFotoProducto) = await GenerarTablaHTML(pedido, tipoCorreo);
+            mail.Body = tabla.ToString();
             mail.IsBodyHtml = true;
             if (pedido.Lineas.FirstOrDefault().almacen == Constantes.Almacenes.REINA)
             {
@@ -177,9 +182,11 @@ namespace NestoAPI.Infraestructure
                 mail.Subject = "[Entrega en 2h] " + mail.Subject;
                 mail.Priority = MailPriority.High;
             }
-            // Si falta la foto ponemos copia a tienda online
-            if (mail.Body.Contains("www.productosdeesteticaypeluqueriaprofesional.com/-") ||
-                mail.Body.Contains("-home_default/.jpg") ||
+            // NestoAPI#170: detectamos la foto ausente inspeccionando las líneas de
+            // producto (tipoLinea=1), no el body del correo. El chequeo anterior
+            // (Body.Contains) daba falsos positivos cuando cualquier texto del correo
+            // casaba con los patrones, por eso tiendaonline recibía copias innecesarias.
+            if (faltaFotoProducto ||
                 pedido.Lineas.First().formaVenta == Constantes.FormasVenta.AMAZON ||
                 pedido.Lineas.First().formaVenta == Constantes.FormasVenta.TIENDA_ONLINE)
             {
@@ -199,9 +206,21 @@ namespace NestoAPI.Infraestructure
             // El ServicioCorreoElectronico ya tiene lógica de retry interna
             servicioCorreo.EnviarCorreoSMTP(mail);
         }
-        private async Task<StringBuilder> GenerarTablaHTML(PedidoVentaDTO pedido, string tipoCorreo)
+        // NestoAPI#170: detecta si la URL devuelta por Prestashop indica imagen ausente.
+        // La tienda usa el patrón "…-home_default/.jpg" cuando no encuentra foto (el
+        // nombre del archivo queda vacío entre el separador "/" y la extensión) y
+        // "…/-" cuando ni siquiera hay directorio. También consideramos ruta vacía.
+        internal static bool EsRutaImagenRota(string rutaImagen)
+        {
+            if (string.IsNullOrEmpty(rutaImagen)) return true;
+            return rutaImagen.Contains("/-") || rutaImagen.Contains("-home_default/.jpg");
+        }
+
+        private async Task<(StringBuilder tabla, bool faltaFoto)> GenerarTablaHTML(
+            PedidoVentaDTO pedido, string tipoCorreo)
         {
             StringBuilder s = new StringBuilder();
+            bool faltaFoto = false;
 
             // Estilo general del correo
             _ = s.AppendLine("<style>");
@@ -374,7 +393,11 @@ namespace NestoAPI.Infraestructure
                 _ = s.Append("<tr style=\"color: " + colorCantidad + ";\">");
                 if (linea.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
                 {
-                    string rutaImagen = await ProductoDTO.RutaImagen(linea.Producto).ConfigureAwait(false);
+                    string rutaImagen = await rutaImagenProvider(linea.Producto).ConfigureAwait(false);
+                    if (EsRutaImagenRota(rutaImagen))
+                    {
+                        faltaFoto = true;
+                    }
                     _ = s.Append("<td style=\"width: 100px; height: 100px; text-align:center; vertical-align:middle\"><img src=\"" + rutaImagen + "\" style=\"max-height:100%; max-width:100%\"></td>");
                 }
                 else
@@ -548,7 +571,7 @@ namespace NestoAPI.Infraestructure
                 _ = s.AppendLine("</table>");
             }
 
-            return s;
+            return (s, faltaFoto);
         }
 
         // Carlos 23/10/25: Cambiado de private a internal para poder hacer tests

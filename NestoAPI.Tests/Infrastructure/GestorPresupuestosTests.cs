@@ -640,5 +640,44 @@ namespace NestoAPI.Tests.Infrastructure
                 "NO debería haber almacenes con reservas si no hay stock disponible en otros almacenes");
         }
 
+        // NestoAPI#170: el CC a tiendaonline solo debe dispararse cuando una línea de
+        // producto real tiene foto rota. EsRutaImagenRota aísla la lógica del chequeo
+        // para poder cubrirla aunque GenerarTablaHTML dependa de la BD.
+
+        [TestMethod]
+        public void EsRutaImagenRota_RutaValida_DevuelveFalse()
+        {
+            Assert.IsFalse(GestorPresupuestos.EsRutaImagenRota(
+                "https://www.productosdeesteticaypeluqueriaprofesional.com/12345-home_default/crema.jpg"));
+        }
+
+        [TestMethod]
+        public void EsRutaImagenRota_NombreArchivoVacio_DevuelveTrue()
+        {
+            // Patrón Prestashop cuando no encuentra nombre de imagen: "-home_default/.jpg".
+            Assert.IsTrue(GestorPresupuestos.EsRutaImagenRota(
+                "https://www.productosdeesteticaypeluqueriaprofesional.com/12345-home_default/.jpg"));
+        }
+
+        [TestMethod]
+        public void EsRutaImagenRota_DirectorioConGuion_DevuelveTrue()
+        {
+            // Patrón cuando Prestashop devuelve ruta sin directorio resuelto: ".../-".
+            Assert.IsTrue(GestorPresupuestos.EsRutaImagenRota(
+                "https://www.productosdeesteticaypeluqueriaprofesional.com/-"));
+        }
+
+        [TestMethod]
+        public void EsRutaImagenRota_RutaVacia_DevuelveTrue()
+        {
+            Assert.IsTrue(GestorPresupuestos.EsRutaImagenRota(""));
+        }
+
+        [TestMethod]
+        public void EsRutaImagenRota_RutaNula_DevuelveTrue()
+        {
+            Assert.IsTrue(GestorPresupuestos.EsRutaImagenRota(null));
+        }
+
     }
 }
