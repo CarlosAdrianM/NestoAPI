@@ -164,6 +164,10 @@ namespace NestoAPI.Controllers
         }
 
 
+        // NestoAPI#171: [Authorize] para que ELMAH registre el usuario del JWT en caso
+        // de auto-fix de descuadre. Sin este atributo, UserSyncHandler no propaga el
+        // principal a HttpContext.Current.User y los errores quedan anónimos.
+        [Authorize]
         [HttpPost]
         [Route("api/Facturas/CrearFactura")]
         public async Task<IHttpActionResult> CrearFactura([FromBody] dynamic parametros)

@@ -404,7 +404,7 @@ namespace NestoAPI.Infraestructure.Facturas
             // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
             // El recálculo se hace antes porque después del SP (incluso con rollback),
             // las líneas pueden estar temporalmente en estado 4 y el trigger no permite modificarlas.
-            bool seAplicoAutoFix = await RecalcularLineasPedido(db, cabPedido);
+            bool seAplicoAutoFix = await RecalcularLineasPedido(db, cabPedido, usuario);
             if (seAplicoAutoFix)
             {
                 System.Diagnostics.Debug.WriteLine($"  → AUTO-FIX PREVENTIVO aplicado para pedido {pedido}");
@@ -577,7 +577,7 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <param name="db">Contexto de Entity Framework</param>
         /// <param name="pedido">Pedido a recalcular</param>
         /// <returns>True si se realizaron cambios, False si no hubo cambios</returns>
-        private async Task<bool> RecalcularLineasPedido(NVEntities db, CabPedidoVta pedido)
+        private async Task<bool> RecalcularLineasPedido(NVEntities db, CabPedidoVta pedido, string usuario = null)
         {
             if (pedido == null)
             {
@@ -595,7 +595,30 @@ namespace NestoAPI.Infraestructure.Facturas
             var infoRecalculo = new StringBuilder();
             infoRecalculo.AppendLine($"=== AUTO-FIX: Recálculo de líneas pedido {pedido.Empresa}/{pedido.Número} ===");
             infoRecalculo.AppendLine($"Fecha/Hora: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            if (!string.IsNullOrWhiteSpace(usuario))
+            {
+                infoRecalculo.AppendLine($"Usuario:    {usuario}");
+            }
             infoRecalculo.AppendLine();
+
+            // NestoAPI#171: antes del UPDATE, capturar qué líneas y qué columna van a
+            // cambiar, para poder documentarlo en ELMAH. Antes el log solo mostraba
+            // agregados y podía salir "Dif: 0,00" si había compensación interlínea, lo
+            // que generaba confusión en diagnóstico.
+            var diferenciasPorLinea = await LeerDiferenciasLineasAsync(db, pedido.Empresa, pedido.Número).ConfigureAwait(false);
+            if (diferenciasPorLinea.Any())
+            {
+                infoRecalculo.AppendLine("  DIFERENCIAS DETECTADAS POR LÍNEA:");
+                foreach (var d in diferenciasPorLinea)
+                {
+                    infoRecalculo.AppendLine($"    Nº Orden {d.NumeroOrden} [{d.Producto?.Trim()}]: " +
+                        $"BI {d.BaseImponibleActual:N4}→{d.BaseImponibleNueva:N4} " +
+                        $"(Dif {d.BaseImponibleNueva - d.BaseImponibleActual:+0.0000;-0.0000;0.0000}) | " +
+                        $"Dto {d.ImporteDtoActual:N4}→{d.ImporteDtoNuevo:N4} " +
+                        $"(Dif {d.ImporteDtoNuevo - d.ImporteDtoActual:+0.0000;-0.0000;0.0000})");
+                }
+                infoRecalculo.AppendLine();
+            }
 
             // Ejecutar UPDATE SQL directo - misma fórmula que C# en GestorPedidosVenta.CalcularImportesLinea
             // IMPORTANTE: Solo Base Imponible se redondea a 2 decimales.
@@ -721,7 +744,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 System.Diagnostics.Debug.WriteLine(infoRecalculo.ToString());
 
                 // Registrar en ELMAH para trazabilidad
-                RegistrarAutoFixEnElmah(pedido, infoRecalculo.ToString());
+                RegistrarAutoFixEnElmah(pedido, infoRecalculo.ToString(), usuario);
             }
             else
             {
@@ -731,16 +754,86 @@ namespace NestoAPI.Infraestructure.Facturas
             return huboCambios;
         }
 
+        // NestoAPI#171: DTO local para capturar qué líneas y qué columnas van a cambiar
+        // antes de lanzar el UPDATE, para que el log de ELMAH describa el desajuste.
+        internal class LineaDiagnosticoAutoFix
+        {
+            public int NumeroOrden { get; set; }
+            public string Producto { get; set; }
+            public decimal BaseImponibleActual { get; set; }
+            public decimal BaseImponibleNueva { get; set; }
+            public decimal ImporteDtoActual { get; set; }
+            public decimal ImporteDtoNuevo { get; set; }
+        }
+
+        private async Task<List<LineaDiagnosticoAutoFix>> LeerDiferenciasLineasAsync(NVEntities db, string empresa, int numero)
+        {
+            // Misma fórmula que el UPDATE de RecalcularLineasPedido. Se duplica a
+            // propósito en modo SELECT para no interferir con la transacción: solo
+            // queremos una foto de lo que va a cambiar, no modificar nada todavía.
+            const string sql = @"
+                ;WITH BaseCalculada AS (
+                    SELECT
+                        l.[Nº Orden],
+                        ROUND(l.Bruto *
+                            CASE WHEN l.[Aplicar Dto] = 1
+                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                            END
+                        , 2) AS NuevoImporteDto,
+                        ROUND(l.Bruto, 2) - ROUND(l.Bruto *
+                            CASE WHEN l.[Aplicar Dto] = 1
+                                THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
+                                ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
+                            END
+                        , 2) AS NuevaBI
+                    FROM LinPedidoVta l
+                    WHERE l.Empresa = @empresa
+                      AND l.Número = @numero
+                      AND l.Estado BETWEEN -1 AND 2
+                )
+                SELECT
+                    l.[Nº Orden] AS NumeroOrden,
+                    l.Producto AS Producto,
+                    CAST(l.[Base Imponible] AS decimal(18,4)) AS BaseImponibleActual,
+                    CAST(bc.NuevaBI AS decimal(18,4)) AS BaseImponibleNueva,
+                    CAST(l.ImporteDto AS decimal(18,4)) AS ImporteDtoActual,
+                    CAST(bc.NuevoImporteDto AS decimal(18,4)) AS ImporteDtoNuevo
+                FROM LinPedidoVta l
+                INNER JOIN BaseCalculada bc ON l.[Nº Orden] = bc.[Nº Orden]
+                WHERE l.Empresa = @empresa
+                  AND l.Número = @numero
+                  AND l.Estado BETWEEN -1 AND 2
+                  AND (
+                      ABS(l.[Base Imponible] - bc.NuevaBI) > 0.0001
+                      OR ABS(l.ImporteDto - bc.NuevoImporteDto) > 0.0001
+                      OR ABS(l.ImporteIVA - (bc.NuevaBI * l.PorcentajeIVA / 100.0)) > 0.0001
+                      OR ABS(l.Total - (bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE))) > 0.0001
+                  )
+                ORDER BY l.[Nº Orden]";
+
+            return await db.Database
+                .SqlQuery<LineaDiagnosticoAutoFix>(sql,
+                    new SqlParameter("@empresa", empresa),
+                    new SqlParameter("@numero", numero))
+                .ToListAsync()
+                .ConfigureAwait(false);
+        }
+
         /// <summary>
         /// Registra en ELMAH que se realizó un auto-fix de descuadre.
         /// Esto es informativo para trazabilidad, no un error crítico.
         /// </summary>
-        private void RegistrarAutoFixEnElmah(CabPedidoVta pedido, string detallesRecalculo)
+        private void RegistrarAutoFixEnElmah(CabPedidoVta pedido, string detallesRecalculo, string usuario = null)
         {
             try
             {
                 var mensajeCompleto = new StringBuilder();
                 mensajeCompleto.AppendLine($"AUTO-FIX DE DESCUADRE APLICADO - Pedido {pedido.Empresa}/{pedido.Número}");
+                if (!string.IsNullOrWhiteSpace(usuario))
+                {
+                    mensajeCompleto.AppendLine($"Usuario: {usuario}");
+                }
                 mensajeCompleto.AppendLine();
                 mensajeCompleto.AppendLine("Se detectó un error de descuadre durante la facturación.");
                 mensajeCompleto.AppendLine("Se recalcularon automáticamente las líneas del pedido y se reintentó la factura.");
@@ -752,6 +845,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 excepcionInfo.Data["Pedido"] = pedido.Número;
                 excepcionInfo.Data["Empresa"] = pedido.Empresa;
                 excepcionInfo.Data["Cliente"] = pedido.Nº_Cliente;
+                excepcionInfo.Data["Usuario"] = usuario ?? "(desconocido)";
                 excepcionInfo.Data["TipoError"] = "AUTO_FIX_DESCUADRE";
                 excepcionInfo.Data["ModoRedondeo"] = RoundingHelper.UsarAwayFromZero ? "AwayFromZero" : "ToEven";
 
