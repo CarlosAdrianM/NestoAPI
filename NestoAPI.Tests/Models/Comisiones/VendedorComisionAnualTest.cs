@@ -1,5 +1,6 @@
 ﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Models;
 using NestoAPI.Models.Comisiones;
 using System;
 using System.Collections.ObjectModel;
@@ -318,9 +319,9 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(1212, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Comision);
             Assert.AreEqual(.2M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
-            Assert.AreEqual(decimal.MaxValue, etiquetaGeneralResumen.FaltaParaSalto);
+            Assert.AreEqual(Constantes.Comisiones.SIN_LIMITE_TRAMO, etiquetaGeneralResumen.FaltaParaSalto);
             Assert.AreEqual(144000, etiquetaGeneralResumen.InicioTramo);
-            Assert.AreEqual(decimal.MaxValue, etiquetaGeneralResumen.FinalTramo);
+            Assert.AreEqual(Constantes.Comisiones.SIN_LIMITE_TRAMO, etiquetaGeneralResumen.FinalTramo);
             Assert.AreEqual(144012, etiquetaGeneralResumen.Proyeccion);
             Assert.IsFalse(etiquetaGeneralResumen.BajaSaltoMesSiguiente);
         }
@@ -363,9 +364,9 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(1296, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == UNION_LASER).Single().Comision);
             Assert.AreEqual(1.6M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
-            Assert.AreEqual(decimal.MaxValue, etiquetaGeneralResumen.FaltaParaSalto);
+            Assert.AreEqual(Constantes.Comisiones.SIN_LIMITE_TRAMO, etiquetaGeneralResumen.FaltaParaSalto);
             Assert.AreEqual(230000.01M, etiquetaGeneralResumen.InicioTramo);
-            Assert.AreEqual(decimal.MaxValue, etiquetaGeneralResumen.FinalTramo);
+            Assert.AreEqual(Constantes.Comisiones.SIN_LIMITE_TRAMO, etiquetaGeneralResumen.FinalTramo);
             Assert.AreEqual(240000, etiquetaGeneralResumen.Proyeccion);
         }
 
@@ -437,7 +438,7 @@ namespace NestoAPI.Tests.Models.Comisiones
             Assert.AreEqual(1.6M, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == EVA_VISNU).Single().Comision);
             Assert.AreEqual(1, vendedorComisionAnual.ResumenMesActual.Etiquetas.Where(e => e.Nombre == OTROS_APARATOS).Single().Comision);
             Assert.AreEqual(230000.01M, etiquetaGeneralResultado.InicioTramo);
-            Assert.AreEqual(decimal.MaxValue, etiquetaGeneralResultado.FinalTramo);
+            Assert.AreEqual(Constantes.Comisiones.SIN_LIMITE_TRAMO, etiquetaGeneralResultado.FinalTramo);
             Assert.AreEqual(240000, etiquetaGeneralResultado.Proyeccion);
         }
 

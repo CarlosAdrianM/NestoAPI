@@ -161,8 +161,10 @@ namespace NestoAPI.Models.Comisiones
                     etiquetaAcumulada.Comision =
                         Math.Round((ventaAcumulada * etiquetaAcumulada.Tipo) - Resumenes.Sum(r => ComisionesHelper.ObtenerEtiquetaAcumulada(r.Etiquetas).Comision), 2);
                     decimal mesesDecimales = (decimal)mesesAnno / meses;
+                    // NestoAPI#185: centinela -1 en vez de decimal.MaxValue para
+                    // que el DTO pueda round-trip por JSON a los clientes.
                     etiquetaAcumulada.FaltaParaSalto = tramo.Hasta == decimal.MaxValue ?
-                        decimal.MaxValue :
+                        Constantes.Comisiones.SIN_LIMITE_TRAMO :
                         comisiones.CalculadorProyecciones.CalcularFaltaParaSalto(ventaAcumulada, tramo.Hasta, mesesDecimales, etiquetaAcumulada.Proyeccion);
                 }
             }
@@ -203,7 +205,12 @@ namespace NestoAPI.Models.Comisiones
         {
             var tramoProyeccion = BuscarTramoComision(tramosAnno, etiquetaAcumulada.Proyeccion);
             etiquetaAcumulada.InicioTramo = tramoProyeccion.Desde;
-            etiquetaAcumulada.FinalTramo = tramoProyeccion.Hasta;
+            // NestoAPI#185: el último tramo se marca internamente con decimal.MaxValue.
+            // Lo traducimos a -1 sólo al escribir en el DTO para que los clientes
+            // puedan detectar "sin límite" sin explotar al deserializar.
+            etiquetaAcumulada.FinalTramo = tramoProyeccion.Hasta == decimal.MaxValue
+                ? Constantes.Comisiones.SIN_LIMITE_TRAMO
+                : tramoProyeccion.Hasta;
         }
 
         public static TramoComision BuscarTramoComision(ICollection<TramoComision> tramos, decimal importe)

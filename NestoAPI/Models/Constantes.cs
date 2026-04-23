@@ -83,6 +83,17 @@ namespace NestoAPI.Models
             }
         }
 
+        public static class Comisiones
+        {
+            // NestoAPI#185: valor centinela para FaltaParaSalto y FinalTramo cuando el
+            // vendedor está en el último tramo (sin límite superior). No se puede usar
+            // decimal.MaxValue porque Newtonsoft.Json lo parsea vía double y pierde
+            // precisión, haciendo que el cliente no pueda convertirlo de vuelta a
+            // decimal (OverflowException). -1 es inequívoco: un importe/diferencia
+            // negativo no tiene sentido semántico en estos campos.
+            public const decimal SIN_LIMITE_TRAMO = -1m;
+        }
+
         public static class Correos
         {
             public const string COMPRAS = "compras@nuevavision.es";
