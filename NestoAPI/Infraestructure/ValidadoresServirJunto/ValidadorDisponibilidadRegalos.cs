@@ -28,7 +28,11 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             List<ProductoBonificadoConCantidadRequest> productos,
             List<ProductoBonificadoConCantidadRequest> lineasPedido)
         {
-            // lineasPedido no se usa en este validador: sólo validamos bonificados.
+            // NestoAPI#175: además de los bonificados explícitos (productos), considerar
+            // las líneas del pedido marcadas como EsBonificadoGanavisiones. Cierra el
+            // agujero de DetallePedido, donde ProductosBonificadosConCantidad viene vacío
+            // y los bonificados llegan como líneas normales del pedido.
+            productos = UnificarConBonificadosDeLineasPedido(productos, lineasPedido);
             var productosIds = productos.Select(p => p.ProductoId).ToList();
 
             var nombresProductos = await db.Productos
@@ -94,6 +98,29 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
                 ProductosProblematicos = new List<ProductoSinStockDTO>(),
                 Mensaje = null
             };
+        }
+
+        private static List<ProductoBonificadoConCantidadRequest> UnificarConBonificadosDeLineasPedido(
+            List<ProductoBonificadoConCantidadRequest> productos,
+            List<ProductoBonificadoConCantidadRequest> lineasPedido)
+        {
+            if (lineasPedido == null || !lineasPedido.Any())
+            {
+                return productos;
+            }
+
+            var idsExistentes = new HashSet<string>(productos.Select(p => p.ProductoId?.Trim()));
+            var unificados = new List<ProductoBonificadoConCantidadRequest>(productos);
+
+            foreach (var linea in lineasPedido.Where(l => l.EsBonificadoGanavisiones))
+            {
+                if (idsExistentes.Add(linea.ProductoId?.Trim()))
+                {
+                    unificados.Add(linea);
+                }
+            }
+
+            return unificados;
         }
     }
 }

@@ -251,6 +251,127 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsTrue(okResult.Content.PuedeDesmarcar);
         }
 
+        // NestoAPI#175: bonificado de Ganavisiones enviado como línea del pedido
+        // (escenario DetallePedido: ProductosBonificadosConCantidad viene vacío y
+        // los bonificados llegan marcados dentro de LineasPedido).
+
+        [TestMethod]
+        public async Task ValidarServirJunto_LineaBonificadoGanavisionesSinStock_Bloquea()
+        {
+            MockStock("BONIF1", "ALG", 0);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, Número = "BONIF1", Nombre = "Regalo Ganavisiones", SubGrupo = "OTR" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                LineasPedido = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "BONIF1", Cantidad = 2, EsBonificadoGanavisiones = true }
+                }
+            };
+
+            var resultado = await controller.ValidarServirJunto(request);
+
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar);
+            Assert.AreEqual("BONIF1", okResult.Content.ProductosProblematicos[0].ProductoId.Trim());
+            Assert.AreEqual("Regalo Ganavisiones", okResult.Content.ProductosProblematicos[0].ProductoNombre);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_LineaBonificadoGanavisionesConStock_PuedeDesmarcar()
+        {
+            MockStock("BONIF1", "ALG", 10);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, Número = "BONIF1", Nombre = "Regalo Ganavisiones", SubGrupo = "OTR" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                LineasPedido = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "BONIF1", Cantidad = 2, EsBonificadoGanavisiones = true }
+                }
+            };
+
+            var resultado = await controller.ValidarServirJunto(request);
+
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsTrue(okResult.Content.PuedeDesmarcar);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_LineaSinFlagEsBonificado_NoSeValidaComoBonificado()
+        {
+            // Retrocompatibilidad: las líneas no marcadas siguen sin entrar al validador
+            // de regalos aunque no tengan stock (sólo el validador MMP las mira, y ese
+            // filtra por subgrupo MUESTRAS).
+            MockStock("PROD1", "ALG", 0);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, Número = "PROD1", Nombre = "Producto normal", SubGrupo = "OTR" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                LineasPedido = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "PROD1", Cantidad = 1 }
+                }
+            };
+
+            var resultado = await controller.ValidarServirJunto(request);
+
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsTrue(okResult.Content.PuedeDesmarcar);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_MismoProductoEnBonificadosYLineas_NoDuplicaValidacion()
+        {
+            // El mismo producto puede llegar a la vez como bonificado explícito y como
+            // línea del pedido marcada. El validador debe tratarlo como uno solo para no
+            // repetirlo en el listado de productos problemáticos.
+            MockStock("BONIF1", "ALG", 0);
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, Número = "BONIF1", Nombre = "Regalo Ganavisiones", SubGrupo = "OTR" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                ProductosBonificadosConCantidad = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "BONIF1", Cantidad = 1 }
+                },
+                LineasPedido = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "BONIF1", Cantidad = 1, EsBonificadoGanavisiones = true }
+                }
+            };
+
+            var resultado = await controller.ValidarServirJunto(request);
+
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsFalse(okResult.Content.PuedeDesmarcar);
+            Assert.AreEqual(1, okResult.Content.ProductosProblematicos.Count);
+        }
+
         #region Helpers (copiados de GanavisionesControllerTests)
 
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
