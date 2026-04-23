@@ -27,6 +27,7 @@ namespace NestoAPI.Tests.Controllers
         private NVEntities db;
         private IProductoService fakeProductoService;
         private DbSet<Producto> fakeProductos;
+        private DbSet<Ganavision> fakeGanavisiones;
         private ServirJuntoController controller;
 
         [TestInitialize]
@@ -35,15 +36,32 @@ namespace NestoAPI.Tests.Controllers
             db = A.Fake<NVEntities>();
             fakeProductoService = A.Fake<IProductoService>();
             fakeProductos = A.Fake<DbSet<Producto>>(o => o.Implements<IQueryable<Producto>>().Implements<IDbAsyncEnumerable<Producto>>());
+            fakeGanavisiones = A.Fake<DbSet<Ganavision>>(o => o.Implements<IQueryable<Ganavision>>().Implements<IDbAsyncEnumerable<Ganavision>>());
 
             A.CallTo(() => db.Productos).Returns(fakeProductos);
             ConfigurarFakeDbSet(fakeProductos, new List<Producto>().AsQueryable());
+
+            A.CallTo(() => db.Ganavisiones).Returns(fakeGanavisiones);
+            ConfigurarFakeDbSet(fakeGanavisiones, new List<Ganavision>().AsQueryable());
 
             A.CallTo(() => fakeProductoService.CalcularStockProducto(A<string>._, A<string>._))
                 .Returns(Task.FromResult(new ProductoDTO.StockProducto()));
 
             var servicio = new ServicioValidarServirJunto(db, fakeProductoService);
             controller = new ServirJuntoController(servicio);
+        }
+
+        private void ConfigurarGanavisiones(params string[] productosIds)
+        {
+            var lista = productosIds
+                .Select(id => new Ganavision
+                {
+                    Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    ProductoId = id,
+                    Ganavisiones = 1
+                })
+                .AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, lista);
         }
 
         [TestMethod]
@@ -259,6 +277,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task ValidarServirJunto_LineaBonificadoGanavisionesSinStock_Bloquea()
         {
             MockStock("BONIF1", "ALG", 0);
+            ConfigurarGanavisiones("BONIF1");
 
             var productos = new List<Producto>
             {
@@ -287,6 +306,7 @@ namespace NestoAPI.Tests.Controllers
         public async Task ValidarServirJunto_LineaBonificadoGanavisionesConStock_PuedeDesmarcar()
         {
             MockStock("BONIF1", "ALG", 10);
+            ConfigurarGanavisiones("BONIF1");
 
             var productos = new List<Producto>
             {
@@ -345,6 +365,7 @@ namespace NestoAPI.Tests.Controllers
             // línea del pedido marcada. El validador debe tratarlo como uno solo para no
             // repetirlo en el listado de productos problemáticos.
             MockStock("BONIF1", "ALG", 0);
+            ConfigurarGanavisiones("BONIF1");
 
             var productos = new List<Producto>
             {
@@ -370,6 +391,36 @@ namespace NestoAPI.Tests.Controllers
             var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
             Assert.IsFalse(okResult.Content.PuedeDesmarcar);
             Assert.AreEqual(1, okResult.Content.ProductosProblematicos.Count);
+        }
+
+        [TestMethod]
+        public async Task ValidarServirJunto_LineaMarcadaSinGanavisionesEnBd_SeDescartaDelValidador()
+        {
+            // Un cliente puede marcar como EsBonificadoGanavisiones cualquier línea a 0€.
+            // Si el producto no tiene registro en la tabla Ganavision, el servicio lo
+            // desmarca y el validador de regalos no lo ve → no falsea ProductosProblematicos.
+            MockStock("NO_BONIF", "ALG", 0);
+            // Ganavisiones fake queda vacío: NO_BONIF no tiene registro.
+
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO, Número = "NO_BONIF", Nombre = "Regalo por importe", SubGrupo = "OTR" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                LineasPedido = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "NO_BONIF", Cantidad = 1, EsBonificadoGanavisiones = true }
+                }
+            };
+
+            var resultado = await controller.ValidarServirJunto(request);
+
+            var okResult = (OkNegotiatedContentResult<ValidarServirJuntoResponse>)resultado;
+            Assert.IsTrue(okResult.Content.PuedeDesmarcar);
         }
 
         #region Helpers (copiados de GanavisionesControllerTests)

@@ -1990,50 +1990,20 @@ namespace NestoAPI.Controllers
                 return null;
             }
 
-            // Detectar bonificados Ganavisiones siguiendo el criterio canónico de
-            // ValidadorGanavisiones: línea a 0€ (BaseImponible==0) sin oferta (oferta
-            // null/0) y producto con registros en tabla Ganavision.
-            var idsBaseCeroSinOferta = lineasRelevantes
-                .Where(l => l.BaseImponible == 0 && (l.oferta == null || l.oferta == 0))
-                .Select(l => l.Producto.Trim())
-                .Distinct()
-                .ToList();
-
-            var idsConGanavisiones = new HashSet<string>();
-            if (idsBaseCeroSinOferta.Any())
-            {
-                var idsEnBd = await db.Ganavisiones
-                    .Where(g => g.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
-                             && idsBaseCeroSinOferta.Contains(g.ProductoId))
-                    .Select(g => g.ProductoId)
-                    .Distinct()
-                    .ToListAsync()
-                    .ConfigureAwait(false);
-
-                foreach (var id in idsEnBd)
-                {
-                    idsConGanavisiones.Add(id.Trim());
-                }
-            }
-
             var almacen = lineasRelevantes.First().almacen?.Trim();
             if (string.IsNullOrEmpty(almacen))
             {
                 return null;
             }
 
-            var lineasRequest = lineasRelevantes.Select(l =>
+            // Marcamos como candidato a bonificado Ganavisiones toda línea a 0€ sin
+            // oferta. El servicio confirma contra la tabla Ganavision y descarta los
+            // falsos positivos (MMP, regalos por importe, etc.).
+            var lineasRequest = lineasRelevantes.Select(l => new ProductoBonificadoConCantidadRequest
             {
-                var idTrimmed = l.Producto.Trim();
-                bool esBonificado = idsConGanavisiones.Contains(idTrimmed)
-                    && l.BaseImponible == 0
-                    && (l.oferta == null || l.oferta == 0);
-                return new ProductoBonificadoConCantidadRequest
-                {
-                    ProductoId = idTrimmed,
-                    Cantidad = l.Cantidad,
-                    EsBonificadoGanavisiones = esBonificado
-                };
+                ProductoId = l.Producto.Trim(),
+                Cantidad = l.Cantidad,
+                EsBonificadoGanavisiones = l.BaseImponible == 0 && (l.oferta == null || l.oferta == 0)
             }).ToList();
 
             var request = new ValidarServirJuntoRequest

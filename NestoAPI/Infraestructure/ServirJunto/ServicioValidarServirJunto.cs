@@ -3,6 +3,7 @@ using NestoAPI.Infraestructure.ValidadoresServirJunto;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta.ServirJunto;
 using System.Collections.Generic;
+using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -32,6 +33,13 @@ namespace NestoAPI.Infraestructure.ServirJunto
             var productosUnificados = UnificarProductosBonificados(request);
             var lineasPedido = request.LineasPedido ?? new List<ProductoBonificadoConCantidadRequest>();
 
+            // NestoAPI#175: el cliente sólo puede marcar candidatos a bonificado con
+            // criterio local (BaseImponible==0, sin oferta). El servidor confirma
+            // consultando la tabla Ganavision y desmarca los falsos positivos (MMP,
+            // regalos por importe, descuentos 100% manuales…) que no son bonificados
+            // del sistema Ganavisiones.
+            lineasPedido = await ConfirmarBonificadosContraBdAsync(lineasPedido).ConfigureAwait(false);
+
             // Si no hay bonificados Y tampoco hay líneas del pedido que validar, se puede
             // desmarcar directamente. Si solo hay líneas del pedido (p. ej. solo MMP sin
             // regalos), sí hay que pasar por los validadores.
@@ -59,6 +67,47 @@ namespace NestoAPI.Infraestructure.ServirJunto
             }
 
             return NuevaRespuestaOK();
+        }
+
+        private async Task<List<ProductoBonificadoConCantidadRequest>> ConfirmarBonificadosContraBdAsync(
+            List<ProductoBonificadoConCantidadRequest> lineasPedido)
+        {
+            var candidatosIds = lineasPedido
+                .Where(l => l.EsBonificadoGanavisiones)
+                .Select(l => l.ProductoId?.Trim())
+                .Where(id => !string.IsNullOrEmpty(id))
+                .Distinct()
+                .ToList();
+
+            if (!candidatosIds.Any())
+            {
+                return lineasPedido;
+            }
+
+            var idsEnBd = await db.Ganavisiones
+                .Where(g => g.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                         && candidatosIds.Contains(g.ProductoId))
+                .Select(g => g.ProductoId)
+                .Distinct()
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            var confirmados = new HashSet<string>(idsEnBd.Select(id => id.Trim()));
+
+            return lineasPedido.Select(l =>
+            {
+                if (!l.EsBonificadoGanavisiones) return l;
+                if (confirmados.Contains(l.ProductoId?.Trim())) return l;
+
+                // Candidato no confirmado: se desmarca para que no entre al validador
+                // de regalos. Si es MMP lo cogerá su validador específico por subgrupo.
+                return new ProductoBonificadoConCantidadRequest
+                {
+                    ProductoId = l.ProductoId,
+                    Cantidad = l.Cantidad,
+                    EsBonificadoGanavisiones = false
+                };
+            }).ToList();
         }
 
         internal static List<ProductoBonificadoConCantidadRequest> UnificarProductosBonificados(ValidarServirJuntoRequest request)
