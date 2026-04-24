@@ -1,9 +1,5 @@
 ﻿using Microsoft.AspNet.Identity.EntityFramework;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Data.Entity;
 
 namespace NestoAPI.Infraestructure
 {
@@ -15,6 +11,11 @@ namespace NestoAPI.Infraestructure
             Configuration.ProxyCreationEnabled = false;
             Configuration.LazyLoadingEnabled = false;
         }
+
+        // NestoAPI#188: refresh tokens OAuth2 para el flow de NestoApp.
+        // Esquema gestionado manualmente por Scripts/SQL/Issue188_AddRefreshTokens.sql,
+        // no por migrations EF.
+        public DbSet<RefreshToken> RefreshTokens { get; set; }
 
         public static ApplicationDbContext Create()
         {

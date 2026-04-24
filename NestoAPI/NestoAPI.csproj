@@ -565,6 +565,7 @@
     <Compile Include="Infraestructure\ApplicationRoleManager.cs" />
     <Compile Include="Infraestructure\ApplicationUser.cs" />
     <Compile Include="Infraestructure\ApplicationUserManager.cs" />
+    <Compile Include="Infraestructure\RefreshToken.cs" />
     <Compile Include="Infraestructure\Buscador\LuceneBuscador.cs" />
     <Compile Include="Infraestructure\Buscador\SpanishInsensitiveAnalyzer.cs" />
     <Compile Include="Infraestructure\ClienteHelper.cs" />
@@ -1325,6 +1326,8 @@
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Providers\CustomJwtFormat.cs" />
     <Compile Include="Providers\CustomOAuthProvider.cs" />
+    <Compile Include="Providers\IRefreshTokenStore.cs" />
+    <Compile Include="Providers\SimpleRefreshTokenProvider.cs" />
     <Compile Include="ServiceCollectionExtensions.cs" />
     <Compile Include="Startup.cs" />
     <Compile Include="ViewModels\ResetPasswordViewModel.cs" />

@@ -102,6 +102,11 @@ namespace NestoAPI
                 AllowInsecureHttp = true,
                 TokenEndpointPath = new PathString("/oauth/token"),
                 AccessTokenExpireTimeSpan = TimeSpan.FromDays(30),
+                // NestoAPI#188: refresh_token OAuth2 para el flow de NestoApp (grant password).
+                // El access_token sigue durando 30 días — no acortar hasta que NestoApp#117
+                // (refresh transparente) esté desplegado, o los usuarios con token de más
+                // de 30 min recibirán 401 sin saber refrescar.
+                RefreshTokenProvider = new SimpleRefreshTokenProvider(TimeSpan.FromDays(90)),
                 Provider = new CustomOAuthProvider(),
                 //AccessTokenFormat = new CustomJwtFormat("http://localhost:53364")
                 AccessTokenFormat = new CustomJwtFormat("carlos")
