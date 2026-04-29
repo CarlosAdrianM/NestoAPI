@@ -605,17 +605,24 @@ namespace NestoAPI.Infraestructure.Facturas
             // cambiar, para poder documentarlo en ELMAH. Antes el log solo mostraba
             // agregados y podía salir "Dif: 0,00" si había compensación interlínea, lo
             // que generaba confusión en diagnóstico.
+            //
+            // Tras analizar prdCrearFacturaVta (29/04/26): el SP NO usa ImporteDto ni
+            // ImporteIVA de las líneas (los recalcula desde Bruto y BaseImponible),
+            // pero SÍ lee Total para el check de cuadre (tolerancia 0,02). Por eso el
+            // UPDATE conserva las cuatro columnas en el WHERE y el diagnóstico imprime
+            // solo aquellas con drift real, omitiendo el ruido de "Dif 0,0000".
             var diferenciasPorLinea = await LeerDiferenciasLineasAsync(db, pedido.Empresa, pedido.Número).ConfigureAwait(false);
             if (diferenciasPorLinea.Any())
             {
                 infoRecalculo.AppendLine("  DIFERENCIAS DETECTADAS POR LÍNEA:");
                 foreach (var d in diferenciasPorLinea)
                 {
-                    infoRecalculo.AppendLine($"    Nº Orden {d.NumeroOrden} [{d.Producto?.Trim()}]: " +
-                        $"BI {d.BaseImponibleActual:N4}→{d.BaseImponibleNueva:N4} " +
-                        $"(Dif {d.BaseImponibleNueva - d.BaseImponibleActual:+0.0000;-0.0000;0.0000}) | " +
-                        $"Dto {d.ImporteDtoActual:N4}→{d.ImporteDtoNuevo:N4} " +
-                        $"(Dif {d.ImporteDtoNuevo - d.ImporteDtoActual:+0.0000;-0.0000;0.0000})");
+                    var partes = new List<string>();
+                    AppendDriftLog(partes, "BI",  d.BaseImponibleActual, d.BaseImponibleNueva);
+                    AppendDriftLog(partes, "Dto", d.ImporteDtoActual,    d.ImporteDtoNuevo);
+                    AppendDriftLog(partes, "IVA", d.ImporteIVAActual,    d.ImporteIVANuevo);
+                    AppendDriftLog(partes, "Tot", d.TotalActual,         d.TotalNuevo);
+                    infoRecalculo.AppendLine($"    Nº Orden {d.NumeroOrden} [{d.Producto?.Trim()}]: " + string.Join(" | ", partes));
                 }
                 infoRecalculo.AppendLine();
             }
@@ -754,6 +761,18 @@ namespace NestoAPI.Infraestructure.Facturas
             return huboCambios;
         }
 
+        // Solo añade la columna al log si el drift es relevante (>0.00005 redondeado a 4
+        // decimales). Si actual y nuevo coinciden, se omite para no ensuciar el mensaje.
+        private static void AppendDriftLog(List<string> partes, string etiqueta, decimal actual, decimal nuevo)
+        {
+            decimal diferencia = nuevo - actual;
+            if (Math.Abs(diferencia) < 0.00005m)
+            {
+                return;
+            }
+            partes.Add($"{etiqueta} {actual:N4}→{nuevo:N4} (Dif {diferencia:+0.0000;-0.0000;0.0000})");
+        }
+
         // NestoAPI#171: DTO local para capturar qué líneas y qué columnas van a cambiar
         // antes de lanzar el UPDATE, para que el log de ELMAH describa el desajuste.
         internal class LineaDiagnosticoAutoFix
@@ -764,6 +783,10 @@ namespace NestoAPI.Infraestructure.Facturas
             public decimal BaseImponibleNueva { get; set; }
             public decimal ImporteDtoActual { get; set; }
             public decimal ImporteDtoNuevo { get; set; }
+            public decimal ImporteIVAActual { get; set; }
+            public decimal ImporteIVANuevo { get; set; }
+            public decimal TotalActual { get; set; }
+            public decimal TotalNuevo { get; set; }
         }
 
         private async Task<List<LineaDiagnosticoAutoFix>> LeerDiferenciasLineasAsync(NVEntities db, string empresa, int numero)
@@ -798,7 +821,11 @@ namespace NestoAPI.Infraestructure.Facturas
                     CAST(l.[Base Imponible] AS decimal(18,4)) AS BaseImponibleActual,
                     CAST(bc.NuevaBI AS decimal(18,4)) AS BaseImponibleNueva,
                     CAST(l.ImporteDto AS decimal(18,4)) AS ImporteDtoActual,
-                    CAST(bc.NuevoImporteDto AS decimal(18,4)) AS ImporteDtoNuevo
+                    CAST(bc.NuevoImporteDto AS decimal(18,4)) AS ImporteDtoNuevo,
+                    CAST(l.ImporteIVA AS decimal(18,4)) AS ImporteIVAActual,
+                    CAST(bc.NuevaBI * l.PorcentajeIVA / 100.0 AS decimal(18,4)) AS ImporteIVANuevo,
+                    CAST(l.Total AS decimal(18,4)) AS TotalActual,
+                    CAST(bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE) AS decimal(18,4)) AS TotalNuevo
                 FROM LinPedidoVta l
                 INNER JOIN BaseCalculada bc ON l.[Nº Orden] = bc.[Nº Orden]
                 WHERE l.Empresa = @empresa
