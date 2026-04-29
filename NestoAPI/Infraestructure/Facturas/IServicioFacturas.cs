@@ -29,6 +29,6 @@ namespace NestoAPI.Infraestructure.Facturas
         IEnumerable<FacturaCorreo> LeerFacturasCliente(string cliente, string contacto, DateTime firstDayOfQuarter, DateTime lastDayOfQuarter);
         bool EnviarCorreoSMTP(MailMessage mail);
         List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido);
-        Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario);
+        Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario, string usuarioAutenticado = null);
     }
 }

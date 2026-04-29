@@ -175,6 +175,11 @@ namespace NestoAPI.Controllers
             string empresa = parametros.Empresa;
             int pedido = parametros.Pedido;
             string usuario = parametros.Usuario;
+            // Capturado en el controller (donde el principal del JWT es de fiar) para
+            // poder usarlo como identidad autenticada en los logs de ELMAH y evitar
+            // que el `usuario` del cuerpo —que el cliente puede falsear— se use como
+            // si fuera la identidad real.
+            string usuarioAutenticado = User.Identity?.Name;
             if (empresa == null)
             {
                 return BadRequest("No se ha especificado la empresa");
@@ -186,7 +191,7 @@ namespace NestoAPI.Controllers
 
             // Las excepciones se propagan automáticamente al GlobalExceptionFilter
             // que las formatea con información rica de contexto
-            var resultado = await gestor.CrearFactura(empresa, pedido, usuario);
+            var resultado = await gestor.CrearFactura(empresa, pedido, usuario, usuarioAutenticado);
             return Ok(resultado);
         }
     }

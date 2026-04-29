@@ -1390,11 +1390,11 @@ namespace NestoAPI.Infraestructure.Facturas
             }
         }
 
-        public async Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario)
+        public async Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario, string usuarioAutenticado = null)
         {
             // Delegar directamente al servicio
             // Las excepciones de negocio (FacturacionException) se propagan automáticamente
-            return await servicio.CrearFactura(empresa, pedido, usuario);
+            return await servicio.CrearFactura(empresa, pedido, usuario, usuarioAutenticado);
         }
     }
 }

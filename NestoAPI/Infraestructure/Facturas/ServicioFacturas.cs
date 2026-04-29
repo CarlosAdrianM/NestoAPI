@@ -344,7 +344,7 @@ namespace NestoAPI.Infraestructure.Facturas
             return efectos;
         }
 
-        public async Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario)
+        public async Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario, string usuarioAutenticado = null)
         {
             // Usar el db de la clase (puede ser externo o interno según el constructor)
             // Esto evita conflictos de concurrencia cuando se llama desde GestorFacturacionRutas
@@ -404,7 +404,7 @@ namespace NestoAPI.Infraestructure.Facturas
             // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
             // El recálculo se hace antes porque después del SP (incluso con rollback),
             // las líneas pueden estar temporalmente en estado 4 y el trigger no permite modificarlas.
-            bool seAplicoAutoFix = await RecalcularLineasPedido(db, cabPedido, usuario);
+            bool seAplicoAutoFix = await RecalcularLineasPedido(db, cabPedido, usuario, usuarioAutenticado);
             if (seAplicoAutoFix)
             {
                 System.Diagnostics.Debug.WriteLine($"  → AUTO-FIX PREVENTIVO aplicado para pedido {pedido}");
@@ -577,7 +577,7 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <param name="db">Contexto de Entity Framework</param>
         /// <param name="pedido">Pedido a recalcular</param>
         /// <returns>True si se realizaron cambios, False si no hubo cambios</returns>
-        private async Task<bool> RecalcularLineasPedido(NVEntities db, CabPedidoVta pedido, string usuario = null)
+        private async Task<bool> RecalcularLineasPedido(NVEntities db, CabPedidoVta pedido, string usuario = null, string usuarioAutenticado = null)
         {
             if (pedido == null)
             {
@@ -751,7 +751,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 System.Diagnostics.Debug.WriteLine(infoRecalculo.ToString());
 
                 // Registrar en ELMAH para trazabilidad
-                RegistrarAutoFixEnElmah(pedido, infoRecalculo.ToString(), usuario);
+                RegistrarAutoFixEnElmah(pedido, infoRecalculo.ToString(), usuario, usuarioAutenticado);
             }
             else
             {
@@ -851,7 +851,10 @@ namespace NestoAPI.Infraestructure.Facturas
         /// Registra en ELMAH que se realizó un auto-fix de descuadre.
         /// Esto es informativo para trazabilidad, no un error crítico.
         /// </summary>
-        private void RegistrarAutoFixEnElmah(CabPedidoVta pedido, string detallesRecalculo, string usuario = null)
+        /// <param name="usuario">Usuario que se mandó al SP (parámetro de negocio, puede venir del cuerpo del request).</param>
+        /// <param name="usuarioAutenticado">Identidad autenticada del request. Si se proporciona, se usa para el campo User
+        /// del registro de ELMAH (no es spoofeable). Si es null, se cae a HttpContext.Current.User?.Identity?.Name.</param>
+        private void RegistrarAutoFixEnElmah(CabPedidoVta pedido, string detallesRecalculo, string usuario = null, string usuarioAutenticado = null)
         {
             try
             {
@@ -876,15 +879,20 @@ namespace NestoAPI.Infraestructure.Facturas
                 excepcionInfo.Data["TipoError"] = "AUTO_FIX_DESCUADRE";
                 excepcionInfo.Data["ModoRedondeo"] = RoundingHelper.UsarAwayFromZero ? "AwayFromZero" : "ToEven";
 
+                // Construimos el Error a mano para poder forzar User con la identidad
+                // autenticada cuando esté disponible. No usamos ErrorSignal.Raise porque
+                // ELMAH lee User de HttpContext.Current.User y, tras los await con
+                // ConfigureAwait(false), ese principal se pierde con frecuencia y el
+                // registro queda anónimo aunque el JWT viniera correcto.
                 var httpContext = HttpContext.Current;
-                if (httpContext != null)
+                var error = httpContext != null
+                    ? new Error(excepcionInfo, httpContext)
+                    : new Error(excepcionInfo);
+                if (!string.IsNullOrWhiteSpace(usuarioAutenticado))
                 {
-                    ErrorSignal.FromContext(httpContext).Raise(excepcionInfo, httpContext);
+                    error.User = usuarioAutenticado;
                 }
-                else
-                {
-                    ErrorLog.GetDefault(null)?.Log(new Error(excepcionInfo));
-                }
+                ErrorLog.GetDefault(httpContext)?.Log(error);
 
                 System.Diagnostics.Debug.WriteLine($"[ELMAH] Registrado auto-fix para pedido {pedido.Número}");
             }
