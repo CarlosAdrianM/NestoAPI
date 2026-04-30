@@ -187,6 +187,7 @@
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
     <Compile Include="Infraestructure\CorreoClienteTests.cs" />
+    <Compile Include="Infraestructure\ApplicationDbContextInitializerTests.cs" />
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Controllers\SeguimientosClientesControllerTests.cs" />
     <Compile Include="Controllers\ComisionesControllerTests.cs" />
