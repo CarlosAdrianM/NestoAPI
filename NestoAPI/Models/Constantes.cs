@@ -264,6 +264,8 @@ namespace NestoAPI.Models
         {
             public const decimal PROVINCIAL = 3.5M;
             public const decimal PENINSULAR = 7M;
+            public const decimal BALEARES = 20M;
+            public const decimal CANARIAS = 100M;
             public const decimal INCREMENTO_REEMBOLSO = 3M;
 
             // NestoAPI#174: texto de la línea de comisión por contra reembolso. Es el

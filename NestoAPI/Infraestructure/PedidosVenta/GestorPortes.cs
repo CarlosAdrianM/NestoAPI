@@ -154,16 +154,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 resultado.ImporteMinimoPedidoSinPortes = ObtenerUmbralPortesGratis(
                     input.CodigoPostal, input.EsPrecioPublicoFinal, input.Iva);
                 resultado.ImporteFaltaParaPortesGratis = resultado.ImporteMinimoPedidoSinPortes;
-                if (EsProvincial(input.CodigoPostal))
-                {
-                    resultado.ImportePortes = Constantes.Portes.PROVINCIAL;
-                    resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_ONTIME;
-                }
-                else
-                {
-                    resultado.ImportePortes = Constantes.Portes.PENINSULAR;
-                    resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_CEX;
-                }
+                AsignarImporteYCuentaPortes(resultado, input.CodigoPostal);
                 return resultado;
             }
             else if (input.BaseImponibleProductos <= 0)
@@ -219,20 +210,39 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             if (!resultado.PortesGratis)
             {
-                // Determinar importe y cuenta según código postal
-                if (EsProvincial(input.CodigoPostal))
-                {
-                    resultado.ImportePortes = Constantes.Portes.PROVINCIAL;
-                    resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_ONTIME;
-                }
-                else
-                {
-                    resultado.ImportePortes = Constantes.Portes.PENINSULAR;
-                    resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_CEX;
-                }
+                AsignarImporteYCuentaPortes(resultado, input.CodigoPostal);
             }
 
             return resultado;
+        }
+
+        private static void AsignarImporteYCuentaPortes(ResultadoPortes resultado, string codigoPostal)
+        {
+            // NestoAPI#192: Canarias y Baleares tienen importe propio. La cuenta contable
+            // es CUENTA_PORTES_CEX porque al crear el pedido aún no sabemos qué agencia
+            // hará el envío (CEX, GLS o Sending). Si en el futuro queremos imputación real
+            // por agencia, habría que mover la creación de la línea de portes al momento
+            // de crear el envío, no al crear el pedido.
+            if (EsCanarias(codigoPostal))
+            {
+                resultado.ImportePortes = Constantes.Portes.CANARIAS;
+                resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_CEX;
+            }
+            else if (EsBaleares(codigoPostal))
+            {
+                resultado.ImportePortes = Constantes.Portes.BALEARES;
+                resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_CEX;
+            }
+            else if (EsProvincial(codigoPostal))
+            {
+                resultado.ImportePortes = Constantes.Portes.PROVINCIAL;
+                resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_ONTIME;
+            }
+            else
+            {
+                resultado.ImportePortes = Constantes.Portes.PENINSULAR;
+                resultado.CuentaPortes = Constantes.Cuentas.CUENTA_PORTES_CEX;
+            }
         }
 
         /// <summary>

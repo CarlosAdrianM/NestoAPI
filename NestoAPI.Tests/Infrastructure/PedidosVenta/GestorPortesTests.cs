@@ -275,6 +275,107 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         [TestMethod]
+        public void GestorPortes_CalcularPortes_Baleares_PortesBaleares()
+        {
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "07001",
+                Ruta = "FW",
+                FormaPago = "EFC",
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 50
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsFalse(resultado.PortesGratis);
+            Assert.AreEqual(Constantes.Portes.BALEARES, resultado.ImportePortes);
+            Assert.AreEqual(Constantes.Cuentas.CUENTA_PORTES_CEX, resultado.CuentaPortes);
+            Assert.AreEqual(100, resultado.ImporteFaltaParaPortesGratis);
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularPortes_CanariasLasPalmas_PortesCanarias()
+        {
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "35001",
+                Ruta = "FW",
+                FormaPago = "EFC",
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 50
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsFalse(resultado.PortesGratis);
+            Assert.AreEqual(Constantes.Portes.CANARIAS, resultado.ImportePortes);
+            Assert.AreEqual(Constantes.Cuentas.CUENTA_PORTES_CEX, resultado.CuentaPortes);
+            Assert.AreEqual(350, resultado.ImporteFaltaParaPortesGratis);
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularPortes_CanariasTenerife_PortesCanarias()
+        {
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "38001",
+                Ruta = "FW",
+                FormaPago = "EFC",
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 50
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsFalse(resultado.PortesGratis);
+            Assert.AreEqual(Constantes.Portes.CANARIAS, resultado.ImportePortes);
+            Assert.AreEqual(Constantes.Cuentas.CUENTA_PORTES_CEX, resultado.CuentaPortes);
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularPortes_BalearesSinProductos_DevuelvePortesBaleares()
+        {
+            // NestoAPI#192: la rama BaseImponibleProductos<=0 también debe devolver
+            // el importe correcto por zona, para que el cliente pueda mostrarlo
+            // cuando se añadan productos.
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "07001",
+                Ruta = "FW",
+                FormaPago = "EFC",
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 0
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.PortesGratis, "Sin productos no se cobran portes");
+            Assert.AreEqual(Constantes.Portes.BALEARES, resultado.ImportePortes);
+            Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO_BALEARES, resultado.ImporteMinimoPedidoSinPortes);
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularPortes_CanariasSinProductos_DevuelvePortesCanarias()
+        {
+            // NestoAPI#192: idem para Canarias en la rama BaseImponibleProductos<=0.
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "35001",
+                Ruta = "FW",
+                FormaPago = "EFC",
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 0
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.PortesGratis);
+            Assert.AreEqual(Constantes.Portes.CANARIAS, resultado.ImportePortes);
+            Assert.AreEqual(GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS, resultado.ImporteMinimoPedidoSinPortes);
+        }
+
+        [TestMethod]
         public void GestorPortes_CalcularPortes_ContraReembolso_ComisionReembolso()
         {
             var input = new PedidoPortesInput
