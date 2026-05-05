@@ -17,6 +17,7 @@ namespace NestoAPI.Models
         public PagoTPV()
         {
             this.PagosTPV_Efectos = new HashSet<PagoTPV_Efecto>();
+            this.PagosTPV1 = new HashSet<PagoTPV>();
         }
     
         public int Id { get; set; }
@@ -45,7 +46,9 @@ namespace NestoAPI.Models
         public System.Guid TokenAcceso { get; set; }
         public Nullable<int> PagoOriginalId { get; set; }
         public string MetodoPago { get; set; }
-
+    
         public virtual ICollection<PagoTPV_Efecto> PagosTPV_Efectos { get; set; }
+        public virtual ICollection<PagoTPV> PagosTPV1 { get; set; }
+        public virtual PagoTPV PagosTPV2 { get; set; }
     }
 }

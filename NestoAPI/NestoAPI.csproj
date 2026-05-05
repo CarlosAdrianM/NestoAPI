@@ -532,6 +532,7 @@
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\PickingController.cs" />
     <Compile Include="Controllers\PlanCuentasController.cs" />
+    <Compile Include="Controllers\PlanesVentajasController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PrestashopProductosController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
@@ -939,6 +940,9 @@
     <Compile Include="Models\EquipoVenta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\EstadoPlanVentajas.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\ExtractoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -1154,6 +1158,12 @@
     <Compile Include="Models\Picking\StockProducto.cs" />
     <Compile Include="Models\Picking\UbicacionPicking.cs" />
     <Compile Include="Models\PlanCuenta.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\PlanVentajas.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\PlanVentajasCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\PlazoPago.cs">

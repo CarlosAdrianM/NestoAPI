@@ -307,6 +307,13 @@
         <AssociationConnector Association="NVModel.FK_LiquidacionesClientes_Empresas" />
         <AssociationConnector Association="NVModel.FK_LiquidacionesClientes_ExtractoCliente" />
         <AssociationConnector Association="NVModel.FK_LiquidacionesClientes_ExtractoCliente1" />
+        <EntityTypeShape EntityType="NVModel.EstadoPlanVentajas" Width="1.5" PointX="10.75" PointY="23.375" />
+        <EntityTypeShape EntityType="NVModel.PlanVentajas" Width="1.5" PointX="13" PointY="28.625" />
+        <EntityTypeShape EntityType="NVModel.PlanVentajasCliente" Width="1.5" PointX="15.25" PointY="29.25" />
+        <AssociationConnector Association="NVModel.FK_PlanesVentajas_Empresas" />
+        <AssociationConnector Association="NVModel.FK_PlanesVentajas_EstadosPlanVentajas" />
+        <AssociationConnector Association="NVModel.FK_PagosTPV_PagoOriginal" />
+        <AssociationConnector Association="NVModel.FK_PlanVentajasCliente_PlanesVentajas" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>
