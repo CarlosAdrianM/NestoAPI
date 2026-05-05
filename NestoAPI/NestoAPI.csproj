@@ -741,6 +741,9 @@
     <Compile Include="Models\Entidad.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\EstadoPlanVentajas.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\Facturas\ISerieFacturaVerifactu.cs" />
     <Compile Include="Models\Facturas\RegistroSeriesVerifactu.cs" />
     <Compile Include="Models\Facturas\SeriesFactura\SerieRC.cs" />
@@ -932,15 +935,18 @@
     <Compile Include="Models\ActualizarDireccionEtiquetaDTO.cs" />
     <Compile Include="Models\CrearEtiquetaPendienteDTO.cs" />
     <Compile Include="Models\EnvioAgenciaDTO.cs" />
+    <Compile Include="Models\PlanVentajas.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\PlanVentajasCliente.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\RespuestaModificacionPedidoDTO.cs" />
     <Compile Include="Models\UltimoEnvioClienteDTO.cs" />
     <Compile Include="Models\EnviosAgencia.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\EquipoVenta.cs">
-      <DependentUpon>NestoEntities.tt</DependentUpon>
-    </Compile>
-    <Compile Include="Models\EstadoPlanVentajas.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\ExtractoCliente.cs">
@@ -1158,12 +1164,6 @@
     <Compile Include="Models\Picking\StockProducto.cs" />
     <Compile Include="Models\Picking\UbicacionPicking.cs" />
     <Compile Include="Models\PlanCuenta.cs">
-      <DependentUpon>NestoEntities.tt</DependentUpon>
-    </Compile>
-    <Compile Include="Models\PlanVentajas.cs">
-      <DependentUpon>NestoEntities.tt</DependentUpon>
-    </Compile>
-    <Compile Include="Models\PlanVentajasCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\PlazoPago.cs">
