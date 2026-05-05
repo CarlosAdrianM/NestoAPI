@@ -173,6 +173,7 @@
   <ItemGroup>
     <Compile Include="Controllers\ExtractosClienteControllerTests.cs" />
     <Compile Include="Controllers\GanavisionesControllerTests.cs" />
+    <Compile Include="Controllers\PlanesVentajasControllerTests.cs" />
     <Compile Include="Controllers\OfertasCombinadasControllerTests.cs" />
     <Compile Include="Controllers\ServirJuntoControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaBuscarLineasTests.cs" />
