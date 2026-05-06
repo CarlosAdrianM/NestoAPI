@@ -99,8 +99,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             if (formaPago == "CNF" ||
                 formaPago == Constantes.FormasPago.TRANSFERENCIA ||
                 formaPago == "CHC" ||
-                formaPago == Constantes.FormasPago.TARJETA ||
-                formaPago == Constantes.FormasPago.RECIBO_BANCARIO) // NestoAPI#194
+                formaPago == Constantes.FormasPago.TARJETA)
                 return false;
 
             if (notaEntrega)
