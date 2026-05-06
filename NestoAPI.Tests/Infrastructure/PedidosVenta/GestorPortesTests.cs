@@ -68,9 +68,19 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         [TestMethod]
-        public void GestorPortes_EsContraReembolso_ConReciboBancario_SiEsReembolso()
+        public void GestorPortes_EsContraReembolso_ConReciboBancario_NoEsReembolso()
         {
-            Assert.IsTrue(GestorPortes.EsContraReembolso("RCB", null, null, "NRM", false));
+            // NestoAPI#194: RCB es siempre domiciliado, nunca reembolso, aunque el CCC
+            // todavía no esté informado en el pedido (caso típico al cambiar formaPago
+            // en DetallePedidoVenta antes de que NestoAPI lo resuelva desde Cliente.CCC).
+            Assert.IsFalse(GestorPortes.EsContraReembolso("RCB", null, null, "NRM", false));
+        }
+
+        [TestMethod]
+        public void GestorPortes_EsContraReembolso_ConReciboBancarioYCCC_NoEsReembolso()
+        {
+            // Caso "feliz": RCB con CCC ya informado → claramente no es reembolso.
+            Assert.IsFalse(GestorPortes.EsContraReembolso("RCB", null, "0049 1234 56 1234567890", "NRM", false));
         }
 
         #endregion
