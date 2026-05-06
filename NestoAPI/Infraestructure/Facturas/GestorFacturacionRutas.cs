@@ -105,7 +105,12 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <summary>
         /// Verifica si el pedido puede ser facturado.
         /// Reproduce la lógica del procedimiento prdCrearFacturaVta:
-        /// Si MantenerJunto = 1 y existen líneas con Estado < 2 (sin albarán), no se puede facturar.
+        /// Si MantenerJunto = 1 y existen líneas con Estado &lt; 2 (sin albarán), no se puede facturar.
+        ///
+        /// NestoAPI#195 (Fase 1): si además tiene SuPedido (PO) informado, también se bloquea
+        /// cuando algún pedido hermano (mismo cliente y mismo PO con MantenerJunto=true) tiene
+        /// líneas sin albarán. Esto es el gate de "agrupar facturación por PO": no se factura
+        /// ningún pedido del grupo hasta que TODOS los pedidos del PO estén listos.
         /// </summary>
         public bool PuedeFacturarPedido(CabPedidoVta pedido)
         {
@@ -126,11 +131,34 @@ namespace NestoAPI.Infraestructure.Facturas
                 return true;
             }
 
-            // Si MantenerJunto = 1, verificar si todas las líneas tienen albarán (Estado >= 2)
+            // Si MantenerJunto = 1, verificar si todas las líneas del propio pedido tienen albarán (Estado >= 2)
             bool tieneLineasSinAlbaran = pedido.LinPedidoVtas
                 .Any(l => l.Estado < Constantes.EstadosLineaVenta.ALBARAN);
 
-            return !tieneLineasSinAlbaran;
+            if (tieneLineasSinAlbaran)
+            {
+                return false;
+            }
+
+            // NestoAPI#195: si tiene PO informado, todos los hermanos del mismo PO con
+            // MantenerJunto=true deben tener también sus líneas en albarán.
+            if (!string.IsNullOrWhiteSpace(pedido.SuPedido))
+            {
+                bool algunHermanoConLineasSinAlbaran = db.CabPedidoVtas
+                    .Where(c => c.Empresa == pedido.Empresa
+                             && c.Nº_Cliente == pedido.Nº_Cliente
+                             && c.Número != pedido.Número
+                             && c.MantenerJunto
+                             && c.SuPedido == pedido.SuPedido)
+                    .Any(c => c.LinPedidoVtas.Any(l => l.Estado < Constantes.EstadosLineaVenta.ALBARAN));
+
+                if (algunHermanoConLineasSinAlbaran)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /// <summary>
