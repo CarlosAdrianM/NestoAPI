@@ -223,6 +223,7 @@
     <Compile Include="Infrastructure\OpenAI\ServicioOpenAITests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\GestorPortesTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorAlmacenTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\TransicionPresupuestoTests.cs" />
     <Compile Include="Infrastructure\GestorPedidosVentaTests.cs" />
     <Compile Include="Infrastructure\Domiciliaciones\GestorDomiciliacionesTests.cs" />
     <Compile Include="Infrastructure\Rectificativas\GestorCopiaPedidosTests.cs" />

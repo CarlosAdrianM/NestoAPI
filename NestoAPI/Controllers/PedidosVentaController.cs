@@ -510,8 +510,13 @@ namespace NestoAPI.Controllers
                 errorPersonalizado("No se pueden mezclar pedidos con presupuestos");
             }
 
-            // Si todas las líneas están en -3 pero la cabecera dice que no es presupuesto, es porque queremos pasarlo a pedido
-            bool aceptarPresupuesto = pedido.Lineas.All(l => l.estado == Constantes.EstadosLineaVenta.PRESUPUESTO) && !pedido.EsPresupuesto;
+            // NestoAPI#193: distinguir "aceptar presupuesto" (todas las líneas activas en BD
+            // estaban en PRESUPUESTO y el cliente quiere salir) de "pasar a presupuesto"
+            // (líneas en BD en PENDIENTE/EN_CURSO sin picking que el cliente quiere bloquear).
+            // Antes solo existía la primera transición y la segunda se confundía con ella.
+            var transicion = TransicionPresupuesto.Decidir(cabPedidoVta.LinPedidoVtas, pedido);
+            bool aceptarPresupuesto = transicion.EsAceptarPresupuesto;
+            bool pasarAPresupuesto = transicion.EsPasarAPresupuesto;
 
             cabPedidoVta.Fecha = pedido.fecha;
             // La forma de pago influye en el importe del reembolso de la agencia. Si se modifica la forma de pago
@@ -718,7 +723,7 @@ namespace NestoAPI.Controllers
 
 
             // Modificamos las líneas
-            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas || aceptarPresupuesto)
+            if (cambiarClienteEnLineas || cambiarContactoEnLineas || cambiarIvaEnLineas || hayLineasNuevas || aceptarPresupuesto || pasarAPresupuesto)
             {
                 foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
                 {
@@ -776,6 +781,17 @@ namespace NestoAPI.Controllers
                     {
                         lineaPedido = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.id);
                         lineaPedido.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
+                    }
+
+                    // NestoAPI#193: pasar a presupuesto solo afecta a las líneas que el helper
+                    // marcó como elegibles (PENDIENTE/EN_CURSO sin picking en BD).
+                    if (pasarAPresupuesto && transicion.IdsParaPresupuesto.Contains(linea.id))
+                    {
+                        lineaPedido = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.id);
+                        if (lineaPedido != null)
+                        {
+                            lineaPedido.Estado = Constantes.EstadosLineaVenta.PRESUPUESTO;
+                        }
                     }
                 }
             }
