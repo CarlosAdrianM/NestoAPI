@@ -1354,5 +1354,82 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         #endregion
+
+        #region Issue #199 - EsContraReembolso es decisión de cabecera, no de líneas
+
+        [TestMethod]
+        public void CalcularPortes_BaseImponibleCero_CabeceraEsContraReembolso_FlagSiTrue()
+        {
+            // Pedido reproductor 1/916614: el producto está marcado como sobre-pedido
+            // (EstadoProducto=1, LineaParcial=0), por lo que el endpoint GET excluye
+            // su importe de BaseImponibleProductos. Antes del fix, la flag
+            // EsContraReembolso quedaba en false por defecto y la UI ocultaba la casilla
+            // "No cobrar comisión contra reembolso", aunque la cabecera EFC sin CCC sí
+            // es contra reembolso y la línea de comisión existía en el pedido.
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "28100",
+                Ruta = "FW",
+                FormaPago = Constantes.FormasPago.EFECTIVO,
+                PlazosPago = Constantes.PlazosPago.CONTADO,
+                CCC = null,
+                PeriodoFacturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 0
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.EsContraReembolso,
+                "EsContraReembolso depende solo de la cabecera; con base 0 debe seguir siendo true.");
+            Assert.AreEqual(0M, resultado.ComisionReembolso,
+                "Sin productos no se cobra comisión; solo la flag refleja la cabecera.");
+        }
+
+        [TestMethod]
+        public void CalcularPortes_AnadirPortesFalse_CabeceraEsContraReembolso_FlagSiTrue()
+        {
+            // Almacén REI/ALC desactiva AnadirPortes. La flag EsContraReembolso debe
+            // seguir reflejando la cabecera (mismo razonamiento que el caso BaseImponible=0).
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "28100",
+                Ruta = "FW",
+                FormaPago = Constantes.FormasPago.EFECTIVO,
+                PlazosPago = Constantes.PlazosPago.CONTADO,
+                CCC = null,
+                PeriodoFacturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 50,
+                AnadirPortes = false
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.EsContraReembolso);
+            Assert.AreEqual(0M, resultado.ComisionReembolso,
+                "Con AnadirPortes=false no se cobra comisión, pero la flag debe ir a true.");
+        }
+
+        [TestMethod]
+        public void CalcularPortes_BaseImponibleCero_CabeceraNoEsReembolso_FlagSiFalse()
+        {
+            // Sanity: si la cabecera no es contra reembolso (TAR), la flag sigue en false
+            // aunque movamos el cálculo arriba.
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "28100",
+                Ruta = "FW",
+                FormaPago = Constantes.FormasPago.TARJETA,
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 0
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsFalse(resultado.EsContraReembolso);
+        }
+
+        #endregion
     }
 }
