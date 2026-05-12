@@ -555,15 +555,17 @@ namespace NestoAPI.Controllers
 
             if (cambiarIvaEnLineas && pedido.iva == null)
             {
-                cabPedidoVta.CCC = null;
-                cabPedidoVta.Forma_Pago = Constantes.FormasPago.EFECTIVO;
-                cabPedidoVta.PlazosPago = Constantes.PlazosPago.CONTADO;
-                cabPedidoVta.Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
-                // NestoAPI#200: propagar al DTO para que el correo refleje lo persistido
-                pedido.ccc = cabPedidoVta.CCC;
-                pedido.formaPago = cabPedidoVta.Forma_Pago;
-                pedido.plazosPago = cabPedidoVta.PlazosPago;
-                pedido.periodoFacturacion = cabPedidoVta.Periodo_Facturacion;
+                // NestoAPI#200: normalizar el DTO (mismo helper que POST) y reflejarlo en
+                // la cabecera para que el correo y la BD muestren los mismos valores.
+                Empresa empresaPedido = await db.Empresas
+                    .SingleOrDefaultAsync(e => e.Número == pedido.empresa).ConfigureAwait(false);
+                NormalizarPedidoSiIvaNull(pedido, empresaPedido);
+                pedido.periodoFacturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
+
+                cabPedidoVta.CCC = pedido.ccc;
+                cabPedidoVta.Forma_Pago = pedido.formaPago;
+                cabPedidoVta.PlazosPago = pedido.plazosPago;
+                cabPedidoVta.Periodo_Facturacion = pedido.periodoFacturacion;
             }
 
             cabPedidoVta.Vendedor = pedido.vendedor;
@@ -1191,6 +1193,20 @@ namespace NestoAPI.Controllers
             }
         }
 
+        // NestoAPI#200: cuando un pedido llega con iva=null la cabecera se persiste con los
+        // defaults de pago de la empresa (excepto en prepago, donde se respeta el plazo PRE
+        // y solo se anula el CCC). El correo lee del DTO 'pedido' pasado a GestorPresupuestos,
+        // así que el DTO debe normalizarse ANTES de construir/actualizar la cabecera para que
+        // ambos vean los mismos valores.
+        internal static void NormalizarPedidoSiIvaNull(PedidoVentaDTO pedido, Empresa empresa)
+        {
+            if (pedido.iva != null) return;
+            pedido.ccc = null;
+            if (pedido.plazosPago == "PRE") return;
+            pedido.formaPago = empresa.FormaPagoEfectivo;
+            pedido.plazosPago = empresa.PlazosPagoDefecto;
+        }
+
         // POST: api/PedidosVenta
         [HttpPost]
         [ResponseType(typeof(PedidoVentaDTO))]
@@ -1275,14 +1291,9 @@ namespace NestoAPI.Controllers
                 pedido.numero = contador.Pedidos;
             }
 
-            // NestoAPI#200: si iva=null (y no es prepago) la cabecera se persiste con FormaPagoEfectivo/PlazosPagoDefecto/CCC=null.
-            // Propagar al DTO antes de construir la cabecera para que el correo refleje lo persistido.
-            if (pedido.iva == null && pedido.plazosPago != "PRE")
-            {
-                pedido.formaPago = empresa.FormaPagoEfectivo;
-                pedido.plazosPago = empresa.PlazosPagoDefecto;
-                pedido.ccc = null;
-            }
+            // NestoAPI#200: normalizar el DTO antes de construir la cabecera para que el
+            // correo (que lee del DTO) y la BD muestren los mismos valores cuando iva=null.
+            NormalizarPedidoSiIvaNull(pedido, empresa);
 
             CabPedidoVta cabecera = new CabPedidoVta
             {
@@ -1291,15 +1302,15 @@ namespace NestoAPI.Controllers
                 Nº_Cliente = pedido.cliente,
                 Contacto = pedido.contacto,
                 Fecha = pedido.fecha,
-                Forma_Pago = pedido.iva == null && pedido.plazosPago != "PRE" ? empresa.FormaPagoEfectivo : pedido.formaPago,
-                PlazosPago = pedido.iva == null && pedido.plazosPago != "PRE" ? empresa.PlazosPagoDefecto : pedido.plazosPago,
+                Forma_Pago = pedido.formaPago,
+                PlazosPago = pedido.plazosPago,
                 Primer_Vencimiento = (DateTime)primerVencimiento.Value,
                 IVA = pedido.iva,
                 Vendedor = pedido.vendedor,
                 Periodo_Facturacion = pedido.periodoFacturacion,
                 Ruta = pedido.ruta,
                 Serie = pedido.serie,
-                CCC = pedido.iva != null ? pedido.ccc : null,
+                CCC = pedido.ccc,
                 Origen = pedido.origen != null && pedido.origen.Trim() != "" ? pedido.origen : pedido.empresa,
                 ContactoCobro = pedido.contactoCobro,
                 NoComisiona = pedido.noComisiona,
