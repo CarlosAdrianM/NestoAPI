@@ -670,6 +670,8 @@
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
     <Compile Include="Infraestructure\Comisiones\ComisionesLecturaService.cs" />
     <Compile Include="Infraestructure\Comisiones\IComisionesLecturaService.cs" />
+    <Compile Include="Infraestructure\PlanesVentajas\IPlanesVentajasService.cs" />
+    <Compile Include="Infraestructure\PlanesVentajas\PlanesVentajasService.cs" />
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\Informes\InformesService.cs" />
@@ -942,6 +944,11 @@
     <Compile Include="Models\PlanVentajasCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\PlanesVentajas\EstadoPlanVentajasDTO.cs" />
+    <Compile Include="Models\PlanesVentajas\PlanVentajasDTO.cs" />
+    <Compile Include="Models\PlanesVentajas\ClientePlanVentajasDTO.cs" />
+    <Compile Include="Models\PlanesVentajas\LineaVentaPlanDTO.cs" />
+    <Compile Include="Models\PlanesVentajas\EmpresaResumenDTO.cs" />
     <Compile Include="Models\RespuestaModificacionPedidoDTO.cs" />
     <Compile Include="Models\UltimoEnvioClienteDTO.cs" />
     <Compile Include="Models\EnviosAgencia.cs">

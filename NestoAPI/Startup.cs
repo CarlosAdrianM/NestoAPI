@@ -22,6 +22,7 @@ using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.Comisiones;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Infraestructure.Pagos;
+using NestoAPI.Infraestructure.PlanesVentajas;
 using NestoAPI.Infraestructure.ServirJunto;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
@@ -188,6 +189,9 @@ namespace NestoAPI
 
             // Lecturas del panel de Comisiones del cliente (Nesto#340 Fase 1B)
             _ = services.AddScoped<IComisionesLecturaService, ComisionesLecturaService>();
+
+            // Planes de Ventajas - CRUD para el cliente (Nesto#340 Fase 1B)
+            _ = services.AddScoped<IPlanesVentajasService, PlanesVentajasService>();
 
             // Validación de "Servir junto" (NestoAPI#161)
             _ = services.AddScoped<IServicioValidarServirJunto, ServicioValidarServirJunto>();
