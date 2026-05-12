@@ -559,6 +559,11 @@ namespace NestoAPI.Controllers
                 cabPedidoVta.Forma_Pago = Constantes.FormasPago.EFECTIVO;
                 cabPedidoVta.PlazosPago = Constantes.PlazosPago.CONTADO;
                 cabPedidoVta.Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
+                // NestoAPI#200: propagar al DTO para que el correo refleje lo persistido
+                pedido.ccc = cabPedidoVta.CCC;
+                pedido.formaPago = cabPedidoVta.Forma_Pago;
+                pedido.plazosPago = cabPedidoVta.PlazosPago;
+                pedido.periodoFacturacion = cabPedidoVta.Periodo_Facturacion;
             }
 
             cabPedidoVta.Vendedor = pedido.vendedor;
@@ -1268,6 +1273,15 @@ namespace NestoAPI.Controllers
             {
                 contador.Pedidos++;
                 pedido.numero = contador.Pedidos;
+            }
+
+            // NestoAPI#200: si iva=null (y no es prepago) la cabecera se persiste con FormaPagoEfectivo/PlazosPagoDefecto/CCC=null.
+            // Propagar al DTO antes de construir la cabecera para que el correo refleje lo persistido.
+            if (pedido.iva == null && pedido.plazosPago != "PRE")
+            {
+                pedido.formaPago = empresa.FormaPagoEfectivo;
+                pedido.plazosPago = empresa.PlazosPagoDefecto;
+                pedido.ccc = null;
             }
 
             CabPedidoVta cabecera = new CabPedidoVta
