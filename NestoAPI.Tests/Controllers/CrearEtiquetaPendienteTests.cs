@@ -695,6 +695,191 @@ namespace NestoAPI.Tests.Controllers
             return envioCreado;
         }
 
+        #region NestoAPI#204 — Canarias / Canteras
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalCanarias_RetornaBadRequest()
+        {
+            // Reproductor #204: hoy NestoApp manda Agencia=8 (CEX) para CP 35xxx/38xxx, pero CEX
+            // no entrega en Canarias. La API debe rechazar y obligar a usar Canteras.
+            var resultado = await IntentarCrearEtiqueta(
+                agencia: Constantes.Agencias.AGENCIA_CORREOS_EXPRESS,
+                codPostal: "35001",
+                lineas: ProductoDe(500m));
+
+            var badRequest = resultado as BadRequestErrorMessageResult;
+            Assert.IsNotNull(badRequest, "CEX a CP canario debe devolver BadRequest");
+            StringAssert.Contains(badRequest.Message, "Canteras",
+                "El mensaje debe orientar al usuario a la agencia correcta (Canteras).");
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCEX_CodigoPostalTenerife_RetornaBadRequest()
+        {
+            // Tenerife (CP 38xxx) también es Canarias.
+            var resultado = await IntentarCrearEtiqueta(
+                agencia: Constantes.Agencias.AGENCIA_CORREOS_EXPRESS,
+                codPostal: "38001",
+                lineas: ProductoDe(500m));
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCanteras_CodigoPostalNoCanarias_RetornaBadRequest()
+        {
+            // Canteras solo opera en Canarias.
+            var resultado = await IntentarCrearEtiqueta(
+                agencia: Constantes.Agencias.AGENCIA_CANTERAS,
+                codPostal: "28001",
+                lineas: ProductoDe(500m));
+
+            var badRequest = resultado as BadRequestErrorMessageResult;
+            Assert.IsNotNull(badRequest);
+            StringAssert.Contains(badRequest.Message, "Canarias",
+                "El mensaje debe explicar que Canteras solo opera en Canarias.");
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCanteras_ImporteBajoSinPortes_RetornaBadRequest()
+        {
+            // Canarias por Canteras exige importe ≥ IMPORTE_MINIMO_CANARIAS (400€) o portes ≥ Portes.CANARIAS (100€).
+            var resultado = await IntentarCrearEtiqueta(
+                agencia: Constantes.Agencias.AGENCIA_CANTERAS,
+                codPostal: "35001",
+                lineas: ProductoDe(50m));
+
+            var badRequest = resultado as BadRequestErrorMessageResult;
+            Assert.IsNotNull(badRequest);
+            StringAssert.Contains(badRequest.Message, "400",
+                "El mensaje debe explicar el mínimo (400€).");
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCanteras_ImporteSuficiente_CreaEtiqueta()
+        {
+            // Importe del pedido ≥ 400€: Canteras OK.
+            var resultado = await IntentarCrearEtiqueta(
+                agencia: Constantes.Agencias.AGENCIA_CANTERAS,
+                codPostal: "35001",
+                lineas: ProductoDe(450m));
+
+            Assert.IsInstanceOfType(resultado, typeof(CreatedNegotiatedContentResult<NestoAPI.Models.EnvioAgenciaDTO>),
+                "Importe ≥ 400€ debe crear la etiqueta sin error.");
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCanteras_ConLineaPortesCanarias_CreaEtiqueta()
+        {
+            // Importe bajo pero con línea de portes Canarias (100€): Canteras OK.
+            var lineas = new List<LinPedidoVta>
+            {
+                LineaProducto(50m),
+                LineaPortes(Constantes.Portes.CANARIAS)
+            };
+            var resultado = await IntentarCrearEtiqueta(
+                agencia: Constantes.Agencias.AGENCIA_CANTERAS,
+                codPostal: "35001",
+                lineas: lineas);
+
+            Assert.IsInstanceOfType(resultado, typeof(CreatedNegotiatedContentResult<NestoAPI.Models.EnvioAgenciaDTO>),
+                "Con línea de portes Canarias (100€) debe crear la etiqueta aunque el importe sea bajo.");
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaCanteras_CobrarReembolsoTrue_RetornaBadRequest()
+        {
+            // Canteras no admite contra reembolso (operativa manual sin cobro).
+            var resultado = await IntentarCrearEtiqueta(
+                agencia: Constantes.Agencias.AGENCIA_CANTERAS,
+                codPostal: "35001",
+                lineas: ProductoDe(500m),
+                cobrarReembolso: true,
+                importeReembolso: 100m);
+
+            var badRequest = resultado as BadRequestErrorMessageResult;
+            Assert.IsNotNull(badRequest);
+            StringAssert.Contains(badRequest.Message, "reembolso",
+                "El mensaje debe explicar que Canteras no admite contra reembolso.");
+        }
+
+        private async Task<System.Web.Http.IHttpActionResult> IntentarCrearEtiqueta(
+            int agencia, string codPostal, List<LinPedidoVta> lineas,
+            bool cobrarReembolso = false, decimal? importeReembolso = null)
+        {
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1  ",
+                Número = 12345,
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                LinPedidoVtas = lineas
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            var direccion = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Nombre = "Cliente Test",
+                CodPostal = codPostal,
+                PersonasContactoClientes = new List<PersonaContactoCliente>()
+            };
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente> { direccion }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>().AsQueryable());
+
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored))
+                .ReturnsLazily((EnviosAgencia e) => e);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+
+            var request = new CrearEtiquetaPendienteDTO
+            {
+                Empresa = "1  ",
+                Pedido = 12345,
+                Agencia = agencia,
+                Retorno = 1,
+                CobrarReembolso = cobrarReembolso,
+                ImporteReembolso = importeReembolso
+            };
+
+            return await controller.CrearEtiquetaPendiente(request);
+        }
+
+        private static List<LinPedidoVta> ProductoDe(decimal baseImponible)
+        {
+            return new List<LinPedidoVta> { LineaProducto(baseImponible) };
+        }
+
+        private static LinPedidoVta LineaProducto(decimal baseImponible)
+        {
+            return new LinPedidoVta
+            {
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "PROD1",
+                Cantidad = 1,
+                Precio = baseImponible,
+                Base_Imponible = baseImponible,
+                Estado = Constantes.EstadosLineaVenta.EN_CURSO
+            };
+        }
+
+        private static LinPedidoVta LineaPortes(decimal importe)
+        {
+            return new LinPedidoVta
+            {
+                TipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = Constantes.Cuentas.CUENTA_PORTES_CEX,
+                Texto = "Portes",
+                Cantidad = 1,
+                Precio = importe,
+                Base_Imponible = importe,
+                Estado = Constantes.EstadosLineaVenta.EN_CURSO
+            };
+        }
+
+        #endregion
+
         #region Helpers
 
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
