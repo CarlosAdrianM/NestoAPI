@@ -1103,6 +1103,20 @@ namespace NestoAPI.Controllers
                         if (lineaReembBD != null)
                         {
                             _ = db.LinPedidoVtas.Remove(lineaReembBD);
+                            // Espejo del DTO (mismo patrón que la línea de portes arriba): el correo
+                            // de modificación lee de pedido.Lineas, así que si la línea ya no debe
+                            // estar en BD también hay que quitarla del DTO para que el correo no la
+                            // siga mostrando.
+                            var lineaReembDTO = pedido.Lineas.FirstOrDefault(l =>
+                                l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                                l.Producto != null &&
+                                l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
+                                l.texto != null &&
+                                l.texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0);
+                            if (lineaReembDTO != null)
+                            {
+                                pedido.Lineas.Remove(lineaReembDTO);
+                            }
                         }
                     }
                 }

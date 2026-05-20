@@ -1431,5 +1431,91 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         #endregion
+
+        #region Bug — cliente con CCC pero cabecera EFC/CONTADO debe mostrar checkbox y limpiar correo
+
+        [TestMethod]
+        public void CalcularPortes_FormaPagoEFCConCccDelCliente_EsContraReembolsoSiTrue()
+        {
+            // Escenario reproductor: cliente con FP=RCB, plazos=1/30, CCC=1. En la plantilla
+            // de ventas el usuario elige FP=EFC y plazos=CONTADO. La UI no limpia el CCC, así
+            // que CalcularPortes recibe CCC="1". Al persistir, EFC.CCCObligatorio=false anula
+            // el CCC en la cabecera y el pedido se cobra contra reembolso. CalcularPortes debe
+            // reflejarlo para que la UI muestre la casilla "No cobrar comisión por reembolso".
+            var input = new PedidoPortesInput
+            {
+                CodigoPostal = "28100",
+                Ruta = Constantes.Pedidos.RUTA_AGENCIA_FW,
+                FormaPago = Constantes.FormasPago.EFECTIVO,
+                PlazosPago = Constantes.PlazosPago.CONTADO,
+                CCC = "1",
+                PeriodoFacturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                NotaEntrega = false,
+                EsCanalExterno = false,
+                Iva = Constantes.Empresas.IVA_POR_DEFECTO,
+                BaseImponibleProductos = 50M
+            };
+
+            var resultado = GestorPortes.CalcularPortes(input);
+
+            Assert.IsTrue(resultado.EsContraReembolso,
+                "Con FP=EFC y plazos=CONTADO el pedido es contra reembolso aunque el CCC " +
+                "venga informado del cliente: EFC.CCCObligatorio=false anula el CCC en cabecera.");
+        }
+
+        [TestMethod]
+        public void GestionarLineasPortes_LineaReembolsoPersistidaSinComision_SeQuitaDelDTO()
+        {
+            // Bug: al modificar un pedido con NoCobrarComisionReembolso=true, CalcularPortes
+            // devuelve ComisionReembolso=0. El PUT del controller quita la línea de reembolso
+            // de la BD (cabPedidoVta.LinPedidoVtas) pero NO del DTO (pedido.Lineas), por lo que
+            // el correo de modificación sigue mostrando la línea. GestionarLineasPortes debe
+            // quitarla del DTO aunque la línea ya esté persistida (id != 0), igual que el
+            // controller hace para la línea de portes.
+            var lineaReembolsoPersistida = new LineaPedidoVentaDTO
+            {
+                id = 12345,
+                tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+                Producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL,
+                texto = "Comisión contra reembolso",
+                PrecioUnitario = 3M,
+                Cantidad = 1,
+                almacen = "ALG",
+                delegacion = "ALG",
+                formaVenta = "EFC",
+                estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                usuario = "test"
+            };
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO
+                {
+                    tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                    Producto = "PROD1",
+                    PrecioUnitario = 50M,
+                    Cantidad = 1,
+                    almacen = "ALG",
+                    delegacion = "ALG",
+                    formaVenta = "EFC",
+                    estado = Constantes.EstadosLineaVenta.EN_CURSO,
+                    usuario = "test"
+                },
+                lineaReembolsoPersistida
+            };
+            var resultado = new ResultadoPortes
+            {
+                EsContraReembolso = true,
+                ComisionReembolso = 0M,
+                PortesGratis = true
+            };
+
+            GestorPortes.GestionarLineasPortes(lineas, resultado, "G21", null);
+
+            Assert.IsFalse(lineas.Contains(lineaReembolsoPersistida),
+                "La línea de reembolso persistida debe quitarse del DTO cuando ComisionReembolso=0, " +
+                "para que el correo de modificación del pedido no la siga mostrando.");
+        }
+
+        #endregion
     }
 }
