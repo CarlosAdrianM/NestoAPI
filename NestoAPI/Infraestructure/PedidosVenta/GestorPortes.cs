@@ -157,6 +157,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 cccEfectivo = null;
                 periodoFacturacionEfectivo = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL;
             }
+            // Bug NestoApp/Nesto: si el cliente tiene RCB/CCC en sus condiciones de pago y el usuario
+            // cambia la cabecera a EFC en la plantilla, la UI puede mantener el CCC=cliente.CCC en el
+            // input de CalcularPortes. Al persistir, EFC.CCCObligatorio=false anula el CCC en la
+            // cabecera (PutPedidoVenta, cabPedidoVta.CCC = formaPago.CCCObligatorio ? pedido.ccc : null),
+            // así que el pedido se cobra contra reembolso. Espejamos esa normalización aquí para que
+            // la UI muestre la casilla "No cobrar comisión por reembolso" cuando corresponda.
+            if (formaPagoEfectiva == Constantes.FormasPago.EFECTIVO)
+            {
+                cccEfectivo = null;
+            }
             resultado.EsContraReembolso = EsContraReembolso(
                 formaPagoEfectiva, plazosPagoEfectivo,
                 cccEfectivo, periodoFacturacionEfectivo, input.NotaEntrega);
@@ -396,8 +406,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                 }
             }
-            else if (lineaReembolsoExistente != null && lineaReembolsoExistente.id == 0)
+            else if (lineaReembolsoExistente != null)
             {
+                // A diferencia de la línea de portes (que se protege con id==0 para no borrar
+                // portes traídos por canales externos como Amazon), la línea de comisión por
+                // reembolso solo la genera NestoAPI. Si CalcularPortes dice que ya no procede
+                // (ej. NoCobrarComisionReembolso=true en el PUT) hay que quitarla del DTO
+                // siempre, persistida o no, para que el correo de modificación no la siga
+                // mostrando después de que el PUT la haya borrado de BD.
                 lineas.Remove(lineaReembolsoExistente);
                 resultadoGestion.Modificado = true;
             }
