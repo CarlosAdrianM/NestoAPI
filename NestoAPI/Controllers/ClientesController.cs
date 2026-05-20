@@ -145,7 +145,10 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string empresa, string filtro)
         {
-            if (filtro.Length < 4 && !filtro.All(c => char.IsDigit(c)))
+            // NestoAPI#201: filtro vacío en la query string lo binda Web API como null
+            // (ej. NestoApp al limpiar la barra de búsqueda). Espejamos el patrón del
+            // overload con vendedor.
+            if ((filtro == null) || ((filtro.Length < 4) && (!filtro.All(c => char.IsDigit(c)))))
             {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }
@@ -202,8 +205,8 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string filtro)
         {
-
-            if (filtro.Length < 4)
+            // NestoAPI#201: filtro null debe disparar la validación, no NullRef.
+            if ((filtro == null) || (filtro.Length < 4))
             {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }
