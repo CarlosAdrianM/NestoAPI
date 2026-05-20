@@ -17,6 +17,10 @@ namespace NestoAPI.Models
             public const int AGENCIA_GLOVO = 7;
             public const int AGENCIA_CORREOS_EXPRESS = 8;
             public const int AGENCIA_SENDING = 10;
+            // NestoAPI#204: Canteras (Numero=11) cubre los envíos a Canarias. Operativa manual
+            // por correo (no hay integración) y no admite contra reembolso. Mínimo del pedido
+            // 400€ o línea de portes de 100€ (constantes IMPORTE_MINIMO_CANARIAS y Portes.CANARIAS).
+            public const int AGENCIA_CANTERAS = 11;
             public const int ESTADO_PENDIENTE = -1;
             public const int ESTADO_EN_CURSO = 0;
             public const decimal REEMBOLSO_NO_COBRAR = -1M;

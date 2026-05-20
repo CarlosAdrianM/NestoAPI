@@ -243,6 +243,14 @@ namespace NestoAPI.Controllers
                 return BadRequest("No se encontró la dirección del contacto del pedido");
             }
 
+            // NestoAPI#204: validar combinación agencia + destino antes de crear la etiqueta.
+            var errorAgencia = ValidarAgenciaCompatibleConDestino(
+                request.Agencia, direccion.CodPostal?.Trim() ?? "", pedido, request.CobrarReembolso);
+            if (errorAgencia != null)
+            {
+                return BadRequest(errorAgencia);
+            }
+
             var telefono = new Telefono(direccion.Teléfono);
             var correo = new CorreoCliente(direccion.PersonasContactoClientes);
 
@@ -298,6 +306,55 @@ namespace NestoAPI.Controllers
 
             var dto = new EnvioAgenciaDTO(envio);
             return Created(new Uri(Request.RequestUri, envio.Numero.ToString()), dto);
+        }
+
+        /// <summary>
+        /// NestoAPI#204: rechazos por combinación agencia + destino. Devuelve mensaje de error o null
+        /// si la combinación es válida. Cubre:
+        /// - CEX no entrega en Canarias → forzar Canteras.
+        /// - Canteras solo opera en Canarias.
+        /// - Canteras es operativa manual y no admite contra reembolso.
+        /// - Canteras exige importe del pedido ≥ <see cref="Models.Picking.GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS"/>
+        ///   o una línea de portes ≥ <see cref="Constantes.Portes.CANARIAS"/>.
+        /// </summary>
+        private static string ValidarAgenciaCompatibleConDestino(int agencia, string codPostal, CabPedidoVta pedido, bool cobrarReembolso)
+        {
+            bool esCanarias = Infraestructure.PedidosVenta.GestorPortes.EsCanarias(codPostal);
+
+            if (agencia == Constantes.Agencias.AGENCIA_CORREOS_EXPRESS && esCanarias)
+            {
+                return "Correos Express no entrega en Canarias. Usa la agencia Canteras para envíos a Canarias.";
+            }
+
+            if (agencia == Constantes.Agencias.AGENCIA_CANTERAS)
+            {
+                if (!esCanarias)
+                {
+                    return "La agencia Canteras solo opera en Canarias (códigos postales 35xxx y 38xxx).";
+                }
+                if (cobrarReembolso)
+                {
+                    return "La agencia Canteras no admite contra reembolso. Cobra el pedido por otro medio antes de tramitar el envío.";
+                }
+
+                decimal baseImponiblePedido = pedido.LinPedidoVtas?
+                    .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                    .Sum(l => l.Base_Imponible) ?? 0M;
+                bool llevaLineaPortesCanarias = pedido.LinPedidoVtas?
+                    .Any(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE
+                        && l.Producto != null
+                        && l.Producto.Trim().StartsWith("624")
+                        && l.Base_Imponible >= Constantes.Portes.CANARIAS) ?? false;
+
+                if (baseImponiblePedido < Models.Picking.GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS
+                    && !llevaLineaPortesCanarias)
+                {
+                    return $"El pedido no llega al mínimo de Canarias ({Models.Picking.GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS:N0} €) " +
+                           $"y no lleva una línea de portes de {Constantes.Portes.CANARIAS:N0} €. Añade portes o aumenta el importe.";
+                }
+            }
+
+            return null;
         }
 
         private static (short Servicio, short Horario, int Pais) ObtenerDefaultsAgencia(int agencia, string codPostal)
