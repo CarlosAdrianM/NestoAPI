@@ -209,6 +209,7 @@
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasMotorSelectionTests.cs" />
     <Compile Include="Infrastructure\Facturas\GestorFacturacionRutas_PuedeFacturarPedidoTests.cs" />
+    <Compile Include="Infrastructure\GestorFacturacionRutasTests.cs" />
     <Compile Include="Infrastructure\GestorKitsTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Infrastructure\GestorPresupuestosTests.cs" />
