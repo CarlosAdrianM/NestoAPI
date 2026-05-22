@@ -2231,6 +2231,170 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_OfertaUnSoloProductoEnVariasLineasConPrecioEsValida()
+        {
+            // Oferta de un solo producto repartida en dos líneas con precio:
+            // p. ej. 2ª unidad al 50 %, una unidad a 20,40 € y otra a 10,20 €.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                Producto = "AA1",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 20.40M
+            });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                Producto = "AA1",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10.20M
+            });
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 555,
+                    Empresa = "NV",
+                    ImporteMinimo = 0,
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle { OfertaId = 555, Empresa = "NV", Producto = "AA1", Precio = 20.40M, Cantidad = 1 },
+                        new OfertaCombinadaDetalle { OfertaId = 555, Empresa = "NV", Producto = "AA1", Precio = 10.20M, Cantidad = 1 }
+                    }
+                }
+            };
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA1")).Returns(listaOfertas);
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA1", GestorPrecios.servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            Assert.AreEqual("La oferta 555 permite poner el producto AA1 a ese precio", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_OfertaUnSoloProductoConImporteMinimoEsValida()
+        {
+            // Oferta de un solo producto con el precio total en el importe mínimo:
+            // 2 unidades de AA1 cuyo importe (30,60 €) llega al mínimo de la oferta.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                Producto = "AA1",
+                AplicarDescuento = true,
+                Cantidad = 2,
+                PrecioUnitario = 15.30M
+            });
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 555,
+                    Empresa = "NV",
+                    ImporteMinimo = 30.60M,
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle { OfertaId = 555, Empresa = "NV", Producto = "AA1", Precio = 0, Cantidad = 2 }
+                    }
+                }
+            };
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA1")).Returns(listaOfertas);
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA1", GestorPrecios.servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+            Assert.AreEqual("La oferta 555 permite poner el producto AA1 a ese precio", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_OfertaUnSoloProductoSiNoLlegaAlImporteMinimoNoEsValida()
+        {
+            // Oferta de un solo producto con importe mínimo: 2 unidades a 12 € (24 €)
+            // no llegan al mínimo de 30,60 €, así que la oferta no autoriza el precio.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                Producto = "AA1",
+                AplicarDescuento = true,
+                Cantidad = 2,
+                PrecioUnitario = 12M
+            });
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 555,
+                    Empresa = "NV",
+                    ImporteMinimo = 30.60M,
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle { OfertaId = 555, Empresa = "NV", Producto = "AA1", Precio = 0, Cantidad = 2 }
+                    }
+                }
+            };
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA1")).Returns(listaOfertas);
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA1", GestorPrecios.servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            Assert.AreEqual("La oferta 555 tiene que tener un importe mínimo de 30,60 € para que sea válida", respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_OfertaUnSoloProductoEnVariasLineasSiFaltaElPrecioCompletoNoEsValida()
+        {
+            // Oferta "por líneas con precio": exige una unidad a precio completo (20,40 €)
+            // y otra a mitad (10,20 €). Si las dos van a mitad de precio, no se autoriza.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                Producto = "AA1",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10.20M
+            });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                Producto = "AA1",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10.20M
+            });
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 555,
+                    Empresa = "NV",
+                    ImporteMinimo = 0,
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle { OfertaId = 555, Empresa = "NV", Producto = "AA1", Precio = 20.40M, Cantidad = 1 },
+                        new OfertaCombinadaDetalle { OfertaId = 555, Empresa = "NV", Producto = "AA1", Precio = 10.20M, Cantidad = 1 }
+                    }
+                }
+            };
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA1")).Returns(listaOfertas);
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA1", GestorPrecios.servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            Assert.AreEqual("No hay ninguna oferta combinada que autorice a vender el producto AA1 a ese precio", respuesta.Motivo);
+        }
+
+        [TestMethod]
         public void GestorPrecios_ValidadorMuestrasYMaterialPromocional_SiLlevaUnaMuestraDeMenosValorDelPermitidoEsValido()
         {
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();

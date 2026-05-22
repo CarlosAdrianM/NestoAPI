@@ -29,15 +29,25 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             if (ofertaCumplida != null)
             {
-                bool tieneAlgunProducto = ofertasCombinadas.FirstOrDefault(o =>
-                        o.OfertasCombinadasDetalles.Where(d => d.Producto != numeroProducto).Any(d =>
-                            pedido.Lineas.Where(p => p.PrecioUnitario >= d.Precio && p.Cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
-                        )
-                    ) != null;
+                // En las ofertas de varios productos exigimos que el pedido lleve algún
+                // producto distinto del que se valida (si no, no sería una "combinada").
+                // Las ofertas de un solo producto (p. ej. 2ª unidad al 50 %) no tienen ese
+                // otro producto por definición, así que esa exigencia no se les aplica.
+                bool esOfertaDeUnSoloProducto = ofertaCumplida.OfertasCombinadasDetalles
+                    .Select(d => d.Producto.Trim()).Distinct().Count() == 1;
 
-                if (!tieneAlgunProducto)
+                if (!esOfertaDeUnSoloProducto)
                 {
-                    ofertaCumplida = null;
+                    bool tieneAlgunProducto = ofertasCombinadas.FirstOrDefault(o =>
+                            o.OfertasCombinadasDetalles.Where(d => d.Producto != numeroProducto).Any(d =>
+                                pedido.Lineas.Where(p => p.PrecioUnitario >= d.Precio && p.Cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
+                            )
+                        ) != null;
+
+                    if (!tieneAlgunProducto)
+                    {
+                        ofertaCumplida = null;
+                    }
                 }
             }
 

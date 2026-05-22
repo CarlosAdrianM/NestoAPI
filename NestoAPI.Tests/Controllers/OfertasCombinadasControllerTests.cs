@@ -212,13 +212,35 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task PostOfertaCombinada_MenosDeDosDetalles_RetornaBadRequest()
+        public async Task PostOfertaCombinada_SinDetalles_RetornaBadRequest()
         {
             // Arrange
             var dto = new OfertaCombinadaCreateDTO
             {
                 Empresa = "1",
+                Nombre = "Oferta Sin Lineas",
+                ImporteMinimo = 100,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>()
+            };
+
+            // Act
+            var resultado = await controller.PostOfertaCombinada(dto, "testuser");
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            var badRequest = (BadRequestErrorMessageResult)resultado;
+            Assert.IsTrue(badRequest.Message.Contains("al menos un producto"));
+        }
+
+        [TestMethod]
+        public async Task PostOfertaCombinada_UnaLineaSinImporteMinimo_RetornaBadRequest()
+        {
+            // Arrange: una sola línea sin importe mínimo no la podría autorizar el validador de precios
+            var dto = new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
                 Nombre = "Oferta Invalida",
+                ImporteMinimo = 0,
                 Detalles = new List<OfertaCombinadaDetalleCreateDTO>
                 {
                     new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 1, Precio = 10 }
@@ -231,7 +253,7 @@ namespace NestoAPI.Tests.Controllers
             // Assert
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
             var badRequest = (BadRequestErrorMessageResult)resultado;
-            Assert.IsTrue(badRequest.Message.Contains("al menos 2 productos"));
+            Assert.IsTrue(badRequest.Message.Contains("importe mínimo"));
         }
 
         [TestMethod]
@@ -265,17 +287,39 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task PostOfertaCombinada_ProductoDuplicado_RetornaBadRequest()
+        public async Task PostOfertaCombinada_DosLineasMismoProducto_CreaOK()
         {
-            // Arrange
+            // Arrange: oferta de un solo producto repartida en dos líneas con precio
+            // (p. ej. 2ª unidad al 50 %: una unidad a precio completo y otra a mitad)
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto 1" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var listaOfertas = new List<OfertaCombinada>();
+            A.CallTo(() => fakeOfertasCombinadas.Add(A<OfertaCombinada>.Ignored))
+                .Invokes((OfertaCombinada o) => { o.Id = 1; listaOfertas.Add(o); })
+                .ReturnsLazily((OfertaCombinada o) => o);
+            A.CallTo(() => db.SaveChangesAsync())
+                .Invokes(() =>
+                {
+                    if (listaOfertas.Any())
+                    {
+                        ConfigurarFakeDbSet(fakeOfertasCombinadas, listaOfertas.AsQueryable());
+                    }
+                })
+                .Returns(Task.FromResult(1));
+
             var dto = new OfertaCombinadaCreateDTO
             {
                 Empresa = "1",
-                Nombre = "Oferta Duplicada",
+                Nombre = "2ª unidad al 50%",
+                ImporteMinimo = 0,
                 Detalles = new List<OfertaCombinadaDetalleCreateDTO>
                 {
-                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 1, Precio = 10 },
-                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 2, Precio = 5 }
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 1, Precio = 20.40m },
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 1, Precio = 10.20m }
                 }
             };
 
@@ -283,9 +327,53 @@ namespace NestoAPI.Tests.Controllers
             var resultado = await controller.PostOfertaCombinada(dto, "testuser");
 
             // Assert
-            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
-            var badRequest = (BadRequestErrorMessageResult)resultado;
-            Assert.IsTrue(badRequest.Message.Contains("duplicado"));
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaCombinadaDTO>));
+            A.CallTo(() => fakeOfertasCombinadas.Add(A<OfertaCombinada>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostOfertaCombinada_UnaLineaConImporteMinimo_CreaOK()
+        {
+            // Arrange: oferta de un solo producto con el precio total en el importe mínimo
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto 1" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var listaOfertas = new List<OfertaCombinada>();
+            A.CallTo(() => fakeOfertasCombinadas.Add(A<OfertaCombinada>.Ignored))
+                .Invokes((OfertaCombinada o) => { o.Id = 1; listaOfertas.Add(o); })
+                .ReturnsLazily((OfertaCombinada o) => o);
+            A.CallTo(() => db.SaveChangesAsync())
+                .Invokes(() =>
+                {
+                    if (listaOfertas.Any())
+                    {
+                        ConfigurarFakeDbSet(fakeOfertasCombinadas, listaOfertas.AsQueryable());
+                    }
+                })
+                .Returns(Task.FromResult(1));
+
+            var dto = new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
+                Nombre = "2ª unidad al 50%",
+                ImporteMinimo = 30.60m,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>
+                {
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 2, Precio = 0 }
+                }
+            };
+
+            // Act
+            var resultado = await controller.PostOfertaCombinada(dto, "testuser");
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaCombinadaDTO>));
+            A.CallTo(() => fakeOfertasCombinadas.Add(A<OfertaCombinada>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
         }
 
         [TestMethod]

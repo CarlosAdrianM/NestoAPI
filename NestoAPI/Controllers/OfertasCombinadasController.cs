@@ -294,20 +294,21 @@ namespace NestoAPI.Controllers
 
         private string ValidarDTO(OfertaCombinadaCreateDTO dto)
         {
-            if (dto.Detalles == null || dto.Detalles.Count < 2)
+            if (dto.Detalles == null || dto.Detalles.Count == 0)
             {
-                return "Una oferta combinada debe tener al menos 2 productos";
+                return "Una oferta combinada debe tener al menos un producto";
             }
 
-            var productosDuplicados = dto.Detalles
-                .GroupBy(d => d.Producto?.Trim())
-                .Where(g => g.Count() > 1)
-                .Select(g => g.Key)
-                .ToList();
-
-            if (productosDuplicados.Any())
+            // Se admiten ofertas de un solo producto (p. ej. 2ª unidad al 50 %), de dos maneras:
+            //  - Por importe mínimo: una sola línea de la referencia con cantidad > 1 y el
+            //    precio total de la oferta en el importe mínimo de la cabecera.
+            //  - Por líneas con precio: varias líneas (admite repetir la misma referencia),
+            //    cada una con su precio, p. ej. una unidad a precio completo y otra a mitad.
+            // Una oferta de una sola línea sin importe mínimo no la podría autorizar nunca el
+            // validador de precios, así que se rechaza para no crear ofertas inservibles.
+            if (dto.Detalles.Count == 1 && dto.ImporteMinimo <= 0)
             {
-                return $"Producto duplicado en la oferta: '{productosDuplicados.First()}'";
+                return "Una oferta combinada de una sola línea debe tener un importe mínimo mayor que cero";
             }
 
             if (dto.FechaDesde.HasValue && dto.FechaHasta.HasValue && dto.FechaDesde > dto.FechaHasta)
