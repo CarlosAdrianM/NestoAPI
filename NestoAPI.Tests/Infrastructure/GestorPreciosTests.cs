@@ -3799,5 +3799,120 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(respuesta.ValidacionSuperada);
             //Assert.AreEqual("El producto MUESTRA no puede ir a ese precio porque no es material promocional o se supera el importe autorizado", respuesta.Motivo);
         }
+
+        // NestoAPI#203: ValidadorDescuentoTiendaOnline acepta el descuento del voucher
+        // de Prestashop (hasta 5%) cuando TODO el pedido viene de la tienda online.
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorDescuentoTiendaOnline_DescuentoCincoPorCientoEnPedidoTodoWeb_LoAcepta()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
+            {
+                Producto = "AA11",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10M,
+                DescuentoLinea = 0.05M,
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                formaVenta = Constantes.FormasVenta.TIENDA_ONLINE
+            };
+            pedido.Lineas.Add(linea);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "AA11");
+
+            Assert.IsTrue(respuesta.ValidacionSuperada,
+                "Un descuento del 5% en un pedido WEB (voucher de Prestashop) debe estar autorizado. Motivo recibido: " + respuesta.Motivo);
+            Assert.IsTrue(respuesta.Motivo.Contains("voucher"),
+                "El motivo debe explicar que el descuento se autoriza por venir de tienda online. Recibido: " + respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorDescuentoTiendaOnline_DescuentoMenorACincoEnPedidoTodoWeb_LoAcepta()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
+            {
+                Producto = "AA11",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10M,
+                DescuentoLinea = 0.03M,
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                formaVenta = Constantes.FormasVenta.TIENDA_ONLINE
+            };
+            pedido.Lineas.Add(linea);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "AA11");
+
+            Assert.IsTrue(respuesta.ValidacionSuperada,
+                "Cualquier descuento por debajo del tope (5%) en pedido WEB debe estar autorizado.");
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorDescuentoTiendaOnline_DescuentoSuperiorACincoEnPedidoTodoWeb_NoLoAcepta()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
+            {
+                Producto = "AA11",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10M,
+                DescuentoLinea = 0.07M,
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                formaVenta = Constantes.FormasVenta.TIENDA_ONLINE
+            };
+            pedido.Lineas.Add(linea);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "AA11");
+
+            Assert.IsFalse(respuesta.ValidacionSuperada,
+                "Un descuento superior al 5% en pedido WEB no debe autorizarse automáticamente: queremos que pase por revisión manual.");
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorDescuentoTiendaOnline_PedidoMixtoWebYOtroCanal_NoLoAcepta()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO lineaWeb = new LineaPedidoVentaDTO
+            {
+                Producto = "AA11",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10M,
+                DescuentoLinea = 0.05M,
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                formaVenta = Constantes.FormasVenta.TIENDA_ONLINE
+            };
+            pedido.Lineas.Add(lineaWeb);
+            LineaPedidoVentaDTO lineaNoWeb = new LineaPedidoVentaDTO
+            {
+                Producto = "AA21",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 21M,
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                formaVenta = "DIR"
+            };
+            pedido.Lineas.Add(lineaNoWeb);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "AA11");
+
+            Assert.IsFalse(respuesta.ValidacionSuperada,
+                "Si alguna línea no es WEB, el descuento no viene de Prestashop y no se justifica automáticamente.");
+        }
     }
 }

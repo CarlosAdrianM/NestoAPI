@@ -719,6 +719,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOtrosAparatosSiempreSinDescuento.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegaloPorImportePedido.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorRegalosTiendaOnline.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentoTiendaOnline.cs" />
     <Compile Include="Infraestructure\Vendedores\IServicioVendedores.cs" />
     <Compile Include="Infraestructure\Vendedores\ServicioVendedores.cs" />
     <Compile Include="Infraestructure\Ventas\GestorVentasCliente.cs" />
