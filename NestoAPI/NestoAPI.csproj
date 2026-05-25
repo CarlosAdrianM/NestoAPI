@@ -533,6 +533,7 @@
     <Compile Include="Controllers\PickingController.cs" />
     <Compile Include="Controllers\PlanCuentasController.cs" />
     <Compile Include="Controllers\PlanesVentajasController.cs" />
+    <Compile Include="Controllers\CorreosController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PrestashopProductosController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
@@ -821,6 +822,8 @@
     <Compile Include="Models\ComisionAnualResumenMes.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\Correos\AdjuntoCorreoDTO.cs" />
+    <Compile Include="Models\Correos\EnvioCorreoDTO.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
     <Compile Include="Models\Comisiones\ClienteVenta.cs" />
