@@ -27,21 +27,102 @@ namespace NestoAPI.Infraestructure.Comisiones
         public async Task<ComisionesAntiguasDTO> LeerComisionesAntiguasAsync(
             string empresa, DateTime fechaDesde, DateTime fechaHasta, string vendedor)
         {
-            // El SP prdComisionesPorVendedor está expuesto en el EDMX del cliente con el
-            // FunctionImport "Comisiones". RellenarTabla se pasa siempre false, igual que
-            // el cliente lo pasaba con 0.
-            var resultado = await db.Database
-                .SqlQuery<ComisionesAntiguasDTO>(
-                    "prdComisionesPorVendedor @Empresa, @Desde, @Hasta, @Vendedor, @RellenarTabla",
-                    new SqlParameter("@Empresa", SqlDbType.Char) { Value = empresa ?? "1" },
-                    new SqlParameter("@Desde", SqlDbType.DateTime) { Value = fechaDesde },
-                    new SqlParameter("@Hasta", SqlDbType.DateTime) { Value = fechaHasta },
-                    new SqlParameter("@Vendedor", SqlDbType.Char) { Value = vendedor ?? string.Empty },
-                    new SqlParameter("@RellenarTabla", SqlDbType.Bit) { Value = false })
-                .ToListAsync()
-                .ConfigureAwait(false);
+            // El SP prdComisionesPorVendedor devuelve 6 columnas con prefijo % en el
+            // nombre (%ComisionCos, %ComisionFijaCos, %ComisionApa, etc.). El EDMX
+            // legacy de Nesto las mapeaba a propiedades C_Comision* via ScalarProperty;
+            // SqlQuery<T> empareja columnas a propiedades por nombre directo y %
+            // no es válido en identificadores C#, así que esas 6 propiedades quedaban
+            // siempre a 0 (NestoAPI#210, regresión Nesto#340). Se usa SqlDataReader
+            // y un mapper explícito para preservar la equivalencia legacy.
+            var connection = (SqlConnection)db.Database.Connection;
+            var huboQueAbrir = connection.State != ConnectionState.Open;
+            if (huboQueAbrir)
+            {
+                await connection.OpenAsync().ConfigureAwait(false);
+            }
+            try
+            {
+                using (var command = connection.CreateCommand())
+                {
+                    command.CommandType = CommandType.StoredProcedure;
+                    command.CommandText = "prdComisionesPorVendedor";
+                    command.Parameters.Add(new SqlParameter("@Empresa", SqlDbType.Char) { Value = empresa ?? "1" });
+                    command.Parameters.Add(new SqlParameter("@Desde", SqlDbType.DateTime) { Value = fechaDesde });
+                    command.Parameters.Add(new SqlParameter("@Hasta", SqlDbType.DateTime) { Value = fechaHasta });
+                    command.Parameters.Add(new SqlParameter("@Vendedor", SqlDbType.Char) { Value = vendedor ?? string.Empty });
+                    command.Parameters.Add(new SqlParameter("@RellenarTabla", SqlDbType.Bit) { Value = false });
 
-            return resultado.FirstOrDefault();
+                    using (var reader = await command.ExecuteReaderAsync().ConfigureAwait(false))
+                    {
+                        if (await reader.ReadAsync().ConfigureAwait(false))
+                        {
+                            return MapearComisionesAntiguas(reader);
+                        }
+                        return null;
+                    }
+                }
+            }
+            finally
+            {
+                if (huboQueAbrir)
+                {
+                    connection.Close();
+                }
+            }
+        }
+
+        internal static ComisionesAntiguasDTO MapearComisionesAntiguas(IDataRecord record)
+        {
+            decimal Decimal(string columna)
+            {
+                var ordinal = record.GetOrdinal(columna);
+                return record.IsDBNull(ordinal) ? 0m : Convert.ToDecimal(record.GetValue(ordinal));
+            }
+
+            return new ComisionesAntiguasDTO
+            {
+                VentaCos = Decimal("VentaCos"),
+                VentaFDMCos = Decimal("VentaFDMCos"),
+                VentaSabrinaCos = Decimal("VentaSabrinaCos"),
+                TotalCos = Decimal("TotalCos"),
+                C_ComisionCos = Decimal("%ComisionCos"),
+                TotalComisionCos = Decimal("TotalComisionCos"),
+                C_ComisionFijaCos = Decimal("%ComisionFijaCos"),
+                TotalComisionFijaCos = Decimal("TotalComisionFijaCos"),
+                SiguienteTramoCos = Decimal("SiguienteTramoCos"),
+                DiferenciaTramoCos = Decimal("DiferenciaTramoCos"),
+                ImporteRutaCos = Decimal("ImporteRutaCos"),
+                VentaAPA = Decimal("VentaAPA"),
+                VentaFDMApa = Decimal("VentaFDMApa"),
+                VentaSabrinaApa = Decimal("VentaSabrinaApa"),
+                TotalApa = Decimal("TotalApa"),
+                C_ComisionApa = Decimal("%ComisionApa"),
+                TotalComisionApa = Decimal("TotalComisionApa"),
+                C_ComisionFijaApa = Decimal("%ComisionFijaApa"),
+                TotalComisionFijaApa = Decimal("TotalComisionFijaApa"),
+                SiguienteTramoApa = Decimal("SiguienteTramoApa"),
+                DiferenciaTramoApa = Decimal("DiferenciaTramoApa"),
+                ImporteRutaApa = Decimal("ImporteRutaApa"),
+                VentaAcp = Decimal("VentaAcp"),
+                VentaFDMAcp = Decimal("VentaFDMAcp"),
+                VentaSabrinaAcp = Decimal("VentaSabrinaAcp"),
+                TotalAcp = Decimal("TotalAcp"),
+                C_ComisionAcp = Decimal("%ComisionAcp"),
+                TotalComisionAcp = Decimal("TotalComisionAcp"),
+                C_ComisionFijaAcp = Decimal("%ComisionFijaAcp"),
+                TotalComisionFijaAcp = Decimal("TotalComisionFijaAcp"),
+                SiguienteTramoAcp = Decimal("SiguienteTramoAcp"),
+                DiferenciaTramoAcp = Decimal("DiferenciaTramoAcp"),
+                ImporteRutaAcp = Decimal("ImporteRutaAcp"),
+                TotalComision = Decimal("TotalComision"),
+                PremioEva = Decimal("PremioEva"),
+                EvaFdM = Decimal("EvaFdM"),
+                CifraRuta = Decimal("CifraRuta"),
+                VentaCur = Decimal("VentaCur"),
+                TotalComisionCur = Decimal("TotalComisionCur"),
+                VentaUL = Decimal("VentaUL"),
+                TotalComisionUL = Decimal("TotalComisionUL"),
+            };
         }
 
         public async Task<List<PedidoVendedorComisionDTO>> LeerPedidosVendedorAsync(string vendedor)
