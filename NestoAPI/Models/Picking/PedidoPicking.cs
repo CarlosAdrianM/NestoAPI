@@ -96,6 +96,19 @@ namespace NestoAPI.Models.Picking
                 }
                 else
                 {
+                    // NestoAPI#202 (diagnóstico): si un pedido PREPAGO no sale en picking,
+                    // dejamos traza en ELMAH con el desglose. Sirve para investigar casos
+                    // como pedido 916885 (mayo 2026) donde según el usuario el prepago + un
+                    // movimiento pendiente cubrían el total pero el pedido no cogió picking.
+                    // Test reproduciendo los datos del ticket pasa, así que cuando vuelva a
+                    // ocurrir necesitamos ver los importes reales.
+                    System.Diagnostics.Trace.WriteLine(
+                        $"[Picking#202] Pedido {Id} retenido por prepago. " +
+                        $"Total={total}, Prepagos={importePrepagos}, " +
+                        $"SaldoAFavor={saldoAFavor}, DeudaVencida={deudaVencida}, " +
+                        $"Disponible={importeTotalDisponible}, " +
+                        $"ExtractosPendientesCount={ExtractosPendientes?.Count ?? 0}, " +
+                        $"ExtractosValidosCount={extractosValidos.Count()}");
                     RetenidoPorPrepago = true;
                     return false;
                 }

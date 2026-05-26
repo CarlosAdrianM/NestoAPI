@@ -86,6 +86,56 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsTrue(pedido.RetenidoPorPrepago);
         }
 
+        // Regresión NestoAPI#202: pedido 916885 (cliente 34991), total 207.87€,
+        // prepago 57.87€ + movimiento pendiente del extracto -150€. La suma cubre
+        // el total. Reportado en mayo 2026 con FormaPago=PRE; la mitigación temporal
+        // fue cambiar a CONTADO manualmente.
+        [TestMethod]
+        public void PedidoPicking_saleEnPicking_caso916885_PrepagoMasPagoACuentaCubrenTotal_SiSale()
+        {
+            // Arrange: replica de los datos del pedido 916885.
+            var linea = new LineaPedidoPicking
+            {
+                Id = 1,
+                TipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "WOW",
+                Cantidad = 1,
+                CantidadReservada = 1,
+                Total = 207.87M
+            };
+
+            var rellenador = A.Fake<IRellenadorPrepagosService>();
+            A.CallTo(() => rellenador.Prepagos(A<int>.Ignored))
+                .Returns(new List<PrepagoDTO>
+                {
+                    new PrepagoDTO { Importe = 57.87M }
+                });
+            A.CallTo(() => rellenador.ExtractosPendientes(A<int>.Ignored))
+                .Returns(new List<ExtractoClienteDTO>
+                {
+                    new ExtractoClienteDTO
+                    {
+                        importePendiente = -150M, // "S/Pago a cuenta curso WOW"
+                        estado = null,
+                        vencimiento = null
+                    }
+                });
+
+            var pedido = new PedidoPicking(rellenador)
+            {
+                Id = 916885,
+                ServirJunto = false,
+                PlazosPago = Constantes.PlazosPago.PREPAGO,
+                Lineas = new List<LineaPedidoPicking> { linea }
+            };
+
+            // Act + Assert
+            Assert.IsTrue(pedido.saleEnPicking(),
+                "Prepago 57.87 + saldo a favor 150 = 207.87 cubre el total 207.87, " +
+                "debería salir en picking aunque la forma de pago sea PRE.");
+            Assert.IsFalse(pedido.RetenidoPorPrepago);
+        }
+
         [TestMethod]
         public void PedidoPicking_saleEnPicking_siPrepagoMasExtractoClienteCubrenTotalSiSale()
         {
