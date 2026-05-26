@@ -193,6 +193,7 @@
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Controllers\SeguimientosClientesControllerTests.cs" />
     <Compile Include="Controllers\ComisionesControllerTests.cs" />
+    <Compile Include="Controllers\VideosProductosControllerTests.cs" />
     <Compile Include="Controllers\InformesControllerTests.cs" />
     <Compile Include="Controllers\NotificacionesControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaJefeEquipoTests.cs" />

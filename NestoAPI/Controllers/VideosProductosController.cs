@@ -13,11 +13,24 @@ namespace NestoAPI.Controllers
     [RoutePrefix("api/VideosProductos")]
     public class VideosProductosController : ApiController
     {
+        private readonly NVEntities db;
+
+        public VideosProductosController()
+        {
+            db = new NVEntities();
+        }
+
+        public VideosProductosController(NVEntities db)
+        {
+            this.db = db;
+        }
+
         #region DTOs
 
         public class ActualizacionVideoProductoDto
         {
             public string Referencia { get; set; }
+            public string NombreProducto { get; set; }
             public string EnlaceTienda { get; set; }
             public string TiempoAparicion { get; set; }
             public string Observaciones { get; set; }
@@ -61,91 +74,96 @@ namespace NestoAPI.Controllers
 
             var usuario = identity.FindFirst(ClaimTypes.Name)?.Value ?? "Desconocido";
 
-            using (var db = new NVEntities())
+            var vp = await db.VideosProductos.FindAsync(id);
+            if (vp == null)
             {
-                var vp = await db.VideosProductos.FindAsync(id);
-                if (vp == null)
+                return NotFound();
+            }
+
+            var cambios = new List<(string Campo, string ValorAnterior, string ValorNuevo)>();
+
+            // Referencia
+            if (dto.Referencia != null && dto.Referencia != vp.Referencia)
+            {
+                cambios.Add(("Referencia", vp.Referencia, dto.Referencia));
+                vp.Referencia = dto.Referencia;
+            }
+
+            // NombreProducto (Nesto#360): permitir corregir el nombre que viene
+            // del vídeo cuando esté mal escrito.
+            if (dto.NombreProducto != null && dto.NombreProducto != vp.NombreProducto)
+            {
+                cambios.Add(("NombreProducto", vp.NombreProducto, dto.NombreProducto));
+                vp.NombreProducto = dto.NombreProducto;
+            }
+
+            // EnlaceTienda
+            if (dto.EnlaceTienda != null && dto.EnlaceTienda != vp.EnlaceTienda)
+            {
+                cambios.Add(("EnlaceTienda", vp.EnlaceTienda, dto.EnlaceTienda));
+                vp.EnlaceTienda = dto.EnlaceTienda;
+            }
+
+            // TiempoAparicion
+            if (dto.TiempoAparicion != null && dto.TiempoAparicion != vp.TiempoAparicion)
+            {
+                cambios.Add(("TiempoAparicion", vp.TiempoAparicion, dto.TiempoAparicion));
+                vp.TiempoAparicion = dto.TiempoAparicion;
+
+                // Regenerar EnlaceVideo si tiene formato YouTube con ?t=
+                if (!string.IsNullOrEmpty(vp.EnlaceVideo))
                 {
-                    return NotFound();
-                }
-
-                var cambios = new List<(string Campo, string ValorAnterior, string ValorNuevo)>();
-
-                // Referencia
-                if (dto.Referencia != null && dto.Referencia != vp.Referencia)
-                {
-                    cambios.Add(("Referencia", vp.Referencia, dto.Referencia));
-                    vp.Referencia = dto.Referencia;
-                }
-
-                // EnlaceTienda
-                if (dto.EnlaceTienda != null && dto.EnlaceTienda != vp.EnlaceTienda)
-                {
-                    cambios.Add(("EnlaceTienda", vp.EnlaceTienda, dto.EnlaceTienda));
-                    vp.EnlaceTienda = dto.EnlaceTienda;
-                }
-
-                // TiempoAparicion
-                if (dto.TiempoAparicion != null && dto.TiempoAparicion != vp.TiempoAparicion)
-                {
-                    cambios.Add(("TiempoAparicion", vp.TiempoAparicion, dto.TiempoAparicion));
-                    vp.TiempoAparicion = dto.TiempoAparicion;
-
-                    // Regenerar EnlaceVideo si tiene formato YouTube con ?t=
-                    if (!string.IsNullOrEmpty(vp.EnlaceVideo))
+                    try
                     {
-                        try
+                        var uri = new Uri(vp.EnlaceVideo);
+                        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                        query["t"] = dto.TiempoAparicion;
+                        var builder = new UriBuilder(uri)
                         {
-                            var uri = new Uri(vp.EnlaceVideo);
-                            var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
-                            query["t"] = dto.TiempoAparicion;
-                            var builder = new UriBuilder(uri)
-                            {
-                                Query = query.ToString()
-                            };
-                            vp.EnlaceVideo = builder.ToString();
-                            cambios.Add(("EnlaceVideo", vp.EnlaceVideo, vp.EnlaceVideo));
-                        }
-                        catch { /* Si el enlace no es v�lido, no hacemos nada */ }
+                            Query = query.ToString()
+                        };
+                        vp.EnlaceVideo = builder.ToString();
+                        cambios.Add(("EnlaceVideo", vp.EnlaceVideo, vp.EnlaceVideo));
                     }
+                    catch { /* Si el enlace no es v�lido, no hacemos nada */ }
                 }
+            }
 
-                if (!cambios.Any())
-                {
-                    return Ok();
-                }
+            if (!cambios.Any())
+            {
+                return Ok();
+            }
 
-                // Registrar cada cambio
-                foreach (var (Campo, ValorAnterior, ValorNuevo) in cambios)
+            // Registrar cada cambio
+            foreach (var (Campo, ValorAnterior, ValorNuevo) in cambios)
+            {
+                _ = db.LogVideosProductos.Add(new LogVideoProducto
                 {
-                    _ = db.LogVideosProductos.Add(new LogVideoProducto
-                    {
-                        VideoProductoId = vp.Id,
-                        CampoModificado = Campo,
-                        ValorAnterior = ValorAnterior,
-                        ValorNuevo = ValorNuevo,
-                        Usuario = usuario,
-                        Accion = "Actualizacion",
-                        Observaciones = dto.Observaciones,
-                        FechaCambio = DateTime.UtcNow
-                    });
-                }
+                    VideoProductoId = vp.Id,
+                    CampoModificado = Campo,
+                    ValorAnterior = ValorAnterior,
+                    ValorNuevo = ValorNuevo,
+                    Usuario = usuario,
+                    Accion = "Actualizacion",
+                    Observaciones = dto.Observaciones,
+                    FechaCambio = DateTime.UtcNow
+                });
+            }
 
-                try
-                {
-                    _ = await db.SaveChangesAsync();
-                    return Ok();
-                }
-                catch (System.Data.Entity.Infrastructure.DbUpdateException ex)
-                {
-                    // Loguear en ELMAH
-                    Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+            try
+            {
+                _ = await db.SaveChangesAsync();
+                return Ok();
+            }
+            catch (System.Data.Entity.Infrastructure.DbUpdateException ex)
+            {
+                // Loguear en ELMAH
+                Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
 
-                    // Extraer mensaje de error interno (ej: permisos SQL)
-                    var innerMessage = ex.InnerException?.InnerException?.Message ?? ex.InnerException?.Message ?? ex.Message;
-                    return Content(System.Net.HttpStatusCode.InternalServerError,
-                        $"Error al guardar los cambios: {innerMessage}");
-                }
+                // Extraer mensaje de error interno (ej: permisos SQL)
+                var innerMessage = ex.InnerException?.InnerException?.Message ?? ex.InnerException?.Message ?? ex.Message;
+                return Content(System.Net.HttpStatusCode.InternalServerError,
+                    $"Error al guardar los cambios: {innerMessage}");
             }
         }
 
@@ -396,5 +414,14 @@ namespace NestoAPI.Controllers
         }
 
         #endregion
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                db.Dispose();
+            }
+            base.Dispose(disposing);
+        }
     }
 }
