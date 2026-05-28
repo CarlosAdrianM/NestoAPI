@@ -1823,6 +1823,70 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("La oferta 123 tiene que tener un importe mínimo de 43,00 € para que sea válida", respuesta.Motivo);
         }
 
+        // El importe mínimo es POR INSTANCIA: si el pedido lleva 2 veces las cantidades de la oferta,
+        // hay que cumplirlo 2 veces. Oferta {AA11:1, AA21:1} con mínimo 10; el pedido lleva 2 de cada
+        // pero su base imponible (10) solo alcanza el suelo de UNA instancia (haría falta 20) → NO válido.
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_ImporteMinimoPorInstancia_DosInstanciasConUnSoloSueloNoEsValido()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "AA11", AplicarDescuento = true, Cantidad = 2, PrecioUnitario = 5 });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "AA21", AplicarDescuento = true, Cantidad = 2, PrecioUnitario = 21, DescuentoLinea = 1M });
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 130,
+                    Empresa = "NV",
+                    ImporteMinimo = 10,
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle { OfertaId = 130, Empresa = "NV", Producto = "AA11", Cantidad = 1, Precio = 0 },
+                        new OfertaCombinadaDetalle { OfertaId = 130, Empresa = "NV", Producto = "AA21", Cantidad = 1, Precio = 0 }
+                    }
+                }
+            };
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA21")).Returns(listaOfertas);
+
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA21", GestorPrecios.servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+        }
+
+        // Espejo del anterior: 2 instancias que SÍ alcanzan el doble del suelo (20) → válido.
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_ImporteMinimoPorInstancia_DosInstanciasConElDobleDelSueloEsValido()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "AA11", AplicarDescuento = true, Cantidad = 2, PrecioUnitario = 10 });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "AA21", AplicarDescuento = true, Cantidad = 2, PrecioUnitario = 21, DescuentoLinea = 1M });
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 130,
+                    Empresa = "NV",
+                    ImporteMinimo = 10,
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle { OfertaId = 130, Empresa = "NV", Producto = "AA11", Cantidad = 1, Precio = 0 },
+                        new OfertaCombinadaDetalle { OfertaId = 130, Empresa = "NV", Producto = "AA21", Cantidad = 1, Precio = 0 }
+                    }
+                }
+            };
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA21")).Returns(listaOfertas);
+
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA21", GestorPrecios.servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+        }
+
         [TestMethod]
         public void GestorPrecios_ValidadorOfertasCombinadas_SiNoLlevaLaCantidadNecesariaNoEsValido()
         {

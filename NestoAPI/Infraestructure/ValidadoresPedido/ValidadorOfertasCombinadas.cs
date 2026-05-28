@@ -71,18 +71,23 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                             ofertaConImporteMinimo.OfertasCombinadasDetalles.Select(d => d.Producto.Trim()).Contains(l.Producto.Trim())
                         );
                         var sumaImporte = lineasOfertaPedido.Sum(l => l.BaseImponible);
-                        if (sumaImporte >= ofertaConImporteMinimo.ImporteMinimo)
+                        // El importe mínimo es por instancia de oferta: si el pedido lleva N veces
+                        // las cantidades de la oferta, hay que cumplirlo N veces (antes se exigía una
+                        // sola vez, lo que dejaba pasar varias instancias con un único suelo).
+                        int instancias = InstanciasEnPedido(ofertaConImporteMinimo, pedido);
+                        decimal importeMinimoRequerido = instancias * ofertaConImporteMinimo.ImporteMinimo;
+                        if (sumaImporte >= importeMinimoRequerido)
                         {
                             ofertaCumplida = ofertaConImporteMinimo;
                             respuesta.ValidacionSuperada = true;
-                            respuesta.Motivo = "La oferta "+ ofertaCumplida.Id.ToString() 
+                            respuesta.Motivo = "La oferta "+ ofertaCumplida.Id.ToString()
                                 +" permite poner el producto "+ numeroProducto +" a ese precio";
                             break;
                         }
                         else
                         {
                             respuesta.Motivo = "La oferta " + ofertaConImporteMinimo.Id
-                                + " tiene que tener un importe mínimo de " + ofertaConImporteMinimo.ImporteMinimo.ToString("C") + " para que sea válida";
+                                + " tiene que tener un importe mínimo de " + importeMinimoRequerido.ToString("C") + " para que sea válida";
                             ofertaCumplida = null;
                         }
                     }
@@ -136,6 +141,25 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     + " permite poner el producto " + numeroProducto + " a ese precio",
                 ProductoId = numeroProducto
             };
+        }
+
+        /// <summary>
+        /// Nº de instancias de la oferta representadas en el pedido: el mínimo, entre los productos
+        /// de la oferta (con Cantidad &gt; 0), de cuántas veces cabe su cantidad en la pedida.
+        /// </summary>
+        private static int InstanciasEnPedido(OfertaCombinada oferta, PedidoVentaDTO pedido)
+        {
+            int instancias = int.MaxValue;
+            foreach (OfertaCombinadaDetalle d in oferta.OfertasCombinadasDetalles)
+            {
+                if (d.Cantidad <= 0 || d.Producto == null) continue;
+                int cantidad = (int)pedido.Lineas
+                    .Where(l => l.Producto != null && l.Producto.Trim() == d.Producto.Trim())
+                    .Sum(l => l.Cantidad);
+                int posibles = cantidad / d.Cantidad;
+                if (posibles < instancias) instancias = posibles;
+            }
+            return instancias == int.MaxValue || instancias < 1 ? 1 : instancias;
         }
 
         /// <summary>
