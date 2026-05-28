@@ -145,7 +145,9 @@ namespace NestoAPI.Controllers
         // GET: api/Clientes
         public IQueryable<ClienteDTO> GetClientes(string empresa, string filtro)
         {
-            if (filtro.Length < 4 && !filtro.All(c => char.IsDigit(c)))
+            // filtro puede llegar como null (p.ej. NestoApp manda ?filtro= al limpiar la búsqueda):
+            // se trata como filtro inválido en vez de lanzar NullReferenceException.
+            if (string.IsNullOrEmpty(filtro) || (filtro.Length < 4 && !filtro.All(c => char.IsDigit(c))))
             {
                 throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
             }

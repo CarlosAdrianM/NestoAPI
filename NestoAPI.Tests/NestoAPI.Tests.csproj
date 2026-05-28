@@ -171,6 +171,7 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Controllers\ClientesControllerTests.cs" />
     <Compile Include="Controllers\ExtractosClienteControllerTests.cs" />
     <Compile Include="Controllers\GanavisionesControllerTests.cs" />
     <Compile Include="Controllers\PlanesVentajasControllerTests.cs" />
