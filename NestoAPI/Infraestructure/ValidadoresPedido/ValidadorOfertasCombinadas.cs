@@ -107,6 +107,23 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 }
             }
 
+            // Gate de consumo exacto: si un producto está compartido por varias ofertas, las
+            // cantidades del pedido deben poder repartirse en instancias ENTERAS de oferta sin que
+            // sobre ni falte. Evita que la misma unidad de un producto compartido "justifique" varias
+            // ofertas a la vez (p.ej. 4 parejas con descuento pero 1 sola unidad del producto
+            // vinculado, cuando harían falta 4). La lógica anterior valida oferta a oferta y no lo ve.
+            bool seriaValido = ofertaCumplida != null || respuesta.ValidacionSuperada;
+            if (seriaValido && !ConsumoExactoFactible(pedido, numeroProducto, servicio))
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    Motivo = "La oferta combinada del producto " + numeroProducto
+                        + " no cuadra: las cantidades no permiten repartir las unidades en ofertas completas",
+                    ProductoId = numeroProducto
+                };
+            }
+
             if (ofertaCumplida == null)
             {
                 return respuesta;
@@ -119,6 +136,134 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     + " permite poner el producto " + numeroProducto + " a ese precio",
                 ProductoId = numeroProducto
             };
+        }
+
+        /// <summary>
+        /// Comprueba que las cantidades del pedido de los productos de las ofertas combinadas
+        /// conectadas con <paramref name="numeroProducto"/> se puedan repartir en un número entero
+        /// de instancias de oferta consumiéndolas EXACTAMENTE. Solo se aplica cuando hay un producto
+        /// compartido por dos o más ofertas (que es donde la validación oferta-a-oferta se queda
+        /// corta); en el resto de casos devuelve true y manda la lógica anterior.
+        /// </summary>
+        private static bool ConsumoExactoFactible(PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
+        {
+            // Componente conexo de ofertas: las que contienen el producto y, transitivamente, las
+            // que comparten algún producto con ellas.
+            Dictionary<int, OfertaCombinada> ofertas = new Dictionary<int, OfertaCombinada>();
+            Queue<string> porExplorar = new Queue<string>();
+            HashSet<string> explorados = new HashSet<string>();
+            porExplorar.Enqueue(numeroProducto.Trim());
+            while (porExplorar.Count > 0)
+            {
+                string prod = porExplorar.Dequeue();
+                if (!explorados.Add(prod)) continue;
+                List<OfertaCombinada> encontradas = servicio.BuscarOfertasCombinadas(prod);
+                if (encontradas == null) continue;
+                foreach (OfertaCombinada o in encontradas)
+                {
+                    if (!ofertas.ContainsKey(o.Id)) ofertas[o.Id] = o;
+                    foreach (OfertaCombinadaDetalle d in o.OfertasCombinadasDetalles)
+                    {
+                        if (d.Cantidad > 0 && d.Producto != null && !explorados.Contains(d.Producto.Trim()))
+                        {
+                            porExplorar.Enqueue(d.Producto.Trim());
+                        }
+                    }
+                }
+            }
+
+            List<OfertaCombinada> listaOfertas = ofertas.Values.ToList();
+            if (listaOfertas.Count <= 1)
+            {
+                return true; // con una sola oferta no hay producto compartido entre ofertas
+            }
+
+            // ¿Algún producto compartido por 2+ ofertas? Si no, los múltiplos por oferta ya bastan.
+            Dictionary<string, int> ofertasPorProducto = new Dictionary<string, int>();
+            foreach (OfertaCombinada o in listaOfertas)
+            {
+                HashSet<string> productosOferta = new HashSet<string>();
+                foreach (OfertaCombinadaDetalle d in o.OfertasCombinadasDetalles)
+                {
+                    if (d.Cantidad > 0 && d.Producto != null) productosOferta.Add(d.Producto.Trim());
+                }
+                foreach (string p in productosOferta)
+                {
+                    ofertasPorProducto[p] = (ofertasPorProducto.TryGetValue(p, out int c) ? c : 0) + 1;
+                }
+            }
+            if (!ofertasPorProducto.Values.Any(c => c >= 2))
+            {
+                return true; // ningún producto compartido
+            }
+
+            HashSet<string> productos = new HashSet<string>(ofertasPorProducto.Keys);
+            Dictionary<string, int> cantidadPedida = new Dictionary<string, int>();
+            foreach (string p in productos)
+            {
+                cantidadPedida[p] = (int)pedido.Lineas
+                    .Where(l => l.Producto != null && l.Producto.Trim() == p)
+                    .Sum(l => l.Cantidad);
+            }
+
+            return ExisteRepartoExacto(listaOfertas, productos, cantidadPedida);
+        }
+
+        /// <summary>
+        /// ¿Existen enteros n_O &gt;= 0 (instancias por oferta) tales que, para cada producto,
+        /// la suma de n_O * cantidad(oferta, producto) sea exactamente la cantidad pedida?
+        /// Las cantidades reales son pequeñas, así que se resuelve por fuerza bruta acotada.
+        /// </summary>
+        private static bool ExisteRepartoExacto(List<OfertaCombinada> ofertas, HashSet<string> productos, Dictionary<string, int> cantidadPedida)
+        {
+            int[] maxInstancias = new int[ofertas.Count];
+            long combinaciones = 1;
+            for (int i = 0; i < ofertas.Count; i++)
+            {
+                int max = int.MaxValue;
+                foreach (OfertaCombinadaDetalle d in ofertas[i].OfertasCombinadasDetalles)
+                {
+                    if (d.Cantidad <= 0 || d.Producto == null) continue;
+                    int disponible = cantidadPedida.TryGetValue(d.Producto.Trim(), out int q) ? q : 0;
+                    int posible = disponible / d.Cantidad;
+                    if (posible < max) max = posible;
+                }
+                maxInstancias[i] = max == int.MaxValue ? 0 : max;
+                combinaciones *= maxInstancias[i] + 1;
+                if (combinaciones > 100000) return true; // demasiadas combinaciones: no rechazamos (conservador)
+            }
+
+            return BuscarReparto(0, new int[ofertas.Count], maxInstancias, ofertas, productos, cantidadPedida);
+        }
+
+        private static bool BuscarReparto(int indice, int[] n, int[] max, List<OfertaCombinada> ofertas, HashSet<string> productos, Dictionary<string, int> cantidadPedida)
+        {
+            if (indice == ofertas.Count)
+            {
+                foreach (string p in productos)
+                {
+                    int consumido = 0;
+                    for (int i = 0; i < ofertas.Count; i++)
+                    {
+                        foreach (OfertaCombinadaDetalle d in ofertas[i].OfertasCombinadasDetalles)
+                        {
+                            if (d.Cantidad > 0 && d.Producto != null && d.Producto.Trim() == p)
+                            {
+                                consumido += n[i] * d.Cantidad;
+                            }
+                        }
+                    }
+                    if (consumido != cantidadPedida[p]) return false;
+                }
+                return true;
+            }
+
+            for (int v = 0; v <= max[indice]; v++)
+            {
+                n[indice] = v;
+                if (BuscarReparto(indice + 1, n, max, ofertas, productos, cantidadPedida)) return true;
+            }
+            return false;
         }
     }
 }

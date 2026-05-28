@@ -2007,6 +2007,124 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("La oferta 125 permite poner el producto AA21 a ese precio", respuesta.Motivo);
         }
 
+        // Documenta las 4 ofertas combinadas "Modellare Home Care" (Id 239-242, creadas el
+        // 28/05/26). Cada una vincula 1 ud de su pareja (239->22268, 240->23130, 241->23128,
+        // 242->23132) con 1 ud de 45381; el ImporteMinimo (75% de la tarifa de la pareja) es el
+        // suelo del conjunto. No hay "regalo" como tal: ambas líneas van vinculadas 1:1.
+        // Caso: 1 ud de cada pareja + 1 ud de 45381. Como hay 4 parejas, harían falta 4 uds de
+        // 45381 (1 por pareja); con 1 sola, el reparto en instancias enteras no cuadra → NO válido.
+        [TestMethod]
+        public void GestorPrecios_OfertasCombinadasModellare_UnaUnidadDeCadaParejaYUnaSolaDelRegalo_NoEsValido()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "22268", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 13.09M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23130", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23128", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23132", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "45381", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 0M });
+
+            IServicioPrecios servicio = A.Fake<IServicioPrecios>();
+            GestorPrecios.servicio = servicio;
+            List<OfertaCombinada> ofertas = CrearOfertasCombinadasModellare();
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("45381")).Returns(ofertas);
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("22268")).Returns(new List<OfertaCombinada> { ofertas[0] });
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("23130")).Returns(new List<OfertaCombinada> { ofertas[1] });
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("23128")).Returns(new List<OfertaCombinada> { ofertas[2] });
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("23132")).Returns(new List<OfertaCombinada> { ofertas[3] });
+
+            RespuestaValidacion respuesta = new ValidadorOfertasCombinadas().EsPedidoValido(pedido, "45381", servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+        }
+
+        // Mismo caso pero con UNA sola línea de 45381 con cantidad 4 (un regalo por cada pareja).
+        // También se permite, que es lo que se quiere (4 parejas -> 4 regalos). OJO: el validador
+        // razona oferta a oferta y NO agrega las 4 ofertas; el chequeo de "más cantidad de regalo
+        // de la permitida" (45381 x4 frente a 1 ud de la pareja de UNA oferta) intentaría anular la
+        // oferta, pero como estas ofertas tienen ImporteMinimo > 0 la validación ya se marcó como
+        // superada antes y ese rechazo no surte efecto. Es decir: el resultado deseado se obtiene,
+        // pero por un camino frágil. Si se "arregla" el chequeo de múltiplos, este test avisará.
+        [TestMethod]
+        public void GestorPrecios_OfertasCombinadasModellare_UnaLineaDeRegaloConCantidadCuatroYUnaParejaDeCadaUna_EsValido()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "22268", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 13.09M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23130", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23128", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23132", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "45381", AplicarDescuento = true, Cantidad = 4, PrecioUnitario = 0M });
+
+            IServicioPrecios servicio = A.Fake<IServicioPrecios>();
+            GestorPrecios.servicio = servicio;
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("45381")).Returns(CrearOfertasCombinadasModellare());
+
+            RespuestaValidacion respuesta = new ValidadorOfertasCombinadas().EsPedidoValido(pedido, "45381", servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+        }
+
+        // PRUEBA PRINCIPAL: 1 ud de cada una de las 5 refs (las 4 parejas al 25% + 1 ud de 45381).
+        // Con 4 parejas harían falta 4 uds de 45381 (1 por pareja), pero el pedido solo lleva 1.
+        // Como el producto 45381 es compartido por las 4 ofertas, validar cualquier pareja debe
+        // RECHAZAR: el reparto en instancias enteras no cuadra (la única unidad de 45381 no puede
+        // respaldar a las 4 parejas a la vez). Es el mismo problema que 1 pareja + N regalos.
+        [TestMethod]
+        public void GestorPrecios_OfertasCombinadasModellare_UnaUnidadDeCadaUnaDeLas5Refs_NoEsValido()
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "22268", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 13.09M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23130", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23128", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "23132", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 10.84M });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO { Producto = "45381", AplicarDescuento = true, Cantidad = 1, PrecioUnitario = 0M });
+
+            IServicioPrecios servicio = A.Fake<IServicioPrecios>();
+            GestorPrecios.servicio = servicio;
+            // CrearOfertasCombinadasModellare devuelve [0]=239(22268), [1]=240(23130), [2]=241(23128), [3]=242(23132)
+            List<OfertaCombinada> ofertas = CrearOfertasCombinadasModellare();
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("45381")).Returns(ofertas);
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("22268")).Returns(new List<OfertaCombinada> { ofertas[0] });
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("23130")).Returns(new List<OfertaCombinada> { ofertas[1] });
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("23128")).Returns(new List<OfertaCombinada> { ofertas[2] });
+            _ = A.CallTo(() => servicio.BuscarOfertasCombinadas("23132")).Returns(new List<OfertaCombinada> { ofertas[3] });
+
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+
+            Assert.IsFalse(validador.EsPedidoValido(pedido, "22268", servicio).ValidacionSuperada);
+            Assert.IsFalse(validador.EsPedidoValido(pedido, "23130", servicio).ValidacionSuperada);
+            Assert.IsFalse(validador.EsPedidoValido(pedido, "23128", servicio).ValidacionSuperada);
+            Assert.IsFalse(validador.EsPedidoValido(pedido, "23132", servicio).ValidacionSuperada);
+        }
+
+        private static List<OfertaCombinada> CrearOfertasCombinadasModellare()
+        {
+            OfertaCombinada Crear(int id, string pareja, decimal importeMinimo) => new OfertaCombinada
+            {
+                Id = id,
+                Empresa = "1",
+                ImporteMinimo = importeMinimo,
+                OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                {
+                    new OfertaCombinadaDetalle { OfertaId = id, Empresa = "1", Producto = pareja, Cantidad = 1, Precio = 0 },
+                    new OfertaCombinadaDetalle { OfertaId = id, Empresa = "1", Producto = "45381", Cantidad = 1, Precio = 0 }
+                }
+            };
+
+            return new List<OfertaCombinada>
+            {
+                Crear(239, "22268", 13.09M),
+                Crear(240, "23130", 10.84M),
+                Crear(241, "23128", 10.84M),
+                Crear(242, "23132", 10.84M)
+            };
+        }
+
         [TestMethod]
         public void GestorPrecios_ValidadorOfertasCombinadas_SiHayMasDeUnaOfertaYlaSegundaLoApruebaEsValido()
         {
