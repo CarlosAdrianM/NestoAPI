@@ -199,6 +199,42 @@ namespace NestoAPI.Tests.Controllers
             await _controller.GetControlPedidos();
         }
 
+        // ----- ControlPedidos PDF (migración RDLC -> QuestPDF) -----
+
+        [TestMethod]
+        public async Task GetControlPedidosPdf_DevuelvePdfConContentTypeCorrecto()
+        {
+            A.CallTo(() => _servicio.LeerControlPedidosAsync())
+                .Returns(new List<ControlPedidosDTO>
+                {
+                    new ControlPedidosDTO
+                    {
+                        Pedido = 12345, Producto = "38697", Nombre = "Crema",
+                        Familia = "Eva Visnú", CantidadPedido = 2, CantidadTotal = 5
+                    }
+                });
+
+            var respuesta = await _controller.GetControlPedidosPdf();
+
+            Assert.AreEqual(System.Net.HttpStatusCode.OK, respuesta.StatusCode);
+            Assert.AreEqual("application/pdf", respuesta.Content.Headers.ContentType.MediaType);
+            byte[] bytes = await respuesta.Content.ReadAsByteArrayAsync();
+            Assert.IsTrue(bytes.Length > 0, "El PDF debe tener contenido");
+            Assert.AreEqual(0x25, bytes[0]); // firma %PDF
+        }
+
+        [TestMethod]
+        public async Task GetControlPedidosPdf_LlamaAlServicio()
+        {
+            A.CallTo(() => _servicio.LeerControlPedidosAsync())
+                .Returns(new List<ControlPedidosDTO>());
+
+            await _controller.GetControlPedidosPdf();
+
+            A.CallTo(() => _servicio.LeerControlPedidosAsync())
+                .MustHaveHappenedOnceExactly();
+        }
+
         // ----- DetalleRapports (1A.3) -----
 
         [TestMethod]

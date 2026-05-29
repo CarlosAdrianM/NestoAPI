@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
@@ -42,6 +45,27 @@ namespace NestoAPI.Controllers
                 .ConfigureAwait(false);
 
             return Ok(lista);
+        }
+
+        /// <summary>
+        /// Render del informe Control de pedidos en PDF (QuestPDF), para que Nesto lo descargue
+        /// en vez de renderizar el RDLC ControlPedidos.rdlc en local.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/ControlPedidos/Pdf")]
+        public async Task<HttpResponseMessage> GetControlPedidosPdf()
+        {
+            List<ControlPedidosDTO> lineas = await _servicio
+                .LeerControlPedidosAsync()
+                .ConfigureAwait(false);
+
+            GeneradorPdfControlPedidos generador = new GeneradorPdfControlPedidos();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(lineas)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
         }
 
         [HttpGet]
