@@ -674,6 +674,7 @@
     <Compile Include="Infraestructure\PlanesVentajas\IPlanesVentajasService.cs" />
     <Compile Include="Infraestructure\PlanesVentajas\PlanesVentajasService.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfControlPedidos.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorPdfResumenVentas.cs" />
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\Informes\InformesService.cs" />
@@ -1230,6 +1231,7 @@
     <Compile Include="Models\Informes\PackingDTO.cs" />
     <Compile Include="Models\Informes\PedidoCompraInformeDTO.cs" />
     <Compile Include="Models\Informes\PickingDTO.cs" />
+    <Compile Include="Models\Informes\ResumenVentasComparativaDTO.cs" />
     <Compile Include="Models\Informes\ResumenVentasDTO.cs" />
     <Compile Include="Models\Informes\SaldoCuenta555\ApunteCuentaDto.cs" />
     <Compile Include="Models\Informes\SaldoCuenta555\GrupoAbiertoDto.cs" />

@@ -35,6 +35,27 @@ namespace NestoAPI.Controllers
             return Ok(lista);
         }
 
+        /// <summary>
+        /// Render del informe Resumen de ventas en PDF (QuestPDF), vista comparativa Año Actual vs.
+        /// Año Anterior, para que Nesto lo descargue en vez de renderizar el RDLC en local.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/ResumenVentas/Pdf")]
+        public async Task<HttpResponseMessage> GetResumenVentasPdf(DateTime fechaDesde, DateTime fechaHasta, bool soloFacturas)
+        {
+            List<ResumenVentasDTO> datos = await _servicio
+                .LeerResumenVentasAsync(fechaDesde, fechaHasta, soloFacturas)
+                .ConfigureAwait(false);
+
+            GeneradorPdfResumenVentas generador = new GeneradorPdfResumenVentas();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(datos, fechaDesde, fechaHasta, soloFacturas)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
         [HttpGet]
         [Route("api/Informes/ControlPedidos")]
         [ResponseType(typeof(List<ControlPedidosDTO>))]

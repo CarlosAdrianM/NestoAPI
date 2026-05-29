@@ -117,6 +117,40 @@ namespace NestoAPI.Tests.Controllers
                 "InformesController debe tener [Authorize] a nivel de clase");
         }
 
+        // ----- ResumenVentas PDF (migración RDLC -> QuestPDF, vista comparativa) -----
+
+        [TestMethod]
+        public async Task GetResumenVentasPdf_DevuelvePdfConContentTypeCorrecto()
+        {
+            A.CallTo(() => _servicio.LeerResumenVentasAsync(A<DateTime>.Ignored, A<DateTime>.Ignored, A<bool>.Ignored))
+                .Returns(new List<ResumenVentasDTO>
+                {
+                    new ResumenVentasDTO { Grupo = "NV", Vendedor = "AM", NombreVendedor = "Ana", VtaNV = 1500m, VtaCV = 1200m, VtaTotal = 2700m }
+                });
+
+            var respuesta = await _controller.GetResumenVentasPdf(new DateTime(2026, 1, 1), new DateTime(2026, 3, 31), true);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.OK, respuesta.StatusCode);
+            Assert.AreEqual("application/pdf", respuesta.Content.Headers.ContentType.MediaType);
+            byte[] bytes = await respuesta.Content.ReadAsByteArrayAsync();
+            Assert.IsTrue(bytes.Length > 0, "El PDF debe tener contenido");
+            Assert.AreEqual(0x25, bytes[0]); // firma %PDF
+        }
+
+        [TestMethod]
+        public async Task GetResumenVentasPdf_PasaLosParametrosAlServicio()
+        {
+            DateTime desde = new DateTime(2026, 1, 1);
+            DateTime hasta = new DateTime(2026, 3, 31);
+            A.CallTo(() => _servicio.LeerResumenVentasAsync(desde, hasta, true))
+                .Returns(new List<ResumenVentasDTO>());
+
+            await _controller.GetResumenVentasPdf(desde, hasta, true);
+
+            A.CallTo(() => _servicio.LeerResumenVentasAsync(desde, hasta, true))
+                .MustHaveHappenedOnceExactly();
+        }
+
         // ----- ControlPedidos (1A.2) -----
 
         [TestMethod]
