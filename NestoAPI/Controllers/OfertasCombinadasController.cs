@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure;
 using NestoAPI.Models;
 using NestoAPI.Models.OfertasCombinadas;
 using System;
@@ -105,6 +106,9 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // El usuario de auditoría se toma del Identity autenticado, no del parámetro (ver UsuarioAuditoriaHelper).
+            string usuarioAuditoria = UsuarioAuditoriaHelper.Resolver(User, usuario);
+
             var ahora = DateTime.Now;
             var oferta = new OfertaCombinada
             {
@@ -113,7 +117,7 @@ namespace NestoAPI.Controllers
                 ImporteMinimo = dto.ImporteMinimo,
                 FechaDesde = dto.FechaDesde,
                 FechaHasta = dto.FechaHasta,
-                Usuario = usuario,
+                Usuario = usuarioAuditoria,
                 FechaModificacion = ahora
             };
 
@@ -125,7 +129,7 @@ namespace NestoAPI.Controllers
                     Producto = detDTO.Producto,
                     Cantidad = detDTO.Cantidad,
                     Precio = detDTO.Precio,
-                    Usuario = usuario,
+                    Usuario = usuarioAuditoria,
                     FechaModificacion = ahora
                 });
             }
@@ -187,6 +191,9 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // El usuario de auditoría se toma del Identity autenticado, no del parámetro (ver UsuarioAuditoriaHelper).
+            string usuarioAuditoria = UsuarioAuditoriaHelper.Resolver(User, usuario);
+
             var ahora = DateTime.Now;
 
             // Actualizar cabecera
@@ -194,7 +201,7 @@ namespace NestoAPI.Controllers
             oferta.ImporteMinimo = dto.ImporteMinimo;
             oferta.FechaDesde = dto.FechaDesde;
             oferta.FechaHasta = dto.FechaHasta;
-            oferta.Usuario = usuario;
+            oferta.Usuario = usuarioAuditoria;
             oferta.FechaModificacion = ahora;
 
             // Gestionar detalles: actualizar existentes, crear nuevos, eliminar los que no vienen
@@ -222,7 +229,7 @@ namespace NestoAPI.Controllers
                         detExistente.Producto = detDTO.Producto;
                         detExistente.Cantidad = detDTO.Cantidad;
                         detExistente.Precio = detDTO.Precio;
-                        detExistente.Usuario = usuario;
+                        detExistente.Usuario = usuarioAuditoria;
                         detExistente.FechaModificacion = ahora;
                     }
                 }
@@ -236,7 +243,7 @@ namespace NestoAPI.Controllers
                         Producto = detDTO.Producto,
                         Cantidad = detDTO.Cantidad,
                         Precio = detDTO.Precio,
-                        Usuario = usuario,
+                        Usuario = usuarioAuditoria,
                         FechaModificacion = ahora
                     });
                 }

@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure;
 using NestoAPI.Models;
 using NestoAPI.Models.OfertasCombinadas;
 using System;
@@ -128,7 +129,7 @@ namespace NestoAPI.Controllers
                 CantidadRegalo = dto.CantidadRegalo,
                 FiltroProducto = string.IsNullOrWhiteSpace(dto.FiltroProducto) ? null : dto.FiltroProducto.Trim(),
                 Denegar = false,
-                Usuario = usuario,
+                Usuario = UsuarioAuditoriaHelper.Resolver(User, usuario),
                 FechaModificación = DateTime.Now
             };
 
@@ -205,7 +206,7 @@ namespace NestoAPI.Controllers
             oferta.CantidadConPrecio = dto.CantidadConPrecio;
             oferta.CantidadRegalo = dto.CantidadRegalo;
             oferta.FiltroProducto = string.IsNullOrWhiteSpace(dto.FiltroProducto) ? null : dto.FiltroProducto.Trim();
-            oferta.Usuario = usuario;
+            oferta.Usuario = UsuarioAuditoriaHelper.Resolver(User, usuario);
             oferta.FechaModificación = DateTime.Now;
 
             await db.SaveChangesAsync().ConfigureAwait(false);

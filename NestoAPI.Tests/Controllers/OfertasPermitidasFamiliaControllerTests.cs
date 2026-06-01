@@ -9,7 +9,9 @@ using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using System.Web.Http.Controllers;
 using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Controllers
@@ -185,6 +187,45 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.That.Matches(
                 o => o.Familia == "DeMarca   " && o.CantidadConPrecio == 6 && o.CantidadRegalo == 1
             ))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task PostOfertaPermitidaFamilia_GrabaUsuarioDelIdentity_NoElDelParametro()
+        {
+            // Regresión: el usuario de auditoría sale del Identity autenticado, no del parámetro de
+            // query (que el cliente Nesto puede rellenar con el machine account del servidor RDS).
+            var familias = new List<Familia>
+            {
+                new Familia { Empresa = "1  ", Número = "DeMarca   ", Descripción = "De Marca" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeFamilias, familias);
+            ConfigurarFakeDbSet(fakeOfertasPermitidas, new List<OfertaPermitida>().AsQueryable());
+
+            OfertaPermitida ofertaGrabada = null;
+            A.CallTo(() => fakeOfertasPermitidas.Add(A<OfertaPermitida>.Ignored))
+                .Invokes((OfertaPermitida o) => ofertaGrabada = o)
+                .ReturnsLazily((OfertaPermitida o) => o);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+
+            var identity = new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "NUEVAVISION\\Carlos") }, "JWT");
+            controller.RequestContext = new HttpRequestContext { Principal = new ClaimsPrincipal(identity) };
+
+            var dto = new OfertaPermitidaFamiliaCreateDTO
+            {
+                Empresa = "1",
+                Familia = "DeMarca   ",
+                CantidadConPrecio = 6,
+                CantidadRegalo = 1,
+                FiltroProducto = "ESMALTE"
+            };
+
+            // Act: el parámetro trae el machine account
+            var resultado = await controller.PostOfertaPermitidaFamilia(dto, "NUEVAVISION\\RDS2016$");
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaPermitidaFamiliaDTO>));
+            Assert.IsNotNull(ofertaGrabada);
+            Assert.AreEqual("NUEVAVISION\\Carlos", ofertaGrabada.Usuario);
         }
 
         [TestMethod]

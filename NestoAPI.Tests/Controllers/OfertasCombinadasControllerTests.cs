@@ -9,7 +9,9 @@ using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using System.Web.Http.Controllers;
 using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Controllers
@@ -209,6 +211,107 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaCombinadaDTO>));
             A.CallTo(() => fakeOfertasCombinadas.Add(A<OfertaCombinada>.Ignored)).MustHaveHappenedOnceExactly();
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task PostOfertaCombinada_GrabaUsuarioDelIdentity_NoElDelParametro()
+        {
+            // Regresión (issue ofertas combinadas con usuario "NUEVAVISION\RDS2016$"): el usuario de
+            // auditoría debe salir del Identity autenticado, NUNCA del parámetro de query que manda
+            // el cliente (Nesto lo rellena con Environment.UserName y en el servidor RDS resuelve al
+            // machine account del proceso). El parámetro trae el valor "malo" y el Identity el "bueno".
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto 1" },
+                new Producto { Empresa = "1  ", Número = "PROD2", Nombre = "Producto 2" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var listaOfertas = new List<OfertaCombinada>();
+            A.CallTo(() => fakeOfertasCombinadas.Add(A<OfertaCombinada>.Ignored))
+                .Invokes((OfertaCombinada o) => { o.Id = 1; listaOfertas.Add(o); })
+                .ReturnsLazily((OfertaCombinada o) => o);
+            A.CallTo(() => db.SaveChangesAsync())
+                .Invokes(() =>
+                {
+                    if (listaOfertas.Any())
+                    {
+                        ConfigurarFakeDbSet(fakeOfertasCombinadas, listaOfertas.AsQueryable());
+                    }
+                })
+                .Returns(Task.FromResult(1));
+
+            // Identity autenticado con el usuario real
+            var identity = new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "NUEVAVISION\\Carlos") }, "JWT");
+            controller.RequestContext = new HttpRequestContext { Principal = new ClaimsPrincipal(identity) };
+
+            var dto = new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
+                Nombre = "Oferta Test",
+                ImporteMinimo = 100,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>
+                {
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 1, Precio = 10 },
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD2", Cantidad = 2, Precio = 0 }
+                }
+            };
+
+            // Act: el parámetro trae el machine account (lo que mandaría el cliente erróneamente)
+            var resultado = await controller.PostOfertaCombinada(dto, "NUEVAVISION\\RDS2016$");
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaCombinadaDTO>));
+            var ofertaCreada = listaOfertas.Single();
+            Assert.AreEqual("NUEVAVISION\\Carlos", ofertaCreada.Usuario, "La cabecera debe grabar el usuario del Identity");
+            Assert.IsTrue(ofertaCreada.OfertasCombinadasDetalles.All(d => d.Usuario == "NUEVAVISION\\Carlos"),
+                "Los detalles deben grabar el usuario del Identity");
+        }
+
+        [TestMethod]
+        public async Task PostOfertaCombinada_SinIdentity_UsaParametroComoFallback()
+        {
+            // Sin Identity (tests / llamadas no autenticadas) se conserva el comportamiento anterior:
+            // se usa el parámetro como último recurso.
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "PROD1", Nombre = "Producto 1" },
+                new Producto { Empresa = "1  ", Número = "PROD2", Nombre = "Producto 2" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var listaOfertas = new List<OfertaCombinada>();
+            A.CallTo(() => fakeOfertasCombinadas.Add(A<OfertaCombinada>.Ignored))
+                .Invokes((OfertaCombinada o) => { o.Id = 1; listaOfertas.Add(o); })
+                .ReturnsLazily((OfertaCombinada o) => o);
+            A.CallTo(() => db.SaveChangesAsync())
+                .Invokes(() =>
+                {
+                    if (listaOfertas.Any())
+                    {
+                        ConfigurarFakeDbSet(fakeOfertasCombinadas, listaOfertas.AsQueryable());
+                    }
+                })
+                .Returns(Task.FromResult(1));
+
+            var dto = new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
+                Nombre = "Oferta Test",
+                ImporteMinimo = 100,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>
+                {
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 1, Precio = 10 },
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD2", Cantidad = 2, Precio = 0 }
+                }
+            };
+
+            // Act: controller sin RequestContext.Principal autenticado
+            var resultado = await controller.PostOfertaCombinada(dto, "usuario_param");
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<OfertaCombinadaDTO>));
+            Assert.AreEqual("usuario_param", listaOfertas.Single().Usuario);
         }
 
         [TestMethod]
