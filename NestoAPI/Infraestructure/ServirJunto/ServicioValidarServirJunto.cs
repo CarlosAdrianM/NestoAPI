@@ -67,7 +67,40 @@ namespace NestoAPI.Infraestructure.ServirJunto
                 }
             }
 
-            return ConAvisoSiProcede(NuevaRespuestaOK(), request);
+            var respuesta = ConAvisoSiProcede(NuevaRespuestaOK(), request);
+
+            // NestoAPI#211 / Nesto#365: si el cliente manda las líneas, devolvemos la base de portes
+            // que quedaría al desmarcar (excluyendo las sobre pedido) para que avise si aparecen portes.
+            if (request.LineasParaPortes != null && request.LineasParaPortes.Any())
+            {
+                respuesta.BaseImponibleSinServirJunto =
+                    CalcularBaseImponibleSinServirJunto(request.LineasParaPortes, new GestorStocks());
+            }
+
+            return respuesta;
+        }
+
+        /// <summary>
+        /// Base imponible de portes sin "servir junto": suma las líneas que NO son sobre pedido
+        /// (estado 0 siempre cuenta; estado != 0 solo si hay stock en el almacén). Reutiliza la misma
+        /// regla que NestoAPI#211 (GestorPortes.EsSobrePedidoParaPortes). El stock solo se consulta para
+        /// líneas estado != 0.
+        /// </summary>
+        internal static decimal CalcularBaseImponibleSinServirJunto(
+            List<LineaPortesServirJuntoDTO> lineas, IGestorStocks gestorStocks)
+        {
+            if (lineas == null)
+            {
+                return 0;
+            }
+
+            return lineas
+                .Where(l => l.Estado == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO
+                         || !GestorPortes.EsSobrePedidoParaPortes(
+                                l.Estado, l.Cantidad,
+                                gestorStocks.Stock(l.ProductoId?.Trim(), l.Almacen?.Trim()),
+                                stockDisponibleTodosAlmacenes: 0, servirJunto: false))
+                .Sum(l => l.BaseImponible);
         }
 
         // NestoAPI#187: añade Aviso al response si el pedido aplica comisión contra

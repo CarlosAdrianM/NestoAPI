@@ -38,5 +38,12 @@ namespace NestoAPI.Models.PedidosVenta.ServirJunto
         public string CCC { get; set; }
         public string PeriodoFacturacion { get; set; }
         public bool? NotaEntrega { get; set; }
+
+        /// <summary>
+        /// NestoAPI#211 / Nesto#365: líneas de producto con base/estado/almacén para calcular la base
+        /// de portes que quedaría al desmarcar "servir junto" (excluyendo las líneas sobre pedido).
+        /// Opcional — si viene null/vacío el servidor no calcula BaseImponibleSinServirJunto (retrocompat).
+        /// </summary>
+        public List<LineaPortesServirJuntoDTO> LineasParaPortes { get; set; }
     }
 }

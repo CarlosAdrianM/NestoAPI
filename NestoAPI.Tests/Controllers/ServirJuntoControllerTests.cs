@@ -1,6 +1,7 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.ServirJunto;
 using NestoAPI.Models;
@@ -538,6 +539,63 @@ namespace NestoAPI.Tests.Controllers
             var resultado = ServicioValidarServirJunto.ConAvisoSiProcede(response, request);
 
             Assert.IsNull(resultado.Aviso);
+        }
+
+        // CalcularBaseImponibleSinServirJunto: internal static, lo testeamos directo con stock fake.
+
+        private static List<LineaPortesServirJuntoDTO> LineasParaPortes211(short estadoUltima)
+        {
+            // 3 líneas de 10€ estado 0 + 1 línea de 10€ con el estado indicado, mismo almacén.
+            return new List<LineaPortesServirJuntoDTO>
+            {
+                new LineaPortesServirJuntoDTO { ProductoId = "PROD1", Almacen = "ALG", Estado = 0, Cantidad = 1, BaseImponible = 10 },
+                new LineaPortesServirJuntoDTO { ProductoId = "PROD2", Almacen = "ALG", Estado = 0, Cantidad = 1, BaseImponible = 10 },
+                new LineaPortesServirJuntoDTO { ProductoId = "PROD3", Almacen = "ALG", Estado = 0, Cantidad = 1, BaseImponible = 10 },
+                new LineaPortesServirJuntoDTO { ProductoId = "PROD4", Almacen = "ALG", Estado = estadoUltima, Cantidad = 1, BaseImponible = 10 }
+            };
+        }
+
+        [TestMethod]
+        public void CalcularBaseSinServirJunto_LineaSobrePedidoSinStock_SeExcluye()
+        {
+            var lineas = LineasParaPortes211(estadoUltima: 4);
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock("PROD4", "ALG")).Returns(0);
+
+            decimal resultado = ServicioValidarServirJunto.CalcularBaseImponibleSinServirJunto(lineas, stocks);
+
+            Assert.AreEqual(30, resultado, "La línea estado != 0 sin stock no cuenta sin servir junto");
+        }
+
+        [TestMethod]
+        public void CalcularBaseSinServirJunto_LineaConStock_SeIncluye()
+        {
+            var lineas = LineasParaPortes211(estadoUltima: 4);
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock("PROD4", "ALG")).Returns(5);
+
+            decimal resultado = ServicioValidarServirJunto.CalcularBaseImponibleSinServirJunto(lineas, stocks);
+
+            Assert.AreEqual(40, resultado);
+        }
+
+        [TestMethod]
+        public void CalcularBaseSinServirJunto_TodoEstado0_NoConsultaStock()
+        {
+            var lineas = LineasParaPortes211(estadoUltima: 0);
+            var stocks = A.Fake<IGestorStocks>();
+
+            decimal resultado = ServicioValidarServirJunto.CalcularBaseImponibleSinServirJunto(lineas, stocks);
+
+            Assert.AreEqual(40, resultado);
+            A.CallTo(() => stocks.Stock(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void CalcularBaseSinServirJunto_LineasNull_DevuelveCero()
+        {
+            var stocks = A.Fake<IGestorStocks>();
+            Assert.AreEqual(0, ServicioValidarServirJunto.CalcularBaseImponibleSinServirJunto(null, stocks));
         }
 
         #region Helpers (copiados de GanavisionesControllerTests)

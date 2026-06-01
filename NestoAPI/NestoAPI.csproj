@@ -1144,6 +1144,7 @@
     <Compile Include="Models\PedidosVenta\ParametroStringIntPedido.cs" />
     <Compile Include="Models\PedidosVenta\PedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\PrepagoDTO.cs" />
+    <Compile Include="Models\PedidosVenta\ServirJunto\LineaPortesServirJuntoDTO.cs" />
     <Compile Include="Models\PedidosVenta\ServirJunto\ProductoBonificadoConCantidadRequest.cs" />
     <Compile Include="Models\PedidosVenta\ServirJunto\ProductoSinStockDTO.cs" />
     <Compile Include="Models\PedidosVenta\ServirJunto\ValidarServirJuntoRequest.cs" />
