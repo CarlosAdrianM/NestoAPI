@@ -496,6 +496,7 @@
     <Compile Include="Controllers\BuscadorController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
     <Compile Include="Controllers\ClientesController.cs" />
+    <Compile Include="Controllers\AlquileresController.cs" />
     <Compile Include="Controllers\ComisionAnualDetallesController.cs" />
     <Compile Include="Controllers\ComisionesController.cs" />
     <Compile Include="Controllers\ContabilidadesController.cs" />
@@ -669,6 +670,8 @@
     <Compile Include="Infraestructure\Verifactu\Verifacti\VerifactiDTOs.cs" />
     <Compile Include="Infraestructure\NotasEntrega\ServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\ServicioExtractoRuta.cs" />
+    <Compile Include="Infraestructure\Alquileres\IProductosAlquilerService.cs" />
+    <Compile Include="Infraestructure\Alquileres\ProductosAlquilerService.cs" />
     <Compile Include="Infraestructure\Comisiones\ComisionesLecturaService.cs" />
     <Compile Include="Infraestructure\Comisiones\IComisionesLecturaService.cs" />
     <Compile Include="Infraestructure\PlanesVentajas\IPlanesVentajasService.cs" />
@@ -830,6 +833,7 @@
     <Compile Include="Models\Correos\EnvioCorreoDTO.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
+    <Compile Include="Models\Alquileres\ProductoAlquilerDTO.cs" />
     <Compile Include="Models\Comisiones\ClienteVenta.cs" />
     <Compile Include="Models\Comisiones\ComisionesAntiguasDTO.cs" />
     <Compile Include="Models\Comisiones\ComisionesAnnoParcial.cs" />

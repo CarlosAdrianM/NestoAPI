@@ -193,6 +193,7 @@
     <Compile Include="Infraestructure\ApplicationDbContextInitializerTests.cs" />
     <Compile Include="Controllers\ControlesStockControllerTests.cs" />
     <Compile Include="Controllers\SeguimientosClientesControllerTests.cs" />
+    <Compile Include="Controllers\AlquileresControllerTests.cs" />
     <Compile Include="Controllers\ComisionesControllerTests.cs" />
     <Compile Include="Controllers\VideosProductosControllerTests.cs" />
     <Compile Include="Controllers\InformesControllerTests.cs" />

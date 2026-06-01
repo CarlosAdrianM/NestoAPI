@@ -7,6 +7,7 @@ using Microsoft.Owin.Security.Jwt;
 using Microsoft.Owin.Security.OAuth;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Alquileres;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.Facturas;
@@ -192,6 +193,9 @@ namespace NestoAPI
 
             // Planes de Ventajas - CRUD para el cliente (Nesto#340 Fase 1B)
             _ = services.AddScoped<IPlanesVentajasService, PlanesVentajasService>();
+
+            // Lista de productos en alquiler para el cliente (Nesto#340 Fase 1C.1)
+            _ = services.AddScoped<IProductosAlquilerService, ProductosAlquilerService>();
 
             // Validación de "Servir junto" (NestoAPI#161)
             _ = services.AddScoped<IServicioValidarServirJunto, ServicioValidarServirJunto>();
