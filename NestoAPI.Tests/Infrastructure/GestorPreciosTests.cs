@@ -3983,7 +3983,7 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         // NestoAPI#203: ValidadorDescuentoTiendaOnline acepta el descuento del voucher
-        // de Prestashop (hasta 5%) cuando TODO el pedido viene de la tienda online.
+        // de Prestashop (5% o 15% exactos) cuando TODO el pedido viene de la tienda online.
 
         [TestMethod]
         public void GestorPrecios_ValidadorDescuentoTiendaOnline_DescuentoCincoPorCientoEnPedidoTodoWeb_LoAcepta()
@@ -4013,8 +4013,35 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void GestorPrecios_ValidadorDescuentoTiendaOnline_DescuentoMenorACincoEnPedidoTodoWeb_LoAcepta()
+        public void GestorPrecios_ValidadorDescuentoTiendaOnline_DescuentoQuincePorCientoEnPedidoTodoWeb_LoAcepta()
         {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
+            {
+                Producto = "AA11",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10M,
+                DescuentoLinea = 0.15M,
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                formaVenta = Constantes.FormasVenta.TIENDA_ONLINE
+            };
+            pedido.Lineas.Add(linea);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "AA11");
+
+            Assert.IsTrue(respuesta.ValidacionSuperada,
+                "Un descuento del 15% en un pedido WEB (voucher de Prestashop) debe estar autorizado. Motivo recibido: " + respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorDescuentoTiendaOnline_DescuentoMenorACincoEnPedidoTodoWeb_NoLoAcepta()
+        {
+            // Solo el 5% y el 15% EXACTOS están autorizados: un 3% (u otro valor intermedio
+            // por debajo del 5%) debe pasar por revisión manual.
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
             pedido.empresa = "1";
             pedido.cliente = "5";
@@ -4033,8 +4060,34 @@ namespace NestoAPI.Tests.Infrastructure
 
             RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "AA11");
 
-            Assert.IsTrue(respuesta.ValidacionSuperada,
-                "Cualquier descuento por debajo del tope (5%) en pedido WEB debe estar autorizado.");
+            Assert.IsFalse(respuesta.ValidacionSuperada,
+                "Un 3% no es 5% ni 15%: no debe autorizarse automáticamente.");
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorDescuentoTiendaOnline_DescuentoEntreCincoYQuinceEnPedidoTodoWeb_NoLoAcepta()
+        {
+            // No es un tramo: un 10% (entre el 5% y el 15%) debe ir a revisión manual.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            LineaPedidoVentaDTO linea = new LineaPedidoVentaDTO
+            {
+                Producto = "AA11",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 10M,
+                DescuentoLinea = 0.10M,
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                formaVenta = Constantes.FormasVenta.TIENDA_ONLINE
+            };
+            pedido.Lineas.Add(linea);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "AA11");
+
+            Assert.IsFalse(respuesta.ValidacionSuperada,
+                "Un 10% no es 5% ni 15%: no debe autorizarse automáticamente.");
         }
 
         [TestMethod]

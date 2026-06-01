@@ -6,14 +6,18 @@ using System.Linq;
 namespace NestoAPI.Infraestructure.ValidadoresPedido
 {
     // NestoAPI#203: Prestashop aplica vouchers (cupones de descuento) que el módulo
-    // CanalesExternos transforma en un descuento sobre la línea (hasta 5%). Ese
-    // descuento ya viene aplicado por el motor de la tienda online, así que lo
-    // aceptamos automáticamente cuando TODAS las líneas del pedido son WEB y el
-    // descuento real no supera el tope. Si supera el tope, queremos que pase por
-    // revisión manual (puede ser un error o un caso fuera de política).
+    // CanalesExternos transforma en un descuento sobre la línea. Ese descuento ya viene
+    // aplicado por el motor de la tienda online, así que lo aceptamos automáticamente
+    // cuando TODAS las líneas del pedido son WEB y el descuento real es uno de los
+    // valores autorizados. Cualquier otro descuento debe pasar por revisión manual (puede
+    // ser un error o un caso fuera de política).
+    //
+    // Autorizados: SOLO el 5% y el 15% EXACTOS (los vouchers concretos de Prestashop). No
+    // es un tramo: un 3%, un 4%, un 10% o un 12% van a revisión manual.
     public class ValidadorDescuentoTiendaOnline : IValidadorAceptacion
     {
-        public const decimal DESCUENTO_MAXIMO_VOUCHER = 0.05m;
+        // Descuentos exactos de los vouchers de Prestashop que se autorizan automáticamente.
+        public static readonly decimal[] DESCUENTOS_VOUCHER_AUTORIZADOS = { 0.05m, 0.15m };
 
         public RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
         {
@@ -41,7 +45,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             decimal descuentoRedondeado = Math.Round(oferta.descuentoReal.Value, 3);
-            if (descuentoRedondeado <= 0 || descuentoRedondeado > DESCUENTO_MAXIMO_VOUCHER)
+            if (!DESCUENTOS_VOUCHER_AUTORIZADOS.Contains(descuentoRedondeado))
             {
                 return respuestaDenegada;
             }
