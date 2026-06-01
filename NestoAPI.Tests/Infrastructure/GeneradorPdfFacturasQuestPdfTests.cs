@@ -115,6 +115,38 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GenerarPdf_TicketGB_ConComentariosPedido_LosIncluye()
+        {
+            // Issue #212: el ticket GB debe mostrar los comentarios (ruta) del pedido. Sin extractor
+            // de texto PDF, verificamos que la rama nueva genera un PDF válido y que añadir un
+            // comentario largo aumenta el tamaño del PDF (la cadena se incrusta en el contenido).
+            const string comentarioLargo =
+                "RUTA: REPARTO MADRID CENTRO - ZONA 3 - LLAMAR ANTES DE ENTREGAR - HORARIO DE MAÑANA - " +
+                "PUERTA TRASERA - PREGUNTAR POR JUAN - DEJAR EN CONSERJERÍA SI NO HAY NADIE - GRACIAS";
+
+            var sinComentario = CrearFacturaBasica();
+            sinComentario.UrlLogo = null;
+            sinComentario.UsaFormatoTicket = true;
+            sinComentario.Serie = "GB";
+            sinComentario.TipoDocumento = "TICKET";
+            sinComentario.Comentarios = null;
+
+            var conComentario = CrearFacturaBasica();
+            conComentario.UrlLogo = null;
+            conComentario.UsaFormatoTicket = true;
+            conComentario.Serie = "GB";
+            conComentario.TipoDocumento = "TICKET";
+            conComentario.Comentarios = comentarioLargo;
+
+            var pdfSin = _generador.GenerarPdf(new List<Factura> { sinComentario }).ReadAsByteArrayAsync().Result;
+            var pdfCon = _generador.GenerarPdf(new List<Factura> { conComentario }).ReadAsByteArrayAsync().Result;
+
+            Assert.AreEqual(0x25, pdfCon[0], "El PDF con comentarios debe ser válido (%PDF)");
+            Assert.IsTrue(pdfCon.Length > pdfSin.Length,
+                "El ticket GB con comentarios del pedido debe ocupar más que sin ellos (el texto se incrusta en el PDF)");
+        }
+
+        [TestMethod]
         public void GenerarPdf_FormatoEstandar_GeneraPdfValido()
         {
             // Arrange

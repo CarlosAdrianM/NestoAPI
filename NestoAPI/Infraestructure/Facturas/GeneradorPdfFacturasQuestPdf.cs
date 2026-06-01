@@ -789,6 +789,15 @@ namespace NestoAPI.Infraestructure.Facturas
                         }
                     });
                 }
+
+                // Comentarios (ruta) del pedido (Issue #212): en GB se muestran abajo y a la
+                // izquierda, a diferencia de NV donde salen tras el cuadro FACTURA. No confundir con
+                // el comentario de la dirección de entrega (ese sale en la cabecera del ticket).
+                if (!string.IsNullOrWhiteSpace(factura.Comentarios))
+                {
+                    column.Item().PaddingTop(10).AlignLeft()
+                        .Text(factura.Comentarios).Bold().FontSize(9);
+                }
             });
         }
 
