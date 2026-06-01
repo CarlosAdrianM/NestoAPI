@@ -29,7 +29,7 @@ namespace NestoAPI.Infraestructure.Informes
                     page.Size(PageSizes.A4);
                     page.MarginVertical(0.8f, Unit.Centimetre);
                     page.MarginHorizontal(0.8f, Unit.Centimetre);
-                    page.DefaultTextStyle(x => x.FontSize(8));
+                    page.DefaultTextStyle(x => x.FontSize(10));
 
                     page.Header().Element(c => ComponerCabecera(c, fechaDesde, fechaHasta, soloFacturas));
                     page.Content().Element(c => ComponerTabla(c, filas, soloFacturas));
@@ -105,10 +105,10 @@ namespace NestoAPI.Infraestructure.Informes
                 table.ColumnsDefinition(columns =>
                 {
                     columns.RelativeColumn(3);    // Vendedor
-                    columns.ConstantColumn(80);   // Año Actual
-                    columns.ConstantColumn(80);   // Año Anterior
-                    columns.ConstantColumn(80);   // Diferencia (€)
-                    columns.ConstantColumn(60);   // Diferencia (%)
+                    columns.ConstantColumn(95);   // Año Actual
+                    columns.ConstantColumn(95);   // Año Anterior
+                    columns.ConstantColumn(95);   // Diferencia (€)
+                    columns.ConstantColumn(70);   // Diferencia (%)
                 });
 
                 table.Header(header =>
@@ -125,7 +125,7 @@ namespace NestoAPI.Infraestructure.Informes
                 foreach (var grupo in filas.GroupBy(f => f.Grupo).OrderByDescending(g => g.Key))
                 {
                     table.Cell().ColumnSpan(5u).PaddingTop(6).PaddingBottom(2)
-                        .Text(NombreGrupo(grupo.Key)).Bold().FontSize(10);
+                        .Text(NombreGrupo(grupo.Key)).Bold().FontSize(12);
 
                     foreach (ResumenVentasComparativaDTO fila in grupo)
                     {
@@ -181,7 +181,7 @@ namespace NestoAPI.Infraestructure.Informes
             {
                 contenido = contenido.AlignRight();
             }
-            contenido.Text(texto).Bold().FontSize(8);
+            contenido.Text(texto).Bold().FontSize(10);
         }
 
         private static void CeldaTexto(IContainer celda, string texto, bool derecha, string color)
@@ -191,7 +191,7 @@ namespace NestoAPI.Infraestructure.Informes
             {
                 contenido = contenido.AlignRight();
             }
-            var span = contenido.Text(texto).FontSize(8);
+            var span = contenido.Text(texto).FontSize(10);
             if (color != null)
             {
                 span.FontColor(color);
@@ -223,7 +223,7 @@ namespace NestoAPI.Infraestructure.Informes
             {
                 contenido = contenido.AlignRight();
             }
-            var span = contenido.Text(texto).FontSize(8);
+            var span = contenido.Text(texto).FontSize(10);
             if (negrita)
             {
                 span.Bold();
