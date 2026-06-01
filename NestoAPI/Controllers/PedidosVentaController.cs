@@ -968,7 +968,9 @@ namespace NestoAPI.Controllers
                 }
                 catch { }
 
-                decimal baseImponibleProductosPut = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas);
+                // NestoAPI#211: con servir junto toda la base cuenta (una entrega); sin servir junto se
+                // excluyen las líneas sobre pedido (estado != 0 sin stock en el almacén).
+                decimal baseImponibleProductosPut = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, pedido.servirJunto, new GestorStocks());
                 var inputPortesPut = new PedidoPortesInput
                 {
                     CodigoPostal = codigoPostalPut,
@@ -1478,7 +1480,9 @@ namespace NestoAPI.Controllers
                 }
                 catch { }
 
-                decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas);
+                // NestoAPI#211: con servir junto toda la base cuenta (una entrega); sin servir junto se
+                // excluyen las líneas sobre pedido (estado != 0 sin stock en el almacén).
+                decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, pedido.servirJunto, new GestorStocks());
                 var inputPortes = new PedidoPortesInput
                 {
                     CodigoPostal = codigoPostalPortes,

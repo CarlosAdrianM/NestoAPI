@@ -1,4 +1,6 @@
+using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
@@ -607,6 +609,86 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas);
 
             Assert.AreEqual(120, resultado);
+        }
+
+        #endregion
+
+        #region CalcularBaseImponibleProductos con servir junto (#211)
+
+        // Caso del issue: 3 líneas de 10€ en estado 0 + 1 línea de 10€ en estado != 0, mismo almacén.
+        private static HashSet<LineaPedidoVentaDTO> LineasEjemplo211(short estadoUltima)
+        {
+            return new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 0 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD2", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 0 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD3", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 0 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD4", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = estadoUltima }
+            };
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularBase_ServirJunto_IncluyeLineaSobrePedido()
+        {
+            // Servir junto = una única entrega: la línea estado != 0 (aunque no haya stock) cuenta. Base = 40.
+            var lineas = LineasEjemplo211(estadoUltima: 4);
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock("PROD4", "ALG")).Returns(0);
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: true, stocks);
+
+            Assert.AreEqual(40, resultado, "Con servir junto todas las líneas cuentan para la base de portes");
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularBase_SinServirJunto_SinStockAlmacen_ExcluyeLineaSobrePedido()
+        {
+            // Sin servir junto, la línea estado != 0 sin stock en el almacén es sobre pedido → se excluye. Base = 30.
+            // (Rojo sin el fix: la sobrecarga antigua sumaba las 4 líneas = 40.)
+            var lineas = LineasEjemplo211(estadoUltima: 4);
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock("PROD4", "ALG")).Returns(0);
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, stocks);
+
+            Assert.AreEqual(30, resultado, "Sin servir junto, la línea sobre pedido no cuenta en esta entrega");
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularBase_SinServirJunto_ConStockAlmacen_IncluyeLinea()
+        {
+            // Sin servir junto pero la línea estado != 0 SÍ tiene stock en el almacén → no es sobre pedido. Base = 40.
+            var lineas = LineasEjemplo211(estadoUltima: 4);
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock("PROD4", "ALG")).Returns(5);
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, stocks);
+
+            Assert.AreEqual(40, resultado);
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularBase_SinServirJunto_TodoEstado0_NoConsultaStock()
+        {
+            // Estado 0 nunca es sobre pedido: no debe consultarse el stock (caso normal, sin coste extra).
+            var lineas = LineasEjemplo211(estadoUltima: 0);
+            var stocks = A.Fake<IGestorStocks>();
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, stocks);
+
+            Assert.AreEqual(40, resultado);
+            A.CallTo(() => stocks.Stock(A<string>._, A<string>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularBase_GestorStocksNull_CuentaTodasLasLineas()
+        {
+            // Sin gestor de stocks (fallback defensivo) se cuenta todo, como la sobrecarga antigua.
+            var lineas = LineasEjemplo211(estadoUltima: 4);
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, gestorStocks: null);
+
+            Assert.AreEqual(40, resultado);
         }
 
         #endregion

@@ -493,16 +493,68 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
         /// <summary>
         /// Calcula la base imponible de solo productos (excluyendo líneas de cuentas contables tipo portes).
+        /// Esta sobrecarga cuenta TODAS las líneas de producto: equivale al caso "servir junto" (una
+        /// única entrega). Para aplicar la exclusión de líneas sobre pedido usar la sobrecarga con
+        /// servirJunto + IGestorStocks.
         /// </summary>
         public static decimal CalcularBaseImponibleProductos(IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> lineas)
+        {
+            return LineasParaBasePortes(lineas).Sum(l => l.BaseImponible);
+        }
+
+        /// <summary>
+        /// Calcula la base imponible para portes aplicando la regla de "sobre pedido" (NestoAPI#211),
+        /// replicando el comportamiento del picking en el alta del pedido:
+        /// - Servir junto MARCADO: es una única entrega, así que TODAS las líneas cuentan
+        ///   (incondicionalmente, sin exigir stock confirmado).
+        /// - Servir junto DESMARCADO: cada línea va por su cuenta; se excluyen las líneas de producto
+        ///   "sobre pedido" (estado != 0 sin stock suficiente en el almacén del pedido), que irán en una
+        ///   entrega posterior y por tanto no suman a esta entrega para el umbral de portes.
+        /// </summary>
+        public static decimal CalcularBaseImponibleProductos(
+            IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> lineas,
+            bool servirJunto,
+            IGestorStocks gestorStocks)
+        {
+            if (servirJunto || gestorStocks == null)
+            {
+                return CalcularBaseImponibleProductos(lineas);
+            }
+
+            return LineasParaBasePortes(lineas)
+                .Where(l => !EsLineaSobrePedidoEnAlmacen(l, gestorStocks))
+                .Sum(l => l.BaseImponible);
+        }
+
+        // Líneas que entran en la base de portes: productos y cuentas contables que NO son portes/reembolso.
+        private static IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> LineasParaBasePortes(
+            IEnumerable<Models.PedidosVenta.LineaPedidoVentaDTO> lineas)
         {
             return lineas
                 .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO ||
                            (l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                             l.Producto != null &&
                             !l.Producto.Trim().StartsWith("624") &&
-                            l.Producto.Trim() != Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL))
-                .Sum(l => l.BaseImponible);
+                            l.Producto.Trim() != Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL));
+        }
+
+        // Una línea de PRODUCTO es "sobre pedido en el almacén" si su estado != 0 y no hay stock
+        // suficiente en el almacén del pedido. Las cuentas contables (no portes) nunca se excluyen.
+        // Solo se consulta el stock para líneas estado != 0 (estado 0 nunca es sobre pedido), para
+        // no añadir consultas innecesarias en el caso normal.
+        private static bool EsLineaSobrePedidoEnAlmacen(
+            Models.PedidosVenta.LineaPedidoVentaDTO linea, IGestorStocks gestorStocks)
+        {
+            if (linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO ||
+                linea.estado == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
+            {
+                return false;
+            }
+
+            int stockAlmacen = gestorStocks.Stock(linea.Producto?.Trim(), linea.almacen?.Trim());
+            return EsSobrePedidoParaPortes(
+                linea.estado, linea.Cantidad, stockAlmacen,
+                stockDisponibleTodosAlmacenes: 0, servirJunto: false);
         }
 
         /// <summary>
