@@ -970,5 +970,112 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         #endregion
+
+        #region ConstruirLineasCobro: asiento cuadrado cuando importe != suma de efectos
+
+        private static PagoTPV CrearPagoConUnEfecto(decimal importePago, int extractoClienteId, decimal importeEfecto)
+        {
+            var pago = new PagoTPV
+            {
+                Id = 1,
+                NumeroOrden = "ABC123456789",
+                Empresa = "1",
+                Cliente = "15191",
+                Importe = importePago,
+                Descripcion = "Reclamar deuda",
+                FechaCreacion = DateTime.Now
+            };
+            pago.PagosTPV_Efectos.Add(new PagoTPV_Efecto
+            {
+                Id = 1,
+                IdPago = 1,
+                ExtractoClienteId = extractoClienteId,
+                Importe = importeEfecto,
+                Documento = "NV001",
+                Efecto = "0",
+                Contacto = "0",
+                Vendedor = "NV",
+                FormaVenta = "WEB",
+                Delegacion = "ALG",
+                TipoApunte = "1"
+            });
+            return pago;
+        }
+
+        [TestMethod]
+        public void ConstruirLineasCobro_ImportePositivoContraEfectoNegativo_GeneraAsientoCuadrado()
+        {
+            // Escenario real (Vendedores > Deuda > Reclamar deuda):
+            // se selecciona un movimiento de -150 € y se cobra 40,65 €.
+            // El asiento DEBE cuadrar (suma Debe == suma Haber); de lo contrario el SP
+            // prd... rechaza el asiento y la contabilización revienta.
+            PagoTPV pago = CrearPagoConUnEfecto(importePago: 40.65m, extractoClienteId: 123, importeEfecto: -150m);
+
+            List<PreContabilidad> lineas = ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Reclamar deuda");
+
+            decimal sumaDebe = lineas.Sum(l => l.Debe);
+            decimal sumaHaber = lineas.Sum(l => l.Haber);
+            Assert.AreEqual(sumaDebe, sumaHaber,
+                $"El asiento debe cuadrar. Debe={sumaDebe}, Haber={sumaHaber}");
+        }
+
+        [TestMethod]
+        public void ConstruirLineasCobro_ImportePositivoContraEfectoNegativo_LiquidaEfectoYDejaPendienteElResto()
+        {
+            // -150 € seleccionado, se cobran 40,65 €. Esperado:
+            //  - Banco (57200013) DEBE 40,65
+            //  - Línea cliente que liquida el -150 (Haber -150, Liquidado=123)
+            //  - Línea cliente pendiente por el resto (Haber 190,65, sin liquidar)
+            PagoTPV pago = CrearPagoConUnEfecto(importePago: 40.65m, extractoClienteId: 123, importeEfecto: -150m);
+
+            List<PreContabilidad> lineas = ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Reclamar deuda");
+
+            PreContabilidad banco = lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE);
+            Assert.AreEqual("57200013", banco.Nº_Cuenta);
+            Assert.AreEqual(40.65m, banco.Debe);
+
+            PreContabilidad liquidacion = lineas.Single(l =>
+                l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE && l.Liquidado == 123);
+            Assert.AreEqual(-150m, liquidacion.Haber, "La línea de liquidación debe contrarrestar el movimiento original");
+
+            PreContabilidad pendiente = lineas.Single(l =>
+                l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE && l.Liquidado == null);
+            Assert.AreEqual("15191", pendiente.Nº_Cuenta);
+            Assert.AreEqual(190.65m, pendiente.Haber, "El resto debe quedar pendiente en el cliente");
+        }
+
+        [TestMethod]
+        public void ConstruirLineasCobro_CobroParcialDeEfectoPositivo_GeneraAsientoCuadradoConPendiente()
+        {
+            // Efecto +150 €, se cobran solo 40,65 €. El asiento debe cuadrar y el resto (109,35)
+            // queda pendiente como deuda del cliente (DEBE).
+            PagoTPV pago = CrearPagoConUnEfecto(importePago: 40.65m, extractoClienteId: 123, importeEfecto: 150m);
+
+            List<PreContabilidad> lineas = ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Reclamar deuda");
+
+            Assert.AreEqual(lineas.Sum(l => l.Debe), lineas.Sum(l => l.Haber), "El asiento debe cuadrar");
+
+            PreContabilidad pendiente = lineas.Single(l =>
+                l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE && l.Liquidado == null);
+            Assert.AreEqual(109.35m, pendiente.Debe, "El resto no cobrado queda como deuda pendiente del cliente");
+        }
+
+        [TestMethod]
+        public void ConstruirLineasCobro_ImporteIgualSumaEfectos_NoAñadeLineaPendiente()
+        {
+            // Caso normal (NestoApp/TiendasNuevaVision): el importe cobrado coincide con la suma
+            // de los efectos. No debe añadirse ninguna línea pendiente extra (comportamiento intacto).
+            PagoTPV pago = CrearPagoConUnEfecto(importePago: 150m, extractoClienteId: 123, importeEfecto: 150m);
+
+            List<PreContabilidad> lineas = ServicioPagos.ConstruirLineasCobro(pago, "57200013", "1", "Reclamar deuda");
+
+            Assert.AreEqual(2, lineas.Count, "Solo banco + 1 efecto, sin línea pendiente");
+            Assert.AreEqual(lineas.Sum(l => l.Debe), lineas.Sum(l => l.Haber), "El asiento debe cuadrar");
+            Assert.IsFalse(lineas.Any(l =>
+                l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE && l.Liquidado == null),
+                "No debe haber línea cliente pendiente cuando los importes coinciden");
+        }
+
+        #endregion
     }
 }

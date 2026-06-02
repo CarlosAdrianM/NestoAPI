@@ -234,6 +234,51 @@ namespace NestoAPI.Infraestructure.Pagos
                 concepto = concepto.Substring(0, 50);
             }
 
+            List<PreContabilidad> lineas = ConstruirLineasCobro(pago, cuentaBanco, empresa, concepto);
+
+            // Si hay Liquidado, copiar Nº_Documento, Vendedor y Ruta del movimiento original
+            var lineasConLiquidado = lineas.Where(l => l.Liquidado.HasValue).ToList();
+            if (lineasConLiquidado.Any())
+            {
+                var numerosOrden = lineasConLiquidado.Select(l => l.Liquidado.Value).Distinct().ToList();
+                using (NVEntities db = new NVEntities())
+                {
+                    var movimientosOriginales = await db.ExtractosCliente
+                        .Where(e => e.Empresa == empresa && numerosOrden.Contains(e.Nº_Orden))
+                        .ToListAsync()
+                        .ConfigureAwait(false);
+
+                    foreach (var linea in lineasConLiquidado)
+                    {
+                        var original = movimientosOriginales.FirstOrDefault(e => e.Nº_Orden == linea.Liquidado.Value);
+                        if (original != null)
+                        {
+                            linea.Nº_Documento = original.Nº_Documento?.Trim();
+                            linea.Vendedor = original.Vendedor?.Trim();
+                            linea.Ruta = original.Ruta?.Trim();
+                        }
+                    }
+                }
+
+                // Si hay líneas con Liquidado, usar el Nº_Documento del movimiento original también en el banco (como hace Cajas)
+                var lineaConDocumentoOriginal = lineasConLiquidado.FirstOrDefault(l => !string.IsNullOrWhiteSpace(l.Nº_Documento));
+                var lineaBanco = lineas.FirstOrDefault(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE);
+                if (lineaConDocumentoOriginal != null && lineaBanco != null)
+                {
+                    lineaBanco.Nº_Documento = lineaConDocumentoOriginal.Nº_Documento;
+                }
+            }
+
+            await _contabilidadService.CrearLineasYContabilizarDiario(lineas).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Construye las líneas de PreContabilidad de un cobro TPV: una línea HABER por cada efecto
+        /// liquidado (o una línea legacy si no hay efectos) y la línea DEBE del banco por el importe cobrado.
+        /// No accede a base de datos para que sea testeable de forma aislada.
+        /// </summary>
+        internal static List<PreContabilidad> ConstruirLineasCobro(PagoTPV pago, string cuentaBanco, string empresa, string concepto)
+        {
             var lineas = new List<PreContabilidad>();
 
             if (pago.PagosTPV_Efectos != null && pago.PagosTPV_Efectos.Any())
@@ -316,40 +361,49 @@ namespace NestoAPI.Infraestructure.Pagos
                 });
             }
 
-            // Si hay Liquidado, copiar Nº_Documento, Vendedor y Ruta del movimiento original
-            var lineasConLiquidado = lineas.Where(l => l.Liquidado.HasValue).ToList();
-            if (lineasConLiquidado.Any())
-            {
-                var numerosOrden = lineasConLiquidado.Select(l => l.Liquidado.Value).Distinct().ToList();
-                using (NVEntities db = new NVEntities())
-                {
-                    var movimientosOriginales = await db.ExtractosCliente
-                        .Where(e => e.Empresa == empresa && numerosOrden.Contains(e.Nº_Orden))
-                        .ToListAsync()
-                        .ConfigureAwait(false);
-
-                    foreach (var linea in lineasConLiquidado)
-                    {
-                        var original = movimientosOriginales.FirstOrDefault(e => e.Nº_Orden == linea.Liquidado.Value);
-                        if (original != null)
-                        {
-                            linea.Nº_Documento = original.Nº_Documento?.Trim();
-                            linea.Vendedor = original.Vendedor?.Trim();
-                            linea.Ruta = original.Ruta?.Trim();
-                        }
-                    }
-                }
-            }
-
-            // Linea banco (DEBE) - siempre una sola linea por el total
             string docBanco = pago.NumeroOrden?.Length > 10
                 ? pago.NumeroOrden.Substring(pago.NumeroOrden.Length - 10)
                 : pago.NumeroOrden;
 
-            // Si hay líneas con Liquidado, usar el Nº_Documento del movimiento original (como hace Cajas)
-            var lineaConDocumentoOriginal = lineas.FirstOrDefault(l => l.Liquidado.HasValue && !string.IsNullOrWhiteSpace(l.Nº_Documento));
-            string docBancoFinal = lineaConDocumentoOriginal?.Nº_Documento ?? docBanco;
+            // Si el importe cobrado no coincide con la suma de los efectos liquidados
+            // (p.ej. se reclama 40,65 € contra un movimiento de -150 €, o un cobro parcial),
+            // se añade una línea de cliente con el resto para que el asiento cuadre:
+            //  - diferencia > 0 -> queda un saldo a favor del cliente (HABER pendiente)
+            //  - diferencia < 0 -> queda deuda pendiente del cliente (DEBE pendiente)
+            // En el caso normal (importe == suma de efectos) la diferencia es 0 y no se añade nada.
+            decimal sumaHaberEfectos = lineas.Sum(l => l.Haber);
+            decimal diferencia = pago.Importe - sumaHaberEfectos;
+            if (diferencia != 0)
+            {
+                PreContabilidad plantilla = lineas.First();
+                lineas.Add(new PreContabilidad
+                {
+                    Empresa = empresa,
+                    Nº_Cuenta = pago.Cliente,
+                    Contacto = plantilla.Contacto,
+                    TipoCuenta = Constantes.Contabilidad.TiposCuenta.CLIENTE,
+                    TipoApunte = TiposExtractoCliente.PAGO,
+                    Haber = diferencia > 0 ? diferencia : 0,
+                    Debe = diferencia < 0 ? -diferencia : 0,
+                    Concepto = concepto,
+                    Nº_Documento = docBanco,
+                    Diario = "_CobrosTPV",
+                    Fecha = DateTime.Today,
+                    FechaVto = DateTime.Today,
+                    Asiento = 1,
+                    Asiento_Automático = true,
+                    Delegación = plantilla.Delegación,
+                    FormaVenta = plantilla.FormaVenta,
+                    FormaPago = Constantes.FormasPago.TARJETA,
+                    Vendedor = plantilla.Vendedor,
+                    Liquidado = null,
+                    Origen = Empresas.EMPRESA_POR_DEFECTO,
+                    Usuario = "NestoAPI",
+                    Fecha_Modificación = DateTime.Now
+                });
+            }
 
+            // Linea banco (DEBE) - siempre una sola linea por el total cobrado
             lineas.Insert(0, new PreContabilidad
             {
                 Empresa = empresa,
@@ -358,7 +412,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 TipoApunte = TiposExtractoCliente.PAGO,
                 Debe = pago.Importe,
                 Concepto = concepto,
-                Nº_Documento = docBancoFinal,
+                Nº_Documento = docBanco,
                 Diario = "_CobrosTPV",
                 Fecha = DateTime.Today,
                 FechaVto = DateTime.Today,
@@ -372,7 +426,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 Fecha_Modificación = DateTime.Now
             });
 
-            await _contabilidadService.CrearLineasYContabilizarDiario(lineas).ConfigureAwait(false);
+            return lineas;
         }
 
         internal static List<EfectoAPagar> NormalizarEfectos(SolicitudPagoTPV solicitud)
