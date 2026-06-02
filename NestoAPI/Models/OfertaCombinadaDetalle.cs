@@ -22,7 +22,8 @@ namespace NestoAPI.Models
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
         public short Cantidad { get; set; }
-    
+        public Nullable<int> GrupoAlternativa { get; set; }
+
         public virtual Empresa Empresa1 { get; set; }
         public virtual OfertaCombinada OfertasCombinada { get; set; }
         public virtual Producto Producto1 { get; set; }

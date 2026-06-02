@@ -23,6 +23,8 @@ namespace NestoAPI.Models.OfertasCombinadas
         public string ProductoNombre { get; set; }
         public short Cantidad { get; set; }
         public decimal Precio { get; set; }
+        // Líneas con el mismo GrupoAlternativa son intercambiables ("elige 1"); null = obligatoria.
+        public int? GrupoAlternativa { get; set; }
     }
 
     public class OfertaCombinadaCreateDTO
@@ -41,5 +43,6 @@ namespace NestoAPI.Models.OfertasCombinadas
         public string Producto { get; set; }
         public short Cantidad { get; set; }
         public decimal Precio { get; set; }
+        public int? GrupoAlternativa { get; set; }
     }
 }

@@ -21,10 +21,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return respuesta;
             }
 
-            OfertaCombinada ofertaCumplida = ofertasCombinadas.FirstOrDefault(o => 
-                o.OfertasCombinadasDetalles.Where(d=> d.Cantidad > 0).All(d => 
+            OfertaCombinada ofertaCumplida = ofertasCombinadas.FirstOrDefault(o =>
+                o.OfertasCombinadasDetalles.Where(d=> d.Cantidad > 0 && d.GrupoAlternativa == null).All(d =>
                     pedido.Lineas.Where(p=>p.PrecioUnitario >= d.Precio && p.Cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
                 )
+                && GruposSatisfechos(o, pedido, InstanciasEnPedido(o, pedido))
             );
 
             if (ofertaCumplida != null)
@@ -54,10 +55,11 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             if (ofertaCumplida == null || ofertaCumplida.ImporteMinimo > 0)
             {
                 IEnumerable<OfertaCombinada> ofertasConImporteMinimo = ofertasCombinadas.Where(o =>
-                    o.OfertasCombinadasDetalles.All(d =>
+                    o.ImporteMinimo > 0
+                    && o.OfertasCombinadasDetalles.Where(d => d.GrupoAlternativa == null).All(d =>
                         pedido.Lineas.Where(p => p.PrecioUnitario >= d.Precio && p.Cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
-                        && o.ImporteMinimo>0
                     )
+                    && GruposSatisfechos(o, pedido, InstanciasEnPedido(o, pedido))
                 );
                 OfertaCombinada ofertaConImporteMinimo;
                 for (int i = 0; i < ofertasConImporteMinimo.Count(); i++)
@@ -152,7 +154,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             int instancias = int.MaxValue;
             foreach (OfertaCombinadaDetalle d in oferta.OfertasCombinadasDetalles)
             {
-                if (d.Cantidad <= 0 || d.Producto == null) continue;
+                // Las líneas agrupadas (alternativas) no definen el nº de instancias: se comprueban
+                // aparte en GruposSatisfechos. El nº de instancias lo marcan las líneas obligatorias.
+                if (d.Cantidad <= 0 || d.Producto == null || d.GrupoAlternativa != null) continue;
                 int cantidad = (int)pedido.Lineas
                     .Where(l => l.Producto != null && l.Producto.Trim() == d.Producto.Trim())
                     .Sum(l => l.Cantidad);
@@ -160,6 +164,43 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 if (posibles < instancias) instancias = posibles;
             }
             return instancias == int.MaxValue || instancias < 1 ? 1 : instancias;
+        }
+
+        /// <summary>
+        /// Grupos de alternativas: las líneas que comparten GrupoAlternativa son intercambiables
+        /// ("elige 1 de N"; p. ej. una camiseta de cualquier talla). Para cada grupo, el pedido debe
+        /// llevar productos del grupo (a precio aceptable) que sumen EXACTAMENTE la cantidad requerida
+        /// (cantidad del grupo × nº de instancias). Así no vale 0 (olvidar la camiseta) ni de más.
+        /// Las ofertas sin grupos devuelven true (comportamiento intacto).
+        /// </summary>
+        private static bool GruposSatisfechos(OfertaCombinada oferta, PedidoVentaDTO pedido, int instancias)
+        {
+            var grupos = oferta.OfertasCombinadasDetalles
+                .Where(d => d.GrupoAlternativa.HasValue && d.Producto != null)
+                .GroupBy(d => d.GrupoAlternativa.Value);
+
+            foreach (var grupo in grupos)
+            {
+                // Todas las alternativas comparten cantidad (lo valida el alta de la oferta).
+                int cantidadGrupo = grupo.Max(d => d.Cantidad);
+                int requerido = instancias * cantidadGrupo;
+
+                int pedidas = 0;
+                foreach (OfertaCombinadaDetalle det in grupo)
+                {
+                    pedidas += (int)pedido.Lineas
+                        .Where(l => l.Producto != null
+                                    && l.Producto.Trim() == det.Producto.Trim()
+                                    && l.PrecioUnitario >= det.Precio)
+                        .Sum(l => l.Cantidad);
+                }
+
+                if (pedidas != requerido)
+                {
+                    return false;
+                }
+            }
+            return true;
         }
 
         /// <summary>
@@ -188,7 +229,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     if (!ofertas.ContainsKey(o.Id)) ofertas[o.Id] = o;
                     foreach (OfertaCombinadaDetalle d in o.OfertasCombinadasDetalles)
                     {
-                        if (d.Cantidad > 0 && d.Producto != null && !explorados.Contains(d.Producto.Trim()))
+                        if (d.Cantidad > 0 && d.Producto != null && d.GrupoAlternativa == null && !explorados.Contains(d.Producto.Trim()))
                         {
                             porExplorar.Enqueue(d.Producto.Trim());
                         }
@@ -209,7 +250,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 HashSet<string> productosOferta = new HashSet<string>();
                 foreach (OfertaCombinadaDetalle d in o.OfertasCombinadasDetalles)
                 {
-                    if (d.Cantidad > 0 && d.Producto != null) productosOferta.Add(d.Producto.Trim());
+                    if (d.Cantidad > 0 && d.Producto != null && d.GrupoAlternativa == null) productosOferta.Add(d.Producto.Trim());
                 }
                 foreach (string p in productosOferta)
                 {
@@ -247,7 +288,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 int max = int.MaxValue;
                 foreach (OfertaCombinadaDetalle d in ofertas[i].OfertasCombinadasDetalles)
                 {
-                    if (d.Cantidad <= 0 || d.Producto == null) continue;
+                    if (d.Cantidad <= 0 || d.Producto == null || d.GrupoAlternativa != null) continue;
                     int disponible = cantidadPedida.TryGetValue(d.Producto.Trim(), out int q) ? q : 0;
                     int posible = disponible / d.Cantidad;
                     if (posible < max) max = posible;
@@ -271,7 +312,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     {
                         foreach (OfertaCombinadaDetalle d in ofertas[i].OfertasCombinadasDetalles)
                         {
-                            if (d.Cantidad > 0 && d.Producto != null && d.Producto.Trim() == p)
+                            if (d.Cantidad > 0 && d.Producto != null && d.GrupoAlternativa == null && d.Producto.Trim() == p)
                             {
                                 consumido += n[i] * d.Cantidad;
                             }

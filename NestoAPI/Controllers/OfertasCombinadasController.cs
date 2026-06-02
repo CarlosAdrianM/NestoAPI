@@ -129,6 +129,7 @@ namespace NestoAPI.Controllers
                     Producto = detDTO.Producto,
                     Cantidad = detDTO.Cantidad,
                     Precio = detDTO.Precio,
+                    GrupoAlternativa = detDTO.GrupoAlternativa,
                     Usuario = usuarioAuditoria,
                     FechaModificacion = ahora
                 });
@@ -229,6 +230,7 @@ namespace NestoAPI.Controllers
                         detExistente.Producto = detDTO.Producto;
                         detExistente.Cantidad = detDTO.Cantidad;
                         detExistente.Precio = detDTO.Precio;
+                        detExistente.GrupoAlternativa = detDTO.GrupoAlternativa;
                         detExistente.Usuario = usuarioAuditoria;
                         detExistente.FechaModificacion = ahora;
                     }
@@ -243,6 +245,7 @@ namespace NestoAPI.Controllers
                         Producto = detDTO.Producto,
                         Cantidad = detDTO.Cantidad,
                         Precio = detDTO.Precio,
+                        GrupoAlternativa = detDTO.GrupoAlternativa,
                         Usuario = usuarioAuditoria,
                         FechaModificacion = ahora
                     });
@@ -299,7 +302,7 @@ namespace NestoAPI.Controllers
             base.Dispose(disposing);
         }
 
-        private string ValidarDTO(OfertaCombinadaCreateDTO dto)
+        internal static string ValidarDTO(OfertaCombinadaCreateDTO dto)
         {
             if (dto.Detalles == null || dto.Detalles.Count == 0)
             {
@@ -335,6 +338,22 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            // Grupos de alternativas: las líneas de un grupo son intercambiables y se exige
+            // EXACTAMENTE la cantidad del grupo, así que deben tener cantidad > 0 y compartir
+            // la misma cantidad (la cantidad requerida del grupo).
+            foreach (var grupo in dto.Detalles.Where(d => d.GrupoAlternativa.HasValue)
+                                              .GroupBy(d => d.GrupoAlternativa.Value))
+            {
+                if (grupo.Any(d => d.Cantidad <= 0))
+                {
+                    return $"Las líneas del grupo de alternativas {grupo.Key} deben tener cantidad mayor que cero";
+                }
+                if (grupo.Select(d => d.Cantidad).Distinct().Count() > 1)
+                {
+                    return $"Todas las alternativas del grupo {grupo.Key} deben tener la misma cantidad";
+                }
+            }
+
             return null;
         }
 
@@ -356,7 +375,8 @@ namespace NestoAPI.Controllers
                     Producto = d.Producto?.Trim(),
                     ProductoNombre = d.Producto1?.Nombre?.Trim(),
                     Cantidad = d.Cantidad,
-                    Precio = d.Precio
+                    Precio = d.Precio,
+                    GrupoAlternativa = d.GrupoAlternativa
                 }).ToList() ?? new List<OfertaCombinadaDetalleDTO>()
             };
         }

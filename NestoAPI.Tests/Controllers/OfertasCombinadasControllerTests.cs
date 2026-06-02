@@ -593,6 +593,75 @@ namespace NestoAPI.Tests.Controllers
 
         #endregion
 
+        #region Grupos de alternativas (ValidarDTO)
+
+        private static OfertaCombinadaCreateDTO CrearDtoConDetalles(params OfertaCombinadaDetalleCreateDTO[] detalles)
+        {
+            return new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
+                Nombre = "Test grupos",
+                ImporteMinimo = 100,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>(detalles)
+            };
+        }
+
+        [TestMethod]
+        public void ValidarDTO_GrupoConCantidadCero_DevuelveError()
+        {
+            var dto = CrearDtoConDetalles(
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CREMA", Cantidad = 1, Precio = 5 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CAM_S", Cantidad = 0, Precio = 0, GrupoAlternativa = 1 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CAM_M", Cantidad = 1, Precio = 0, GrupoAlternativa = 1 });
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "cantidad mayor que cero");
+        }
+
+        [TestMethod]
+        public void ValidarDTO_GrupoConCantidadesDistintas_DevuelveError()
+        {
+            var dto = CrearDtoConDetalles(
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CREMA", Cantidad = 1, Precio = 5 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CAM_S", Cantidad = 1, Precio = 0, GrupoAlternativa = 1 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CAM_M", Cantidad = 2, Precio = 0, GrupoAlternativa = 1 });
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "misma cantidad");
+        }
+
+        [TestMethod]
+        public void ValidarDTO_GrupoValido_NoDevuelveError()
+        {
+            var dto = CrearDtoConDetalles(
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CREMA", Cantidad = 1, Precio = 5 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CAM_S", Cantidad = 1, Precio = 0, GrupoAlternativa = 1 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CAM_M", Cantidad = 1, Precio = 0, GrupoAlternativa = 1 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CAM_L", Cantidad = 1, Precio = 0, GrupoAlternativa = 1 });
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNull(error, error);
+        }
+
+        [TestMethod]
+        public void ValidarDTO_SinGrupos_NoDevuelveError()
+        {
+            var dto = CrearDtoConDetalles(
+                new OfertaCombinadaDetalleCreateDTO { Producto = "CREMA", Cantidad = 1, Precio = 5 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "REGALO", Cantidad = 1, Precio = 0 });
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNull(error, error);
+        }
+
+        #endregion
+
         #region Helpers
 
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
