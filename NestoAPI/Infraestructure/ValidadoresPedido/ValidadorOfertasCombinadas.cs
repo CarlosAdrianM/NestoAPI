@@ -78,7 +78,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                         // sola vez, lo que dejaba pasar varias instancias con un único suelo).
                         int instancias = InstanciasEnPedido(ofertaConImporteMinimo, pedido);
                         decimal importeMinimoRequerido = instancias * ofertaConImporteMinimo.ImporteMinimo;
-                        if (sumaImporte >= importeMinimoRequerido)
+                        // Tolerancia de redondeo: ImporteMinimo se guarda a 2 decimales (suele ser el
+                        // precio con el descuento de la oferta) y aquí se multiplica por las instancias,
+                        // acumulando hasta ~medio céntimo por instancia frente a la base imponible real de
+                        // las líneas (que se redondea una sola vez). Sin esto, comprar al descuento exacto
+                        // de la oferta se queda 1 céntimo corto (Modellare 239-242: 4×10,84=43,36 vs 43,35).
+                        decimal toleranciaRedondeo = 0.005m * (instancias + 1);
+                        if (sumaImporte >= importeMinimoRequerido - toleranciaRedondeo)
                         {
                             ofertaCumplida = ofertaConImporteMinimo;
                             respuesta.ValidacionSuperada = true;
