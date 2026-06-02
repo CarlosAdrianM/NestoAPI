@@ -543,6 +543,7 @@
     <Compile Include="Controllers\ProveedoresController.cs" />
     <Compile Include="Controllers\InformesController.cs" />
     <Compile Include="Controllers\ServirJuntoController.cs" />
+    <Compile Include="Controllers\ErroresController.cs" />
     <Compile Include="Controllers\NotificacionesController.cs" />
     <Compile Include="Controllers\PagosController.cs" />
     <Compile Include="Controllers\ReclamacionDeudaController.cs" />
@@ -627,6 +628,7 @@
     <Compile Include="Infraestructure\NotasEntrega\IServicioNotasEntrega.cs" />
     <Compile Include="Infraestructure\ExtractosRuta\IServicioExtractoRuta.cs" />
     <Compile Include="Infraestructure\ElmahLogService.cs" />
+    <Compile Include="Infraestructure\ErrorClienteException.cs" />
     <Compile Include="Infraestructure\ILogService.cs" />
     <Compile Include="Infraestructure\IServicioCorreoElectronico.cs" />
     <Compile Include="Infraestructure\IServicioGestorClientes.cs" />
@@ -1259,6 +1261,7 @@
     <Compile Include="Models\PagoTPV_Efecto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\ErrorClienteDTO.cs" />
     <Compile Include="Models\ReclamacionDeuda.cs" />
     <Compile Include="Models\RecursosHumanos\Accion.cs" />
     <Compile Include="Models\RecursosHumanos\Empleado.cs" />

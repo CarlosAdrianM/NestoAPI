@@ -182,6 +182,9 @@ namespace NestoAPI
             _ = services.AddScoped<IContabilidadService, ContabilidadService>();
             _ = services.AddScoped<ILectorParametrosUsuario, LectorParametrosUsuario>();
 
+            // Registro centralizado de errores de clientes en ELMAH (ErroresController)
+            _ = services.AddScoped<ILogService, ElmahLogService>();
+
             // Servicios de Notificaciones Push (Issue #108)
             _ = services.AddScoped<IServicioNotificacionesPush, ServicioNotificacionesPush>();
 

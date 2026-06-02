@@ -1,0 +1,75 @@
+using NestoAPI.Infraestructure;
+using NestoAPI.Models;
+using System.Web.Http;
+
+namespace NestoAPI.Controllers
+{
+    /// <summary>
+    /// Recibe errores no controlados de las aplicaciones cliente (Nesto, NestoApp, TiendasNuevaVision)
+    /// y los registra de forma centralizada en ELMAH. Así los crashes del escritorio dejan rastro,
+    /// que de otra forma se perdería (Nesto no tiene ELMAH).
+    /// </summary>
+    [RoutePrefix("api/Errores")]
+    public class ErroresController : ApiController
+    {
+        private readonly ILogService _logService;
+
+        public ErroresController(ILogService logService)
+        {
+            _logService = logService;
+        }
+
+        [HttpPost]
+        [Route("")]
+        // AllowAnonymous a propósito: queremos registrar los crashes de cualquier cliente
+        // (Nesto, NestoApp, TiendasNuevaVision) incluso cuando NO hay token válido
+        // (pre-login, token caducado, o un fallo en la propia autenticación), que es justo
+        // cuando más interesa enterarse. Si la petición SÍ está autenticada, el usuario real
+        // sale igualmente del Identity (UserSyncHandler) y se ve en ELMAH.
+        [AllowAnonymous]
+        public IHttpActionResult Post([FromBody] ErrorClienteDTO error)
+        {
+            if (error == null || string.IsNullOrWhiteSpace(error.Mensaje))
+            {
+                return BadRequest("El mensaje del error es obligatorio");
+            }
+
+            string resumen = ConstruirResumen(error);
+
+            var excepcionCliente = new ErrorClienteException(error.Mensaje.Trim(), error.StackTrace);
+            _logService.LogError(resumen, excepcionCliente);
+
+            return Ok();
+        }
+
+        internal static string ConstruirResumen(ErrorClienteDTO error)
+        {
+            string app = string.IsNullOrWhiteSpace(error.Aplicacion) ? "Cliente" : error.Aplicacion.Trim();
+
+            string interior = app;
+            if (!string.IsNullOrWhiteSpace(error.Version))
+            {
+                interior += $" {error.Version.Trim()}";
+            }
+            if (!string.IsNullOrWhiteSpace(error.Plataforma))
+            {
+                interior += $" ({error.Plataforma.Trim()})";
+            }
+            string cabecera = $"[{interior}]";
+
+            string contexto = !string.IsNullOrWhiteSpace(error.Contexto)
+                ? $" {error.Contexto.Trim()}"
+                : string.Empty;
+
+            string tipo = !string.IsNullOrWhiteSpace(error.TipoExcepcion)
+                ? $" {error.TipoExcepcion.Trim()}:"
+                : string.Empty;
+
+            string usuario = !string.IsNullOrWhiteSpace(error.UsuarioCliente)
+                ? $" [usuario: {error.UsuarioCliente.Trim()}]"
+                : string.Empty;
+
+            return $"{cabecera}{contexto}{tipo} {error.Mensaje.Trim()}{usuario}";
+        }
+    }
+}
