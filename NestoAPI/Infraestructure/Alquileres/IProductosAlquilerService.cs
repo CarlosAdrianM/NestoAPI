@@ -7,5 +7,7 @@ namespace NestoAPI.Infraestructure.Alquileres
     public interface IProductosAlquilerService
     {
         Task<List<ProductoAlquilerDTO>> LeerProductosAlquilerAsync();
+
+        Task<List<MovimientoAlquilerDTO>> LeerMovimientosAlquilerAsync(string empresa, int pedido);
     }
 }

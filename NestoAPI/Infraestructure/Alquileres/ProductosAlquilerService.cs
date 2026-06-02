@@ -47,6 +47,31 @@ namespace NestoAPI.Infraestructure.Alquileres
             }).ToList();
         }
 
+        // Nesto#340 Fase 1C.2: pestaña "Movimientos" de un alquiler (líneas del pedido de venta).
+        // Sustituye la lectura EF DbContext.LinPedidoVta del cliente Nesto.
+        public async Task<List<MovimientoAlquilerDTO>> LeerMovimientosAlquilerAsync(string empresa, int pedido)
+        {
+            // Se materializa primero y se proyecta en memoria para poder usar ?.Trim() (no
+            // traducible por EF) y dejar nombres/columnas limpias en el DTO.
+            List<LinPedidoVta> lineas = await db.LinPedidoVtas
+                .Where(l => l.Empresa == empresa && l.Número == pedido)
+                .OrderBy(l => l.Nº_Orden)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return lineas.Select(l => new MovimientoAlquilerDTO
+            {
+                NumeroOrden = l.Nº_Orden,
+                FechaEntrega = l.Fecha_Entrega,
+                Producto = l.Producto?.Trim(),
+                Texto = l.Texto?.Trim(),
+                Cantidad = l.Cantidad,
+                Precio = l.Precio,
+                Total = l.Total,
+                Estado = l.Estado
+            }).ToList();
+        }
+
         // Tipo crudo intermedio: sus nombres de propiedad coinciden con las columnas del SP.
         private class FilaSp
         {

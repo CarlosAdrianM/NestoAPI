@@ -835,6 +835,7 @@
     <Compile Include="Models\Correos\EnvioCorreoDTO.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
+    <Compile Include="Models\Alquileres\MovimientoAlquilerDTO.cs" />
     <Compile Include="Models\Alquileres\ProductoAlquilerDTO.cs" />
     <Compile Include="Models\Comisiones\ClienteVenta.cs" />
     <Compile Include="Models\Comisiones\ComisionesAntiguasDTO.cs" />

@@ -32,5 +32,19 @@ namespace NestoAPI.Controllers
 
             return Ok(productos);
         }
+
+        // GET: api/Alquileres/Movimientos?empresa=1&pedido=12345
+        // Nesto#340 Fase 1C.2: líneas del pedido de venta de un alquiler (pestaña Movimientos).
+        [HttpGet]
+        [Route("api/Alquileres/Movimientos")]
+        [ResponseType(typeof(List<MovimientoAlquilerDTO>))]
+        public async Task<IHttpActionResult> GetMovimientosAlquiler(string empresa, int pedido)
+        {
+            List<MovimientoAlquilerDTO> movimientos = await _productosAlquiler
+                .LeerMovimientosAlquilerAsync(empresa, pedido)
+                .ConfigureAwait(false);
+
+            return Ok(movimientos);
+        }
     }
 }
