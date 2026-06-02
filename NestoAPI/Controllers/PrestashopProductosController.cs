@@ -121,7 +121,8 @@ namespace NestoAPI.Controllers
             await PublicarProductoEnNestoSync(dto.ProductoId);
             await PublicarPrestashopProductoSync(producto);
 
-            return CreatedAtRoute("DefaultApi", new { id = dto.ProductoId }, MapToDTO(producto));
+            string location = Url.Content($"~/api/PrestashopProductos/{dto.ProductoId}");
+            return Created(location, MapToDTO(producto));
         }
 
         // PUT: api/PrestashopProductos
