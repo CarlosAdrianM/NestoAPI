@@ -226,11 +226,20 @@ namespace NestoAPI.Controllers
             Producto producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.Número == id);
             if (producto == null)
             {
-                producto = await db.Productos.SingleOrDefaultAsync(p => p.Empresa == empresa && p.CodBarras == id);
-                if (producto == null)
+                // El código de barras puede estar compartido por varios productos: en ese caso
+                // devolvemos la lista (409) para que el cliente deje elegir, en vez de lanzar 500.
+                List<Producto> porCodigoBarras = await db.Productos
+                    .Where(p => p.Empresa == empresa && p.CodBarras == id)
+                    .ToListAsync();
+                if (porCodigoBarras.Count == 0)
                 {
                     return NotFound();
                 }
+                if (porCodigoBarras.Count > 1)
+                {
+                    return Content(HttpStatusCode.Conflict, ListarDuplicadosCodigoBarras(porCodigoBarras));
+                }
+                producto = porCodigoBarras[0];
             }
 
             ProductoPlantillaDTO productoDTO = new ProductoPlantillaDTO()
@@ -491,15 +500,34 @@ namespace NestoAPI.Controllers
             }
 
             codigoBarras = codigoBarras.Trim();
-            Producto producto = await db.Productos.FirstOrDefaultAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (p.CodBarras == codigoBarras || p.Número.Trim() == codigoBarras)).ConfigureAwait(false);
-            if (producto == null)
+            List<Producto> coincidencias = await db.Productos
+                .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (p.CodBarras == codigoBarras || p.Número.Trim() == codigoBarras))
+                .ToListAsync().ConfigureAwait(false);
+            if (coincidencias.Count == 0)
             {
                 return NotFound();
             }
+            if (coincidencias.Count > 1)
+            {
+                // Código de barras compartido por varios productos: devolvemos la lista (409).
+                return Content(HttpStatusCode.Conflict, ListarDuplicadosCodigoBarras(coincidencias));
+            }
 
+            Producto producto = coincidencias[0];
             IHttpActionResult actionResult = await GetProducto(producto.Empresa, producto.Número, true);
 
             return actionResult;
+        }
+
+        private static List<ProductoCodigoBarrasDuplicadoDTO> ListarDuplicadosCodigoBarras(IEnumerable<Producto> productos)
+        {
+            return productos
+                .Select(p => new ProductoCodigoBarrasDuplicadoDTO
+                {
+                    producto = p.Número?.Trim(),
+                    nombre = p.Nombre?.Trim()
+                })
+                .ToList();
         }
 
         /// <summary>
