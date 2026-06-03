@@ -43,7 +43,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     .Sum(l => l.BaseImponible);
                 int maximoUnidades = pedido.Lineas.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad);
 
-                var importeMuestras = GestorPrecios.servicio.CalcularImporteGrupo(pedido, Constantes.Productos.GRUPO_COSMETICA, Constantes.Productos.SUBGRUPO_MUESTRAS);
+                var importeMuestras = CalcularImporteMuestrasNoJustificadas(pedido, numeroProducto, servicio);
 
                 if (importeMuestras <= baseImponiblePedido * PORCENTAJE_MAXIMO_MUESTRAS && maximoUnidades <= UNIDADES_MAXIMO_MUESTRAS)
                 {
@@ -59,6 +59,48 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             return respuesta;
+        }
+
+        /// <summary>
+        /// Importe (PVP × cantidad) de las muestras cosméticas que cuentan para el límite del 5 %.
+        /// Se parte del importe de TODAS las muestras cosméticas y se RESTAN las que ya están
+        /// justificadas por otro validador de aceptación (p. ej. las que son el regalo de una oferta
+        /// combinada): esas muestras no deben "gastar" el 5 % reservado a las muestras sueltas.
+        /// Caso real (pedido 918775): las muestras NEO-TECH de la oferta combinada inflaban el importe
+        /// (111,94 € sobre una base de 686 €, 5 % = 34,30 €) y rechazaban 4 muestras sueltas que por sí
+        /// solas sumaban 10,94 € y sí cabían en el 5 %.
+        /// </summary>
+        private decimal CalcularImporteMuestrasNoJustificadas(PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
+        {
+            decimal importeTotal = GestorPrecios.servicio.CalcularImporteGrupo(
+                pedido, Constantes.Productos.GRUPO_COSMETICA, Constantes.Productos.SUBGRUPO_MUESTRAS);
+
+            decimal importeJustificadas = pedido.Lineas
+                .Where(l => l.Producto != null
+                    && l.Producto.Trim() != numeroProducto.Trim()
+                    && l.GrupoProducto?.Trim() == Constantes.Productos.GRUPO_COSMETICA
+                    && l.SubgrupoProducto?.Trim() == Constantes.Productos.SUBGRUPO_MUESTRAS
+                    && OtroValidadorDeAceptacionLaJustifica(pedido, l.Producto.Trim(), servicio))
+                .Sum(l => (GestorPrecios.servicio.BuscarProducto(l.Producto).PVP ?? 0) * l.Cantidad);
+
+            return importeTotal - importeJustificadas;
+        }
+
+        /// <summary>
+        /// ¿Hay algún validador de aceptación DISTINTO de éste que justifique el producto a ese precio?
+        /// (típicamente una oferta combinada cuyo regalo es la muestra). Se excluye a sí mismo para no
+        /// recursar. Si la lista aún no se ha cargado, devuelve false (comportamiento original).
+        /// </summary>
+        private bool OtroValidadorDeAceptacionLaJustifica(PedidoVentaDTO pedido, string producto, IServicioPrecios servicio)
+        {
+            if (GestorPrecios.listaValidadoresAceptacion == null)
+            {
+                return false;
+            }
+
+            return GestorPrecios.listaValidadoresAceptacion
+                .Where(v => !(v is ValidadorMuestrasYMaterialPromocional))
+                .Any(v => v.EsPedidoValido(pedido, producto, servicio).ValidacionSuperada);
         }
 
         private bool ContieneMuestrasMultivitAinhoaPeroNoLlevaElProducto(PedidoVentaDTO pedido)

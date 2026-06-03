@@ -2764,6 +2764,102 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorPrecios_ValidadorMuestrasYMaterialPromocional_LasMuestrasDeUnaOfertaCombinadaNoCuentanParaEl5Porciento()
+        {
+            // Regresión (pedido 918775): una muestra suelta que por sí sola cabe en el 5 % se rechazaba
+            // porque las muestras regaladas por una oferta combinada se sumaban al importe de muestras.
+            // Las muestras justificadas por la oferta NO deben gastar el 5 % de las muestras sueltas.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+
+            // Producto cobrado que da base imponible (20 €). 5 % = 1 €.
+            LineaPedidoVentaDTO lineaCobrada = new LineaPedidoVentaDTO
+            {
+                Producto = "COSMAIN",
+                AplicarDescuento = true,
+                Cantidad = 2,
+                PrecioUnitario = 10,
+                GrupoProducto = Constantes.Productos.GRUPO_COSMETICA
+            };
+            pedido.Lineas.Add(lineaCobrada);
+
+            // Muestra regalada por la oferta combinada (PVP 5 € → 5 € de importe de muestras).
+            LineaPedidoVentaDTO lineaMuestraOferta = new LineaPedidoVentaDTO
+            {
+                Producto = "MOFERTA",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 5,
+                DescuentoLinea = 1M,
+                GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                SubgrupoProducto = Constantes.Productos.SUBGRUPO_MUESTRAS
+            };
+            pedido.Lineas.Add(lineaMuestraOferta);
+
+            // Muestra suelta (PVP 0,5 € → 0,5 €, cabe en el 5 % = 1 €).
+            LineaPedidoVentaDTO lineaMuestraSuelta = new LineaPedidoVentaDTO
+            {
+                Producto = "MSUELTA",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 0.5M,
+                DescuentoLinea = 1M,
+                GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                SubgrupoProducto = Constantes.Productos.SUBGRUPO_MUESTRAS
+            };
+            pedido.Lineas.Add(lineaMuestraSuelta);
+
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarProducto("COSMAIN")).Returns(new Producto
+            {
+                Número = "COSMAIN",
+                PVP = 10,
+                Grupo = "COS",
+                SubGrupo = "025"
+            });
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarProducto("MOFERTA")).Returns(new Producto
+            {
+                Número = "MOFERTA",
+                PVP = 5,
+                Grupo = "COS",
+                SubGrupo = "MMP"
+            });
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarProducto("MSUELTA")).Returns(new Producto
+            {
+                Número = "MSUELTA",
+                PVP = 0.5M,
+                Grupo = "COS",
+                SubGrupo = "MMP"
+            });
+
+            // La oferta combinada (COSMAIN + MOFERTA de regalo) justifica la muestra MOFERTA.
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 900,
+                    Empresa = "1",
+                    ImporteMinimo = 0,
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle { OfertaId = 900, Empresa = "1", Producto = "COSMAIN", Precio = 10, Cantidad = 1 },
+                        new OfertaCombinadaDetalle { OfertaId = 900, Empresa = "1", Producto = "MOFERTA", Precio = 0, Cantidad = 1 }
+                    }
+                }
+            };
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("MOFERTA")).Returns(listaOfertas);
+
+            // CalcularImporteGrupo devuelve TODAS las muestras cosméticas: oferta (5) + suelta (0,5) = 5,5 €.
+            _ = A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(5.5M);
+
+            RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "MSUELTA");
+
+            // Descontando la muestra de la oferta (5 €) quedan 0,5 € ≤ 1 € (5 %) → la suelta es válida.
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+        }
+
+        [TestMethod]
         public void GestorPrecios_ValidadorRegaloPorImportePedido_SiLlegaAlImporteLoPuedeRegalar()
         {
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
