@@ -23,7 +23,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             OfertaCombinada ofertaCumplida = ofertasCombinadas.FirstOrDefault(o =>
                 o.OfertasCombinadasDetalles.Where(d=> d.Cantidad > 0 && d.GrupoAlternativa == null).All(d =>
-                    pedido.Lineas.Where(p=>p.PrecioUnitario >= d.Precio && p.Cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
+                    DetalleSatisfecho(d, pedido)
                 )
                 && GruposSatisfechos(o, pedido, InstanciasEnPedido(o, pedido))
             );
@@ -41,7 +41,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 {
                     bool tieneAlgunProducto = ofertasCombinadas.FirstOrDefault(o =>
                             o.OfertasCombinadasDetalles.Where(d => d.Producto != numeroProducto).Any(d =>
-                                pedido.Lineas.Where(p => p.PrecioUnitario >= d.Precio && p.Cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
+                                DetalleSatisfecho(d, pedido)
                             )
                         ) != null;
 
@@ -57,7 +57,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 IEnumerable<OfertaCombinada> ofertasConImporteMinimo = ofertasCombinadas.Where(o =>
                     o.ImporteMinimo > 0
                     && o.OfertasCombinadasDetalles.Where(d => d.GrupoAlternativa == null).All(d =>
-                        pedido.Lineas.Where(p => p.PrecioUnitario >= d.Precio && p.Cantidad >= d.Cantidad).Select(p => p.Producto.Trim()).Contains(d.Producto.Trim())
+                        DetalleSatisfecho(d, pedido)
                     )
                     && GruposSatisfechos(o, pedido, InstanciasEnPedido(o, pedido))
                 );
@@ -149,6 +149,24 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     + " permite poner el producto " + numeroProducto + " a ese precio",
                 ProductoId = numeroProducto
             };
+        }
+
+        /// <summary>
+        /// ¿El pedido cubre la línea de oferta <paramref name="d"/>? El producto debe estar presente
+        /// (a un precio &gt;= al de la oferta) y la SUMA de cantidades de sus líneas debe alcanzar la
+        /// cantidad requerida. Se agrega por producto (no se exige una única línea con la cantidad)
+        /// para permitir repartir la oferta en varias líneas — p.ej. "2ª unidad al 50 %" como 1 línea
+        /// a precio completo + 1 línea con el 50 % (Nesto#371). Antes se comprobaba línea a línea y un
+        /// 1+1 no validaba contra una oferta de cantidad 2.
+        /// </summary>
+        private static bool DetalleSatisfecho(OfertaCombinadaDetalle d, PedidoVentaDTO pedido)
+        {
+            var lineasProducto = pedido.Lineas
+                .Where(p => p.Producto != null
+                            && p.Producto.Trim() == d.Producto.Trim()
+                            && p.PrecioUnitario >= d.Precio);
+
+            return lineasProducto.Any() && lineasProducto.Sum(p => p.Cantidad) >= d.Cantidad;
         }
 
         /// <summary>

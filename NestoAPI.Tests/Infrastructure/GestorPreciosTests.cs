@@ -2495,6 +2495,52 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_SegundaUnidadAl50EnDosLineasEsValida()
+        {
+            // Nesto#371: "2ª unidad al 50 %" repartida en DOS líneas (1 ud a precio completo + 1 ud al
+            // 50 %) debe validar contra una oferta de un solo producto con Cantidad 2 e ImporteMinimo 30,60.
+            // Antes fallaba: ninguna línea (de cantidad 1) cumplía por sí sola Cantidad >= 2.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                Producto = "AA1",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 20.40M // 1ª unidad a precio completo (base 20,40)
+            });
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                Producto = "AA1",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 20.40M,
+                DescuentoLinea = 0.5M // 2ª unidad al 50 % (base 10,20)
+            });
+            List<OfertaCombinada> listaOfertas = new List<OfertaCombinada>
+            {
+                new OfertaCombinada
+                {
+                    Id = 238,
+                    Empresa = "NV",
+                    ImporteMinimo = 30.60M,
+                    OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                    {
+                        new OfertaCombinadaDetalle { OfertaId = 238, Empresa = "NV", Producto = "AA1", Precio = 0, Cantidad = 2 }
+                    }
+                }
+            };
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("AA1")).Returns(listaOfertas);
+            ValidadorOfertasCombinadas validador = new ValidadorOfertasCombinadas();
+
+            RespuestaValidacion respuesta = validador.EsPedidoValido(pedido, "AA1", GestorPrecios.servicio);
+
+            // 20,40 + 10,20 = 30,60 = importe mínimo (1 instancia) -> la oferta autoriza el 50 %.
+            Assert.IsTrue(respuesta.ValidacionSuperada);
+        }
+
+        [TestMethod]
         public void GestorPrecios_ValidadorOfertasCombinadas_OfertaUnSoloProductoSiNoLlegaAlImporteMinimoNoEsValida()
         {
             // Oferta de un solo producto con importe mínimo: 2 unidades a 12 € (24 €)
