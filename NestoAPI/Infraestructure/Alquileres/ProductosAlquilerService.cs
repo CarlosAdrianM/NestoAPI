@@ -72,6 +72,35 @@ namespace NestoAPI.Infraestructure.Alquileres
             }).ToList();
         }
 
+        // Nesto#340 Fase 1C.2: pestaña "Compra" de un alquiler (líneas del pedido de compra del
+        // aparato concreto). Sustituye la lectura EF DbContext.LinPedidoCmp del cliente Nesto, que
+        // filtraba por Producto + NumSerie ordenando por NºOrden.
+        public async Task<List<CompraAlquilerDTO>> LeerComprasAlquilerAsync(string producto, string numSerie)
+        {
+            // Se materializa primero y se proyecta en memoria para poder usar ?.Trim() (no
+            // traducible por EF) y dejar nombres/columnas limpias en el DTO.
+            List<LinPedidoCmp> lineas = await db.LinPedidoCmps
+                .Where(l => l.Producto == producto && l.NumSerie == numSerie)
+                .OrderBy(l => l.NºOrden)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return lineas.Select(l => new CompraAlquilerDTO
+            {
+                NumeroOrden = l.NºOrden,
+                NumeroPedido = l.Número,
+                Proveedor = l.NºProveedor?.Trim(),
+                FechaRecepcion = l.FechaRecepción,
+                Producto = l.Producto?.Trim(),
+                Texto = l.Texto?.Trim(),
+                Cantidad = l.Cantidad,
+                Precio = l.Precio,
+                Total = l.Total,
+                Estado = l.Estado,
+                NumSerie = l.NumSerie?.Trim()
+            }).ToList();
+        }
+
         // Tipo crudo intermedio: sus nombres de propiedad coinciden con las columnas del SP.
         private class FilaSp
         {

@@ -46,5 +46,19 @@ namespace NestoAPI.Controllers
 
             return Ok(movimientos);
         }
+
+        // GET: api/Alquileres/Compras?producto=26780&numSerie=ABC123
+        // Nesto#340 Fase 1C.2: líneas del pedido de compra del aparato (pestaña Compra).
+        [HttpGet]
+        [Route("api/Alquileres/Compras")]
+        [ResponseType(typeof(List<CompraAlquilerDTO>))]
+        public async Task<IHttpActionResult> GetComprasAlquiler(string producto, string numSerie)
+        {
+            List<CompraAlquilerDTO> compras = await _productosAlquiler
+                .LeerComprasAlquilerAsync(producto, numSerie)
+                .ConfigureAwait(false);
+
+            return Ok(compras);
+        }
     }
 }

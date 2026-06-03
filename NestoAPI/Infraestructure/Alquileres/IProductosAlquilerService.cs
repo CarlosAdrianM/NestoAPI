@@ -9,5 +9,7 @@ namespace NestoAPI.Infraestructure.Alquileres
         Task<List<ProductoAlquilerDTO>> LeerProductosAlquilerAsync();
 
         Task<List<MovimientoAlquilerDTO>> LeerMovimientosAlquilerAsync(string empresa, int pedido);
+
+        Task<List<CompraAlquilerDTO>> LeerComprasAlquilerAsync(string producto, string numSerie);
     }
 }

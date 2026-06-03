@@ -84,5 +84,37 @@ namespace NestoAPI.Tests.Controllers
             var ok = (OkNegotiatedContentResult<List<MovimientoAlquilerDTO>>)resultado;
             Assert.AreEqual(0, ok.Content.Count);
         }
+
+        [TestMethod]
+        public async Task GetComprasAlquiler_DevuelveLasComprasDelServicio()
+        {
+            var lista = new List<CompraAlquilerDTO>
+            {
+                new CompraAlquilerDTO { NumeroOrden = 1, NumeroPedido = 555, Proveedor = "PROV1", Producto = "26780", NumSerie = "ABC123", Texto = "Compra aparato", Cantidad = 1, Precio = 300m, Total = 363m, Estado = 4 },
+                new CompraAlquilerDTO { NumeroOrden = 2, NumeroPedido = 556, Proveedor = "PROV1", Producto = "26780", NumSerie = "ABC123", Texto = "Reparación", Cantidad = 1, Precio = 50m, Total = 60.5m, Estado = 1 }
+            };
+            A.CallTo(() => servicio.LeerComprasAlquilerAsync("26780", "ABC123")).Returns(Task.FromResult(lista));
+
+            var resultado = await controller.GetComprasAlquiler("26780", "ABC123");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<CompraAlquilerDTO>>));
+            var ok = (OkNegotiatedContentResult<List<CompraAlquilerDTO>>)resultado;
+            Assert.AreEqual(2, ok.Content.Count);
+            Assert.AreEqual(556, ok.Content[1].NumeroPedido);
+            Assert.AreEqual("ABC123", ok.Content[0].NumSerie);
+            A.CallTo(() => servicio.LeerComprasAlquilerAsync("26780", "ABC123")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetComprasAlquiler_SinCompras_DevuelveListaVacia()
+        {
+            A.CallTo(() => servicio.LeerComprasAlquilerAsync(A<string>._, A<string>._))
+                .Returns(Task.FromResult(new List<CompraAlquilerDTO>()));
+
+            var resultado = await controller.GetComprasAlquiler("99999", "ZZZ");
+
+            var ok = (OkNegotiatedContentResult<List<CompraAlquilerDTO>>)resultado;
+            Assert.AreEqual(0, ok.Content.Count);
+        }
     }
 }
