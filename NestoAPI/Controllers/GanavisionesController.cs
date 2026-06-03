@@ -202,7 +202,7 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("api/Ganavisiones/ProductosBonificables")]
         [ResponseType(typeof(ProductosBonificablesResponse))]
-        public async Task<IHttpActionResult> GetProductosBonificables(string empresa, decimal baseImponibleBonificable, string almacen = null, bool servirJunto = true, string cliente = null, string productosExcluir = null)
+        public async Task<IHttpActionResult> GetProductosBonificables(string empresa, decimal baseImponibleBonificable, string almacen = null, bool servirJunto = true, string cliente = null, string productosExcluir = null, bool incluirBloqueados = false)
         {
             if (baseImponibleBonificable < 0)
             {
@@ -215,7 +215,9 @@ namespace NestoAPI.Controllers
             // Calcular Ganavisiones disponibles (truncado, no redondeado)
             int ganavisionesDisponibles = (int)(baseImponibleBonificable / Constantes.Productos.VALOR_GANAVISION_EN_EUROS);
 
-            if (ganavisionesDisponibles <= 0)
+            // Sin incluirBloqueados (comportamiento clásico): si no hay puntos, no hay nada que mostrar.
+            // Con incluirBloqueados (Nesto#370) seguimos, porque queremos mostrar también los bloqueados.
+            if (ganavisionesDisponibles <= 0 && !incluirBloqueados)
             {
                 return Ok(new ProductosBonificablesResponse
                 {
@@ -225,14 +227,17 @@ namespace NestoAPI.Controllers
                 });
             }
 
-            // Obtener productos con Ganavisiones activos que se pueden bonificar
+            // Obtener productos con Ganavisiones activos. Sin incluirBloqueados se filtran a los
+            // canjeables (puntos suficientes y se alcanza el importe mínimo); con incluirBloqueados
+            // se traen todos los activos y se marca cada uno como bloqueado o no (Nesto#370).
             var ganavisionesQuery = await db.Ganavisiones
                 .Include("Producto")
                 .Where(g => g.Empresa == empresaPadded &&
                             g.FechaDesde <= hoy &&
                             (g.FechaHasta == null || g.FechaHasta >= hoy) &&
-                            g.Ganavisiones <= ganavisionesDisponibles &&
-                            g.ImporteMinimoPedido <= baseImponibleBonificable)
+                            (incluirBloqueados ||
+                             (g.Ganavisiones <= ganavisionesDisponibles &&
+                              g.ImporteMinimoPedido <= baseImponibleBonificable)))
                 .OrderBy(g => g.Ganavisiones)
                 .ThenBy(g => g.Producto.Nombre)
                 .ToListAsync()
@@ -294,6 +299,13 @@ namespace NestoAPI.Controllers
                     });
                 }
 
+                // Nesto#370: un producto está bloqueado si faltan puntos o no se alcanza su importe
+                // mínimo. El importe que falta es el mayor de los dos umbrales menos la base actual.
+                decimal importeNecesario = Math.Max(
+                    g.Ganavisiones * Constantes.Productos.VALOR_GANAVISION_EN_EUROS,
+                    g.ImporteMinimoPedido);
+                decimal importeParaDesbloquear = Math.Max(0m, importeNecesario - baseImponibleBonificable);
+
                 var dto = new ProductoBonificableDTO
                 {
                     ProductoId = g.ProductoId?.Trim(),
@@ -301,7 +313,9 @@ namespace NestoAPI.Controllers
                     Ganavisiones = g.Ganavisiones,
                     PVP = g.Producto?.PVP ?? 0,
                     Iva = g.Producto?.IVA_Repercutido?.Trim(),
-                    Stocks = stocks
+                    Stocks = stocks,
+                    Bloqueado = importeParaDesbloquear > 0m,
+                    ImporteParaDesbloquear = importeParaDesbloquear
                 };
 
                 productosBonificables.Add(dto);
@@ -323,6 +337,14 @@ namespace NestoAPI.Controllers
                     .Where(p => p.DisponibleTotal > 0)
                     .ToList();
             }
+
+            // Nesto#370: los seleccionables primero (en su orden por Ganavisiones/Nombre, que OrderBy
+            // mantiene por ser estable) y los bloqueados al final, ordenados por lo que falta para
+            // desbloquearlos (lo más cercano arriba).
+            productosBonificables = productosBonificables
+                .OrderBy(p => p.Bloqueado)
+                .ThenBy(p => p.Bloqueado ? p.ImporteParaDesbloquear : 0m)
+                .ToList();
 
             return Ok(new ProductosBonificablesResponse
             {

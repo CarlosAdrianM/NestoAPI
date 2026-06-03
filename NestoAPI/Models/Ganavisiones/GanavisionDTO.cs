@@ -57,6 +57,19 @@ namespace NestoAPI.Models.Ganavisiones
         public List<StockAlmacenDTO> Stocks { get; set; }
         public int StockTotal => Stocks?.Sum(s => s.stock) ?? 0;
         public int DisponibleTotal => Stocks?.Sum(s => s.cantidadDisponible) ?? 0;
+
+        /// <summary>
+        /// True si el pedido aún no llega para canjear este Ganavisión (faltan puntos o no alcanza
+        /// el ImporteMinimoPedido). El cliente lo muestra deshabilitado con la etiqueta de desbloqueo.
+        /// Nesto#370.
+        /// </summary>
+        public bool Bloqueado { get; set; }
+
+        /// <summary>
+        /// Importe (de base imponible bonificable) que falta para poder seleccionar este Ganavisión.
+        /// 0 si ya es seleccionable. Nesto#370.
+        /// </summary>
+        public decimal ImporteParaDesbloquear { get; set; }
     }
 
     /// <summary>

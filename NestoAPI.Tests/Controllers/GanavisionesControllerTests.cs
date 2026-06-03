@@ -724,6 +724,94 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetProductosBonificables_IncluirBloqueadosTrue_DevuelveBloqueadosConImporteParaDesbloquear()
+        {
+            // Nesto#370: base 100 -> 10 Ganavisiones. PROD1 (5) canjeable; PROD2 (15) bloqueado.
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1, Empresa = "1  ", ProductoId = "PROD1", Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Barato", PVP = 5m }
+                },
+                new Ganavision
+                {
+                    Id = 2, Empresa = "1  ", ProductoId = "PROD2", Ganavisiones = 15,
+                    FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD2", Nombre = "Producto Caro", PVP = 15m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
+            MockStock("PROD2", "ALG", 10);
+
+            var resultado = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(2, okResult.Content.Productos.Count);
+            // Seleccionable primero, bloqueado al final.
+            var prod1 = okResult.Content.Productos[0];
+            var prod2 = okResult.Content.Productos[1];
+            Assert.AreEqual("PROD1", prod1.ProductoId.Trim());
+            Assert.IsFalse(prod1.Bloqueado);
+            Assert.AreEqual(0m, prod1.ImporteParaDesbloquear);
+            Assert.AreEqual("PROD2", prod2.ProductoId.Trim());
+            Assert.IsTrue(prod2.Bloqueado);
+            // 15 Ganavisiones = 150 EUR necesarios; base 100 -> faltan 50.
+            Assert.AreEqual(50m, prod2.ImporteParaDesbloquear);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_IncluirBloqueadosFalse_NoDevuelveBloqueados()
+        {
+            // Por defecto (retrocompat) los bloqueados no se devuelven.
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 2, Empresa = "1  ", ProductoId = "PROD2", Ganavisiones = 15,
+                    FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD2", Nombre = "Producto Caro", PVP = 15m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD2", "ALG", 10);
+
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(0, okResult.Content.Productos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProductosBonificables_IncluirBloqueados_BloqueadoPorImporteMinimoPedido()
+        {
+            // Tiene puntos de sobra (5 <= 10) pero el ImporteMinimoPedido (200) no se alcanza con base 100.
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1, Empresa = "1  ", ProductoId = "PROD1", Ganavisiones = 5,
+                    ImporteMinimoPedido = 200m,
+                    FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Barato", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
+
+            var resultado = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            var prod1 = okResult.Content.Productos[0];
+            Assert.IsTrue(prod1.Bloqueado);
+            // Necesita 200 EUR (ImporteMinimoPedido) y la base es 100 -> faltan 100.
+            Assert.AreEqual(100m, prod1.ImporteParaDesbloquear);
+        }
+
+        [TestMethod]
         public async Task GetProductosBonificables_BaseImponible0_RetornaListaVacia()
         {
             // Arrange: 0 EUR = 0 Ganavisiones disponibles
