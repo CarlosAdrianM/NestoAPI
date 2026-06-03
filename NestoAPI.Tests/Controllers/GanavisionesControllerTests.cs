@@ -763,6 +763,37 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetProductosBonificables_IncluirBloqueados_BloqueadoSinStockSeMuestraIgual()
+        {
+            // Nesto#370: el filtro de stock NO debe ocultar los bloqueados (son aspiracionales).
+            // PROD_OK seleccionable con stock; PROD_BLOQ bloqueado y SIN stock disponible -> debe salir.
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1, Empresa = "1  ", ProductoId = "PROD_OK", Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD_OK", Nombre = "Disponible", PVP = 5m }
+                },
+                new Ganavision
+                {
+                    Id = 2, Empresa = "1  ", ProductoId = "PROD_BLOQ", Ganavisiones = 15,
+                    FechaDesde = DateTime.Today.AddDays(-5), FechaHasta = null,
+                    Producto = new Producto { Número = "PROD_BLOQ", Nombre = "Bloqueado sin stock", PVP = 15m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD_OK", "ALG", 10);
+            // PROD_BLOQ no tiene stock (no se llama a MockStock -> 0 por defecto).
+
+            var resultado = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true);
+
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(2, okResult.Content.Productos.Count);
+            Assert.IsTrue(okResult.Content.Productos.Any(p => p.ProductoId.Trim() == "PROD_BLOQ" && p.Bloqueado));
+        }
+
+        [TestMethod]
         public async Task GetProductosBonificables_IncluirBloqueadosFalse_NoDevuelveBloqueados()
         {
             // Por defecto (retrocompat) los bloqueados no se devuelven.
