@@ -763,10 +763,11 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task GetProductosBonificables_IncluirBloqueados_BloqueadoSinStockSeMuestraIgual()
+        public async Task GetProductosBonificables_IncluirBloqueados_BloqueadoSinStock_NoSeMuestra()
         {
-            // Nesto#370: el filtro de stock NO debe ocultar los bloqueados (son aspiracionales).
-            // PROD_OK seleccionable con stock; PROD_BLOQ bloqueado y SIN stock disponible -> debe salir.
+            // Nesto#370: no tiene sentido ofrecer un bloqueado que, aunque se desbloquee, no se podria
+            // dar por falta de stock. El filtro de stock se aplica tambien a los bloqueados.
+            // PROD_OK seleccionable con stock (sale); PROD_BLOQ bloqueado y SIN stock (NO sale).
             var ganavisiones = new List<Ganavision>
             {
                 new Ganavision
@@ -789,8 +790,8 @@ namespace NestoAPI.Tests.Controllers
             var resultado = await controller.GetProductosBonificables("1", 100m, incluirBloqueados: true);
 
             var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
-            Assert.AreEqual(2, okResult.Content.Productos.Count);
-            Assert.IsTrue(okResult.Content.Productos.Any(p => p.ProductoId.Trim() == "PROD_BLOQ" && p.Bloqueado));
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("PROD_OK", okResult.Content.Productos[0].ProductoId.Trim());
         }
 
         [TestMethod]

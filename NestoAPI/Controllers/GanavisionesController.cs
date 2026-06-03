@@ -323,21 +323,21 @@ namespace NestoAPI.Controllers
 
             // Filtrar por disponibilidad segun servirJunto
             // Issue #117: Usar cantidadDisponible en vez de stock bruto
-            // Nesto#370: el filtro de stock solo se aplica a los SELECCIONABLES (los que el cliente
-            // podria anadir ya). Los bloqueados se muestran siempre (son aspiracionales: "amplia X EUR
-            // para desbloquear"), aunque ahora mismo no tengan stock disponible.
+            // Nesto#370: el filtro de stock se aplica a TODOS (tambien a los bloqueados): no tiene
+            // sentido mostrar un producto que, aunque se desbloquee, no se podria dar por falta de
+            // stock (confundiria al vendedor: amplia el pedido y luego no puede entregarlo).
             if (!servirJunto && !string.IsNullOrEmpty(almacen))
             {
                 // Solo productos con disponibilidad en el almacen especificado
                 productosBonificables = productosBonificables
-                    .Where(p => p.Bloqueado || p.Stocks.Any(s => s.almacen == almacen && s.cantidadDisponible > 0))
+                    .Where(p => p.Stocks.Any(s => s.almacen == almacen && s.cantidadDisponible > 0))
                     .ToList();
             }
             else
             {
                 // Productos con disponibilidad en cualquier almacen
                 productosBonificables = productosBonificables
-                    .Where(p => p.Bloqueado || p.DisponibleTotal > 0)
+                    .Where(p => p.DisponibleTotal > 0)
                     .ToList();
             }
 
