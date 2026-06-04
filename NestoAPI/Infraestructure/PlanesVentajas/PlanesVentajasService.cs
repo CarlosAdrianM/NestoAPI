@@ -85,8 +85,12 @@ namespace NestoAPI.Infraestructure.PlanesVentajas
                                     && c.Vendedor.Trim() == vendedor.Trim())));
             }
 
+            // NestoAPI#219: NO ordenar en la consulta SQL. Con los joins de navegación (Empresa1,
+            // EstadosPlanVentaja) y las subconsultas Any() del filtro, EF6 añade columnas de clave al
+            // ORDER BY y duplica 'Número' (clave de PlanVentajas y columna de Empresa), lo que SQL Server
+            // rechaza ("La columna 'Número' se ha especificado varias veces"). Ordenamos en memoria tras
+            // materializar (el conjunto de planes es pequeño).
             var lista = await query
-                .OrderBy(p => p.FechaFin)
                 .Select(p => new PlanVentajasDTO
                 {
                     Numero = p.Numero,
@@ -104,7 +108,7 @@ namespace NestoAPI.Infraestructure.PlanesVentajas
                 .ToListAsync()
                 .ConfigureAwait(false);
 
-            return lista;
+            return lista.OrderBy(d => d.FechaFin).ToList();
         }
 
         public async Task<PlanVentajasDTO> ObtenerPlanAsync(int numero)

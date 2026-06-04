@@ -220,6 +220,7 @@
     <Compile Include="Infrastructure\Facturas\GestorFacturacionRutas_PuedeFacturarPedidoTests.cs" />
     <Compile Include="Infrastructure\GestorKitsTests.cs" />
     <Compile Include="Infrastructure\Filters\GlobalExceptionFilterContextTests.cs" />
+    <Compile Include="Infrastructure\PlanesVentajas\PlanesVentajasServiceTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Infrastructure\GestorPresupuestosTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasGruposTests.cs" />
