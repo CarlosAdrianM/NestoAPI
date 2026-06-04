@@ -45,7 +45,7 @@ namespace NestoAPI.Infraestructure.Filters
             // Logging con Elmah (persiste en base de datos)
             try
             {
-                ErrorSignal.FromCurrentContext().Raise(exception);
+                RegistrarEnElmah(exception);
             }
             catch
             {
@@ -79,6 +79,57 @@ namespace NestoAPI.Infraestructure.Filters
             }
 
             context.Response = context.Request.CreateResponse(statusCode, responseContent);
+        }
+
+        /// <summary>
+        /// Registra la excepción en ELMAH. Si es una <see cref="NestoBusinessException"/> con datos
+        /// de contexto (p. ej. el JSON del pedido que falló la validación, NestoAPI#215), construye
+        /// el <see cref="Elmah.Error"/> a mano y vuelca cada dato de <c>AdditionalData</c> a una
+        /// ServerVariable (<c>X-Context-*</c>), para verlo en la misma ficha de ELMAH y poder
+        /// reproducir el caso. <c>ErrorSignal.Raise</c> no permite inyectar ServerVariables, por eso
+        /// se usa <c>ErrorLog.Log</c> directamente en ese caso; el resto sigue por ErrorSignal (que
+        /// aplica el errorFilter de Web.config, p. ej. el de OperationCanceledException).
+        /// </summary>
+        private void RegistrarEnElmah(Exception exception)
+        {
+            var contexto = (exception as NestoBusinessException)?.Context;
+            var httpContext = System.Web.HttpContext.Current;
+
+            if (httpContext != null && contexto?.AdditionalData != null && contexto.AdditionalData.Count > 0)
+            {
+                var error = new Elmah.Error(exception, httpContext);
+                VolcarContextoAServerVariables(error.ServerVariables, contexto);
+                _ = Elmah.ErrorLog.GetDefault(httpContext).Log(error);
+            }
+            else
+            {
+                ErrorSignal.FromCurrentContext().Raise(exception);
+            }
+        }
+
+        /// <summary>
+        /// Copia cada entrada de <c>AdditionalData</c> del contexto a una ServerVariable del Error de
+        /// ELMAH con prefijo <c>X-Context-</c>. Los valores no string se serializan a JSON. Así el JSON
+        /// del pedido (NestoAPI#215), los Motivos y los Errores quedan en la ficha del error.
+        /// </summary>
+        internal static void VolcarContextoAServerVariables(System.Collections.Specialized.NameValueCollection serverVariables, ErrorContext contexto)
+        {
+            if (serverVariables == null || contexto?.AdditionalData == null)
+            {
+                return;
+            }
+
+            foreach (var kvp in contexto.AdditionalData)
+            {
+                if (kvp.Value == null)
+                {
+                    continue;
+                }
+
+                string valor = kvp.Value as string
+                    ?? Newtonsoft.Json.JsonConvert.SerializeObject(kvp.Value);
+                serverVariables.Add("X-Context-" + kvp.Key, valor);
+            }
         }
 
         /// <summary>

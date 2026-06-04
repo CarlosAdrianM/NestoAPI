@@ -1,4 +1,5 @@
 using NestoAPI.Models.PedidosVenta;
+using Newtonsoft.Json;
 using System.Net;
 
 namespace NestoAPI.Infraestructure.Exceptions
@@ -91,6 +92,33 @@ namespace NestoAPI.Infraestructure.Exceptions
                 {
                     Context.WithData("Errores", respuestaValidacion.Errores);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Constructor que recibe el <see cref="PedidoVentaDTO"/> completo (NestoAPI#215).
+        /// Extrae empresa/número/cliente/usuario del propio pedido (evita repetirlos en POST y PUT)
+        /// y ADJUNTA el DTO serializado al contexto ("pedidoBorradorJson"), que GlobalExceptionFilter
+        /// vuelca a ELMAH. Así el error guarda el pedido exacto que falló la validación, en la misma
+        /// forma que PlantillaVenta/DetallePedido cargan como borrador, y se puede reproducir el caso.
+        /// </summary>
+        /// <param name="mensaje">Mensaje descriptivo del error de validación</param>
+        /// <param name="respuestaValidacion">Objeto completo con todos los detalles de validación</param>
+        /// <param name="pedido">DTO del pedido que se estaba validando</param>
+        public PedidoValidacionException(
+            string mensaje,
+            RespuestaValidacion respuestaValidacion,
+            PedidoVentaDTO pedido)
+            : this(mensaje, respuestaValidacion,
+                empresa: pedido?.empresa,
+                pedido: pedido?.numero,
+                cliente: pedido?.cliente,
+                usuario: pedido?.Usuario)
+        {
+            if (pedido != null)
+            {
+                Context.WithData("pedidoBorradorJson", JsonConvert.SerializeObject(pedido,
+                    new JsonSerializerSettings { ReferenceLoopHandling = ReferenceLoopHandling.Ignore }));
             }
         }
 

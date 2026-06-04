@@ -834,10 +834,7 @@ namespace NestoAPI.Controllers
                         throw new PedidoValidacionException(
                             respuestaValidacion.Motivo,
                             respuestaValidacion,
-                            empresa: pedido.empresa,
-                            pedido: pedido.numero,
-                            cliente: pedido.cliente,
-                            usuario: pedido.Usuario);
+                            pedido);
                     }
                 }
             }
@@ -1586,10 +1583,7 @@ namespace NestoAPI.Controllers
                     throw new PedidoValidacionException(
                         respuestaValidacion.Motivo,
                         respuestaValidacion,
-                        empresa: pedido.empresa,
-                        pedido: pedido.numero,
-                        cliente: pedido.cliente,
-                        usuario: pedido.Usuario);
+                        pedido);
                 }
             }
 
