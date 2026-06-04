@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosVenta;
@@ -607,8 +608,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return await UnirPedidos(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is NestoBusinessException))
             {
+                // NestoAPI#216: las NestoBusinessException (p. ej. PedidoValidacionException) se dejan
+                // pasar SIN envolver, para no perder el código PEDIDO_VALIDACION_FALLO que el cliente
+                // necesita para ofrecer "¿Crear el pedido de todas formas?" también al unir pedidos.
                 throw new Exception(ex.Message);
             }
         }
@@ -620,8 +624,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
                 return await UnirPedidos(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (!(ex is NestoBusinessException))
             {
+                // NestoAPI#216: las NestoBusinessException (p. ej. PedidoValidacionException) se dejan
+                // pasar SIN envolver, para no perder el código PEDIDO_VALIDACION_FALLO que el cliente
+                // necesita para ofrecer "¿Crear el pedido de todas formas?" también al unir pedidos.
                 throw new Exception(ex.Message);
             }
         }
@@ -632,33 +639,46 @@ namespace NestoAPI.Infraestructure.PedidosVenta
 
             using (TransactionScope transaction = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
             {
-                using (PedidosVentaController controller = new PedidosVentaController())
+                try
                 {
-                    try
-                    {
-                        if (pedidoAmpliacion.numero != 0)
-                        {
-                            _ = await controller.PutPedidoVenta(pedidoAmpliacion).ConfigureAwait(true);
-                        }
-                        _ = await controller.PutPedidoVenta(pedidoOriginal).ConfigureAwait(true);
-                        transaction.Complete();
-                    }
-                    catch (TransactionAbortedException ex)
-                    {
-                        throw new Exception(ex.Message);
-                    }
-                    catch (HttpResponseException ex)
-                    {
-                        throw new Exception(ex.Response.ReasonPhrase);
-                    }
-                    catch (Exception ex)
-                    {
-                        throw new Exception(ex.Message);
-                    }
+                    await PersistirUnion(pedidoOriginal, pedidoAmpliacion).ConfigureAwait(true);
+                    transaction.Complete();
+                }
+                catch (TransactionAbortedException ex)
+                {
+                    throw new Exception(ex.Message);
+                }
+                catch (HttpResponseException ex)
+                {
+                    throw new Exception(ex.Response.ReasonPhrase);
+                }
+                catch (Exception ex) when (!(ex is NestoBusinessException))
+                {
+                    // NestoAPI#216: PutPedidoVenta lanza PedidoValidacionException (código
+                    // PEDIDO_VALIDACION_FALLO) cuando el pedido unido no pasa validación. La dejamos
+                    // propagar sin envolver para que el cliente ofrezca "¿Crear de todas formas?".
+                    throw new Exception(ex.Message);
                 }
             }
 
             return pedidoOriginal;
+        }
+
+        /// <summary>
+        /// Persiste la unión: vuelve a guardar (PUT) el pedido de ampliación (si existe en BD) y el
+        /// original ya con las líneas movidas. Extraído de <see cref="UnirPedidos"/> como punto de
+        /// extensión (virtual) para poder testear el manejo de excepciones sin tocar la BD.
+        /// </summary>
+        protected virtual async Task PersistirUnion(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
+        {
+            using (PedidosVentaController controller = new PedidosVentaController())
+            {
+                if (pedidoAmpliacion.numero != 0)
+                {
+                    _ = await controller.PutPedidoVenta(pedidoAmpliacion).ConfigureAwait(true);
+                }
+                _ = await controller.PutPedidoVenta(pedidoOriginal).ConfigureAwait(true);
+            }
         }
 
         /// <summary>

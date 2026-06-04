@@ -1,10 +1,14 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -392,6 +396,64 @@ namespace NestoAPI.Tests.Infrastructure
 
             var lineaMovida = original.Lineas.Single(l => l.Producto == "B");
             Assert.AreEqual(0, lineaMovida.id);
+        }
+
+        #endregion
+
+        #region UnirPedidos preserva PedidoValidacionException - NestoAPI#216
+
+        [TestMethod]
+        public void UnirPedidos_SiLaValidacionDelPedidoUnidoFalla_PropagaPedidoValidacionExceptionConSuCodigo()
+        {
+            // Regresión NestoAPI#216: al unir pedidos, si el pedido resultante no pasa la validación,
+            // PutPedidoVenta lanza PedidoValidacionException (código PEDIDO_VALIDACION_FALLO). Antes
+            // UnirPedidos lo envolvía en una Exception genérica y se perdía el código, así que el cliente
+            // NO ofrecía "¿Crear el pedido de todas formas?" (sí lo ofrece al crear un pedido normal).
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var pedidoValidacion = new PedidoValidacionException(
+                "No se encuentra autorización para la oferta del producto 380",
+                new RespuestaValidacion { ValidacionSuperada = false });
+            var gestor = new GestorUnirPedidosConFallo(servicio, pedidoValidacion);
+
+            PedidoValidacionException ex = Assert.ThrowsException<PedidoValidacionException>(() =>
+                gestor.UnirPedidos(NuevoPedidoDto(), NuevoPedidoDto()).GetAwaiter().GetResult());
+
+            Assert.AreEqual("PEDIDO_VALIDACION_FALLO", ex.Context.ErrorCode);
+        }
+
+        [TestMethod]
+        public void UnirPedidos_SiFallaPorOtroMotivo_SeSigueEnvolviendoEnExceptionGenerica()
+        {
+            // El resto de errores se siguen aplanando a Exception(message) como antes (comportamiento
+            // intacto): solo las NestoBusinessException se dejan pasar sin envolver.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var gestor = new GestorUnirPedidosConFallo(servicio, new InvalidOperationException("boom"));
+
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                gestor.UnirPedidos(NuevoPedidoDto(), NuevoPedidoDto()).GetAwaiter().GetResult());
+
+            Assert.IsFalse(ex is NestoBusinessException);
+            Assert.AreEqual("boom", ex.Message);
+        }
+
+        /// <summary>
+        /// Sustituye la persistencia real (controller + BD) por el lanzamiento de una excepción dada,
+        /// para verificar el manejo de excepciones de UnirPedidos sin tocar la BD.
+        /// </summary>
+        private class GestorUnirPedidosConFallo : GestorPedidosVenta
+        {
+            private readonly Exception _aLanzar;
+
+            public GestorUnirPedidosConFallo(IServicioPedidosVenta servicio, Exception aLanzar)
+                : base(servicio)
+            {
+                _aLanzar = aLanzar;
+            }
+
+            protected override Task PersistirUnion(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
+            {
+                throw _aLanzar;
+            }
         }
 
         #endregion
