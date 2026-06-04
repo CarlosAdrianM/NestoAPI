@@ -6,6 +6,7 @@ using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -2806,7 +2807,9 @@ namespace NestoAPI.Tests.Infrastructure
             RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
 
             Assert.IsFalse(respuesta.ValidacionSuperada);
-            Assert.AreEqual("No se encuentra autorizado el descuento del 100,00 % para el producto MUESTRA", respuesta.Motivo);
+            // Tras el follow-up del mensaje, el pipeline surfacea el motivo concreto del validador de
+            // muestras (supera las 10 uds sueltas) en vez del genérico "no autorizado el 100 %".
+            Assert.AreEqual("El producto MUESTRA no se puede regalar: se superan las 10 unidades de muestra suelta permitidas", respuesta.Motivo);
         }
 
         [TestMethod]
@@ -2903,6 +2906,308 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Descontando la muestra de la oferta (5 €) quedan 0,5 € ≤ 1 € (5 %) → la suelta es válida.
             Assert.IsTrue(respuesta.ValidacionSuperada);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_UnaCamisetaDeMasNoDebeTirarTodaLaOfertaNiSusMuestras()
+        {
+            // Regresión real (ELMAH 04/06/26, pedido borrador de CAROLINA FERREIRA BERMEJO 29382):
+            // se rechazó el descuento del 100 % de TODAS las muestras (45440, 45442, 45461, 45444,
+            // 45445, 45446, 45449) de la oferta combinada 244 "NEO-TECH Ainhoa opcion exclusiva beauty".
+            //
+            // Causa: el pedido cumple EXACTAMENTE la oferta 244 (importe mínimo 642,56 € y todas las
+            // cantidades), salvo que lleva 2 camisetas (45449) cuando el grupo de alternativas de la
+            // oferta da 1. GruposSatisfechos exige cantidad exacta (pedidas != requerido => false), así
+            // que UNA camiseta de más invalida la oferta entera y arrastra a todas las muestras.
+            //
+            // Comportamiento deseado (confirmado por Carlos): la oferta se cumple consumiendo 1 camiseta
+            // y SOBRA 1 camiseta (PVP 17 €). Esa camiseta sobrante es material promocional suelto: como
+            // 17 € < 5 % de la base (642,56 € → 32,13 €), el pedido debe ACEPTARSE.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "29382";
+            pedido.contacto = "0";
+
+            // Productos cobrados de la oferta (dan la base imponible: 642,56 €, justo el importe mínimo).
+            AnadirLineaCobrada(pedido, "45437", 2, 38.63M);
+            AnadirLineaCobrada(pedido, "45438", 5, 26.42M);
+            AnadirLineaCobrada(pedido, "45439", 20, 4.56M);
+            AnadirLineaCobrada(pedido, "45441", 10, 34.20M);
+
+            // Muestras de la oferta (100 % dto). 45449 es la camiseta: la oferta da 1, el pedido lleva 2.
+            AnadirLineaMuestra(pedido, "45440", 1, 10M);
+            AnadirLineaMuestra(pedido, "45442", 50, 0.40M);
+            AnadirLineaMuestra(pedido, "45461", 30, 4M);
+            AnadirLineaMuestra(pedido, "45444", 30, 0.80M);
+            AnadirLineaMuestra(pedido, "45445", 1, 19M);
+            AnadirLineaMuestra(pedido, "45446", 1, 10M);
+            AnadirLineaMuestra(pedido, "45449", 2, 17M);
+
+            ConfigurarProductoCobrado("45437", 38.63M);
+            ConfigurarProductoCobrado("45438", 26.42M);
+            ConfigurarProductoCobrado("45439", 4.56M);
+            ConfigurarProductoCobrado("45441", 34.20M);
+            ConfigurarProductoMuestra("45440", 10M);
+            ConfigurarProductoMuestra("45442", 0.40M);
+            ConfigurarProductoMuestra("45461", 4M);
+            ConfigurarProductoMuestra("45444", 0.80M);
+            ConfigurarProductoMuestra("45445", 19M);
+            ConfigurarProductoMuestra("45446", 10M);
+            ConfigurarProductoMuestra("45449", 17M);
+
+            OfertaCombinada oferta244 = CrearOfertaNeoTech244();
+            OfertaCombinada oferta245 = CrearOfertaNeoTech245();
+            List<OfertaCombinada> ambas = new List<OfertaCombinada> { oferta244, oferta245 };
+            List<OfertaCombinada> solo244 = new List<OfertaCombinada> { oferta244 };
+            // 45445 solo está en la 244; el resto, en las dos.
+            foreach (string p in new[] { "45437", "45438", "45439", "45440", "45441", "45442", "45444", "45446", "45449", "45461" })
+            {
+                string producto = p;
+                _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas(producto)).Returns(ambas);
+            }
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("45445")).Returns(solo244);
+
+            // Importe total de muestras cosméticas (PVP × cantidad): 10+20+120+24+19+10+34 = 237 €.
+            _ = A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(237M);
+
+            // Las 7 referencias que ELMAH rechazó deben quedar autorizadas (por la oferta las que la
+            // oferta consume, y por el 5 % de material promocional la camiseta sobrante).
+            string[] productosRechazadosEnElmah = { "45440", "45442", "45461", "45444", "45445", "45446", "45449" };
+            List<string> sigueRechazado = new List<string>();
+            foreach (string producto in productosRechazadosEnElmah)
+            {
+                RespuestaValidacion respuesta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, producto);
+                if (!respuesta.ValidacionSuperada)
+                {
+                    sigueRechazado.Add(producto);
+                }
+            }
+
+            Assert.AreEqual(0, sigueRechazado.Count,
+                "Estas referencias siguen rechazadas y no deberían: " + string.Join(", ", sigueRechazado));
+        }
+
+        [TestMethod]
+        public void GestorPrecios_ValidadorOfertasCombinadas_SiLasCamisetasSobrantesSuperanEl5PorcientoSeRechazan()
+        {
+            // Misma oferta 244, pero ahora la comercial mete 5 camisetas (45449). La oferta cubre 1;
+            // sobran 4 (4 × 17 = 68 €), que como material promocional suelto superan el 5 % de la base
+            // (642,56 € → 32,13 €). Debe rechazarse SOLO la camiseta, no las demás muestras de la oferta.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "29382";
+            pedido.contacto = "0";
+
+            AnadirLineaCobrada(pedido, "45437", 2, 38.63M);
+            AnadirLineaCobrada(pedido, "45438", 5, 26.42M);
+            AnadirLineaCobrada(pedido, "45439", 20, 4.56M);
+            AnadirLineaCobrada(pedido, "45441", 10, 34.20M);
+
+            AnadirLineaMuestra(pedido, "45440", 1, 10M);
+            AnadirLineaMuestra(pedido, "45442", 50, 0.40M);
+            AnadirLineaMuestra(pedido, "45461", 30, 4M);
+            AnadirLineaMuestra(pedido, "45444", 30, 0.80M);
+            AnadirLineaMuestra(pedido, "45445", 1, 19M);
+            AnadirLineaMuestra(pedido, "45446", 1, 10M);
+            AnadirLineaMuestra(pedido, "45449", 5, 17M); // 5 camisetas: la oferta cubre 1, sobran 4
+
+            ConfigurarProductoCobrado("45437", 38.63M);
+            ConfigurarProductoCobrado("45438", 26.42M);
+            ConfigurarProductoCobrado("45439", 4.56M);
+            ConfigurarProductoCobrado("45441", 34.20M);
+            ConfigurarProductoMuestra("45440", 10M);
+            ConfigurarProductoMuestra("45442", 0.40M);
+            ConfigurarProductoMuestra("45461", 4M);
+            ConfigurarProductoMuestra("45444", 0.80M);
+            ConfigurarProductoMuestra("45445", 19M);
+            ConfigurarProductoMuestra("45446", 10M);
+            ConfigurarProductoMuestra("45449", 17M);
+
+            OfertaCombinada oferta244 = CrearOfertaNeoTech244();
+            OfertaCombinada oferta245 = CrearOfertaNeoTech245();
+            List<OfertaCombinada> ambas = new List<OfertaCombinada> { oferta244, oferta245 };
+            List<OfertaCombinada> solo244 = new List<OfertaCombinada> { oferta244 };
+            foreach (string p in new[] { "45437", "45438", "45439", "45440", "45441", "45442", "45444", "45446", "45449", "45461" })
+            {
+                string producto = p;
+                _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas(producto)).Returns(ambas);
+            }
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("45445")).Returns(solo244);
+
+            // Importe total de muestras: 10+20+120+24+19+10 + 5×17 = 288 €.
+            _ = A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(288M);
+
+            // Las demás muestras siguen autorizadas por la oferta...
+            RespuestaValidacion respuestaMuestra = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "45442");
+            Assert.IsTrue(respuestaMuestra.ValidacionSuperada, "Las muestras de la oferta deben seguir autorizadas");
+
+            // ...pero la camiseta sobrante (4 uds = 68 € > 32,13 €) NO.
+            RespuestaValidacion respuestaCamiseta = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, "45449");
+            Assert.IsFalse(respuestaCamiseta.ValidacionSuperada,
+                "Las 4 camisetas sobrantes superan el 5 % y no deben autorizarse");
+            Assert.IsTrue(respuestaCamiseta.Motivo != null && respuestaCamiseta.Motivo.Contains("supera el 5 %"),
+                "El motivo del rechazo debe explicar que supera el 5 %, no el genérico del 100 %. Motivo: " + respuestaCamiseta.Motivo);
+        }
+
+        [TestMethod]
+        public void GestorPrecios_EsPedidoValido_LaCamisetaQueSuperaEl5PorcientoDaMensajeClaro()
+        {
+            // End-to-end: el pipeline completo (denegación -> aceptación) debe surfacear el motivo
+            // CONCRETO del validador de muestras ("supera el 5 %") en vez del genérico de denegación
+            // ("No se encuentra autorizado el descuento del 100 %"), que no le dice al usuario qué pasa.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "29382";
+            pedido.contacto = "0";
+
+            AnadirLineaCobrada(pedido, "45437", 2, 38.63M);
+            AnadirLineaCobrada(pedido, "45438", 5, 26.42M);
+            AnadirLineaCobrada(pedido, "45439", 20, 4.56M);
+            AnadirLineaCobrada(pedido, "45441", 10, 34.20M);
+
+            AnadirLineaMuestra(pedido, "45440", 1, 10M);
+            AnadirLineaMuestra(pedido, "45442", 50, 0.40M);
+            AnadirLineaMuestra(pedido, "45461", 30, 4M);
+            AnadirLineaMuestra(pedido, "45444", 30, 0.80M);
+            AnadirLineaMuestra(pedido, "45445", 1, 19M);
+            AnadirLineaMuestra(pedido, "45446", 1, 10M);
+            AnadirLineaMuestra(pedido, "45449", 5, 17M);
+
+            ConfigurarProductoCobrado("45437", 38.63M);
+            ConfigurarProductoCobrado("45438", 26.42M);
+            ConfigurarProductoCobrado("45439", 4.56M);
+            ConfigurarProductoCobrado("45441", 34.20M);
+            ConfigurarProductoMuestra("45440", 10M);
+            ConfigurarProductoMuestra("45442", 0.40M);
+            ConfigurarProductoMuestra("45461", 4M);
+            ConfigurarProductoMuestra("45444", 0.80M);
+            ConfigurarProductoMuestra("45445", 19M);
+            ConfigurarProductoMuestra("45446", 10M);
+            ConfigurarProductoMuestra("45449", 17M);
+
+            OfertaCombinada oferta244 = CrearOfertaNeoTech244();
+            OfertaCombinada oferta245 = CrearOfertaNeoTech245();
+            List<OfertaCombinada> ambas = new List<OfertaCombinada> { oferta244, oferta245 };
+            List<OfertaCombinada> solo244 = new List<OfertaCombinada> { oferta244 };
+            foreach (string p in new[] { "45437", "45438", "45439", "45440", "45441", "45442", "45444", "45446", "45449", "45461" })
+            {
+                string producto = p;
+                _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas(producto)).Returns(ambas);
+            }
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas("45445")).Returns(solo244);
+            _ = A.CallTo(() => GestorPrecios.servicio.CalcularImporteGrupo(pedido, "COS", "MMP")).Returns(288M);
+
+            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada, "El pedido no es válido (la camiseta sobrante supera el 5 %)");
+            Assert.IsTrue(respuesta.Motivos.Any(m => m.Contains("supera el 5 %")),
+                "El motivo final debe explicar que supera el 5 %. Motivos: " + string.Join(" | ", respuesta.Motivos));
+            Assert.IsFalse(respuesta.Motivos.Any(m => m.Contains("descuento del 100")),
+                "No debe quedar el mensaje genérico del 100 % para la camiseta. Motivos: " + string.Join(" | ", respuesta.Motivos));
+        }
+
+        private static void AnadirLineaCobrada(PedidoVentaDTO pedido, string producto, int cantidad, decimal precio)
+        {
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = 1, // línea de venta: los validadores de denegación solo procesan tipoLinea == 1
+                Producto = producto,
+                AplicarDescuento = true,
+                Cantidad = cantidad,
+                PrecioUnitario = precio,
+                GrupoProducto = Constantes.Productos.GRUPO_COSMETICA
+            });
+        }
+
+        private static void AnadirLineaMuestra(PedidoVentaDTO pedido, string producto, int cantidad, decimal precio)
+        {
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = 1, // línea de venta: los validadores de denegación solo procesan tipoLinea == 1
+                Producto = producto,
+                AplicarDescuento = true,
+                Cantidad = cantidad,
+                PrecioUnitario = precio,
+                DescuentoLinea = 1M, // de regalo, 100 % dto
+                GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                SubgrupoProducto = Constantes.Productos.SUBGRUPO_MUESTRAS
+            });
+        }
+
+        private static void ConfigurarProductoCobrado(string producto, decimal pvp)
+        {
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarProducto(producto)).Returns(new Producto
+            {
+                Número = producto,
+                PVP = pvp,
+                Grupo = Constantes.Productos.GRUPO_COSMETICA,
+                SubGrupo = "COS"
+            });
+        }
+
+        private static void ConfigurarProductoMuestra(string producto, decimal pvp)
+        {
+            _ = A.CallTo(() => GestorPrecios.servicio.BuscarProducto(producto)).Returns(new Producto
+            {
+                Número = producto,
+                PVP = pvp,
+                Grupo = Constantes.Productos.GRUPO_COSMETICA,
+                SubGrupo = Constantes.Productos.SUBGRUPO_MUESTRAS
+            });
+        }
+
+        private static OfertaCombinada CrearOfertaNeoTech244()
+        {
+            return new OfertaCombinada
+            {
+                Id = 244,
+                Empresa = "1",
+                Nombre = "Oferta NEO-TECH Ainhoa opcion exclusiva beauty",
+                ImporteMinimo = 642.56M,
+                OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                {
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45437", Precio = 0, Cantidad = 2 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45438", Precio = 0, Cantidad = 5 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45439", Precio = 0, Cantidad = 20 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45440", Precio = 0, Cantidad = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45441", Precio = 0, Cantidad = 10 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45442", Precio = 0, Cantidad = 50 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45444", Precio = 0, Cantidad = 30 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45445", Precio = 0, Cantidad = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45446", Precio = 0, Cantidad = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45461", Precio = 0, Cantidad = 30 },
+                    // Grupo de alternativas (elige 1 camiseta): 45447 / 45448 / 45449
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45447", Precio = 0, Cantidad = 1, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45448", Precio = 0, Cantidad = 1, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 244, Empresa = "1", Producto = "45449", Precio = 0, Cantidad = 1, GrupoAlternativa = 1 }
+                }
+            };
+        }
+
+        private static OfertaCombinada CrearOfertaNeoTech245()
+        {
+            return new OfertaCombinada
+            {
+                Id = 245,
+                Empresa = "1",
+                Nombre = "Oferta NEO-TECH Ainhoa opcion exclusiva simple",
+                ImporteMinimo = 383.71M,
+                OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                {
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45437", Precio = 0, Cantidad = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45438", Precio = 0, Cantidad = 4 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45439", Precio = 0, Cantidad = 15 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45440", Precio = 0, Cantidad = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45441", Precio = 0, Cantidad = 5 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45442", Precio = 0, Cantidad = 30 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45444", Precio = 0, Cantidad = 15 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45446", Precio = 0, Cantidad = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45461", Precio = 0, Cantidad = 10 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45447", Precio = 0, Cantidad = 1, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45448", Precio = 0, Cantidad = 1, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 245, Empresa = "1", Producto = "45449", Precio = 0, Cantidad = 1, GrupoAlternativa = 1 }
+                }
+            };
         }
 
         [TestMethod]

@@ -280,9 +280,10 @@ namespace NestoAPI.Infraestructure
                     {
                         foreach (var error in respuestaValidacion.Errores)
                         {
+                            RespuestaValidacion respuestaAceptacion = null;
                             if (!error.AutorizadaDenegadaExpresamente)
                             {
-                                RespuestaValidacion respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, error.ProductoId);
+                                respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, error.ProductoId);
                                 if (respuestaAceptacion.ValidacionSuperada)
                                 {
                                     // Este error está justificado - guardamos el motivo de aceptación
@@ -295,19 +296,26 @@ namespace NestoAPI.Infraestructure
                                 }
                             }
 
-                            // Acumulamos el error no justificado
-                            if (!string.IsNullOrEmpty(error.Motivo))
+                            // Acumulamos el error no justificado. Si un validador de aceptación reconoció
+                            // el producto y dio un motivo específico (p. ej. "supera el 5 % del pedido"),
+                            // lo preferimos al genérico de denegación ("No se encuentra autorizado el 100 %").
+                            string motivoError = (respuestaAceptacion != null && respuestaAceptacion.MotivoEspecifico
+                                    && !string.IsNullOrEmpty(respuestaAceptacion.Motivo))
+                                ? respuestaAceptacion.Motivo
+                                : error.Motivo;
+                            if (!string.IsNullOrEmpty(motivoError))
                             {
-                                erroresAcumulados.Add(error.Motivo);
+                                erroresAcumulados.Add(motivoError);
                             }
                         }
                     }
                     else
                     {
                         // Compatibilidad con validadores que no usan Errores
+                        RespuestaValidacion respuestaAceptacion = null;
                         if (!respuestaValidacion.AutorizadaDenegadaExpresamente)
                         {
-                            RespuestaValidacion respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, respuestaValidacion.ProductoId);
+                            respuestaAceptacion = GestorPrecios.ComprobarValidadoresDeAceptacion(pedido, respuestaValidacion.ProductoId);
                             if (respuestaAceptacion.ValidacionSuperada)
                             {
                                 if (!string.IsNullOrEmpty(respuestaAceptacion.Motivo))
@@ -319,9 +327,14 @@ namespace NestoAPI.Infraestructure
                             }
                         }
 
-                        if (!string.IsNullOrEmpty(respuestaValidacion.Motivo))
+                        // Preferimos el motivo específico del validador de aceptación al genérico de denegación.
+                        string motivoDenegacion = (respuestaAceptacion != null && respuestaAceptacion.MotivoEspecifico
+                                && !string.IsNullOrEmpty(respuestaAceptacion.Motivo))
+                            ? respuestaAceptacion.Motivo
+                            : respuestaValidacion.Motivo;
+                        if (!string.IsNullOrEmpty(motivoDenegacion))
                         {
-                            erroresAcumulados.Add(respuestaValidacion.Motivo);
+                            erroresAcumulados.Add(motivoDenegacion);
                         }
                     }
                 }
@@ -356,17 +369,24 @@ namespace NestoAPI.Infraestructure
                 Motivo = "No hay ninguna oferta que permita poner el producto " + numeroProducto + " a ese precio"
             };
 
+            // Si ningún validador acepta, preferimos devolver el rechazo de un validador que "reconozca"
+            // el producto (MotivoEspecifico) en vez del genérico del último de la lista: así el pipeline
+            // puede dar un mensaje útil al usuario (p. ej. "supera el 5 % del pedido").
+            RespuestaValidacion rechazoEspecifico = null;
             foreach (IValidadorAceptacion validador in listaValidadoresAceptacion)
             {
                 respuesta = validador.EsPedidoValido(pedido, numeroProducto, servicio);
                 if (respuesta.ValidacionSuperada)
                 {
-                    break;
+                    return respuesta;
+                }
+                if (respuesta.MotivoEspecifico && rechazoEspecifico == null)
+                {
+                    rechazoEspecifico = respuesta;
                 }
             }
-            ;
 
-            return respuesta;
+            return rechazoEspecifico ?? respuesta;
         }
     }
 
@@ -448,6 +468,13 @@ namespace NestoAPI.Infraestructure
 
         public string ProductoId { get; set; }
         public bool AutorizadaDenegadaExpresamente { get; set; }
+
+        // Carlos 04/06/26: cuando un validador de ACEPTACIÓN rechaza un producto que él "reconoce"
+        // (p. ej. el de muestras sabe que es material promocional y el motivo es que supera el 5 %),
+        // marca su rechazo como específico. El pipeline (EsPedidoValido) prefiere este motivo concreto
+        // al genérico de denegación ("No se encuentra autorizado el descuento del 100 %"), que no le
+        // dice al usuario QUÉ pasa. Los rechazos genéricos lo dejan en false (comportamiento previo).
+        public bool MotivoEspecifico { get; set; }
     }
 
     public class ErrorValidacion

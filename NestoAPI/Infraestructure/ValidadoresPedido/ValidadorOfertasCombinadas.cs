@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -102,6 +103,23 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 }
             }
 
+            // Si el producto validado pertenece a un grupo de alternativas con más unidades de las que
+            // la oferta cubre (p. ej. 2 camisetas cuando la oferta da 1), la oferta autoriza solo las
+            // unidades justas: las que sobran son material promocional suelto. Rechazamos este producto
+            // (NO la oferta entera) para que el pipeline pase a ValidadorMuestrasYMaterialPromocional,
+            // que cuenta solo las unidades sobrantes contra el 5 % del pedido.
+            if (ofertaCumplida != null && ProductoEnGrupoSobresurtido(ofertaCumplida, pedido, numeroProducto))
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    Motivo = "La oferta " + ofertaCumplida.Id.ToString()
+                        + " solo cubre las unidades justas del grupo de alternativas; las que sobran del producto "
+                        + numeroProducto + " son material promocional suelto",
+                    ProductoId = numeroProducto
+                };
+            }
+
             // Comprobamos los múltiplos
             if (ofertaCumplida != null)
             {
@@ -193,9 +211,12 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// <summary>
         /// Grupos de alternativas: las líneas que comparten GrupoAlternativa son intercambiables
         /// ("elige 1 de N"; p. ej. una camiseta de cualquier talla). Para cada grupo, el pedido debe
-        /// llevar productos del grupo (a precio aceptable) que sumen EXACTAMENTE la cantidad requerida
-        /// (cantidad del grupo × nº de instancias). Así no vale 0 (olvidar la camiseta) ni de más.
-        /// Las ofertas sin grupos devuelven true (comportamiento intacto).
+        /// llevar productos del grupo (a precio aceptable) que sumen AL MENOS la cantidad requerida
+        /// (cantidad del grupo × nº de instancias). Así no vale 0 (olvidar la camiseta), pero SÍ vale
+        /// de más: las unidades sobrantes del grupo no tiran la oferta para el resto de productos; se
+        /// tratan como material promocional suelto (las rechaza este validador a nivel del producto
+        /// concreto vía ProductoEnGrupoSobresurtido y las cuenta el 5 % en
+        /// ValidadorMuestrasYMaterialPromocional). Las ofertas sin grupos devuelven true (intacto).
         /// </summary>
         private static bool GruposSatisfechos(OfertaCombinada oferta, PedidoVentaDTO pedido, int instancias)
         {
@@ -219,11 +240,141 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                         .Sum(l => l.Cantidad);
                 }
 
-                if (pedidas != requerido)
+                if (pedidas < requerido)
                 {
                     return false;
                 }
             }
+            return true;
+        }
+
+        /// <summary>
+        /// ¿El producto validado pertenece a un grupo de alternativas de la oferta que lleva MÁS
+        /// unidades de las que la oferta cubre (cantidad del grupo × nº de instancias)? En ese caso la
+        /// oferta autoriza solo las unidades justas y este producto concreto no se da por cubierto: las
+        /// que sobran son material promocional suelto. (Las ofertas reales 244/245 dan 1 camiseta; si
+        /// el pedido lleva 2, la 2ª sobra.)
+        /// </summary>
+        private static bool ProductoEnGrupoSobresurtido(OfertaCombinada oferta, PedidoVentaDTO pedido, string numeroProducto)
+        {
+            OfertaCombinadaDetalle detalleGrupo = oferta.OfertasCombinadasDetalles
+                .FirstOrDefault(d => d.GrupoAlternativa.HasValue
+                    && d.Producto != null
+                    && d.Producto.Trim() == numeroProducto.Trim());
+            if (detalleGrupo == null)
+            {
+                return false;
+            }
+
+            int instancias = InstanciasEnPedido(oferta, pedido);
+            int cantidadGrupo = oferta.OfertasCombinadasDetalles
+                .Where(d => d.GrupoAlternativa == detalleGrupo.GrupoAlternativa)
+                .Max(d => (int)d.Cantidad);
+            int requerido = instancias * cantidadGrupo;
+
+            int pedidas = oferta.OfertasCombinadasDetalles
+                .Where(d => d.GrupoAlternativa == detalleGrupo.GrupoAlternativa && d.Producto != null)
+                .Sum(d => (int)pedido.Lineas
+                    .Where(l => l.Producto != null && l.Producto.Trim() == d.Producto.Trim())
+                    .Sum(l => l.Cantidad));
+
+            return pedidas > requerido;
+        }
+
+        /// <summary>
+        /// Nº de unidades de <paramref name="numeroProducto"/> que una oferta combinada cubre en este
+        /// pedido (para descontarlas del 5 % de muestras sueltas). Es el mínimo entre lo pedido y la
+        /// cuota de la oferta (cantidad del producto —o del grupo si es alternativa— × nº de instancias),
+        /// de entre las ofertas que el pedido satisface. 0 si ninguna oferta aplica.
+        /// </summary>
+        public static int UnidadesCubiertas(PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
+        {
+            List<OfertaCombinada> ofertas = servicio.BuscarOfertasCombinadas(numeroProducto);
+            if (ofertas == null || ofertas.Count == 0)
+            {
+                return 0;
+            }
+
+            int pedidas = (int)pedido.Lineas
+                .Where(l => l.Producto != null && l.Producto.Trim() == numeroProducto.Trim())
+                .Sum(l => l.Cantidad);
+
+            int mejor = 0;
+            foreach (OfertaCombinada oferta in ofertas)
+            {
+                if (!OfertaCubreElPedido(oferta, pedido))
+                {
+                    continue;
+                }
+
+                List<OfertaCombinadaDetalle> detallesProducto = oferta.OfertasCombinadasDetalles
+                    .Where(d => d.Producto != null && d.Producto.Trim() == numeroProducto.Trim())
+                    .ToList();
+                if (detallesProducto.Count == 0)
+                {
+                    continue;
+                }
+
+                int instancias = InstanciasEnPedido(oferta, pedido);
+                OfertaCombinadaDetalle detalleGrupo = detallesProducto.FirstOrDefault(d => d.GrupoAlternativa.HasValue);
+                int cuota;
+                if (detalleGrupo != null)
+                {
+                    int cantidadGrupo = oferta.OfertasCombinadasDetalles
+                        .Where(d => d.GrupoAlternativa == detalleGrupo.GrupoAlternativa)
+                        .Max(d => (int)d.Cantidad);
+                    cuota = cantidadGrupo * instancias;
+                }
+                else
+                {
+                    cuota = (int)detallesProducto.Sum(d => d.Cantidad) * instancias;
+                }
+
+                int cubiertas = Math.Min(pedidas, cuota);
+                if (cubiertas > mejor)
+                {
+                    mejor = cubiertas;
+                }
+            }
+
+            return mejor;
+        }
+
+        /// <summary>
+        /// ¿El pedido satisface esta oferta? (productos obligatorios presentes a precio aceptable,
+        /// grupos de alternativas con al menos lo requerido e importe mínimo cumplido por instancia).
+        /// Se usa para contar unidades cubiertas; reutiliza la misma lógica que el matching principal.
+        /// </summary>
+        private static bool OfertaCubreElPedido(OfertaCombinada oferta, PedidoVentaDTO pedido)
+        {
+            bool obligatoriasOk = oferta.OfertasCombinadasDetalles
+                .Where(d => d.Cantidad > 0 && d.GrupoAlternativa == null)
+                .All(d => DetalleSatisfecho(d, pedido));
+            if (!obligatoriasOk)
+            {
+                return false;
+            }
+
+            int instancias = InstanciasEnPedido(oferta, pedido);
+            if (!GruposSatisfechos(oferta, pedido, instancias))
+            {
+                return false;
+            }
+
+            if (oferta.ImporteMinimo > 0)
+            {
+                IEnumerable<LineaPedidoVentaDTO> lineasOferta = pedido.Lineas.Where(l =>
+                    l.Producto != null
+                    && oferta.OfertasCombinadasDetalles.Select(d => d.Producto.Trim()).Contains(l.Producto.Trim()));
+                decimal suma = lineasOferta.Sum(l => l.BaseImponible);
+                decimal requerido = instancias * oferta.ImporteMinimo;
+                decimal tolerancia = 0.005m * (instancias + 1);
+                if (suma < requerido - tolerancia)
+                {
+                    return false;
+                }
+            }
+
             return true;
         }
 

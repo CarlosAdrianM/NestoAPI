@@ -31,6 +31,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 {
                     ValidacionSuperada = false,
                     ProductoId = numeroProducto,
+                    MotivoEspecifico = true,
                     Motivo = $"El producto {numeroProducto} no puede ir a ese precio porque no se ha comprado el producto MULTIVIT"
                 };
             }
@@ -41,7 +42,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 decimal baseImponiblePedido = pedido.Lineas
                     .Where(l => l.GrupoProducto != Constantes.Productos.GRUPO_APARATOS)
                     .Sum(l => l.BaseImponible);
-                int maximoUnidades = pedido.Lineas.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad);
+                // Solo cuentan las unidades sueltas: las que cubre una oferta combinada (incluida 1
+                // talla del grupo de alternativas) no gastan el 5 % reservado a las muestras sueltas.
+                int unidadesCubiertas = ValidadorOfertasCombinadas.UnidadesCubiertas(pedido, numeroProducto, servicio);
+                int maximoUnidades = pedido.Lineas.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad) - unidadesCubiertas;
 
                 var importeMuestras = CalcularImporteMuestrasNoJustificadas(pedido, numeroProducto, servicio);
 
@@ -55,17 +59,28 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                         + " puede ir a ese precio porque es material promocional y no se supera el importe autorizado"
                     };
                 }
-                
+
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    ProductoId = numeroProducto,
+                    MotivoEspecifico = true,
+                    Motivo = maximoUnidades > UNIDADES_MAXIMO_MUESTRAS
+                        ? $"El producto {numeroProducto} no se puede regalar: se superan las {UNIDADES_MAXIMO_MUESTRAS} unidades de muestra suelta permitidas"
+                        : $"El material promocional suelto (el que no cubre ninguna oferta) supera el 5 % del pedido: no se puede regalar el producto {numeroProducto}"
+                };
             }
 
             return respuesta;
         }
 
         /// <summary>
-        /// Importe (PVP × cantidad) de las muestras cosméticas que cuentan para el límite del 5 %.
-        /// Se parte del importe de TODAS las muestras cosméticas y se RESTAN las que ya están
-        /// justificadas por otro validador de aceptación (p. ej. las que son el regalo de una oferta
-        /// combinada): esas muestras no deben "gastar" el 5 % reservado a las muestras sueltas.
+        /// Importe (PVP × cantidad) de las muestras cosméticas SUELTAS que cuentan para el límite del 5 %.
+        /// Se parte del importe de TODAS las muestras cosméticas y se RESTA lo que cubre una oferta:
+        /// (1) las OTRAS muestras justificadas completas por otro validador de aceptación (p. ej. el
+        /// regalo de una oferta combinada) y (2) la parte del PROPIO producto validado que cubre una
+        /// oferta (p. ej. 1 de las 2 camisetas del grupo de alternativas). Lo que queda son las unidades
+        /// sueltas, las únicas que deben "gastar" el 5 %.
         /// Caso real (pedido 918775): las muestras NEO-TECH de la oferta combinada inflaban el importe
         /// (111,94 € sobre una base de 686 €, 5 % = 34,30 €) y rechazaban 4 muestras sueltas que por sí
         /// solas sumaban 10,94 € y sí cabían en el 5 %.
@@ -75,6 +90,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             decimal importeTotal = GestorPrecios.servicio.CalcularImporteGrupo(
                 pedido, Constantes.Productos.GRUPO_COSMETICA, Constantes.Productos.SUBGRUPO_MUESTRAS);
 
+            // Otras muestras justificadas por otro validador de aceptación (p. ej. el regalo de una
+            // oferta combinada): se restan completas porque no son muestras sueltas.
             decimal importeJustificadas = pedido.Lineas
                 .Where(l => l.Producto != null
                     && l.Producto.Trim() != numeroProducto.Trim()
@@ -83,7 +100,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     && OtroValidadorDeAceptacionLaJustifica(pedido, l.Producto.Trim(), servicio))
                 .Sum(l => (GestorPrecios.servicio.BuscarProducto(l.Producto).PVP ?? 0) * l.Cantidad);
 
-            return importeTotal - importeJustificadas;
+            // Del propio producto validado puede haber una parte cubierta por una oferta (p. ej. 1 de
+            // las 2 camisetas del grupo de alternativas): esas unidades tampoco gastan el 5 %. Solo
+            // cuentan las sobrantes. OtroValidador... excluye el propio producto, así que se resta aquí.
+            int unidadesCubiertasPropias = ValidadorOfertasCombinadas.UnidadesCubiertas(pedido, numeroProducto, servicio);
+            decimal coberturaPropia = (GestorPrecios.servicio.BuscarProducto(numeroProducto).PVP ?? 0) * unidadesCubiertasPropias;
+
+            return importeTotal - importeJustificadas - coberturaPropia;
         }
 
         /// <summary>
