@@ -1,5 +1,6 @@
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.ValidadoresServirJunto;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta.ServirJunto;
@@ -14,6 +15,7 @@ namespace NestoAPI.Infraestructure.ServirJunto
     {
         private readonly NVEntities db;
         private readonly IProductoService productoService;
+        private readonly ILogService logService;
 
         // Constructor de producción: NVEntities y ProductoService no están registrados
         // en el contenedor DI, así que se instancian aquí (mismo patrón que InformesService).
@@ -21,12 +23,14 @@ namespace NestoAPI.Infraestructure.ServirJunto
         {
             db = new NVEntities();
             productoService = new ProductoService();
+            logService = new ElmahLogService();
         }
 
-        internal ServicioValidarServirJunto(NVEntities db, IProductoService productoService)
+        internal ServicioValidarServirJunto(NVEntities db, IProductoService productoService, ILogService logService = null)
         {
             this.db = db;
             this.productoService = productoService;
+            this.logService = logService ?? new ElmahLogService();
         }
 
         public async Task<ValidarServirJuntoResponse> Validar(ValidarServirJuntoRequest request)
@@ -63,6 +67,10 @@ namespace NestoAPI.Infraestructure.ServirJunto
                 var resultado = await validador.Validar(request.Almacen, productosUnificados, lineasPedido).ConfigureAwait(false);
                 if (!resultado.PuedeDesmarcar)
                 {
+                    // NestoAPI#220: dejamos constancia en ELMAH del porqué se denegó desmarcar "servir
+                    // junto" (antes no quedaba en ningún sitio y no podíamos diagnosticar las quejas).
+                    // El usuario lo captura ELMAH del contexto HTTP. No bloquea: si el log falla, se ignora.
+                    LogDenegacion(request, resultado);
                     return resultado;
                 }
             }
@@ -181,6 +189,35 @@ namespace NestoAPI.Infraestructure.ServirJunto
             }
 
             return new List<ProductoBonificadoConCantidadRequest>();
+        }
+
+        /// <summary>
+        /// NestoAPI#220: registra en ELMAH (vía ILogService) el motivo por el que se denegó desmarcar
+        /// "servir junto", con el almacén, los productos problemáticos y lo que mandó el cliente, para
+        /// poder diagnosticar después. El usuario lo añade ELMAH del contexto HTTP. Nunca lanza.
+        /// </summary>
+        private void LogDenegacion(ValidarServirJuntoRequest request, ValidarServirJuntoResponse resultado)
+        {
+            try
+            {
+                string problematicos = resultado.ProductosProblematicos != null
+                    ? string.Join(", ", resultado.ProductosProblematicos.Select(p => p.ProductoId?.Trim()))
+                    : "";
+                string bonificados = string.Join(", ",
+                    UnificarProductosBonificados(request).Select(p => p.ProductoId?.Trim()));
+                string lineas = request.LineasPedido != null
+                    ? string.Join(", ", request.LineasPedido.Select(l => l.ProductoId?.Trim()))
+                    : "";
+
+                logService.LogError(
+                    $"[ServirJunto NestoAPI#220] Denegado desmarcar 'servir junto' en almacén {request.Almacen?.Trim()}. " +
+                    $"Motivo: {resultado.Mensaje}. Productos problemáticos: [{problematicos}]. " +
+                    $"Bonificados enviados: [{bonificados}]. Líneas enviadas: [{lineas}].");
+            }
+            catch
+            {
+                // El logging de diagnóstico nunca debe afectar a la respuesta de validación.
+            }
         }
 
         private static ValidarServirJuntoResponse NuevaRespuestaOK() =>
