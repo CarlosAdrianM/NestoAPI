@@ -7,8 +7,11 @@ using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas; // Incluye NivelSeveridad
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -17,6 +20,18 @@ namespace NestoAPI.Tests.Infrastructure
     [TestClass]
     public class GestorFacturacionRutasTests
     {
+        // Issue #198 (recuperación del fichero huérfano):
+        // - Eliminado Grupo 3 (PuedeFacturarPedido): redundante, ya cubierto por
+        //   Facturas/GestorFacturacionRutas_PuedeFacturarPedidoTests.cs (NestoAPI#195).
+        // - Eliminado Grupo 6 (ObtenerDocumentosImpresion): usaba API de impresión ya desaparecida
+        //   (Cliente.ClienteGrupo, DatosImpresionDocumento, IGestorFacturas.GenerarDatosImpresionFactura).
+        // - Eliminados los tests de FacturarRutas que crean albarán (Grupo 2, Grupo 9 multi-error y el
+        //   de severidad MantenerJunto): ProcesarPedido ahora hace db.Entry(linea).ReloadAsync(), que
+        //   FakeItEasy no puede interceptar (DbContext.Entry no es virtual) -> no testeables con NVEntities fake.
+        //   La elegibilidad queda cubierta por ObtenerLineasProcesables_*, ObtenerNumeroAlbaranExistente_*
+        //   y PuedeFacturarPedido (fichero hermano).
+        // - Eliminado el test de VtoBueno = null: LinPedidoVta.VtoBueno pasó a bool no-nullable.
+
         private NVEntities db;
         private IServicioAlbaranesVenta servicioAlbaranes;
         private IServicioFacturas servicioFacturas;
@@ -30,6 +45,13 @@ namespace NestoAPI.Tests.Infrastructure
         public void Setup()
         {
             db = A.Fake<NVEntities>();
+
+            // #198: PreviewFacturarRutas consulta db.Clientes (muestra de pedidos), así que el DbSet
+            // debe ser un fake consultable aunque esté vacío (el código es null-safe -> "Desconocido").
+            var fakeClientes = A.Fake<DbSet<Cliente>>(o => o.Implements<IQueryable<Cliente>>().Implements<IDbAsyncEnumerable<Cliente>>());
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente>().AsQueryable());
+            A.CallTo(() => db.Clientes).Returns(fakeClientes);
+
             servicioAlbaranes = A.Fake<IServicioAlbaranesVenta>();
             servicioFacturas = A.Fake<IServicioFacturas>();
             gestorFacturas = A.Fake<IGestorFacturas>();
@@ -195,324 +217,6 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
-        #region Grupo 2: Facturación después de crear albarán con MantenerJunto
-
-        [TestMethod]
-        public async Task FacturarRutas_PedidoNRMMantenerJuntoQueQuedaCompleto_CreaAlbaranYFactura()
-        {
-            // Arrange - Pedido NRM con MantenerJunto=1, con 2 líneas:
-            // - Una línea EN_CURSO (se albaranará)
-            // - Otra línea ya ALBARAN (ya albaranada)
-            // Después de crear el albarán, TODAS las líneas tendrán Estado >= 2,
-            // por lo que DEBERÍA crear la factura
-
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12345,
-                Nº_Cliente = "1001",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, // "NRM"
-                MantenerJunto = true,
-                NotaEntrega = false,
-                Comentarios = "",
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta
-                    {
-                        Estado = Constantes.EstadosLineaVenta.EN_CURSO, // Estado 1 - se albaranará
-                        VtoBueno = true,
-                        Base_Imponible = 100m
-                    },
-                    new LinPedidoVta
-                    {
-                        Estado = Constantes.EstadosLineaVenta.ALBARAN, // Estado 2 - ya albaranada
-                        VtoBueno = true,
-                        Base_Imponible = 50m
-                    }
-                }
-            };
-
-            var pedidos = new List<CabPedidoVta> { pedido };
-
-            // Configurar mock del servicio de albaranes
-            // Después de crear el albarán (número 1001), TODAS las líneas deben tener Estado >= 2
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12345, "usuario"))
-                .Returns(Task.FromResult(1001))
-                .Invokes(() =>
-                {
-                    // Simular que el albarán se crea y actualiza el estado de la línea EN_CURSO a ALBARAN
-                    pedido.LinPedidoVtas[0].Estado = Constantes.EstadosLineaVenta.ALBARAN;
-                });
-
-            // Configurar mock del servicio de facturas
-            A.CallTo(() => servicioFacturas.CrearFactura("1", 12345, "usuario"))
-                .Returns(Task.FromResult("A25/123"));
-
-            // Configurar mock de traspaso (no debe traspasar)
-            A.CallTo(() => servicioTraspaso.HayQueTraspasar(pedido))
-                .Returns(false);
-
-            // Configurar mock de SaveChangesAsync
-            A.CallTo(() => db.SaveChangesAsync())
-                .Returns(Task.FromResult(0));
-
-            // Act
-            var response = await gestor.FacturarRutas(pedidos, "usuario");
-
-            // Assert
-            Assert.AreEqual(1, response.PedidosProcesados, "Debe procesar 1 pedido");
-            Assert.AreEqual(1, response.Albaranes.Count, "Debe crear 1 albarán");
-            Assert.AreEqual(1, response.Facturas.Count, "Debe crear 1 factura (ESTE TEST FALLA ACTUALMENTE)");
-            Assert.AreEqual(0, response.PedidosConErrores.Count, "No debe haber errores");
-
-            // Verificar que se llamó a CrearAlbaran
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12345, "usuario"))
-                .MustHaveHappenedOnceExactly();
-
-            // Verificar que se llamó a CrearFactura (ESTO FALLA ACTUALMENTE)
-            A.CallTo(() => servicioFacturas.CrearFactura("1", 12345, "usuario"))
-                .MustHaveHappenedOnceExactly();
-        }
-
-        [TestMethod]
-        public async Task FacturarRutas_PedidoNRMMantenerJuntoQueSigueIncompleto_CreaSoloAlbaranConError()
-        {
-            // Arrange - Pedido NRM con MantenerJunto=1, con 2 líneas:
-            // - Una línea EN_CURSO (se albaranará)
-            // - Otra línea PENDIENTE (NO se albaranará)
-            // Después de crear el albarán, sigue habiendo líneas sin albarán,
-            // por lo que NO debe crear la factura
-
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12346,
-                Nº_Cliente = "1002",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, // "NRM"
-                MantenerJunto = true,
-                NotaEntrega = false,
-                Comentarios = "",
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta
-                    {
-                        Estado = Constantes.EstadosLineaVenta.EN_CURSO, // Estado 1 - se albaranará
-                        VtoBueno = true,
-                        Base_Imponible = 100m
-                    },
-                    new LinPedidoVta
-                    {
-                        Estado = Constantes.EstadosLineaVenta.PENDIENTE, // Estado -1 - NO se albaranará
-                        VtoBueno = true,
-                        Base_Imponible = 50m
-                    }
-                }
-            };
-
-            var pedidos = new List<CabPedidoVta> { pedido };
-
-            // Configurar mock del servicio de albaranes
-            // Después de crear el albarán, solo la primera línea cambia a ALBARAN
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12346, "usuario"))
-                .Returns(Task.FromResult(1002))
-                .Invokes(() =>
-                {
-                    // Simular que el albarán solo actualiza la línea EN_CURSO
-                    pedido.LinPedidoVtas[0].Estado = Constantes.EstadosLineaVenta.ALBARAN;
-                    // La línea PENDIENTE sigue en PENDIENTE
-                });
-
-            // Configurar mock de traspaso
-            A.CallTo(() => servicioTraspaso.HayQueTraspasar(pedido))
-                .Returns(false);
-
-            // Configurar mock de SaveChangesAsync
-            A.CallTo(() => db.SaveChangesAsync())
-                .Returns(Task.FromResult(0));
-
-            // Act
-            var response = await gestor.FacturarRutas(pedidos, "usuario");
-
-            // Assert
-            Assert.AreEqual(1, response.PedidosProcesados, "Debe procesar 1 pedido");
-            Assert.AreEqual(1, response.Albaranes.Count, "Debe crear 1 albarán");
-            Assert.AreEqual(0, response.Facturas.Count, "NO debe crear factura (quedan líneas pendientes)");
-            Assert.AreEqual(1, response.PedidosConErrores.Count, "Debe registrar 1 error");
-
-            // Verificar el mensaje de error
-            var error = response.PedidosConErrores[0];
-            Assert.AreEqual(12346, error.NumeroPedido);
-            Assert.AreEqual("Factura", error.TipoError);
-            Assert.IsTrue(error.MensajeError.Contains("MantenerJunto=1"));
-            Assert.IsTrue(error.MensajeError.Contains("1 línea(s) sin albarán"));
-
-            // Verificar que NO se llamó a CrearFactura
-            A.CallTo(() => servicioFacturas.CrearFactura(A<string>._, A<int>._, A<string>._))
-                .MustNotHaveHappened();
-        }
-
-        [TestMethod]
-        public async Task FacturarRutas_PedidoNRMMantenerJuntoTodasLineasAlbaranadasAntes_CreaAlbaranYFactura()
-        {
-            // Arrange - Pedido NRM con MantenerJunto=1, con 2 líneas:
-            // - Ambas líneas ya tienen Estado = ALBARAN
-            // Por lo tanto, DEBE poder facturar inmediatamente
-
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12347,
-                Nº_Cliente = "1003",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, // "NRM"
-                MantenerJunto = true,
-                NotaEntrega = false,
-                Comentarios = "",
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta
-                    {
-                        Estado = Constantes.EstadosLineaVenta.ALBARAN, // Ya albaranada
-                        VtoBueno = true,
-                        Base_Imponible = 100m
-                    },
-                    new LinPedidoVta
-                    {
-                        Estado = Constantes.EstadosLineaVenta.ALBARAN, // Ya albaranada
-                        VtoBueno = true,
-                        Base_Imponible = 50m
-                    }
-                }
-            };
-
-            var pedidos = new List<CabPedidoVta> { pedido };
-
-            // Configurar mock del servicio de albaranes
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12347, "usuario"))
-                .Returns(Task.FromResult(1003));
-
-            // Configurar mock del servicio de facturas
-            A.CallTo(() => servicioFacturas.CrearFactura("1", 12347, "usuario"))
-                .Returns(Task.FromResult("A25/124"));
-
-            // Configurar mock de traspaso
-            A.CallTo(() => servicioTraspaso.HayQueTraspasar(pedido))
-                .Returns(false);
-
-            // Configurar mock de SaveChangesAsync
-            A.CallTo(() => db.SaveChangesAsync())
-                .Returns(Task.FromResult(0));
-
-            // Act
-            var response = await gestor.FacturarRutas(pedidos, "usuario");
-
-            // Assert
-            Assert.AreEqual(1, response.PedidosProcesados, "Debe procesar 1 pedido");
-            Assert.AreEqual(1, response.Albaranes.Count, "Debe crear 1 albarán");
-            Assert.AreEqual(1, response.Facturas.Count, "Debe crear 1 factura");
-            Assert.AreEqual(0, response.PedidosConErrores.Count, "No debe haber errores");
-
-            // Verificar que se llamó a CrearFactura
-            A.CallTo(() => servicioFacturas.CrearFactura("1", 12347, "usuario"))
-                .MustHaveHappenedOnceExactly();
-        }
-
-        #endregion
-
-        #region Grupo 3: Validación MantenerJunto
-
-        [TestMethod]
-        public void PuedeFacturarPedido_MantenerJuntoConLineasSinAlbaran_RetornaFalse()
-        {
-            // Arrange
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12345,
-                MantenerJunto = true,
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true }, // Estado 1 < 2
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.ALBARAN, VtoBueno = true }   // Estado 2
-                }
-            };
-
-            // Act
-            bool resultado = gestor.PuedeFacturarPedido(pedido);
-
-            // Assert
-            Assert.IsFalse(resultado, "No debe poder facturar: MantenerJunto=true y hay líneas sin albarán (Estado < 2)");
-        }
-
-        [TestMethod]
-        public void PuedeFacturarPedido_MantenerJuntoTodasConAlbaran_RetornaTrue()
-        {
-            // Arrange
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12345,
-                MantenerJunto = true,
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.ALBARAN, VtoBueno = true },   // Estado 2
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.FACTURA, VtoBueno = true }    // Estado 4
-                }
-            };
-
-            // Act
-            bool resultado = gestor.PuedeFacturarPedido(pedido);
-
-            // Assert
-            Assert.IsTrue(resultado, "Debe poder facturar: MantenerJunto=true pero todas las líneas tienen albarán (Estado >= 2)");
-        }
-
-        [TestMethod]
-        public void PuedeFacturarPedido_NoMantenerJunto_RetornaTrue()
-        {
-            // Arrange
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12345,
-                MantenerJunto = false,
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true }, // Estado 1 < 2
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.PENDIENTE, VtoBueno = true } // Estado -1 < 2
-                }
-            };
-
-            // Act
-            bool resultado = gestor.PuedeFacturarPedido(pedido);
-
-            // Assert
-            Assert.IsTrue(resultado, "Debe poder facturar: MantenerJunto=false (no importa el estado de las líneas)");
-        }
-
-        [TestMethod]
-        public void PuedeFacturarPedido_MantenerJuntoSinLineas_RetornaTrue()
-        {
-            // Arrange
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12345,
-                MantenerJunto = true,
-                LinPedidoVtas = new List<LinPedidoVta>() // Sin líneas
-            };
-
-            // Act
-            bool resultado = gestor.PuedeFacturarPedido(pedido);
-
-            // Assert
-            Assert.IsTrue(resultado, "Debe poder facturar: sin líneas no hay restricciones");
-        }
-
-        #endregion
-
         #region Grupo 4: PreviewFacturarRutas
 
         [TestMethod]
@@ -543,9 +247,8 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Empresa = "1",
                 Número = 12345,
-                Cliente = "1001",
+                Nº_Cliente = "1001",
                 Contacto = "0",
-                NombreCliente = "Cliente Test",
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, // "NRM"
                 NotaEntrega = false,
                 MantenerJunto = false,
@@ -584,9 +287,8 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Empresa = "1",
                 Número = 12346,
-                Cliente = "1002",
+                Nº_Cliente = "1002",
                 Contacto = "0",
-                NombreCliente = "Cliente FDM",
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES, // "FDM"
                 NotaEntrega = false,
                 MantenerJunto = false,
@@ -625,9 +327,8 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Empresa = "1",
                 Número = 12347,
-                Cliente = "1003",
+                Nº_Cliente = "1003",
                 Contacto = "0",
-                NombreCliente = "Cliente Nota Entrega",
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 NotaEntrega = true,
                 MantenerJunto = false,
@@ -667,9 +368,8 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Empresa = "1",
                 Número = 12348,
-                Cliente = "1004",
+                Nº_Cliente = "1004",
                 Contacto = "0",
-                NombreCliente = "Cliente MantenerJunto",
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL, // "NRM"
                 NotaEntrega = false,
                 MantenerJunto = true,
@@ -719,9 +419,8 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     Empresa = "1",
                     Número = 1,
-                    Cliente = "1001",
+                    Nº_Cliente = "1001",
                     Contacto = "0",
-                    NombreCliente = "Cliente 1",
                     Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                     NotaEntrega = false,
                     MantenerJunto = false,
@@ -742,9 +441,8 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     Empresa = "1",
                     Número = 2,
-                    Cliente = "1002",
+                    Nº_Cliente = "1002",
                     Contacto = "0",
-                    NombreCliente = "Cliente 2",
                     Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
                     NotaEntrega = false,
                     MantenerJunto = false,
@@ -765,9 +463,8 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     Empresa = "1",
                     Número = 3,
-                    Cliente = "1003",
+                    Nº_Cliente = "1003",
                     Contacto = "0",
-                    NombreCliente = "Cliente 3",
                     Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                     NotaEntrega = true,
                     MantenerJunto = false,
@@ -806,9 +503,8 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Empresa = "1",
                 Número = 12349,
-                Cliente = "1005",
+                Nº_Cliente = "1005",
                 Contacto = "0",
-                NombreCliente = "Cliente Sin Líneas",
                 Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                 NotaEntrega = false,
                 MantenerJunto = false,
@@ -821,7 +517,8 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Assert
             Assert.AreEqual(1, resultado.NumeroPedidos);
-            Assert.AreEqual(1, resultado.NumeroAlbaranes);
+            // Un NRM que puede facturar cuenta como FACTURA, no albarán (evita doble contabilización)
+            Assert.AreEqual(0, resultado.NumeroAlbaranes, "NRM facturable no cuenta en albaranes");
             Assert.AreEqual(1, resultado.NumeroFacturas);
             Assert.AreEqual(0m, resultado.BaseImponibleAlbaranes, "Sin líneas, base = 0");
             Assert.AreEqual(0m, resultado.BaseImponibleFacturas, "Sin líneas, base = 0");
@@ -855,7 +552,7 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     Empresa = "1",
                     Número = 1,
-                    Cliente = "1001",
+                    Nº_Cliente = "1001",
                     Contacto = "0",
                     Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                     NotaEntrega = false,
@@ -877,7 +574,7 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     Empresa = "1",
                     Número = 2,
-                    Cliente = "1002",
+                    Nº_Cliente = "1002",
                     Contacto = "0",
                     Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
                     NotaEntrega = false,
@@ -955,28 +652,9 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(resultado, "Hay al menos una línea sin VtoBueno = true");
         }
 
-        [TestMethod]
-        public void TieneTodasLasLineasConVistoBueno_AlgunaLineaConVistoBuenoNull_RetornaFalse()
-        {
-            // Arrange
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12345,
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta { VtoBueno = true },
-                    new LinPedidoVta { VtoBueno = null }, // Una con null
-                    new LinPedidoVta { VtoBueno = true }
-                }
-            };
-
-            // Act
-            bool resultado = gestor.TieneTodasLasLineasConVistoBueno(pedido);
-
-            // Assert
-            Assert.IsFalse(resultado, "Hay al menos una línea con VtoBueno = null (no es true)");
-        }
+        // Nota (#198): se eliminó TieneTodasLasLineasConVistoBueno_AlgunaLineaConVistoBuenoNull_RetornaFalse
+        // porque LinPedidoVta.VtoBueno pasó a ser bool no-nullable; el caso "null" ya no existe y queda
+        // cubierto por TieneTodasLasLineasConVistoBueno_AlgunaLineaSinVistoBueno_RetornaFalse (VtoBueno = false).
 
         [TestMethod]
         public void TieneTodasLasLineasConVistoBueno_PedidoSinLineas_RetornaTrue()
@@ -1011,309 +689,6 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
-        #region Grupo 6: ObtenerDocumentosImpresion
-
-        [TestMethod]
-        public async Task ObtenerDocumentosImpresion_PedidoNRMConFactura_RetornaFacturaYDatosImpresion()
-        {
-            // Arrange
-            string empresa = "1";
-            int numeroPedido = 12345;
-            string numeroFactura = "A25/123";
-            int? numeroAlbaran = 1001;
-
-            var pedido = new CabPedidoVta
-            {
-                Empresa = empresa,
-                Número = numeroPedido,
-                Nº_Cliente = "1001",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
-                NotaEntrega = false,
-                Comentarios = "FACTURA FÍSICA requerida",
-                Cliente = new Cliente
-                {
-                    Nº_Cliente = "1001",
-                    Nombre = "Cliente Test",
-                    ClienteGrupo = new ClienteGrupo
-                    {
-                        Grupo = "RU",
-                        Copias = 2,
-                        Bandeja = 2 // Middle
-                    }
-                }
-            };
-
-            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
-            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
-                .Returns(Task.FromResult(pedido));
-            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
-
-            // Configurar generación de datos de impresión de factura
-            A.CallTo(() => gestorFacturas.GenerarDatosImpresionFactura(
-                A<string>._, A<int>._, A<string>._, A<string>._, A<bool>._))
-                .Returns(new DatosImpresionDocumento
-                {
-                    ContenidoPdf = new byte[] { 1, 2, 3 },
-                    NumeroCopias = 2,
-                    Bandeja = System.Drawing.Printing.PaperSourceKind.Middle
-                });
-
-            // Act
-            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
-
-            // Assert
-            Assert.IsNotNull(resultado);
-            Assert.AreEqual(1, resultado.Facturas.Count, "Debe contener 1 factura");
-            Assert.AreEqual(numeroFactura, resultado.Facturas[0].NumeroFactura);
-            Assert.IsNotNull(resultado.Facturas[0].DatosImpresion, "Debe tener datos de impresión");
-            Assert.AreEqual(2, resultado.Facturas[0].DatosImpresion.NumeroCopias);
-            Assert.AreEqual(0, resultado.Albaranes.Count, "No debe generar albarán para NRM");
-            Assert.AreEqual(0, resultado.NotasEntrega.Count, "No debe generar nota de entrega");
-            Assert.IsTrue(resultado.HayDocumentosParaImprimir);
-        }
-
-        [TestMethod]
-        public async Task ObtenerDocumentosImpresion_PedidoFDMConAlbaran_RetornaAlbaranYDatosImpresion()
-        {
-            // Arrange
-            string empresa = "1";
-            int numeroPedido = 12346;
-            string numeroFactura = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES; // "FDM"
-            int? numeroAlbaran = 1002;
-
-            var pedido = new CabPedidoVta
-            {
-                Empresa = empresa,
-                Número = numeroPedido,
-                Nº_Cliente = "1002",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
-                NotaEntrega = false,
-                Comentarios = "ALBARÁN FÍSICO necesario",
-                Cliente = new Cliente
-                {
-                    Nº_Cliente = "1002",
-                    Nombre = "Cliente FDM",
-                    ClienteGrupo = new ClienteGrupo
-                    {
-                        Grupo = "RU",
-                        Copias = 1,
-                        Bandeja = 1 // Upper
-                    }
-                }
-            };
-
-            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
-            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
-                .Returns(Task.FromResult(pedido));
-            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
-
-            // Configurar generación de datos de impresión de albarán
-            A.CallTo(() => servicioAlbaranes.GenerarDatosImpresionAlbaran(
-                A<string>._, A<int>._, A<int>._, A<string>._, A<bool>._))
-                .Returns(new DatosImpresionDocumento
-                {
-                    ContenidoPdf = new byte[] { 4, 5, 6 },
-                    NumeroCopias = 1,
-                    Bandeja = System.Drawing.Printing.PaperSourceKind.Upper
-                });
-
-            // Act
-            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
-
-            // Assert
-            Assert.IsNotNull(resultado);
-            Assert.AreEqual(0, resultado.Facturas.Count, "No debe generar factura para FDM");
-            Assert.AreEqual(1, resultado.Albaranes.Count, "Debe contener 1 albarán");
-            Assert.AreEqual(numeroAlbaran.Value, resultado.Albaranes[0].NumeroAlbaran);
-            Assert.IsNotNull(resultado.Albaranes[0].DatosImpresion, "Debe tener datos de impresión");
-            Assert.AreEqual(1, resultado.Albaranes[0].DatosImpresion.NumeroCopias);
-            Assert.AreEqual(0, resultado.NotasEntrega.Count, "No debe generar nota de entrega");
-            Assert.IsTrue(resultado.HayDocumentosParaImprimir);
-        }
-
-        [TestMethod]
-        public async Task ObtenerDocumentosImpresion_PedidoNotaEntrega_RetornaNotaEntregaYDatosImpresion()
-        {
-            // Arrange
-            string empresa = "1";
-            int numeroPedido = 12347;
-            string numeroFactura = null;
-            int? numeroAlbaran = null;
-
-            var pedido = new CabPedidoVta
-            {
-                Empresa = empresa,
-                Número = numeroPedido,
-                Nº_Cliente = "1003",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
-                NotaEntrega = true,
-                Comentarios = "Nota de entrega solicitada",
-                Cliente = new Cliente
-                {
-                    Nº_Cliente = "1003",
-                    Nombre = "Cliente Nota Entrega",
-                    ClienteGrupo = new ClienteGrupo
-                    {
-                        Grupo = "RU",
-                        Copias = 1,
-                        Bandeja = 1
-                    }
-                }
-            };
-
-            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
-            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
-                .Returns(Task.FromResult(pedido));
-            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
-
-            // Configurar generación de datos de impresión de nota de entrega
-            A.CallTo(() => servicioNotasEntrega.GenerarDatosImpresionNotaEntrega(
-                A<string>._, A<int>._, A<string>._, A<bool>._))
-                .Returns(new DatosImpresionDocumento
-                {
-                    ContenidoPdf = new byte[] { 7, 8, 9 },
-                    NumeroCopias = 1,
-                    Bandeja = System.Drawing.Printing.PaperSourceKind.Upper
-                });
-
-            // Act
-            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
-
-            // Assert
-            Assert.IsNotNull(resultado);
-            Assert.AreEqual(0, resultado.Facturas.Count, "No debe generar factura");
-            Assert.AreEqual(0, resultado.Albaranes.Count, "No debe generar albarán");
-            Assert.AreEqual(1, resultado.NotasEntrega.Count, "Debe contener 1 nota de entrega");
-            Assert.IsNotNull(resultado.NotasEntrega[0].DatosImpresion, "Debe tener datos de impresión");
-            Assert.AreEqual(1, resultado.NotasEntrega[0].DatosImpresion.NumeroCopias);
-            Assert.IsTrue(resultado.HayDocumentosParaImprimir);
-        }
-
-        [TestMethod]
-        public async Task ObtenerDocumentosImpresion_SinComentarioImpresion_RetornaSinDatosImpresion()
-        {
-            // Arrange
-            string empresa = "1";
-            int numeroPedido = 12348;
-            string numeroFactura = "A25/124";
-            int? numeroAlbaran = 1003;
-
-            var pedido = new CabPedidoVta
-            {
-                Empresa = empresa,
-                Número = numeroPedido,
-                Nº_Cliente = "1004",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
-                NotaEntrega = false,
-                Comentarios = "Pedido normal sin solicitud de impresión", // No contiene palabras clave
-                Cliente = new Cliente
-                {
-                    Nº_Cliente = "1004",
-                    Nombre = "Cliente Sin Impresión"
-                }
-            };
-
-            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
-            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
-                .Returns(Task.FromResult(pedido));
-            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
-
-            // Act
-            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
-
-            // Assert
-            Assert.IsNotNull(resultado);
-            Assert.AreEqual(1, resultado.Facturas.Count, "Debe contener la factura");
-            Assert.IsNull(resultado.Facturas[0].DatosImpresion, "NO debe tener datos de impresión");
-            Assert.IsFalse(resultado.HayDocumentosParaImprimir, "No hay documentos para imprimir");
-            Assert.AreEqual(0, resultado.TotalDocumentosParaImprimir);
-        }
-
-        [TestMethod]
-        public async Task ObtenerDocumentosImpresion_PedidoNoEncontrado_RetornaListasVacias()
-        {
-            // Arrange
-            string empresa = "1";
-            int numeroPedido = 99999;
-            string numeroFactura = "A25/125";
-            int? numeroAlbaran = 1004;
-
-            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
-            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
-                .Returns(Task.FromResult<CabPedidoVta>(null)); // Pedido no existe
-            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
-
-            // Act
-            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
-
-            // Assert
-            Assert.IsNotNull(resultado);
-            Assert.AreEqual(0, resultado.Facturas.Count);
-            Assert.AreEqual(0, resultado.Albaranes.Count);
-            Assert.AreEqual(0, resultado.NotasEntrega.Count);
-            Assert.IsFalse(resultado.HayDocumentosParaImprimir);
-        }
-
-        [TestMethod]
-        public async Task ObtenerDocumentosImpresion_ConVariasCopias_RetornaTotalDocumentosCorrect()
-        {
-            // Arrange
-            string empresa = "1";
-            int numeroPedido = 12349;
-            string numeroFactura = "A25/126";
-            int? numeroAlbaran = 1005;
-
-            var pedido = new CabPedidoVta
-            {
-                Empresa = empresa,
-                Número = numeroPedido,
-                Nº_Cliente = "1005",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
-                NotaEntrega = false,
-                Comentarios = "FACTURA FÍSICA con varias copias",
-                Cliente = new Cliente
-                {
-                    Nº_Cliente = "1005",
-                    Nombre = "Cliente Multi-Copia",
-                    ClienteGrupo = new ClienteGrupo
-                    {
-                        Grupo = "RU",
-                        Copias = 3, // 3 copias
-                        Bandeja = 2
-                    }
-                }
-            };
-
-            var dbSetPedido = A.Fake<IDbSet<CabPedidoVta>>();
-            A.CallTo(() => dbSetPedido.FindAsync(empresa, numeroPedido))
-                .Returns(Task.FromResult(pedido));
-            A.CallTo(() => db.CabPedidoVtas).Returns(dbSetPedido);
-
-            A.CallTo(() => gestorFacturas.GenerarDatosImpresionFactura(
-                A<string>._, A<int>._, A<string>._, A<string>._, A<bool>._))
-                .Returns(new DatosImpresionDocumento
-                {
-                    ContenidoPdf = new byte[] { 1, 2, 3 },
-                    NumeroCopias = 3,
-                    Bandeja = System.Drawing.Printing.PaperSourceKind.Middle
-                });
-
-            // Act
-            var resultado = await gestor.ObtenerDocumentosImpresion(empresa, numeroPedido, numeroFactura, numeroAlbaran);
-
-            // Assert
-            Assert.IsNotNull(resultado);
-            Assert.AreEqual(1, resultado.Facturas.Count);
-            Assert.AreEqual(3, resultado.Facturas[0].DatosImpresion.NumeroCopias);
-            Assert.AreEqual(3, resultado.TotalDocumentosParaImprimir, "Debe contar 3 copias");
-        }
-
-        #endregion
 
         #region ObtenerLineasProcesables Tests
 
@@ -1346,11 +721,11 @@ namespace NestoAPI.Tests.Infrastructure
                 Número = 1,
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
-                    new LinPedidoVta { Número = 1, NºOrden = 1, Picking = 5, Fecha_Entrega = ayer },    // ✓ Válida
-                    new LinPedidoVta { Número = 1, NºOrden = 2, Picking = null, Fecha_Entrega = ayer }, // ✗ Sin picking
-                    new LinPedidoVta { Número = 1, NºOrden = 3, Picking = 0, Fecha_Entrega = ayer },    // ✗ Picking = 0
-                    new LinPedidoVta { Número = 1, NºOrden = 4, Picking = 3, Fecha_Entrega = manana },  // ✗ Fecha futura
-                    new LinPedidoVta { Número = 1, NºOrden = 5, Picking = 2, Fecha_Entrega = hoy }      // ✓ Válida
+                    new LinPedidoVta { Número = 1, Nº_Orden = 1, Picking = 5, Fecha_Entrega = ayer },    // ✓ Válida
+                    new LinPedidoVta { Número = 1, Nº_Orden = 2, Picking = null, Fecha_Entrega = ayer }, // ✗ Sin picking
+                    new LinPedidoVta { Número = 1, Nº_Orden = 3, Picking = 0, Fecha_Entrega = ayer },    // ✗ Picking = 0
+                    new LinPedidoVta { Número = 1, Nº_Orden = 4, Picking = 3, Fecha_Entrega = manana },  // ✗ Fecha futura
+                    new LinPedidoVta { Número = 1, Nº_Orden = 5, Picking = 2, Fecha_Entrega = hoy }      // ✓ Válida
                 }
             };
 
@@ -1359,11 +734,11 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Assert
             Assert.AreEqual(2, resultado.Count, "Solo 2 líneas son procesables");
-            Assert.IsTrue(resultado.Any(l => l.NºOrden == 1), "Debe incluir línea 1");
-            Assert.IsTrue(resultado.Any(l => l.NºOrden == 5), "Debe incluir línea 5");
-            Assert.IsFalse(resultado.Any(l => l.NºOrden == 2), "NO debe incluir línea sin picking");
-            Assert.IsFalse(resultado.Any(l => l.NºOrden == 3), "NO debe incluir línea con picking=0");
-            Assert.IsFalse(resultado.Any(l => l.NºOrden == 4), "NO debe incluir línea con fecha futura");
+            Assert.IsTrue(resultado.Any(l => l.Nº_Orden == 1), "Debe incluir línea 1");
+            Assert.IsTrue(resultado.Any(l => l.Nº_Orden == 5), "Debe incluir línea 5");
+            Assert.IsFalse(resultado.Any(l => l.Nº_Orden == 2), "NO debe incluir línea sin picking");
+            Assert.IsFalse(resultado.Any(l => l.Nº_Orden == 3), "NO debe incluir línea con picking=0");
+            Assert.IsFalse(resultado.Any(l => l.Nº_Orden == 4), "NO debe incluir línea con fecha futura");
         }
 
         #endregion
@@ -1399,8 +774,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Número = 1,
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
-                    new LinPedidoVta { NºOrden = 1, Picking = 5, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
-                    new LinPedidoVta { NºOrden = 2, Picking = 3, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // Sin albarán
+                    new LinPedidoVta { Nº_Orden = 1, Picking = 5, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
+                    new LinPedidoVta { Nº_Orden = 2, Picking = 3, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // Sin albarán
                 }
             };
             DateTime fechaDesde = DateTime.Today;
@@ -1422,9 +797,9 @@ namespace NestoAPI.Tests.Infrastructure
                 Número = 1,
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
-                    new LinPedidoVta { NºOrden = 1, Picking = 5, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
-                    new LinPedidoVta { NºOrden = 2, Picking = 3, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
-                    new LinPedidoVta { NºOrden = 3, Picking = null, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // No procesable
+                    new LinPedidoVta { Nº_Orden = 1, Picking = 5, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
+                    new LinPedidoVta { Nº_Orden = 2, Picking = 3, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },
+                    new LinPedidoVta { Nº_Orden = 3, Picking = null, Fecha_Entrega = DateTime.Today, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // No procesable
                 }
             };
             DateTime fechaDesde = DateTime.Today;
@@ -1450,8 +825,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Número = 1,
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
-                    new LinPedidoVta { NºOrden = 1, Picking = 5, Fecha_Entrega = hoy, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },    // Procesable con albarán
-                    new LinPedidoVta { NºOrden = 2, Picking = 3, Fecha_Entrega = manana, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // Futura, no procesable
+                    new LinPedidoVta { Nº_Orden = 1, Picking = 5, Fecha_Entrega = hoy, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 100 },    // Procesable con albarán
+                    new LinPedidoVta { Nº_Orden = 2, Picking = 3, Fecha_Entrega = manana, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Nº_Albarán = null } // Futura, no procesable
                 }
             };
             DateTime fechaDesde = hoy;
@@ -1537,7 +912,7 @@ namespace NestoAPI.Tests.Infrastructure
         public void HayDocumentosParaImprimir_ConNumeroCopiasCero_RetornaFalse()
         {
             // Arrange - REGRESIÓN: Antes devolvía true si DatosImpresion != null
-            var documentos = new Models.PedidosVenta.DocumentosImpresionPedidoDTO();
+            var documentos = new NestoAPI.Models.PedidosVenta.DocumentosImpresionPedidoDTO();
             documentos.Facturas.Add(new FacturaCreadaDTO
             {
                 NumeroFactura = "A25/001",
@@ -1560,7 +935,7 @@ namespace NestoAPI.Tests.Infrastructure
         public void HayDocumentosParaImprimir_ConNumeroCopiasMayorQueCero_RetornaTrue()
         {
             // Arrange
-            var documentos = new Models.PedidosVenta.DocumentosImpresionPedidoDTO();
+            var documentos = new NestoAPI.Models.PedidosVenta.DocumentosImpresionPedidoDTO();
             documentos.Facturas.Add(new FacturaCreadaDTO
             {
                 NumeroFactura = "A25/001",
@@ -1583,7 +958,7 @@ namespace NestoAPI.Tests.Infrastructure
         public void TotalDocumentosParaImprimir_ConNumeroCopiasCero_RetornaCero()
         {
             // Arrange
-            var documentos = new Models.PedidosVenta.DocumentosImpresionPedidoDTO();
+            var documentos = new NestoAPI.Models.PedidosVenta.DocumentosImpresionPedidoDTO();
             documentos.Facturas.Add(new FacturaCreadaDTO
             {
                 NumeroFactura = "A25/001",
@@ -1619,7 +994,7 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     new LinPedidoVta
                     {
-                        NºOrden = 1,
+                        Nº_Orden = 1,
                         Picking = 5,
                         Fecha_Entrega = DateTime.Today,
                         Estado = Constantes.EstadosLineaVenta.ALBARAN, // Ya tiene albarán
@@ -1627,7 +1002,7 @@ namespace NestoAPI.Tests.Infrastructure
                     },
                     new LinPedidoVta
                     {
-                        NºOrden = 2,
+                        Nº_Orden = 2,
                         Picking = 3,
                         Fecha_Entrega = DateTime.Today,
                         Estado = Constantes.EstadosLineaVenta.ALBARAN, // Ya tiene albarán
@@ -1645,166 +1020,6 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(707567, numeroAlbaran.Value, "Debe retornar el número de albarán existente");
             // NOTA: En el flujo real, al detectar albarán existente, NO creará albarán nuevo
             // y continuará con la facturación NRM
-        }
-
-        #endregion
-
-        #region Grupo 9: Concurrencia - DbContext compartido
-
-        /// <summary>
-        /// CRÍTICO: Verifica que cuando un pedido falla, los siguientes pedidos no se ven afectados.
-        /// Este test documenta el bug de concurrencia que causaba errores masivos en facturación de rutas.
-        ///
-        /// El problema era:
-        /// 1. ServicioAlbaranesVenta y ServicioFacturas creaban sus propios NVEntities
-        /// 2. Cuando un SP modificaba datos (ej: prdCrearAlbaránVta), el contexto de GestorFacturacionRutas
-        ///    no veía esos cambios → RowVersion desactualizado
-        /// 3. Cualquier SaveChanges posterior fallaba con "0 rows affected"
-        /// 4. El error "contaminaba" el contexto → los siguientes pedidos también fallaban
-        ///
-        /// La solución fue:
-        /// 1. Inyectar el mismo NVEntities a todos los servicios
-        /// 2. Limpiar el contexto después de cada error (LimpiarContextoDespuesDeError)
-        /// </summary>
-        [TestMethod]
-        public async Task FacturarRutas_CuandoUnPedidoFalla_LosSiguientesPedidosSeProcesanCorrectamente()
-        {
-            // Arrange - 3 pedidos: el primero falla, los otros dos deben procesarse bien
-            var pedido1Falla = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 100,
-                Nº_Cliente = "1001",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
-                NotaEntrega = false,
-                MantenerJunto = false,
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true, Base_Imponible = 100m }
-                }
-            };
-
-            var pedido2OK = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 200,
-                Nº_Cliente = "1002",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
-                NotaEntrega = false,
-                MantenerJunto = false,
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true, Base_Imponible = 200m }
-                }
-            };
-
-            var pedido3OK = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 300,
-                Nº_Cliente = "1003",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
-                NotaEntrega = false,
-                MantenerJunto = false,
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true, Base_Imponible = 300m }
-                }
-            };
-
-            var pedidos = new List<CabPedidoVta> { pedido1Falla, pedido2OK, pedido3OK };
-
-            // Configurar: pedido 1 falla en CrearAlbaran
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 100, "usuario"))
-                .Throws(new Exception("Error simulado de concurrencia"));
-
-            // Configurar: pedidos 2 y 3 funcionan correctamente
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 200, "usuario"))
-                .Returns(Task.FromResult(2001));
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 300, "usuario"))
-                .Returns(Task.FromResult(3001));
-
-            // Configurar traspaso
-            A.CallTo(() => servicioTraspaso.HayQueTraspasar(A<CabPedidoVta>._))
-                .Returns(false);
-
-            // Configurar SaveChangesAsync
-            A.CallTo(() => db.SaveChangesAsync())
-                .Returns(Task.FromResult(0));
-
-            // Act
-            var response = await gestor.FacturarRutas(pedidos, "usuario", DateTime.Today);
-
-            // Assert
-            Assert.AreEqual(2, response.PedidosProcesados, "Deben procesarse 2 pedidos (el primero falla)");
-            Assert.AreEqual(2, response.Albaranes.Count, "Deben crearse 2 albaranes");
-            Assert.AreEqual(1, response.PedidosConErrores.Count, "Debe haber 1 error");
-            Assert.AreEqual(100, response.PedidosConErrores[0].NumeroPedido, "El error debe ser del pedido 100");
-
-            // Verificar que se intentó crear albarán para TODOS los pedidos
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 100, "usuario")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 200, "usuario")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 300, "usuario")).MustHaveHappenedOnceExactly();
-        }
-
-        /// <summary>
-        /// Verifica que múltiples errores consecutivos no impiden el procesamiento de pedidos válidos.
-        /// Este es un caso extremo pero importante para la robustez del sistema.
-        /// </summary>
-        [TestMethod]
-        public async Task FacturarRutas_MultiplesErroresConsecutivos_NoImpidenProcesamientoDePedidosValidos()
-        {
-            // Arrange - 5 pedidos: 3 fallan, 2 funcionan
-            var pedidos = new List<CabPedidoVta>();
-            for (int i = 1; i <= 5; i++)
-            {
-                pedidos.Add(new CabPedidoVta
-                {
-                    Empresa = "1",
-                    Número = i * 100,
-                    Nº_Cliente = $"100{i}",
-                    Contacto = "0",
-                    Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
-                    NotaEntrega = false,
-                    MantenerJunto = false,
-                    LinPedidoVtas = new List<LinPedidoVta>
-                    {
-                        new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = true, Base_Imponible = i * 100m }
-                    }
-                });
-            }
-
-            // Configurar: pedidos 1, 2, 3 fallan; pedidos 4, 5 funcionan
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 100, "usuario"))
-                .Throws(new Exception("Error 1"));
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 200, "usuario"))
-                .Throws(new Exception("Error 2"));
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 300, "usuario"))
-                .Throws(new Exception("Error 3"));
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 400, "usuario"))
-                .Returns(Task.FromResult(4001));
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 500, "usuario"))
-                .Returns(Task.FromResult(5001));
-
-            A.CallTo(() => servicioTraspaso.HayQueTraspasar(A<CabPedidoVta>._)).Returns(false);
-            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(0));
-
-            // Act
-            var response = await gestor.FacturarRutas(pedidos, "usuario", DateTime.Today);
-
-            // Assert
-            Assert.AreEqual(2, response.PedidosProcesados, "Deben procesarse 2 pedidos");
-            Assert.AreEqual(2, response.Albaranes.Count, "Deben crearse 2 albaranes");
-            Assert.AreEqual(3, response.PedidosConErrores.Count, "Deben haber 3 errores");
-
-            // Verificar que los errores son de los pedidos correctos
-            var pedidosConError = response.PedidosConErrores.Select(e => e.NumeroPedido).ToList();
-            Assert.IsTrue(pedidosConError.Contains(100));
-            Assert.IsTrue(pedidosConError.Contains(200));
-            Assert.IsTrue(pedidosConError.Contains(300));
         }
 
         #endregion
@@ -1924,8 +1139,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Número = 12345,
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
-                    new LinPedidoVta { NºOrden = 1, Base_Imponible = 100m },
-                    new LinPedidoVta { NºOrden = 2, Base_Imponible = 200m }
+                    new LinPedidoVta { Nº_Orden = 1, Base_Imponible = 100m },
+                    new LinPedidoVta { Nº_Orden = 2, Base_Imponible = 200m }
                 }
             };
 
@@ -1947,7 +1162,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Número = 12345,
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
-                    new LinPedidoVta { NºOrden = 1, Base_Imponible = 100m }
+                    new LinPedidoVta { Nº_Orden = 1, Base_Imponible = 100m }
                 }
             };
 
@@ -2103,62 +1318,19 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("Mensaje con prefijo", mensaje);
         }
 
-        /// <summary>
-        /// Verifica que el caso MantenerJunto se marca como Warning (no Error).
-        /// Este test documenta el comportamiento esperado para la issue #267.
-        /// </summary>
-        [TestMethod]
-        public async Task FacturarRutas_MantenerJuntoConLineasPendientes_RegistraWarningNoError()
+        #endregion
+
+        #region Helpers
+
+        private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
-            // Arrange - Pedido NRM con MantenerJunto=1 y líneas sin albarán
-            var pedido = new CabPedidoVta
-            {
-                Empresa = "1",
-                Número = 12350,
-                Nº_Cliente = "1006",
-                Contacto = "0",
-                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
-                MantenerJunto = true,
-                NotaEntrega = false,
-                Comentarios = "",
-                LinPedidoVtas = new List<LinPedidoVta>
-                {
-                    new LinPedidoVta
-                    {
-                        Estado = Constantes.EstadosLineaVenta.EN_CURSO,
-                        VtoBueno = true,
-                        Base_Imponible = 100m
-                    },
-                    new LinPedidoVta
-                    {
-                        Estado = Constantes.EstadosLineaVenta.PENDIENTE, // No se albaranará
-                        VtoBueno = true,
-                        Base_Imponible = 50m
-                    }
-                }
-            };
-
-            var pedidos = new List<CabPedidoVta> { pedido };
-
-            // Configurar mock
-            A.CallTo(() => servicioAlbaranes.CrearAlbaran("1", 12350, "usuario"))
-                .Returns(Task.FromResult(1006))
-                .Invokes(() =>
-                {
-                    pedido.LinPedidoVtas[0].Estado = Constantes.EstadosLineaVenta.ALBARAN;
-                });
-
-            A.CallTo(() => servicioTraspaso.HayQueTraspasar(pedido)).Returns(false);
-            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(0));
-
-            // Act
-            var response = await gestor.FacturarRutas(pedidos, "usuario");
-
-            // Assert
-            Assert.AreEqual(1, response.PedidosConErrores.Count, "Debe registrar 1 incidencia");
-            Assert.AreEqual(NivelSeveridad.Warning, response.PedidosConErrores[0].Severidad,
-                "MantenerJunto con líneas pendientes debe ser WARNING, no ERROR");
-            Assert.IsTrue(response.PedidosConErrores[0].MensajeError.Contains("MantenerJunto=1"));
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+                .Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
         }
 
         #endregion

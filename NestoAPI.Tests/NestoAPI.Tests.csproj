@@ -214,6 +214,7 @@
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />
     <Compile Include="Infrastructure\GestorEnviosAgenciaTests.cs" />
+    <Compile Include="Infrastructure\GestorFacturacionRutasTests.cs" />
     <Compile Include="Infrastructure\ServicioGestorClientesTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfControlPedidosTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfResumenVentasTests.cs" />
