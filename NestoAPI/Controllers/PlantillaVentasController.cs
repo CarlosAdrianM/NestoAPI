@@ -14,13 +14,21 @@ namespace NestoAPI.Controllers
     [RoutePrefix("api/PlantillaVentas")]
     public class PlantillaVentasController : ApiController
     {
-        private readonly NVEntities db = new NVEntities();
+        private readonly NVEntities db;
         private readonly IServicioPlantillaVenta _servicio;
 
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
         public PlantillaVentasController(IServicioPlantillaVenta servicio)
         {
+            db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
+            _servicio = servicio;
+        }
+
+        // Issue #214: constructor para tests (permite inyectar un NVEntities fake)
+        internal PlantillaVentasController(IServicioPlantillaVenta servicio, NVEntities db)
+        {
+            this.db = db;
             _servicio = servicio;
         }
 
@@ -141,7 +149,12 @@ namespace NestoAPI.Controllers
         {
             Cliente clienteDireccionPorDefecto = db.Clientes
                 .Where(c => c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones && c.ClientePrincipal)
-                .SingleOrDefault();
+                .FirstOrDefault();
+
+            // Issue #214: si el cliente no tiene contacto principal (o tuviera varios), no desreferenciar
+            // null dentro de la proyección. Capturamos el contacto por defecto como valor local: cuando es
+            // null, ninguna dirección queda marcada como "por defecto" en vez de devolver 500 (NRE).
+            string contactoDefecto = clienteDireccionPorDefecto?.ContactoDefecto;
 
             IQueryable<DireccionesEntregaClienteDTO> clientes = db.Clientes
                 .Where(c => c.Empresa == empresa && c.Estado >= 0 && c.Nº_Cliente == clienteDirecciones)
@@ -154,7 +167,7 @@ namespace NestoAPI.Controllers
                     comentarios = clienteEncontrado.Comentarios,
                     contacto = clienteEncontrado.Contacto.Trim(),
                     direccion = clienteEncontrado.Dirección.Trim(),
-                    esDireccionPorDefecto = clienteDireccionPorDefecto.ContactoDefecto == clienteEncontrado.Contacto,
+                    esDireccionPorDefecto = clienteEncontrado.Contacto == contactoDefecto,
                     estado = clienteEncontrado.Estado,
                     iva = clienteEncontrado.IVA.Trim(),
                     mantenerJunto = clienteEncontrado.MantenerJunto,
