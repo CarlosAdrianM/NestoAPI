@@ -454,19 +454,45 @@ namespace NestoAPI.Infraestructure.Facturas
                         }
 
                         // Fila de producto - SIN líneas entre filas
-                        table.Cell().Padding(2).AlignMiddle().Text(linea.Producto ?? "").FontSize(8);
-                        table.Cell().Padding(2).AlignMiddle().Text(linea.DescripcionCompleta ?? "").FontSize(8);
-                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.Cantidad?.ToString() ?? "").FontSize(8);
-                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.PrecioUnitario?.ToString("N2") ?? "").FontSize(8);
+                        // Issue #222: color de línea según estado/stock (replica lógica de Factura.rdlc)
+                        string colorLinea = ColorLinea(linea.Estado, linea.Picking);
+                        table.Cell().Padding(2).AlignMiddle().Text(linea.Producto ?? "").FontSize(8).FontColor(colorLinea);
+                        table.Cell().Padding(2).AlignMiddle().Text(linea.DescripcionCompleta ?? "").FontSize(8).FontColor(colorLinea);
+                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.Cantidad?.ToString() ?? "").FontSize(8).FontColor(colorLinea);
+                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.PrecioUnitario?.ToString("N2") ?? "").FontSize(8).FontColor(colorLinea);
                         if (mostrarColumnaDescuento)
                         {
                             table.Cell().Padding(2).AlignMiddle().AlignRight()
-                                .Text(linea.Descuento != 0 ? linea.Descuento.ToString("P2") : "").FontSize(8);
+                                .Text(linea.Descuento != 0 ? linea.Descuento.ToString("P2") : "").FontSize(8).FontColor(colorLinea);
                         }
-                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.Importe.ToString("N2")).FontSize(8);
+                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.Importe.ToString("N2")).FontSize(8).FontColor(colorLinea);
                     }
                 }
             });
+        }
+
+        /// <summary>
+        /// Issue #222: calcula el color de la línea según su estado de stock/picking,
+        /// replicando la expresión del informe legacy Factura.rdlc:
+        /// =IIF(Estado>=2 orelse Estado&lt;-1, "Black",
+        ///    IIF(Estado=-1, "Red", IIF(Picking=0, "Blue", "Green")))
+        /// </summary>
+        /// <param name="estado">Estado de la línea (ver Constantes.EstadosLineaVenta).</param>
+        /// <param name="picking">Nº de picking asignado (0 = sin asignar).</param>
+        /// <returns>Color QuestPDF aplicable con .FontColor(...).</returns>
+        internal static string ColorLinea(int estado, int picking)
+        {
+            if (estado >= 2 || estado < -1)
+            {
+                return Colors.Black;            // Albarán/factura o presupuesto: sin resaltado
+            }
+            if (estado == -1)
+            {
+                return Colors.Red.Medium;       // PENDIENTE: sin stock
+            }
+            return picking == 0
+                ? Colors.Blue.Medium            // EN_CURSO sin picking: stock sin comprobar
+                : Colors.Green.Medium;          // EN_CURSO con picking: servible
         }
 
         private void ComponerTotales(IContainer container, Factura factura)

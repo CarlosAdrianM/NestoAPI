@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models.Facturas;
+using QuestPDF.Helpers;
 using System;
 using System.Collections.Generic;
 
@@ -389,6 +390,47 @@ namespace NestoAPI.Tests.Infrastructure
 
             // Assert
             Assert.IsFalse(factura.MostrarImagenes);
+        }
+
+        #endregion
+
+        #region Tests de color de línea según estado/stock (Issue #222)
+
+        // Replica la matriz del informe legacy Factura.rdlc:
+        // | Estado >= 2 (albarán/factura) o Estado < -1 (presupuesto) | Negro |
+        // | Estado = -1 (PENDIENTE)                                   | Rojo  |
+        // | Estado = 1 (EN_CURSO) y Picking = 0                       | Azul  |
+        // | Estado = 1 (EN_CURSO) y Picking <> 0                      | Verde |
+
+        [DataTestMethod]
+        [DataRow(2, 0)]    // ALBARAN
+        [DataRow(2, 123)]  // ALBARAN con picking asignado
+        [DataRow(4, 0)]    // FACTURA
+        [DataRow(-3, 0)]   // PRESUPUESTO (Estado < -1)
+        public void ColorLinea_AlbaranFacturaOPresupuesto_DevuelveNegro(int estado, int picking)
+        {
+            Assert.AreEqual(Colors.Black, GeneradorPdfFacturasQuestPdf.ColorLinea(estado, picking));
+        }
+
+        [TestMethod]
+        public void ColorLinea_Pendiente_DevuelveRojo()
+        {
+            // Estado -1 (PENDIENTE): sin stock
+            Assert.AreEqual(Colors.Red.Medium, GeneradorPdfFacturasQuestPdf.ColorLinea(-1, 0));
+        }
+
+        [TestMethod]
+        public void ColorLinea_EnCursoSinPicking_DevuelveAzul()
+        {
+            // Estado 1 (EN_CURSO) y Picking 0: stock sin comprobar
+            Assert.AreEqual(Colors.Blue.Medium, GeneradorPdfFacturasQuestPdf.ColorLinea(1, 0));
+        }
+
+        [TestMethod]
+        public void ColorLinea_EnCursoConPicking_DevuelveVerde()
+        {
+            // Estado 1 (EN_CURSO) y Picking <> 0: línea servible (hay stock)
+            Assert.AreEqual(Colors.Green.Medium, GeneradorPdfFacturasQuestPdf.ColorLinea(1, 5));
         }
 
         #endregion
