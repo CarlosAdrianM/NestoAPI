@@ -980,7 +980,7 @@ namespace NestoAPI.Controllers
                     EsCanalExterno = false,
                     Iva = pedido.iva?.Trim(),
                     BaseImponibleProductos = baseImponibleProductosPut,
-                    AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim()),
+                    AnadirPortes = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()),
                     NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso
                 };
                 var resultadoPortesPut = GestorPortes.CalcularPortes(inputPortesPut);
@@ -1492,7 +1492,7 @@ namespace NestoAPI.Controllers
                     EsCanalExterno = false,
                     Iva = pedido.iva?.Trim(),
                     BaseImponibleProductos = baseImponibleProductos,
-                    AnadirPortes = !EsAlmacenSinPortes(pedido.Lineas.FirstOrDefault()?.almacen?.Trim()),
+                    AnadirPortes = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()),
                     NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso
                 };
                 var resultadoPortes = GestorPortes.CalcularPortes(inputPortes);
@@ -1779,7 +1779,7 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [ResponseType(typeof(ResultadoPortes))]
         [Route("api/PedidosVenta/CalcularPortes")]
-        public IHttpActionResult CalcularPortesPedido(string empresa, int pedido)
+        public IHttpActionResult CalcularPortesPedido(string empresa, int pedido, bool anadirPortes = true)
         {
             var cabecera = db.CabPedidoVtas.Include(c => c.LinPedidoVtas)
                 .SingleOrDefault(c => c.Empresa == empresa && c.Número == pedido);
@@ -1822,12 +1822,36 @@ namespace NestoAPI.Controllers
                     cliente?.Estado == 8 && cabecera.Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL,
                 Iva = cabecera.IVA?.Trim(),
                 BaseImponibleProductos = baseImponibleProductos,
-                AnadirPortes = !EsAlmacenSinPortes(cabecera.LinPedidoVtas.FirstOrDefault()?.Almacén?.Trim()),
+                AnadirPortes = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), anadirPortes, cabecera.LinPedidoVtas.FirstOrDefault()?.Almacén?.Trim()),
                 NoCobrarComisionReembolso = cabecera.NoCobrarComisionReembolso
             };
 
             var resultado = GestorPortes.CalcularPortes(input);
             return Ok(resultado);
+        }
+
+        /// <summary>
+        /// Issue #218: decide si añadir portes combinando autorización, intención del cliente
+        /// y regla de almacén. Lógica pura y testeable (la autorización se resuelve fuera).
+        /// </summary>
+        /// <param name="puedeSuprimirPortes">El usuario pertenece a Almacén o Compras (puede desmarcar).</param>
+        /// <param name="anadirPortesSolicitado">Valor de la casilla "Añadir portes" enviado por el cliente.</param>
+        /// <param name="almacen">Almacén de la primera línea del pedido.</param>
+        internal static bool DebeAnadirPortes(bool puedeSuprimirPortes, bool anadirPortesSolicitado, string almacen)
+        {
+            // Si el usuario no está autorizado a suprimirlos, se fuerza a true (ignora el desmarcado del cliente).
+            bool quiereAnadirPortes = !puedeSuprimirPortes || anadirPortesSolicitado;
+            // REI/ALC nunca llevan portes aunque se pidan: la regla de almacén manda.
+            return quiereAnadirPortes && !EsAlmacenSinPortes(almacen);
+        }
+
+        /// <summary>
+        /// Issue #218: ¿el usuario actual (Almacén o Compras) está autorizado a suprimir portes?
+        /// </summary>
+        private bool UsuarioPuedeSuprimirPortes()
+        {
+            return User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN)
+                || User.IsInRoleSinDominio(Constantes.GruposSeguridad.COMPRAS);
         }
 
         private static bool EsAlmacenSinPortes(string almacen)

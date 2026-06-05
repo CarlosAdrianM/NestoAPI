@@ -56,6 +56,14 @@ namespace NestoAPI.Models.PedidosVenta
         /// a partir de esa fecha el backend ignora el flag y siempre aplica la comisión si procede.
         /// </summary>
         public bool NoCobrarComisionReembolso { get; set; }
+        /// <summary>
+        /// Issue #218: casilla "Añadir portes al pedido" de PlantillaVenta. Default <c>true</c>
+        /// por retrocompatibilidad (los clientes que no lo envíen se comportan como hasta ahora).
+        /// Solo los grupos Almacén y Compras pueden desmarcarlo para suprimir portes; el resto de
+        /// usuarios lo llevan siempre, y REI/ALC nunca añaden portes aunque venga <c>true</c>.
+        /// La autorización real la hace el servidor (no fiarse de este flag).
+        /// </summary>
+        public bool AnadirPortes { get; set; } = true;
 
         public virtual ICollection<PrepagoDTO> Prepagos { get; set; }
         public virtual ICollection<VendedorGrupoProductoDTO> VendedoresGrupoProducto { get; set; }
