@@ -1890,5 +1890,78 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("cestmoi", clienteDB.Usuario);
             Assert.AreEqual(Constantes.Clientes.Estados.SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA, clienteDB.Estado);
         }
+
+        #region Issue #223: saltar números de cliente ya ocupados al crear cliente nuevo
+
+        [TestMethod]
+        public void CalcularNumeroClienteLibre_NumeroLibre_LoUsaYAvanzaElContador()
+        {
+            // El número del contador no existe -> se usa tal cual (comportamiento de siempre)
+            var (numero, nuevoContador) = GestorClientes.CalcularNumeroClienteLibre(1000, _ => false);
+
+            Assert.AreEqual("1000", numero);
+            Assert.AreEqual(1001, nuevoContador);
+        }
+
+        [TestMethod]
+        public void CalcularNumeroClienteLibre_NumeroOcupado_SaltaAlSiguienteLibre()
+        {
+            // "1000" ya existe (p.ej. creado por "Nesto viejo") -> se salta y se usa "1001"
+            var ocupados = new HashSet<string> { "1000" };
+            var (numero, nuevoContador) = GestorClientes.CalcularNumeroClienteLibre(1000, ocupados.Contains);
+
+            Assert.AreEqual("1001", numero);
+            Assert.AreEqual(1002, nuevoContador);
+        }
+
+        [TestMethod]
+        public void CalcularNumeroClienteLibre_VariosOcupadosConsecutivos_SaltaTodos()
+        {
+            var ocupados = new HashSet<string> { "1000", "1001", "1002" };
+            var (numero, nuevoContador) = GestorClientes.CalcularNumeroClienteLibre(1000, ocupados.Contains);
+
+            Assert.AreEqual("1003", numero);
+            Assert.AreEqual(1004, nuevoContador);
+        }
+
+        #endregion
+
+        #region Issue #223: un contacto adicional debe compartir el NIF del cliente
+
+        [TestMethod]
+        public void NifContactoEsIncompatible_NifsDistintos_EsIncompatible()
+        {
+            Assert.IsTrue(GestorClientes.NifContactoEsIncompatible("22222222J", "11111111H"));
+        }
+
+        [TestMethod]
+        public void NifContactoEsIncompatible_MismoNif_NoEsIncompatible()
+        {
+            Assert.IsFalse(GestorClientes.NifContactoEsIncompatible("11111111H", "11111111H"));
+        }
+
+        [TestMethod]
+        public void NifContactoEsIncompatible_MismoNifDistintoCaseYEspacios_NoEsIncompatible()
+        {
+            // Comparación case-insensitive y tolerante a padding (strings de BD legacy)
+            Assert.IsFalse(GestorClientes.NifContactoEsIncompatible("11111111h", " 11111111H "));
+        }
+
+        [TestMethod]
+        public void NifContactoEsIncompatible_ContactoSinNif_NoEsIncompatible()
+        {
+            // Si el contacto no trae NIF, no se valida (no se cambia la identidad fiscal)
+            Assert.IsFalse(GestorClientes.NifContactoEsIncompatible(null, "11111111H"));
+            Assert.IsFalse(GestorClientes.NifContactoEsIncompatible("   ", "11111111H"));
+        }
+
+        [TestMethod]
+        public void NifContactoEsIncompatible_ClienteSinNif_NoEsIncompatible()
+        {
+            // Si el cliente existente no tiene NIF registrado, no se puede comparar -> no incompatible
+            Assert.IsFalse(GestorClientes.NifContactoEsIncompatible("22222222J", null));
+        }
+
+        #endregion
     }
 }

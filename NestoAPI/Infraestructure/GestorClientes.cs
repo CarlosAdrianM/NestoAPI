@@ -1354,8 +1354,19 @@ namespace NestoAPI.Infraestructure
                 ContadorGlobal contador;
                 if (!clienteCrear.EsContacto)
                 {
+                    // Issue #223: al crear un cliente nuevo, saltar los números ya ocupados
+                    // (p.ej. creados por "Nesto viejo" u otro sistema que no pasa por NestoAPI),
+                    // para no acabar creando un contacto del cliente equivocado.
                     contador = db.ContadoresGlobales.SingleOrDefault();
-                    clienteCrear.Cliente = contador.Clientes++.ToString();
+                    (clienteCrear.Cliente, contador.Clientes) = CalcularNumeroClienteLibre(
+                        contador.Clientes,
+                        numero => db.Clientes.Any(c => c.Nº_Cliente == numero));
+                }
+                else
+                {
+                    // Issue #223: un contacto adicional debe compartir el NIF del cliente; si no,
+                    // tendríamos dos identidades fiscales bajo el mismo nº de cliente (muy grave).
+                    ValidarNifContactoCoincideConCliente(db, clienteCrear);
                 }
 
                 if (clienteCrear.Empresa == null)
@@ -1462,6 +1473,66 @@ namespace NestoAPI.Infraestructure
         private bool ClienteExists(NVEntities db, string empresa, string numCliente, string contacto)
         {
             return db.Clientes.Count(e => e.Empresa == empresa && e.Nº_Cliente == numCliente && e.Contacto == contacto) > 0;
+        }
+
+        /// <summary>
+        /// Issue #223: dado el valor actual del contador de clientes, devuelve el primer número
+        /// libre (saltando los ya ocupados, p.ej. por altas externas que no pasan por NestoAPI) y
+        /// el nuevo valor del contador (apuntando justo tras el número asignado). Lógica pura y
+        /// testeable: la existencia del número se consulta a través de <paramref name="numeroClienteExiste"/>.
+        /// </summary>
+        internal static (string numeroCliente, int nuevoContador) CalcularNumeroClienteLibre(
+            int contadorActual, Func<string, bool> numeroClienteExiste)
+        {
+            int candidato = contadorActual;
+            while (numeroClienteExiste(candidato.ToString()))
+            {
+                candidato++;
+            }
+            return (candidato.ToString(), candidato + 1);
+        }
+
+        /// <summary>
+        /// Issue #223: ¿el NIF de un contacto adicional es incompatible con el del cliente?
+        /// Lo es solo cuando ambos están informados y difieren. Si el contacto no trae NIF (o el
+        /// cliente no lo tiene), no se considera incompatible (no se cambia la identidad fiscal).
+        /// Lógica pura y testeable.
+        /// </summary>
+        internal static bool NifContactoEsIncompatible(string nifContacto, string nifCliente)
+        {
+            nifContacto = nifContacto?.Trim();
+            nifCliente = nifCliente?.Trim();
+            if (string.IsNullOrEmpty(nifContacto) || string.IsNullOrEmpty(nifCliente))
+            {
+                return false;
+            }
+            return !string.Equals(nifContacto, nifCliente, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Issue #223: al crear un contacto adicional, comprueba que su NIF coincide con el del
+        /// cliente existente. Si se especifica un NIF distinto, se rechaza para no crear dos
+        /// identidades fiscales bajo el mismo nº de cliente.
+        /// </summary>
+        private void ValidarNifContactoCoincideConCliente(NVEntities db, ClienteCrear clienteCrear)
+        {
+            string nifContacto = clienteCrear.Nif?.Trim();
+            if (string.IsNullOrEmpty(nifContacto))
+            {
+                return;
+            }
+
+            string nifCliente = db.Clientes
+                .Where(c => c.Nº_Cliente == clienteCrear.Cliente && c.CIF_NIF != null)
+                .Select(c => c.CIF_NIF)
+                .FirstOrDefault();
+
+            if (NifContactoEsIncompatible(nifContacto, nifCliente))
+            {
+                throw new ValidationException(
+                    $"El NIF '{nifContacto}' no coincide con el del cliente {clienteCrear.Cliente?.Trim()} ('{nifCliente?.Trim()}'). " +
+                    "Un contacto adicional debe tener el mismo NIF que el cliente.");
+            }
         }
 
         public async Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif)
