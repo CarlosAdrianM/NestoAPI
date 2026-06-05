@@ -101,6 +101,35 @@ namespace NestoAPI.Infraestructure.Alquileres
             }).ToList();
         }
 
+        // Nesto#340 Fase 1C.2: pestaña "Inmovilizados" de un alquiler (extracto del inmovilizado).
+        // Sustituye la lectura EF DbContext.ExtractoInmovilizado del cliente Nesto. La tabla no está
+        // mapeada en NestoAPI, así que se lee con SQL crudo aliasando las columnas (NºOrden, Número,
+        // NºDocumento llevan acentos/º) a nombres ASCII limpios.
+        public async Task<List<ExtractoInmovilizadoDTO>> LeerInmovilizadosAlquilerAsync(string empresa, string numero)
+        {
+            const string sql =
+                "SELECT [NºOrden] AS NumeroOrden, [Fecha] AS Fecha, [Concepto] AS Concepto, " +
+                "[NºDocumento] AS NumeroDocumento, [Importe] AS Importe, [ImportePdte] AS ImportePendiente, " +
+                "[Estado] AS Estado " +
+                "FROM ExtractoInmovilizado WHERE Empresa = @p0 AND [Número] = @p1 ORDER BY [Fecha]";
+
+            List<FilaInmovilizado> filas = await db.Database
+                .SqlQuery<FilaInmovilizado>(sql, empresa, numero)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return filas.Select(f => new ExtractoInmovilizadoDTO
+            {
+                NumeroOrden = f.NumeroOrden,
+                Fecha = f.Fecha,
+                Concepto = f.Concepto?.Trim(),
+                NumeroDocumento = f.NumeroDocumento?.Trim(),
+                Importe = f.Importe,
+                ImportePendiente = f.ImportePendiente,
+                Estado = f.Estado
+            }).ToList();
+        }
+
         // Tipo crudo intermedio: sus nombres de propiedad coinciden con las columnas del SP.
         private class FilaSp
         {
@@ -110,6 +139,18 @@ namespace NestoAPI.Infraestructure.Alquileres
             public int Stock { get; set; }
             public int StockAlquileres { get; set; }
             public int Diferencia { get; set; }
+        }
+
+        // Tipo crudo del extracto de inmovilizado: nombres = alias del SELECT.
+        private class FilaInmovilizado
+        {
+            public int NumeroOrden { get; set; }
+            public System.DateTime Fecha { get; set; }
+            public string Concepto { get; set; }
+            public string NumeroDocumento { get; set; }
+            public decimal Importe { get; set; }
+            public decimal ImportePendiente { get; set; }
+            public short Estado { get; set; }
         }
     }
 }

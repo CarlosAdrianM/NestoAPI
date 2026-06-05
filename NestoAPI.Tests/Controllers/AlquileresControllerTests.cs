@@ -116,5 +116,36 @@ namespace NestoAPI.Tests.Controllers
             var ok = (OkNegotiatedContentResult<List<CompraAlquilerDTO>>)resultado;
             Assert.AreEqual(0, ok.Content.Count);
         }
+
+        [TestMethod]
+        public async Task GetInmovilizadosAlquiler_DevuelveElExtractoDelServicio()
+        {
+            var lista = new List<ExtractoInmovilizadoDTO>
+            {
+                new ExtractoInmovilizadoDTO { NumeroOrden = 1, Concepto = "Compra aparato", NumeroDocumento = "555", Importe = 300m, ImportePendiente = 0m, Estado = 4 },
+                new ExtractoInmovilizadoDTO { NumeroOrden = 2, Concepto = "Amortización", NumeroDocumento = "A001", Importe = -25m, ImportePendiente = 0m, Estado = 1 }
+            };
+            A.CallTo(() => servicio.LeerInmovilizadosAlquilerAsync("1", "ALQ000123")).Returns(Task.FromResult(lista));
+
+            var resultado = await controller.GetInmovilizadosAlquiler("1", "ALQ000123");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<ExtractoInmovilizadoDTO>>));
+            var ok = (OkNegotiatedContentResult<List<ExtractoInmovilizadoDTO>>)resultado;
+            Assert.AreEqual(2, ok.Content.Count);
+            Assert.AreEqual("Compra aparato", ok.Content[0].Concepto);
+            A.CallTo(() => servicio.LeerInmovilizadosAlquilerAsync("1", "ALQ000123")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GetInmovilizadosAlquiler_SinExtracto_DevuelveListaVacia()
+        {
+            A.CallTo(() => servicio.LeerInmovilizadosAlquilerAsync(A<string>._, A<string>._))
+                .Returns(Task.FromResult(new List<ExtractoInmovilizadoDTO>()));
+
+            var resultado = await controller.GetInmovilizadosAlquiler("1", "NOEXISTE");
+
+            var ok = (OkNegotiatedContentResult<List<ExtractoInmovilizadoDTO>>)resultado;
+            Assert.AreEqual(0, ok.Content.Count);
+        }
     }
 }

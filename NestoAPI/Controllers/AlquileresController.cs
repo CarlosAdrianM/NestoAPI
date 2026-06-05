@@ -60,5 +60,19 @@ namespace NestoAPI.Controllers
 
             return Ok(compras);
         }
+
+        // GET: api/Alquileres/Inmovilizados?empresa=1&numero=ALQ000123
+        // Nesto#340 Fase 1C.2: extracto del inmovilizado de un alquiler (pestaña Inmovilizados).
+        [HttpGet]
+        [Route("api/Alquileres/Inmovilizados")]
+        [ResponseType(typeof(List<ExtractoInmovilizadoDTO>))]
+        public async Task<IHttpActionResult> GetInmovilizadosAlquiler(string empresa, string numero)
+        {
+            List<ExtractoInmovilizadoDTO> inmovilizados = await _productosAlquiler
+                .LeerInmovilizadosAlquilerAsync(empresa, numero)
+                .ConfigureAwait(false);
+
+            return Ok(inmovilizados);
+        }
     }
 }
