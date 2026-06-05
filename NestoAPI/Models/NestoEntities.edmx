@@ -1290,7 +1290,7 @@
           <Property Name="ImporteMinimo" Type="money" Nullable="false" />
           <Property Name="FechaDesde" Type="date" />
           <Property Name="FechaHasta" Type="date" />
-          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="OfertasCombinadasDetalle">
@@ -1303,7 +1303,7 @@
           <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
           <Property Name="Cantidad" Type="smallint" Nullable="false" />
           <Property Name="Precio" Type="money" Nullable="false" />
-          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
         </EntityType>
         <EntityType Name="OfertasPermitidas">
@@ -10484,7 +10484,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="ImporteMinimo" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
           <Property Name="FechaDesde" Type="DateTime" Precision="0" />
           <Property Name="FechaHasta" Type="DateTime" Precision="0" />
-          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasCombinadas_Empresas" FromRole="OfertasCombinada" ToRole="Empresa" />
           <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_OfertasCombinadas" FromRole="OfertasCombinada" ToRole="OfertasCombinadasDetalle" />
@@ -10498,7 +10498,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="OfertaId" Type="Int32" Nullable="false" />
           <Property Name="Producto" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
           <Property Name="Precio" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
-          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" annotation:StoreGeneratedPattern="Computed" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasCombinadasDetalle_Empresas" FromRole="OfertasCombinadasDetalle" ToRole="Empresa" />
           <NavigationProperty Name="OfertasCombinada" Relationship="NVModel.FK_OfertasCombinadasDetalle_OfertasCombinadas" FromRole="OfertasCombinadasDetalle" ToRole="OfertasCombinada" />

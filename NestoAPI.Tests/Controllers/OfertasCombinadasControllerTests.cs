@@ -13,6 +13,7 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using System.Web.Http.Controllers;
 using System.Web.Http.Results;
+using System.Xml.Linq;
 
 namespace NestoAPI.Tests.Controllers
 {
@@ -658,6 +659,41 @@ namespace NestoAPI.Tests.Controllers
             string error = OfertasCombinadasController.ValidarDTO(dto);
 
             Assert.IsNull(error, error);
+        }
+
+        #endregion
+
+        #region Regresión: el Usuario de auditoría no debe ser StoreGenerated (RDS2016$)
+
+        // Si Usuario se marca como Computed en el EDMX, EF no envía el valor que asigna el controller
+        // (UsuarioAuditoriaHelper.Resolver) y SQL aplica el DEFAULT de la columna
+        // (SYSTEM_USER = NUEVAVISION\RDS2016$). Este test lee el SSDL embebido en el assembly de
+        // NestoAPI y verifica que Usuario NO es StoreGeneratedPattern="Computed".
+        [DataTestMethod]
+        [DataRow("OfertasCombinadas")]
+        [DataRow("OfertasCombinadasDetalle")]
+        public void Edmx_UsuarioDeOfertasCombinadas_NoEsStoreGenerated(string nombreEntidad)
+        {
+            var asm = typeof(NVEntities).Assembly;
+            string recursoSsdl = asm.GetManifestResourceNames()
+                .Single(n => n.EndsWith(".ssdl", StringComparison.OrdinalIgnoreCase));
+
+            XDocument ssdl;
+            using (var stream = asm.GetManifestResourceStream(recursoSsdl))
+            {
+                ssdl = XDocument.Load(stream);
+            }
+
+            var propiedadUsuario = ssdl.Descendants()
+                .Where(e => e.Name.LocalName == "EntityType" && (string)e.Attribute("Name") == nombreEntidad)
+                .SelectMany(e => e.Elements().Where(p => p.Name.LocalName == "Property"))
+                .Single(p => (string)p.Attribute("Name") == "Usuario");
+
+            string storeGenerated = (string)propiedadUsuario.Attribute("StoreGeneratedPattern");
+
+            Assert.AreNotEqual("Computed", storeGenerated,
+                $"El campo Usuario de {nombreEntidad} está marcado como Computed en el EDMX: EF no enviará " +
+                "el usuario de auditoría y SQL grabará el DEFAULT (NUEVAVISION\\RDS2016$).");
         }
 
         #endregion
