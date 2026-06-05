@@ -18,9 +18,21 @@ namespace NestoAPI.Infraestructure.Informes
     /// </summary>
     public class GeneradorPdfResumenVentas
     {
+        /// <summary>
+        /// Issue #221: el SP prdInformeResumenVentas despacha a sub-procedimientos distintos según la
+        /// fecha. A partir de esta fecha (igual umbral que el SP) las columnas significan Año Actual /
+        /// Año Anterior (layout comparativo); antes, cada columna es una empresa (layout antiguo).
+        /// </summary>
+        public static readonly DateTime FechaCorteLayoutComparativo = new DateTime(2022, 1, 1);
+
+        /// <summary>¿Se usa el layout comparativo (Año Actual vs. Año Anterior)? Si no, el de por empresa.</summary>
+        public static bool UsarLayoutComparativo(DateTime fechaDesde) => fechaDesde >= FechaCorteLayoutComparativo;
+
         public ByteArrayContent GenerarPdf(List<ResumenVentasDTO> datos, DateTime fechaDesde, DateTime fechaHasta, bool soloFacturas)
         {
-            List<ResumenVentasComparativaDTO> filas = Transformar(datos);
+            bool layoutComparativo = UsarLayoutComparativo(fechaDesde);
+            List<ResumenVentasDTO> datosSeguro = datos ?? new List<ResumenVentasDTO>();
+            List<ResumenVentasComparativaDTO> filasComparativa = layoutComparativo ? Transformar(datosSeguro) : null;
 
             var documento = Document.Create(container =>
             {
@@ -32,7 +44,17 @@ namespace NestoAPI.Infraestructure.Informes
                     page.DefaultTextStyle(x => x.FontSize(10));
 
                     page.Header().Element(c => ComponerCabecera(c, fechaDesde, fechaHasta, soloFacturas));
-                    page.Content().Element(c => ComponerTabla(c, filas, soloFacturas));
+                    page.Content().Element(c =>
+                    {
+                        if (layoutComparativo)
+                        {
+                            ComponerTabla(c, filasComparativa, soloFacturas);
+                        }
+                        else
+                        {
+                            ComponerTablaPorEmpresa(c, datosSeguro);
+                        }
+                    });
                     page.Footer().Element(ComponerPie);
                 });
             });
@@ -151,6 +173,70 @@ namespace NestoAPI.Infraestructure.Informes
                     ComponerFilaTotales(table, "TOTAL", filas, Colors.Grey.Darken1, negrita: true);
                 }
             });
+        }
+
+        /// <summary>
+        /// Issue #221: layout antiguo "una columna por empresa" para informes con fechaDesde &lt; 2022,
+        /// igual que el RDLC original ResumenVentas.rdlc (Nueva Visión, Cursos Visión, Visnú Cosméticos,
+        /// Unión Láser, Total). Las columnas del SP aquí son empresas, no años.
+        /// </summary>
+        private void ComponerTablaPorEmpresa(IContainer container, List<ResumenVentasDTO> filas)
+        {
+            container.Table(table =>
+            {
+                table.ColumnsDefinition(columns =>
+                {
+                    columns.RelativeColumn(3);    // Vendedor
+                    columns.ConstantColumn(90);   // Nueva Visión (VtaNV)
+                    columns.ConstantColumn(90);   // Cursos Visión (VtaCV)
+                    columns.ConstantColumn(90);   // Visnú Cosméticos (VtaVC)
+                    columns.ConstantColumn(90);   // Unión Láser (VtaUL)
+                    columns.ConstantColumn(90);   // Total (VtaTotal)
+                });
+
+                table.Header(header =>
+                {
+                    CeldaCabecera(header.Cell(), "Vendedor", derecha: false);
+                    CeldaCabecera(header.Cell(), "Nueva Visión", derecha: true);
+                    CeldaCabecera(header.Cell(), "Cursos Visión", derecha: true);
+                    CeldaCabecera(header.Cell(), "Visnú Cosméticos", derecha: true);
+                    CeldaCabecera(header.Cell(), "Unión Láser", derecha: true);
+                    CeldaCabecera(header.Cell(), "Total", derecha: true);
+                });
+
+                foreach (var grupo in filas.GroupBy(f => f.Grupo).OrderByDescending(g => g.Key))
+                {
+                    table.Cell().ColumnSpan(6u).PaddingTop(6).PaddingBottom(2)
+                        .Text(NombreGrupo(grupo.Key)).Bold().FontSize(12);
+
+                    foreach (ResumenVentasDTO fila in grupo)
+                    {
+                        CeldaTexto(table.Cell(), fila.NombreVendedor?.Trim() ?? "", derecha: false, null);
+                        CeldaTexto(table.Cell(), fila.VtaNV.ToString("N2"), derecha: true, null);
+                        CeldaTexto(table.Cell(), fila.VtaCV.ToString("N2"), derecha: true, null);
+                        CeldaTexto(table.Cell(), fila.VtaVC.ToString("N2"), derecha: true, null);
+                        CeldaTexto(table.Cell(), fila.VtaUL.ToString("N2"), derecha: true, null);
+                        CeldaTexto(table.Cell(), fila.VtaTotal.ToString("N2"), derecha: true, null);
+                    }
+
+                    ComponerFilaTotalesPorEmpresa(table, $"Subtotal {NombreGrupo(grupo.Key)}", grupo.ToList(), Colors.Grey.Lighten1, negrita: false);
+                }
+
+                if (filas.Any())
+                {
+                    ComponerFilaTotalesPorEmpresa(table, "TOTAL", filas, Colors.Grey.Darken1, negrita: true);
+                }
+            });
+        }
+
+        private static void ComponerFilaTotalesPorEmpresa(TableDescriptor table, string etiqueta, List<ResumenVentasDTO> filas, string colorBorde, bool negrita)
+        {
+            CeldaTotal(table.Cell(), etiqueta, derecha: false, colorBorde, negrita);
+            CeldaTotal(table.Cell(), filas.Sum(f => f.VtaNV).ToString("N2"), derecha: true, colorBorde, negrita);
+            CeldaTotal(table.Cell(), filas.Sum(f => f.VtaCV).ToString("N2"), derecha: true, colorBorde, negrita);
+            CeldaTotal(table.Cell(), filas.Sum(f => f.VtaVC).ToString("N2"), derecha: true, colorBorde, negrita);
+            CeldaTotal(table.Cell(), filas.Sum(f => f.VtaUL).ToString("N2"), derecha: true, colorBorde, negrita);
+            CeldaTotal(table.Cell(), filas.Sum(f => f.VtaTotal).ToString("N2"), derecha: true, colorBorde, negrita);
         }
 
         // Fila de subtotal/total: el % se recalcula a partir de los importes sumados, no se suman los %.

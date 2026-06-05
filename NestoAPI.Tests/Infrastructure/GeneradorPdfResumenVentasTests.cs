@@ -140,6 +140,42 @@ namespace NestoAPI.Tests.Infrastructure
             ComprobarCabeceraPdf(bytes);
         }
 
+        // ----- Issue #221: selección de layout por fecha (comparativo vs. por empresa) -----
+
+        [TestMethod]
+        public void UsarLayoutComparativo_DesdeEnero2022_EsComparativo()
+        {
+            Assert.IsTrue(GeneradorPdfResumenVentas.UsarLayoutComparativo(new DateTime(2022, 1, 1)));
+            Assert.IsTrue(GeneradorPdfResumenVentas.UsarLayoutComparativo(new DateTime(2026, 6, 1)));
+        }
+
+        [TestMethod]
+        public void UsarLayoutComparativo_AntesDe2022_EsPorEmpresa()
+        {
+            Assert.IsFalse(GeneradorPdfResumenVentas.UsarLayoutComparativo(new DateTime(2021, 12, 31)));
+            Assert.IsFalse(GeneradorPdfResumenVentas.UsarLayoutComparativo(new DateTime(2017, 5, 1)));
+            Assert.IsFalse(GeneradorPdfResumenVentas.UsarLayoutComparativo(new DateTime(2016, 1, 1)));
+        }
+
+        [TestMethod]
+        public void GenerarPdf_FechaAnteriorA2022_UsaLayoutPorEmpresaYDevuelvePdfValido()
+        {
+            // Antes de 2022 cada columna es una empresa (VtaNV..VtaUL) -> layout antiguo.
+            var datos = new List<ResumenVentasDTO>
+            {
+                new ResumenVentasDTO { Grupo = "FAC", Vendedor = "AM", NombreVendedor = "Ana", VtaNV = 100m, VtaCV = 200m, VtaVC = 300m, VtaUL = 400m, VtaTotal = 1000m },
+                new ResumenVentasDTO { Grupo = "ALB", Vendedor = "JG", NombreVendedor = "Juan", VtaNV = 10m, VtaCV = 20m, VtaVC = 30m, VtaUL = 40m, VtaTotal = 100m }
+            };
+
+            var resultado = new GeneradorPdfResumenVentas()
+                .GenerarPdf(datos, new DateTime(2018, 1, 1), new DateTime(2018, 3, 31), true);
+
+            Assert.IsNotNull(resultado);
+            byte[] bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0, "El PDF (layout por empresa) debe tener contenido");
+            ComprobarCabeceraPdf(bytes);
+        }
+
         private static void ComprobarCabeceraPdf(byte[] bytes)
         {
             Assert.IsTrue(bytes.Length >= 4, "El PDF es demasiado corto");
