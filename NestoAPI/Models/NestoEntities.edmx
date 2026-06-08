@@ -1305,6 +1305,7 @@
           <Property Name="Precio" Type="money" Nullable="false" />
           <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="GrupoAlternativa" Type="int" />
         </EntityType>
         <EntityType Name="OfertasPermitidas">
           <Key>
@@ -10504,6 +10505,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="OfertasCombinada" Relationship="NVModel.FK_OfertasCombinadasDetalle_OfertasCombinadas" FromRole="OfertasCombinadasDetalle" ToRole="OfertasCombinada" />
           <NavigationProperty Name="Producto1" Relationship="NVModel.FK_OfertasCombinadasDetalle_Productos" FromRole="OfertasCombinadasDetalle" ToRole="Producto" />
           <Property Name="Cantidad" Type="Int16" Nullable="false" />
+          <Property Name="GrupoAlternativa" Type="Int32" />
         </EntityType>
         <Association Name="FK_OfertasCombinadas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -14187,6 +14189,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="OfertasCombinadasDetalles">
             <EntityTypeMapping TypeName="NVModel.OfertaCombinadaDetalle">
               <MappingFragment StoreEntitySet="OfertasCombinadasDetalle">
+                <ScalarProperty Name="GrupoAlternativa" ColumnName="GrupoAlternativa" />
                 <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
