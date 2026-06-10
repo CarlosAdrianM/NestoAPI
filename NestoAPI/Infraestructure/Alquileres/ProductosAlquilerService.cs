@@ -1,5 +1,6 @@
 using NestoAPI.Models;
 using NestoAPI.Models.Alquileres;
+using System;
 using System.Collections.Generic;
 using System.Data.Entity;
 using System.Linq;
@@ -128,6 +129,160 @@ namespace NestoAPI.Infraestructure.Alquileres
                 ImportePendiente = f.ImportePendiente,
                 Estado = f.Estado
             }).ToList();
+        }
+
+        // Nesto#340 Fase 1C.3: grid principal de Alquileres. Sustituye la lectura EF
+        // DbContext.CabAlquileres del cliente Nesto (filtraba por Producto, ordenaba por NumeroSerie).
+        // Se incluyen los datos del cliente (nombre/dirección) para que el cliente pueda imprimir la
+        // etiqueta del pedido sin la navegación EF CabAlquileres.Clientes.
+        public async Task<List<AlquilerCabeceraDTO>> LeerCabecerasAlquilerAsync(string empresa, string producto)
+        {
+            List<CabAlquiler> cabeceras = await db.CabAlquileres
+                .Where(c => c.Empresa == empresa && c.Producto == producto)
+                .OrderBy(c => c.NumeroSerie)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return await ProyectarConClientesAsync(empresa, cabeceras).ConfigureAwait(false);
+        }
+
+        // Nesto#340 Fase 1C.3: guardado del grid (reconcile). Sustituye DbContext.SaveChanges del
+        // cliente Nesto, que persistía altas/ediciones/bajas del ChangeTracker. Aquí se reciben las
+        // cabeceras actuales del producto y se reconcilian con las que hay en la BD:
+        //   - Numero > 0  -> edición de la fila existente
+        //   - Numero == 0 -> alta (la identity asigna el Número)
+        //   - filas en BD que ya no vienen -> baja
+        // SaveChangesAsync es transaccional, así que todo se aplica de forma atómica.
+        public async Task<List<AlquilerCabeceraDTO>> GuardarCabecerasAlquilerAsync(string empresa, string producto, List<AlquilerCabeceraDTO> cabeceras, string usuario)
+        {
+            cabeceras = cabeceras ?? new List<AlquilerCabeceraDTO>();
+
+            List<CabAlquiler> existentes = await db.CabAlquileres
+                .Where(c => c.Empresa == empresa && c.Producto == producto)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            HashSet<int> numerosEntrantes = new HashSet<int>(cabeceras.Where(c => c.Numero > 0).Select(c => c.Numero));
+
+            // Bajas: lo que estaba en la BD para este producto y ya no viene en la lista.
+            foreach (CabAlquiler existente in existentes.Where(e => !numerosEntrantes.Contains(e.Número)).ToList())
+            {
+                db.CabAlquileres.Remove(existente);
+            }
+
+            DateTime ahora = DateTime.Now;
+            foreach (AlquilerCabeceraDTO dto in cabeceras)
+            {
+                CabAlquiler entidad = dto.Numero > 0
+                    ? existentes.FirstOrDefault(e => e.Número == dto.Numero)
+                    : null;
+
+                if (entidad == null)
+                {
+                    entidad = new CabAlquiler { Empresa = empresa };
+                    db.CabAlquileres.Add(entidad);
+                }
+
+                AplicarDto(entidad, dto, producto);
+                entidad.Usuario = usuario;
+                entidad.FechaModificación = ahora;
+            }
+
+            await db.SaveChangesAsync().ConfigureAwait(false);
+
+            // Releemos para devolver los Números asignados a las altas y los datos de cliente.
+            return await LeerCabecerasAlquilerAsync(empresa, producto).ConfigureAwait(false);
+        }
+
+        private async Task<List<AlquilerCabeceraDTO>> ProyectarConClientesAsync(string empresa, List<CabAlquiler> cabeceras)
+        {
+            // Cargamos en una sola consulta los clientes referenciados para rellenar los datos de
+            // etiqueta (nombre/dirección). Se materializa y se hace el match en memoria con Trim
+            // porque las claves de la BD vienen rellenas con espacios (sistema legacy).
+            Dictionary<string, Cliente> clientesPorClave = new Dictionary<string, Cliente>();
+            List<string> numerosCliente = cabeceras
+                .Where(c => !string.IsNullOrWhiteSpace(c.Cliente))
+                .Select(c => c.Cliente)
+                .Distinct()
+                .ToList();
+
+            if (numerosCliente.Any())
+            {
+                List<Cliente> clientes = await db.Clientes
+                    .Where(cli => cli.Empresa == empresa && numerosCliente.Contains(cli.Nº_Cliente))
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                foreach (Cliente cli in clientes)
+                {
+                    clientesPorClave[ClaveCliente(cli.Nº_Cliente, cli.Contacto)] = cli;
+                }
+            }
+
+            return cabeceras.Select(c =>
+            {
+                Cliente cli = null;
+                if (!string.IsNullOrWhiteSpace(c.Cliente))
+                {
+                    clientesPorClave.TryGetValue(ClaveCliente(c.Cliente, c.Contacto), out cli);
+                }
+                return MapearADto(c, cli);
+            }).ToList();
+        }
+
+        private static string ClaveCliente(string cliente, string contacto)
+        {
+            return (cliente?.Trim() ?? string.Empty) + "|" + (contacto?.Trim() ?? string.Empty);
+        }
+
+        private static void AplicarDto(CabAlquiler entidad, AlquilerCabeceraDTO dto, string productoPorDefecto)
+        {
+            entidad.Cliente = dto.Cliente?.Trim();
+            entidad.Contacto = dto.Contacto?.Trim();
+            entidad.Producto = string.IsNullOrWhiteSpace(dto.Producto) ? productoPorDefecto : dto.Producto.Trim();
+            entidad.Inmovilizado = dto.Inmovilizado?.Trim();
+            entidad.Cuotas = dto.Cuotas;
+            entidad.FechaEntrega = dto.FechaEntrega;
+            entidad.FechaSeñal = dto.FechaSenal;
+            entidad.ImporteSeñal = dto.ImporteSenal;
+            entidad.NumeroSerie = dto.NumeroSerie?.Trim();
+            entidad.SeñalComisiona = dto.SenalComisiona;
+            entidad.Indemnización = dto.Indemnizacion;
+            entidad.Importe = dto.Importe;
+            entidad.CabPedidoVta = dto.CabPedidoVta;
+            entidad.RutaContrato = dto.RutaContrato?.Trim();
+            entidad.Comentarios = dto.Comentarios;
+        }
+
+        private static AlquilerCabeceraDTO MapearADto(CabAlquiler c, Cliente cli)
+        {
+            return new AlquilerCabeceraDTO
+            {
+                Empresa = c.Empresa?.Trim(),
+                Numero = c.Número,
+                Cliente = c.Cliente?.Trim(),
+                Contacto = c.Contacto?.Trim(),
+                Producto = c.Producto?.Trim(),
+                Inmovilizado = c.Inmovilizado?.Trim(),
+                Cuotas = c.Cuotas,
+                FechaEntrega = c.FechaEntrega,
+                FechaSenal = c.FechaSeñal,
+                ImporteSenal = c.ImporteSeñal,
+                NumeroSerie = c.NumeroSerie?.Trim(),
+                SenalComisiona = c.SeñalComisiona,
+                Indemnizacion = c.Indemnización,
+                Importe = c.Importe,
+                CabPedidoVta = c.CabPedidoVta,
+                RutaContrato = c.RutaContrato?.Trim(),
+                Comentarios = c.Comentarios,
+                NombreProducto = c.NombreProducto?.Trim(),
+                Familia = c.Familia?.Trim(),
+                NombreCliente = cli?.Nombre?.Trim(),
+                DireccionCliente = cli?.Dirección?.Trim(),
+                CodPostalCliente = cli?.CodPostal?.Trim(),
+                PoblacionCliente = cli?.Población?.Trim(),
+                ProvinciaCliente = cli?.Provincia?.Trim()
+            };
         }
 
         // Tipo crudo intermedio: sus nombres de propiedad coinciden con las columnas del SP.

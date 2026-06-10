@@ -38,6 +38,7 @@ namespace NestoAPI.Models
             this.PersonasContactoClientes1 = new HashSet<PersonaContactoCliente>();
             this.CabFacturaVtas = new HashSet<CabFacturaVta>();
             this.CabAlbaránVta = new HashSet<CabAlbaranVta>();
+            this.CabAlquileres = new HashSet<CabAlquiler>();
         }
     
         public string Empresa { get; set; }
@@ -111,5 +112,6 @@ namespace NestoAPI.Models
         public virtual ICollection<PersonaContactoCliente> PersonasContactoClientes1 { get; set; }
         public virtual ICollection<CabFacturaVta> CabFacturaVtas { get; set; }
         public virtual ICollection<CabAlbaranVta> CabAlbaránVta { get; set; }
+        public virtual ICollection<CabAlquiler> CabAlquileres { get; set; }
     }
 }

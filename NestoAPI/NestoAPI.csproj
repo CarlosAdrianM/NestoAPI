@@ -756,6 +756,9 @@
     </Compile>
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Models\AccountBindingModels.cs" />
+    <Compile Include="Models\CabAlquiler.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\DispositivoNotificacion.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -843,6 +846,7 @@
     <Compile Include="Models\Correos\EnvioCorreoDTO.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2018.cs" />
+    <Compile Include="Models\Alquileres\AlquilerCabeceraDTO.cs" />
     <Compile Include="Models\Alquileres\CompraAlquilerDTO.cs" />
     <Compile Include="Models\Alquileres\ExtractoInmovilizadoDTO.cs" />
     <Compile Include="Models\Alquileres\MovimientoAlquilerDTO.cs" />

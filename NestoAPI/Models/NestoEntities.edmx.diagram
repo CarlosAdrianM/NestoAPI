@@ -314,6 +314,10 @@
         <AssociationConnector Association="NVModel.FK_PlanesVentajas_EstadosPlanVentajas" />
         <AssociationConnector Association="NVModel.FK_PagosTPV_PagoOriginal" />
         <AssociationConnector Association="NVModel.FK_PlanVentajasCliente_PlanesVentajas" />
+        <EntityTypeShape EntityType="NVModel.CabAlquiler" Width="1.5" PointX="28.375" PointY="55.5" />
+        <AssociationConnector Association="NVModel.FK_CabAlquileres_Clientes" />
+        <AssociationConnector Association="NVModel.FK_CabAlquileres_Inmovilizados" />
+        <AssociationConnector Association="NVModel.FK_CabAlquileres_Productos" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

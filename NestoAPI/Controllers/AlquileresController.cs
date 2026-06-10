@@ -1,3 +1,4 @@
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Alquileres;
 using NestoAPI.Models.Alquileres;
 using System.Collections.Generic;
@@ -73,6 +74,42 @@ namespace NestoAPI.Controllers
                 .ConfigureAwait(false);
 
             return Ok(inmovilizados);
+        }
+
+        // GET: api/Alquileres/Cabeceras?empresa=1&producto=26780
+        // Nesto#340 Fase 1C.3: cabeceras del grid principal de un producto en alquiler.
+        [HttpGet]
+        [Route("api/Alquileres/Cabeceras")]
+        [ResponseType(typeof(List<AlquilerCabeceraDTO>))]
+        public async Task<IHttpActionResult> GetCabecerasAlquiler(string empresa, string producto)
+        {
+            List<AlquilerCabeceraDTO> cabeceras = await _productosAlquiler
+                .LeerCabecerasAlquilerAsync(empresa, producto)
+                .ConfigureAwait(false);
+
+            return Ok(cabeceras);
+        }
+
+        // POST: api/Alquileres/Cabeceras/Guardar
+        // Nesto#340 Fase 1C.3: reconcilia (altas/ediciones/bajas) las cabeceras del producto.
+        // El usuario de auditoría se toma del Identity, no de lo que mande el cliente.
+        [HttpPost]
+        [Route("api/Alquileres/Cabeceras/Guardar")]
+        [ResponseType(typeof(List<AlquilerCabeceraDTO>))]
+        public async Task<IHttpActionResult> GuardarCabecerasAlquiler(GuardarCabecerasAlquilerRequest request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Empresa) || string.IsNullOrWhiteSpace(request.Producto))
+            {
+                return BadRequest("Empresa y Producto son obligatorios.");
+            }
+
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+
+            List<AlquilerCabeceraDTO> cabeceras = await _productosAlquiler
+                .GuardarCabecerasAlquilerAsync(request.Empresa, request.Producto, request.Cabeceras, usuario)
+                .ConfigureAwait(false);
+
+            return Ok(cabeceras);
         }
     }
 }

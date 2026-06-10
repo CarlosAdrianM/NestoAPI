@@ -102,6 +102,33 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="CabAlquileres">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Cliente" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="Producto" Type="char" MaxLength="15" />
+          <Property Name="Inmovilizado" Type="char" MaxLength="10" />
+          <Property Name="Cuotas" Type="int" />
+          <Property Name="FechaEntrega" Type="datetime" />
+          <Property Name="FechaSeñal" Type="datetime" />
+          <Property Name="ImporteSeñal" Type="money" />
+          <Property Name="NumeroSerie" Type="varchar" MaxLength="30" />
+          <Property Name="NombreProducto" Type="varchar" MaxLength="50" />
+          <Property Name="Familia" Type="varchar" MaxLength="30" />
+          <Property Name="SeñalComisiona" Type="bit" />
+          <Property Name="Indemnización" Type="money" />
+          <Property Name="Importe" Type="money" />
+          <Property Name="CabPedidoVta" Type="int" />
+          <Property Name="RutaContrato" Type="varchar" MaxLength="50" />
+          <Property Name="Comentarios" Type="nvarchar(max)" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="CabFacturaCmp">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -2178,6 +2205,50 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Principal>
             <Dependent Role="CabAlbaránVta">
               <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabAlquileres_Clientes">
+          <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
+          <End Role="CabAlquileres" Type="Self.CabAlquileres" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Clientes">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabAlquileres">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabAlquileres_Inmovilizados">
+          <End Role="Inmovilizados" Type="Self.Inmovilizados" Multiplicity="0..1" />
+          <End Role="CabAlquileres" Type="Self.CabAlquileres" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Inmovilizados">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabAlquileres">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Inmovilizado" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabAlquileres_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="0..1" />
+          <End Role="CabAlquileres" Type="Self.CabAlquileres" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabAlquileres">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -5280,6 +5351,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="ApuntesBancarios" EntityType="Self.ApuntesBancarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Bancos" EntityType="Self.Bancos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabAlbaránVta" EntityType="Self.CabAlbaránVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="CabAlquileres" EntityType="Self.CabAlquileres" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaVta" EntityType="Self.CabFacturaVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoCmp" EntityType="Self.CabPedidoCmp" Schema="dbo" store:Type="Tables" />
@@ -5456,6 +5528,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_CabAlbaránVta_Empresas" Association="Self.FK_CabAlbaránVta_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
             <End Role="CabAlbaránVta" EntitySet="CabAlbaránVta" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabAlquileres_Clientes" Association="Self.FK_CabAlquileres_Clientes">
+            <End Role="Clientes" EntitySet="Clientes" />
+            <End Role="CabAlquileres" EntitySet="CabAlquileres" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabAlquileres_Inmovilizados" Association="Self.FK_CabAlquileres_Inmovilizados">
+            <End Role="Inmovilizados" EntitySet="Inmovilizados" />
+            <End Role="CabAlquileres" EntitySet="CabAlquileres" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabAlquileres_Productos" Association="Self.FK_CabAlquileres_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="CabAlquileres" EntitySet="CabAlquileres" />
           </AssociationSet>
           <AssociationSet Name="FK_CabFacturaCmp_Empresas" Association="Self.FK_CabFacturaCmp_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -7433,6 +7517,19 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="PlanesVentaja" EntitySet="PlanesVentajas" />
             <End Role="PlanVentajasCliente" EntitySet="PlanesVentajasClientes" />
           </AssociationSet>
+          <EntitySet Name="CabAlquileres" EntityType="NVModel.CabAlquiler" />
+          <AssociationSet Name="FK_CabAlquileres_Clientes" Association="NVModel.FK_CabAlquileres_Clientes">
+            <End Role="Cliente" EntitySet="Clientes" />
+            <End Role="CabAlquilere" EntitySet="CabAlquileres" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabAlquileres_Inmovilizados" Association="NVModel.FK_CabAlquileres_Inmovilizados">
+            <End Role="Inmovilizado" EntitySet="Inmovilizados" />
+            <End Role="CabAlquilere" EntitySet="CabAlquileres" />
+          </AssociationSet>
+          <AssociationSet Name="FK_CabAlquileres_Productos" Association="NVModel.FK_CabAlquileres_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="CabAlquilere" EntitySet="CabAlquileres" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -7840,6 +7937,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="PersonasContactoClientes1" Relationship="NVModel.FK_PersonasContactoCliente_Clientes1" FromRole="Cliente" ToRole="PersonasContactoCliente" />
           <NavigationProperty Name="CabFacturaVtas" Relationship="NVModel.FK_CabFacturaVta_Clientes" FromRole="Cliente" ToRole="CabFacturaVta" />
           <NavigationProperty Name="CabAlbaránVta" Relationship="NVModel.FK_CabAlbaránVta_Clientes" FromRole="Cliente" ToRole="CabAlbaránVta" />
+          <NavigationProperty Name="CabAlquileres" Relationship="NVModel.FK_CabAlquileres_Clientes" FromRole="Cliente" ToRole="CabAlquilere" />
         </EntityType>
         <Association Name="FK_CabPedidoVta_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -8011,6 +8109,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_Productos_GruposProducto" FromRole="Producto" ToRole="GruposProducto" />
           <NavigationProperty Name="Ganavisiones" Relationship="NVModel.FK_Ganavisiones_Productos" FromRole="Producto" ToRole="Ganavisione" />
           <NavigationProperty Name="PrestashopProducto" Relationship="NVModel.FK_PrestashopProductos_Productos" FromRole="Producto" ToRole="PrestashopProducto" />
+          <NavigationProperty Name="CabAlquileres" Relationship="NVModel.FK_CabAlquileres_Productos" FromRole="Producto" ToRole="CabAlquilere" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -9722,6 +9821,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaCreación" Type="DateTime" Nullable="false" Precision="3" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Inmovilizados_Empresas" FromRole="Inmovilizado" ToRole="Empresa" />
           <NavigationProperty Name="CentrosCoste" Relationship="NVModel.FK_Inmovilizados_CentrosCoste" FromRole="Inmovilizado" ToRole="CentrosCoste" />
+          <NavigationProperty Name="CabAlquileres" Relationship="NVModel.FK_CabAlquileres_Inmovilizados" FromRole="Inmovilizado" ToRole="CabAlquilere" />
         </EntityType>
         <EntityType Name="PlanCuenta">
           <Key>
@@ -13123,6 +13223,80 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="CabAlquiler">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Producto" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Inmovilizado" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Cuotas" Type="Int32" />
+          <Property Name="FechaEntrega" Type="DateTime" Precision="3" />
+          <Property Name="FechaSeñal" Type="DateTime" Precision="3" />
+          <Property Name="ImporteSeñal" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="NumeroSerie" Type="String" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="NombreProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="Familia" Type="String" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="SeñalComisiona" Type="Boolean" />
+          <Property Name="Indemnización" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="Importe" Type="Decimal" Precision="19" Scale="4" />
+          <Property Name="CabPedidoVta" Type="Int32" />
+          <Property Name="RutaContrato" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Cliente1" Relationship="NVModel.FK_CabAlquileres_Clientes" FromRole="CabAlquilere" ToRole="Cliente" />
+          <NavigationProperty Name="Inmovilizado1" Relationship="NVModel.FK_CabAlquileres_Inmovilizados" FromRole="CabAlquilere" ToRole="Inmovilizado" />
+          <NavigationProperty Name="Producto1" Relationship="NVModel.FK_CabAlquileres_Productos" FromRole="CabAlquilere" ToRole="Producto" />
+        </EntityType>
+        <Association Name="FK_CabAlquileres_Clientes">
+          <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
+          <End Type="NVModel.CabAlquiler" Role="CabAlquilere" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Cliente">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Nº_Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Principal>
+            <Dependent Role="CabAlquilere">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Cliente" />
+              <PropertyRef Name="Contacto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabAlquileres_Inmovilizados">
+          <End Type="NVModel.Inmovilizado" Role="Inmovilizado" Multiplicity="0..1" />
+          <End Type="NVModel.CabAlquiler" Role="CabAlquilere" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Inmovilizado">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabAlquilere">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Inmovilizado" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_CabAlquileres_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="0..1" />
+          <End Type="NVModel.CabAlquiler" Role="CabAlquilere" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="CabAlquilere">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -15172,6 +15346,33 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Cliente" ColumnName="Cliente" />
                 <ScalarProperty Name="NumeroContrato" ColumnName="NumeroContrato" />
                 <ScalarProperty Name="Numero" ColumnName="Numero" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="CabAlquileres">
+            <EntityTypeMapping TypeName="NVModel.CabAlquiler">
+              <MappingFragment StoreEntitySet="CabAlquileres">
+                <ScalarProperty Name="FechaModificación" ColumnName="FechaModificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
+                <ScalarProperty Name="RutaContrato" ColumnName="RutaContrato" />
+                <ScalarProperty Name="CabPedidoVta" ColumnName="CabPedidoVta" />
+                <ScalarProperty Name="Importe" ColumnName="Importe" />
+                <ScalarProperty Name="Indemnización" ColumnName="Indemnización" />
+                <ScalarProperty Name="SeñalComisiona" ColumnName="SeñalComisiona" />
+                <ScalarProperty Name="Familia" ColumnName="Familia" />
+                <ScalarProperty Name="NombreProducto" ColumnName="NombreProducto" />
+                <ScalarProperty Name="NumeroSerie" ColumnName="NumeroSerie" />
+                <ScalarProperty Name="ImporteSeñal" ColumnName="ImporteSeñal" />
+                <ScalarProperty Name="FechaSeñal" ColumnName="FechaSeñal" />
+                <ScalarProperty Name="FechaEntrega" ColumnName="FechaEntrega" />
+                <ScalarProperty Name="Cuotas" ColumnName="Cuotas" />
+                <ScalarProperty Name="Inmovilizado" ColumnName="Inmovilizado" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Cliente" ColumnName="Cliente" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

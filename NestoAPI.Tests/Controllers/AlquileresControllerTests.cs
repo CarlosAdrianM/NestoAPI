@@ -6,6 +6,7 @@ using NestoAPI.Models.Alquileres;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Web.Http.Results;
+using System.Linq;
 
 namespace NestoAPI.Tests.Controllers
 {
@@ -146,6 +147,74 @@ namespace NestoAPI.Tests.Controllers
 
             var ok = (OkNegotiatedContentResult<List<ExtractoInmovilizadoDTO>>)resultado;
             Assert.AreEqual(0, ok.Content.Count);
+        }
+
+        // Nesto#340 Fase 1C.3: cabeceras del grid principal.
+
+        [TestMethod]
+        public async Task GetCabecerasAlquiler_DevuelveLasCabecerasDelServicio()
+        {
+            var lista = new List<AlquilerCabeceraDTO>
+            {
+                new AlquilerCabeceraDTO { Empresa = "1", Numero = 100, Producto = "26780", NumeroSerie = "ABC123", Cliente = "15191", NombreCliente = "Cliente X" },
+                new AlquilerCabeceraDTO { Empresa = "1", Numero = 101, Producto = "26780", NumeroSerie = "ABC124" }
+            };
+            A.CallTo(() => servicio.LeerCabecerasAlquilerAsync("1", "26780")).Returns(Task.FromResult(lista));
+
+            var resultado = await controller.GetCabecerasAlquiler("1", "26780");
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>));
+            var ok = (OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>)resultado;
+            Assert.AreEqual(2, ok.Content.Count);
+            Assert.AreEqual(100, ok.Content[0].Numero);
+            Assert.AreEqual("Cliente X", ok.Content[0].NombreCliente);
+            A.CallTo(() => servicio.LeerCabecerasAlquilerAsync("1", "26780")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GuardarCabecerasAlquiler_LlamaAlServicioConUsuarioDeAuditoriaYDevuelveResultado()
+        {
+            var entrantes = new List<AlquilerCabeceraDTO>
+            {
+                new AlquilerCabeceraDTO { Empresa = "1", Numero = 100, Producto = "26780", NumeroSerie = "ABC123" },
+                new AlquilerCabeceraDTO { Empresa = "1", Numero = 0, Producto = "26780", NumeroSerie = "NUEVA" }
+            };
+            var request = new GuardarCabecerasAlquilerRequest { Empresa = "1", Producto = "26780", Cabeceras = entrantes };
+            var guardadas = new List<AlquilerCabeceraDTO>
+            {
+                new AlquilerCabeceraDTO { Empresa = "1", Numero = 100, Producto = "26780", NumeroSerie = "ABC123" },
+                new AlquilerCabeceraDTO { Empresa = "1", Numero = 102, Producto = "26780", NumeroSerie = "NUEVA" }
+            };
+            // En un test el controller no tiene User autenticado, así que el usuario cae al fallback.
+            A.CallTo(() => servicio.GuardarCabecerasAlquilerAsync("1", "26780", entrantes, "NestoAPI"))
+                .Returns(Task.FromResult(guardadas));
+
+            var resultado = await controller.GuardarCabecerasAlquiler(request);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>));
+            var ok = (OkNegotiatedContentResult<List<AlquilerCabeceraDTO>>)resultado;
+            Assert.AreEqual(102, ok.Content.Single(c => c.NumeroSerie == "NUEVA").Numero);
+            A.CallTo(() => servicio.GuardarCabecerasAlquilerAsync("1", "26780", entrantes, "NestoAPI")).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task GuardarCabecerasAlquiler_RequestNull_DevuelveBadRequest()
+        {
+            var resultado = await controller.GuardarCabecerasAlquiler(null);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task GuardarCabecerasAlquiler_SinProducto_DevuelveBadRequest()
+        {
+            var request = new GuardarCabecerasAlquilerRequest { Empresa = "1", Producto = " ", Cabeceras = new List<AlquilerCabeceraDTO>() };
+
+            var resultado = await controller.GuardarCabecerasAlquiler(request);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => servicio.GuardarCabecerasAlquilerAsync(A<string>._, A<string>._, A<List<AlquilerCabeceraDTO>>._, A<string>._))
+                .MustNotHaveHappened();
         }
     }
 }

@@ -126,6 +126,7 @@ namespace NestoAPI.Models
         public virtual DbSet<EstadoPlanVentajas> EstadosPlanesVentajas { get; set; }
         public virtual DbSet<PlanVentajas> PlanesVentajas { get; set; }
         public virtual DbSet<PlanVentajasCliente> PlanesVentajasClientes { get; set; }
+        public virtual DbSet<CabAlquiler> CabAlquileres { get; set; }
     
         public virtual int prdAjustarDíasPagoCliente(string empresa, string cliente, string contacto, Nullable<System.DateTime> fechaIn, ObjectParameter fechaOut)
         {

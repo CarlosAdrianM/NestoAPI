@@ -31,6 +31,7 @@ namespace NestoAPI.Models
             this.Kits1 = new HashSet<Kit>();
             this.GruposProductoes = new HashSet<GruposProducto>();
             this.Ganavisiones = new HashSet<Ganavision>();
+            this.CabAlquileres = new HashSet<CabAlquiler>();
         }
     
         public string Empresa { get; set; }
@@ -91,5 +92,6 @@ namespace NestoAPI.Models
         public virtual GruposProducto GruposProducto { get; set; }
         public virtual ICollection<Ganavision> Ganavisiones { get; set; }
         public virtual PrestashopProducto PrestashopProducto { get; set; }
+        public virtual ICollection<CabAlquiler> CabAlquileres { get; set; }
     }
 }

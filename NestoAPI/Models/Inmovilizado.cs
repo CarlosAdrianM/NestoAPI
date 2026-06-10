@@ -14,6 +14,11 @@ namespace NestoAPI.Models
     
     public partial class Inmovilizado
     {
+        public Inmovilizado()
+        {
+            this.CabAlquileres = new HashSet<CabAlquiler>();
+        }
+    
         public string Empresa { get; set; }
         public string Número { get; set; }
         public string Descripción { get; set; }
@@ -28,5 +33,6 @@ namespace NestoAPI.Models
     
         public virtual Empresa Empresa1 { get; set; }
         public virtual CentrosCoste CentrosCoste { get; set; }
+        public virtual ICollection<CabAlquiler> CabAlquileres { get; set; }
     }
 }
