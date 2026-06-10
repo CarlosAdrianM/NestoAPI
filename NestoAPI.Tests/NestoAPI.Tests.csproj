@@ -253,6 +253,7 @@
     <Compile Include="Infrastructure\Seguridad\ValidadorAccesoClienteTests.cs" />
     <Compile Include="Providers\SimpleRefreshTokenProviderTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorGanavisionesTests.cs" />
+    <Compile Include="Infrastructure\ValidadoresPedido\ValidadorOfertaSinBeneficioTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorLimiteRegalosTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ExtractoAdaptersTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\CalculadorSaldoMayorTests.cs" />

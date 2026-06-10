@@ -721,6 +721,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorGanavisiones.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorLimiteRegalos.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertaSinBeneficio.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasPermitidas.cs" />
