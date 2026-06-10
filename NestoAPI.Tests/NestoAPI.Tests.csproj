@@ -259,6 +259,8 @@
     <Compile Include="Infrastructure\Sincronizacion\SyncTableRouterTests.cs" />
     <Compile Include="Infrastructure\ClientesSyncHandlerVendedorTests.cs" />
     <Compile Include="Infrastructure\Ventas\GestorVentasClienteTests.cs" />
+    <Compile Include="Infrastructure\CanalesExternos\Amazon\ServicioRotacionCredencialesAmazonTests.cs" />
+    <Compile Include="Infrastructure\CanalesExternos\Amazon\AwsSignatureV4Tests.cs" />
     <Compile Include="Infrastructure\Pagos\FormatoCorreoReclamacionTests.cs" />
     <Compile Include="Infrastructure\Pagos\RedsysServiceTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioReclamacionDeudaTests.cs" />

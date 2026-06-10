@@ -19,6 +19,7 @@ using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Infraestructure.Videos;
 using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Infraestructure.CanalesExternos.Amazon;
 using NestoAPI.Infraestructure.CorreosPostCompra;
 using NestoAPI.Infraestructure.Comisiones;
 using NestoAPI.Infraestructure.Informes;
@@ -344,6 +345,20 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'informe-clientes-nuevos-semanal' configurado (viernes a las 9:00)");
+
+            // NestoAPI#225: rotación automática del client_secret LWA de Amazon SP-API.
+            // Diario a las 7:00: sondea la cola SQS (persiste secretos nuevos) y rota si el
+            // secreto almacenado está cerca de caducar. No hace nada hasta ~15 días antes de caducar.
+            RecurringJob.AddOrUpdate(
+                "amazon-rotacion-credenciales",
+                () => AmazonCredencialRotacionJobsService.ProcesarRotacionCredenciales(),
+                "0 7 * * *", // Cron: todos los días a las 7:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'amazon-rotacion-credenciales' configurado (diario a las 7:00)");
 
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':

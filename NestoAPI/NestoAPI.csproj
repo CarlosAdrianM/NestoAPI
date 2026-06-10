@@ -734,6 +734,14 @@
     <Compile Include="Infraestructure\Videos\GestorVideos.cs" />
     <Compile Include="Infraestructure\Videos\IServicioVideos.cs" />
     <Compile Include="Infraestructure\Videos\ServicioVideos.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\AwsSignatureV4.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\IAmazonSpApiGateway.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\AmazonSpApiGateway.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\IAmazonCredencialStore.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\AmazonCredencialStore.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\IServicioRotacionCredencialesAmazon.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\ServicioRotacionCredencialesAmazon.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\AmazonCredencialRotacionJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\CorreosPostCompraJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\GeneradorContenidoCorreoPostCompra.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\IServicioRecomendacionesPostCompra.cs" />
@@ -1143,6 +1151,8 @@
     <Compile Include="Models\PedidosVenta\SerieDTO.cs" />
     <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ResumenPedidoVentaCanalExternoDTO.cs" />
+    <Compile Include="Models\CanalesExternos\AmazonSpApiCredencial.cs" />
+    <Compile Include="Models\CanalesExternos\AmazonNotificationPayload.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaBusquedaDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />
