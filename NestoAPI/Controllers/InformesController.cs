@@ -171,6 +171,27 @@ namespace NestoAPI.Controllers
             return Ok(lista);
         }
 
+        /// <summary>
+        /// Render del informe "Kits que se pueden montar o desmontar" en PDF (QuestPDF), para que
+        /// Nesto lo descargue en vez de renderizar el RDLC KitsQueSePuedenMontar.rdlc en local.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/KitsQueSePuedenMontar/Pdf")]
+        public async Task<HttpResponseMessage> GetKitsQueSePuedenMontarPdf(string empresa, string fecha, string almacen, string filtroRutas)
+        {
+            List<KitsQueSePuedenMontarDTO> kits = await _servicio
+                .LeerKitsQueSePuedenMontarAsync(empresa, fecha, almacen, filtroRutas)
+                .ConfigureAwait(false);
+
+            GeneradorPdfKitsQueSePuedenMontar generador = new GeneradorPdfKitsQueSePuedenMontar();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(kits)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
         [HttpGet]
         [Route("api/Informes/MontarKitProductos")]
         [ResponseType(typeof(List<MontarKitProductosDTO>))]

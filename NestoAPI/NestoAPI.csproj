@@ -679,6 +679,7 @@
     <Compile Include="Infraestructure\PlanesVentajas\IPlanesVentajasService.cs" />
     <Compile Include="Infraestructure\PlanesVentajas\PlanesVentajasService.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfControlPedidos.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorPdfKitsQueSePuedenMontar.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfResumenVentas.cs" />
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
