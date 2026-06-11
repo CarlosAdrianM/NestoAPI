@@ -22,6 +22,13 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return respuesta;
             }
 
+            // Si varias ofertas se satisfacen a la vez (escalados por tramos: la misma lista de
+            // referencias con cantidades 1, 2, 3... y distinto descuento, como las Allure 247-250),
+            // hay que quedarse con la MÁS exigente que el pedido cumple, no con la primera por Id:
+            // los grupos exigen "al menos" su cantidad, así que el tramo 1 también "se cumple" con
+            // 3 unidades, y elegirlo dispara el sobresurtido y tira un pedido perfectamente válido.
+            ofertasCombinadas = ofertasCombinadas.OrderByDescending(UnidadesRequeridas).ToList();
+
             OfertaCombinada ofertaCumplida = ofertasCombinadas.FirstOrDefault(o =>
                 o.OfertasCombinadasDetalles.Where(d=> d.Cantidad > 0 && d.GrupoAlternativa == null).All(d =>
                     DetalleSatisfecho(d, pedido)
@@ -185,6 +192,24 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                             && p.PrecioUnitario >= d.Precio);
 
             return lineasProducto.Any() && lineasProducto.Sum(p => p.Cantidad) >= d.Cantidad;
+        }
+
+        /// <summary>
+        /// Unidades totales que una instancia de la oferta exige: las de las líneas obligatorias
+        /// más la cantidad de cada grupo de alternativas (compartida por todas sus líneas). Sirve
+        /// para ordenar ofertas solapadas de más a menos exigente y elegir el tramo que mejor
+        /// encaja con el pedido.
+        /// </summary>
+        private static int UnidadesRequeridas(OfertaCombinada oferta)
+        {
+            int obligatorias = oferta.OfertasCombinadasDetalles
+                .Where(d => d.Cantidad > 0 && d.Producto != null && d.GrupoAlternativa == null)
+                .Sum(d => (int)d.Cantidad);
+            int grupos = oferta.OfertasCombinadasDetalles
+                .Where(d => d.GrupoAlternativa.HasValue)
+                .GroupBy(d => d.GrupoAlternativa.Value)
+                .Sum(g => g.Max(d => (int)d.Cantidad));
+            return obligatorias + grupos;
         }
 
         /// <summary>
