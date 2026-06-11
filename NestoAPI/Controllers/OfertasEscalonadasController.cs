@@ -11,6 +11,10 @@ using System.Web.Http.Description;
 
 namespace NestoAPI.Controllers
 {
+    // Endpoint nuevo sin llamantes legacy: puede llevar [Authorize] desde el primer día (su único
+    // cliente es el módulo de Ofertas Combinadas de Nesto, que ya manda JWT). Sin token, el
+    // usuario de auditoría caería en el fallback del parámetro y grabaría el machine account.
+    [Authorize]
     public class OfertasEscalonadasController : ApiController
     {
         private NVEntities db;
