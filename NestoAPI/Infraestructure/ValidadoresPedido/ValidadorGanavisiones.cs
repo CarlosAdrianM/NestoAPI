@@ -33,6 +33,29 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 };
             }
 
+            // NestoAPI#228: las líneas bonificadas que YA estaban guardadas en el pedido (id != 0)
+            // se respetan aunque el Ganavisión se haya retirado, caducado o quedado sin saldo
+            // después de crearse el pedido: fueron válidas en su día y ampliar/unir el pedido no
+            // debe revalidarlas contra la disponibilidad actual. Solo se valida lo NUEVO: si la
+            // ampliación añade líneas bonificadas (id == 0) de este producto, sigue la validación
+            // normal completa. Mismo criterio que el check de stock de Nesto#346 (más abajo).
+            var lineasBonificadasProducto = pedido.Lineas
+                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                    && l.Producto == numeroProducto
+                    && l.BaseImponible == 0
+                    && (l.oferta == null || l.oferta == 0))
+                .ToList();
+            if (lineasBonificadasProducto.Any() && lineasBonificadasProducto.All(l => l.id != 0))
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = true,
+                    ProductoId = numeroProducto,
+                    Motivo = $"El producto {numeroProducto} bonificado ya estaba guardado en el pedido y se respeta " +
+                             "aunque el Ganavisión ya no esté disponible (solo se validan las líneas nuevas)"
+                };
+            }
+
             // Verificar si el producto tiene Ganavisiones configurados
             int? ganavisionesProducto = servicio.BuscarGanavisionesProducto(numeroProducto);
             if (!ganavisionesProducto.HasValue)

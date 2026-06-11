@@ -404,6 +404,110 @@ namespace NestoAPI.Tests.Infrastructure.ValidadoresPedido
 
         #endregion
 
+        #region Issue #228: ampliar/unir respeta los regalos ya guardados aunque el Ganavisión se haya retirado
+
+        private static PedidoVentaDTO CrearPedidoAmpliacion(int idLineaRegalo, params LineaPedidoVentaDTO[] lineasExtra)
+        {
+            var pedido = new PedidoVentaDTO
+            {
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    // Línea bonificable ya guardada en el pedido original
+                    new LineaPedidoVentaDTO
+                    {
+                        id = 100,
+                        Producto = "PROD01",
+                        GrupoProducto = Constantes.Productos.GRUPO_COSMETICA,
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 100m
+                    },
+                    // Regalo bonificado por Ganavisión cuando se creó el pedido
+                    new LineaPedidoVentaDTO
+                    {
+                        id = idLineaRegalo,
+                        Producto = "REGALO01",
+                        tipoLinea = 1,
+                        Cantidad = 1,
+                        PrecioUnitario = 0m
+                    }
+                }
+            };
+            foreach (var linea in lineasExtra)
+            {
+                pedido.Lineas.Add(linea);
+            }
+            return pedido;
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_RegaloYaGuardadoConGanavisionRetirado_SeRespeta()
+        {
+            // El Ganavisión estaba activo al crear el pedido y se retiró/caducó después:
+            // al ampliar, la línea de regalo ya guardada (id != 0) no debe revalidarse
+            // contra la disponibilidad actual.
+            var pedido = CrearPedidoAmpliacion(idLineaRegalo: 200);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(null);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                $"El regalo ya guardado debe respetarse aunque el Ganavisión ya no exista. Motivo: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_RegaloYaGuardadoSinSaldoActual_SeRespeta()
+        {
+            // Mismo principio con el Ganavisión vigente pero sin saldo suficiente HOY
+            // (p. ej. el reparto de bases cambió al unir pedidos): lo guardado se respeta.
+            var pedido = CrearPedidoAmpliacion(idLineaRegalo: 200);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(99);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsTrue(resultado.ValidacionSuperada,
+                $"El regalo ya guardado debe respetarse aunque hoy no haya saldo. Motivo: {resultado.Motivo}");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_RegaloNuevoConGanavisionRetirado_NoSeAutoriza()
+        {
+            // Un regalo NUEVO (id == 0) sí se valida contra la disponibilidad actual:
+            // si el Ganavisión ya no existe, no se puede añadir.
+            var pedido = CrearPedidoAmpliacion(idLineaRegalo: 0);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(null);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada,
+                "Un regalo nuevo de un Ganavisión retirado no debe autorizarse");
+        }
+
+        [TestMethod]
+        public void EsPedidoValido_RegaloGuardadoMasUnoNuevo_ElNuevoNoSeCuelaPorElViejo()
+        {
+            // La ampliación añade OTRA unidad de regalo del mismo producto (línea nueva, id == 0)
+            // con el Ganavisión ya retirado: la vieja se respetaría, pero la nueva exige
+            // validación normal y debe rechazar el producto.
+            var lineaNueva = new LineaPedidoVentaDTO
+            {
+                id = 0,
+                Producto = "REGALO01",
+                tipoLinea = 1,
+                Cantidad = 1,
+                PrecioUnitario = 0m
+            };
+            var pedido = CrearPedidoAmpliacion(idLineaRegalo: 200, lineaNueva);
+            A.CallTo(() => _servicioPrecios.BuscarGanavisionesProducto("REGALO01")).Returns(null);
+
+            var resultado = _validador.EsPedidoValido(pedido, "REGALO01", _servicioPrecios);
+
+            Assert.IsFalse(resultado.ValidacionSuperada,
+                "Si la ampliación añade unidades nuevas del regalo, deben validarse contra la disponibilidad actual");
+        }
+
+        #endregion
+
         #region Bug: Oferta 5+5 confunde Ganavisiones (Issue #106)
 
         [TestMethod]
