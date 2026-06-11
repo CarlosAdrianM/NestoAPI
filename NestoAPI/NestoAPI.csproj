@@ -514,6 +514,7 @@
     <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\GanavisionesController.cs" />
     <Compile Include="Controllers\OfertasCombinadasController.cs" />
+    <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />
     <Compile Include="Controllers\DeepLinkController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
@@ -724,6 +725,7 @@
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertaSinBeneficio.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorMuestrasYMaterialPromocional.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasCombinadas.cs" />
+    <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasEscalonadas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasPermitidas.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOfertasYDescuentosPermitidos.cs" />
     <Compile Include="Infraestructure\ValidadoresPedido\ValidadorOtrosAparatosSiempreSinDescuento.cs" />
@@ -1050,6 +1052,7 @@
     </Compile>
     <Compile Include="Models\Ganavisiones\GanavisionDTO.cs" />
     <Compile Include="Models\OfertasCombinadas\OfertaCombinadaDTO.cs" />
+    <Compile Include="Models\OfertasEscalonadas\OfertaEscalonadaDTO.cs" />
     <Compile Include="Models\OfertasCombinadas\OfertaPermitidaFamiliaDTO.cs" />
     <Compile Include="Models\FicheroCuaderno43.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
@@ -1121,6 +1124,15 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\OfertaCombinadaDetalle.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\OfertaEscalonada.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\OfertaEscalonadaProducto.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\OfertaEscalonadaTramo.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\OfertaPermitida.cs">

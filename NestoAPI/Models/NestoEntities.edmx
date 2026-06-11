@@ -1334,6 +1334,41 @@
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="GrupoAlternativa" Type="int" />
         </EntityType>
+        <EntityType Name="OfertasEscalonadas">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Nombre" Type="nvarchar" MaxLength="100" />
+          <Property Name="FechaDesde" Type="date" />
+          <Property Name="FechaHasta" Type="date" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="OfertasEscalonadasProductos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="OfertaId" Type="int" Nullable="false" />
+          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="PrecioBase" Type="money" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="OfertasEscalonadasTramos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="OfertaId" Type="int" Nullable="false" />
+          <Property Name="CantidadMinima" Type="smallint" Nullable="false" />
+          <Property Name="Descuento" Type="decimal" Precision="9" Scale="6" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="OfertasPermitidas">
           <Key>
             <PropertyRef Name="NºOrden" />
@@ -4342,6 +4377,44 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_OfertasEscalonadasProductos_Oferta">
+          <End Role="OfertasEscalonadas" Type="Self.OfertasEscalonadas" Multiplicity="1" />
+          <End Role="OfertasEscalonadasProductos" Type="Self.OfertasEscalonadasProductos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="OfertasEscalonadas">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="OfertasEscalonadasProductos">
+              <PropertyRef Name="OfertaId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasEscalonadasProductos_Producto">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="OfertasEscalonadasProductos" Type="Self.OfertasEscalonadasProductos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertasEscalonadasProductos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasEscalonadasTramos_Oferta">
+          <End Role="OfertasEscalonadas" Type="Self.OfertasEscalonadas" Multiplicity="1" />
+          <End Role="OfertasEscalonadasTramos" Type="Self.OfertasEscalonadasTramos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="OfertasEscalonadas">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="OfertasEscalonadasTramos">
+              <PropertyRef Name="OfertaId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_OfertasPermitidas_Clientes">
           <End Role="Clientes" Type="Self.Clientes" Multiplicity="0..1" />
           <End Role="OfertasPermitidas" Type="Self.OfertasPermitidas" Multiplicity="*" />
@@ -5407,6 +5480,9 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="OfertasEscalonadas" EntityType="Self.OfertasEscalonadas" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="OfertasEscalonadasProductos" EntityType="Self.OfertasEscalonadasProductos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="OfertasEscalonadasTramos" EntityType="Self.OfertasEscalonadasTramos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasPermitidas" EntityType="Self.OfertasPermitidas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasProveedores" EntityType="Self.OfertasProveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PagosTPV" EntityType="Self.PagosTPV" Schema="dbo" store:Type="Tables" />
@@ -6140,6 +6216,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_OfertasCombinadasDetalle_Productos" Association="Self.FK_OfertasCombinadasDetalle_Productos">
             <End Role="Productos" EntitySet="Productos" />
             <End Role="OfertasCombinadasDetalle" EntitySet="OfertasCombinadasDetalle" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasEscalonadasProductos_Oferta" Association="Self.FK_OfertasEscalonadasProductos_Oferta">
+            <End Role="OfertasEscalonadas" EntitySet="OfertasEscalonadas" />
+            <End Role="OfertasEscalonadasProductos" EntitySet="OfertasEscalonadasProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasEscalonadasProductos_Producto" Association="Self.FK_OfertasEscalonadasProductos_Producto">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="OfertasEscalonadasProductos" EntitySet="OfertasEscalonadasProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasEscalonadasTramos_Oferta" Association="Self.FK_OfertasEscalonadasTramos_Oferta">
+            <End Role="OfertasEscalonadas" EntitySet="OfertasEscalonadas" />
+            <End Role="OfertasEscalonadasTramos" EntitySet="OfertasEscalonadasTramos" />
           </AssociationSet>
           <AssociationSet Name="FK_OfertasPermitidas_Clientes" Association="Self.FK_OfertasPermitidas_Clientes">
             <End Role="Clientes" EntitySet="Clientes" />
@@ -7035,6 +7123,21 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_OfertasCombinadasDetalle_Productos" Association="NVModel.FK_OfertasCombinadasDetalle_Productos">
             <End Role="Producto" EntitySet="Productos" />
             <End Role="OfertasCombinadasDetalle" EntitySet="OfertasCombinadasDetalles" />
+          </AssociationSet>
+          <EntitySet Name="OfertasEscalonadas" EntityType="NVModel.OfertaEscalonada" />
+          <EntitySet Name="OfertasEscalonadasProductos" EntityType="NVModel.OfertaEscalonadaProducto" />
+          <EntitySet Name="OfertasEscalonadasTramos" EntityType="NVModel.OfertaEscalonadaTramo" />
+          <AssociationSet Name="FK_OfertasEscalonadasProductos_Oferta" Association="NVModel.FK_OfertasEscalonadasProductos_Oferta">
+            <End Role="OfertaEscalonada" EntitySet="OfertasEscalonadas" />
+            <End Role="OfertaEscalonadaProducto" EntitySet="OfertasEscalonadasProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasEscalonadasProductos_Producto" Association="NVModel.FK_OfertasEscalonadasProductos_Producto">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="OfertaEscalonadaProducto" EntitySet="OfertasEscalonadasProductos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_OfertasEscalonadasTramos_Oferta" Association="NVModel.FK_OfertasEscalonadasTramos_Oferta">
+            <End Role="OfertaEscalonada" EntitySet="OfertasEscalonadas" />
+            <End Role="OfertaEscalonadaTramo" EntitySet="OfertasEscalonadasTramos" />
           </AssociationSet>
           <EntitySet Name="ComisionesAnualesDetalles" EntityType="NVModel.ComisionAnualDetalle" />
           <EntitySet Name="RentingFacturas" EntityType="NVModel.RentingFactura" />
@@ -10656,6 +10759,84 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="OfertasCombinadasDetalle">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="OfertaEscalonada">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Nombre" Type="String" MaxLength="100" FixedLength="false" Unicode="true" />
+          <Property Name="FechaDesde" Type="DateTime" Precision="0" />
+          <Property Name="FechaHasta" Type="DateTime" Precision="0" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="OfertasEscalonadasProductos" Relationship="NVModel.FK_OfertasEscalonadasProductos_Oferta" FromRole="OfertaEscalonada" ToRole="OfertaEscalonadaProducto" />
+          <NavigationProperty Name="OfertasEscalonadasTramos" Relationship="NVModel.FK_OfertasEscalonadasTramos_Oferta" FromRole="OfertaEscalonada" ToRole="OfertaEscalonadaTramo" />
+        </EntityType>
+        <EntityType Name="OfertaEscalonadaProducto">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="OfertaId" Type="Int32" Nullable="false" />
+          <Property Name="Producto" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="PrecioBase" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="OfertasEscalonada" Relationship="NVModel.FK_OfertasEscalonadasProductos_Oferta" FromRole="OfertaEscalonadaProducto" ToRole="OfertaEscalonada" />
+          <NavigationProperty Name="Producto1" Relationship="NVModel.FK_OfertasEscalonadasProductos_Producto" FromRole="OfertaEscalonadaProducto" ToRole="Producto" />
+        </EntityType>
+        <EntityType Name="OfertaEscalonadaTramo">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="OfertaId" Type="Int32" Nullable="false" />
+          <Property Name="CantidadMinima" Type="Int16" Nullable="false" />
+          <Property Name="Descuento" Type="Decimal" Nullable="false" Precision="9" Scale="6" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="OfertasEscalonada" Relationship="NVModel.FK_OfertasEscalonadasTramos_Oferta" FromRole="OfertaEscalonadaTramo" ToRole="OfertaEscalonada" />
+        </EntityType>
+        <Association Name="FK_OfertasEscalonadasProductos_Oferta">
+          <End Type="NVModel.OfertaEscalonada" Role="OfertaEscalonada" Multiplicity="1" />
+          <End Type="NVModel.OfertaEscalonadaProducto" Role="OfertaEscalonadaProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="OfertaEscalonada">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="OfertaEscalonadaProducto">
+              <PropertyRef Name="OfertaId" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasEscalonadasProductos_Producto">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.OfertaEscalonadaProducto" Role="OfertaEscalonadaProducto" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="OfertaEscalonadaProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_OfertasEscalonadasTramos_Oferta">
+          <End Type="NVModel.OfertaEscalonada" Role="OfertaEscalonada" Multiplicity="1" />
+          <End Type="NVModel.OfertaEscalonadaTramo" Role="OfertaEscalonadaTramo" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="OfertaEscalonada">
+              <PropertyRef Name="Id" />
+            </Principal>
+            <Dependent Role="OfertaEscalonadaTramo">
+              <PropertyRef Name="OfertaId" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -14371,6 +14552,44 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Producto" ColumnName="Producto" />
                 <ScalarProperty Name="OfertaId" ColumnName="OfertaId" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="OfertasEscalonadas">
+            <EntityTypeMapping TypeName="NVModel.OfertaEscalonada">
+              <MappingFragment StoreEntitySet="OfertasEscalonadas">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaHasta" ColumnName="FechaHasta" />
+                <ScalarProperty Name="FechaDesde" ColumnName="FechaDesde" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="OfertasEscalonadasProductos">
+            <EntityTypeMapping TypeName="NVModel.OfertaEscalonadaProducto">
+              <MappingFragment StoreEntitySet="OfertasEscalonadasProductos">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="PrecioBase" ColumnName="PrecioBase" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
+                <ScalarProperty Name="OfertaId" ColumnName="OfertaId" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="OfertasEscalonadasTramos">
+            <EntityTypeMapping TypeName="NVModel.OfertaEscalonadaTramo">
+              <MappingFragment StoreEntitySet="OfertasEscalonadasTramos">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Descuento" ColumnName="Descuento" />
+                <ScalarProperty Name="CantidadMinima" ColumnName="CantidadMinima" />
+                <ScalarProperty Name="OfertaId" ColumnName="OfertaId" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>
             </EntityTypeMapping>

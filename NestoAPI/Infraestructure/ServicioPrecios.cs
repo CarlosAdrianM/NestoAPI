@@ -85,6 +85,21 @@ namespace NestoAPI.Infraestructure
             
         }
 
+        public List<OfertaEscalonada> BuscarOfertasEscalonadas(string numeroProducto)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return db.OfertasEscalonadas
+                    .Include("OfertasEscalonadasProductos")
+                    .Include("OfertasEscalonadasTramos")
+                    .Where(o =>
+                        o.OfertasEscalonadasProductos.Any(p => p.Producto == numeroProducto) &&
+                        (o.FechaHasta == null || o.FechaHasta >= DateTime.Today) &&
+                        (o.FechaDesde == null || o.FechaDesde <= DateTime.Today)
+                    ).ToList();
+            }
+        }
+
         public decimal CalcularImporteGrupo(PedidoVentaDTO pedido, string grupo, string subGrupo)
         {
             using (NVEntities db = new NVEntities())

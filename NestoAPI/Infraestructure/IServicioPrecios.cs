@@ -10,6 +10,7 @@ namespace NestoAPI.Infraestructure
         List<OfertaPermitida> BuscarOfertasPermitidas(string producto);
         List<DescuentosProducto> BuscarDescuentosPermitidos(string numeroProducto, string numeroCliente, string contactoCliente);
         List<OfertaCombinada> BuscarOfertasCombinadas(string numeroProducto);
+        List<OfertaEscalonada> BuscarOfertasEscalonadas(string numeroProducto);
         decimal CalcularImporteGrupo(PedidoVentaDTO pedido, string grupo, string subGrupo);
         List<LineaPedidoVentaDTO> FiltrarLineas(PedidoVentaDTO pedido, string filtroProducto, string familia);
         List<RegaloImportePedido> BuscarRegaloPorImportePedido(string numeroProducto);

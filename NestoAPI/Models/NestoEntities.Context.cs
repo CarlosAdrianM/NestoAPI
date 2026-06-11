@@ -73,6 +73,9 @@ namespace NestoAPI.Models
         public virtual DbSet<OfertaPermitida> OfertasPermitidas { get; set; }
         public virtual DbSet<OfertaCombinada> OfertasCombinadas { get; set; }
         public virtual DbSet<OfertaCombinadaDetalle> OfertasCombinadasDetalles { get; set; }
+        public virtual DbSet<OfertaEscalonada> OfertasEscalonadas { get; set; }
+        public virtual DbSet<OfertaEscalonadaProducto> OfertasEscalonadasProductos { get; set; }
+        public virtual DbSet<OfertaEscalonadaTramo> OfertasEscalonadasTramos { get; set; }
         public virtual DbSet<ComisionAnualDetalle> ComisionesAnualesDetalles { get; set; }
         public virtual DbSet<RentingFactura> RentingFacturas { get; set; }
         public virtual DbSet<vstLinPedidoVtaComisionesDetalle> vstLinPedidoVtaComisionesDetalles { get; set; }
