@@ -513,6 +513,7 @@
     <Compile Include="Controllers\FormasPagoController.cs" />
     <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\GanavisionesController.cs" />
+    <Compile Include="Controllers\CredencialesAmazonController.cs" />
     <Compile Include="Controllers\OfertasCombinadasController.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />
@@ -1171,6 +1172,7 @@
     <Compile Include="Models\PedidosVenta\ResumenPedidoVentaCanalExternoDTO.cs" />
     <Compile Include="Models\CanalesExternos\AmazonSpApiCredencial.cs" />
     <Compile Include="Models\CanalesExternos\AmazonNotificationPayload.cs" />
+    <Compile Include="Models\CanalesExternos\CredencialAmazonDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaBusquedaDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ParametroStringIntInt.cs" />
