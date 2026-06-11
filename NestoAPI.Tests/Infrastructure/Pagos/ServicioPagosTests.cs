@@ -600,6 +600,35 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         [TestMethod]
+        public void EnviarCorreoPostCobro_CuerpoContieneElConcepto()
+        {
+            // Issue #227: administración necesita ver a qué corresponde el cobro de un vistazo.
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            string cuerpoCapturado = null;
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._))
+                .Invokes((System.Net.Mail.MailMessage m) => cuerpoCapturado = m.Body);
+
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, servicioCorreo, _logService);
+            var pago = new PagoTPV
+            {
+                Cliente = "15191 ",
+                Importe = 100m,
+                NumeroOrden = "TEST321",
+                Descripcion = "Factura NV1234 <pendiente>",
+                FechaActualizacion = DateTime.Now
+            };
+
+            // Act
+            servicio.EnviarCorreoPostCobro(pago);
+
+            // Assert
+            Assert.IsNotNull(cuerpoCapturado);
+            Assert.IsTrue(cuerpoCapturado.Contains("Concepto"), "Debe incluir la etiqueta Concepto");
+            Assert.IsTrue(cuerpoCapturado.Contains("Factura NV1234 &lt;pendiente&gt;"),
+                "Debe incluir la descripción del pago codificada como HTML");
+        }
+
+        [TestMethod]
         public void EnviarCorreoPostCobro_ConUsuarioEmail_AñadeCCDirectamente()
         {
             // Arrange

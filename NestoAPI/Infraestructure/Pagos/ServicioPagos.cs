@@ -747,6 +747,7 @@ namespace NestoAPI.Infraestructure.Pagos
                         {seccionError}
                         <table style='width:100%;font-size:14px'>
                             <tr><td style='padding:6px 0;color:#888;width:140px'>Cliente</td><td style='padding:6px 0;font-weight:bold'>{pago.Cliente?.Trim()}</td></tr>
+                            <tr><td style='padding:6px 0;color:#888'>Concepto</td><td style='padding:6px 0'>{HttpUtility.HtmlEncode(pago.Descripcion?.Trim())}</td></tr>
                             <tr><td style='padding:6px 0;color:#888'>Importe</td><td style='padding:6px 0;font-weight:bold;color:#27ae60;font-size:18px'>{pago.Importe:N2} &euro;</td></tr>
                             <tr><td style='padding:6px 0;color:#888'>N&ordm; Orden</td><td style='padding:6px 0'>{pago.NumeroOrden}</td></tr>
                             <tr><td style='padding:6px 0;color:#888'>Autorizaci&oacute;n</td><td style='padding:6px 0'>{pago.CodigoAutorizacion}</td></tr>
