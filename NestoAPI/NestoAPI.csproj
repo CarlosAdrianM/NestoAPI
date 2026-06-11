@@ -1282,6 +1282,7 @@
     <Compile Include="Models\Informes\EtiquetasTiendaDTO.cs" />
     <Compile Include="Models\Informes\UbicacionesInventarioDTO.cs" />
     <Compile Include="Models\Pagos\FormatoCorreoReclamacion.cs" />
+    <Compile Include="Models\Pagos\GuardarCorreoPagoDTO.cs" />
     <Compile Include="Models\Pagos\NotificacionRedsys.cs" />
     <Compile Include="Models\Pagos\PagoTPVDTO.cs" />
     <Compile Include="Models\Pagos\ParametrosRedsysFirmados.cs" />

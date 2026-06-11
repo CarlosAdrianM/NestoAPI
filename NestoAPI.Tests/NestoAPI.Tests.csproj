@@ -237,6 +237,7 @@
     <Compile Include="Infrastructure\ValidadorOfertasEscalonadasTests.cs" />
     <Compile Include="Controllers\OfertasEscalonadasControllerTests.cs" />
     <Compile Include="Controllers\CredencialesAmazonControllerTests.cs" />
+    <Compile Include="Controllers\PagoRedirectControllerGuardarCorreoTests.cs" />
     <Compile Include="Infrastructure\ClienteHelperTests.cs" />
     <Compile Include="Infrastructure\GestorUbicacionesTests.cs" />
     <Compile Include="Infrastructure\GestosStocksTests.cs" />
