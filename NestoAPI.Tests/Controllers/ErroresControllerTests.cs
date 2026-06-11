@@ -43,6 +43,27 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void ErrorClienteException_ToString_IncluyeLaPilaDelCliente()
+        {
+            // Regresión (Nesto#377): en .NET Framework, Exception.ToString() NO usa la propiedad
+            // virtual StackTrace (lee el campo interno), así que el override no bastaba y el
+            // Detail de ELMAH (que se construye con ToString() del wrapper de ElmahLogService)
+            // llegaba sin la pila capturada en el cliente — imposible localizar el origen.
+            string pilaCliente = "System.ArgumentNullException: Value cannot be null. (Parameter 'source')\r\n"
+                + "   en System.Linq.Enumerable.Where[TSource](IEnumerable`1 source, Func`2 predicate)\r\n"
+                + "   en Nesto.ViewModels.AlgunViewModel.CargarDatos()";
+            var excepcionCliente = new ErrorClienteException("Value cannot be null. (Parameter 'source')", pilaCliente);
+
+            // El mismo wrapper que crea ElmahLogService.LogError(resumen, excepcion)
+            var wrapper = new System.Exception("[Nesto 1.10.4 (Windows)] DispatcherUnhandledException", excepcionCliente);
+
+            Assert.IsTrue(excepcionCliente.ToString().Contains("CargarDatos"),
+                "ToString() de la excepción debe incluir la pila del cliente");
+            Assert.IsTrue(wrapper.ToString().Contains("CargarDatos"),
+                "ToString() del wrapper (lo que ELMAH guarda como Detail) debe incluir la pila del cliente");
+        }
+
+        [TestMethod]
         public void Post_SinMensaje_DevuelveBadRequestYNoRegistra()
         {
             var error = new ErrorClienteDTO
