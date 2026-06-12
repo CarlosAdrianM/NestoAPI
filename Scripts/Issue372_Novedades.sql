@@ -45,7 +45,7 @@ INSERT INTO dbo.Novedades ([Version], Categoria, Titulo, Descripcion, Ambito, Us
 (@version, 'Mejorado', 'Mensajes de error más claros al buscar productos',
  'Cuando hay un problema al consultar un producto, se muestra el motivo real en vez de "El producto no existe".', 'Nesto', SUSER_SNAME()),
 (@version, 'Nuevo', 'Ventana de novedades',
- 'Al actualizar Nesto se muestra un resumen de las mejoras incluidas. También se puede consultar en Herramientas → Ayuda → Novedades.', 'Nesto', SUSER_SNAME());
+ 'Al actualizar Nesto se muestra un resumen de las mejoras incluidas. También se puede consultar en el menú Nesto → Novedades.', 'Nesto', SUSER_SNAME());
 */
 GO
 
