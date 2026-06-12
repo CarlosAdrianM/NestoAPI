@@ -22,6 +22,14 @@ GO
 GRANT SELECT ON dbo.Novedades TO [NUEVAVISION\RDS2016$];
 GO
 
+-- Parámetro de usuario "(defecto)" para UltimaVersionNovedades: el GET de ParametrosUsuario
+-- crea la fila de cada usuario copiando la de "(defecto)" la primera vez que la pide. Valor
+-- vacío = bootstrap silencioso (la primera vez no se muestra el histórico, solo se guarda la
+-- versión actual; a partir de la siguiente actualización ya salta el popup).
+INSERT INTO dbo.ParametrosUsuario (Empresa, Usuario, Clave, Valor, Usuario2, [Fecha Modificación])
+VALUES ('1', '(defecto)', 'UltimaVersionNovedades', '', SUSER_SNAME(), GETDATE());
+GO
+
 -- =====================================================================================
 -- SEMILLA: novedades de la próxima versión. AJUSTAR [Version] a la versión ClickOnce
 -- que se vaya a publicar antes de ejecutar este bloque.

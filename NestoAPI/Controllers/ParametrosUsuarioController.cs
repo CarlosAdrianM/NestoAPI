@@ -61,7 +61,9 @@ namespace NestoAPI.Controllers
                     throw ex;
                 }
 
-                return Ok(parametroUsuario.Valor);
+                // Nesto#372: mismo contrato que el camino del usuario específico: nunca null y
+                // sin el padding del char(162) (devolver null hacía crashear el Trim del cliente)
+                return Ok(parametroUsuario.Valor != null ? parametroUsuario.Valor.Trim() : "");
             }
 
             // No debería suceder nunca, porque siempre existe el usuario por defecto
