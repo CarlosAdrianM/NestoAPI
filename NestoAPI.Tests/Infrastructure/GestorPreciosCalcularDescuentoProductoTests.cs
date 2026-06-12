@@ -1,6 +1,7 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Tests.Helpers;
 using System.Collections.Generic;
@@ -11,11 +12,11 @@ using System.Linq;
 namespace NestoAPI.Tests.Infrastructure
 {
     /// <summary>
-    /// Regresión Issue #229: GestorPrecios.calcularDescuentoProducto lanzaba
-    /// "La secuencia contiene más de un elemento" cuando DescuentosProducto tenía
-    /// varias filas válidas para el mismo filtro (tramos por CantidadMínima o
-    /// duplicados que SQL Server considera iguales por collation). Debe elegir
-    /// el tramo más exigente (mayor CantidadMínima &lt;= cantidad) sin lanzar.
+    /// Regresión Issue #229: en DescuentosProducto solo puede haber una fila aplicable por
+    /// filtro (cliente/familia/grupo/producto). Cuando hay duplicados (p.ej. dos familias que
+    /// solo difieren en mayúsculas, iguales para SQL Server), el error debe decir claramente
+    /// qué está duplicado para que el usuario lo corrija, no un 500 genérico de
+    /// "La secuencia contiene más de un elemento".
     /// </summary>
     [TestClass]
     public class GestorPreciosCalcularDescuentoProductoTests
@@ -58,52 +59,56 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
-        // Caso real del error 500 en producción: el cliente 2414 tiene dos filas de descuento
-        // por familia que SQL Server considera iguales ('lisap'/'Lisap'). En memoria las
-        // representamos con la misma familia y FiltroProducto vacío (StartsWith(null) no es
-        // evaluable en LINQ to Objects).
+        // Caso real del error 500 en producción: el cliente 2414 tenía dos filas de descuento
+        // por familia que SQL Server considera iguales ('lisap'/'Lisap').
         [TestMethod]
-        public void CalcularDescuentoProducto_FilasDuplicadasDeFamilia_NoLanzaYAplicaElDescuento()
+        public void CalcularDescuentoProducto_DescuentosDeFamiliaDuplicados_LanzaErrorQueIndicaElDuplicado()
         {
             var producto = CrearProducto();
             var descuentos = new List<DescuentosProducto>
             {
-                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", FiltroProducto = "", CantidadMínima = 0, Descuento = 0.66m, Producto = new Producto { Número = "OTRO" } },
-                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", FiltroProducto = "", CantidadMínima = 0, Descuento = 0.66m, Producto = new Producto { Número = "OTRO" } }
+                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", CantidadMínima = 0, Descuento = 0.66m, Producto = new Producto { Número = "OTRO" } },
+                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", CantidadMínima = 0, Descuento = 0.66m, Producto = new Producto { Número = "OTRO" } }
             };
             ConfigurarFakeDbSet(fakeDescuentos, descuentos.AsQueryable());
             var datos = CrearDatos(producto, 1);
 
-            GestorPrecios.calcularDescuentoProducto(datos, db);
+            var excepcion = Assert.ThrowsException<DescuentosDuplicadosException>(() => GestorPrecios.calcularDescuentoProducto(datos, db));
 
-            Assert.AreEqual(0.66m, datos.descuentoCalculado);
+            StringAssert.Contains(excepcion.Message, "Lisap");
+            StringAssert.Contains(excepcion.Message, "2414");
+            StringAssert.Contains(excepcion.Message, "duplicados");
         }
 
+        // Dos filas con distinta CantidadMínima también son un error de datos: aunque solo
+        // una "ganaría", el descuento del cliente debe estar definido sin ambigüedad.
         [TestMethod]
-        public void CalcularDescuentoProducto_TramosDeDescuentoPorFamilia_CogeElTramoMasExigente()
+        public void CalcularDescuentoProducto_DosFilasDeFamiliaAplicablesPorCantidad_LanzaErrorQueIndicaElDuplicado()
         {
             var producto = CrearProducto();
             var descuentos = new List<DescuentosProducto>
             {
-                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", FiltroProducto = "", CantidadMínima = 0, Descuento = 0.10m, Producto = new Producto { Número = "OTRO" } },
-                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", FiltroProducto = "", CantidadMínima = 4, Descuento = 0.15m, Producto = new Producto { Número = "OTRO" } }
+                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", CantidadMínima = 0, Descuento = 0.10m, Producto = new Producto { Número = "OTRO" } },
+                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", CantidadMínima = 4, Descuento = 0.15m, Producto = new Producto { Número = "OTRO" } }
             };
             ConfigurarFakeDbSet(fakeDescuentos, descuentos.AsQueryable());
             var datos = CrearDatos(producto, 4);
 
-            GestorPrecios.calcularDescuentoProducto(datos, db);
+            var excepcion = Assert.ThrowsException<DescuentosDuplicadosException>(() => GestorPrecios.calcularDescuentoProducto(datos, db));
 
-            Assert.AreEqual(0.15m, datos.descuentoCalculado);
+            StringAssert.Contains(excepcion.Message, "Lisap");
+            StringAssert.Contains(excepcion.Message, "2414");
         }
 
+        // Si por cantidad solo aplica una de las filas, no hay ambigüedad y se calcula normal.
         [TestMethod]
-        public void CalcularDescuentoProducto_TramosDeDescuentoPorFamilia_CantidadInferiorAlSegundoTramo_CogeElPrimero()
+        public void CalcularDescuentoProducto_SoloUnaFilaAplicaPorCantidad_CalculaElDescuento()
         {
             var producto = CrearProducto();
             var descuentos = new List<DescuentosProducto>
             {
-                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", FiltroProducto = "", CantidadMínima = 0, Descuento = 0.10m, Producto = new Producto { Número = "OTRO" } },
-                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", FiltroProducto = "", CantidadMínima = 4, Descuento = 0.15m, Producto = new Producto { Número = "OTRO" } }
+                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", CantidadMínima = 0, Descuento = 0.10m, Producto = new Producto { Número = "OTRO" } },
+                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Familia = "Lisap", CantidadMínima = 4, Descuento = 0.15m, Producto = new Producto { Número = "OTRO" } }
             };
             ConfigurarFakeDbSet(fakeDescuentos, descuentos.AsQueryable());
             var datos = CrearDatos(producto, 2);
@@ -114,17 +119,35 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void CalcularDescuentoProducto_TramosDePrecioEspecialPorCliente_CogeElTramoMasExigente()
+        public void CalcularDescuentoProducto_PreciosEspecialesDuplicados_LanzaErrorQueIndicaElProducto()
         {
             var producto = CrearProducto();
             producto.PVP = 100;
             var descuentos = new List<DescuentosProducto>
             {
                 new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Nº_Producto = "44166", CantidadMínima = 0, Precio = 90, Producto = new Producto { Número = "44166" } },
-                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Nº_Producto = "44166", CantidadMínima = 4, Precio = 80, Producto = new Producto { Número = "44166" } }
+                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Nº_Producto = "44166", CantidadMínima = 0, Precio = 80, Producto = new Producto { Número = "44166" } }
             };
             ConfigurarFakeDbSet(fakeDescuentos, descuentos.AsQueryable());
-            var datos = CrearDatos(producto, 4);
+            var datos = CrearDatos(producto, 1);
+
+            var excepcion = Assert.ThrowsException<DescuentosDuplicadosException>(() => GestorPrecios.calcularDescuentoProducto(datos, db));
+
+            StringAssert.Contains(excepcion.Message, "44166");
+            StringAssert.Contains(excepcion.Message, "2414");
+        }
+
+        [TestMethod]
+        public void CalcularDescuentoProducto_SinDuplicados_CalculaPrecioYDescuento()
+        {
+            var producto = CrearProducto();
+            producto.PVP = 100;
+            var descuentos = new List<DescuentosProducto>
+            {
+                new DescuentosProducto { Empresa = "1", Nº_Cliente = "2414", Nº_Producto = "44166", CantidadMínima = 0, Precio = 80, Producto = new Producto { Número = "44166" } }
+            };
+            ConfigurarFakeDbSet(fakeDescuentos, descuentos.AsQueryable());
+            var datos = CrearDatos(producto, 1);
 
             GestorPrecios.calcularDescuentoProducto(datos, db);
 
