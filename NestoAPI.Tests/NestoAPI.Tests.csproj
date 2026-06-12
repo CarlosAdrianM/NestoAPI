@@ -229,6 +229,7 @@
     <Compile Include="Infrastructure\Filters\GlobalExceptionFilterContextTests.cs" />
     <Compile Include="Infrastructure\PlanesVentajas\PlanesVentajasServiceTests.cs" />
     <Compile Include="Infrastructure\ServirJunto\ServicioValidarServirJuntoTests.cs" />
+    <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Infrastructure\GestorPresupuestosTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasGruposTests.cs" />

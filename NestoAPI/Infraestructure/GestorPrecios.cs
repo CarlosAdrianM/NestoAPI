@@ -31,6 +31,16 @@ namespace NestoAPI.Infraestructure
 
         public static void calcularDescuentoProducto(PrecioDescuentoProducto datos)
         {
+            using (NVEntities db = new NVEntities())
+            {
+                calcularDescuentoProducto(datos, db);
+            }
+        }
+
+        // Issue #229: sobrecarga con el contexto inyectado para poder testear la selección de filas
+        // de DescuentosProducto (tramos por CantidadMínima y duplicados que SQL Server considera iguales).
+        internal static void calcularDescuentoProducto(PrecioDescuentoProducto datos, NVEntities db)
+        {
 
             DescuentosProducto dtoProducto;
 
@@ -47,12 +57,11 @@ namespace NestoAPI.Infraestructure
             }
 
 
-            using (NVEntities db = new NVEntities())
             {
                 // AQUÍ CALCULA PRECIOS, NO DESCUENTOS
                 //select precio from descuentosproducto with (nolock) where [nº cliente]='15191     ' and contacto='0  ' and [nº producto]= '29487' and empresa='1  ' AND CANTIDADMÍNIMA<=1
 
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == datos.contacto && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == datos.contacto && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad);
                 if (dtoProducto != null && dtoProducto.Precio < datos.precioCalculado)
                 {
                     datos.precioCalculado = (decimal)dtoProducto.Precio;
@@ -61,7 +70,7 @@ namespace NestoAPI.Infraestructure
                 //select recargopvp from clientes with (nolock) where empresa='1  ' and [nº cliente]='15191     ' and contacto='0  '
                 //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     ' and contacto='0  ' order by cantidadminima desc
                 //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente]='15191     '  order by cantidadminima desc
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad);
                 if (dtoProducto != null && dtoProducto.Precio < datos.precioCalculado)
                 {
                     datos.precioCalculado = (decimal)dtoProducto.Precio;
@@ -80,32 +89,32 @@ namespace NestoAPI.Infraestructure
                 //select * from descuentosproducto where empresa='1  ' and grupoproducto='PEL' and [nº cliente]='15191     ' and nºproveedor is null and familia is null
 
                 //select isnull(max(descuento),0) from descuentosproducto where [nº cliente]='15191     ' and empresa='1  ' and grupoproducto='PEL' and cantidadmínima<=1 and familia is null and nºproveedor is null
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null && d.FiltroProducto == null && d.Nº_Cliente == null);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null && d.FiltroProducto == null && d.Nº_Cliente == null);
                 if (dtoProducto != null) // && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
 
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo && d.FiltroProducto == null && d.Nº_Cliente == null);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo && d.FiltroProducto == null && d.Nº_Cliente == null);
                 if (dtoProducto != null) // && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
 
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == null && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == null && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo);
                 if (dtoProducto != null) // && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
                 //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and nºproveedor is null and grupoproducto is null
                 //select isnull(max(descuento),0) from descuentosproducto where [nº cliente]='15191     ' and empresa='1  ' and familia='Lisap     ' and cantidadmínima<=1 and nºproveedor is null  and grupoproducto is null
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null && d.FiltroProducto == null);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null && d.FiltroProducto == null);
                 if (dtoProducto != null)// && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
                 // Descuento por familia con filtro y contacto
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == datos.contacto && d.Familia == datos.producto.Familia && datos.producto.Nombre.StartsWith(d.FiltroProducto) && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == datos.contacto && d.Familia == datos.producto.Familia && datos.producto.Nombre.StartsWith(d.FiltroProducto) && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
                 if (dtoProducto != null) // && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
@@ -113,14 +122,14 @@ namespace NestoAPI.Infraestructure
                 // Descuento por familia con filtro sin contacto
                 if (dtoProducto == null) // solo entramos si no ha encontrado el descuento con el contacto
                 {
-                    dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == null && d.Familia == datos.producto.Familia && datos.producto.Nombre.StartsWith(d.FiltroProducto) && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
+                    dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Contacto == null && d.Familia == datos.producto.Familia && datos.producto.Nombre.StartsWith(d.FiltroProducto) && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
                     if (dtoProducto != null) // && dtoProducto.Descuento > datos.descuentoCalculado)
                     {
                         datos.descuentoCalculado = dtoProducto.Descuento;
                     }
                 }
                 //select * from descuentosproducto where empresa='1  ' and familia='Lisap     ' and [nº cliente]='15191     ' and grupoproducto='PEL' and nºproveedor is null
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Familia == datos.producto.Familia && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == datos.producto.Grupo);
                 if (dtoProducto != null) // && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
@@ -133,7 +142,7 @@ namespace NestoAPI.Infraestructure
                 }
 
                 //select * from descuentosproducto where empresa='1  ' and [nº producto]='29352' and [nº cliente]='15191     ' and nºproveedor is null and familia is null
-                dtoProducto = db.DescuentosProductoes.SingleOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.Familia == null);
+                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Cliente == datos.cliente && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.Familia == null);
                 if (dtoProducto != null)// && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
