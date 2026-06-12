@@ -605,6 +605,10 @@
     <Compile Include="Infraestructure\Exceptions\FacturacionException.cs" />
     <Compile Include="Infraestructure\Exceptions\PedidoInvalidoException.cs" />
     <Compile Include="Infraestructure\Exceptions\DescuentosDuplicadosException.cs" />
+    <Compile Include="Infraestructure\Novedades\IServicioNovedades.cs" />
+    <Compile Include="Infraestructure\Novedades\ServicioNovedades.cs" />
+    <Compile Include="Models\Novedades\NovedadDTO.cs" />
+    <Compile Include="Controllers\NovedadesController.cs" />
     <Compile Include="Infraestructure\Exceptions\PedidoValidacionException.cs" />
     <Compile Include="Infraestructure\Exceptions\TraspasoEmpresaException.cs" />
     <Compile Include="Infraestructure\Filters\GlobalExceptionFilter.cs" />
