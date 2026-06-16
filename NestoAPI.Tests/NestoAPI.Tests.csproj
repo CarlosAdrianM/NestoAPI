@@ -219,6 +219,7 @@
     <Compile Include="Infrastructure\GeneradorPdfControlPedidosTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfKitsQueSePuedenMontarTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfResumenVentasTests.cs" />
+    <Compile Include="Infrastructure\GeneradorPdfUbicacionesInventarioTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfFacturasQuestPdfTests.cs" />
     <Compile Include="Infrastructure\SuPedidoTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />

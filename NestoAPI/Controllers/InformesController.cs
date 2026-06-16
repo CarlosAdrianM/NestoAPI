@@ -160,6 +160,23 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
+        [Route("api/Informes/UbicacionesInventario/Pdf")]
+        public async Task<HttpResponseMessage> GetUbicacionesInventarioPdf(string empresa = "1")
+        {
+            List<UbicacionesInventarioDTO> lista = await _servicio
+                .LeerUbicacionesInventarioAsync(empresa)
+                .ConfigureAwait(false);
+
+            GeneradorPdfUbicacionesInventario generador = new GeneradorPdfUbicacionesInventario();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(lista)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
+        [HttpGet]
         [Route("api/Informes/KitsQueSePuedenMontar")]
         [ResponseType(typeof(List<KitsQueSePuedenMontarDTO>))]
         public async Task<IHttpActionResult> GetKitsQueSePuedenMontar(string empresa, string fecha, string almacen, string filtroRutas)

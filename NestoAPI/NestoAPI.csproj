@@ -688,6 +688,7 @@
     <Compile Include="Infraestructure\Informes\GeneradorPdfControlPedidos.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfKitsQueSePuedenMontar.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfResumenVentas.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorPdfUbicacionesInventario.cs" />
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\Informes\InformesService.cs" />
