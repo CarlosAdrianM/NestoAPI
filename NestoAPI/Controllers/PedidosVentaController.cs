@@ -409,9 +409,11 @@ namespace NestoAPI.Controllers
             //db.Entry(cabPedidoVta).Reference(l => l.LinPedidoVtas).Load();
             cabPedidoVta = db.CabPedidoVtas.Include(l => l.LinPedidoVtas).SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
-            // Comprobar que tiene líneas pendientes de servir, en caso contrario no se permite la edición
-            bool tienePendientes = cabPedidoVta.LinPedidoVtas.Any(l => (l.Estado >= ESTADO_LINEA_PENDIENTE && l.Estado <= ESTADO_LINEA_EN_CURSO) || l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
-            if (!tienePendientes)
+            // Comprobar que se puede modificar el pedido. Además del caso de siempre (hay líneas
+            // pendientes) se admite un cambio SOLO de cabecera (p.ej. el CCC de un pedido RCB)
+            // aunque las líneas estén en albarán. Las líneas en albarán las protege el bucle de
+            // líneas de abajo; aquí solo dejamos pasar cambios que no las tocan.
+            if (!PuedeModificarsePedido(cabPedidoVta, pedido))
             {
                 errorPersonalizado("No se puede modificar un pedido ya facturado");
             }
@@ -2014,6 +2016,78 @@ namespace NestoAPI.Controllers
 
             bool debeImprimir = gestorFacturacionRutas.DebeImprimirDocumento(comentarios);
             return Ok(debeImprimir);
+        }
+
+        /// <summary>
+        /// Decide si el PUT puede modificar el pedido. Permitido en dos casos:
+        ///  1) Hay líneas plenamente modificables (pendientes): modificación normal de siempre.
+        ///  2) Es un cambio SOLO de cabecera (p.ej. el CCC de un pedido Recibo) sobre un pedido
+        ///     cuyas líneas están todas en albarán. Las líneas en albarán NO se pueden tocar.
+        /// </summary>
+        internal static bool PuedeModificarsePedido(CabPedidoVta cabPedidoVta, PedidoVentaDTO pedido)
+        {
+            return PedidoTieneLineasPendientes(cabPedidoVta.LinPedidoVtas)
+                || EsCambioSoloCabeceraEnAlbaran(cabPedidoVta, pedido);
+        }
+
+        /// <summary>
+        /// Conjunto de líneas que SIEMPRE permitió modificar el pedido (sin cambios respecto al
+        /// comportamiento histórico): presupuesto, pendiente y en curso. NO incluye nota de
+        /// entrega (-2), albarán (2) ni factura (4).
+        /// </summary>
+        internal static bool PedidoTieneLineasPendientes(IEnumerable<LinPedidoVta> lineas)
+        {
+            return lineas.Any(l =>
+                (l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+                || l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+        }
+
+        /// <summary>
+        /// Indica si el cambio es SOLO de cabecera sobre un pedido totalmente en albarán, lo
+        /// único que añadimos respecto al comportamiento anterior. Se exige que TODAS las líneas
+        /// estén en albarán (ni pendientes, ni nota de entrega, ni factura) y que el cambio NO
+        /// afecte a las líneas: no puede cambiar cliente, contacto ni IVA (se propagan a las
+        /// líneas) ni añadir líneas nuevas. Las bajas y los cambios de cantidad sobre líneas en
+        /// albarán ya los rechaza el bucle de líneas con su propio mensaje.
+        /// </summary>
+        internal static bool EsCambioSoloCabeceraEnAlbaran(CabPedidoVta cabPedidoVta, PedidoVentaDTO pedido)
+        {
+            var lineas = cabPedidoVta.LinPedidoVtas;
+            if (lineas == null || !lineas.Any())
+            {
+                return false;
+            }
+            if (!lineas.All(l => l.Estado == Constantes.EstadosLineaVenta.ALBARAN))
+            {
+                return false;
+            }
+
+            if ((cabPedidoVta.Nº_Cliente ?? "").Trim() != (pedido.cliente ?? "").Trim())
+            {
+                return false;
+            }
+            if ((cabPedidoVta.Contacto ?? "").Trim() != (pedido.contacto ?? "").Trim())
+            {
+                return false;
+            }
+            if (IvaCambia(cabPedidoVta.IVA, pedido.iva))
+            {
+                return false;
+            }
+            // No se permite añadir líneas nuevas a un pedido en albarán.
+            if (pedido.Lineas != null && pedido.Lineas.Any(l => l.id == 0))
+            {
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IvaCambia(string ivaCabecera, string ivaPedido)
+        {
+            return (ivaCabecera == null && ivaPedido != null) ||
+                   (ivaCabecera != null && ivaPedido == null) ||
+                   (ivaCabecera != null && ivaPedido != null && ivaCabecera.Trim() != ivaPedido.Trim());
         }
 
         private void errorPersonalizado(string mensajePersonalizado)
