@@ -28,7 +28,15 @@ namespace NestoAPI.Infraestructure
                 return null;
             }
 
-            var almacenPedido = pedido?.Lineas?.First().almacen;
+            // NestoAPI#232: el '?.' no protege contra Lineas vacía; un pedido sin líneas no es
+            // servible (la comprobación de líneas vacías que había más abajo nunca llegaba a
+            // ejecutarse porque First() petaba antes con "La secuencia no contiene elementos").
+            if (pedido?.Lineas == null || !pedido.Lineas.Any())
+            {
+                return null;
+            }
+
+            var almacenPedido = pedido.Lineas.First().almacen;
             if (GestorFestivos.EsFestivo(hora, almacenPedido))
             {
                 return null;
