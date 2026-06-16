@@ -42,10 +42,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             // Aceptar presupuesto: todas las líneas activas en BD están en PRESUPUESTO y el
             // DTO indica que ya no es presupuesto (EsPresupuesto=false). Mantenemos la
             // semántica anterior para no romper el flujo "Aceptar presupuesto" existente.
-            bool todasBDEnPresupuesto = lineasBDList.Any()
-                && lineasBDList
-                    .Where(EsLineaActiva)
-                    .All(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+            // OJO: hay que exigir que EXISTA alguna línea activa. Si no hay ninguna (p.ej. un
+            // pedido todo en albarán), el .All() sobre la lista vacía daría true por verdad
+            // vacua y se interpretaría como "aceptar presupuesto" sin haber ningún presupuesto,
+            // disparando la validación del pedido al solo cambiar la cabecera (pedido 918386).
+            var lineasActivasBD = lineasBDList.Where(EsLineaActiva).ToList();
+            bool todasBDEnPresupuesto = lineasActivasBD.Any()
+                && lineasActivasBD.All(l => l.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
 
             if (todasBDEnPresupuesto && !dto.EsPresupuesto)
             {

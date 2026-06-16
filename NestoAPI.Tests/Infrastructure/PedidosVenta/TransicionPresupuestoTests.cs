@@ -146,6 +146,53 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
         }
 
         [TestMethod]
+        public void Decidir_TodasEnAlbaran_NoEsAceptarPresupuesto()
+        {
+            // Pedido 918386: todas las líneas en albarán (ninguna ACTIVA: ni pendiente, ni en
+            // curso, ni presupuesto) y EsPresupuesto=false (cambio solo de cabecera, p.ej. el
+            // CCC de un RCB). NO debe interpretarse como "aceptar presupuesto": no hay ningún
+            // presupuesto que aceptar. Antes el .All() sobre la lista vacía de líneas activas
+            // daba true por VERDAD VACUA -> EsAceptarPresupuesto=true -> el PUT disparaba la
+            // validación del pedido y fallaba por descuentos colados al solo cambiar el CCC.
+            var lineasBD = new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.ALBARAN, picking: 0),
+                LineaBD(2, Constantes.EstadosLineaVenta.ALBARAN, picking: 0)
+            };
+            var dto = DtoConLineas(
+                LineaDto(1, Constantes.EstadosLineaVenta.ALBARAN),
+                LineaDto(2, Constantes.EstadosLineaVenta.ALBARAN));
+            dto.EsPresupuesto = false;
+
+            var decision = TransicionPresupuesto.Decidir(lineasBD, dto);
+
+            Assert.IsFalse(decision.EsAceptarPresupuesto,
+                "Un pedido todo en albarán no tiene ningún presupuesto que aceptar");
+            Assert.IsFalse(decision.EsPasarAPresupuesto);
+        }
+
+        [TestMethod]
+        public void Decidir_AlbaranYFacturaSinLineasActivas_NoEsAceptarPresupuesto()
+        {
+            // Otra combinación sin líneas activas (albarán + factura): tampoco hay presupuesto
+            // que aceptar.
+            var lineasBD = new List<LinPedidoVta>
+            {
+                LineaBD(1, Constantes.EstadosLineaVenta.ALBARAN, picking: 0),
+                LineaBD(2, Constantes.EstadosLineaVenta.FACTURA, picking: 0)
+            };
+            var dto = DtoConLineas(
+                LineaDto(1, Constantes.EstadosLineaVenta.ALBARAN),
+                LineaDto(2, Constantes.EstadosLineaVenta.FACTURA));
+            dto.EsPresupuesto = false;
+
+            var decision = TransicionPresupuesto.Decidir(lineasBD, dto);
+
+            Assert.IsFalse(decision.EsAceptarPresupuesto);
+            Assert.IsFalse(decision.EsPasarAPresupuesto);
+        }
+
+        [TestMethod]
         public void Decidir_PedidoSinCambiosDeEstado_NingunaTransicion()
         {
             // Caso típico: el usuario solo cambia un dato del pedido (texto, dirección...)
