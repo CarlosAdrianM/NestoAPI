@@ -1,22 +1,35 @@
-using System.Data.Entity;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Web.Http;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 using NestoAPI.Models;
 
 namespace NestoAPI.Controllers
 {
-    /// <summary>Agencia + su recargo de combustible (fracción, p.ej. 0,1055 = 10,55 %).</summary>
-    public class RecargoCombustibleAgenciaDTO
+    /// <summary>
+    /// Una agencia de transporte (fila de AgenciasTransporte). OJO: Numero es la PK de cada fila
+    /// (agencia × empresa), no del transportista; el comparador usa Numero como AgenciaId.
+    /// RecargoCombustible es fracción (0,1055 = 10,55 %).
+    /// </summary>
+    public class AgenciaTransporteDTO
     {
         public int Numero { get; set; }
+        public string Empresa { get; set; }
         public string Nombre { get; set; }
+        public string Ruta { get; set; }
+        public string Identificador { get; set; }
+        public string PrefijoCodigoBarras { get; set; }
+        public string CuentaReembolsos { get; set; }
         public decimal RecargoCombustible { get; set; }
     }
 
     /// <summary>
-    /// Tarifas de agencia server-side (Nesto#340): mantenimiento del recargo de combustible por
-    /// agencia (editable mensual desde Nesto) y comparador "agencia más económica" para un pedido.
+    /// Mantenimiento de agencias de transporte server-side (Nesto#340): alta/edición de agencias
+    /// (incluido el recargo de combustible, editable mensual) y comparador "agencia más económica"
+    /// para un pedido. La cuarentena se gestiona en el cliente vía el parámetro AgenciasEnCuarentena.
+    /// No hay borrado: las agencias tienen movimientos (FK), no se pueden eliminar.
     /// </summary>
     public class AgenciasTarifasController : ApiController
     {
@@ -34,49 +47,84 @@ namespace NestoAPI.Controllers
 
         private readonly NVEntities db;
 
-        // GET: api/Agencias/RecargosCombustible  -> lista para la UI de edición mensual.
+        // GET: api/Agencias  -> todas las agencias con todos sus campos (mantenimiento).
         [HttpGet]
-        [Route("api/Agencias/RecargosCombustible")]
-        public IHttpActionResult GetRecargosCombustible()
+        [Route("api/Agencias")]
+        public IHttpActionResult GetAgencias()
         {
             var agencias = db.AgenciasTransportes
-                .GroupBy(a => new { a.Numero, a.Nombre })
-                .Select(g => new RecargoCombustibleAgenciaDTO
-                {
-                    Numero = g.Key.Numero,
-                    Nombre = g.Key.Nombre,
-                    RecargoCombustible = g.Max(a => a.RecargoCombustible)
-                })
                 .OrderBy(a => a.Numero)
+                .ThenBy(a => a.Empresa)
+                .ToList()
+                .Select(ADto)
                 .ToList();
 
             return Ok(agencias);
         }
 
-        // PUT: api/Agencias/{numero}/RecargoCombustible  -> actualiza el % de TODAS las empresas
-        // de esa agencia (el fuel es a nivel de transportista).
-        [HttpPut]
-        [Route("api/Agencias/{numero:int}/RecargoCombustible")]
-        public IHttpActionResult PutRecargoCombustible(int numero, [FromBody] RecargoCombustibleAgenciaDTO dto)
+        // POST: api/Agencias  -> alta de una agencia nueva (p.ej. Innovatrans, Numero=12).
+        [HttpPost]
+        [Route("api/Agencias")]
+        public IHttpActionResult PostAgencia([FromBody] AgenciaTransporteDTO dto)
         {
-            if (dto == null || dto.RecargoCombustible < 0)
+            IHttpActionResult error = Validar(dto);
+            if (error != null)
             {
-                return BadRequest("El recargo de combustible no puede ser nulo ni negativo.");
+                return error;
+            }
+            if (db.AgenciasTransportes.Any(a => a.Numero == dto.Numero))
+            {
+                return BadRequest($"Ya existe una agencia con el número {dto.Numero}.");
             }
 
-            var filas = db.AgenciasTransportes.Where(a => a.Numero == numero).ToList();
-            if (!filas.Any())
+            var agencia = new AgenciaTransporte
+            {
+                Numero = dto.Numero,
+                Empresa = dto.Empresa?.Trim(),
+                Nombre = dto.Nombre?.Trim(),
+                Ruta = dto.Ruta?.Trim(),
+                Identificador = dto.Identificador?.Trim(),
+                PrefijoCodigoBarras = dto.PrefijoCodigoBarras?.Trim(),
+                CuentaReembolsos = dto.CuentaReembolsos?.Trim(),
+                RecargoCombustible = dto.RecargoCombustible,
+                Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI"),
+                FechaModificacion = DateTime.Now
+            };
+            db.AgenciasTransportes.Add(agencia);
+            db.SaveChanges();
+
+            return Ok(ADto(agencia));
+        }
+
+        // PUT: api/Agencias/{numero}  -> edición de una agencia existente (todos los campos).
+        [HttpPut]
+        [Route("api/Agencias/{numero:int}")]
+        public IHttpActionResult PutAgencia(int numero, [FromBody] AgenciaTransporteDTO dto)
+        {
+            IHttpActionResult error = Validar(dto);
+            if (error != null)
+            {
+                return error;
+            }
+
+            var agencia = db.AgenciasTransportes.FirstOrDefault(a => a.Numero == numero);
+            if (agencia == null)
             {
                 return NotFound();
             }
 
-            foreach (var fila in filas)
-            {
-                fila.RecargoCombustible = dto.RecargoCombustible;
-            }
+            agencia.Empresa = dto.Empresa?.Trim();
+            agencia.Nombre = dto.Nombre?.Trim();
+            agencia.Ruta = dto.Ruta?.Trim();
+            agencia.Identificador = dto.Identificador?.Trim();
+            agencia.PrefijoCodigoBarras = dto.PrefijoCodigoBarras?.Trim();
+            agencia.CuentaReembolsos = dto.CuentaReembolsos?.Trim();
+            agencia.RecargoCombustible = dto.RecargoCombustible;
+            agencia.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            agencia.FechaModificacion = DateTime.Now;
             db.SaveChanges();
 
-            return Ok(dto.RecargoCombustible);
+            return Ok(ADto(agencia));
         }
 
         // GET: api/Agencias/MasEconomica?empresa=&codigoPostal=&peso=&reembolso=
@@ -93,5 +141,34 @@ namespace NestoAPI.Controllers
             }
             return Ok(mejor);
         }
+
+        private IHttpActionResult Validar(AgenciaTransporteDTO dto)
+        {
+            if (dto == null)
+            {
+                return BadRequest("No se han recibido datos de la agencia.");
+            }
+            if (string.IsNullOrWhiteSpace(dto.Nombre))
+            {
+                return BadRequest("El nombre de la agencia es obligatorio.");
+            }
+            if (dto.RecargoCombustible < 0)
+            {
+                return BadRequest("El recargo de combustible no puede ser negativo.");
+            }
+            return null;
+        }
+
+        private static AgenciaTransporteDTO ADto(AgenciaTransporte a) => new AgenciaTransporteDTO
+        {
+            Numero = a.Numero,
+            Empresa = a.Empresa?.Trim(),
+            Nombre = a.Nombre?.Trim(),
+            Ruta = a.Ruta?.Trim(),
+            Identificador = a.Identificador?.Trim(),
+            PrefijoCodigoBarras = a.PrefijoCodigoBarras?.Trim(),
+            CuentaReembolsos = a.CuentaReembolsos?.Trim(),
+            RecargoCombustible = a.RecargoCombustible
+        };
     }
 }

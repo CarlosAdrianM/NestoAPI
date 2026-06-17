@@ -36,40 +36,108 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public void GetRecargosCombustible_AgrupaPorNumeroYDevuelveElFuel()
+        public void GetAgencias_DevuelveTodasConSusCamposYElFuel()
         {
             Datos(
-                new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "GLS", RecargoCombustible = 0.1055m },
-                new AgenciaTransporte { Numero = 1, Empresa = "3  ", Nombre = "GLS", RecargoCombustible = 0.1055m },
-                new AgenciaTransporte { Numero = 8, Empresa = "1  ", Nombre = "CEX", RecargoCombustible = 0m });
+                new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "ASM   ", Ruta = "10", Identificador = "abc", PrefijoCodigoBarras = "6108352", CuentaReembolsos = "55500042", RecargoCombustible = 0.1055m },
+                new AgenciaTransporte { Numero = 8, Empresa = "1  ", Nombre = "Correos Express", RecargoCombustible = 0m });
 
-            var resultado = controller.GetRecargosCombustible() as OkNegotiatedContentResult<List<RecargoCombustibleAgenciaDTO>>;
+            var resultado = controller.GetAgencias() as OkNegotiatedContentResult<List<AgenciaTransporteDTO>>;
 
             Assert.IsNotNull(resultado);
-            Assert.AreEqual(2, resultado.Content.Count); // distinto por Numero
-            Assert.AreEqual(0.1055m, resultado.Content.Single(a => a.Numero == 1).RecargoCombustible);
-            Assert.AreEqual(0m, resultado.Content.Single(a => a.Numero == 8).RecargoCombustible);
+            Assert.AreEqual(2, resultado.Content.Count);
+            var asm = resultado.Content.Single(a => a.Numero == 1);
+            Assert.AreEqual("ASM", asm.Nombre);              // trim del padding legacy
+            Assert.AreEqual("1", asm.Empresa);
+            Assert.AreEqual("6108352", asm.PrefijoCodigoBarras);
+            Assert.AreEqual(0.1055m, asm.RecargoCombustible);
         }
 
         [TestMethod]
-        public void PutRecargoCombustible_ActualizaTodasLasEmpresasDeLaAgencia()
+        public void PostAgencia_CreaLaAgencia()
         {
-            var gls1 = new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "GLS", RecargoCombustible = 0.10m };
-            var gls3 = new AgenciaTransporte { Numero = 1, Empresa = "3  ", Nombre = "GLS", RecargoCombustible = 0.10m };
-            Datos(gls1, gls3);
+            Datos(new AgenciaTransporte { Numero = 11, Nombre = "Canteras" });
             A.CallTo(() => db.SaveChanges()).Returns(1);
 
-            controller.PutRecargoCombustible(1, new RecargoCombustibleAgenciaDTO { RecargoCombustible = 0.1055m });
+            var dto = new AgenciaTransporteDTO
+            {
+                Numero = 12,
+                Empresa = "1",
+                Nombre = "Innovatrans",
+                CuentaReembolsos = "55500074",
+                RecargoCombustible = 0.025m
+            };
 
-            Assert.AreEqual(0.1055m, gls1.RecargoCombustible);
-            Assert.AreEqual(0.1055m, gls3.RecargoCombustible);
+            var resultado = controller.PostAgencia(dto) as OkNegotiatedContentResult<AgenciaTransporteDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual("Innovatrans", resultado.Content.Nombre);
+            A.CallTo(() => fakeAgencias.Add(A<AgenciaTransporte>.That.Matches(a => a.Numero == 12 && a.Nombre == "Innovatrans" && a.RecargoCombustible == 0.025m)))
+                .MustHaveHappenedOnceExactly();
             A.CallTo(() => db.SaveChanges()).MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
-        public void PutRecargoCombustible_Negativo_DevuelveBadRequest()
+        public void PostAgencia_NumeroYaExistente_DevuelveBadRequest()
         {
-            var resultado = controller.PutRecargoCombustible(1, new RecargoCombustibleAgenciaDTO { RecargoCombustible = -0.1m });
+            Datos(new AgenciaTransporte { Numero = 12, Nombre = "Innovatrans" });
+
+            var dto = new AgenciaTransporteDTO { Numero = 12, Nombre = "Otra", RecargoCombustible = 0m };
+
+            var resultado = controller.PostAgencia(dto);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public void PostAgencia_SinNombre_DevuelveBadRequest()
+        {
+            Datos();
+
+            var resultado = controller.PostAgencia(new AgenciaTransporteDTO { Numero = 12, Nombre = "  ", RecargoCombustible = 0m });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public void PutAgencia_ActualizaTodosLosCampos()
+        {
+            var innovatrans = new AgenciaTransporte { Numero = 12, Empresa = "1  ", Nombre = "Innovatrans", RecargoCombustible = 0.025m };
+            Datos(innovatrans);
+            A.CallTo(() => db.SaveChanges()).Returns(1);
+
+            var dto = new AgenciaTransporteDTO
+            {
+                Numero = 12,
+                Empresa = "1",
+                Nombre = "Innovatrans",
+                Identificador = "91253",
+                RecargoCombustible = 0.03m
+            };
+
+            controller.PutAgencia(12, dto);
+
+            Assert.AreEqual("91253", innovatrans.Identificador);
+            Assert.AreEqual(0.03m, innovatrans.RecargoCombustible);
+            A.CallTo(() => db.SaveChanges()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void PutAgencia_NoExiste_DevuelveNotFound()
+        {
+            Datos();
+
+            var resultado = controller.PutAgencia(99, new AgenciaTransporteDTO { Numero = 99, Nombre = "X", RecargoCombustible = 0m });
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        [TestMethod]
+        public void PutAgencia_RecargoNegativo_DevuelveBadRequest()
+        {
+            Datos(new AgenciaTransporte { Numero = 12, Nombre = "Innovatrans" });
+
+            var resultado = controller.PutAgencia(12, new AgenciaTransporteDTO { Numero = 12, Nombre = "Innovatrans", RecargoCombustible = -0.1m });
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }
@@ -77,7 +145,7 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public void GetMasEconomica_CodigoPostalPeninsular_DevuelveGLS()
         {
-            // Solo GLS está portada todavía; BusinessParcel cubre Peninsular -> es la elegida.
+            // GLS (BusinessParcel 5kg=3,66) gana a Innovatrans Economy (5kg=4,53) en Peninsular.
             Datos(new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "GLS", RecargoCombustible = 0m });
 
             var resultado = controller.GetMasEconomica("08001", peso: 3m, empresa: "1", reembolso: 0m)
