@@ -118,6 +118,52 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsTrue(resumen.Contains("No cuadra"), resumen);
         }
 
+        private static System.Security.Principal.IPrincipal Principal(string nombre)
+            => new System.Security.Principal.GenericPrincipal(
+                new System.Security.Principal.GenericIdentity(nombre ?? ""), new string[0]);
+
+        [TestMethod]
+        public void UsuarioParaElmah_PrincipalAutenticado_NoLoSobrescribe()
+        {
+            // Si el JWT/Windows ya dio usuario (UserSyncHandler), se respeta (devuelve null = no tocar).
+            var error = new ErrorClienteDTO { Mensaje = "x", UsuarioCliente = "Otro" };
+
+            string usuario = ErroresController.UsuarioParaElmah(Principal("Ines"), error);
+
+            Assert.IsNull(usuario);
+        }
+
+        [TestMethod]
+        public void UsuarioParaElmah_AnonimoConUsuarioCliente_DevuelveElDelCuerpo()
+        {
+            // Petición anónima (NestoApp): el usuario sale del cuerpo para que ELMAH no quede vacío.
+            var error = new ErrorClienteDTO { Mensaje = "x", UsuarioCliente = "  Ines  " };
+
+            string usuario = ErroresController.UsuarioParaElmah(Principal(""), error);
+
+            Assert.AreEqual("Ines", usuario);
+        }
+
+        [TestMethod]
+        public void UsuarioParaElmah_SinPrincipalConUsuarioCliente_DevuelveElDelCuerpo()
+        {
+            var error = new ErrorClienteDTO { Mensaje = "x", UsuarioCliente = "Ines" };
+
+            string usuario = ErroresController.UsuarioParaElmah(null, error);
+
+            Assert.AreEqual("Ines", usuario);
+        }
+
+        [TestMethod]
+        public void UsuarioParaElmah_AnonimoSinUsuarioCliente_DevuelveNull()
+        {
+            var error = new ErrorClienteDTO { Mensaje = "x" };
+
+            string usuario = ErroresController.UsuarioParaElmah(Principal(""), error);
+
+            Assert.IsNull(usuario);
+        }
+
         [TestMethod]
         public void ConstruirResumen_ConPlataformaYUsuarioCliente_LosIncluye()
         {
