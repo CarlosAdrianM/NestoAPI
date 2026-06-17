@@ -7,6 +7,10 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// </summary>
     public class ComparadorAgencias
     {
+        // Canteras juega en otro nivel: solo Canarias y no depende del precio. Cualquier envío a
+        // Canarias va siempre por Canteras, así que no se compara por tarifa (decisión Carlos).
+        private const int AgenciaCanteras = 11;
+
         private readonly IRegistroTarifas _registro;
         private readonly IProveedorRecargoCombustible _recargoCombustible;
 
@@ -19,6 +23,17 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         public OpcionEnvioAgencia MasEconomica(string empresa, string codigoPostal, decimal peso, decimal reembolso)
         {
             ZonasEnvioAgencia zona = CalculadoraZonaEnvio.CalcularZona(codigoPostal);
+
+            // Canarias siempre va por Canteras, sin comparar precio.
+            if (zona == ZonasEnvioAgencia.CanariasMayores || zona == ZonasEnvioAgencia.CanariasMenores)
+            {
+                return new OpcionEnvioAgencia
+                {
+                    AgenciaId = AgenciaCanteras,
+                    NombreServicio = "Canteras"
+                };
+            }
+
             OpcionEnvioAgencia mejor = null;
 
             foreach (ITarifaAgencia tarifa in _registro.Todas())

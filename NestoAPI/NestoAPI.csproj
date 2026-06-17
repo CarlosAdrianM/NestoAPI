@@ -574,6 +574,10 @@
     <Compile Include="Infraestructure\Agencias\Tarifas\ITarifaAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaGLSBaleares.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaGLSBusinessParcel.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransBase.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransEconomy.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransPortugal.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransMaritimo.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ZonasEnvioAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEnviosAgencia.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />

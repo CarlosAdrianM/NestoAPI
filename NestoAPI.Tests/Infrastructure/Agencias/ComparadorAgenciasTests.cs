@@ -106,5 +106,20 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.IsNull(mejor);
         }
+
+        [TestMethod]
+        public void MasEconomica_Canarias_SiempreVaPorCanterasSinCompararPrecio()
+        {
+            // Aunque haya una tarifa baratísima que cubra Canarias, Canarias siempre va por
+            // Canteras (juega en otro nivel, no depende del precio).
+            var tarifas = new[] { TarifaFake(1, ZonasEnvioAgencia.CanariasMayores, 1m) };
+            var comparador = Comparador(tarifas, FuelCero());
+
+            var mejor = comparador.MasEconomica("1", "35001", peso: 3m, reembolso: 0m);
+
+            Assert.IsNotNull(mejor);
+            Assert.AreEqual(11, mejor.AgenciaId);
+            Assert.AreEqual("Canteras", mejor.NombreServicio);
+        }
     }
 }
