@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
 using NestoAPI.Models.Bancos;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -13,6 +14,18 @@ namespace NestoAPI.Infraestructure.Contabilidad
 {
     public class ContabilidadService : IContabilidadService
     {
+        private readonly ILectorParametrosUsuario _lectorParametros;
+        private Dictionary<string, string> _mapaTerminalesResuelto;
+
+        public ContabilidadService() : this(new LectorParametrosUsuario())
+        {
+        }
+
+        public ContabilidadService(ILectorParametrosUsuario lectorParametros)
+        {
+            _lectorParametros = lectorParametros;
+        }
+
         public async Task<int> ContabilizarDiario(string empresa, string diario, string usuario)
         {
             using (NVEntities db = new NVEntities())
@@ -427,9 +440,11 @@ namespace NestoAPI.Infraestructure.Contabilidad
 
             }
         }
+        // NestoAPI#231: valores por defecto (fallback). El mapeo vigente se edita en caliente en el
+        // parámetro TerminalesUsuariosTPV (JSON), sin recompilar; ver ObtenerMapaTerminales.
         private readonly Dictionary<string, string> TerminalesUsuarios = new Dictionary<string, string>()
         {
-            { "91900804273", "Paloma" },
+            { "91901505888", "Paloma" }, // antes 91900804273 (dado de baja)
             { "91900804275", "Victoria" },
             { "26617120788", "Laura Camacho" },
             { "00346609775", "Patricia" },
@@ -441,13 +456,51 @@ namespace NestoAPI.Infraestructure.Contabilidad
             { "00022126270", "Almacén" },
             { "91901357047", "Almacén" },
         };
-        private string ObtenerUsuarioTerminal(string terminal)
+        internal string ObtenerUsuarioTerminal(string terminal)
         {
-            if (TerminalesUsuarios.TryGetValue(terminal, out string usuario))
+            if (ObtenerMapaTerminales().TryGetValue(terminal, out string usuario))
             {
                 return usuario;
             }
             return string.Empty; // O un valor predeterminado si prefieres
+        }
+
+        internal const string ParametroTerminalesUsuariosTPV = "TerminalesUsuariosTPV";
+
+        // NestoAPI#231: el mapeo terminal→usuario se lee del parámetro TerminalesUsuariosTPV (JSON),
+        // editable sin recompilar. Si no existe o no parsea, se usa el diccionario por defecto. Se
+        // cachea durante la operación (la instancia del servicio es por operación).
+        private Dictionary<string, string> ObtenerMapaTerminales()
+        {
+            if (_mapaTerminalesResuelto != null)
+            {
+                return _mapaTerminalesResuelto;
+            }
+            _mapaTerminalesResuelto = LeerMapaTerminalesDeParametro() ?? TerminalesUsuarios;
+            return _mapaTerminalesResuelto;
+        }
+
+        private Dictionary<string, string> LeerMapaTerminalesDeParametro()
+        {
+            if (_lectorParametros == null)
+            {
+                return null;
+            }
+            string json = _lectorParametros.LeerParametro(
+                Constantes.Empresas.EMPRESA_POR_DEFECTO, "(defecto)", ParametroTerminalesUsuariosTPV);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+            try
+            {
+                var mapa = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+                return (mapa != null && mapa.Count > 0) ? mapa : null;
+            }
+            catch (JsonException)
+            {
+                return null; // fallback al diccionario por defecto
+            }
         }
 
         public async Task ContabilizarComisionesTarjetas(List<MovimientoTPVDTO> movimientosTPV)
