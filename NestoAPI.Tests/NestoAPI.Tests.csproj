@@ -212,6 +212,7 @@
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraZonaEnvioTests.cs" />
+    <Compile Include="Infrastructure\Agencias\TarifasGLSTests.cs" />
     <Compile Include="Infrastructure\Agencias\MapeadorDireccionDataTransTests.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />
