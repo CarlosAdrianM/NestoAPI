@@ -505,6 +505,7 @@
     <Compile Include="Controllers\DepositosController.cs" />
     <Compile Include="Controllers\DiariosProductosController.cs" />
     <Compile Include="Controllers\EmpresasController.cs" />
+    <Compile Include="Controllers\AgenciasTarifasController.cs" />
     <Compile Include="Controllers\EnviosAgenciasController.cs" />
     <Compile Include="Controllers\ExtractoProveedoresController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
@@ -567,6 +568,7 @@
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraCosteEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgenciasContratos.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\ProveedorRecargoCombustibleEF.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\RegistroTarifas.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraZonaEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ITarifaAgencia.cs" />
