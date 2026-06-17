@@ -608,6 +608,10 @@ namespace NestoAPI.Controllers
                 {
                     lineaPedido.CantidadAnterior = lineaOriginal.Cantidad;
                     lineaPedido.ProductoAnterior = lineaOriginal.Producto;
+                    // Issue #237: si la línea no se toca (misma cantidad y precio) y no tiene oferta, no
+                    // se re-valida su descuento (una subida de tarifa posterior la bloquearía sin tocarla).
+                    lineaPedido.NoRevalidarDescuento = lineaPedido.EsIntactaParaDescuento(
+                        lineaOriginal.Cantidad ?? -1, lineaOriginal.Precio ?? -1);
                 }
             }
 

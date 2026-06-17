@@ -41,6 +41,22 @@ namespace NestoAPI.Models.PedidosVenta
         [JsonIgnore]
         public bool CambioProducto => !EsLineaNueva && ProductoAnterior != null && ProductoAnterior.Trim() != Producto?.Trim();
 
+        // Issue #237: una línea preexistente que NO se toca (misma cantidad y precio que en BD) y que
+        // no pertenece a una oferta no debe re-validar su descuento al modificar/unir el pedido: una
+        // subida de tarifa posterior la bloquearía sin haberla tocado. Lo marca el controller; el
+        // validador de descuentos omite el producto solo si TODAS sus líneas están marcadas.
+        [JsonIgnore]
+        public bool NoRevalidarDescuento { get; set; }
+
+        /// <summary>
+        /// Issue #237: la línea es preexistente, no se ha tocado (misma cantidad y precio que en BD) y
+        /// no pertenece a una oferta. En ese caso su descuento no debe re-validarse (era correcto al
+        /// crearse; una subida de tarifa posterior no debe bloquearla). Si cambia cantidad/precio, es
+        /// nueva, o tiene oferta, devuelve false → se valida con normalidad.
+        /// </summary>
+        public bool EsIntactaParaDescuento(int cantidadBD, decimal precioBD)
+            => !EsLineaNueva && oferta == null && Cantidad == cantidadBD && PrecioUnitario == precioBD;
+
         public override decimal SumaDescuentos
         {
             get

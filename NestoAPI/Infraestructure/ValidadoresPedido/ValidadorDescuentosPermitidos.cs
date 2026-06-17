@@ -17,11 +17,16 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             List<ErrorValidacion> erroresEncontrados = new List<ErrorValidacion>();
 
-            // Obtener productos únicos para evitar validar el mismo producto varias veces
+            // Obtener productos únicos para evitar validar el mismo producto varias veces.
+            // Issue #237: se omiten los productos cuyas líneas están TODAS intactas (preexistentes,
+            // sin tocar y sin oferta; marcadas por el controller). Así una línea correcta que no se
+            // modifica no se re-bloquea por una subida de tarifa posterior. Si alguna línea del
+            // producto sí se toca (o es nueva), el producto se valida con normalidad.
             var productosUnicos = pedido.Lineas
                 .Where(l => l.tipoLinea == 1)
-                .Select(l => l.Producto)
-                .Distinct();
+                .GroupBy(l => l.Producto)
+                .Where(g => g.Any(l => !l.NoRevalidarDescuento))
+                .Select(g => g.Key);
 
             foreach (string numeroProducto in productosUnicos)
             {

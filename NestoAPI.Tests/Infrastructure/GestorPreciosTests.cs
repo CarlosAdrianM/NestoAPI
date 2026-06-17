@@ -682,6 +682,86 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void ValidadorDescuentosPermitidos_LineaIntacta_NoRevalidaElDescuento_Issue237()
+        {
+            // Línea preexistente intacta (NoRevalidarDescuento) con un descuento que normalmente NO
+            // estaría autorizado (p. ej. la tarifa subió tras meter el pedido): no debe bloquear la unión.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "FAMYPROD",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 30,            // 70 % de dto, normalmente NO autorizado
+                NoRevalidarDescuento = true
+            });
+
+            RespuestaValidacion respuesta = new ValidadorDescuentosPermitidos().EsPedidoValido(pedido, GestorPrecios.servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, "Una línea intacta no debe re-bloquearse por una subida de tarifa posterior");
+        }
+
+        [TestMethod]
+        public void ValidadorDescuentosPermitidos_LineaNoIntacta_SiRevalidaElDescuento_Issue237()
+        {
+            // La misma línea SIN marcar como intacta debe seguir fallando (no relajar de más).
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "FAMYPROD",
+                AplicarDescuento = true,
+                Cantidad = 1,
+                PrecioUnitario = 30,
+                NoRevalidarDescuento = false
+            });
+
+            RespuestaValidacion respuesta = new ValidadorDescuentosPermitidos().EsPedidoValido(pedido, GestorPrecios.servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada, "Una línea no intacta debe seguir validándose");
+        }
+
+        private static LineaPedidoVentaDTO LineaPreexistente(int cantidad, decimal precio, int? oferta = null)
+            => new LineaPedidoVentaDTO { id = 100, Producto = "45363", Cantidad = cantidad, PrecioUnitario = precio, oferta = oferta };
+
+        [TestMethod]
+        public void EsIntactaParaDescuento_MismaCantidadYPrecioSinOferta_True()
+        {
+            Assert.IsTrue(LineaPreexistente(1, 165m).EsIntactaParaDescuento(1, 165m));
+        }
+
+        [TestMethod]
+        public void EsIntactaParaDescuento_LineaNueva_False()
+        {
+            // id == 0 → línea nueva, debe validarse.
+            Assert.IsFalse(new LineaPedidoVentaDTO { id = 0, Producto = "45363", Cantidad = 1, PrecioUnitario = 165m }.EsIntactaParaDescuento(1, 165m));
+        }
+
+        [TestMethod]
+        public void EsIntactaParaDescuento_CantidadDistinta_False()
+        {
+            Assert.IsFalse(LineaPreexistente(2, 165m).EsIntactaParaDescuento(1, 165m));
+        }
+
+        [TestMethod]
+        public void EsIntactaParaDescuento_PrecioDistinto_False()
+        {
+            Assert.IsFalse(LineaPreexistente(1, 160m).EsIntactaParaDescuento(1, 165m));
+        }
+
+        [TestMethod]
+        public void EsIntactaParaDescuento_ConOferta_False()
+        {
+            // Línea intacta pero con oferta (combinada): debe seguir validándose.
+            Assert.IsFalse(LineaPreexistente(1, 165m, oferta: 7).EsIntactaParaDescuento(1, 165m));
+        }
+
+        [TestMethod]
         public void GestorPrecios_EsOfertaPermitida_SiNoHayUnDescuentoValidoYLlevaDescuentoNoEsPermitida()
         {
             Producto producto = GestorPrecios.servicio.BuscarProducto("AA21");
