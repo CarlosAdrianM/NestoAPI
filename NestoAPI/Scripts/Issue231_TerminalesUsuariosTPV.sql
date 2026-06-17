@@ -5,7 +5,7 @@
 -- como fallback, con el terminal de Paloma ya corregido); ejecutar esto habilita editar el mapeo
 -- (altas/bajas/cambios de terminal) con un simple UPDATE/INSERT, sin recompilar ni publicar.
 --
--- GRANT al usuario de la conexión de negocio (cuenta máquina), ver patrón de NestoConnection.
+-- GRANT a la cuenta máquina con la que corre la API (NestoConnection / integrated security).
 
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'TerminalesUsuariosTPV')
 BEGIN
@@ -27,5 +27,5 @@ BEGIN
         ('00022126270', 'Almacén'),
         ('91901357047', 'Almacén');
 
-    GRANT SELECT ON TerminalesUsuariosTPV TO [NUEVAVISION\RDS2016$];
+    GRANT SELECT, INSERT, UPDATE, DELETE ON TerminalesUsuariosTPV TO [NUEVAVISION\RDS2016$];
 END
