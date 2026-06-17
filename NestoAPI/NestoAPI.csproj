@@ -564,6 +564,7 @@
     </Compile>
     <Compile Include="Infraestructure\Agencias\GestorEnviosAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorDireccionDataTrans.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraCosteEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraZonaEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ITarifaAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaGLSBaleares.cs" />

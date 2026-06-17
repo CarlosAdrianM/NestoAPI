@@ -211,6 +211,7 @@
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
+    <Compile Include="Infrastructure\Agencias\CalculadoraCosteEnvioTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraZonaEnvioTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasGLSTests.cs" />
     <Compile Include="Infrastructure\Agencias\MapeadorDireccionDataTransTests.cs" />
