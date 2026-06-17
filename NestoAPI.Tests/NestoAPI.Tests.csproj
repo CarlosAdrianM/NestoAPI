@@ -218,6 +218,7 @@
     <Compile Include="Infrastructure\Agencias\TarifasGLSTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasInnovatransTests.cs" />
     <Compile Include="Infrastructure\Agencias\MapeadorDireccionDataTransTests.cs" />
+    <Compile Include="Infrastructure\Agencias\ConfiguracionInnovatransTests.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />
     <Compile Include="Infrastructure\GestorClientesTests.cs" />
     <Compile Include="Infrastructure\GestorEnviosAgenciaTests.cs" />
