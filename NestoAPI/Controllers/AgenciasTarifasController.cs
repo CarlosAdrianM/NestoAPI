@@ -132,7 +132,11 @@ namespace NestoAPI.Controllers
         [Route("api/Agencias/MasEconomica")]
         public IHttpActionResult GetMasEconomica(string codigoPostal, decimal peso, string empresa = "1", decimal reembolso = 0)
         {
-            var comparador = new ComparadorAgencias(new RegistroTarifas(), new ProveedorRecargoCombustibleEF(db));
+            // Solo se comparan agencias dadas de alta en AgenciasTransporte: una tarifa portada pero
+            // sin fila (p.ej. Innovatrans antes de crearla) no debe entrar en la comparación.
+            var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
+            var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
+            var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db));
             OpcionEnvioAgencia mejor = comparador.MasEconomica(empresa, codigoPostal, peso, reembolso);
 
             if (mejor == null)

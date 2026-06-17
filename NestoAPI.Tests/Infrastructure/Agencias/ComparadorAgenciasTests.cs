@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
@@ -105,6 +106,18 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             var mejor = comparador.MasEconomica("1", "08001", peso: 3m, reembolso: 0m);
 
             Assert.IsNull(mejor);
+        }
+
+        [TestMethod]
+        public void RegistroTarifasExistentes_SoloDevuelveLasAgenciasConFila()
+        {
+            // Numero 1 (GLS) existe; 12 (Innovatrans) no -> Innovatrans queda fuera de la comparación.
+            var registro = new RegistroTarifasExistentes(new RegistroTarifas(), new[] { 1 });
+
+            var ids = registro.Todas().Select(t => t.AgenciaId).Distinct().ToList();
+
+            Assert.IsTrue(ids.Contains(1));
+            Assert.IsFalse(ids.Contains(12), "Innovatrans (12) no tiene fila todavía: no se compara");
         }
 
         [TestMethod]

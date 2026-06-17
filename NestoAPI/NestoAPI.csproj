@@ -570,6 +570,7 @@
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgenciasContratos.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ProveedorRecargoCombustibleEF.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\RegistroTarifas.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\RegistroTarifasExistentes.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraZonaEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ITarifaAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaGLSBaleares.cs" />

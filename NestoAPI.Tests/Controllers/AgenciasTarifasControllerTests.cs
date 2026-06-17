@@ -143,6 +143,17 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void GetMasEconomica_SinAgenciasDadasDeAlta_DevuelveNotFound()
+        {
+            // Sin filas en AgenciasTransporte, ninguna tarifa entra en la comparación.
+            Datos();
+
+            var resultado = controller.GetMasEconomica("08001", peso: 3m, empresa: "1", reembolso: 0m);
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        [TestMethod]
         public void GetMasEconomica_CodigoPostalPeninsular_DevuelveGLS()
         {
             // GLS (BusinessParcel 5kg=3,66) gana a Innovatrans Economy (5kg=4,53) en Peninsular.
