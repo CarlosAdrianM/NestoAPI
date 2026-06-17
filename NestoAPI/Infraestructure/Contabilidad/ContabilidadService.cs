@@ -1,7 +1,6 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.ApuntesBanco;
 using NestoAPI.Models.Bancos;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Data;
@@ -14,16 +13,16 @@ namespace NestoAPI.Infraestructure.Contabilidad
 {
     public class ContabilidadService : IContabilidadService
     {
-        private readonly ILectorParametrosUsuario _lectorParametros;
+        private readonly IRepositorioTerminalesTPV _repositorioTerminales;
         private Dictionary<string, string> _mapaTerminalesResuelto;
 
-        public ContabilidadService() : this(new LectorParametrosUsuario())
+        public ContabilidadService() : this(new RepositorioTerminalesTPV())
         {
         }
 
-        public ContabilidadService(ILectorParametrosUsuario lectorParametros)
+        public ContabilidadService(IRepositorioTerminalesTPV repositorioTerminales)
         {
-            _lectorParametros = lectorParametros;
+            _repositorioTerminales = repositorioTerminales;
         }
 
         public async Task<int> ContabilizarDiario(string empresa, string diario, string usuario)
@@ -465,42 +464,19 @@ namespace NestoAPI.Infraestructure.Contabilidad
             return string.Empty; // O un valor predeterminado si prefieres
         }
 
-        internal const string ParametroTerminalesUsuariosTPV = "TerminalesUsuariosTPV";
-
-        // NestoAPI#231: el mapeo terminal→usuario se lee del parámetro TerminalesUsuariosTPV (JSON),
-        // editable sin recompilar. Si no existe o no parsea, se usa el diccionario por defecto. Se
-        // cachea durante la operación (la instancia del servicio es por operación).
+        // NestoAPI#231: el mapeo terminal→usuario se lee de la tabla TerminalesUsuariosTPV (vía
+        // IRepositorioTerminalesTPV), editable sin recompilar. Si la tabla no existe o está vacía,
+        // se usa el diccionario por defecto. Se cachea durante la operación (la instancia del
+        // servicio es por operación).
         private Dictionary<string, string> ObtenerMapaTerminales()
         {
             if (_mapaTerminalesResuelto != null)
             {
                 return _mapaTerminalesResuelto;
             }
-            _mapaTerminalesResuelto = LeerMapaTerminalesDeParametro() ?? TerminalesUsuarios;
+            Dictionary<string, string> mapa = _repositorioTerminales?.LeerMapa();
+            _mapaTerminalesResuelto = (mapa != null && mapa.Count > 0) ? mapa : TerminalesUsuarios;
             return _mapaTerminalesResuelto;
-        }
-
-        private Dictionary<string, string> LeerMapaTerminalesDeParametro()
-        {
-            if (_lectorParametros == null)
-            {
-                return null;
-            }
-            string json = _lectorParametros.LeerParametro(
-                Constantes.Empresas.EMPRESA_POR_DEFECTO, "(defecto)", ParametroTerminalesUsuariosTPV);
-            if (string.IsNullOrWhiteSpace(json))
-            {
-                return null;
-            }
-            try
-            {
-                var mapa = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
-                return (mapa != null && mapa.Count > 0) ? mapa : null;
-            }
-            catch (JsonException)
-            {
-                return null; // fallback al diccionario por defecto
-            }
         }
 
         public async Task ContabilizarComisionesTarjetas(List<MovimientoTPVDTO> movimientosTPV)

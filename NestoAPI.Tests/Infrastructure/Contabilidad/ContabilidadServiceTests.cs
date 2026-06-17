@@ -1,46 +1,45 @@
+using System.Collections.Generic;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Contabilidad;
 
 namespace NestoAPI.Tests.Infrastructure.Contabilidad
 {
     /// <summary>
-    /// NestoAPI#231: el mapeo terminal TPV → usuario se lee del parámetro TerminalesUsuariosTPV
-    /// (JSON), con fallback al diccionario por defecto. Y el terminal de Paloma ya es el nuevo.
+    /// NestoAPI#231: el mapeo terminal TPV → usuario se lee de la tabla TerminalesUsuariosTPV
+    /// (vía IRepositorioTerminalesTPV), con fallback al diccionario por defecto. Y el terminal de
+    /// Paloma ya es el nuevo.
     /// </summary>
     [TestClass]
     public class ContabilidadServiceTests
     {
-        private const string ParametroTerminales = "TerminalesUsuariosTPV";
-
-        private static ContabilidadService ConParametro(string valor)
+        private static ContabilidadService ConMapa(Dictionary<string, string> mapa)
         {
-            var lector = A.Fake<ILectorParametrosUsuario>();
-            A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, ParametroTerminales)).Returns(valor);
-            return new ContabilidadService(lector);
+            var repositorio = A.Fake<IRepositorioTerminalesTPV>();
+            A.CallTo(() => repositorio.LeerMapa()).Returns(mapa);
+            return new ContabilidadService(repositorio);
         }
 
         [TestMethod]
-        public void ObtenerUsuarioTerminal_ConParametroJson_DevuelveElUsuarioDelParametro()
+        public void ObtenerUsuarioTerminal_ConMapaDeBD_DevuelveElUsuarioDeLaTabla()
         {
-            var servicio = ConParametro("{\"99999\":\"Nuevo Usuario\"}");
+            var servicio = ConMapa(new Dictionary<string, string> { { "99999", "Nuevo Usuario" } });
 
             Assert.AreEqual("Nuevo Usuario", servicio.ObtenerUsuarioTerminal("99999"));
         }
 
         [TestMethod]
-        public void ObtenerUsuarioTerminal_SinParametro_UsaDiccionarioPorDefecto()
+        public void ObtenerUsuarioTerminal_SinMapaDeBD_UsaDiccionarioPorDefecto()
         {
-            var servicio = ConParametro(null);
+            var servicio = ConMapa(null);
 
             Assert.AreEqual("Victoria", servicio.ObtenerUsuarioTerminal("91900804275"));
         }
 
         [TestMethod]
-        public void ObtenerUsuarioTerminal_ParametroNoParsea_UsaDiccionarioPorDefecto()
+        public void ObtenerUsuarioTerminal_MapaVacio_UsaDiccionarioPorDefecto()
         {
-            var servicio = ConParametro("esto no es json");
+            var servicio = ConMapa(new Dictionary<string, string>());
 
             Assert.AreEqual("Victoria", servicio.ObtenerUsuarioTerminal("91900804275"));
         }
@@ -48,7 +47,7 @@ namespace NestoAPI.Tests.Infrastructure.Contabilidad
         [TestMethod]
         public void ObtenerUsuarioTerminal_Paloma_UsaElTerminalNuevo()
         {
-            var servicio = ConParametro(null);
+            var servicio = ConMapa(null);
 
             Assert.AreEqual("Paloma", servicio.ObtenerUsuarioTerminal("91901505888"));
         }
@@ -56,7 +55,7 @@ namespace NestoAPI.Tests.Infrastructure.Contabilidad
         [TestMethod]
         public void ObtenerUsuarioTerminal_TerminalDesconocido_DevuelveVacio()
         {
-            var servicio = ConParametro(null);
+            var servicio = ConMapa(null);
 
             Assert.AreEqual(string.Empty, servicio.ObtenerUsuarioTerminal("00000000000"));
         }
