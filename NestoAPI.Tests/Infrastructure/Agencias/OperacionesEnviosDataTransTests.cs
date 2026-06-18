@@ -114,6 +114,19 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task InsertarEnvio_Observaciones_VanAntesDeTipoServ()
+        {
+            // El WS de DataTrans (Axis2) exige el orden del XSD: observaciones antes de tipoServ.
+            var handler = new HandlerFalso(HttpStatusCode.OK, RESP_INSERTAR_OK);
+
+            await CrearOperaciones(handler).InsertarEnvioAsync(EnvioDePrueba());
+
+            string cuerpo = handler.UltimoCuerpo;
+            Assert.IsTrue(cuerpo.IndexOf("observaciones") < cuerpo.IndexOf("tipoServ"),
+                "observaciones debe ir antes de tipoServ (Axis2 rechaza el orden incorrecto).");
+        }
+
+        [TestMethod]
         public async Task InsertarEnvio_DecimalesViajanConPunto_AunEnCulturaEspanola()
         {
             CultureInfo original = Thread.CurrentThread.CurrentCulture;

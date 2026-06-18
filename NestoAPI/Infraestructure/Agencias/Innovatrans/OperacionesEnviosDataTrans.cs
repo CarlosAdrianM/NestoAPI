@@ -114,7 +114,11 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 Campo("referencia", envio.Referencia));
             AnadirDireccion(envios, "Rem", envio.Remitente);
             AnadirDireccion(envios, "Des", envio.Destinatario);
+            // OJO ORDEN: el WS de DataTrans (Axis2) exige el orden EXACTO del XSD. observaciones va
+            // tras el bloque del destinatario y ANTES de tipoServ; si no, rechaza con
+            // "ADBException: Unexpected subelement observaciones". El resto va en orden de XSD.
             envios.Add(
+                Campo("observaciones", envio.Observaciones),
                 Campo("tipoServ", envio.TipoServicio),
                 Campo("largo", Dec(envio.Largo)),
                 Campo("alto", Dec(envio.Alto)),
@@ -124,8 +128,7 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 Campo("paqs", envio.Paqs.ToString(CultureInfo.InvariantCulture)),
                 Campo("reembolso", Dec(envio.Reembolso)),
                 Campo("comReembPag", SiNo(envio.ComisionReembolsoPagada)),
-                Campo("portesPagados", SiNo(envio.PortesPagados)),
-                Campo("observaciones", envio.Observaciones));
+                Campo("portesPagados", SiNo(envio.PortesPagados)));
 
             XDocument doc = await _cliente.EjecutarAsync("Envios", "InsertarEnvios", envios).ConfigureAwait(false);
 
