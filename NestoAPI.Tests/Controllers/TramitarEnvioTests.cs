@@ -27,6 +27,7 @@ namespace NestoAPI.Tests.Controllers
         private IFabricaAgenciasRemotas fakeFabrica;
         private IAgenciaRemota fakeAgencia;
         private EnviosAgenciasController controller;
+        private AgenciaLlamadaWeb auditoria;
 
         [TestInitialize]
         public void Setup()
@@ -39,7 +40,13 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
 
             fakeAgencia = A.Fake<IAgenciaRemota>();
+            A.CallTo(() => fakeAgencia.Intercambios).Returns(new List<IntercambioRemoto>());
             fakeFabrica = A.Fake<IFabricaAgenciasRemotas>();
+
+            // Captura la auditoría que se inserta, para poder inspeccionarla.
+            A.CallTo(() => fakeLlamadas.Add(A<AgenciaLlamadaWeb>.Ignored))
+                .Invokes((AgenciaLlamadaWeb l) => auditoria = l)
+                .ReturnsLazily((AgenciaLlamadaWeb l) => l);
 
             controller = new EnviosAgenciasController(db, fakeFabrica);
             controller.Request = new System.Net.Http.HttpRequestMessage
@@ -127,6 +134,32 @@ namespace NestoAPI.Tests.Controllers
             // Auditoría con éxito.
             A.CallTo(() => fakeLlamadas.Add(A<AgenciaLlamadaWeb>.That.Matches(l => l.Exito && l.Agencia == "Innovatrans"))).MustHaveHappened();
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Tramitar_Exito_AuditaElSoapCrudoDeLosIntercambios()
+        {
+            EnviosAgencia envio = EnvioPendiente();
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored))
+                .Returns(Task.FromResult(new ResultadoTramitacionRemota { Exito = true, Albaran = "0123456789", Bultos = 1, Etiqueta = EtiquetaZpl() }));
+            A.CallTo(() => fakeAgencia.Intercambios).Returns(new List<IntercambioRemoto>
+            {
+                new IntercambioRemoto { Operacion = "InsertarEnvios", Url = "http://dtx/Envios", Peticion = "<peticion-insert/>", Respuesta = "<respuesta-insert/>" },
+                new IntercambioRemoto { Operacion = "BusquedaEtiquetas", Url = "http://dtx/Etiquetas", Peticion = "<peticion-etiqueta/>", Respuesta = "<respuesta-etiqueta/>" }
+            });
+
+            await controller.TramitarEnvio(1);
+
+            Assert.IsNotNull(auditoria);
+            Assert.IsTrue(auditoria.Exito);
+            // Las peticiones crudas de ambos intercambios van en CuerpoLlamada.
+            StringAssert.Contains(auditoria.CuerpoLlamada, "<peticion-insert/>");
+            StringAssert.Contains(auditoria.CuerpoLlamada, "<peticion-etiqueta/>");
+            // Las respuestas crudas en CuerpoRespuesta.
+            StringAssert.Contains(auditoria.CuerpoRespuesta, "<respuesta-insert/>");
+            StringAssert.Contains(auditoria.CuerpoRespuesta, "<respuesta-etiqueta/>");
         }
 
         [TestMethod]

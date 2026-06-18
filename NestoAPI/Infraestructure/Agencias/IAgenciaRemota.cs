@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
 
@@ -53,5 +54,11 @@ namespace NestoAPI.Infraestructure.Agencias
 
         /// <summary>Reimprime la etiqueta de un albarán ya insertado (no reinserta). Idempotente.</summary>
         Task<EtiquetaDataTrans> ReimprimirAsync(string albaran, int? desdeBulto = null, int? hastaBulto = null);
+
+        /// <summary>
+        /// Intercambios crudos (petición + respuesta) hechos contra la API de la agencia durante las
+        /// operaciones de esta instancia. Para auditar/depurar (sobre todo el primer envío real).
+        /// </summary>
+        IReadOnlyList<IntercambioRemoto> Intercambios { get; }
     }
 }

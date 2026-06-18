@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
 
 namespace NestoAPI.Tests.Infrastructure.Agencias
@@ -140,6 +141,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             var handler = new HandlerFalso(HttpStatusCode.InternalServerError, "Boom");
 
             await CrearOperaciones(handler).BuscarPoblacionAsync("28001");
+        }
+
+        [TestMethod]
+        public async Task EjecutarAsync_ConRegistro_CapturaPeticionYRespuestaCrudas()
+        {
+            var handler = new HandlerFalso(HttpStatusCode.OK, RESPUESTA_200);
+            var registro = new RegistroIntercambiosRemotos();
+            var cliente = new ClienteSoapDataTrans(ConfigDePrueba(), ControlSinEspera(), new HttpClient(handler), registro);
+
+            await new OperacionesLecturaDataTrans(cliente).BuscarPoblacionAsync("28001");
+
+            Assert.AreEqual(1, registro.Intercambios.Count);
+            IntercambioRemoto i = registro.Intercambios[0];
+            Assert.AreEqual("BuscarPoblacion", i.Operacion);
+            StringAssert.Contains(i.Peticion, "BuscarPoblacionTypeIn");
+            StringAssert.Contains(i.Respuesta, "BuscarPoblacionTypeOut");
         }
 
         /// <summary>HttpMessageHandler de prueba: captura la petición y devuelve una respuesta fija.</summary>

@@ -574,6 +574,7 @@
     <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorTipoServicioDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\AgenciaRemotaInnovatrans.cs" />
     <Compile Include="Infraestructure\Agencias\IAgenciaRemota.cs" />
+    <Compile Include="Infraestructure\Agencias\RegistroIntercambiosRemotos.cs" />
     <Compile Include="Infraestructure\Agencias\FabricaAgenciasRemotas.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraCosteEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgencias.cs" />

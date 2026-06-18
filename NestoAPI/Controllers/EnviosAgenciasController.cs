@@ -186,7 +186,9 @@ namespace NestoAPI.Controllers
             if (!string.IsNullOrWhiteSpace(envio.CodigoBarras))
             {
                 EtiquetaDataTrans reimpresion = await ReimprimirSeguro(agencia, envio.CodigoBarras.Trim());
-                if (reimpresion == null || !reimpresion.Exito)
+                bool reimpresionOk = reimpresion != null && reimpresion.Exito;
+                await AuditarTramitacion(envio, agencia, reimpresionOk, reimpresionOk ? null : "No se pudo reimprimir la etiqueta.");
+                if (!reimpresionOk)
                 {
                     return Content(HttpStatusCode.BadGateway, "No se pudo reimprimir la etiqueta del envío ya tramitado.");
                 }
@@ -200,13 +202,13 @@ namespace NestoAPI.Controllers
             }
             catch (DataTransException ex)
             {
-                await AuditarTramitacion(envio, false, ex.Message, null);
+                await AuditarTramitacion(envio, agencia, false, ex.Message);
                 return Content(HttpStatusCode.BadGateway, ex.Message);
             }
 
             if (!resultado.Exito)
             {
-                await AuditarTramitacion(envio, false, resultado.Error, null);
+                await AuditarTramitacion(envio, agencia, false, resultado.Error);
                 return Content(HttpStatusCode.BadGateway, resultado.Error);
             }
 
@@ -220,7 +222,7 @@ namespace NestoAPI.Controllers
             }
             envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
             envio.FechaModificacion = DateTime.Now;
-            db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, true, null, resultado.Albaran));
+            db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, agencia, true, null));
             await db.SaveChangesAsync();
 
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
@@ -253,23 +255,35 @@ namespace NestoAPI.Controllers
             Observaciones = envio.Observaciones?.Trim()
         };
 
-        private async Task AuditarTramitacion(EnviosAgencia envio, bool exito, string error, string albaran)
+        private async Task AuditarTramitacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
         {
-            db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, exito, error, albaran));
+            db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, agencia, exito, error));
             await db.SaveChangesAsync();
         }
 
-        private AgenciaLlamadaWeb ConstruirAuditoria(EnviosAgencia envio, bool exito, string error, string albaran) => new AgenciaLlamadaWeb
+        private AgenciaLlamadaWeb ConstruirAuditoria(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
         {
-            Agencia = "Innovatrans",
-            Fecha = DateTime.Now,
-            Exito = exito,
-            UrlLlamada = ConfigurationManager.AppSettings["Innovatrans:Url"],
-            CuerpoLlamada = $"Tramitar envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})",
-            CuerpoRespuesta = exito ? $"Albarán {albaran}, bultos {envio.Bultos}" : null,
-            TextoRespuestaError = error,
-            Usuario = User?.Identity?.Name ?? "NestoAPI"
-        };
+            var intercambios = agencia.Intercambios;
+            return new AgenciaLlamadaWeb
+            {
+                Agencia = "Innovatrans",
+                Fecha = DateTime.Now,
+                Exito = exito,
+                UrlLlamada = intercambios.LastOrDefault()?.Url ?? ConfigurationManager.AppSettings["Innovatrans:Url"],
+                // SOAP crudo de cada intercambio (insertar + etiquetar). Con la cabecera del envío
+                // para no perder el contexto al revisar la auditoría.
+                CuerpoLlamada = $"Tramitar envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})\n\n"
+                    + Serializar(intercambios, i => i.Peticion),
+                CuerpoRespuesta = Serializar(intercambios, i => i.Respuesta),
+                TextoRespuestaError = error,
+                Usuario = User?.Identity?.Name ?? "NestoAPI"
+            };
+        }
+
+        private static string Serializar(IReadOnlyList<IntercambioRemoto> intercambios, Func<IntercambioRemoto, string> parte)
+            => intercambios.Count == 0
+                ? null
+                : string.Join("\n\n", intercambios.Select(i => $"=== {i.Operacion} ===\n{parte(i)}"));
 
         private static TramitarEnvioResultadoDTO AResultado(EnviosAgencia envio, string albaran, short bultos, EtiquetaDataTrans etiqueta, bool reimpresion) => new TramitarEnvioResultadoDTO
         {

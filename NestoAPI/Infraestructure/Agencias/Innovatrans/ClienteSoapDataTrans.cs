@@ -51,12 +51,15 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         private readonly ConfiguracionInnovatrans _config;
         private readonly ControlTasaDataTrans _control;
         private readonly HttpClient _http;
+        private readonly RegistroIntercambiosRemotos _registro;
 
-        public ClienteSoapDataTrans(ConfiguracionInnovatrans config, ControlTasaDataTrans control = null, HttpClient http = null)
+        public ClienteSoapDataTrans(ConfiguracionInnovatrans config, ControlTasaDataTrans control = null,
+            HttpClient http = null, RegistroIntercambiosRemotos registro = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _control = control ?? ControlCompartido;
             _http = http ?? ClienteCompartido;
+            _registro = registro; // opcional: si es null, no se auditan los intercambios
         }
 
         public async Task<XDocument> EjecutarAsync(string servicio, string operacion, params XElement[] parametros)
@@ -81,12 +84,14 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 }
                 catch (HttpRequestException ex)
                 {
+                    _registro?.Registrar(operacion, url, envelope, "[sin respuesta] " + ex.Message);
                     throw new DataTransException($"No se pudo conectar con DataTrans para {operacion}: {ex.Message}", ex);
                 }
 
                 using (resp)
                 {
                     string cuerpo = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    _registro?.Registrar(operacion, url, envelope, cuerpo);
                     if (!resp.IsSuccessStatusCode)
                     {
                         throw new DataTransException($"DataTrans {operacion} devolvió HTTP {(int)resp.StatusCode}: {cuerpo}");

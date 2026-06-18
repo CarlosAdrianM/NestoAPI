@@ -27,10 +27,13 @@ namespace NestoAPI.Infraestructure.Agencias
                 return null;
             }
 
+            // El registro de intercambios lo comparten el cliente (que lo escribe) y la estrategia
+            // (que lo expone), para poder auditar el SOAP crudo de cada tramitación.
+            var registro = new RegistroIntercambiosRemotos();
             var configuracion = new ConfiguracionInnovatrans();
-            var cliente = new ClienteSoapDataTrans(configuracion);
+            var cliente = new ClienteSoapDataTrans(configuracion, registro: registro);
             var operaciones = new OperacionesEnviosDataTrans(cliente);
-            return new AgenciaRemotaInnovatrans(operaciones, LeerRemitente());
+            return new AgenciaRemotaInnovatrans(operaciones, LeerRemitente(), registro);
         }
 
         // Remitente fijo (nuestro almacén de Algete). Se configura en Web.config para no hardcodearlo.

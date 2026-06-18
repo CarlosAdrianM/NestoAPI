@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 
@@ -22,12 +23,19 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
 
         private readonly OperacionesEnviosDataTrans _operaciones;
         private readonly DireccionDataTrans _remitente;
+        private readonly RegistroIntercambiosRemotos _registro;
 
-        public AgenciaRemotaInnovatrans(OperacionesEnviosDataTrans operaciones, DireccionDataTrans remitente)
+        public AgenciaRemotaInnovatrans(OperacionesEnviosDataTrans operaciones, DireccionDataTrans remitente,
+            RegistroIntercambiosRemotos registro = null)
         {
             _operaciones = operaciones ?? throw new ArgumentNullException(nameof(operaciones));
             _remitente = remitente ?? throw new ArgumentNullException(nameof(remitente));
+            // Si no se inyecta registro, uno vacío (Intercambios nunca es null). Para que capture algo,
+            // el cliente SOAP tiene que compartir ESTE mismo registro (lo cablea la factory).
+            _registro = registro ?? new RegistroIntercambiosRemotos();
         }
+
+        public IReadOnlyList<IntercambioRemoto> Intercambios => _registro.Intercambios;
 
         public async Task<ResultadoTramitacionRemota> InsertarYEtiquetarAsync(DatosEnvioRemoto envio)
         {
