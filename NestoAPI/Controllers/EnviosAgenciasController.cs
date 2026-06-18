@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
+using System.Data.Entity.Validation;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -223,10 +224,40 @@ namespace NestoAPI.Controllers
             envio.FechaModificacion = DateTime.Now;
             // CRÍTICO: persistir el registro (albarán/estado) ANTES de auditar; si no, un fallo de la
             // auditoría dejaría un envío registrado en la agencia pero no en nuestra BD (envío fantasma).
-            await db.SaveChangesAsync();
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbEntityValidationException ex)
+            {
+                // El envío YA está registrado en la agencia (albarán resultado.Albaran) pero no se
+                // pudo guardar en nuestra BD. Logueamos el detalle de los ValidationErrors (que el
+                // mensaje genérico de EF oculta) CON el albarán, para diagnosticar el campo y poder
+                // recuperar el envío sin perderlo.
+                string detalle = DescribirErroresValidacion(ex);
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                    $"Innovatrans registró el envío {envio.Numero} (albarán {resultado.Albaran}) pero falló al guardar en BD: {detalle}", ex)));
+                return Content(HttpStatusCode.InternalServerError,
+                    $"Se registró en la agencia (albarán {resultado.Albaran}) pero no se pudo guardar en nuestra BD: {detalle}");
+            }
             await AuditarTramitacion(envio, agencia, true, null);
 
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
+        }
+
+        // Extrae el detalle de los ValidationErrors de EF (campo + mensaje); el Message genérico de
+        // DbEntityValidationException no los incluye y deja el error sin diagnosticar.
+        private static string DescribirErroresValidacion(Exception ex)
+        {
+            DbEntityValidationException validacion = ex as DbEntityValidationException;
+            if (validacion == null)
+            {
+                return ex.Message;
+            }
+            string campos = string.Join(" | ", validacion.EntityValidationErrors
+                .SelectMany(e => e.ValidationErrors)
+                .Select(v => $"{v.PropertyName}: {v.ErrorMessage}"));
+            return string.IsNullOrEmpty(campos) ? ex.Message : campos;
         }
 
         private static async Task<EtiquetaDataTrans> ReimprimirSeguro(IAgenciaRemota agencia, string albaran)
@@ -267,7 +298,8 @@ namespace NestoAPI.Controllers
             }
             catch (Exception ex)
             {
-                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(ex));
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                    $"Fallo auditando la tramitación del envío {envio.Numero}: {DescribirErroresValidacion(ex)}", ex)));
             }
         }
 
