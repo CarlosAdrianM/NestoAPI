@@ -571,6 +571,10 @@
     <Compile Include="Infraestructure\Agencias\Innovatrans\ClienteSoapDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\OperacionesLecturaDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\OperacionesEnviosDataTrans.cs" />
+    <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorTipoServicioDataTrans.cs" />
+    <Compile Include="Infraestructure\Agencias\Innovatrans\AgenciaRemotaInnovatrans.cs" />
+    <Compile Include="Infraestructure\Agencias\IAgenciaRemota.cs" />
+    <Compile Include="Infraestructure\Agencias\FabricaAgenciasRemotas.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraCosteEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgenciasContratos.cs" />

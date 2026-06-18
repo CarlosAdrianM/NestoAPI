@@ -21,6 +21,9 @@ namespace NestoAPI.Models
             // por correo (no hay integración) y no admite contra reembolso. Mínimo del pedido
             // 400€ o línea de portes de 100€ (constantes IMPORTE_MINIMO_CANARIAS y Portes.CANARIAS).
             public const int AGENCIA_CANTERAS = 11;
+            // Innovatrans (DataTrans DTX). Primera agencia con gestión remota server-side (insertar
+            // envío + etiqueta ZPL vía SOAP). Alta en AgenciasTransporte con Numero=12.
+            public const int AGENCIA_INNOVATRANS = 12;
             public const int ESTADO_PENDIENTE = -1;
             public const int ESTADO_EN_CURSO = 0;
             public const decimal REEMBOLSO_NO_COBRAR = -1M;
