@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Threading.Tasks;
 using System.Web.Http;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias.Innovatrans;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 using NestoAPI.Models;
 
@@ -144,6 +147,43 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
             return Ok(mejor);
+        }
+
+        // GET: api/Agencias/Innovatrans/Diagnostico?codigoPostal=28001
+        // Prueba de conectividad con el WebService DataTrans DTX de Innovatrans. Usa BuscarPoblacion
+        // (solo lectura: NO crea ni modifica envíos), por lo que es seguro lanzarlo contra producción.
+        // Valida de paso las credenciales: 200/300 = conectado y autenticado, 400 = clave/usuario mal.
+        [HttpGet]
+        [Route("api/Agencias/Innovatrans/Diagnostico")]
+        public async Task<IHttpActionResult> GetDiagnosticoInnovatrans(string codigoPostal = "28001")
+        {
+            try
+            {
+                var cliente = new ClienteSoapDataTrans(new ConfiguracionInnovatrans());
+                var operaciones = new OperacionesLecturaDataTrans(cliente);
+                ResultadoBuscarPoblacion resultado = await operaciones.BuscarPoblacionAsync(codigoPostal);
+
+                string estado;
+                switch (resultado.Respuesta)
+                {
+                    case 200: estado = "CONECTADO"; break;                    // auth ok + CP con población
+                    case 300: estado = "CONECTADO_SIN_RESULTADOS"; break;     // auth ok, CP sin población
+                    case 400: estado = "AUTENTICACION_INCORRECTA"; break;     // clave (MD5) o usuario mal
+                    default: estado = "RESPUESTA_INESPERADA"; break;
+                }
+
+                return Ok(new
+                {
+                    estado,
+                    respuesta = resultado.Respuesta,
+                    mensajeError = resultado.MensajeError,
+                    poblaciones = resultado.Poblaciones
+                });
+            }
+            catch (DataTransException ex)
+            {
+                return Content(HttpStatusCode.BadGateway, new { estado = "ERROR_CONEXION", detalle = ex.Message });
+            }
         }
 
         private IHttpActionResult Validar(AgenciaTransporteDTO dto)

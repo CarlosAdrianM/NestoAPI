@@ -27,6 +27,16 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         }
 
         /// <summary>
+        /// Constructor con valores explícitos (tests y composición fuera de Web.config). La
+        /// <c>clave</c> de <paramref name="credenciales"/> ya debe ser el MD5 de la contraseña.
+        /// </summary>
+        public ConfiguracionInnovatrans(string url, CredencialesDataTrans credenciales)
+        {
+            Url = url;
+            Credenciales = credenciales;
+        }
+
+        /// <summary>
         /// Deriva la <c>clave</c> de autenticación de DataTrans: MD5 de la contraseña, en
         /// hexadecimal de 32 caracteres en minúsculas. Devuelve cadena vacía si no hay contraseña.
         /// </summary>
