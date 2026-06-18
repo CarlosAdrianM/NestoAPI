@@ -63,7 +63,13 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         public string Bultos { get; set; }
         public string AgenciaDestino { get; set; }
 
-        public bool Exito => !string.IsNullOrWhiteSpace(Albaran);
+        /// <summary>
+        /// DTX a veces devuelve codError=200 pero mete en &lt;albaran&gt; un texto de error (p.ej.
+        /// "ERROR: ...NullPointerException") en vez del albarán. Por eso el éxito exige que el albarán
+        /// no esté vacío y NO empiece por "ERROR" (si no, lo trataríamos como un albarán válido).
+        /// </summary>
+        public bool Exito => !string.IsNullOrWhiteSpace(Albaran)
+            && !Albaran.TrimStart().StartsWith("ERROR", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

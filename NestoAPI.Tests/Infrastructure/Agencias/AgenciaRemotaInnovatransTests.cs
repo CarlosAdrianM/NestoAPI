@@ -102,7 +102,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             ResultadoTramitacionRemota r = await agencia.InsertarYEtiquetarAsync(EnvioMadrid());
 
             Assert.IsFalse(r.Exito);
-            StringAssert.Contains(r.Error, "500");
+            StringAssert.Contains(r.Error, "Tipo de servicio");
+            Assert.AreEqual(1, fake.Llamadas.Count, "No debe pedir etiqueta si el envío fue rechazado.");
+        }
+
+        [TestMethod]
+        public async Task InsertarYEtiquetar_AlbaranConTextoDeError_NoEsExitoNiPideEtiqueta()
+        {
+            // DTX a veces devuelve codError=200 pero mete un texto de error en el campo albarán.
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertar("ERROR: Se ha producido una excepcion: java.lang.NullPointerException", "1"));
+
+            ResultadoTramitacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .InsertarYEtiquetarAsync(EnvioMadrid());
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "NullPointerException");
             Assert.AreEqual(1, fake.Llamadas.Count, "No debe pedir etiqueta si el envío fue rechazado.");
         }
 

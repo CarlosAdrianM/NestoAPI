@@ -56,10 +56,15 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             ResultadoInsertarEnvio insercion = await _operaciones.InsertarEnvioAsync(peticion).ConfigureAwait(false);
             if (!insercion.Exito)
             {
+                // El motivo puede venir en MsgError o, cuando DTX devuelve codError=200 con un fallo
+                // interno, como texto de error en el propio campo albarán.
+                string motivo = !string.IsNullOrWhiteSpace(insercion.MsgError)
+                    ? insercion.MsgError
+                    : (!string.IsNullOrWhiteSpace(insercion.Albaran) ? insercion.Albaran : $"codError {insercion.CodError}");
                 return new ResultadoTramitacionRemota
                 {
                     Exito = false,
-                    Error = $"Innovatrans rechazó el envío (codError {insercion.CodError}): {insercion.MsgError}"
+                    Error = $"Innovatrans rechazó el envío: {motivo}"
                 };
             }
 
