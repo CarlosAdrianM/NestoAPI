@@ -12,16 +12,32 @@ using System.Web.Http.Description;
 using NestoAPI.Models;
 using System.Net.Mail;
 using System.Text;
+using System.Configuration;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
+using NestoAPI.Infraestructure.Agencias.Innovatrans;
 using System.Web.Http.Cors;
 using System.Security.Claims;
 using NestoAPI.Infraestructure.Seguridad;
 
 namespace NestoAPI.Controllers
 {
-    
-    
+    /// <summary>
+    /// Resultado de tramitar un envío con una agencia remota: el albarán que asignó la agencia, los
+    /// bultos y la etiqueta (ZPL en base64) para mandar a la Zebra. <see cref="Reimpresion"/> indica
+    /// que el envío ya estaba tramitado y solo se reimprimió (no se volvió a registrar).
+    /// </summary>
+    public class TramitarEnvioResultadoDTO
+    {
+        public int Numero { get; set; }
+        public string Albaran { get; set; }
+        public int Bultos { get; set; }
+        public bool Reimpresion { get; set; }
+        public string EtiquetaTipo { get; set; }
+        public string EtiquetaCodificacion { get; set; }
+        public string EtiquetaContenido { get; set; }
+    }
+
     public class EnviosAgenciasController : ApiController
     {
         public EnviosAgenciasController()
@@ -36,7 +52,13 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
         }
 
+        public EnviosAgenciasController(NVEntities db, IFabricaAgenciasRemotas fabricaAgenciasRemotas) : this(db)
+        {
+            this.fabricaAgenciasRemotas = fabricaAgenciasRemotas;
+        }
+
         private NVEntities db;
+        private IFabricaAgenciasRemotas fabricaAgenciasRemotas = new FabricaAgenciasRemotas();
 
         /*
         // GET: api/EnviosAgencias
@@ -133,11 +155,133 @@ namespace NestoAPI.Controllers
                 }
             }
 
-            
+
             return StatusCode(HttpStatusCode.NoContent);
         }
-        
-        
+
+        // POST: api/EnviosAgencias/5/Tramitar
+        // Tramita un envío con la agencia (server-side): lo inserta en su API, guarda el albarán y los
+        // bultos y devuelve la etiqueta ZPL para la Zebra. Solo agencias con gestión remota (hoy
+        // Innovatrans); el resto devuelve BadRequest. Idempotente: si el envío ya tiene albarán, NO
+        // reinserta (evita envío fantasma + cobro doble), solo reimprime la etiqueta. Crea envío REAL.
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/Tramitar")]
+        [ResponseType(typeof(TramitarEnvioResultadoDTO))]
+        public async Task<IHttpActionResult> TramitarEnvio(int id)
+        {
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+
+            IAgenciaRemota agencia = fabricaAgenciasRemotas.Crear(envio.Agencia);
+            if (agencia == null)
+            {
+                return BadRequest($"La agencia {envio.Agencia} no tiene gestión remota en el servidor.");
+            }
+
+            // Idempotencia: si ya hay albarán, "tramitar" = reimprimir (no reinsertar).
+            if (!string.IsNullOrWhiteSpace(envio.CodigoBarras))
+            {
+                EtiquetaDataTrans reimpresion = await ReimprimirSeguro(agencia, envio.CodigoBarras.Trim());
+                if (reimpresion == null || !reimpresion.Exito)
+                {
+                    return Content(HttpStatusCode.BadGateway, "No se pudo reimprimir la etiqueta del envío ya tramitado.");
+                }
+                return Ok(AResultado(envio, envio.CodigoBarras.Trim(), envio.Bultos, reimpresion, reimpresion: true));
+            }
+
+            ResultadoTramitacionRemota resultado;
+            try
+            {
+                resultado = await agencia.InsertarYEtiquetarAsync(MapearEnvioRemoto(envio));
+            }
+            catch (DataTransException ex)
+            {
+                await AuditarTramitacion(envio, false, ex.Message, null);
+                return Content(HttpStatusCode.BadGateway, ex.Message);
+            }
+
+            if (!resultado.Exito)
+            {
+                await AuditarTramitacion(envio, false, resultado.Error, null);
+                return Content(HttpStatusCode.BadGateway, resultado.Error);
+            }
+
+            envio.CodigoBarras = resultado.Albaran;
+            envio.Bultos = (short)resultado.Bultos;
+            envio.Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO;
+            // Issue #135: con el envío ya tramitado, el sentinel de reembolso (<0) pasa a 0.
+            if (envio.Reembolso < 0)
+            {
+                envio.Reembolso = 0;
+            }
+            envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            envio.FechaModificacion = DateTime.Now;
+            db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, true, null, resultado.Albaran));
+            await db.SaveChangesAsync();
+
+            return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
+        }
+
+        private static async Task<EtiquetaDataTrans> ReimprimirSeguro(IAgenciaRemota agencia, string albaran)
+        {
+            try
+            {
+                return await agencia.ReimprimirAsync(albaran);
+            }
+            catch (DataTransException)
+            {
+                return null;
+            }
+        }
+
+        private static DatosEnvioRemoto MapearEnvioRemoto(EnviosAgencia envio) => new DatosEnvioRemoto
+        {
+            Referencia = envio.Pedido?.ToString(),
+            Nombre = envio.Nombre?.Trim(),
+            Telefono = envio.Telefono?.Trim(),
+            Movil = envio.Movil?.Trim(),
+            CodigoPostal = envio.CodPostal?.Trim(),
+            Poblacion = envio.Poblacion?.Trim(),
+            Direccion = envio.Direccion?.Trim(),
+            Peso = envio.Peso,
+            Bultos = envio.Bultos,
+            Reembolso = envio.Reembolso,
+            Observaciones = envio.Observaciones?.Trim()
+        };
+
+        private async Task AuditarTramitacion(EnviosAgencia envio, bool exito, string error, string albaran)
+        {
+            db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, exito, error, albaran));
+            await db.SaveChangesAsync();
+        }
+
+        private AgenciaLlamadaWeb ConstruirAuditoria(EnviosAgencia envio, bool exito, string error, string albaran) => new AgenciaLlamadaWeb
+        {
+            Agencia = "Innovatrans",
+            Fecha = DateTime.Now,
+            Exito = exito,
+            UrlLlamada = ConfigurationManager.AppSettings["Innovatrans:Url"],
+            CuerpoLlamada = $"Tramitar envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})",
+            CuerpoRespuesta = exito ? $"Albarán {albaran}, bultos {envio.Bultos}" : null,
+            TextoRespuestaError = error,
+            Usuario = User?.Identity?.Name ?? "NestoAPI"
+        };
+
+        private static TramitarEnvioResultadoDTO AResultado(EnviosAgencia envio, string albaran, short bultos, EtiquetaDataTrans etiqueta, bool reimpresion) => new TramitarEnvioResultadoDTO
+        {
+            Numero = envio.Numero,
+            Albaran = albaran,
+            Bultos = bultos,
+            Reimpresion = reimpresion,
+            EtiquetaTipo = etiqueta?.Tipo,
+            EtiquetaCodificacion = etiqueta?.Codificacion,
+            EtiquetaContenido = etiqueta?.Contenido
+        };
+
         // POST: api/EnviosAgencias
         [ResponseType(typeof(EnviosAgencia))]
         public async Task<IHttpActionResult> PostEnviosAgencia(EnviosAgencia enviosAgencia)

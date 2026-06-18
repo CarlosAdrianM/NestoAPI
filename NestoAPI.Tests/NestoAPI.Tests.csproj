@@ -194,6 +194,7 @@
     <Compile Include="Controllers\PedidosCompraControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Controllers\CrearEtiquetaPendienteTests.cs" />
+    <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
