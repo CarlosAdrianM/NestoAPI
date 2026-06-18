@@ -221,8 +221,10 @@ namespace NestoAPI.Controllers
             }
             envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
             envio.FechaModificacion = DateTime.Now;
-            db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, agencia, true, null));
+            // CRÍTICO: persistir el registro (albarán/estado) ANTES de auditar; si no, un fallo de la
+            // auditoría dejaría un envío registrado en la agencia pero no en nuestra BD (envío fantasma).
             await db.SaveChangesAsync();
+            await AuditarTramitacion(envio, agencia, true, null);
 
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
         }
@@ -256,26 +258,38 @@ namespace NestoAPI.Controllers
 
         private async Task AuditarTramitacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
         {
-            db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, agencia, exito, error));
-            await db.SaveChangesAsync();
+            // La auditoría es best-effort: si falla (validación, etc.) NUNCA debe enmascarar el error
+            // real de la tramitación ni revertir el registro ya guardado del envío.
+            try
+            {
+                db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, agencia, exito, error));
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(ex));
+            }
         }
 
         private AgenciaLlamadaWeb ConstruirAuditoria(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
         {
+            // Las columnas de AgenciasLlamadasWeb son NOT NULL y varias tienen longitud máxima
+            // (UrlLlamada/TextoRespuestaError 255, Usuario 30, Agencia 50); CuerpoLlamada/Respuesta son
+            // nvarchar(max). Hay que respetar ambas o EF lanza DbEntityValidationException.
             var intercambios = agencia.Intercambios;
             return new AgenciaLlamadaWeb
             {
-                Agencia = "Innovatrans",
+                Agencia = Limitar("Innovatrans", 50),
                 Fecha = DateTime.Now,
                 Exito = exito,
-                UrlLlamada = intercambios.LastOrDefault()?.Url ?? ConfigurationManager.AppSettings["Innovatrans:Url"],
+                UrlLlamada = Limitar(intercambios.LastOrDefault()?.Url ?? ConfigurationManager.AppSettings["Innovatrans:Url"], 255),
                 // SOAP crudo de cada intercambio (insertar + etiquetar). Con la cabecera del envío
                 // para no perder el contexto al revisar la auditoría.
                 CuerpoLlamada = $"Tramitar envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})\n\n"
-                    + Serializar(intercambios, i => i.Peticion),
-                CuerpoRespuesta = Serializar(intercambios, i => i.Respuesta),
-                TextoRespuestaError = error,
-                Usuario = User?.Identity?.Name ?? "NestoAPI"
+                    + (Serializar(intercambios, i => i.Peticion) ?? string.Empty),
+                CuerpoRespuesta = Serializar(intercambios, i => i.Respuesta) ?? string.Empty,
+                TextoRespuestaError = Limitar(error, 255),
+                Usuario = Limitar(User?.Identity?.Name ?? "NestoAPI", 30)
             };
         }
 
@@ -283,6 +297,16 @@ namespace NestoAPI.Controllers
             => intercambios.Count == 0
                 ? null
                 : string.Join("\n\n", intercambios.Select(i => $"=== {i.Operacion} ===\n{parte(i)}"));
+
+        // Recorta a la longitud máxima de la columna y nunca devuelve null (las columnas son NOT NULL).
+        private static string Limitar(string valor, int maximo)
+        {
+            if (string.IsNullOrEmpty(valor))
+            {
+                return string.Empty;
+            }
+            return valor.Length <= maximo ? valor : valor.Substring(0, maximo);
+        }
 
         private static TramitarEnvioResultadoDTO AResultado(EnviosAgencia envio, string albaran, short bultos, EtiquetaDataTrans etiqueta, bool reimpresion) => new TramitarEnvioResultadoDTO
         {

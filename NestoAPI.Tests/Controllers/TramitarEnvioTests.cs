@@ -163,6 +163,29 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Tramitar_FalloConErrorLargo_AuditoriaRespetaLosLimitesYNoEsNull()
+        {
+            EnviosAgencia envio = EnvioPendiente();
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            // Error muy largo (>255) y sin intercambios: antes reventaba el guardado de la auditoría
+            // (TextoRespuestaError nvarchar(255) NOT NULL, CuerpoRespuesta NOT NULL).
+            string errorLargo = new string('x', 400);
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored))
+                .Throws(new NestoAPI.Infraestructure.Agencias.Innovatrans.DataTransException(errorLargo));
+
+            var resultado = await controller.TramitarEnvio(1);
+
+            Assert.IsInstanceOfType(resultado, typeof(NegotiatedContentResult<string>));
+            Assert.IsNotNull(auditoria);
+            Assert.IsFalse(auditoria.Exito);
+            Assert.IsTrue(auditoria.TextoRespuestaError.Length <= 255, "TextoRespuestaError no puede superar 255.");
+            Assert.IsNotNull(auditoria.CuerpoRespuesta, "CuerpoRespuesta es NOT NULL.");
+            Assert.IsNotNull(auditoria.UrlLlamada);
+            Assert.IsTrue(auditoria.Usuario.Length <= 30);
+        }
+
+        [TestMethod]
         public async Task Tramitar_YaTramitado_SoloReimprimeSinReinsertar()
         {
             EnviosAgencia envio = EnvioPendiente();
