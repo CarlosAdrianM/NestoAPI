@@ -76,6 +76,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task InsertarYEtiquetar_PesoCero_NoLlamaAlSoapYDevuelveErrorClaro()
+        {
+            var fake = new FakeClienteSoap();
+
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.Peso = 0m;
+
+            ResultadoTramitacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .InsertarYEtiquetarAsync(envio);
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "peso");
+            Assert.AreEqual(0, fake.Llamadas.Count, "Con peso 0 no debe llamar a DataTrans.");
+        }
+
+        [TestMethod]
         public async Task InsertarYEtiquetar_SiElInsertFalla_NoPideEtiquetaYDevuelveError()
         {
             var fake = new FakeClienteSoap();

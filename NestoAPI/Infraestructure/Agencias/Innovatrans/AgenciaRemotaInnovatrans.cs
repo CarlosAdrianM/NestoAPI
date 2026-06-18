@@ -41,6 +41,17 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         {
             if (envio == null) throw new ArgumentNullException(nameof(envio));
 
+            // DataTrans exige pesoReal > 0; si no, rechaza el envío con un fault poco claro. Mejor
+            // cortar aquí con un mensaje entendible (el usuario mete el peso al imprimir la etiqueta).
+            if (envio.Peso <= 0)
+            {
+                return new ResultadoTramitacionRemota
+                {
+                    Exito = false,
+                    Error = "Innovatrans necesita el peso del envío (mayor que 0 kg). Indícalo antes de imprimir la etiqueta."
+                };
+            }
+
             EnvioDataTrans peticion = ConstruirPeticion(envio);
             ResultadoInsertarEnvio insercion = await _operaciones.InsertarEnvioAsync(peticion).ConfigureAwait(false);
             if (!insercion.Exito)
