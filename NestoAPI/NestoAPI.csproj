@@ -570,6 +570,7 @@
     <Compile Include="Infraestructure\Agencias\Innovatrans\ControlTasaDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\ClienteSoapDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\OperacionesLecturaDataTrans.cs" />
+    <Compile Include="Infraestructure\Agencias\Innovatrans\OperacionesEnviosDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraCosteEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgenciasContratos.cs" />
