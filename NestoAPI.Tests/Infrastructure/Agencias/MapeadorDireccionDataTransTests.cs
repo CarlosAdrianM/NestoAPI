@@ -37,6 +37,24 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [DataTestMethod]
+        [DataRow("1000-001", DisplayName = "Con guion")]
+        [DataRow("1000 001", DisplayName = "Con espacio")]
+        [DataRow("1000001", DisplayName = "Junto")]
+        [DataRow(" 1000-001 ", DisplayName = "Con espacios alrededor")]
+        public void NormalizarCodigoPostalPortugal_CualquierFormato_DevuelveCanonicoConGuion(string cp)
+        {
+            Assert.AreEqual("1000-001", MapeadorDireccionDataTrans.NormalizarCodigoPostalPortugal(cp));
+        }
+
+        [DataTestMethod]
+        [DataRow("28001", DisplayName = "CP español (5 dígitos) no se toca")]
+        [DataRow("ABC", DisplayName = "No reconocible no se toca")]
+        public void NormalizarCodigoPostalPortugal_NoEs7Digitos_DevuelveIgualTrim(string cp)
+        {
+            Assert.AreEqual(cp.Trim(), MapeadorDireccionDataTrans.NormalizarCodigoPostalPortugal(cp));
+        }
+
+        [DataTestMethod]
         [DataRow("", "ESP")]
         [DataRow(null, "ESP")]
         [DataRow("1", "ESP")]

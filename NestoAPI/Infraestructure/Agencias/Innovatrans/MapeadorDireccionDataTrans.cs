@@ -36,6 +36,21 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             return digitos.Length < 2 ? string.Empty : "0" + digitos.Substring(0, 2);
         }
 
+        /// <summary>
+        /// Normaliza un código postal portugués (formato oficial NNNN-NNN) venga como venga de la BD:
+        /// "1000-001", "1000 001" o junto "1000001" → siempre el canónico con guion "NNNN-NNN". Si no
+        /// son exactamente 7 dígitos no es un CP portugués reconocible y se devuelve tal cual (trim).
+        /// </summary>
+        public static string NormalizarCodigoPostalPortugal(string codigoPostal)
+        {
+            string digitos = SoloDigitos(codigoPostal);
+            if (digitos.Length != 7)
+            {
+                return codigoPostal?.Trim();
+            }
+            return digitos.Substring(0, 4) + "-" + digitos.Substring(4, 3);
+        }
+
         private static string SoloDigitos(string texto)
         {
             if (string.IsNullOrWhiteSpace(texto))

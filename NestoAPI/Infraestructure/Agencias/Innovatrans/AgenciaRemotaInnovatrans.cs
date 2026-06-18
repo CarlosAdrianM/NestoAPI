@@ -95,7 +95,10 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                     Pais = esPortugal ? MapeadorDireccionDataTrans.PAIS_PORTUGAL : MapeadorDireccionDataTrans.PAIS_ESPANA,
                     Nombre = envio.Nombre,
                     Telefono = string.IsNullOrWhiteSpace(envio.Telefono) ? envio.Movil : envio.Telefono,
-                    CodigoPostal = envio.CodigoPostal,
+                    // Portugal: normalizamos el CP al canónico NNNN-NNN venga como venga de la BD.
+                    CodigoPostal = esPortugal
+                        ? MapeadorDireccionDataTrans.NormalizarCodigoPostalPortugal(envio.CodigoPostal)
+                        : envio.CodigoPostal,
                     Poblacion = envio.Poblacion,
                     Direccion = envio.Direccion
                 },

@@ -28,6 +28,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         [DataTestMethod]
         [DataRow("1000-001", DisplayName = "Portugal con guion")]
         [DataRow("4000 100", DisplayName = "Portugal con espacio")]
+        [DataRow("1231234", DisplayName = "Portugal junto (sin separador)")]
         public void CalcularZona_Portugal(string cp)
         {
             Assert.AreEqual(ZonasEnvioAgencia.Portugal, CalculadoraZonaEnvio.CalcularZona(cp));
