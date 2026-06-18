@@ -9,6 +9,9 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
     /// Economy = 0048 (península), 14H Portugal = 0014, Islas Portugal = 0006 (Madeira/Azores, no
     /// modelado), Marítimo Baleares/Canarias = 0EXP. La zona se calcula con
     /// <see cref="CalculadoraZonaEnvio"/> (mismo criterio que el comparador de agencias).
+    /// OJO: aunque el catálogo agrupa Baleares y Canarias en 0EXP, CANARIAS NO sale por Innovatrans
+    /// (va siempre por Canteras, igual que en el comparador). Si un CP de Canarias llega aquí es un
+    /// error de enrutado: lanzamos en vez de mandar el envío por la agencia equivocada.
     /// </summary>
     public static class MapeadorTipoServicioDataTrans
     {
@@ -28,9 +31,11 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                     return SERVICIO_PORTUGAL_14H;
                 case ZonasEnvioAgencia.BalearesMayores:
                 case ZonasEnvioAgencia.BalearesMenores:
+                    return SERVICIO_MARITIMO_ISLAS;
                 case ZonasEnvioAgencia.CanariasMayores:
                 case ZonasEnvioAgencia.CanariasMenores:
-                    return SERVICIO_MARITIMO_ISLAS;
+                    throw new ArgumentException(
+                        $"Canarias (CP '{codigoPostal}') no sale por Innovatrans, va por Canteras.", nameof(codigoPostal));
                 default:
                     throw new ArgumentException(
                         $"Innovatrans no tiene servicio para la zona '{zona}' (CP '{codigoPostal}').", nameof(codigoPostal));

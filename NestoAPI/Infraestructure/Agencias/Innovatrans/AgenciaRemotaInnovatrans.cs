@@ -12,11 +12,13 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
     /// </summary>
     public class AgenciaRemotaInnovatrans : IAgenciaRemota
     {
-        // DataTrans exige largo/alto/ancho (obligatorios). No los guardamos por envío, así que cuando
-        // no vienen usamos un bulto estándar (la tarifa de Innovatrans es por peso, no volumétrica).
-        internal const decimal LARGO_POR_DEFECTO = 30m;
-        internal const decimal ALTO_POR_DEFECTO = 30m;
-        internal const decimal ANCHO_POR_DEFECTO = 30m;
+        // DataTrans marca largo/alto/ancho como obligatorios y NO guardamos dimensiones por envío
+        // (solo el peso, que mete el usuario al imprimir). Usamos como defecto la caja MEDIANA, que
+        // es la más usada. Las otras cajas habituales son pequeña (16×15×20) y grande (28×40×60);
+        // si algún día se elige caja, se pasan en DatosEnvioRemoto y prevalecen sobre este defecto.
+        internal const decimal LARGO_POR_DEFECTO = 32m;
+        internal const decimal ANCHO_POR_DEFECTO = 23m;
+        internal const decimal ALTO_POR_DEFECTO = 29m;
 
         private readonly OperacionesEnviosDataTrans _operaciones;
         private readonly DireccionDataTrans _remitente;

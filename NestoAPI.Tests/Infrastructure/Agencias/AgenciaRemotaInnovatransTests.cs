@@ -22,8 +22,14 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual("0048", MapeadorTipoServicioDataTrans.TipoServicioDesdeCodigoPostal("28001")); // Madrid
             Assert.AreEqual("0048", MapeadorTipoServicioDataTrans.TipoServicioDesdeCodigoPostal("46001")); // Peninsular
             Assert.AreEqual("0014", MapeadorTipoServicioDataTrans.TipoServicioDesdeCodigoPostal("1000-001")); // Portugal
-            Assert.AreEqual("0EXP", MapeadorTipoServicioDataTrans.TipoServicioDesdeCodigoPostal("35001")); // Canarias
             Assert.AreEqual("0EXP", MapeadorTipoServicioDataTrans.TipoServicioDesdeCodigoPostal("07001")); // Baleares
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(System.ArgumentException))]
+        public void TipoServicio_Canarias_Lanza_PorqueVaPorCanteras()
+        {
+            MapeadorTipoServicioDataTrans.TipoServicioDesdeCodigoPostal("35001"); // Las Palmas
         }
 
         [TestMethod]
@@ -60,6 +66,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             StringAssert.Contains(insertar, "<com:tipoServ>0048</com:tipoServ>");          // Madrid -> Economy
             StringAssert.Contains(insertar, "<com:nombreRem>NUEVA VISION</com:nombreRem>"); // remitente fijo
             StringAssert.Contains(insertar, "<com:provinciaRem>028</com:provinciaRem>");    // CP 28119 -> 028
+            StringAssert.Contains(insertar, "<com:largo>32</com:largo>");  // caja mediana por defecto
+            StringAssert.Contains(insertar, "<com:ancho>23</com:ancho>");
+            StringAssert.Contains(insertar, "<com:alto>29</com:alto>");
 
             string etiqueta = fake.Llamadas[1].Xml;
             StringAssert.Contains(etiqueta, "<mes:albaran>0123456789</mes:albaran>");
