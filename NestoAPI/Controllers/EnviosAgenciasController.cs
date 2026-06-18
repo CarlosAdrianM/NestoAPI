@@ -40,16 +40,15 @@ namespace NestoAPI.Controllers
 
     public class EnviosAgenciasController : ApiController
     {
-        public EnviosAgenciasController()
+        public EnviosAgenciasController() : this(new NVEntities())
         {
-            db = new NVEntities();
-            db.Configuration.LazyLoadingEnabled = false;
         }
 
         public EnviosAgenciasController(NVEntities db)
         {
             this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
+            fabricaAgenciasRemotas = new FabricaAgenciasRemotas(db);
         }
 
         public EnviosAgenciasController(NVEntities db, IFabricaAgenciasRemotas fabricaAgenciasRemotas) : this(db)
@@ -58,7 +57,7 @@ namespace NestoAPI.Controllers
         }
 
         private NVEntities db;
-        private IFabricaAgenciasRemotas fabricaAgenciasRemotas = new FabricaAgenciasRemotas();
+        private IFabricaAgenciasRemotas fabricaAgenciasRemotas;
 
         /*
         // GET: api/EnviosAgencias

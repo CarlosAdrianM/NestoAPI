@@ -159,7 +159,11 @@ namespace NestoAPI.Controllers
         {
             try
             {
-                var cliente = new ClienteSoapDataTrans(new ConfiguracionInnovatrans());
+                string identificador = db.AgenciasTransportes
+                    .Where(a => a.Numero == Constantes.Agencias.AGENCIA_INNOVATRANS)
+                    .Select(a => a.Identificador)
+                    .FirstOrDefault();
+                var cliente = new ClienteSoapDataTrans(new ConfiguracionInnovatrans(identificador?.Trim()));
                 var operaciones = new OperacionesLecturaDataTrans(cliente);
                 ResultadoBuscarPoblacion resultado = await operaciones.BuscarPoblacionAsync(codigoPostal);
 

@@ -1,4 +1,5 @@
 using System.Configuration;
+using System.Linq;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
 using NestoAPI.Models;
 
@@ -16,10 +17,18 @@ namespace NestoAPI.Infraestructure.Agencias
     /// <summary>
     /// Factory de agencias con gestión remota. Hoy solo Innovatrans (Numero=12); el resto devuelve
     /// null (sin integración server-side). Compone la cadena DataTrans (config + cliente SOAP +
-    /// operaciones de envío) y fija el remitente (nuestro almacén de Algete) desde Web.config.
+    /// operaciones de envío) y fija el remitente (nuestro almacén de Algete) desde Web.config. El
+    /// identificador (nº de cliente DataTrans) se lee de AgenciaTransporte.Identificador (fila 12).
     /// </summary>
     public class FabricaAgenciasRemotas : IFabricaAgenciasRemotas
     {
+        private readonly NVEntities _db;
+
+        public FabricaAgenciasRemotas(NVEntities db)
+        {
+            _db = db;
+        }
+
         public IAgenciaRemota Crear(int agenciaId)
         {
             if (agenciaId != Constantes.Agencias.AGENCIA_INNOVATRANS)
@@ -27,10 +36,16 @@ namespace NestoAPI.Infraestructure.Agencias
                 return null;
             }
 
+            // El identificador (nº de cliente DataTrans) vive en la tabla, como en las demás agencias.
+            string identificador = _db.AgenciasTransportes
+                .Where(a => a.Numero == Constantes.Agencias.AGENCIA_INNOVATRANS)
+                .Select(a => a.Identificador)
+                .FirstOrDefault();
+
             // El registro de intercambios lo comparten el cliente (que lo escribe) y la estrategia
             // (que lo expone), para poder auditar el SOAP crudo de cada tramitación.
             var registro = new RegistroIntercambiosRemotos();
-            var configuracion = new ConfiguracionInnovatrans();
+            var configuracion = new ConfiguracionInnovatrans(identificador?.Trim());
             var cliente = new ClienteSoapDataTrans(configuracion, registro: registro);
             var operaciones = new OperacionesEnviosDataTrans(cliente);
             return new AgenciaRemotaInnovatrans(operaciones, LeerRemitente(), registro);
