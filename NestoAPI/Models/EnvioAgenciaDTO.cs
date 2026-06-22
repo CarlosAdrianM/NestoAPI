@@ -63,9 +63,10 @@ namespace NestoAPI.Models
                         enlace = !string.IsNullOrEmpty(AgenciaIdentificador) && !string.IsNullOrEmpty(CodigoBarras) ? string.Format("https://info.sending.es/fgts/pub/locNumServ.seam?cliente={0}&localizador={1}", AgenciaIdentificador, CodigoBarras) : string.Empty;
                         break;
                     case "Innovatrans":
-                        // TODO provisional: URL inventada hasta que Innovatrans confirme su portal de
-                        // seguimiento (o se monte una página propia vía ConsultarEstados).
-                        enlace = !string.IsNullOrEmpty(CodigoBarras) ? string.Format("https://www.innovatrans.com/{0}", CodigoBarras.Trim()) : string.Empty;
+                        // Portal TIP-SA: id fijo de cliente (028040028040) + albarán (CodigoBarras) de DataTrans.
+                        enlace = !string.IsNullOrEmpty(CodigoBarras)
+                            ? string.Format("https://aplicaciones.tip-sa.com/cliente/datos_env.php?id=028040028040{0}", CodigoBarras.Trim())
+                            : string.Empty;
                         break;
                     default:
                         enlace = "error, agencia no definida";

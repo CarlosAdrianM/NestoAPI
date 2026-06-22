@@ -53,6 +53,10 @@ namespace NestoAPI.Models
                     case "Correos Express":
                         return $"https://s.correosexpress.com/c?n={NumeroSeguimiento}";
 
+                    case "Innovatrans":
+                        // Portal TIP-SA: id fijo de cliente (028040028040) + albarán (NumeroSeguimiento) de DataTrans.
+                        return $"https://aplicaciones.tip-sa.com/cliente/datos_env.php?id=028040028040{NumeroSeguimiento}";
+
                     case "Sending":
                         return !string.IsNullOrEmpty(AgenciaIdentificador)
                             ? $"https://info.sending.es/fgts/pub/locNumServ.seam?cliente={AgenciaIdentificador}&localizador={NumeroSeguimiento}"

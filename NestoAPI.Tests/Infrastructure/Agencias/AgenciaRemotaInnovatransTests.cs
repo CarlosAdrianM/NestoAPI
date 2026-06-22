@@ -76,6 +76,29 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task InsertarYEtiquetar_DestinoPortugal_EnviaCodPostalComprimidoYTipoServPortugal()
+        {
+            // Portugal: tipoServ 0014 (14H) y codPostalDes comprimido a "6"+4 dígitos (1000-001 -> 61000),
+            // regla del integrador (22/06/26). Antes mandábamos el canónico "1000-001": regresión.
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertar("9990001112", "1"));
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
+
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.CodigoPostal = "1000-001"; // Lisboa
+            envio.Poblacion = "LISBOA";
+
+            await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .InsertarYEtiquetarAsync(envio);
+
+            string insertar = fake.Llamadas[0].Xml;
+            StringAssert.Contains(insertar, "<com:paisDes>PRT</com:paisDes>");
+            StringAssert.Contains(insertar, "<com:tipoServ>0014</com:tipoServ>");
+            StringAssert.Contains(insertar, "<com:codPostalDes>61000</com:codPostalDes>");
+            Assert.IsFalse(insertar.Contains("1000-001"), "No debe viajar el CP portugués sin comprimir.");
+        }
+
+        [TestMethod]
         public async Task InsertarYEtiquetar_PesoCero_NoLlamaAlSoapYDevuelveErrorClaro()
         {
             var fake = new FakeClienteSoap();
@@ -119,6 +142,25 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsFalse(r.Exito);
             StringAssert.Contains(r.Error, "NullPointerException");
             Assert.AreEqual(1, fake.Llamadas.Count, "No debe pedir etiqueta si el envío fue rechazado.");
+        }
+
+        [TestMethod]
+        public async Task InsertarYEtiquetar_InsertOkPeroEtiquetaEsPdf_PreservaAlbaranYNoEsExito()
+        {
+            // Innovatrans no tiene ZPL para este envío → devuelve un PDF. El insert SÍ se hizo (albarán
+            // asignado): debemos preservar el albarán (para no reinsertar en un reintento) pero NO dar
+            // por buena la etiqueta (un PDF es inservible para la Zebra).
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertar("6520139001", "1"));
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaPdf());
+
+            ResultadoTramitacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .InsertarYEtiquetarAsync(EnvioMadrid());
+
+            Assert.IsFalse(r.Exito, "Un PDF no es una etiqueta ZPL válida.");
+            Assert.AreEqual("6520139001", r.Albaran, "El albarán debe conservarse para no reinsertar.");
+            Assert.AreEqual(1, r.Bultos);
+            StringAssert.Contains(r.Error, "ZPL");
         }
 
         [TestMethod]
@@ -184,6 +226,16 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                   <ns5:tipo xmlns:ns5=""http://listType.dtx.sw"">application/zpl</ns5:tipo>
                   <ns5:codificacion xmlns:ns5=""http://listType.dtx.sw"">base64</ns5:codificacion>
                   <ns5:contenido xmlns:ns5=""http://listType.dtx.sw"">XlhBfkNJMTUw</ns5:contenido>
+                </ns4:return><ns4:returnError/></ns4:BusquedaEtiquetasTypeOut></soapenv:Body></soapenv:Envelope>";
+
+        // Etiqueta que DTX devuelve cuando NO tiene ZPL para el envío: un PDF en base64 (empieza por
+        // "JVBE" = base64 de "%PDF"). EsZpl debe rechazarla.
+        private static string RespEtiquetaPdf() =>
+            @"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>
+                <ns4:BusquedaEtiquetasTypeOut xmlns:ns4=""http://messageout.dtx.sw""><ns4:return>
+                  <ns5:tipo xmlns:ns5=""http://listType.dtx.sw"">application/pdf</ns5:tipo>
+                  <ns5:codificacion xmlns:ns5=""http://listType.dtx.sw"">base64</ns5:codificacion>
+                  <ns5:contenido xmlns:ns5=""http://listType.dtx.sw"">JVBERi0xLjcK</ns5:contenido>
                 </ns4:return><ns4:returnError/></ns4:BusquedaEtiquetasTypeOut></soapenv:Body></soapenv:Envelope>";
 
         /// <summary>Fake de IClienteSoapDataTrans: responde por operación y captura las llamadas.</summary>

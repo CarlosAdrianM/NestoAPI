@@ -34,8 +34,13 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
     /// </summary>
     public class EnvioDataTrans
     {
+        /// <summary>Departamento del cliente en DataTrans. "00001" es nuestro departamento por defecto;
+        /// sin él, según la configuración de la ficha de cliente, DTX puede no devolver el albarán creado.</summary>
+        public const string DEPARTAMENTO_POR_DEFECTO = "00001";
+
         public DireccionDataTrans Remitente { get; set; }
         public DireccionDataTrans Destinatario { get; set; }
+        public string Departamento { get; set; } = DEPARTAMENTO_POR_DEFECTO;
         public string Referencia { get; set; }
         public string TipoServicio { get; set; }
         public decimal Largo { get; set; }
@@ -86,6 +91,23 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         public string Error { get; set; }
 
         public bool Exito => string.IsNullOrEmpty(Error) && !string.IsNullOrEmpty(Contenido);
+
+        /// <summary>
+        /// Una etiqueta ZPL válida empieza por el comando <c>^XA</c>. Innovatrans, cuando NO tiene ZPL
+        /// para esa etiqueta, devuelve un PDF (empieza por <c>%PDF</c>) aunque se pida formato=1: lo
+        /// detectamos para no mandar basura a la Zebra. Cubre el contenido en crudo y en base64
+        /// (<c>^XA</c> → "XlhB", <c>%PDF</c> → "JVBE").
+        /// </summary>
+        public bool EsZpl
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(Contenido)) return false;
+                string c = Contenido.TrimStart();
+                return c.StartsWith("^XA", StringComparison.Ordinal)
+                    || c.StartsWith("XlhB", StringComparison.Ordinal);
+            }
+        }
     }
 
     /// <summary>
@@ -115,8 +137,12 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             if (envio.Remitente == null) throw new ArgumentException("El envío necesita remitente.", nameof(envio));
             if (envio.Destinatario == null) throw new ArgumentException("El envío necesita destinatario.", nameof(envio));
 
+            // OJO ORDEN (XSD de Axis2): albaran -> departamento -> referencia. departamento es
+            // imprescindible: sin él DTX puede no devolver el albarán recién creado (lo confirmó
+            // el integrador). "00001" es nuestro departamento por defecto.
             XElement envios = new XElement(Mes + "envios",
                 new XElement(Com + "albaran"), // en blanco: lo asigna DTX
+                Campo("departamento", envio.Departamento),
                 Campo("referencia", envio.Referencia));
             AnadirDireccion(envios, "Rem", envio.Remitente);
             AnadirDireccion(envios, "Des", envio.Destinatario);
@@ -172,24 +198,35 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 "Etiquetas", "BusquedaEtiquetas", parametros.Elements().ToArray()).ConfigureAwait(false);
 
             XElement retorno = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "return");
+            string contenido = ValorHijo(retorno, "contenido");
+            // DTX genera el ZPL con ^CI28 (UTF-8) pero mete los acentos como byte Latin-1 -> la Zebra
+            // los descarta. Normalizamos el ZPL a hex UTF-8 (workaround hasta que el integrador lo
+            // corrija). Solo aplica al ZPL, no al PDF.
+            if (formato == FormatoEtiquetaDataTrans.Zpl)
+            {
+                contenido = NormalizadorZplDataTrans.CorregirAcentos(contenido);
+            }
             return new EtiquetaDataTrans
             {
                 Tipo = ValorHijo(retorno, "tipo"),
                 Codificacion = ValorHijo(retorno, "codificacion"),
                 TamanoBytes = ParsearEntero(ValorHijo(retorno, "tamano")),
-                Contenido = ValorHijo(retorno, "contenido"),
+                Contenido = contenido,
                 Error = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "returnError")?.Value
             };
         }
 
         private void AnadirDireccion(XElement envios, string sufijo, DireccionDataTrans dir)
         {
+            // codPostal y provincia se derivan del CP + país: España va tal cual ("0"+2 dígitos de
+            // provincia); Portugal comprime el CP a "6"+4 dígitos en codPostal y deja la provincia vacía.
+            string codPostal = MapeadorDireccionDataTrans.CodigoPostalDestino(dir.CodigoPostal, dir.Pais);
             string provincia = MapeadorDireccionDataTrans.ProvinciaDesdeCodigoPostal(dir.CodigoPostal, dir.Pais);
             envios.Add(
                 Campo("pais" + sufijo, dir.Pais),
                 Campo("nombre" + sufijo, dir.Nombre),
                 Campo("telefono" + sufijo, dir.Telefono),
-                Campo("codPostal" + sufijo, dir.CodigoPostal),
+                Campo("codPostal" + sufijo, codPostal),
                 Campo("poblacion" + sufijo, dir.Poblacion),
                 Campo("provincia" + sufijo, provincia),
                 Campo("direccion" + sufijo, dir.Direccion));

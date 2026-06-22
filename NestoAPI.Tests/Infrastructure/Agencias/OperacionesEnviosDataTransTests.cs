@@ -63,7 +63,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             var config = new ConfiguracionInnovatrans(
                 "http://h001.iatsl.es:8081/dtxSW/services/",
                 new CredencialesDataTrans { Identificador = "91253", Empresa = "91253", Email = "x@x.es", Clave = "abc" });
-            var control = new ControlTasaDataTrans(intervaloMinimo: System.TimeSpan.Zero, esperar: _ => Task.CompletedTask);
+            var control = new ControlTasaDataTrans(esperar: _ => Task.CompletedTask);
             var cliente = new ClienteSoapDataTrans(config, control, new HttpClient(handler));
             return new OperacionesEnviosDataTrans(cliente);
         }
@@ -114,6 +114,26 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task InsertarEnvio_DestinoPortugal_CodPostalComprimidoYProvinciaVacia()
+        {
+            // Regla del integrador (22/06/26): el CP portugués va comprimido a "6"+4 dígitos en
+            // codPostalDes (1000-001 -> 61000) y la provinciaDes queda vacía (pendiente de confirmar).
+            var handler = new HandlerFalso(HttpStatusCode.OK, RESP_INSERTAR_OK);
+
+            EnvioDataTrans envio = EnvioDePrueba();
+            envio.Destinatario.Pais = MapeadorDireccionDataTrans.PAIS_PORTUGAL;
+            envio.Destinatario.CodigoPostal = "1000-001";
+
+            await CrearOperaciones(handler).InsertarEnvioAsync(envio);
+
+            string cuerpo = handler.UltimoCuerpo;
+            StringAssert.Contains(cuerpo, "<com:codPostalDes>61000</com:codPostalDes>");
+            // El 61000 va en codPostalDes, NO en provinciaDes (antes estaba al revés: era el bug).
+            Assert.IsFalse(cuerpo.Contains("<com:provinciaDes>61000"),
+                "El CP comprimido portugués no debe ir en provinciaDes.");
+        }
+
+        [TestMethod]
         public async Task InsertarEnvio_Observaciones_VanAntesDeTipoServ()
         {
             // El WS de DataTrans (Axis2) exige el orden del XSD: observaciones antes de tipoServ.
@@ -124,6 +144,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             string cuerpo = handler.UltimoCuerpo;
             Assert.IsTrue(cuerpo.IndexOf("observaciones") < cuerpo.IndexOf("tipoServ"),
                 "observaciones debe ir antes de tipoServ (Axis2 rechaza el orden incorrecto).");
+        }
+
+        [TestMethod]
+        public async Task InsertarEnvio_IncluyeDepartamentoPorDefecto_EntreAlbaranYReferencia()
+        {
+            // Sin departamento, DTX puede no devolver el albarán creado (confirmado por el integrador).
+            // El XSD de Axis2 exige el orden: albaran -> departamento -> referencia.
+            var handler = new HandlerFalso(HttpStatusCode.OK, RESP_INSERTAR_OK);
+
+            await CrearOperaciones(handler).InsertarEnvioAsync(EnvioDePrueba());
+
+            string cuerpo = handler.UltimoCuerpo;
+            StringAssert.Contains(cuerpo, "<com:departamento>00001</com:departamento>");
+            Assert.IsTrue(cuerpo.IndexOf("albaran") < cuerpo.IndexOf("departamento")
+                && cuerpo.IndexOf("departamento") < cuerpo.IndexOf("referencia"),
+                "El orden del XSD es albaran -> departamento -> referencia.");
         }
 
         [TestMethod]

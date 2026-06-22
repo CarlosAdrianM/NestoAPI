@@ -40,6 +40,23 @@ namespace NestoAPI.Tests.Models
         }
 
         [TestMethod]
+        public void UrlSeguimiento_Innovatrans_DevuelveUrlTipSaConIdYAlbaran()
+        {
+            // Arrange
+            var dto = new UltimoEnvioClienteDTO
+            {
+                AgenciaNombre = "Innovatrans",
+                NumeroSeguimiento = "6520139001"
+            };
+
+            // Act
+            var url = dto.UrlSeguimiento;
+
+            // Assert
+            Assert.AreEqual("https://aplicaciones.tip-sa.com/cliente/datos_env.php?id=0280400280406520139001", url);
+        }
+
+        [TestMethod]
         public void UrlSeguimiento_ASM_ConCodigoPostal_DevuelveUrlCorrecta()
         {
             // Arrange

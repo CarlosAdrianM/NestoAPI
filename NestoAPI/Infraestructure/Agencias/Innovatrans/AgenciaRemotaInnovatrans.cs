@@ -68,14 +68,49 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 };
             }
 
-            EtiquetaDataTrans etiqueta = await _operaciones
-                .BuscarEtiquetaAsync(insercion.Albaran, FormatoEtiquetaDataTrans.Zpl).ConfigureAwait(false);
+            // A partir de aquí el envío YA existe en la agencia (albarán asignado). Pase lo que pase
+            // con la etiqueta, devolvemos SIEMPRE el albarán y los bultos: así el llamante puede
+            // persistirlo y un reintento solo reimprime, en vez de reinsertar (envío fantasma + cobro
+            // doble). El Exito=false con albarán = "registrado pero sin etiqueta".
+            int bultos = ParsearBultos(insercion.Bultos);
+
+            EtiquetaDataTrans etiqueta;
+            try
+            {
+                etiqueta = await _operaciones
+                    .BuscarEtiquetaAsync(insercion.Albaran, FormatoEtiquetaDataTrans.Zpl).ConfigureAwait(false);
+            }
+            catch (DataTransException ex)
+            {
+                return new ResultadoTramitacionRemota
+                {
+                    Exito = false,
+                    Albaran = insercion.Albaran,
+                    Bultos = bultos,
+                    Error = $"El envío se registró en Innovatrans (albarán {insercion.Albaran}) pero no se pudo obtener la etiqueta: {ex.Message}"
+                };
+            }
+
+            // La etiqueta tiene que ser ZPL válido: si Innovatrans no tiene ZPL para este envío devuelve
+            // un PDF, que es inservible para la Zebra. No lo damos por bueno (mandaría basura a imprimir).
+            if (etiqueta == null || !etiqueta.Exito || !etiqueta.EsZpl)
+            {
+                return new ResultadoTramitacionRemota
+                {
+                    Exito = false,
+                    Albaran = insercion.Albaran,
+                    Bultos = bultos,
+                    Etiqueta = etiqueta,
+                    Error = $"El envío se registró en Innovatrans (albarán {insercion.Albaran}) pero no devolvió una etiqueta ZPL válida"
+                        + (string.IsNullOrWhiteSpace(etiqueta?.Error) ? "." : $": {etiqueta.Error}")
+                };
+            }
 
             return new ResultadoTramitacionRemota
             {
                 Exito = true,
                 Albaran = insercion.Albaran,
-                Bultos = ParsearBultos(insercion.Bultos),
+                Bultos = bultos,
                 Etiqueta = etiqueta
             };
         }
@@ -95,10 +130,9 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                     Pais = esPortugal ? MapeadorDireccionDataTrans.PAIS_PORTUGAL : MapeadorDireccionDataTrans.PAIS_ESPANA,
                     Nombre = envio.Nombre,
                     Telefono = string.IsNullOrWhiteSpace(envio.Telefono) ? envio.Movil : envio.Telefono,
-                    // Portugal: normalizamos el CP al canónico NNNN-NNN venga como venga de la BD.
-                    CodigoPostal = esPortugal
-                        ? MapeadorDireccionDataTrans.NormalizarCodigoPostalPortugal(envio.CodigoPostal)
-                        : envio.CodigoPostal,
+                    // CP en crudo: la conversión a formato DataTrans (España tal cual; Portugal comprimido
+                    // a "6"+4 dígitos en codPostalDes) la hace el mapeador al construir el XML del envío.
+                    CodigoPostal = envio.CodigoPostal,
                     Poblacion = envio.Poblacion,
                     Direccion = envio.Direccion
                 },
