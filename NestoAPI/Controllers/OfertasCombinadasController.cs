@@ -130,6 +130,7 @@ namespace NestoAPI.Controllers
                     Cantidad = detDTO.Cantidad,
                     Precio = detDTO.Precio,
                     GrupoAlternativa = detDTO.GrupoAlternativa,
+                    PermitirCantidadMenor = detDTO.PermitirCantidadMenor,
                     Usuario = usuarioAuditoria,
                     FechaModificacion = ahora
                 });
@@ -231,6 +232,7 @@ namespace NestoAPI.Controllers
                         detExistente.Cantidad = detDTO.Cantidad;
                         detExistente.Precio = detDTO.Precio;
                         detExistente.GrupoAlternativa = detDTO.GrupoAlternativa;
+                        detExistente.PermitirCantidadMenor = detDTO.PermitirCantidadMenor;
                         detExistente.Usuario = usuarioAuditoria;
                         detExistente.FechaModificacion = ahora;
                     }
@@ -246,6 +248,7 @@ namespace NestoAPI.Controllers
                         Cantidad = detDTO.Cantidad,
                         Precio = detDTO.Precio,
                         GrupoAlternativa = detDTO.GrupoAlternativa,
+                        PermitirCantidadMenor = detDTO.PermitirCantidadMenor,
                         Usuario = usuarioAuditoria,
                         FechaModificacion = ahora
                     });
@@ -376,7 +379,8 @@ namespace NestoAPI.Controllers
                     ProductoNombre = d.Producto1?.Nombre?.Trim(),
                     Cantidad = d.Cantidad,
                     Precio = d.Precio,
-                    GrupoAlternativa = d.GrupoAlternativa
+                    GrupoAlternativa = d.GrupoAlternativa,
+                    PermitirCantidadMenor = d.PermitirCantidadMenor
                 }).ToList() ?? new List<OfertaCombinadaDetalleDTO>()
             };
         }

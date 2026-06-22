@@ -135,7 +135,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 if (cantidadLineas > cantidadOferta)
                 {
                     IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.Lineas.Where(l =>
-                        ofertaCumplida.OfertasCombinadasDetalles.Where(o => (float)l.Cantidad / o.Cantidad < (float)cantidadLineas / cantidadOferta).Select(d => d.Producto).Contains(l.Producto)
+                        ofertaCumplida.OfertasCombinadasDetalles.Where(o => !o.PermitirCantidadMenor && (float)l.Cantidad / o.Cantidad < (float)cantidadLineas / cantidadOferta).Select(d => d.Producto).Contains(l.Producto)
                     );
                     if (lineasOfertaPedido != null && lineasOfertaPedido.Count() > 0)
                     {
@@ -191,6 +191,14 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                             && p.Producto.Trim() == d.Producto.Trim()
                             && p.PrecioUnitario >= d.Precio);
 
+            // "Permitir cantidad menor" (NestoAPI#239): la Cantidad es un MÁXIMO, no una cantidad
+            // exacta. La línea se satisface con cualquier cantidad de 0 a Cantidad (extra opcional:
+            // p. ej. folletos/expositor). El exceso (> Cantidad) no lo cubre la oferta.
+            if (d.PermitirCantidadMenor)
+            {
+                return lineasProducto.Sum(p => p.Cantidad) <= d.Cantidad;
+            }
+
             return lineasProducto.Any() && lineasProducto.Sum(p => p.Cantidad) >= d.Cantidad;
         }
 
@@ -203,7 +211,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         private static int UnidadesRequeridas(OfertaCombinada oferta)
         {
             int obligatorias = oferta.OfertasCombinadasDetalles
-                .Where(d => d.Cantidad > 0 && d.Producto != null && d.GrupoAlternativa == null)
+                .Where(d => d.Cantidad > 0 && d.Producto != null && d.GrupoAlternativa == null && !d.PermitirCantidadMenor)
                 .Sum(d => (int)d.Cantidad);
             int grupos = oferta.OfertasCombinadasDetalles
                 .Where(d => d.GrupoAlternativa.HasValue)
@@ -222,8 +230,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             foreach (OfertaCombinadaDetalle d in oferta.OfertasCombinadasDetalles)
             {
                 // Las líneas agrupadas (alternativas) no definen el nº de instancias: se comprueban
-                // aparte en GruposSatisfechos. El nº de instancias lo marcan las líneas obligatorias.
-                if (d.Cantidad <= 0 || d.Producto == null || d.GrupoAlternativa != null) continue;
+                // aparte en GruposSatisfechos. Las de "cantidad menor" tampoco: son extras opcionales
+                // (0..máx) que no escalan la oferta. El nº de instancias lo marcan las líneas obligatorias.
+                if (d.Cantidad <= 0 || d.Producto == null || d.GrupoAlternativa != null || d.PermitirCantidadMenor) continue;
                 int cantidad = (int)pedido.Lineas
                     .Where(l => l.Producto != null && l.Producto.Trim() == d.Producto.Trim())
                     .Sum(l => l.Cantidad);

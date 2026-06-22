@@ -215,6 +215,58 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task PostOfertaCombinada_PermitirCantidadMenor_SePersisteYDevuelve()
+        {
+            // NestoAPI#239: el flag "permitir cantidad menor" por línea debe persistirse y devolverse.
+            var productos = new List<Producto>
+            {
+                new Producto { Empresa = "1  ", Número = "SERUM", Nombre = "Sérum" },
+                new Producto { Empresa = "1  ", Número = "FOLLETO", Nombre = "Folleto" }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeProductos, productos);
+
+            var listaOfertas = new List<OfertaCombinada>();
+            A.CallTo(() => fakeOfertasCombinadas.Add(A<OfertaCombinada>.Ignored))
+                .Invokes((OfertaCombinada o) => { o.Id = 1; listaOfertas.Add(o); })
+                .ReturnsLazily((OfertaCombinada o) => o);
+            A.CallTo(() => db.SaveChangesAsync())
+                .Invokes(() =>
+                {
+                    if (listaOfertas.Any())
+                    {
+                        ConfigurarFakeDbSet(fakeOfertasCombinadas, listaOfertas.AsQueryable());
+                    }
+                })
+                .Returns(Task.FromResult(1));
+
+            var dto = new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
+                Nombre = "Level Lash Sérum 6+2",
+                ImporteMinimo = 0,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>
+                {
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "SERUM", Cantidad = 1, Precio = 10, PermitirCantidadMenor = false },
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "FOLLETO", Cantidad = 20, Precio = 0, PermitirCantidadMenor = true }
+                }
+            };
+
+            // Act
+            var resultado = await controller.PostOfertaCombinada(dto, "testuser");
+
+            // Assert: persistido en la entidad
+            var detalleFolleto = listaOfertas.Single().OfertasCombinadasDetalles.Single(d => d.Producto == "FOLLETO");
+            Assert.IsTrue(detalleFolleto.PermitirCantidadMenor, "El folleto debe persistirse con el flag a true");
+            var detalleSerum = listaOfertas.Single().OfertasCombinadasDetalles.Single(d => d.Producto == "SERUM");
+            Assert.IsFalse(detalleSerum.PermitirCantidadMenor, "El sérum debe quedar sin el flag");
+
+            // Assert: devuelto en el DTO
+            var okResult = (OkNegotiatedContentResult<OfertaCombinadaDTO>)resultado;
+            Assert.IsTrue(okResult.Content.Detalles.Single(d => d.Producto == "FOLLETO").PermitirCantidadMenor,
+                "El DTO devuelto debe reflejar el flag");
+        }
+
+        [TestMethod]
         public async Task PostOfertaCombinada_GrabaUsuarioDelIdentity_NoElDelParametro()
         {
             // Regresión (issue ofertas combinadas con usuario "NUEVAVISION\RDS2016$"): el usuario de
