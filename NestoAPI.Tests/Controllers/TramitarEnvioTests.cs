@@ -205,6 +205,33 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Tramitar_InsertOkPeroEtiquetaFalla_GuardaAlbaranParaNoReinsertar()
+        {
+            // El envío YA se registró en la agencia (albarán) pero la etiqueta falló (ZPL no disponible).
+            // El controller DEBE persistir el albarán y dejar el envío En curso, para que un reintento
+            // reimprima en vez de reinsertar (envío fantasma + cobro doble). Y devolver el error.
+            EnviosAgencia envio = EnvioPendiente();
+            ConEnvio(envio);
+            A.CallTo(() => fakeFabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS)).Returns(fakeAgencia);
+            A.CallTo(() => fakeAgencia.InsertarYEtiquetarAsync(A<DatosEnvioRemoto>.Ignored))
+                .Returns(Task.FromResult(new ResultadoTramitacionRemota
+                {
+                    Exito = false,
+                    Albaran = "6520139001",
+                    Bultos = 1,
+                    Error = "El envío se registró en Innovatrans (albarán 6520139001) pero no devolvió una etiqueta ZPL válida."
+                }));
+
+            var resultado = await controller.TramitarEnvio(1);
+
+            Assert.IsInstanceOfType(resultado, typeof(NegotiatedContentResult<string>));
+            Assert.AreEqual("6520139001", envio.CodigoBarras, "Hay que guardar el albarán aunque la etiqueta falle.");
+            Assert.AreEqual((short)Constantes.Agencias.ESTADO_EN_CURSO, envio.Estado, "Queda En curso, no se reinsertará.");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+            A.CallTo(() => fakeLlamadas.Add(A<AgenciaLlamadaWeb>.That.Matches(l => !l.Exito))).MustHaveHappened();
+        }
+
+        [TestMethod]
         public async Task Tramitar_FalloEnInsercion_NoGuardaAlbaranYAuditaError()
         {
             EnviosAgencia envio = EnvioPendiente();

@@ -29,11 +29,12 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             return t;
         }
 
-        private static ComparadorAgencias Comparador(IEnumerable<ITarifaAgencia> tarifas, IProveedorRecargoCombustible fuel)
+        private static ComparadorAgencias Comparador(IEnumerable<ITarifaAgencia> tarifas, IProveedorRecargoCombustible fuel,
+            IEnumerable<int> sombra = null)
         {
             var registro = A.Fake<IRegistroTarifas>();
             A.CallTo(() => registro.Todas()).Returns(tarifas);
-            return new ComparadorAgencias(registro, fuel);
+            return new ComparadorAgencias(registro, fuel, sombra);
         }
 
         private static IProveedorRecargoCombustible FuelCero()
@@ -118,6 +119,41 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.IsTrue(ids.Contains(1));
             Assert.IsFalse(ids.Contains(12), "Innovatrans (12) no tiene fila todavía: no se compara");
+        }
+
+        [TestMethod]
+        public void MasEconomica_ExcluyeLasAgenciasSombra()
+        {
+            // La 2 (8) es la más barata, pero es SOMBRA -> MasEconomica devuelve la 1 (10).
+            var tarifas = new[]
+            {
+                TarifaFake(1, ZonasEnvioAgencia.Peninsular, 10m),
+                TarifaFake(2, ZonasEnvioAgencia.Peninsular, 8m)
+            };
+            var comparador = Comparador(tarifas, FuelCero(), sombra: new[] { 2 });
+
+            var mejor = comparador.MasEconomica("1", "08001", peso: 3m, reembolso: 0m);
+
+            Assert.AreEqual(1, mejor.AgenciaId, "La sombra (2) no debe auto-seleccionarse.");
+            Assert.AreEqual(10m, mejor.Coste);
+        }
+
+        [TestMethod]
+        public void Ranking_IncluyeLasSombraOrdenadasPorCoste()
+        {
+            // El ranking SÍ incluye la sombra (para medir cuánto ganaría): la 2 (8) va primera.
+            var tarifas = new[]
+            {
+                TarifaFake(1, ZonasEnvioAgencia.Peninsular, 10m),
+                TarifaFake(2, ZonasEnvioAgencia.Peninsular, 8m)
+            };
+            var comparador = Comparador(tarifas, FuelCero(), sombra: new[] { 2 });
+
+            var ranking = comparador.Ranking("1", "08001", peso: 3m, reembolso: 0m);
+
+            Assert.AreEqual(2, ranking.Count);
+            Assert.AreEqual(2, ranking[0].AgenciaId, "La más barata (sombra) va primera en el ranking.");
+            Assert.AreEqual(1, ranking[1].AgenciaId);
         }
 
         [TestMethod]

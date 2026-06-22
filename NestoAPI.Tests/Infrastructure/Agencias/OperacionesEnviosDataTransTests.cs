@@ -114,10 +114,10 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public async Task InsertarEnvio_DestinoPortugal_CodPostalComprimidoYProvinciaVacia()
+        public async Task InsertarEnvio_DestinoPortugal_CodPostalComprimidoYProvincia053()
         {
             // Regla del integrador (22/06/26): el CP portugués va comprimido a "6"+4 dígitos en
-            // codPostalDes (1000-001 -> 61000) y la provinciaDes queda vacía (pendiente de confirmar).
+            // codPostalDes (1000-001 -> 61000) y la provinciaDes es el código fijo "053".
             var handler = new HandlerFalso(HttpStatusCode.OK, RESP_INSERTAR_OK);
 
             EnvioDataTrans envio = EnvioDePrueba();
@@ -128,6 +128,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             string cuerpo = handler.UltimoCuerpo;
             StringAssert.Contains(cuerpo, "<com:codPostalDes>61000</com:codPostalDes>");
+            StringAssert.Contains(cuerpo, "<com:provinciaDes>053</com:provinciaDes>");
             // El 61000 va en codPostalDes, NO en provinciaDes (antes estaba al revés: era el bug).
             Assert.IsFalse(cuerpo.Contains("<com:provinciaDes>61000"),
                 "El CP comprimido portugués no debe ir en provinciaDes.");

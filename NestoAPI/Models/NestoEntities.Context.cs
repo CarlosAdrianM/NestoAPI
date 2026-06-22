@@ -88,6 +88,7 @@ namespace NestoAPI.Models
         public virtual DbSet<PersonaContactoCliente> PersonasContactoClientes { get; set; }
         public virtual DbSet<CabFacturaVta> CabsFacturasVtas { get; set; }
         public virtual DbSet<AgenciaTransporte> AgenciasTransportes { get; set; }
+        public virtual DbSet<ComparativaAgenciaSombra> ComparativaAgenciaSombras { get; set; }
         public virtual DbSet<Prepago> Prepagos { get; set; }
         public virtual DbSet<RegaloImportePedido> RegalosImportePedido { get; set; }
         public virtual DbSet<ClasificacionMasVendido> ClasificacionMasVendidos { get; set; }

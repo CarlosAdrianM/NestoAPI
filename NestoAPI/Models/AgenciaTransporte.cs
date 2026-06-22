@@ -29,6 +29,8 @@ namespace NestoAPI.Models
         public string CuentaReembolsos { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
+        public decimal RecargoCombustible { get; set; }
+        public bool EsSombra { get; set; }
     
         public virtual Empresa Empresa1 { get; set; }
         public virtual Ruta Ruta1 { get; set; }

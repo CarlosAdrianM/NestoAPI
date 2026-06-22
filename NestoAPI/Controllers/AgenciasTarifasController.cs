@@ -5,6 +5,7 @@ using System.Net;
 using System.Threading.Tasks;
 using System.Web.Http;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 using NestoAPI.Models;
@@ -138,8 +139,10 @@ namespace NestoAPI.Controllers
             // Solo se comparan agencias dadas de alta en AgenciasTransporte: una tarifa portada pero
             // sin fila (p.ej. Innovatrans antes de crearla) no debe entrar en la comparación.
             var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
+            // Las agencias sombra compiten en el ranking interno pero NUNCA se auto-seleccionan.
+            var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
             var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
-            var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db));
+            var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
             OpcionEnvioAgencia mejor = comparador.MasEconomica(empresa, codigoPostal, peso, reembolso);
 
             if (mejor == null)
@@ -147,6 +150,19 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
             return Ok(mejor);
+        }
+
+        // POST: api/Agencias/ComparativaSombra/Recalcular?dias=30
+        // Rellena ComparativaAgenciaSombra con los envíos reales de los últimos N días (idempotente):
+        // qué agencia SOMBRA habría ganado cada envío y a qué coste vs la agencia usada. Para backfill
+        // histórico bajo demanda; el job nocturno 'comparativa-agencia-sombra' hace lo mismo a diario.
+        [HttpPost]
+        [Authorize]
+        [Route("api/Agencias/ComparativaSombra/Recalcular")]
+        public IHttpActionResult RecalcularComparativaSombra(int dias = 30)
+        {
+            int insertados = new ComparativaAgenciaSombraJobsService(db).RegistrarComparativas(dias);
+            return Ok(new { dias, insertados });
         }
 
         // GET: api/Agencias/Innovatrans/Diagnostico?codigoPostal=28001

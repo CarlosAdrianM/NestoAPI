@@ -32,6 +32,8 @@
           <Property Name="CuentaReembolsos" Type="varchar" MaxLength="10" />
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+          <Property Name="RecargoCombustible" Type="decimal" Precision="6" Scale="4" Nullable="false" />
+          <Property Name="EsSombra" Type="bit" Nullable="false" />
         </EntityType>
         <EntityType Name="ApuntesBancarios">
           <Key>
@@ -620,6 +622,29 @@
           <Property Name="FechaRegistro" Type="datetime" Nullable="false" />
           <Property Name="FechaUltimaActividad" Type="datetime" Nullable="false" />
           <Property Name="Activo" Type="bit" Nullable="false" />
+        </EntityType>
+        <EntityType Name="ComparativaAgenciaSombra">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="NumeroEnvio" Type="int" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Pedido" Type="int" />
+          <Property Name="FechaEnvio" Type="datetime" />
+          <Property Name="CodigoPostal" Type="varchar" MaxLength="10" />
+          <Property Name="Zona" Type="varchar" MaxLength="20" />
+          <Property Name="Peso" Type="decimal" Precision="10" Scale="2" Nullable="false" />
+          <Property Name="Reembolso" Type="decimal" Precision="12" Scale="2" Nullable="false" />
+          <Property Name="AgenciaRealId" Type="int" Nullable="false" />
+          <Property Name="AgenciaRealNombre" Type="nvarchar" MaxLength="50" />
+          <Property Name="CosteReal" Type="decimal" Precision="10" Scale="2" />
+          <Property Name="AgenciaSombraId" Type="int" />
+          <Property Name="AgenciaSombraNombre" Type="nvarchar" MaxLength="50" />
+          <Property Name="CosteSombra" Type="decimal" Precision="10" Scale="2" />
+          <Property Name="SombraGana" Type="bit" Nullable="false" />
+          <Property Name="Ahorro" Type="decimal" Precision="10" Scale="2" />
+          <Property Name="FechaCalculo" Type="datetime" Nullable="false" />
         </EntityType>
         <EntityType Name="EfectosPedidoVenta">
           <Key>
@@ -1333,6 +1358,7 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="GrupoAlternativa" Type="int" />
+          <Property Name="PermitirCantidadMenor" Type="bit" Nullable="false" />
         </EntityType>
         <EntityType Name="OfertasEscalonadas">
           <Key>
@@ -5449,6 +5475,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="DiariosProducto" EntityType="Self.DiariosProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DíasPagoClientes" EntityType="Self.DíasPagoClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DispositivosNotificaciones" EntityType="Self.DispositivosNotificaciones" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ComparativaAgenciaSombra" EntityType="Self.ComparativaAgenciaSombra" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EfectosPedidoVenta" EntityType="Self.EfectosPedidoVenta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Empresas" EntityType="Self.Empresas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Entidades" EntityType="Self.Entidades" Schema="dbo" store:Type="Tables" />
@@ -7588,6 +7615,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="PagosTPV_Efectos" EntitySet="PagosTPV_Efectos" />
           </AssociationSet>
           <EntitySet Name="DispositivosNotificaciones" EntityType="NVModel.DispositivoNotificacion" />
+          <EntitySet Name="ComparativaAgenciaSombras" EntityType="NVModel.ComparativaAgenciaSombra" />
           <EntitySet Name="LiquidacionesClientes" EntityType="NVModel.LiquidacionCliente" />
           <AssociationSet Name="FK_LiquidacionesClientes_Empresas" Association="NVModel.FK_LiquidacionesClientes_Empresas">
             <End Role="Empresa" EntitySet="Empresas" />
@@ -10709,6 +10737,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Producto1" Relationship="NVModel.FK_OfertasCombinadasDetalle_Productos" FromRole="OfertasCombinadasDetalle" ToRole="Producto" />
           <Property Name="Cantidad" Type="Int16" Nullable="false" />
           <Property Name="GrupoAlternativa" Type="Int32" />
+          <Property Name="PermitirCantidadMenor" Type="Boolean" Nullable="false" />
         </EntityType>
         <Association Name="FK_OfertasCombinadas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -11604,6 +11633,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Ruta1" Relationship="NVModel.FK_AgenciasTransporte_Rutas" FromRole="AgenciasTransporte" ToRole="Ruta" />
           <NavigationProperty Name="EnviosAgencias" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte" FromRole="AgenciasTransporte" ToRole="EnviosAgencia" />
           <NavigationProperty Name="EnviosAgencias1" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte1" FromRole="AgenciasTransporte" ToRole="EnviosAgencia" />
+          <Property Name="RecargoCombustible" Type="Decimal" Nullable="false" Precision="6" Scale="4" />
+          <Property Name="EsSombra" Type="Boolean" Nullable="false" />
         </EntityType>
         <Association Name="FK_AgenciasTransporte_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -13261,6 +13292,29 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaUltimaActividad" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="Activo" Type="Boolean" Nullable="false" />
         </EntityType>
+        <EntityType Name="ComparativaAgenciaSombra">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="NumeroEnvio" Type="Int32" Nullable="false" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Pedido" Type="Int32" />
+          <Property Name="FechaEnvio" Type="DateTime" Precision="3" />
+          <Property Name="CodigoPostal" Type="String" MaxLength="10" FixedLength="false" Unicode="false" />
+          <Property Name="Zona" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="Peso" Type="Decimal" Nullable="false" Precision="10" Scale="2" />
+          <Property Name="Reembolso" Type="Decimal" Nullable="false" Precision="12" Scale="2" />
+          <Property Name="AgenciaRealId" Type="Int32" Nullable="false" />
+          <Property Name="AgenciaRealNombre" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="CosteReal" Type="Decimal" Precision="10" Scale="2" />
+          <Property Name="AgenciaSombraId" Type="Int32" />
+          <Property Name="AgenciaSombraNombre" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="CosteSombra" Type="Decimal" Precision="10" Scale="2" />
+          <Property Name="SombraGana" Type="Boolean" Nullable="false" />
+          <Property Name="Ahorro" Type="Decimal" Precision="10" Scale="2" />
+          <Property Name="FechaCalculo" Type="DateTime" Nullable="false" Precision="3" />
+        </EntityType>
         <EntityType Name="LiquidacionCliente">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -14544,6 +14598,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="OfertasCombinadasDetalles">
             <EntityTypeMapping TypeName="NVModel.OfertaCombinadaDetalle">
               <MappingFragment StoreEntitySet="OfertasCombinadasDetalle">
+                <ScalarProperty Name="PermitirCantidadMenor" ColumnName="PermitirCantidadMenor" />
                 <ScalarProperty Name="GrupoAlternativa" ColumnName="GrupoAlternativa" />
                 <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
@@ -14861,6 +14916,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="AgenciasTransportes">
             <EntityTypeMapping TypeName="NVModel.AgenciaTransporte">
               <MappingFragment StoreEntitySet="AgenciasTransporte">
+                <ScalarProperty Name="EsSombra" ColumnName="EsSombra" />
+                <ScalarProperty Name="RecargoCombustible" ColumnName="RecargoCombustible" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="CuentaReembolsos" ColumnName="CuentaReembolsos" />
@@ -15516,6 +15573,30 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="ComparativaAgenciaSombras">
+            <EntityTypeMapping TypeName="NVModel.ComparativaAgenciaSombra">
+              <MappingFragment StoreEntitySet="ComparativaAgenciaSombra">
+                <ScalarProperty Name="Id" ColumnName="Id" />
+                <ScalarProperty Name="NumeroEnvio" ColumnName="NumeroEnvio" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Pedido" ColumnName="Pedido" />
+                <ScalarProperty Name="FechaEnvio" ColumnName="FechaEnvio" />
+                <ScalarProperty Name="CodigoPostal" ColumnName="CodigoPostal" />
+                <ScalarProperty Name="Zona" ColumnName="Zona" />
+                <ScalarProperty Name="Peso" ColumnName="Peso" />
+                <ScalarProperty Name="Reembolso" ColumnName="Reembolso" />
+                <ScalarProperty Name="AgenciaRealId" ColumnName="AgenciaRealId" />
+                <ScalarProperty Name="AgenciaRealNombre" ColumnName="AgenciaRealNombre" />
+                <ScalarProperty Name="CosteReal" ColumnName="CosteReal" />
+                <ScalarProperty Name="AgenciaSombraId" ColumnName="AgenciaSombraId" />
+                <ScalarProperty Name="AgenciaSombraNombre" ColumnName="AgenciaSombraNombre" />
+                <ScalarProperty Name="CosteSombra" ColumnName="CosteSombra" />
+                <ScalarProperty Name="SombraGana" ColumnName="SombraGana" />
+                <ScalarProperty Name="Ahorro" ColumnName="Ahorro" />
+                <ScalarProperty Name="FechaCalculo" ColumnName="FechaCalculo" />
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>

@@ -11,16 +11,15 @@ namespace NestoAPI.Models
 {
     using System;
     using System.Collections.Generic;
-
+    
     public partial class OfertaEscalonada
     {
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2214:DoNotCallOverridableMethodsInConstructors")]
         public OfertaEscalonada()
         {
             this.OfertasEscalonadasProductos = new HashSet<OfertaEscalonadaProducto>();
             this.OfertasEscalonadasTramos = new HashSet<OfertaEscalonadaTramo>();
         }
-
+    
         public int Id { get; set; }
         public string Empresa { get; set; }
         public string Nombre { get; set; }
@@ -28,10 +27,8 @@ namespace NestoAPI.Models
         public Nullable<System.DateTime> FechaHasta { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
-
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
+    
         public virtual ICollection<OfertaEscalonadaProducto> OfertasEscalonadasProductos { get; set; }
-        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Usage", "CA2227:CollectionPropertiesShouldBeReadOnly")]
         public virtual ICollection<OfertaEscalonadaTramo> OfertasEscalonadasTramos { get; set; }
     }
 }

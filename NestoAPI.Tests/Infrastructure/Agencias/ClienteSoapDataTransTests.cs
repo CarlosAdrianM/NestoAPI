@@ -66,7 +66,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         // Control de tasa que no duerme (espera = no-op).
         private static ControlTasaDataTrans ControlSinEspera()
         {
-            return new ControlTasaDataTrans(intervaloMinimo: TimeSpan.Zero, esperar: _ => Task.CompletedTask);
+            return new ControlTasaDataTrans(esperar: _ => Task.CompletedTask);
         }
 
         private static OperacionesLecturaDataTrans CrearOperaciones(HandlerFalso handler)
@@ -141,6 +141,51 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             var handler = new HandlerFalso(HttpStatusCode.InternalServerError, "Boom");
 
             await CrearOperaciones(handler).BuscarPoblacionAsync("28001");
+        }
+
+        [TestMethod]
+        public async Task EjecutarAsync_RespuestaConSoapFault_LanzaDataTransExceptionConElFaultstring()
+        {
+            // DTX devuelve a veces un Fault bien formado (p.ej. al fallar al serializar la etiqueta):
+            // hay que tratarlo como error de transporte con el faultstring, no parsear un resultado vacío.
+            const string FAULT =
+                @"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>
+                    <soapenv:Fault><faultcode>soapenv:Server</faultcode>
+                    <faultstring>Invalid white space character (0x14) in text to output</faultstring><detail /></soapenv:Fault>
+                  </soapenv:Body></soapenv:Envelope>";
+            var handler = new HandlerFalso(HttpStatusCode.OK, FAULT);
+            var cliente = new ClienteSoapDataTrans(ConfigDePrueba(), ControlSinEspera(), new HttpClient(handler));
+
+            try
+            {
+                await cliente.EjecutarAsync("Etiquetas", "BusquedaEtiquetas");
+                Assert.Fail("Debería lanzar DataTransException ante un SOAP Fault.");
+            }
+            catch (DataTransException ex)
+            {
+                StringAssert.Contains(ex.Message, "0x14");
+            }
+        }
+
+        [TestMethod]
+        public async Task EjecutarAsync_RespuestaConXmlCorrupto_LanzaDataTransExceptionResumida()
+        {
+            // Cuerpo enorme + XML mal formado (lo que pasa cuando DTX inlina un PDF sin codificar): el
+            // mensaje no debe volcar todo el cuerpo, solo un resumen.
+            string cuerpoEnorme = "<?xml version=\"1.0\"?><roto>" + new string('A', 5000); // sin cierre -> XmlException
+            var handler = new HandlerFalso(HttpStatusCode.OK, cuerpoEnorme);
+            var cliente = new ClienteSoapDataTrans(ConfigDePrueba(), ControlSinEspera(), new HttpClient(handler));
+
+            try
+            {
+                await cliente.EjecutarAsync("Etiquetas", "BusquedaEtiquetas");
+                Assert.Fail("Debería lanzar DataTransException ante XML corrupto.");
+            }
+            catch (DataTransException ex)
+            {
+                Assert.IsTrue(ex.Message.Length < 800, "El mensaje no debe volcar el cuerpo entero.");
+                StringAssert.Contains(ex.Message, "…");
+            }
         }
 
         [TestMethod]

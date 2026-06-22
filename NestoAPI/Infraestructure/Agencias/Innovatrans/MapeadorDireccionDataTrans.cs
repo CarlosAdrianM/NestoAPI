@@ -12,21 +12,22 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         public const string PAIS_ESPANA = "ESP";
         public const string PAIS_PORTUGAL = "PRT";
 
+        // Código de provincia DataTrans para Portugal (fijo, confirmado por el integrador 22/06/26).
+        public const string PROVINCIA_PORTUGAL = "053";
+
         /// <summary>
         /// Código de provincia DataTrans (3 chars) a partir del código postal.
         ///  - España/Península (y Baleares/Canarias/Ceuta/Melilla): "0" + 2 primeros dígitos del CP
         ///    (28001 -> "028", 35001 -> "035", 51001 -> "051").
-        ///  - Portugal: PENDIENTE. El integrador (22/06/26) aclaró que el "6" + 4 dígitos va en
-        ///    codPostalDes (ver <see cref="CodigoPostalDestino"/>), NO en provincia, y quedó en
-        ///    consultar qué valor lleva el campo provincia para Portugal. Hasta entonces lo dejamos
-        ///    vacío (mandar el CP comprimido en un campo de 3 chars rompería el WS).
+        ///  - Portugal: código fijo "053" (confirmado por el integrador 22/06/26). El CP comprimido
+        ///    "6" + 4 dígitos va aparte en codPostalDes (ver <see cref="CodigoPostalDestino"/>).
         /// </summary>
         public static string ProvinciaDesdeCodigoPostal(string codigoPostal, string pais)
         {
             bool esPortugal = string.Equals(pais?.Trim(), PAIS_PORTUGAL, StringComparison.OrdinalIgnoreCase);
             if (esPortugal)
             {
-                return string.Empty;
+                return PROVINCIA_PORTUGAL;
             }
 
             // España (península, Baleares, Canarias, Ceuta, Melilla).

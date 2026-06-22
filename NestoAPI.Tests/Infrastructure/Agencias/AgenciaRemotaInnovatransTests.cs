@@ -130,6 +130,30 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task InsertarYEtiquetar_AlbaranGuionConCodError_RechazaConElMsgErrorYNoPideEtiqueta()
+        {
+            // Caso real (pedido 920350 a Portugal): DTX devuelve albarán "-" con codError 402 y un
+            // msgError. Es un RECHAZO, no un albarán válido: hay que dar el msgError, no pedir etiqueta
+            // (evita el mensaje confuso "no devolvió etiqueta ZPL") ni persistir un albarán fantasma.
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios",
+                @"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>
+                     <ns4:InsertarEnviosTypeOut xmlns:ns4=""http://messageout.dtx.sw""><ns4:resultado>
+                       <ns2:albaran xmlns:ns2=""http://complexType.dtx.sw"">-</ns2:albaran>
+                       <ns2:codError xmlns:ns2=""http://complexType.dtx.sw"">402</ns2:codError>
+                       <ns2:msgError xmlns:ns2=""http://complexType.dtx.sw"">Error. No existe agencia asociada al pais indicado.</ns2:msgError>
+                     </ns4:resultado></ns4:InsertarEnviosTypeOut></soapenv:Body></soapenv:Envelope>");
+
+            ResultadoTramitacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .InsertarYEtiquetarAsync(EnvioMadrid());
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "No existe agencia asociada");
+            Assert.IsNull(r.Albaran, "No debe persistir el albarán placeholder \"-\".");
+            Assert.AreEqual(1, fake.Llamadas.Count, "No debe pedir etiqueta si el insert fue rechazado.");
+        }
+
+        [TestMethod]
         public async Task InsertarYEtiquetar_AlbaranConTextoDeError_NoEsExitoNiPideEtiqueta()
         {
             // DTX a veces devuelve codError=200 pero mete un texto de error en el campo albarán.

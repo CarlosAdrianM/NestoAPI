@@ -13,6 +13,10 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     ///   - CEX y Sending: en cuarentena (parámetro AgenciasEnCuarentena).
     ///   - OnTime: fuera del factory.
     /// Si alguna se reactiva, se porta su tarifa y se añade aquí.
+    ///
+    /// CTT entra como AGENCIA SOMBRA (AgenciasTransporte.EsSombra = 1): SÍ se incluye aquí para que
+    /// compita en el ranking y poder medir cuántos envíos ganaría, pero el comparador la excluye de
+    /// MasEconomica (nunca se auto-selecciona).
     /// </summary>
     public class RegistroTarifas : IRegistroTarifas
     {
@@ -22,7 +26,8 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             new TarifaGLSBaleares(),
             new TarifaInnovatransEconomy(),
             new TarifaInnovatransPortugal(),
-            new TarifaInnovatransMaritimo()
+            new TarifaInnovatransMaritimo(),
+            new TarifaCTT48h()
         };
 
         public IEnumerable<ITarifaAgencia> Todas() => _tarifas;

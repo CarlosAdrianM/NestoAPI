@@ -186,7 +186,7 @@ namespace NestoAPI.Controllers
             if (!string.IsNullOrWhiteSpace(envio.CodigoBarras))
             {
                 EtiquetaDataTrans reimpresion = await ReimprimirSeguro(agencia, envio.CodigoBarras.Trim());
-                bool reimpresionOk = reimpresion != null && reimpresion.Exito;
+                bool reimpresionOk = reimpresion != null && reimpresion.Exito && reimpresion.EsZpl;
                 await AuditarTramitacion(envio, agencia, reimpresionOk, reimpresionOk ? null : "No se pudo reimprimir la etiqueta.");
                 if (!reimpresionOk)
                 {
@@ -206,40 +206,50 @@ namespace NestoAPI.Controllers
                 return Content(HttpStatusCode.BadGateway, ex.Message);
             }
 
+            // Si la agencia asignó albarán, el envío YA existe en su sistema: hay que persistirlo SIEMPRE
+            // (aunque la etiqueta haya fallado) para no reinsertarlo en un reintento (envío fantasma +
+            // cobro doble). Si no hubo albarán (inserción rechazada), el envío queda intacto/pendiente.
+            if (!string.IsNullOrWhiteSpace(resultado.Albaran))
+            {
+                envio.CodigoBarras = resultado.Albaran;
+                envio.Bultos = (short)resultado.Bultos;
+                envio.Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO;
+                // Issue #135: con el envío ya tramitado, el sentinel de reembolso (<0) pasa a 0.
+                if (envio.Reembolso < 0)
+                {
+                    envio.Reembolso = 0;
+                }
+                envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+                envio.FechaModificacion = DateTime.Now;
+                // CRÍTICO: persistir el registro (albarán/estado) ANTES de auditar; si no, un fallo de la
+                // auditoría dejaría un envío registrado en la agencia pero no en nuestra BD (envío fantasma).
+                try
+                {
+                    await db.SaveChangesAsync();
+                }
+                catch (DbEntityValidationException ex)
+                {
+                    // El envío YA está registrado en la agencia (albarán resultado.Albaran) pero no se
+                    // pudo guardar en nuestra BD. Logueamos el detalle de los ValidationErrors (que el
+                    // mensaje genérico de EF oculta) CON el albarán, para diagnosticar el campo y poder
+                    // recuperar el envío sin perderlo.
+                    string detalle = DescribirErroresValidacion(ex);
+                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                        $"Innovatrans registró el envío {envio.Numero} (albarán {resultado.Albaran}) pero falló al guardar en BD: {detalle}", ex)));
+                    return Content(HttpStatusCode.InternalServerError,
+                        $"Se registró en la agencia (albarán {resultado.Albaran}) pero no se pudo guardar en nuestra BD: {detalle}");
+                }
+            }
+
             if (!resultado.Exito)
             {
+                // Dos casos: (a) inserción rechazada (sin albarán, el envío queda intacto/pendiente) o
+                // (b) registrado pero sin etiqueta ZPL válida (el albarán ya quedó guardado arriba, así
+                // que un reintento reimprimirá en vez de reinsertar). En ambos: BadGateway con el motivo.
                 await AuditarTramitacion(envio, agencia, false, resultado.Error);
                 return Content(HttpStatusCode.BadGateway, resultado.Error);
             }
 
-            envio.CodigoBarras = resultado.Albaran;
-            envio.Bultos = (short)resultado.Bultos;
-            envio.Estado = (short)Constantes.Agencias.ESTADO_EN_CURSO;
-            // Issue #135: con el envío ya tramitado, el sentinel de reembolso (<0) pasa a 0.
-            if (envio.Reembolso < 0)
-            {
-                envio.Reembolso = 0;
-            }
-            envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
-            envio.FechaModificacion = DateTime.Now;
-            // CRÍTICO: persistir el registro (albarán/estado) ANTES de auditar; si no, un fallo de la
-            // auditoría dejaría un envío registrado en la agencia pero no en nuestra BD (envío fantasma).
-            try
-            {
-                await db.SaveChangesAsync();
-            }
-            catch (DbEntityValidationException ex)
-            {
-                // El envío YA está registrado en la agencia (albarán resultado.Albaran) pero no se
-                // pudo guardar en nuestra BD. Logueamos el detalle de los ValidationErrors (que el
-                // mensaje genérico de EF oculta) CON el albarán, para diagnosticar el campo y poder
-                // recuperar el envío sin perderlo.
-                string detalle = DescribirErroresValidacion(ex);
-                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                    $"Innovatrans registró el envío {envio.Numero} (albarán {resultado.Albaran}) pero falló al guardar en BD: {detalle}", ex)));
-                return Content(HttpStatusCode.InternalServerError,
-                    $"Se registró en la agencia (albarán {resultado.Albaran}) pero no se pudo guardar en nuestra BD: {detalle}");
-            }
             await AuditarTramitacion(envio, agencia, true, null);
 
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));

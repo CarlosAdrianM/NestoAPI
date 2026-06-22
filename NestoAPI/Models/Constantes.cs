@@ -24,6 +24,9 @@ namespace NestoAPI.Models
             // Innovatrans (DataTrans DTX). Primera agencia con gestión remota server-side (insertar
             // envío + etiqueta ZPL vía SOAP). Alta en AgenciasTransporte con Numero=12.
             public const int AGENCIA_INNOVATRANS = 12;
+            // CTT Express. Alta en AgenciasTransporte con Numero=13 y EsSombra=1 (agencia sombra:
+            // compite en el comparador para medir cuántos envíos ganaría, pero nunca se auto-selecciona).
+            public const int AGENCIA_CTT = 13;
             public const int ESTADO_PENDIENTE = -1;
             public const int ESTADO_EN_CURSO = 0;
             public const decimal REEMBOLSO_NO_COBRAR = -1M;

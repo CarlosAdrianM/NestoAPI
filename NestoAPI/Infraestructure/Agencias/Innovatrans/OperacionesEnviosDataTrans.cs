@@ -69,12 +69,20 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         public string AgenciaDestino { get; set; }
 
         /// <summary>
-        /// DTX a veces devuelve codError=200 pero mete en &lt;albaran&gt; un texto de error (p.ej.
-        /// "ERROR: ...NullPointerException") en vez del albarán. Por eso el éxito exige que el albarán
-        /// no esté vacío y NO empiece por "ERROR" (si no, lo trataríamos como un albarán válido).
+        /// El insert es un éxito solo si DTX asignó un albarán de verdad. DTX señala el fallo de
+        /// varias formas que NO debemos tomar por un albarán válido:
+        ///  - albarán vacío;
+        ///  - un texto de error en &lt;albaran&gt; (p.ej. "ERROR: ...NullPointerException"), pese a codError=200;
+        ///  - el placeholder "-" acompañado de un codError de error (p.ej. 402 "No existe agencia
+        ///    asociada al país indicado" en envíos a Portugal sin agencia configurada);
+        ///  - cualquier codError distinto de 200 (200/vacío = OK; el resto es error de negocio).
+        /// Si tratáramos esos casos como éxito, pediríamos la etiqueta de un albarán inexistente y
+        /// daríamos un mensaje confuso ("no devolvió etiqueta ZPL") en vez del msgError real.
         /// </summary>
         public bool Exito => !string.IsNullOrWhiteSpace(Albaran)
-            && !Albaran.TrimStart().StartsWith("ERROR", StringComparison.OrdinalIgnoreCase);
+            && Albaran.Trim() != "-"
+            && !Albaran.TrimStart().StartsWith("ERROR", StringComparison.OrdinalIgnoreCase)
+            && (CodError == null || CodError == 200);
     }
 
     /// <summary>

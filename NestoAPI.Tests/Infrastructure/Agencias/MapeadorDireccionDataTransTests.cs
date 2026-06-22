@@ -26,11 +26,11 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         [DataTestMethod]
         [DataRow("1000-001", "PRT", DisplayName = "Lisboa con guion")]
         [DataRow("4000", "PRT", DisplayName = "Oporto 4 digitos")]
-        public void ProvinciaDesdeCodigoPostal_Portugal_VacioPendienteDeConfirmar(string cp, string pais)
+        public void ProvinciaDesdeCodigoPostal_Portugal_CodigoFijo053(string cp, string pais)
         {
-            // El integrador aclaró que el "6"+4 dígitos va en codPostalDes, NO en provincia, y quedó
-            // en confirmar qué valor lleva provincia para Portugal. Hasta entonces, vacío.
-            Assert.AreEqual(string.Empty, MapeadorDireccionDataTrans.ProvinciaDesdeCodigoPostal(cp, pais));
+            // El integrador confirmó (22/06/26) que la provincia para Portugal es el código fijo "053"
+            // (el CP comprimido "6"+4 dígitos va en codPostalDes, no aquí).
+            Assert.AreEqual("053", MapeadorDireccionDataTrans.ProvinciaDesdeCodigoPostal(cp, pais));
         }
 
         [TestMethod]

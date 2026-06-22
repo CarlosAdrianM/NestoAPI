@@ -11,7 +11,7 @@ namespace NestoAPI.Models
 {
     using System;
     using System.Collections.Generic;
-
+    
     public partial class OfertaEscalonadaProducto
     {
         public int Id { get; set; }
@@ -21,7 +21,7 @@ namespace NestoAPI.Models
         public decimal PrecioBase { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
-
+    
         public virtual OfertaEscalonada OfertasEscalonada { get; set; }
         public virtual Producto Producto1 { get; set; }
     }

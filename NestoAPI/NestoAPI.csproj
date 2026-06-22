@@ -571,11 +571,13 @@
     <Compile Include="Infraestructure\Agencias\Innovatrans\ClienteSoapDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\OperacionesLecturaDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\OperacionesEnviosDataTrans.cs" />
+    <Compile Include="Infraestructure\Agencias\Innovatrans\NormalizadorZplDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorTipoServicioDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\AgenciaRemotaInnovatrans.cs" />
     <Compile Include="Infraestructure\Agencias\IAgenciaRemota.cs" />
     <Compile Include="Infraestructure\Agencias\RegistroIntercambiosRemotos.cs" />
     <Compile Include="Infraestructure\Agencias\FabricaAgenciasRemotas.cs" />
+    <Compile Include="Infraestructure\Agencias\ComparativaAgenciaSombraJobsService.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraCosteEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgenciasContratos.cs" />
@@ -590,6 +592,7 @@
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransEconomy.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransPortugal.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransMaritimo.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\TarifaCTT48h.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ZonasEnvioAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEnviosAgencia.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
@@ -797,6 +800,9 @@
     <Compile Include="Migrations\Configuration.cs" />
     <Compile Include="Models\AccountBindingModels.cs" />
     <Compile Include="Models\CabAlquiler.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\ComparativaAgenciaSombra.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\DispositivoNotificacion.cs">

@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Threading.Tasks;
@@ -96,16 +97,42 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                     {
                         throw new DataTransException($"DataTrans {operacion} devolvió HTTP {(int)resp.StatusCode}: {cuerpo}");
                     }
+                    XDocument doc;
                     try
                     {
-                        return XDocument.Parse(cuerpo);
+                        doc = XDocument.Parse(cuerpo);
                     }
                     catch (XmlException ex)
                     {
-                        throw new DataTransException($"La respuesta de DataTrans {operacion} no es XML válido: {cuerpo}", ex);
+                        // El cuerpo puede ser enorme/binario (p.ej. DTX inlina un PDF sin codificar y
+                        // su binario rompe el XML). No volcamos todo: un resumen basta para diagnosticar.
+                        throw new DataTransException(
+                            $"La respuesta de DataTrans {operacion} no es XML válido (posible documento binario sin codificar): {Resumir(cuerpo)}", ex);
                     }
+
+                    // Un Fault bien formado (sin resultado de negocio) lo tratamos como error de transporte:
+                    // lo lanzamos con el faultstring para que el llamante dé un mensaje claro y no parsee vacío.
+                    XElement fault = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Fault");
+                    if (fault != null)
+                    {
+                        string faultString = fault.Descendants()
+                            .FirstOrDefault(e => e.Name.LocalName == "faultstring")?.Value;
+                        throw new DataTransException(
+                            $"DataTrans {operacion} devolvió un error SOAP: {faultString ?? Resumir(cuerpo)}");
+                    }
+
+                    return doc;
                 }
             }
+        }
+
+        // Recorta el cuerpo para los mensajes de error: puede ser enorme (un PDF inlineado) y no
+        // aporta nada volcarlo entero al log/respuesta.
+        private static string Resumir(string cuerpo)
+        {
+            const int MAXIMO = 500;
+            if (string.IsNullOrEmpty(cuerpo)) return cuerpo;
+            return cuerpo.Length <= MAXIMO ? cuerpo : cuerpo.Substring(0, MAXIMO) + "…";
         }
 
         private string ConstruirEnvelope(string operacion, XElement[] parametros)

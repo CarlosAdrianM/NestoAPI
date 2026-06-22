@@ -7,6 +7,7 @@ using Microsoft.Owin.Security.Jwt;
 using Microsoft.Owin.Security.OAuth;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Alquileres;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.ExtractosRuta;
@@ -359,6 +360,20 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'amazon-rotacion-credenciales' configurado (diario a las 7:00)");
+
+            // Diario a las 6:30: registra en ComparativaAgenciaSombra qué envíos reales habría ganado
+            // cada agencia SOMBRA (p.ej. CTT) y a qué coste, para evaluar si negociar con ella. No
+            // hace nada si no hay agencias sombra (AgenciasTransporte.EsSombra = 1).
+            RecurringJob.AddOrUpdate(
+                "comparativa-agencia-sombra",
+                () => ComparativaAgenciaSombraJobsService.ProcesarComparativaDiaria(),
+                "30 6 * * *", // Cron: todos los días a las 6:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'comparativa-agencia-sombra' configurado (diario a las 6:30)");
 
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
