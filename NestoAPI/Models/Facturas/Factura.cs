@@ -23,6 +23,9 @@ namespace NestoAPI.Models.Facturas
         public bool MostrarImagenes { get; set; }
         public string SuPedido { get; set; }
         public string TipoDocumento { get; set; }
+        // NestoAPI#243: descuento por pronto pago (financiero) del documento, como fracción (0,03 = 3 %).
+        // Si es > 0, el PDF QuestPDF muestra el comercial en las líneas y el pronto pago en el pie.
+        public decimal DescuentoPP { get; set; }
         public List<DireccionFactura> Direcciones { get; set; }
         public List<LineaFactura> Lineas { get; set; }
         public List<NotaFactura> NotasAlPie { get; set; }

@@ -461,6 +461,48 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(string.Empty, GeneradorPdfFacturasQuestPdf.ComponerTextoDireccionEntrega(null));
         }
 
+        // NestoAPI#243: separación del descuento comercial y el pronto pago para el PDF.
+
+        [TestMethod]
+        public void DescuentoComercial_QuitaElProntoPago_DelDescuentoTotal()
+        {
+            // 15 % comercial + 3 % PP => total 17,55 %. La línea debe mostrar el 15 % comercial.
+            decimal comercial = GeneradorPdfFacturasQuestPdf.DescuentoComercial(0.1755m, 0.03m);
+            Assert.AreEqual(0.15m, Math.Round(comercial, 4));
+        }
+
+        [TestMethod]
+        public void DescuentoComercial_SinProntoPago_DevuelveElTotal()
+        {
+            Assert.AreEqual(0.1755m, GeneradorPdfFacturasQuestPdf.DescuentoComercial(0.1755m, 0m));
+        }
+
+        [TestMethod]
+        public void ImporteAntesProntoPago_DeshaceElProntoPago()
+        {
+            // Base imponible 82,45 (= 85,00 con un 3 % de PP). El subtotal comercial es 85,00.
+            Assert.AreEqual(85.00m, GeneradorPdfFacturasQuestPdf.ImporteAntesProntoPago(82.45m, 0.03m));
+        }
+
+        [TestMethod]
+        public void ImporteAntesProntoPago_SinProntoPago_DevuelveElImporte()
+        {
+            Assert.AreEqual(82.45m, GeneradorPdfFacturasQuestPdf.ImporteAntesProntoPago(82.45m, 0m));
+        }
+
+        [TestMethod]
+        public void SeparacionProntoPago_Cuadra_SubtotalMenosProntoPagoEsLaBase()
+        {
+            // El importe del pronto pago del pie = subtotal - base imponible, y coincide con base*PP/(1-PP).
+            decimal baseImponible = 82.45m;
+            decimal pp = 0.03m;
+            decimal subtotal = GeneradorPdfFacturasQuestPdf.ImporteAntesProntoPago(baseImponible, pp);
+            decimal importePP = subtotal - baseImponible;
+            Assert.AreEqual(85.00m, subtotal);
+            Assert.AreEqual(2.55m, importePP);          // 85,00 * 3 %
+            Assert.AreEqual(baseImponible, subtotal - importePP); // cuadra con la base imponible
+        }
+
         [TestMethod]
         public void ComponerTextoDireccionEntrega_SoloNombre_NoIncluyeSeparadoresVacios()
         {

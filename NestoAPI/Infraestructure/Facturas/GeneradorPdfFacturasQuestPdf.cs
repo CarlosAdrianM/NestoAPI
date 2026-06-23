@@ -52,8 +52,9 @@ namespace NestoAPI.Infraestructure.Facturas
                 CargarImagenesProductos(factura);
             }
 
-            // Determinar si hay descuentos en alguna línea
-            bool mostrarColumnaDescuento = factura.Lineas?.Any(l => l.Descuento != 0) ?? false;
+            // Determinar si hay descuentos en alguna línea (NestoAPI#243: el descuento COMERCIAL,
+            // sin el pronto pago, que es el que se muestra en la línea).
+            bool mostrarColumnaDescuento = factura.Lineas?.Any(l => DescuentoComercial(l.Descuento, l.DescuentoPP) != 0) ?? false;
 
             var documento = Document.Create(container =>
             {
@@ -329,6 +330,14 @@ namespace NestoAPI.Infraestructure.Facturas
 
                 column.Item().PaddingVertical(5);
 
+                // NestoAPI#243: si hay descuento por pronto pago, mostrar subtotal + pronto pago
+                // (financiero) ANTES de la base imponible. El total y la base imponible no cambian.
+                if (factura.DescuentoPP > 0m)
+                {
+                    column.Item().Element(c => ComponerDescuentoProntoPago(c, factura));
+                    column.Item().PaddingVertical(3);
+                }
+
                 // Totales (ancho completo)
                 column.Item().Element(c => ComponerTotales(c, factura));
 
@@ -470,6 +479,10 @@ namespace NestoAPI.Infraestructure.Facturas
                         // Fila de producto - SIN líneas entre filas
                         // Issue #222: color de línea según estado/stock (replica lógica de Factura.rdlc)
                         string colorLinea = ColorLinea(linea.Estado, linea.Picking);
+                        // NestoAPI#243: en la línea va el descuento COMERCIAL y el importe ANTES del
+                        // pronto pago (subtotal). El pronto pago se muestra aparte en el pie.
+                        decimal descuentoComercialLinea = DescuentoComercial(linea.Descuento, linea.DescuentoPP);
+                        decimal importeLinea = ImporteAntesProntoPago(linea.Importe, linea.DescuentoPP);
                         table.Cell().Padding(2).AlignMiddle().Text(linea.Producto ?? "").FontSize(8).FontColor(colorLinea);
                         table.Cell().Padding(2).AlignMiddle().Text(linea.DescripcionCompleta ?? "").FontSize(8).FontColor(colorLinea);
                         table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.Cantidad?.ToString() ?? "").FontSize(8).FontColor(colorLinea);
@@ -477,9 +490,9 @@ namespace NestoAPI.Infraestructure.Facturas
                         if (mostrarColumnaDescuento)
                         {
                             table.Cell().Padding(2).AlignMiddle().AlignRight()
-                                .Text(linea.Descuento != 0 ? linea.Descuento.ToString("P2") : "").FontSize(8).FontColor(colorLinea);
+                                .Text(descuentoComercialLinea != 0 ? descuentoComercialLinea.ToString("P2") : "").FontSize(8).FontColor(colorLinea);
                         }
-                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(linea.Importe.ToString("N2")).FontSize(8).FontColor(colorLinea);
+                        table.Cell().Padding(2).AlignMiddle().AlignRight().Text(importeLinea.ToString("N2")).FontSize(8).FontColor(colorLinea);
                     }
                 }
             });
@@ -522,6 +535,22 @@ namespace NestoAPI.Infraestructure.Facturas
             return "Entrega: " + string.Join(" - ", partes);
         }
 
+        // NestoAPI#243: descuento comercial de la línea = descuento total (SumaDescuentos) SIN el
+        // pronto pago, para mostrarlo en la línea. (1-comercial)(1-pp) = (1-total), luego
+        // comercial = 1 - (1-total)/(1-pp). Con pp=0 devuelve el total (no cambia nada).
+        internal static decimal DescuentoComercial(decimal descuentoTotal, decimal descuentoPP)
+            => descuentoPP > 0m && descuentoPP < 1m
+                ? 1m - ((1m - descuentoTotal) / (1m - descuentoPP))
+                : descuentoTotal;
+
+        // NestoAPI#243: importe de la línea ANTES del pronto pago (subtotal comercial). La base
+        // imponible (importe) ya lleva el pp aplicado; lo "deshacemos" dividiendo por (1-pp). El pie
+        // resta el pronto pago para volver a la base imponible. Con pp=0 devuelve el importe tal cual.
+        internal static decimal ImporteAntesProntoPago(decimal importe, decimal descuentoPP)
+            => descuentoPP > 0m && descuentoPP < 1m
+                ? RoundingHelper.Round(importe / (1m - descuentoPP), 2)
+                : importe;
+
         internal static string ColorLinea(int estado, int picking)
         {
             if (estado >= 2 || estado < -1)
@@ -535,6 +564,32 @@ namespace NestoAPI.Infraestructure.Facturas
             return picking == 0
                 ? Colors.Blue.Medium            // EN_CURSO sin picking: stock sin comprobar
                 : Colors.Green.Medium;          // EN_CURSO con picking: servible
+        }
+
+        // NestoAPI#243: bloque "Subtotal + Pronto pago" antes de la base imponible (solo cuando hay
+        // descuento por pronto pago). El importe del pronto pago se deriva como subtotal - base
+        // imponible para que cuadre exactamente con la base existente (sin descuadres de redondeo).
+        private void ComponerDescuentoProntoPago(IContainer container, Factura factura)
+        {
+            decimal subtotal = factura.Lineas?.Sum(l => ImporteAntesProntoPago(l.Importe, l.DescuentoPP)) ?? 0m;
+            decimal baseImponible = factura.Totales?.Sum(t => t.BaseImponible)
+                ?? (factura.Lineas?.Sum(l => l.Importe) ?? 0m);
+            decimal importeProntoPago = subtotal - baseImponible;
+
+            container.AlignRight().Width(260).Column(col =>
+            {
+                col.Item().Row(row =>
+                {
+                    row.RelativeItem().AlignRight().PaddingRight(8).Text("Subtotal:").FontSize(9);
+                    row.ConstantItem(80).AlignRight().Text(subtotal.ToString("N2")).FontSize(9);
+                });
+                col.Item().Row(row =>
+                {
+                    row.RelativeItem().AlignRight().PaddingRight(8)
+                        .Text($"Pronto pago {factura.DescuentoPP.ToString("P2")}:").FontSize(9);
+                    row.ConstantItem(80).AlignRight().Text("-" + importeProntoPago.ToString("N2")).FontSize(9);
+                });
+            });
         }
 
         private void ComponerTotales(IContainer container, Factura factura)

@@ -31,6 +31,10 @@ namespace NestoAPI.Models.Facturas
         public decimal? PrecioUnitario { get; set; }
         public decimal Descuento { get; set; }
         public decimal Importe { get; set; }
+        // NestoAPI#243: descuento por pronto pago (financiero) de la línea. Cuando es > 0, el PDF
+        // QuestPDF muestra en la línea solo el descuento comercial (Descuento sin el PP) y mueve el
+        // pronto pago al pie. Vale 0 en líneas/documentos donde no se separa (RDLC lo ignora).
+        public decimal DescuentoPP { get; set; }
         public int Pedido { get; set; }
         public int Estado { get; set; }
         public int Picking { get; set; }

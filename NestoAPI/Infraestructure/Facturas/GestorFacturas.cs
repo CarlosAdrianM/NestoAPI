@@ -233,7 +233,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     Pedido = linea.Número,
                     Estado = linea.Estado,
                     Picking = linea.Picking ?? 0,
-                    Contacto = linea.Contacto?.Trim()
+                    Contacto = linea.Contacto?.Trim(),
+                    DescuentoPP = linea.DescuentoPP // NestoAPI#243
                 };
 
                 if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
@@ -401,6 +402,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 Serie = cabFactura.Serie?.Trim(),
                 SuPedido = cabFactura.SuPedido?.Trim(),
                 TipoDocumento = tipoDocumento,
+                DescuentoPP = lineas.Select(l => l.DescuentoPP).DefaultIfEmpty(0m).Max(), // NestoAPI#243
                 Totales = totales,
                 UrlLogo = serieFactura.UrlLogo,
                 UsaFormatoTicket = serieFactura.UsaFormatoTicket,
@@ -457,7 +459,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     Producto = linea.Producto?.Trim(),
                     Pedido = linea.Número,
                     Estado = linea.Estado,
-                    Picking = linea.Picking ?? 0
+                    Picking = linea.Picking ?? 0,
+                    DescuentoPP = ponerPrecios ? linea.DescuentoPP : 0 // NestoAPI#243
                 };
 
                 if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
@@ -536,6 +539,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 Serie = cabPedido.Serie?.Trim(),
                 SuPedido = cabPedido.SuPedido?.Trim(),
                 TipoDocumento = tipoDocumento,
+                DescuentoPP = lineas.Select(l => l.DescuentoPP).DefaultIfEmpty(0m).Max(), // NestoAPI#243
                 Totales = totales,
                 UrlLogo = serieFactura.UrlLogo,
                 UsaFormatoTicket = serieFactura.UsaFormatoTicket,
