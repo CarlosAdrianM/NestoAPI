@@ -88,8 +88,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
 
             DatosEnvioRemoto envio = EnvioMadrid();
-            envio.CodigoPostal = "1000-001"; // Lisboa
-            envio.Poblacion = "LISBOA";
+            envio.CodigoPostal = "3830-004"; // Ílhavo (Aveiro)
+            envio.Poblacion = "ÍLHAVO-AVEIRO"; // viene de la dirección con tilde y sufijo del distrito
 
             await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
                 .InsertarYEtiquetarAsync(envio);
@@ -99,16 +99,19 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsFalse(insertar.Contains("<com:paisDes>PRT</com:paisDes>"),
                 "paisDes no debe viajar como PRT: DataTrans rechaza Portugal con país PRT.");
             StringAssert.Contains(insertar, "<com:tipoServ>0014</com:tipoServ>");
-            StringAssert.Contains(insertar, "<com:codPostalDes>61000</com:codPostalDes>");
+            StringAssert.Contains(insertar, "<com:codPostalDes>63830</com:codPostalDes>");
             StringAssert.Contains(insertar, "<com:provinciaDes>053</com:provinciaDes>");
-            Assert.IsFalse(insertar.Contains("1000-001"), "No debe viajar el CP portugués sin comprimir.");
+            // Población normalizada al catálogo de DTX (sin tilde, mayúsculas, sin el sufijo).
+            StringAssert.Contains(insertar, "<com:poblacionDes>ILHAVO</com:poblacionDes>");
+            // Portugal SÍ canaliza por población.
+            StringAssert.Contains(insertar, "<com:canalizarPorPoblacion>true</com:canalizarPorPoblacion>");
         }
 
         [TestMethod]
-        public async Task InsertarYEtiquetar_EnviaCanalizarPorPoblacion()
+        public async Task InsertarYEtiquetar_DestinoEspana_NoCanalizaPorPoblacion()
         {
-            // DTX necesita canalizarPorPoblacion=true para enrutar (Portugal con provincia "053" sola
-            // daba codError 405 "Canalizacion incorrecta", verificado en prod, llamada 49031).
+            // En España NO se manda canalizarPorPoblacion (canaliza por CP/provincia como siempre);
+            // activarlo arriesgaría que poblaciones con tildes/variantes no cuadren con el catálogo.
             var fake = new FakeClienteSoap();
             fake.Responder("InsertarEnvios", RespInsertar("9990001112", "1"));
             fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
@@ -116,8 +119,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
                 .InsertarYEtiquetarAsync(EnvioMadrid());
 
-            StringAssert.Contains(fake.Llamadas[0].Xml,
-                "<com:canalizarPorPoblacion>true</com:canalizarPorPoblacion>");
+            Assert.IsFalse(fake.Llamadas[0].Xml.Contains("canalizarPorPoblacion"),
+                "España no debe canalizar por población.");
         }
 
         [TestMethod]

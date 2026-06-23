@@ -85,5 +85,37 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         {
             Assert.AreEqual("ESP", MapeadorDireccionDataTrans.PaisParaDataTrans(paisInterno));
         }
+
+        // Población para Portugal: el WS canaliza por población y el texto debe cuadrar con el
+        // catálogo de DTX (BuscarPoblacion 63830 -> ILHAVO). Quitamos tilde, mayúsculas y el sufijo.
+        [DataTestMethod]
+        [DataRow("ÍLHAVO-AVEIRO", "ILHAVO", DisplayName = "Tilde + sufijo de distrito")]
+        [DataRow("ilhavo", "ILHAVO", DisplayName = "Minúsculas a mayúsculas")]
+        [DataRow("LISBOA", "LISBOA", DisplayName = "Sin tilde ni separador, igual")]
+        [DataRow("GAFANHA DA NAZARÉ", "GAFANHA DA NAZARE", DisplayName = "Espacios se conservan, tilde fuera")]
+        [DataRow("ÍLHAVO, AVEIRO", "ILHAVO", DisplayName = "Separador coma")]
+        public void PoblacionParaDataTrans_Portugal_Normaliza(string entrada, string esperado)
+        {
+            Assert.AreEqual(esperado, MapeadorDireccionDataTrans.PoblacionParaDataTrans(entrada, "PRT"));
+        }
+
+        [TestMethod]
+        public void PoblacionParaDataTrans_Espana_NoToca()
+        {
+            // En España no se canaliza por población: la dejamos tal cual (tildes incluidas).
+            Assert.AreEqual("ALCALÁ DE HENARES",
+                MapeadorDireccionDataTrans.PoblacionParaDataTrans("ALCALÁ DE HENARES", "ESP"));
+        }
+
+        [DataTestMethod]
+        [DataRow("PRT", true)]
+        [DataRow("prt", true)]
+        [DataRow(" PRT ", true)]
+        [DataRow("ESP", false)]
+        [DataRow(null, false)]
+        public void EsPortugal_DetectaPais(string pais, bool esperado)
+        {
+            Assert.AreEqual(esperado, MapeadorDireccionDataTrans.EsPortugal(pais));
+        }
     }
 }

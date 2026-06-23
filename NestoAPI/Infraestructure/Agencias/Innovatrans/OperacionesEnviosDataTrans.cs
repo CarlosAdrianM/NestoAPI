@@ -168,13 +168,16 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 Campo("paqs", envio.Paqs.ToString(CultureInfo.InvariantCulture)),
                 Campo("reembolso", Dec(envio.Reembolso)),
                 Campo("comReembPag", SiNo(envio.ComisionReembolsoPagada)),
-                Campo("portesPagados", SiNo(envio.PortesPagados)),
-                // Issue Innovatrans (23/06/26): canalizar por población. Imprescindible para
-                // Portugal — la provincia "053" sola no basta y DTX devuelve codError 405
-                // "Canalizacion incorrecta" (verificado en prod, llamada 49031). España funciona
-                // igual con el flag (prueba a Madrid con canalizarPorPoblacion=true -> albarán
-                // 6520139001), así que se manda siempre.
-                Campo("canalizarPorPoblacion", "true"));
+                Campo("portesPagados", SiNo(envio.PortesPagados)));
+
+            // Issue Innovatrans (23/06/26): canalizar por población SOLO en Portugal — la provincia
+            // "053" no basta y DTX devuelve codError 405 "Canalizacion incorrecta" (verificado en prod,
+            // llamada 49031). En España NO se manda (canaliza por CP/provincia como siempre); activarlo
+            // allí arriesgaría que poblaciones con tildes/variantes no cuadren con el catálogo de DTX.
+            if (MapeadorDireccionDataTrans.EsPortugal(envio.Destinatario?.Pais))
+            {
+                envios.Add(Campo("canalizarPorPoblacion", "true"));
+            }
 
             XDocument doc = await _cliente.EjecutarAsync("Envios", "InsertarEnvios", envios).ConfigureAwait(false);
 
@@ -236,14 +239,15 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // provincia); Portugal comprime el CP a "6"+4 dígitos en codPostal y deja la provincia vacía.
             string codPostal = MapeadorDireccionDataTrans.CodigoPostalDestino(dir.CodigoPostal, dir.Pais);
             string provincia = MapeadorDireccionDataTrans.ProvinciaDesdeCodigoPostal(dir.CodigoPostal, dir.Pais);
+            string poblacion = MapeadorDireccionDataTrans.PoblacionParaDataTrans(dir.Poblacion, dir.Pais);
             envios.Add(
                 // Issue Innovatrans (23/06/26): el país del WS va SIEMPRE "ESP" (Portugal se
-                // canaliza vía España); el país interno solo deriva CP/provincia (arriba).
+                // canaliza vía España); el país interno solo deriva CP/provincia/población (arriba).
                 Campo("pais" + sufijo, MapeadorDireccionDataTrans.PaisParaDataTrans(dir.Pais)),
                 Campo("nombre" + sufijo, dir.Nombre),
                 Campo("telefono" + sufijo, dir.Telefono),
                 Campo("codPostal" + sufijo, codPostal),
-                Campo("poblacion" + sufijo, dir.Poblacion),
+                Campo("poblacion" + sufijo, poblacion),
                 Campo("provincia" + sufijo, provincia),
                 Campo("direccion" + sufijo, dir.Direccion));
         }

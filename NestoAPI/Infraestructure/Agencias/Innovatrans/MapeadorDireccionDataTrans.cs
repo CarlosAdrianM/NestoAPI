@@ -1,5 +1,7 @@
 using System;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 
 namespace NestoAPI.Infraestructure.Agencias.Innovatrans
 {
@@ -25,6 +27,47 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         /// <see cref="ProvinciaDesdeCodigoPostal"/>).
         /// </summary>
         public static string PaisParaDataTrans(string paisInterno) => PAIS_ESPANA;
+
+        /// <summary>¿El país interno es Portugal?</summary>
+        public static bool EsPortugal(string pais)
+            => string.Equals(pais?.Trim(), PAIS_PORTUGAL, StringComparison.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// Población para el WS. En Portugal hay que canalizar por población
+        /// (<c>canalizarPorPoblacion=true</c>) y el texto DEBE coincidir con el catálogo de DataTrans
+        /// (BuscarPoblacion); las direcciones llegan como "CIUDAD-DISTRITO" y con tildes ("ÍLHAVO-AVEIRO")
+        /// que DTX no reconoce → "Canalizacion incorrecta". Normalizamos a la ciudad en mayúsculas y sin
+        /// tildes, quedándonos con la parte anterior a un separador "-"/","/"/" (ÍLHAVO-AVEIRO -> ILHAVO).
+        /// En España se deja tal cual (no se canaliza por población).
+        /// </summary>
+        public static string PoblacionParaDataTrans(string poblacion, string pais)
+        {
+            if (!EsPortugal(pais) || string.IsNullOrWhiteSpace(poblacion))
+            {
+                return poblacion;
+            }
+            string normalizada = QuitarTildes(poblacion).ToUpperInvariant();
+            int corte = normalizada.IndexOfAny(new[] { '-', ',', '/' });
+            if (corte > 0)
+            {
+                normalizada = normalizada.Substring(0, corte);
+            }
+            return normalizada.Trim();
+        }
+
+        private static string QuitarTildes(string texto)
+        {
+            string formD = texto.Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder(formD.Length);
+            foreach (char c in formD)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(c) != UnicodeCategory.NonSpacingMark)
+                {
+                    _ = sb.Append(c);
+                }
+            }
+            return sb.ToString().Normalize(NormalizationForm.FormC);
+        }
 
         /// <summary>
         /// Código de provincia DataTrans (3 chars) a partir del código postal.
