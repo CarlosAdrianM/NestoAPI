@@ -45,6 +45,23 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         /// más cara, INCLUIDAS las sombra. Para Canarias devuelve solo Canteras (caso fijo). Sirve
         /// para detectar cuándo una sombra habría ganado y compararla con la agencia realmente usada.
         /// </summary>
+        /// <summary>
+        /// Coste de UNA agencia concreta (y, opcionalmente, de un servicio concreto) para el destino,
+        /// con su recargo de combustible. A diferencia de <see cref="MasEconomica"/> NO elige la más
+        /// barata: devuelve el coste de la agencia indicada (la realmente usada en el envío), para
+        /// rellenar <c>EnviosAgencia.ImporteGasto</c> (NestoAPI#238). Incluye agencias sombra. Si no se
+        /// indica servicio, devuelve el más barato de esa agencia. Null si esa agencia/servicio no
+        /// cubre el destino o no tiene tarifa portada.
+        /// </summary>
+        public OpcionEnvioAgencia CosteDeAgencia(string empresa, string codigoPostal, decimal peso,
+            decimal reembolso, int agenciaId, byte? servicioId = null)
+        {
+            // Ranking ya viene ordenado de más barato a más caro: el primero que case es el correcto.
+            return Ranking(empresa, codigoPostal, peso, reembolso)
+                .FirstOrDefault(o => o.AgenciaId == agenciaId
+                    && (servicioId == null || o.ServicioId == servicioId.Value));
+        }
+
         public IReadOnlyList<OpcionEnvioAgencia> Ranking(string empresa, string codigoPostal, decimal peso, decimal reembolso)
         {
             ZonasEnvioAgencia zona = CalculadoraZonaEnvio.CalcularZona(codigoPostal);

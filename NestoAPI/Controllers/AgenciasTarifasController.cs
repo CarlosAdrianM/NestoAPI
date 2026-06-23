@@ -152,6 +152,29 @@ namespace NestoAPI.Controllers
             return Ok(mejor);
         }
 
+        // GET: api/Agencias/{numero}/Coste?codigoPostal=&peso=&empresa=&reembolso=&servicioId=
+        // Coste de UNA agencia (y opcionalmente un servicio) para el destino, con su fuel. A diferencia
+        // de MasEconomica NO elige la más barata: devuelve el coste de la agencia indicada (la realmente
+        // usada en el envío), para rellenar EnviosAgencia.ImporteGasto (NestoAPI#238). NotFound si esa
+        // agencia/servicio no tiene tarifa portada o no cubre la zona.
+        [HttpGet]
+        [Route("api/Agencias/{numero:int}/Coste")]
+        public IHttpActionResult GetCosteAgencia(int numero, string codigoPostal, decimal peso,
+            string empresa = "1", decimal reembolso = 0, byte? servicioId = null)
+        {
+            var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
+            var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
+            var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
+            var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
+            OpcionEnvioAgencia opcion = comparador.CosteDeAgencia(empresa, codigoPostal, peso, reembolso, numero, servicioId);
+
+            if (opcion == null)
+            {
+                return NotFound();
+            }
+            return Ok(opcion);
+        }
+
         // POST: api/Agencias/ComparativaSombra/Recalcular?dias=30
         // Rellena ComparativaAgenciaSombra con los envíos reales de los últimos N días (idempotente):
         // qué agencia SOMBRA habría ganado cada envío y a qué coste vs la agencia usada. Para backfill

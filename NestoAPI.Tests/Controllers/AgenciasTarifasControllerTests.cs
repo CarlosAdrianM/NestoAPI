@@ -166,6 +166,48 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(1, resultado.Content.AgenciaId);
         }
 
+        // NestoAPI#238: coste de UNA agencia (la realmente usada), no la más barata.
+
+        [TestMethod]
+        public void GetCosteAgencia_AgenciaConTarifaQueCubreLaZona_DevuelveCoste()
+        {
+            Datos(new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "GLS", RecargoCombustible = 0m });
+
+            var resultado = controller.GetCosteAgencia(1, "08001", peso: 3m, empresa: "1", reembolso: 0m)
+                as OkNegotiatedContentResult<OpcionEnvioAgencia>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.AgenciaId);
+            Assert.IsTrue(resultado.Content.Coste > 0m, "El coste debe ser mayor que 0.");
+        }
+
+        [TestMethod]
+        public void GetCosteAgencia_AgenciaSinAlta_DevuelveNotFound()
+        {
+            // Sin filas en AgenciasTransporte, la tarifa de GLS no entra → no hay coste.
+            Datos();
+
+            var resultado = controller.GetCosteAgencia(1, "08001", peso: 3m, empresa: "1", reembolso: 0m);
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        [TestMethod]
+        public void GetCosteAgencia_DevuelveLaAgenciaPedida_NoLaMasBarata()
+        {
+            // En Peninsular GLS es más barata que Innovatrans, pero si pedimos Innovatrans (12)
+            // debe devolver SU coste, no el de la más barata (esa es la diferencia con MasEconomica).
+            Datos(
+                new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "GLS", RecargoCombustible = 0m },
+                new AgenciaTransporte { Numero = 12, Empresa = "1  ", Nombre = "Innovatrans", RecargoCombustible = 0.025m });
+
+            var resultado = controller.GetCosteAgencia(12, "08001", peso: 3m, empresa: "1", reembolso: 0m)
+                as OkNegotiatedContentResult<OpcionEnvioAgencia>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(12, resultado.Content.AgenciaId);
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
