@@ -1019,6 +1019,7 @@
     </Compile>
     <Compile Include="Models\ActualizarDireccionEtiquetaDTO.cs" />
     <Compile Include="Models\CrearEtiquetaPendienteDTO.cs" />
+    <Compile Include="Models\Agencias\SeguimientoAgencias.cs" />
     <Compile Include="Models\EnvioAgenciaDTO.cs" />
     <Compile Include="Models\PlanVentajas.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

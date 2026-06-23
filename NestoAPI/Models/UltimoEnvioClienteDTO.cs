@@ -1,5 +1,5 @@
+using NestoAPI.Models.Agencias;
 using System;
-using System.Net;
 
 namespace NestoAPI.Models
 {
@@ -30,41 +30,23 @@ namespace NestoAPI.Models
         {
             get
             {
+                // NestoAPI#240: delega en RegistroSeguimientoAgencias (un único sitio por agencia).
+                // Este DTO conserva su contrato: null si no hay número de seguimiento, si la agencia
+                // no se conoce, o si faltan datos para construir la URL.
                 if (string.IsNullOrEmpty(NumeroSeguimiento))
                 {
                     return null;
                 }
-
-                switch (AgenciaNombre)
+                var datos = new DatosSeguimientoEnvio
                 {
-                    case "ASM":
-                        return !string.IsNullOrEmpty(CodigoPostal)
-                            ? $"https://mygls.gls-spain.es/e/{NumeroSeguimiento}/{CodigoPostal}"
-                            : null;
-
-                    case "OnTime":
-                        if (!string.IsNullOrEmpty(Cliente) && Pedido > 0)
-                        {
-                            string referencia = WebUtility.UrlEncode(Cliente.Trim() + "-" + Pedido.ToString());
-                            return $"https://ontimegts.alertran.net/gts/pub/clielocserv.seam?cliente=02890107&referencia={referencia}";
-                        }
-                        return null;
-
-                    case "Correos Express":
-                        return $"https://s.correosexpress.com/c?n={NumeroSeguimiento}";
-
-                    case "Innovatrans":
-                        // Portal TIP-SA: id fijo de cliente (028040028040) + albarán (NumeroSeguimiento) de DataTrans.
-                        return $"https://aplicaciones.tip-sa.com/cliente/datos_env.php?id=028040028040{NumeroSeguimiento}";
-
-                    case "Sending":
-                        return !string.IsNullOrEmpty(AgenciaIdentificador)
-                            ? $"https://info.sending.es/fgts/pub/locNumServ.seam?cliente={AgenciaIdentificador}&localizador={NumeroSeguimiento}"
-                            : null;
-
-                    default:
-                        return null;
-                }
+                    AgenciaNombre = AgenciaNombre,
+                    Identificador = AgenciaIdentificador,
+                    CodigoSeguimiento = NumeroSeguimiento,
+                    CodigoPostal = CodigoPostal,
+                    Cliente = Cliente,
+                    Pedido = Pedido
+                };
+                return RegistroSeguimientoAgencias.ConstruirUrl(datos);
             }
         }
 

@@ -1,5 +1,5 @@
-﻿using System;
-using System.Net;
+﻿using NestoAPI.Models.Agencias;
+using System;
 
 namespace NestoAPI.Models
 {
@@ -39,40 +39,23 @@ namespace NestoAPI.Models
         {
             get
             {
-                string enlace;
-                switch (AgenciaNombre)
+                // NestoAPI#240: la lógica por agencia vive en RegistroSeguimientoAgencias. Este DTO
+                // conserva su contrato: "error, agencia no definida" si la agencia no se conoce y
+                // cadena vacía si se conoce pero faltan datos para construir la URL.
+                if (!RegistroSeguimientoAgencias.AgenciaConocida(AgenciaNombre))
                 {
-                    case "ASM":
-                        enlace = !string.IsNullOrEmpty(CodigoBarras) && !string.IsNullOrEmpty(CodigoPostal) ? string.Format("https://mygls.gls-spain.es/e/{0}/{1}", CodigoBarras, CodigoPostal) : string.Empty;
-                        break;
-                    case "OnTime":
-                        if (!string.IsNullOrEmpty(Pedido.ToString()))
-                        {
-                            string referencia = WebUtility.UrlEncode(Cliente.Trim() + "-" + Pedido.ToString());
-                            enlace = string.Format("https://ontimegts.alertran.net/gts/pub/clielocserv.seam?cliente=02890107&referencia={0}", referencia);
-                        }
-                        else
-                        {
-                            enlace = string.Empty;
-                        }
-                        break;
-                    case "Correos Express":
-                        enlace = !string.IsNullOrEmpty(CodigoBarras) ? string.Format("https://s.correosexpress.com/c?n={0}", CodigoBarras) : string.Empty;
-                        break;
-                    case "Sending":
-                        enlace = !string.IsNullOrEmpty(AgenciaIdentificador) && !string.IsNullOrEmpty(CodigoBarras) ? string.Format("https://info.sending.es/fgts/pub/locNumServ.seam?cliente={0}&localizador={1}", AgenciaIdentificador, CodigoBarras) : string.Empty;
-                        break;
-                    case "Innovatrans":
-                        // Portal TIP-SA: id fijo de cliente (028040028040) + albarán (CodigoBarras) de DataTrans.
-                        enlace = !string.IsNullOrEmpty(CodigoBarras)
-                            ? string.Format("https://aplicaciones.tip-sa.com/cliente/datos_env.php?id=028040028040{0}", CodigoBarras.Trim())
-                            : string.Empty;
-                        break;
-                    default:
-                        enlace = "error, agencia no definida";
-                        break;
+                    return "error, agencia no definida";
                 }
-                return enlace;
+                var datos = new DatosSeguimientoEnvio
+                {
+                    AgenciaNombre = AgenciaNombre,
+                    Identificador = AgenciaIdentificador,
+                    CodigoSeguimiento = CodigoBarras,
+                    CodigoPostal = CodigoPostal,
+                    Cliente = Cliente,
+                    Pedido = Pedido
+                };
+                return RegistroSeguimientoAgencias.ConstruirUrl(datos) ?? string.Empty;
             }
         }
 

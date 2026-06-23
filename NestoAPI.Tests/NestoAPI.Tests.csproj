@@ -321,6 +321,7 @@
     <Compile Include="Models\RecursosHumanos\AccionTest.cs" />
     <Compile Include="Models\Ubicaciones\PreExtractoProductoDTOTests.cs" />
     <Compile Include="Models\UltimoEnvioClienteDTOTests.cs" />
+    <Compile Include="Models\EnvioAgenciaDTOSeguimientoTests.cs" />
     <Compile Include="Models\LineaPedidoVentaDTOTests.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Controllers\HomeControllerTest.cs" />
