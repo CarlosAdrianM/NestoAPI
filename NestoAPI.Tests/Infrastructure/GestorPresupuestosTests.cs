@@ -679,5 +679,42 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(GestorPresupuestos.EsRutaImagenRota(null));
         }
 
+        // Issue #241: el correo de creación/modificación de pedido debe mostrar el P.O. (Su Pedido)
+        // cuando lo haya, y no cambiar (sin la línea) cuando no lo haya. GenerarTablaHTML depende de
+        // la BD, así que aislamos la generación de la línea en GenerarLineaPO para poder cubrirla.
+
+        [TestMethod]
+        public void GenerarLineaPO_ConSuPedido_DevuelveLineaConPO()
+        {
+            string resultado = GestorPresupuestos.GenerarLineaPO("PO-12345");
+
+            Assert.AreEqual("P.O.: PO-12345<br>", resultado);
+        }
+
+        [TestMethod]
+        public void GenerarLineaPO_RecortaEspacios()
+        {
+            // Los strings de la BD legacy vienen con padding; debe quedar limpio.
+            string resultado = GestorPresupuestos.GenerarLineaPO("  PO-12345  ");
+
+            Assert.AreEqual("P.O.: PO-12345<br>", resultado);
+        }
+
+        [TestMethod]
+        public void GenerarLineaPO_EscapaHtml()
+        {
+            string resultado = GestorPresupuestos.GenerarLineaPO("A&B<C>");
+
+            Assert.AreEqual("P.O.: A&amp;B&lt;C&gt;<br>", resultado);
+        }
+
+        [TestMethod]
+        public void GenerarLineaPO_SinSuPedido_DevuelveVacio()
+        {
+            Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarLineaPO(null));
+            Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarLineaPO(""));
+            Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarLineaPO("   "));
+        }
+
     }
 }

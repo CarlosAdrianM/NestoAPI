@@ -4,6 +4,7 @@ using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Mail;
 using System.Text;
 using System.Threading.Tasks;
@@ -216,6 +217,18 @@ namespace NestoAPI.Infraestructure
             return rutaImagen.Contains("/-") || rutaImagen.Contains("-home_default/.jpg");
         }
 
+        // Issue #241: genera la línea HTML con el P.O. (Su Pedido) del pedido para el cuerpo del correo.
+        // Devuelve cadena vacía cuando no hay P.O., para que el correo quede idéntico al comportamiento
+        // anterior en los pedidos sin P.O. El valor se escapa para no romper el HTML.
+        internal static string GenerarLineaPO(string suPedido)
+        {
+            if (string.IsNullOrWhiteSpace(suPedido))
+            {
+                return string.Empty;
+            }
+            return "P.O.: " + WebUtility.HtmlEncode(suPedido.Trim()) + "<br>";
+        }
+
         private async Task<(StringBuilder tabla, bool faltaFoto)> GenerarTablaHTML(
             PedidoVentaDTO pedido, string tipoCorreo)
         {
@@ -262,6 +275,9 @@ namespace NestoAPI.Infraestructure
                 "<b>" + TEXTO_PEDIDO + " " + pedido.numero.ToString() + "</b><br>" +
                 "Nº Cliente: " + pedido.cliente + "/" + pedido.contacto + "<br>" +
                 "CIF/NIF: " + cliente.CIF_NIF + "<br>");
+            // Issue #241: si el pedido tiene P.O. (Su Pedido) lo mostramos en el correo.
+            // Si no lo tiene, el correo queda como antes (sin la línea).
+            _ = s.Append(GenerarLineaPO(pedido.suPedido));
             if (!string.IsNullOrEmpty(nombreVendedorCabecera))
             {
                 _ = s.AppendLine("Vendedor: " + nombreVendedorCabecera + "<br>");
