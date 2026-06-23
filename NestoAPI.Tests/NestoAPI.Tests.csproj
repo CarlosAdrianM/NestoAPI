@@ -364,4 +364,21 @@
   <Target Name="AfterBuild">
   </Target>
   -->
+  <!-- SkiaSharp / SkiaSharp.HarfBuzz / HarfBuzzSharp (managed) son dependencias TRANSITIVAS de
+       QuestPDF. En csproj old-style, el MSBuild de línea de comandos NO las copia al output de los
+       tests (sí copia las nativas x64/x86). Si se limpia el bin (p.ej. un Rebuild por CLI), los tests
+       de PDF fallan con FileNotFoundException de SkiaSharp/HarfBuzzSharp. Este target las copia desde
+       el bin del proyecto web (ProjectReference: se construye antes y siempre las tiene en su versión
+       vigente), de modo que el output de tests queda completo en cualquier build. -->
+  <Target Name="CopiarDependenciasQuestPdfManaged" AfterTargets="Build">
+    <ItemGroup>
+      <DependenciasQuestPdf Include="$(MSBuildProjectDirectory)\..\NestoAPI\bin\SkiaSharp.dll" />
+      <DependenciasQuestPdf Include="$(MSBuildProjectDirectory)\..\NestoAPI\bin\SkiaSharp.HarfBuzz.dll" />
+      <DependenciasQuestPdf Include="$(MSBuildProjectDirectory)\..\NestoAPI\bin\HarfBuzzSharp.dll" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DependenciasQuestPdf)"
+          DestinationFolder="$(OutputPath)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('%(DependenciasQuestPdf.Identity)')" />
+  </Target>
 </Project>
