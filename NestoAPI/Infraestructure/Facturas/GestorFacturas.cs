@@ -215,8 +215,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 direccionEntrega
             };
 
+            List<LinPedidoVta> lineasOrigen = cabFactura.LinPedidoVtas?.OrderBy(l => l.Nº_Orden).ToList()
+                ?? new List<LinPedidoVta>();
             List<LineaFactura> lineas = new List<LineaFactura>();
-            foreach (LinPedidoVta linea in cabFactura.LinPedidoVtas?.OrderBy(l => l.Nº_Orden))
+            foreach (LinPedidoVta linea in lineasOrigen)
             {
                 LineaFactura lineaNueva = new LineaFactura
                 {
@@ -230,7 +232,8 @@ namespace NestoAPI.Infraestructure.Facturas
                     Producto = linea.Producto?.Trim(),
                     Pedido = linea.Número,
                     Estado = linea.Estado,
-                    Picking = linea.Picking ?? 0
+                    Picking = linea.Picking ?? 0,
+                    Contacto = linea.Contacto?.Trim()
                 };
 
                 if (linea.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
@@ -241,6 +244,11 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
                 lineas.Add(lineaNueva);
             }
+
+            // NestoAPI#196: en facturas multi-dirección (líneas con contactos distintos) o
+            // mono-dirección que difiere de la cabecera, resolvemos la dirección de entrega por
+            // línea para que el PDF imprima a qué dirección fue cada albarán.
+            AsignarDireccionesEntrega(lineas, lineasOrigen, cabFactura.Nº_Cliente, cabFactura.Contacto);
 
             decimal importeTotal = 0;
 
@@ -673,6 +681,78 @@ namespace NestoAPI.Infraestructure.Facturas
                     vencimiento.Importe = importePrincipal + importeGastos;
                     vencimiento.ImportePendiente = importePrincipal + importeGastos;
                 }
+            }
+        }
+
+        // NestoAPI#196: decide si hay que imprimir la dirección de entrega por línea/albarán.
+        // Solo se considera el contacto de las líneas de PRODUCTO (CA-6). Se muestra cuando:
+        //  - hay más de un contacto distinto (factura multi-dirección), o
+        //  - hay un único contacto pero difiere del de la cabecera (entrega en otra dirección).
+        // En el resto de casos (factura estándar) se devuelve false y el PDF no cambia.
+        internal static bool DebeMostrarDireccionesEntrega(
+            IEnumerable<string> contactosLineasProducto, string contactoCabecera)
+        {
+            if (contactosLineasProducto == null)
+            {
+                return false;
+            }
+            List<string> distintos = contactosLineasProducto
+                .Select(c => (c ?? string.Empty).Trim())
+                .Where(c => c != string.Empty)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (distintos.Count == 0)
+            {
+                return false;
+            }
+            if (distintos.Count > 1)
+            {
+                return true;
+            }
+            return !string.Equals(distintos[0], (contactoCabecera ?? string.Empty).Trim(),
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        // NestoAPI#196: rellena DireccionEntrega en las líneas de producto cuando la factura es
+        // multi-dirección (o mono-dirección distinta de la cabecera). lineas y lineasOrigen van
+        // alineadas por índice. Los clientes están siempre en EMPRESA_POR_DEFECTO.
+        private void AsignarDireccionesEntrega(
+            List<LineaFactura> lineas, List<LinPedidoVta> lineasOrigen,
+            string numeroCliente, string contactoCabecera)
+        {
+            IEnumerable<string> contactosProducto = lineasOrigen
+                .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                .Select(l => l.Contacto);
+
+            if (!DebeMostrarDireccionesEntrega(contactosProducto, contactoCabecera))
+            {
+                return;
+            }
+
+            Dictionary<string, DireccionFactura> cache =
+                new Dictionary<string, DireccionFactura>(StringComparer.OrdinalIgnoreCase);
+
+            for (int i = 0; i < lineas.Count; i++)
+            {
+                LinPedidoVta origen = lineasOrigen[i];
+                if (origen.TipoLinea != Constantes.TiposLineaVenta.PRODUCTO)
+                {
+                    continue;
+                }
+                string contacto = (origen.Contacto ?? string.Empty).Trim();
+                if (contacto == string.Empty)
+                {
+                    continue;
+                }
+                if (!cache.TryGetValue(contacto, out DireccionFactura direccion))
+                {
+                    Cliente cliente = servicio.CargarCliente(
+                        Constantes.Empresas.EMPRESA_POR_DEFECTO, numeroCliente, contacto);
+                    direccion = cliente != null ? CargarDireccionEntrega(cliente) : null;
+                    cache[contacto] = direccion;
+                }
+                lineas[i].DireccionEntrega = direccion;
             }
         }
 

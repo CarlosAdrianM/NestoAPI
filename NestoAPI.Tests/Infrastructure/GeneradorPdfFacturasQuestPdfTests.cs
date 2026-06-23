@@ -434,5 +434,44 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region ComponerTextoDireccionEntrega (NestoAPI#196)
+
+        [TestMethod]
+        public void ComponerTextoDireccionEntrega_DireccionCompleta_DevuelveTextoConNombreDireccionYPoblacion()
+        {
+            var direccion = new DireccionFactura
+            {
+                Tipo = "Entrega",
+                Nombre = "ACME S.L.",
+                Direccion = "Calle X 12",
+                CodigoPostal = "28001",
+                Poblacion = "Madrid",
+                Provincia = "Madrid"
+            };
+
+            string texto = GeneradorPdfFacturasQuestPdf.ComponerTextoDireccionEntrega(direccion);
+
+            Assert.AreEqual("Entrega: ACME S.L. - Calle X 12 - 28001 Madrid (Madrid)", texto);
+        }
+
+        [TestMethod]
+        public void ComponerTextoDireccionEntrega_Null_DevuelveVacio()
+        {
+            Assert.AreEqual(string.Empty, GeneradorPdfFacturasQuestPdf.ComponerTextoDireccionEntrega(null));
+        }
+
+        [TestMethod]
+        public void ComponerTextoDireccionEntrega_SoloNombre_NoIncluyeSeparadoresVacios()
+        {
+            var direccion = new DireccionFactura { Tipo = "Entrega", Nombre = "ACME S.L." };
+
+            string texto = GeneradorPdfFacturasQuestPdf.ComponerTextoDireccionEntrega(direccion);
+
+            // Sin CP/población/provincia no debe colar "()" ni separadores vacíos.
+            Assert.AreEqual("Entrega: ACME S.L.", texto);
+        }
+
+        #endregion
     }
 }

@@ -410,6 +410,9 @@ namespace NestoAPI.Infraestructure.Facturas
 
                 // Filas de líneas
                 string albaranAnterior = null;
+                // NestoAPI#196: en facturas multi-dirección, mostramos la dirección de entrega
+                // cuando cambia el contacto (típicamente al cambiar de albarán).
+                string contactoEntregaAnterior = null;
                 if (factura.Lineas != null)
                 {
                     foreach (var linea in factura.Lineas)
@@ -429,6 +432,17 @@ namespace NestoAPI.Infraestructure.Facturas
                             table.Cell().ColumnSpan((uint)totalColumnas)
                                 .PaddingVertical(3).PaddingLeft(3)
                                 .Text(linea.TextoAlbaran).Bold().FontSize(8);
+                        }
+
+                        // NestoAPI#196: dirección de entrega del bloque (solo si está informada y
+                        // cambia el contacto respecto a la línea anterior mostrada).
+                        if (linea.DireccionEntrega != null && linea.Contacto != contactoEntregaAnterior)
+                        {
+                            contactoEntregaAnterior = linea.Contacto;
+                            table.Cell().ColumnSpan((uint)totalColumnas)
+                                .PaddingLeft(10).PaddingBottom(2)
+                                .Text(ComponerTextoDireccionEntrega(linea.DireccionEntrega))
+                                .Italic().FontSize(7).FontColor(Colors.Grey.Darken1);
                         }
 
                         // Issue #111: Columna de imagen del producto
@@ -480,6 +494,34 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <param name="estado">Estado de la línea (ver Constantes.EstadosLineaVenta).</param>
         /// <param name="picking">Nº de picking asignado (0 = sin asignar).</param>
         /// <returns>Color QuestPDF aplicable con .FontColor(...).</returns>
+        // NestoAPI#196: compone el texto de la dirección de entrega que se imprime bajo el
+        // albarán en facturas multi-dirección. Ej: "Entrega: ACME S.L. - Calle X 12, 28001 Madrid (Madrid)".
+        internal static string ComponerTextoDireccionEntrega(DireccionFactura direccion)
+        {
+            if (direccion == null)
+            {
+                return string.Empty;
+            }
+            var partes = new List<string>();
+            if (!string.IsNullOrWhiteSpace(direccion.Nombre)) partes.Add(direccion.Nombre.Trim());
+            if (!string.IsNullOrWhiteSpace(direccion.Direccion)) partes.Add(direccion.Direccion.Trim());
+
+            // Población: "CP Población (Provincia)" sin meter paréntesis/huecos vacíos cuando
+            // faltan campos (PoblacionCompleta sí los metería).
+            var pobPartes = new List<string>();
+            if (!string.IsNullOrWhiteSpace(direccion.CodigoPostal)) pobPartes.Add(direccion.CodigoPostal.Trim());
+            if (!string.IsNullOrWhiteSpace(direccion.Poblacion)) pobPartes.Add(direccion.Poblacion.Trim());
+            string poblacion = string.Join(" ", pobPartes);
+            if (!string.IsNullOrWhiteSpace(direccion.Provincia))
+            {
+                string provincia = "(" + direccion.Provincia.Trim() + ")";
+                poblacion = poblacion.Length == 0 ? provincia : poblacion + " " + provincia;
+            }
+            if (poblacion.Length > 0) partes.Add(poblacion);
+
+            return "Entrega: " + string.Join(" - ", partes);
+        }
+
         internal static string ColorLinea(int estado, int picking)
         {
             if (estado >= 2 || estado < -1)

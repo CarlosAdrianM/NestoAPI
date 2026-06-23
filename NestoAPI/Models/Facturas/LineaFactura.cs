@@ -35,5 +35,11 @@ namespace NestoAPI.Models.Facturas
         public int Estado { get; set; }
         public int Picking { get; set; }
         public string UrlImagen { get; set; }
+
+        // NestoAPI#196: contacto/dirección de entrega de la línea. Opcionales: solo se rellenan
+        // en facturas multi-dirección (o mono-dirección que difiere de la cabecera) para imprimir
+        // a qué dirección fue cada albarán. En facturas estándar quedan null y el PDF no cambia.
+        public string Contacto { get; set; }
+        public DireccionFactura DireccionEntrega { get; set; }
     }
 }

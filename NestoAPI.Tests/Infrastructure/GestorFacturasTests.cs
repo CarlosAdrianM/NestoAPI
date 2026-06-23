@@ -1792,6 +1792,46 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region DebeMostrarDireccionesEntrega (NestoAPI#196)
+
+        [TestMethod]
+        public void DebeMostrarDireccionesEntrega_MonoContactoIgualQueCabecera_DevuelveFalse()
+        {
+            // CA-1/CA-3: factura estándar (todo a la dirección de la cabecera) → no cambia el PDF.
+            Assert.IsFalse(GestorFacturas.DebeMostrarDireccionesEntrega(new[] { "0", "0" }, "0"));
+        }
+
+        [TestMethod]
+        public void DebeMostrarDireccionesEntrega_MonoContactoDistintoDeCabecera_DevuelveTrue()
+        {
+            // CA-2: un solo contacto pero entregado en otra dirección distinta de la cabecera.
+            Assert.IsTrue(GestorFacturas.DebeMostrarDireccionesEntrega(new[] { "5", "5" }, "0"));
+        }
+
+        [TestMethod]
+        public void DebeMostrarDireccionesEntrega_VariosContactos_DevuelveTrue()
+        {
+            // CA-4: multi-dirección.
+            Assert.IsTrue(GestorFacturas.DebeMostrarDireccionesEntrega(new[] { "0", "5", "7" }, "0"));
+        }
+
+        [TestMethod]
+        public void DebeMostrarDireccionesEntrega_SinContactos_DevuelveFalse()
+        {
+            // CA-6: sin líneas de producto con contacto (vacíos/null) → no se fuerza nada.
+            Assert.IsFalse(GestorFacturas.DebeMostrarDireccionesEntrega(new[] { "", "  ", null }, "0"));
+            Assert.IsFalse(GestorFacturas.DebeMostrarDireccionesEntrega(null, "0"));
+        }
+
+        [TestMethod]
+        public void DebeMostrarDireccionesEntrega_IgnoraPaddingYMayusculas()
+        {
+            // Los contactos legacy vienen con padding; "0 " == "0" y no debe contar como multi.
+            Assert.IsFalse(GestorFacturas.DebeMostrarDireccionesEntrega(new[] { "0 ", " 0" }, " 0 "));
+        }
+
+        #endregion
     }
 
 
