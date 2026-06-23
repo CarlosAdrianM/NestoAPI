@@ -15,6 +15,8 @@ namespace NestoAPI.Models.Facturas
             Albaranes = new List<AlbaranCreadoDTO>();
             Facturas = new List<FacturaCreadaDTO>();
             NotasEntrega = new List<NotaEntregaCreadaDTO>();
+            FacturasPorPO = new List<string>();
+            ErroresPorPO = new List<string>();
         }
 
         /// <summary>
@@ -49,6 +51,19 @@ namespace NestoAPI.Models.Facturas
         /// Tiempo total que tomó el proceso
         /// </summary>
         public TimeSpan TiempoTotal { get; set; }
+
+        /// <summary>
+        /// NestoAPI#195 (Fase 3): números de factura creadas por agrupación de PO
+        /// (pedidos con MantenerJunto + mismo P.O. agrupados en una sola factura), que se
+        /// procesan ANTES de la facturación normal de la ruta.
+        /// </summary>
+        public List<string> FacturasPorPO { get; set; }
+
+        /// <summary>
+        /// NestoAPI#195 (Fase 3): errores al agrupar/facturar por P.O. (uno por grupo que falló;
+        /// no bloquean ni la facturación de otros PO ni la facturación normal de la ruta).
+        /// </summary>
+        public List<string> ErroresPorPO { get; set; }
 
         // Propiedades de conveniencia para contadores (compatibilidad con código existente)
 

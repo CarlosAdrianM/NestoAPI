@@ -1,6 +1,7 @@
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Infraestructure.Facturas.Agrupacion;
 using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Infraestructure.Pedidos;
 using NestoAPI.Infraestructure.Traspasos;
@@ -27,6 +28,7 @@ namespace NestoAPI.Controllers
     {
         private readonly NVEntities db;
         private readonly IServicioPedidosParaFacturacion servicioPedidos;
+        private readonly IServicioAgruparPorPO servicioAgruparPorPO;
 
         /// <summary>
         /// Constructor por defecto (usado en producción)
@@ -35,6 +37,7 @@ namespace NestoAPI.Controllers
         {
             db = new NVEntities();
             servicioPedidos = new ServicioPedidosParaFacturacion(db);
+            servicioAgruparPorPO = CrearServicioAgruparPorPO(db);
         }
 
         /// <summary>
@@ -42,10 +45,41 @@ namespace NestoAPI.Controllers
         /// </summary>
         internal FacturacionRutasController(
             NVEntities db,
-            IServicioPedidosParaFacturacion servicioPedidos)
+            IServicioPedidosParaFacturacion servicioPedidos,
+            IServicioAgruparPorPO servicioAgruparPorPO = null)
         {
             this.db = db ?? throw new ArgumentNullException(nameof(db));
             this.servicioPedidos = servicioPedidos ?? throw new ArgumentNullException(nameof(servicioPedidos));
+            this.servicioAgruparPorPO = servicioAgruparPorPO ?? CrearServicioAgruparPorPO(db);
+        }
+
+        // NestoAPI#195 (Fase 3): construye el orquestador de agrupación por PO con el mismo
+        // db compartido (igual patrón que FacturarRutas, para evitar conflictos de concurrencia).
+        private static IServicioAgruparPorPO CrearServicioAgruparPorPO(NVEntities db)
+        {
+            return new ServicioAgruparPorPO(
+                db,
+                new EstrategiaAgrupacionPO(db),
+                new MotorAgrupacionPedidos(db),
+                new ServicioFacturas(db));
+        }
+
+        // NestoAPI#195 (Fase 3): vuelca el resultado de la agrupación por PO en la respuesta de
+        // facturación de rutas (números de factura creados y errores por grupo).
+        private static void VolcarResultadoPO(ResultadoAgrupacionPO resultadoPO, FacturarRutasResponseDTO response)
+        {
+            if (resultadoPO == null)
+            {
+                return;
+            }
+            foreach (var factura in resultadoPO.Facturas)
+            {
+                response.FacturasPorPO.Add(factura.NumeroFactura);
+            }
+            foreach (var error in resultadoPO.Errores)
+            {
+                response.ErroresPorPO.Add($"PO {error.SuPedido} (cliente {error.Cliente}): {error.Mensaje}");
+            }
         }
 
         /// <summary>
@@ -136,19 +170,27 @@ namespace NestoAPI.Controllers
                 if (string.IsNullOrEmpty(usuario))
                     return Unauthorized();
 
-                // 1. Obtener pedidos
                 var fechaDesde = request.FechaEntregaDesde ?? DateTime.Today;
+
+                // NestoAPI#195 (Fase 3): ANTES de la facturación normal, agrupamos y facturamos
+                // los grupos de PO completos (MantenerJunto + mismo SuPedido, todos en albarán).
+                // Tiene que ir primero para que la facturación normal no facture esos pedidos por
+                // separado: tras agrupar, sus líneas viven en el pedido destino (ya facturado) y
+                // ObtenerPedidosParaFacturar ya no los devuelve.
+                ResultadoAgrupacionPO resultadoPO = await servicioAgruparPorPO.EvaluarYProcesar(
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario);
+
+                // 1. Obtener pedidos (después de agrupar PO, para no incluir los ya facturados)
                 var pedidos = await servicioPedidos.ObtenerPedidosParaFacturar(
                     request.TipoRuta,
                     fechaDesde);
 
-                // Si no hay pedidos, retornar response vacío
+                // Si no hay pedidos de ruta, devolvemos el resultado de la agrupación por PO igualmente
                 if (!pedidos.Any())
                 {
-                    return Ok(new FacturarRutasResponseDTO
-                    {
-                        PedidosConErrores = new System.Collections.Generic.List<PedidoConErrorDTO>()
-                    });
+                    var responseVacio = new FacturarRutasResponseDTO();
+                    VolcarResultadoPO(resultadoPO, responseVacio);
+                    return Ok(responseVacio);
                 }
 
                 // 2. Procesar facturación
@@ -172,8 +214,49 @@ namespace NestoAPI.Controllers
                 );
 
                 var response = await gestor.FacturarRutas(pedidos, usuario, fechaDesde);
+                VolcarResultadoPO(resultadoPO, response);
 
                 return Ok(response);
+            }
+            catch (Exception ex)
+            {
+                return InternalServerError(ex);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#195 (Fase 3): agrupa y factura los pedidos que comparten P.O. (Purchase Order)
+        /// con MantenerJunto cuyos grupos están completos (todas las líneas en albarán), para la
+        /// empresa por defecto. Cada grupo se convierte en UNA factura con el deudor del cliente
+        /// principal, conservando el P.O. y las direcciones de entrega por línea.
+        /// </summary>
+        /// <returns>Facturas creadas y grupos que fallaron (cada grupo se procesa aislado)</returns>
+        /// <remarks>
+        /// PERMISOS REQUERIDOS: Almacén o Dirección
+        ///
+        /// Endpoint dedicado y a demanda, separado del batch de FacturarRutas: permite verificar
+        /// la agrupación por PO de forma controlada antes de automatizarla. El gate de
+        /// PuedeFacturarPedido ya impide que FacturarRutas facture pedidos con hermanos de PO
+        /// incompletos; este endpoint procesa los grupos que ya están listos.
+        /// </remarks>
+        [HttpPost]
+        [Route("AgruparPorPO")]
+        public async Task<IHttpActionResult> AgruparPorPO()
+        {
+            // Validar autorización (Almacén o Dirección)
+            if (!TienePermisosFacturacion())
+                return StatusCode(HttpStatusCode.Forbidden);
+
+            try
+            {
+                string usuario = ObtenerUsuarioActual();
+                if (string.IsNullOrEmpty(usuario))
+                    return Unauthorized();
+
+                ResultadoAgrupacionPO resultado = await servicioAgruparPorPO.EvaluarYProcesar(
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario);
+
+                return Ok(resultado);
             }
             catch (Exception ex)
             {

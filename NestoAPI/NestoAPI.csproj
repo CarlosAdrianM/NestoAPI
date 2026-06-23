@@ -650,6 +650,14 @@
     <Compile Include="Infraestructure\Facturas\IGeneradorPdfFacturas.cs" />
     <Compile Include="Infraestructure\Facturas\GestorFacturacionRutas.cs" />
     <Compile Include="Infraestructure\Facturas\IGestorFacturacionRutas.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\GrupoPedidosPO.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\IMotorAgrupacionPedidos.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\MotorAgrupacionPedidos.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\IEstrategiaAgrupacionPO.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\EstrategiaAgrupacionPO.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\ResultadoAgrupacionPO.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\IServicioAgruparPorPO.cs" />
+    <Compile Include="Infraestructure\Facturas\Agrupacion\ServicioAgruparPorPO.cs" />
     <Compile Include="Infraestructure\GestorPrecios.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\OtrosAparatosNoPuedeLlevarDescuento.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\RamasonNoPuedeLlevarNingunDescuento.cs" />

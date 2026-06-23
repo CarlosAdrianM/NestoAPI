@@ -175,6 +175,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Controllers\ClientesControllerTests.cs" />
+    <Compile Include="Controllers\FacturacionRutasControllerAgruparPorPOTests.cs" />
     <Compile Include="Controllers\ErroresControllerTests.cs" />
     <Compile Include="Controllers\ExtractosClienteControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerCodigoBarrasTests.cs" />
@@ -243,6 +244,9 @@
     <Compile Include="Infrastructure\GestorFacturasMotorSelectionTests.cs" />
     <Compile Include="Infrastructure\Comisiones\ComisionesLecturaServiceTests.cs" />
     <Compile Include="Infrastructure\Facturas\GestorFacturacionRutas_PuedeFacturarPedidoTests.cs" />
+    <Compile Include="Infrastructure\Facturas\Agrupacion\MotorAgrupacionPedidosTests.cs" />
+    <Compile Include="Infrastructure\Facturas\Agrupacion\EstrategiaAgrupacionPOTests.cs" />
+    <Compile Include="Infrastructure\Facturas\Agrupacion\ServicioAgruparPorPOTests.cs" />
     <Compile Include="Infrastructure\GestorKitsTests.cs" />
     <Compile Include="Infrastructure\Filters\GlobalExceptionFilterContextTests.cs" />
     <Compile Include="Infrastructure\PlanesVentajas\PlanesVentajasServiceTests.cs" />
