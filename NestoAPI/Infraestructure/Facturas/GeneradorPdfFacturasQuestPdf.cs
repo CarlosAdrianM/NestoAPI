@@ -569,6 +569,15 @@ namespace NestoAPI.Infraestructure.Facturas
         // NestoAPI#243: bloque "Subtotal + Pronto pago" antes de la base imponible (solo cuando hay
         // descuento por pronto pago). El importe del pronto pago se deriva como subtotal - base
         // imponible para que cuadre exactamente con la base existente (sin descuadres de redondeo).
+        //
+        // Por qué NO contemplamos líneas con DescuentoPP distintos en una misma factura:
+        // el pronto pago procede de los PLAZOS DE PAGO de la cabecera (GestorPedidosVenta:
+        // 'pedido.DescuentoPP = plazosPago.DtoProntoPago') y se propaga UNIFORME a todas las líneas
+        // (setter PedidoBase.DescuentoPP). Una factura tiene unos únicos plazos de pago, luego un
+        // único PP. Aun en el caso rebuscado de agrupar albaranes con PP distinto (FDM/PO), el código
+        // es robusto: el IMPORTE del pie sale de subtotal - base (exacto, cubra los % que cubra) y la
+        // descomposición por línea usa el DescuentoPP de cada línea; solo la ETIQUETA del % usa el
+        // predominante (Factura.DescuentoPP = Max de las líneas). Total/base/contabilidad siempre OK.
         private void ComponerDescuentoProntoPago(IContainer container, Factura factura)
         {
             decimal subtotal = factura.Lineas?.Sum(l => ImporteAntesProntoPago(l.Importe, l.DescuentoPP)) ?? 0m;

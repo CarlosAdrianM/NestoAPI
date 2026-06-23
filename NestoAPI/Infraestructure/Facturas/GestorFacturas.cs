@@ -402,7 +402,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 Serie = cabFactura.Serie?.Trim(),
                 SuPedido = cabFactura.SuPedido?.Trim(),
                 TipoDocumento = tipoDocumento,
-                DescuentoPP = lineas.Select(l => l.DescuentoPP).DefaultIfEmpty(0m).Max(), // NestoAPI#243
+                // NestoAPI#243: PP del documento = el de las líneas (uniforme; procede de los plazos de
+                // pago de la cabecera). Max() solo ignora líneas sin PP (p.ej. portes). Ver el porqué
+                // de no contemplar PP mixto en GeneradorPdfFacturasQuestPdf.ComponerDescuentoProntoPago.
+                DescuentoPP = lineas.Select(l => l.DescuentoPP).DefaultIfEmpty(0m).Max(),
                 Totales = totales,
                 UrlLogo = serieFactura.UrlLogo,
                 UsaFormatoTicket = serieFactura.UsaFormatoTicket,
@@ -539,7 +542,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 Serie = cabPedido.Serie?.Trim(),
                 SuPedido = cabPedido.SuPedido?.Trim(),
                 TipoDocumento = tipoDocumento,
-                DescuentoPP = lineas.Select(l => l.DescuentoPP).DefaultIfEmpty(0m).Max(), // NestoAPI#243
+                // NestoAPI#243: PP del documento = el de las líneas (uniforme; procede de los plazos de
+                // pago de la cabecera). Max() solo ignora líneas sin PP (p.ej. portes). Ver el porqué
+                // de no contemplar PP mixto en GeneradorPdfFacturasQuestPdf.ComponerDescuentoProntoPago.
+                DescuentoPP = lineas.Select(l => l.DescuentoPP).DefaultIfEmpty(0m).Max(),
                 Totales = totales,
                 UrlLogo = serieFactura.UrlLogo,
                 UsaFormatoTicket = serieFactura.UsaFormatoTicket,
