@@ -80,6 +80,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         {
             // Portugal: tipoServ 0014 (14H) y codPostalDes comprimido a "6"+4 dígitos (1000-001 -> 61000),
             // regla del integrador (22/06/26). Antes mandábamos el canónico "1000-001": regresión.
+            // paisDes va SIEMPRE "ESP" (23/06/26): DataTrans canaliza Portugal vía España; mandar "PRT"
+            // lo rechazaba con codError 402 "No existe agencia asociada al país" (verificado en prod,
+            // albarán 6521355001 con paisDes=ESP). El CP "6"+4 y la provincia "053" identifican Portugal.
             var fake = new FakeClienteSoap();
             fake.Responder("InsertarEnvios", RespInsertar("9990001112", "1"));
             fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
@@ -92,9 +95,12 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 .InsertarYEtiquetarAsync(envio);
 
             string insertar = fake.Llamadas[0].Xml;
-            StringAssert.Contains(insertar, "<com:paisDes>PRT</com:paisDes>");
+            StringAssert.Contains(insertar, "<com:paisDes>ESP</com:paisDes>");
+            Assert.IsFalse(insertar.Contains("<com:paisDes>PRT</com:paisDes>"),
+                "paisDes no debe viajar como PRT: DataTrans rechaza Portugal con país PRT.");
             StringAssert.Contains(insertar, "<com:tipoServ>0014</com:tipoServ>");
             StringAssert.Contains(insertar, "<com:codPostalDes>61000</com:codPostalDes>");
+            StringAssert.Contains(insertar, "<com:provinciaDes>053</com:provinciaDes>");
             Assert.IsFalse(insertar.Contains("1000-001"), "No debe viajar el CP portugués sin comprimir.");
         }
 

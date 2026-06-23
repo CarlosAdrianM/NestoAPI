@@ -16,6 +16,17 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         public const string PROVINCIA_PORTUGAL = "053";
 
         /// <summary>
+        /// País (3 chars) que viaja en el WS (campos paisRem/paisDes). El integrador (23/06/26)
+        /// confirma que SIEMPRE debe ir "ESP", incluso para destinos de Portugal: DataTrans canaliza
+        /// Portugal a través de España (la provincia "053" y el CP "6"+4 díg ya identifican el destino
+        /// portugués). Mandar "PRT" hacía que DTX rechazara el envío con codError 402 "No existe
+        /// agencia asociada al país". El país interno (<paramref name="paisInterno"/>) se sigue usando
+        /// para derivar el CP y la provincia (ver <see cref="CodigoPostalDestino"/> /
+        /// <see cref="ProvinciaDesdeCodigoPostal"/>).
+        /// </summary>
+        public static string PaisParaDataTrans(string paisInterno) => PAIS_ESPANA;
+
+        /// <summary>
         /// Código de provincia DataTrans (3 chars) a partir del código postal.
         ///  - España/Península (y Baleares/Canarias/Ceuta/Melilla): "0" + 2 primeros dígitos del CP
         ///    (28001 -> "028", 35001 -> "035", 51001 -> "051").

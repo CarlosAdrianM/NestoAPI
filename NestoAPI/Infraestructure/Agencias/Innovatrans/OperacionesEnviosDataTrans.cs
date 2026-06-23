@@ -231,7 +231,9 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             string codPostal = MapeadorDireccionDataTrans.CodigoPostalDestino(dir.CodigoPostal, dir.Pais);
             string provincia = MapeadorDireccionDataTrans.ProvinciaDesdeCodigoPostal(dir.CodigoPostal, dir.Pais);
             envios.Add(
-                Campo("pais" + sufijo, dir.Pais),
+                // Issue Innovatrans (23/06/26): el país del WS va SIEMPRE "ESP" (Portugal se
+                // canaliza vía España); el país interno solo deriva CP/provincia (arriba).
+                Campo("pais" + sufijo, MapeadorDireccionDataTrans.PaisParaDataTrans(dir.Pais)),
                 Campo("nombre" + sufijo, dir.Nombre),
                 Campo("telefono" + sufijo, dir.Telefono),
                 Campo("codPostal" + sufijo, codPostal),

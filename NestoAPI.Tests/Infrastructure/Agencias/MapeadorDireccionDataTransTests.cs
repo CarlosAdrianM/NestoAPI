@@ -74,5 +74,16 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         {
             Assert.AreEqual("", MapeadorDireccionDataTrans.ProvinciaDesdeCodigoPostal(cp, pais));
         }
+
+        // El integrador (23/06/26): el país del WS (paisRem/paisDes) va SIEMPRE "ESP", incluso
+        // Portugal (se canaliza vía España). Mandar "PRT" lo rechazaba con codError 402.
+        [DataTestMethod]
+        [DataRow("PRT", DisplayName = "Portugal viaja como ESP")]
+        [DataRow("ESP", DisplayName = "España viaja como ESP")]
+        [DataRow(null, DisplayName = "Null viaja como ESP")]
+        public void PaisParaDataTrans_SiempreEsp(string paisInterno)
+        {
+            Assert.AreEqual("ESP", MapeadorDireccionDataTrans.PaisParaDataTrans(paisInterno));
+        }
     }
 }
