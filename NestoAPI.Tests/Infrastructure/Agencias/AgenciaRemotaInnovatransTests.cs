@@ -105,6 +105,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task InsertarYEtiquetar_EnviaCanalizarPorPoblacion()
+        {
+            // DTX necesita canalizarPorPoblacion=true para enrutar (Portugal con provincia "053" sola
+            // daba codError 405 "Canalizacion incorrecta", verificado en prod, llamada 49031).
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertar("9990001112", "1"));
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
+
+            await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .InsertarYEtiquetarAsync(EnvioMadrid());
+
+            StringAssert.Contains(fake.Llamadas[0].Xml,
+                "<com:canalizarPorPoblacion>true</com:canalizarPorPoblacion>");
+        }
+
+        [TestMethod]
         public async Task InsertarYEtiquetar_PesoCero_NoLlamaAlSoapYDevuelveErrorClaro()
         {
             var fake = new FakeClienteSoap();

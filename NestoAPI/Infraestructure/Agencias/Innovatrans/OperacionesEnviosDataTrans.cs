@@ -168,7 +168,13 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 Campo("paqs", envio.Paqs.ToString(CultureInfo.InvariantCulture)),
                 Campo("reembolso", Dec(envio.Reembolso)),
                 Campo("comReembPag", SiNo(envio.ComisionReembolsoPagada)),
-                Campo("portesPagados", SiNo(envio.PortesPagados)));
+                Campo("portesPagados", SiNo(envio.PortesPagados)),
+                // Issue Innovatrans (23/06/26): canalizar por población. Imprescindible para
+                // Portugal — la provincia "053" sola no basta y DTX devuelve codError 405
+                // "Canalizacion incorrecta" (verificado en prod, llamada 49031). España funciona
+                // igual con el flag (prueba a Madrid con canalizarPorPoblacion=true -> albarán
+                // 6520139001), así que se manda siempre.
+                Campo("canalizarPorPoblacion", "true"));
 
             XDocument doc = await _cliente.EjecutarAsync("Envios", "InsertarEnvios", envios).ConfigureAwait(false);
 
