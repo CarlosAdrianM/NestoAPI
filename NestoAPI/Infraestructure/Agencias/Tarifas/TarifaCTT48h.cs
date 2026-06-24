@@ -15,12 +15,12 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// nuestras 2 (Provincial / Peninsular); usamos la columna "Peninsular" de CTT (la media). Canarias
     /// no se modela: el comparador la resuelve siempre por Canteras.
     /// </summary>
-    public class TarifaCTT48h : ITarifaAgencia
+    public class TarifaCTT48h : TarifaNacionalBase
     {
-        public int AgenciaId => 13; // CTT (debe coincidir con AgenciasTransporte.Numero)
-        public byte ServicioId => 48; // CTT 48h
-        public string NombreServicio => "CTT 48h";
-        public byte HorarioDefectoId => 0;
+        public override int AgenciaId => 13; // CTT (debe coincidir con AgenciasTransporte.Numero)
+        public override byte ServicioId => 48; // CTT 48h
+        public override string NombreServicio => "CTT 48h";
+        public override byte HorarioDefectoId => 0;
 
         private static readonly IReadOnlyList<TramoCosteEnvio> _costeEnvio = new List<TramoCosteEnvio>
         {
@@ -65,9 +65,9 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             new TramoCosteEnvio(15m, ZonasEnvioAgencia.BalearesMenores, 13.64m)
         };
 
-        public IReadOnlyList<TramoCosteEnvio> CosteEnvio => _costeEnvio;
+        protected override IReadOnlyList<TramoCosteEnvio> Tramos => _costeEnvio;
 
-        public decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
+        protected override decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
         {
             switch (zona)
             {
@@ -81,6 +81,6 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         }
 
         /// <summary>Reembolso CTT: 0% del importe, mínimo 1,15€ (oferta 2026). No se le aplica fuel.</summary>
-        public decimal CosteReembolso(decimal reembolso) => 1.15m;
+        protected override decimal CosteReembolso(decimal reembolso) => 1.15m;
     }
 }

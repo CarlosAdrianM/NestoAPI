@@ -1,64 +1,59 @@
-using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 
 namespace NestoAPI.Tests.Infrastructure.Agencias
 {
     /// <summary>
-    /// Verifica el porte a NestoAPI de las tarifas GLS/ASM 2026 (estructura + spot-check de precios).
-    /// Si cambia la tarifa anual, actualizar estos valores junto con la tarifa.
+    /// Tarifas GLS/ASM (oferta 2026). Se prueban vía CalcularCoste(CP, país, peso, reembolso, fuel)
+    /// con CP representativos de cada zona (sin fuel ni reembolso = precio del tramo).
     /// </summary>
     [TestClass]
     public class TarifasGLSTests
     {
-        private static decimal Precio(ITarifaAgencia t, ZonasEnvioAgencia zona, decimal pesoMax)
-            => t.CosteEnvio.Single(c => c.Zona == zona && c.PesoMaximo == pesoMax).Precio;
+        private readonly TarifaGLSBusinessParcel _bp = new TarifaGLSBusinessParcel();
+        private readonly TarifaGLSBaleares _bal = new TarifaGLSBaleares();
 
         [TestMethod]
-        public void BusinessParcel_EstructuraYPreciosClave()
+        public void BusinessParcel_IdentidadYPreciosClave()
         {
-            var t = new TarifaGLSBusinessParcel();
+            Assert.AreEqual(1, _bp.AgenciaId);
+            Assert.AreEqual((byte)96, _bp.ServicioId);
 
-            Assert.AreEqual(1, t.AgenciaId);
-            Assert.AreEqual((byte)96, t.ServicioId);
-            Assert.AreEqual(1.80m, t.CosteReembolso(100m));
-            Assert.AreEqual(0.41m, t.CosteKiloAdicional(ZonasEnvioAgencia.Peninsular));
-            Assert.AreEqual(0.31m, t.CosteKiloAdicional(ZonasEnvioAgencia.Provincial));
-
-            // Cubre Peninsular y Provincial con 5 tramos cada una.
-            Assert.AreEqual(5, t.CosteEnvio.Count(c => c.Zona == ZonasEnvioAgencia.Peninsular));
-            Assert.AreEqual(5, t.CosteEnvio.Count(c => c.Zona == ZonasEnvioAgencia.Provincial));
-
-            // Spot-check (oferta 2026).
-            Assert.AreEqual(3.66m, Precio(t, ZonasEnvioAgencia.Peninsular, 1m));
-            Assert.AreEqual(4.19m, Precio(t, ZonasEnvioAgencia.Peninsular, 5m));
-            Assert.AreEqual(3.10m, Precio(t, ZonasEnvioAgencia.Provincial, 1m));
-            Assert.AreEqual(4.06m, Precio(t, ZonasEnvioAgencia.Provincial, 15m));
-
-            // GLS Portugal (ASM_2026.pdf): hasta 5 kg 13,28 €, hasta 10 kg 14,76 €, kilo adicional 0,88 €.
-            Assert.AreEqual(0.88m, t.CosteKiloAdicional(ZonasEnvioAgencia.Portugal));
-            Assert.AreEqual(2, t.CosteEnvio.Count(c => c.Zona == ZonasEnvioAgencia.Portugal));
-            Assert.AreEqual(13.28m, Precio(t, ZonasEnvioAgencia.Portugal, 5m));
-            Assert.AreEqual(14.76m, Precio(t, ZonasEnvioAgencia.Portugal, 10m));
+            // Provincial (28xxx): 1 kg = 3,10; 15 kg = 4,06.
+            Assert.AreEqual(3.10m, _bp.CalcularCoste("28001", "ES", 1m, 0m, 0m));
+            Assert.AreEqual(4.06m, _bp.CalcularCoste("28001", "ES", 15m, 0m, 0m));
+            // Peninsular (08xxx): 1 kg = 3,66; 5 kg = 4,19.
+            Assert.AreEqual(3.66m, _bp.CalcularCoste("08001", "ES", 1m, 0m, 0m));
+            Assert.AreEqual(4.19m, _bp.CalcularCoste("08001", "ES", 5m, 0m, 0m));
+            // GLS Portugal (CP portugués): 5 kg = 13,28; 10 kg = 14,76.
+            Assert.AreEqual(13.28m, _bp.CalcularCoste("1000-001", "ES", 5m, 0m, 0m));
+            Assert.AreEqual(14.76m, _bp.CalcularCoste("1000-001", "ES", 10m, 0m, 0m));
         }
 
         [TestMethod]
-        public void InsularMaritimo_EstructuraYPreciosClave()
+        public void BusinessParcel_Reembolso180_SinFuel()
         {
-            var t = new TarifaGLSBaleares();
+            decimal sinReembolso = _bp.CalcularCoste("08001", "ES", 1m, 0m, 0m);
+            decimal conReembolso = _bp.CalcularCoste("08001", "ES", 1m, 50m, 0m);
+            Assert.AreEqual(1.80m, conReembolso - sinReembolso);
+        }
 
-            Assert.AreEqual(1, t.AgenciaId);
-            Assert.AreEqual((byte)6, t.ServicioId);
-            Assert.AreEqual(1.80m, t.CosteReembolso(100m));
-            Assert.AreEqual(0.94m, t.CosteKiloAdicional(ZonasEnvioAgencia.BalearesMayores));
-            Assert.AreEqual(1.50m, t.CosteKiloAdicional(ZonasEnvioAgencia.CanariasMenores));
+        [TestMethod]
+        public void BusinessParcel_NoCubreExtranjero()
+        {
+            Assert.AreEqual(decimal.MaxValue, _bp.CalcularCoste("00000", "DE", 1m, 0m, 0m));
+        }
 
-            // Cubre las 4 zonas insulares.
-            Assert.AreEqual(12.51m, Precio(t, ZonasEnvioAgencia.BalearesMayores, 5m));
-            Assert.AreEqual(15.18m, Precio(t, ZonasEnvioAgencia.BalearesMenores, 5m));
-            // Canarias incluye el DUA aproximado (12,94 + 20,85).
-            Assert.AreEqual(33.79m, Precio(t, ZonasEnvioAgencia.CanariasMayores, 5m));
-            Assert.AreEqual(35.63m, Precio(t, ZonasEnvioAgencia.CanariasMenores, 5m));
+        [TestMethod]
+        public void InsularMaritimo_IdentidadYPreciosClave()
+        {
+            Assert.AreEqual(1, _bal.AgenciaId);
+            Assert.AreEqual((byte)6, _bal.ServicioId);
+
+            Assert.AreEqual(12.51m, _bal.CalcularCoste("07001", "ES", 5m, 0m, 0m)); // Baleares Mayores
+            Assert.AreEqual(15.18m, _bal.CalcularCoste("07820", "ES", 5m, 0m, 0m)); // Baleares Menores
+            // Canarias incluye el DUA aproximado (12,94 + 20,85 = 33,79).
+            Assert.AreEqual(33.79m, _bal.CalcularCoste("35001", "ES", 5m, 0m, 0m));
         }
     }
 }

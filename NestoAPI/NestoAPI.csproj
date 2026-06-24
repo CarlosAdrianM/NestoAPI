@@ -587,7 +587,9 @@
     <Compile Include="Infraestructure\Agencias\Tarifas\RegistroTarifasExistentes.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraZonaEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ITarifaAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\TarifaNacionalBase.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaGLSBaleares.cs" />
+    <Compile Include="Infraestructure\Agencias\Tarifas\TarifaGLSEuroBusinessParcel.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaGLSBusinessParcel.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransBase.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaInnovatransEconomy.cs" />

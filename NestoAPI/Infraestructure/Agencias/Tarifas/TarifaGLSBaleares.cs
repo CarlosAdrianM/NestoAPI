@@ -7,14 +7,14 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// Precios ANTES de fuel. Para Canarias se suma un coste aproximado de DUA (20,85); los
     /// DUAS/cabildos reales van aparte.
     /// </summary>
-    public class TarifaGLSBaleares : ITarifaAgencia
+    public class TarifaGLSBaleares : TarifaNacionalBase
     {
         private const decimal CosteDuaCanariasAproximado = 20.85m;
 
-        public int AgenciaId => 1; // GLS/ASM
-        public byte ServicioId => 6; // Carga / insular marítimo
-        public string NombreServicio => "Insular marítimo";
-        public byte HorarioDefectoId => 10;
+        public override int AgenciaId => 1; // GLS/ASM
+        public override byte ServicioId => 6; // Carga / insular marítimo
+        public override string NombreServicio => "Insular marítimo";
+        public override byte HorarioDefectoId => 10;
 
         private static readonly IReadOnlyList<TramoCosteEnvio> _costeEnvio = new List<TramoCosteEnvio>
         {
@@ -24,9 +24,9 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             new TramoCosteEnvio(5m, ZonasEnvioAgencia.CanariasMenores, 14.78m + CosteDuaCanariasAproximado)
         };
 
-        public IReadOnlyList<TramoCosteEnvio> CosteEnvio => _costeEnvio;
+        protected override IReadOnlyList<TramoCosteEnvio> Tramos => _costeEnvio;
 
-        public decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
+        protected override decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
         {
             if (zona == ZonasEnvioAgencia.BalearesMayores)
             {
@@ -47,6 +47,6 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             return decimal.MaxValue;
         }
 
-        public decimal CosteReembolso(decimal reembolso) => 1.80m;
+        protected override decimal CosteReembolso(decimal reembolso) => 1.80m;
     }
 }

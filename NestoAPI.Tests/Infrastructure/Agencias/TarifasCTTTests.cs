@@ -5,8 +5,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 {
     /// <summary>
     /// Tarifa CTT 48h (agencia sombra). Tests price-independent: NO fijan los precios de los tramos
-    /// de la oferta (una subida anual los rompería sin haber bug); verifican qué zonas cubre, que el
-    /// fuel se aplica al porte y que el reembolso es el mínimo de 1,15€.
+    /// de la oferta (una subida anual los rompería sin haber bug); verifican qué destinos cubre, que
+    /// el fuel se aplica al porte y que el reembolso es el mínimo de 1,15€. Se prueban vía
+    /// CalcularCoste(CP, país, peso, reembolso, fuel) con CP/país representativos de cada zona.
     /// </summary>
     [TestClass]
     public class TarifasCTTTests
@@ -23,14 +24,18 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         [TestMethod]
         public void CubreLasZonasPeninsularesPortugalYBaleares()
         {
-            foreach (var zona in new[]
+            // (CP, país) representativos de cada zona que CTT debe cubrir.
+            foreach (var destino in new[]
             {
-                ZonasEnvioAgencia.Provincial, ZonasEnvioAgencia.Peninsular, ZonasEnvioAgencia.Portugal,
-                ZonasEnvioAgencia.BalearesMayores, ZonasEnvioAgencia.BalearesMenores
+                ("28001", "ES"),    // Provincial
+                ("08001", "ES"),    // Peninsular
+                ("1000-001", "ES"), // Portugal
+                ("07001", "ES"),    // Baleares Mayores
+                ("07820", "ES")     // Baleares Menores
             })
             {
-                decimal coste = CalculadoraCosteEnvio.CalcularCoste(_tarifa, zona, peso: 1m, reembolso: 0m, recargoCombustible: 0m);
-                Assert.AreNotEqual(decimal.MaxValue, coste, $"CTT debería cubrir la zona {zona}.");
+                decimal coste = _tarifa.CalcularCoste(destino.Item1, destino.Item2, 1m, 0m, 0m);
+                Assert.AreNotEqual(decimal.MaxValue, coste, $"CTT debería cubrir el destino {destino.Item1}/{destino.Item2}.");
             }
         }
 
@@ -38,17 +43,15 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         public void NoCubreCanariasNiExtranjero()
         {
             // Canarias la resuelve el comparador por Canteras; CTT no la modela.
-            Assert.AreEqual(decimal.MaxValue,
-                CalculadoraCosteEnvio.CalcularCoste(_tarifa, ZonasEnvioAgencia.CanariasMayores, 1m, 0m, 0m));
-            Assert.AreEqual(decimal.MaxValue,
-                CalculadoraCosteEnvio.CalcularCoste(_tarifa, ZonasEnvioAgencia.Extranjero, 1m, 0m, 0m));
+            Assert.AreEqual(decimal.MaxValue, _tarifa.CalcularCoste("35001", "ES", 1m, 0m, 0m));
+            Assert.AreEqual(decimal.MaxValue, _tarifa.CalcularCoste("00000", "DE", 1m, 0m, 0m));
         }
 
         [TestMethod]
         public void ElFuelSeAplicaAlPorte()
         {
-            decimal sinFuel = CalculadoraCosteEnvio.CalcularCoste(_tarifa, ZonasEnvioAgencia.Peninsular, 1m, 0m, 0m);
-            decimal conFuel = CalculadoraCosteEnvio.CalcularCoste(_tarifa, ZonasEnvioAgencia.Peninsular, 1m, 0m, 0.10m);
+            decimal sinFuel = _tarifa.CalcularCoste("08001", "ES", 1m, 0m, 0m);
+            decimal conFuel = _tarifa.CalcularCoste("08001", "ES", 1m, 0m, 0.10m);
 
             Assert.AreEqual(sinFuel * 1.10m, conFuel);
         }
@@ -56,13 +59,11 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         [TestMethod]
         public void ReembolsoEsElMinimoDe115_SinFuel()
         {
-            decimal sinReembolso = CalculadoraCosteEnvio.CalcularCoste(_tarifa, ZonasEnvioAgencia.Peninsular, 1m, 0m, 0m);
-            decimal conReembolso = CalculadoraCosteEnvio.CalcularCoste(_tarifa, ZonasEnvioAgencia.Peninsular, 1m, 200m, 0m);
+            decimal sinReembolso = _tarifa.CalcularCoste("08001", "ES", 1m, 0m, 0m);
 
-            // 0% del importe -> mínimo 1,15€, y al reembolso no se le aplica fuel.
-            Assert.AreEqual(1.15m, conReembolso - sinReembolso);
-            Assert.AreEqual(1.15m, _tarifa.CosteReembolso(200m));
-            Assert.AreEqual(1.15m, _tarifa.CosteReembolso(5m));
+            // 0% del importe -> mínimo 1,15€, y al reembolso no se le aplica fuel (independiente del importe).
+            Assert.AreEqual(1.15m, _tarifa.CalcularCoste("08001", "ES", 1m, 200m, 0m) - sinReembolso);
+            Assert.AreEqual(1.15m, _tarifa.CalcularCoste("08001", "ES", 1m, 5m, 0m) - sinReembolso);
         }
     }
 }

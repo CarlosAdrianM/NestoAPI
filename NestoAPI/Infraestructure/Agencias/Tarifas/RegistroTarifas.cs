@@ -24,6 +24,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         {
             new TarifaGLSBusinessParcel(),
             new TarifaGLSBaleares(),
+            new TarifaGLSEuroBusinessParcel(),
             new TarifaInnovatransEconomy(),
             new TarifaInnovatransPortugal(),
             new TarifaInnovatransMaritimo(),

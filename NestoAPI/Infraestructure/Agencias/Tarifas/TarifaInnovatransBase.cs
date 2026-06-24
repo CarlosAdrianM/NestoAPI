@@ -11,23 +11,21 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// aplica el 2,5% en la tarifa. El recargo de combustible lo aplica el comparador a partir de
     /// AgenciasTransporte.RecargoCombustible (la fila Numero=12 debe llevar 0,025 = 2,5%).
     /// </summary>
-    public abstract class TarifaInnovatransBase : ITarifaAgencia
+    public abstract class TarifaInnovatransBase : TarifaNacionalBase
     {
         // Sending=10, Canteras=11 → Innovatrans=12. Debe coincidir con AgenciasTransporte.Numero.
-        public int AgenciaId => 12;
+        public override int AgenciaId => 12;
 
-        public byte HorarioDefectoId => 1; // Normal
+        public override byte HorarioDefectoId => 1; // Normal
 
-        public abstract byte ServicioId { get; }
-        public abstract string NombreServicio { get; }
-        public abstract IReadOnlyList<TramoCosteEnvio> CosteEnvio { get; }
-        public abstract decimal CosteKiloAdicional(ZonasEnvioAgencia zona);
+        // ServicioId, NombreServicio, Tramos y CosteKiloAdicional son abstractos en TarifaNacionalBase;
+        // los aporta cada servicio concreto (Economy, 14H Portugal, Marítimo islas).
 
         /// <summary>
         /// Reembolso (condición particular 5 de la oferta): 5% del valor, mínimo 4,03€, máximo
         /// 300€. No se le aplica fuel.
         /// </summary>
-        public decimal CosteReembolso(decimal reembolso)
+        protected override decimal CosteReembolso(decimal reembolso)
         {
             const decimal porcentaje = 0.05m;
             const decimal minimo = 4.03m;

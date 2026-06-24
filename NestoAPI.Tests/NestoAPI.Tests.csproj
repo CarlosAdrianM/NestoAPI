@@ -218,6 +218,7 @@
     <Compile Include="Infrastructure\Agencias\ComparadorAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraZonaEnvioTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasGLSTests.cs" />
+    <Compile Include="Infrastructure\Agencias\TarifasGLSEuroTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasInnovatransTests.cs" />
     <Compile Include="Infrastructure\Agencias\TarifasCTTTests.cs" />
     <Compile Include="Infrastructure\Agencias\NormalizadorZplDataTransTests.cs" />

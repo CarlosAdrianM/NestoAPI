@@ -131,10 +131,12 @@ namespace NestoAPI.Controllers
             return Ok(ADto(agencia));
         }
 
-        // GET: api/Agencias/MasEconomica?empresa=&codigoPostal=&peso=&reembolso=
+        // GET: api/Agencias/MasEconomica?empresa=&codigoPostal=&peso=&reembolso=&pais=
+        // pais en ISO 3166-1 alpha-2 (ES, PT, FR...); "ES" por defecto (retrocompatible). El destino
+        // canónico es (codigoPostal + pais): cada tarifa resuelve su zona puertas adentro.
         [HttpGet]
         [Route("api/Agencias/MasEconomica")]
-        public IHttpActionResult GetMasEconomica(string codigoPostal, decimal peso, string empresa = "1", decimal reembolso = 0)
+        public IHttpActionResult GetMasEconomica(string codigoPostal, decimal peso, string empresa = "1", decimal reembolso = 0, string pais = "ES")
         {
             // Solo se comparan agencias dadas de alta en AgenciasTransporte: una tarifa portada pero
             // sin fila (p.ej. Innovatrans antes de crearla) no debe entrar en la comparación.
@@ -143,7 +145,7 @@ namespace NestoAPI.Controllers
             var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
             var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
             var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
-            OpcionEnvioAgencia mejor = comparador.MasEconomica(empresa, codigoPostal, peso, reembolso);
+            OpcionEnvioAgencia mejor = comparador.MasEconomica(empresa, codigoPostal, peso, reembolso, pais);
 
             if (mejor == null)
             {
@@ -160,13 +162,13 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("api/Agencias/{numero:int}/Coste")]
         public IHttpActionResult GetCosteAgencia(int numero, string codigoPostal, decimal peso,
-            string empresa = "1", decimal reembolso = 0, byte? servicioId = null)
+            string empresa = "1", decimal reembolso = 0, byte? servicioId = null, string pais = "ES")
         {
             var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
             var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
             var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
             var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
-            OpcionEnvioAgencia opcion = comparador.CosteDeAgencia(empresa, codigoPostal, peso, reembolso, numero, servicioId);
+            OpcionEnvioAgencia opcion = comparador.CosteDeAgencia(empresa, codigoPostal, peso, reembolso, numero, servicioId, pais);
 
             if (opcion == null)
             {

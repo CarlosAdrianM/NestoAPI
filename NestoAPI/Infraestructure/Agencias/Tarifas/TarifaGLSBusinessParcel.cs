@@ -7,12 +7,12 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     /// Precios ANTES de fuel (GLS aplica carburante + climat protec aparte; el fuel se añade
     /// en el comparador por agencia desde AgenciasTransporte.RecargoCombustible).
     /// </summary>
-    public class TarifaGLSBusinessParcel : ITarifaAgencia
+    public class TarifaGLSBusinessParcel : TarifaNacionalBase
     {
-        public int AgenciaId => 1; // GLS/ASM
-        public byte ServicioId => 96; // BusinessParcel
-        public string NombreServicio => "BusinessParcel";
-        public byte HorarioDefectoId => 18;
+        public override int AgenciaId => 1; // GLS/ASM
+        public override byte ServicioId => 96; // BusinessParcel
+        public override string NombreServicio => "BusinessParcel";
+        public override byte HorarioDefectoId => 18;
 
         private static readonly IReadOnlyList<TramoCosteEnvio> _costeEnvio = new List<TramoCosteEnvio>
         {
@@ -33,9 +33,9 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             new TramoCosteEnvio(10m, ZonasEnvioAgencia.Portugal, 14.76m)
         };
 
-        public IReadOnlyList<TramoCosteEnvio> CosteEnvio => _costeEnvio;
+        protected override IReadOnlyList<TramoCosteEnvio> Tramos => _costeEnvio;
 
-        public decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
+        protected override decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
         {
             if (zona == ZonasEnvioAgencia.Peninsular)
             {
@@ -52,6 +52,6 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             return decimal.MaxValue;
         }
 
-        public decimal CosteReembolso(decimal reembolso) => 1.80m;
+        protected override decimal CosteReembolso(decimal reembolso) => 1.80m;
     }
 }

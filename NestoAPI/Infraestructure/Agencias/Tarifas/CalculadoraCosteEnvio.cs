@@ -1,41 +1,43 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
 namespace NestoAPI.Infraestructure.Agencias.Tarifas
 {
     /// <summary>
-    /// Calcula el coste de un envío para una tarifa concreta. Portado de Nesto
-    /// (AgenciasViewModel.CalcularCostoEnvio) al mover el comparador a NestoAPI, AÑADIENDO el
-    /// recargo de combustible (fuel) por agencia: se aplica al PORTE (no al reembolso), porque
-    /// las tarifas se guardan ANTES de fuel y cada agencia tiene su % (AgenciasTransporte).
+    /// Helper REUTILIZABLE de cálculo de coste por tramos de peso y zona (lo usan las tarifas que se
+    /// zonifican por tablas, p.ej. las nacionales). NO conoce ninguna agencia: recibe los tramos, el
+    /// coste por kilo adicional, la zona ya resuelta y el coste de reembolso ya calculado. El fuel se
+    /// aplica al PORTE (no al reembolso), porque las tarifas se guardan ANTES de fuel.
     /// </summary>
     public static class CalculadoraCosteEnvio
     {
         public static decimal CalcularCoste(
-            ITarifaAgencia tarifa,
+            IReadOnlyList<TramoCosteEnvio> tramos,
+            Func<ZonasEnvioAgencia, decimal> costeKiloAdicional,
             ZonasEnvioAgencia zona,
             decimal peso,
-            decimal reembolso,
-            decimal recargoCombustible)
+            decimal recargoCombustible,
+            decimal costeReembolso)
         {
-            List<TramoCosteEnvio> tramos = tarifa.CosteEnvio
+            List<TramoCosteEnvio> tramosZona = tramos
                 .Where(c => c.Zona == zona)
                 .OrderBy(c => c.PesoMaximo)
                 .ToList();
 
             // La tarifa no cubre esta zona: no es una opción válida.
-            if (!tramos.Any())
+            if (!tramosZona.Any())
             {
                 return decimal.MaxValue;
             }
 
             decimal porte;
-            TramoCosteEnvio tramo = tramos.FirstOrDefault(c => c.PesoMaximo >= peso);
+            TramoCosteEnvio tramo = tramosZona.FirstOrDefault(c => c.PesoMaximo >= peso);
             if (tramo == null)
             {
                 // Por encima del último tramo: último precio + kilos de más * coste por kilo adicional.
-                TramoCosteEnvio ultimo = tramos.Last();
-                porte = ultimo.Precio + ((peso - ultimo.PesoMaximo) * tarifa.CosteKiloAdicional(zona));
+                TramoCosteEnvio ultimo = tramosZona.Last();
+                porte = ultimo.Precio + ((peso - ultimo.PesoMaximo) * costeKiloAdicional(zona));
             }
             else
             {
@@ -45,8 +47,7 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             // Fuel sobre el porte (los precios de la oferta son antes de combustible).
             porte = porte * (1m + recargoCombustible);
 
-            decimal costoReembolso = reembolso != 0 ? tarifa.CosteReembolso(reembolso) : 0m;
-            return porte + costoReembolso;
+            return porte + costeReembolso;
         }
     }
 }

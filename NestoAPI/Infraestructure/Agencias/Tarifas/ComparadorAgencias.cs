@@ -34,9 +34,9 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         /// La opción más barata que SÍ se puede seleccionar (excluye las agencias sombra). Null si
         /// ninguna agencia seleccionable cubre el destino.
         /// </summary>
-        public OpcionEnvioAgencia MasEconomica(string empresa, string codigoPostal, decimal peso, decimal reembolso)
+        public OpcionEnvioAgencia MasEconomica(string empresa, string codigoPostal, decimal peso, decimal reembolso, string paisIso = "ES")
         {
-            return Ranking(empresa, codigoPostal, peso, reembolso)
+            return Ranking(empresa, codigoPostal, peso, reembolso, paisIso)
                 .FirstOrDefault(o => !_agenciasSombra.Contains(o.AgenciaId));
         }
 
@@ -54,25 +54,27 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         /// cubre el destino o no tiene tarifa portada.
         /// </summary>
         public OpcionEnvioAgencia CosteDeAgencia(string empresa, string codigoPostal, decimal peso,
-            decimal reembolso, int agenciaId, byte? servicioId = null)
+            decimal reembolso, int agenciaId, byte? servicioId = null, string paisIso = "ES")
         {
             // Ranking ya viene ordenado de más barato a más caro: el primero que case es el correcto.
-            return Ranking(empresa, codigoPostal, peso, reembolso)
+            return Ranking(empresa, codigoPostal, peso, reembolso, paisIso)
                 .FirstOrDefault(o => o.AgenciaId == agenciaId
                     && (servicioId == null || o.ServicioId == servicioId.Value));
         }
 
-        public IReadOnlyList<OpcionEnvioAgencia> Ranking(string empresa, string codigoPostal, decimal peso, decimal reembolso)
+        public IReadOnlyList<OpcionEnvioAgencia> Ranking(string empresa, string codigoPostal, decimal peso, decimal reembolso, string paisIso = "ES")
         {
-            ZonasEnvioAgencia zona = CalculadoraZonaEnvio.CalcularZona(codigoPostal);
-
-            // Canarias siempre va por Canteras, sin comparar precio.
-            if (zona == ZonasEnvioAgencia.CanariasMayores || zona == ZonasEnvioAgencia.CanariasMenores)
+            // Canarias (siempre España) va siempre por Canteras, sin comparar precio.
+            if (EsEspana(paisIso))
             {
-                return new List<OpcionEnvioAgencia>
+                ZonasEnvioAgencia zonaEspana = CalculadoraZonaEnvio.CalcularZona(codigoPostal);
+                if (zonaEspana == ZonasEnvioAgencia.CanariasMayores || zonaEspana == ZonasEnvioAgencia.CanariasMenores)
                 {
-                    new OpcionEnvioAgencia { AgenciaId = AgenciaCanteras, NombreServicio = "Canteras" }
-                };
+                    return new List<OpcionEnvioAgencia>
+                    {
+                        new OpcionEnvioAgencia { AgenciaId = AgenciaCanteras, NombreServicio = "Canteras" }
+                    };
+                }
             }
 
             var opciones = new List<OpcionEnvioAgencia>();
@@ -80,9 +82,10 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             foreach (ITarifaAgencia tarifa in _registro.Todas())
             {
                 decimal fuel = _recargoCombustible.RecargoCombustible(empresa, tarifa.AgenciaId);
-                decimal coste = CalculadoraCosteEnvio.CalcularCoste(tarifa, zona, peso, reembolso, fuel);
+                // Cada tarifa resuelve su zona PUERTAS ADENTRO a partir del destino canónico (CP + país).
+                decimal coste = tarifa.CalcularCoste(codigoPostal, paisIso, peso, reembolso, fuel);
 
-                // La tarifa no cubre la zona (coste centinela): no es una opción.
+                // La tarifa no cubre el destino (coste centinela): no es una opción.
                 if (coste == decimal.MaxValue)
                 {
                     continue;
@@ -98,6 +101,14 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             }
 
             return opciones.OrderBy(o => o.Coste).ToList();
+        }
+
+        // El destino es España si no se informa país o es "ES". El resto de países (UE, etc.) los
+        // resuelve cada tarifa por su cuenta (p.ej. GLS internacional); Canarias solo aplica en España.
+        private static bool EsEspana(string paisIso)
+        {
+            string iso = (paisIso ?? string.Empty).Trim().ToUpperInvariant();
+            return iso.Length == 0 || iso == "ES";
         }
     }
 }

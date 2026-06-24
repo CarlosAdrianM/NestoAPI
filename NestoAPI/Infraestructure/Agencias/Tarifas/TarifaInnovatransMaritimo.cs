@@ -25,9 +25,9 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             new TramoCosteEnvio(10m, ZonasEnvioAgencia.CanariasMenores, 30.91m + DespachoCanarias)
         };
 
-        public override IReadOnlyList<TramoCosteEnvio> CosteEnvio => _costeEnvio;
+        protected override IReadOnlyList<TramoCosteEnvio> Tramos => _costeEnvio;
 
-        public override decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
+        protected override decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
         {
             switch (zona)
             {

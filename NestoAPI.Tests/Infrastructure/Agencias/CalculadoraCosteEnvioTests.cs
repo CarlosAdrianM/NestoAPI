@@ -1,65 +1,61 @@
+using System.Collections.Generic;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 
 namespace NestoAPI.Tests.Infrastructure.Agencias
 {
     /// <summary>
-    /// CalculadoraCosteEnvio: porte del cálculo de coste de Nesto + el recargo de combustible
-    /// por agencia aplicado al porte. Se usa GLS BusinessParcel (Peninsular) como tarifa de prueba.
+    /// CalculadoraCosteEnvio: helper de porte por tramos + fuel + reembolso (sin conocer agencias).
+    /// Se le pasan tramos y coste por kilo adicional explícitos.
     /// </summary>
     [TestClass]
     public class CalculadoraCosteEnvioTests
     {
-        private readonly TarifaGLSBusinessParcel _gls = new TarifaGLSBusinessParcel();
+        private static readonly IReadOnlyList<TramoCosteEnvio> Tramos = new List<TramoCosteEnvio>
+        {
+            new TramoCosteEnvio(1m, ZonasEnvioAgencia.Peninsular, 3.66m),
+            new TramoCosteEnvio(3m, ZonasEnvioAgencia.Peninsular, 3.86m),
+            new TramoCosteEnvio(5m, ZonasEnvioAgencia.Peninsular, 4.19m),
+            new TramoCosteEnvio(10m, ZonasEnvioAgencia.Peninsular, 4.71m),
+            new TramoCosteEnvio(15m, ZonasEnvioAgencia.Peninsular, 6.07m)
+        };
+
+        private static decimal KiloAdicional(ZonasEnvioAgencia zona)
+            => zona == ZonasEnvioAgencia.Peninsular ? 0.41m : decimal.MaxValue;
+
+        private static decimal Calcular(decimal peso, decimal fuel, decimal costeReembolso,
+            ZonasEnvioAgencia zona = ZonasEnvioAgencia.Peninsular)
+            => CalculadoraCosteEnvio.CalcularCoste(Tramos, KiloAdicional, zona, peso, fuel, costeReembolso);
 
         [TestMethod]
         public void CalcularCoste_SinFuelNiReembolso_DevuelvePrecioDelTramo()
         {
-            // Peninsular 3 kg -> tramo "hasta 3 kg" = 3,86. Sin fuel ni reembolso.
-            decimal coste = CalculadoraCosteEnvio.CalcularCoste(
-                _gls, ZonasEnvioAgencia.Peninsular, peso: 3m, reembolso: 0m, recargoCombustible: 0m);
-
-            Assert.AreEqual(3.86m, coste);
+            Assert.AreEqual(3.86m, Calcular(peso: 3m, fuel: 0m, costeReembolso: 0m)); // tramo "hasta 3 kg"
         }
 
         [TestMethod]
         public void CalcularCoste_ConFuel_MultiplicaElPorte()
         {
-            // 3,86 * (1 + 0,1055) = 4,26723.
-            decimal coste = CalculadoraCosteEnvio.CalcularCoste(
-                _gls, ZonasEnvioAgencia.Peninsular, peso: 3m, reembolso: 0m, recargoCombustible: 0.1055m);
-
-            Assert.AreEqual(3.86m * 1.1055m, coste);
+            Assert.AreEqual(3.86m * 1.1055m, Calcular(peso: 3m, fuel: 0.1055m, costeReembolso: 0m));
         }
 
         [TestMethod]
         public void CalcularCoste_ConReembolso_NoAplicaFuelAlReembolso()
         {
-            // Porte con fuel + comisión de reembolso (1,80) SIN fuel.
-            decimal coste = CalculadoraCosteEnvio.CalcularCoste(
-                _gls, ZonasEnvioAgencia.Peninsular, peso: 3m, reembolso: 50m, recargoCombustible: 0.1055m);
-
-            Assert.AreEqual((3.86m * 1.1055m) + 1.80m, coste);
+            Assert.AreEqual((3.86m * 1.1055m) + 1.80m, Calcular(peso: 3m, fuel: 0.1055m, costeReembolso: 1.80m));
         }
 
         [TestMethod]
         public void CalcularCoste_PesoPorEncimaDelUltimoTramo_UsaKiloAdicional()
         {
-            // Peninsular 20 kg: último tramo (15 kg = 6,07) + 5 kg * 0,41 = 8,12. Con fuel 0.
-            decimal coste = CalculadoraCosteEnvio.CalcularCoste(
-                _gls, ZonasEnvioAgencia.Peninsular, peso: 20m, reembolso: 0m, recargoCombustible: 0m);
-
-            Assert.AreEqual(6.07m + (5m * 0.41m), coste);
+            // 15 kg = 6,07; 20 kg = 6,07 + 5*0,41.
+            Assert.AreEqual(6.07m + (5m * 0.41m), Calcular(peso: 20m, fuel: 0m, costeReembolso: 0m));
         }
 
         [TestMethod]
-        public void CalcularCoste_ZonaNoCubierta_DevuelveMaxValue()
+        public void CalcularCoste_ZonaSinTramos_DevuelveMaxValue()
         {
-            // BusinessParcel no cubre Canarias.
-            decimal coste = CalculadoraCosteEnvio.CalcularCoste(
-                _gls, ZonasEnvioAgencia.CanariasMayores, peso: 3m, reembolso: 0m, recargoCombustible: 0m);
-
-            Assert.AreEqual(decimal.MaxValue, coste);
+            Assert.AreEqual(decimal.MaxValue, Calcular(peso: 3m, fuel: 0m, costeReembolso: 0m, zona: ZonasEnvioAgencia.CanariasMayores));
         }
     }
 }

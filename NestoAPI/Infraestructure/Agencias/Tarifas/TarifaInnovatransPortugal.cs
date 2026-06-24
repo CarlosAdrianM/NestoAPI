@@ -27,9 +27,9 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             new TramoCosteEnvio(50m, ZonasEnvioAgencia.Portugal, 32.61m)
         };
 
-        public override IReadOnlyList<TramoCosteEnvio> CosteEnvio => _costeEnvio;
+        protected override IReadOnlyList<TramoCosteEnvio> Tramos => _costeEnvio;
 
-        public override decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
+        protected override decimal CosteKiloAdicional(ZonasEnvioAgencia zona)
         {
             if (zona == ZonasEnvioAgencia.Portugal)
             {

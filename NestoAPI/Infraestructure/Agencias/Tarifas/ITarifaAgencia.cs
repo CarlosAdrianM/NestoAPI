@@ -21,9 +21,12 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
     }
 
     /// <summary>
-    /// Tarifa de un servicio de una agencia. Portado de Nesto (ITarifaAgencia) al mover el
-    /// comparador a NestoAPI. Los precios de <see cref="CosteEnvio"/> y <see cref="CosteKiloAdicional"/>
-    /// son ANTES de fuel; el recargo de combustible se aplica en el comparador, por agencia.
+    /// Tarifa de un servicio de una agencia. El contrato común es AGNÓSTICO de agencia: recibe el
+    /// destino CANÓNICO (código postal + país en ISO 3166-1 alpha-2) y devuelve el coste total (porte
+    /// con fuel/recargos + reembolso) o <see cref="decimal.MaxValue"/> si la tarifa NO cubre ese destino.
+    /// CADA agencia decide su propia zonificación PUERTAS ADENTRO (las nacionales reúsan el helper
+    /// común de zonas por CP; GLS internacional usa sus zonas A–E; otra agencia, las suyas), sin
+    /// imponer ningún sistema de zonas en lo compartido.
     /// </summary>
     public interface ITarifaAgencia
     {
@@ -31,8 +34,11 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
         byte ServicioId { get; }
         string NombreServicio { get; }
         byte HorarioDefectoId { get; }
-        IReadOnlyList<TramoCosteEnvio> CosteEnvio { get; }
-        decimal CosteKiloAdicional(ZonasEnvioAgencia zona);
-        decimal CosteReembolso(decimal reembolso);
+
+        /// <summary>
+        /// Coste total para el destino (CP + país ISO2), con fuel y recargos ya aplicados, o
+        /// <see cref="decimal.MaxValue"/> si esta tarifa no cubre el destino.
+        /// </summary>
+        decimal CalcularCoste(string codigoPostal, string paisIso, decimal peso, decimal reembolso, decimal recargoCombustible);
     }
 }

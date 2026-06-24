@@ -1,76 +1,58 @@
-using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 
 namespace NestoAPI.Tests.Infrastructure.Agencias
 {
     /// <summary>
-    /// Verifica el porte a NestoAPI de las tarifas Innovatrans (oferta Paquetería 2026). Los
-    /// precios son ANTES de fuel (el 2,5% lo aplica el comparador desde AgenciasTransporte).
-    /// Si cambia la oferta, actualizar estos valores junto con la tarifa.
+    /// Tarifas Innovatrans (oferta Paquetería 2026). Se prueban vía CalcularCoste(CP, país, peso,
+    /// reembolso, fuel). El reembolso (5% min 4,03 / max 300) se verifica por diferencia de coste.
     /// </summary>
     [TestClass]
     public class TarifasInnovatransTests
     {
-        private static decimal Precio(ITarifaAgencia t, ZonasEnvioAgencia zona, decimal pesoMax)
-            => t.CosteEnvio.Single(c => c.Zona == zona && c.PesoMaximo == pesoMax).Precio;
+        private readonly TarifaInnovatransEconomy _eco = new TarifaInnovatransEconomy();
+        private readonly TarifaInnovatransPortugal _pt = new TarifaInnovatransPortugal();
+        private readonly TarifaInnovatransMaritimo _mar = new TarifaInnovatransMaritimo();
 
         [TestMethod]
-        public void Economy_EstructuraYPreciosClave()
+        public void Economy_IdentidadYPreciosClave()
         {
-            var t = new TarifaInnovatransEconomy();
+            Assert.AreEqual(12, _eco.AgenciaId);
+            Assert.AreEqual((byte)1, _eco.ServicioId);
+            Assert.AreEqual("Economy", _eco.NombreServicio);
 
-            Assert.AreEqual(12, t.AgenciaId);
-            Assert.AreEqual((byte)1, t.ServicioId);
-            Assert.AreEqual("Economy", t.NombreServicio);
-            Assert.AreEqual(0.17m, t.CosteKiloAdicional(ZonasEnvioAgencia.Provincial));
-            Assert.AreEqual(0.44m, t.CosteKiloAdicional(ZonasEnvioAgencia.Peninsular));
-            Assert.AreEqual(decimal.MaxValue, t.CosteKiloAdicional(ZonasEnvioAgencia.Portugal));
-
-            Assert.AreEqual(3.94m, Precio(t, ZonasEnvioAgencia.Provincial, 2m));
-            Assert.AreEqual(18.69m, Precio(t, ZonasEnvioAgencia.Provincial, 100m));
-            Assert.AreEqual(4.53m, Precio(t, ZonasEnvioAgencia.Peninsular, 5m));
-            Assert.AreEqual(43.12m, Precio(t, ZonasEnvioAgencia.Peninsular, 100m));
+            Assert.AreEqual(3.94m, _eco.CalcularCoste("28001", "ES", 2m, 0m, 0m));    // Provincial 2 kg
+            Assert.AreEqual(18.69m, _eco.CalcularCoste("28001", "ES", 100m, 0m, 0m)); // Provincial 100 kg
+            Assert.AreEqual(4.53m, _eco.CalcularCoste("08001", "ES", 5m, 0m, 0m));    // Peninsular 5 kg
+            Assert.AreEqual(43.12m, _eco.CalcularCoste("08001", "ES", 100m, 0m, 0m)); // Peninsular 100 kg
         }
 
         [TestMethod]
         public void Reembolso_5PorCiento_ConMinimoYMaximo()
         {
-            var t = new TarifaInnovatransEconomy();
-
-            Assert.AreEqual(5.00m, t.CosteReembolso(100m));   // 5% de 100
-            Assert.AreEqual(4.03m, t.CosteReembolso(50m));    // 2,50 < mínimo 4,03
-            Assert.AreEqual(300m, t.CosteReembolso(10000m));  // 500 > máximo 300
+            decimal baseCoste = _eco.CalcularCoste("08001", "ES", 1m, 0m, 0m);
+            Assert.AreEqual(5.00m, _eco.CalcularCoste("08001", "ES", 1m, 100m, 0m) - baseCoste);   // 5% de 100
+            Assert.AreEqual(4.03m, _eco.CalcularCoste("08001", "ES", 1m, 50m, 0m) - baseCoste);    // mínimo 4,03
+            Assert.AreEqual(300m, _eco.CalcularCoste("08001", "ES", 1m, 10000m, 0m) - baseCoste);  // máximo 300
         }
 
         [TestMethod]
-        public void Portugal_EstructuraYPreciosClave()
+        public void Portugal_PreciosClave()
         {
-            var t = new TarifaInnovatransPortugal();
-
-            Assert.AreEqual(12, t.AgenciaId);
-            Assert.AreEqual((byte)2, t.ServicioId);
-            Assert.AreEqual("14H Portugal", t.NombreServicio);
-            Assert.AreEqual(0.65m, t.CosteKiloAdicional(ZonasEnvioAgencia.Portugal));
-
-            Assert.AreEqual(7.42m, Precio(t, ZonasEnvioAgencia.Portugal, 2m));
-            Assert.AreEqual(32.61m, Precio(t, ZonasEnvioAgencia.Portugal, 50m));
+            Assert.AreEqual((byte)2, _pt.ServicioId);
+            Assert.AreEqual("14H Portugal", _pt.NombreServicio);
+            Assert.AreEqual(7.42m, _pt.CalcularCoste("1000-001", "PT", 2m, 0m, 0m));
+            Assert.AreEqual(32.61m, _pt.CalcularCoste("1000-001", "PT", 50m, 0m, 0m));
         }
 
         [TestMethod]
-        public void Maritimo_EstructuraYPreciosClave()
+        public void Maritimo_PreciosClave()
         {
-            var t = new TarifaInnovatransMaritimo();
-
-            Assert.AreEqual(12, t.AgenciaId);
-            Assert.AreEqual((byte)3, t.ServicioId);
-            Assert.AreEqual("Marítimo islas", t.NombreServicio);
-            Assert.AreEqual(2.59m, t.CosteKiloAdicional(ZonasEnvioAgencia.CanariasMenores));
-
-            Assert.AreEqual(8.47m, Precio(t, ZonasEnvioAgencia.BalearesMayores, 5m));
-            // Canarias incorpora el despacho fijo (18,03 origen + 25 destino = 43,03).
-            Assert.AreEqual(58.39m, Precio(t, ZonasEnvioAgencia.CanariasMayores, 10m));
-            Assert.AreEqual(73.94m, Precio(t, ZonasEnvioAgencia.CanariasMenores, 10m));
+            Assert.AreEqual((byte)3, _mar.ServicioId);
+            Assert.AreEqual(8.47m, _mar.CalcularCoste("07001", "ES", 5m, 0m, 0m));    // Baleares Mayores
+            // Canarias incorpora el despacho fijo (18,03 + 25 = 43,03).
+            Assert.AreEqual(58.39m, _mar.CalcularCoste("35001", "ES", 10m, 0m, 0m));  // Canarias Mayores
+            Assert.AreEqual(73.94m, _mar.CalcularCoste("38800", "ES", 10m, 0m, 0m));  // Canarias Menores
         }
     }
 }

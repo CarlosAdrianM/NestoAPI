@@ -14,18 +14,19 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
     [TestClass]
     public class ComparadorAgenciasTests
     {
+        // Tarifa falsa que cubre UNA sola zona (resuelta a partir del CP, como las nacionales reales) y
+        // cobra un precio fijo + fuel; MaxValue si el CP cae en otra zona. Reembolso no se modela.
         private static ITarifaAgencia TarifaFake(int agenciaId, ZonasEnvioAgencia zona, decimal precioHasta5kg)
         {
             var t = A.Fake<ITarifaAgencia>();
             A.CallTo(() => t.AgenciaId).Returns(agenciaId);
             A.CallTo(() => t.ServicioId).Returns((byte)agenciaId);
             A.CallTo(() => t.NombreServicio).Returns("Servicio " + agenciaId);
-            A.CallTo(() => t.CosteEnvio).Returns(new List<TramoCosteEnvio>
-            {
-                new TramoCosteEnvio(5m, zona, precioHasta5kg)
-            });
-            A.CallTo(() => t.CosteKiloAdicional(A<ZonasEnvioAgencia>._)).Returns(1m);
-            A.CallTo(() => t.CosteReembolso(A<decimal>._)).Returns(0m);
+            A.CallTo(() => t.CalcularCoste(A<string>._, A<string>._, A<decimal>._, A<decimal>._, A<decimal>._))
+                .ReturnsLazily((string cp, string pais, decimal peso, decimal reembolso, decimal fuel) =>
+                    CalculadoraZonaEnvio.CalcularZona(cp) == zona
+                        ? precioHasta5kg * (1m + fuel)
+                        : decimal.MaxValue);
             return t;
         }
 
