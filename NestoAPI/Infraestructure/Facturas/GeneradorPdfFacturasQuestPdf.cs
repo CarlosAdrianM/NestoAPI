@@ -19,6 +19,37 @@ namespace NestoAPI.Infraestructure.Facturas
         private bool _papelConMembrete;
         private Dictionary<string, byte[]> _imagenesProductos;
 
+        // NestoAPI#244: sello Madrid Excelente (versión reducida oficial), recurso embebido en el
+        // ensamblado. Se carga una sola vez (compartido por todas las facturas). Nueva Visión es
+        // empresa certificada -> el sello aparece en la cabecera de todos los documentos, accesorio
+        // al logo. Si por lo que sea no se pudiera cargar el recurso, queda null y no se pinta (nunca
+        // rompe la generación del PDF).
+        private static readonly byte[] _selloMadridExcelente = CargarSelloMadridExcelente();
+
+        private static byte[] CargarSelloMadridExcelente()
+        {
+            try
+            {
+                var assembly = typeof(GeneradorPdfFacturasQuestPdf).Assembly;
+                using (var stream = assembly.GetManifestResourceStream("NestoAPI.Resources.SelloMadridExcelenteReducido.png"))
+                {
+                    if (stream == null)
+                    {
+                        return null;
+                    }
+                    using (var ms = new System.IO.MemoryStream())
+                    {
+                        stream.CopyTo(ms);
+                        return ms.ToArray();
+                    }
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
             _papelConMembrete = papelConMembrete;
@@ -177,15 +208,29 @@ namespace NestoAPI.Infraestructure.Facturas
                         row.ConstantItem(6.05f, Unit.Centimetre).Height(3.96f, Unit.Centimetre);
                     }
 
-                    // Espacio vacío alineado con Razón Social (columna izquierda de FILA 2)
-                    row.RelativeItem();
+                    // Sello Madrid Excelente (NestoAPI#244): va en el HUECO entre el logo y los datos de
+                    // empresa, centrado verticalmente a la altura del logo. Así es ACCESORIO (3,5 cm <
+                    // 6,05 cm del logo, a su derecha) y NO aumenta la altura de la cabecera (no roba
+                    // espacio a las líneas de la factura). Versión reducida oficial, proporciones intactas.
+                    if (_selloMadridExcelente != null)
+                    {
+                        row.RelativeItem().AlignMiddle().AlignCenter()
+                            .Width(3.5f, Unit.Centimetre).Image(_selloMadridExcelente, ImageScaling.FitWidth);
+                    }
+                    else
+                    {
+                        // Espacio vacío alineado con Razón Social (columna izquierda de FILA 2)
+                        row.RelativeItem();
+                    }
                     row.ConstantItem(10); // Espacio entre columnas (igual que FILA 2)
 
                     // Datos empresa centrados sobre Dirección de Entrega (columna derecha de FILA 2)
                     // En papel membrete no imprimimos datos de empresa (ya están en el membrete)
                     if (!_papelConMembrete && direccionEmpresa != null)
                     {
-                        row.RelativeItem().AlignCenter().Column(col =>
+                        // AlignMiddle: centra verticalmente los datos de empresa a la altura del logo y
+                        // del sello (los tres bloques de la FILA 1 quedan centrados verticalmente entre sí).
+                        row.RelativeItem().AlignMiddle().AlignCenter().Column(col =>
                         {
                             col.Item().AlignCenter().Text(direccionEmpresa.Nombre).Bold().FontSize(10);
                             col.Item().AlignCenter().Text(direccionEmpresa.Direccion).FontSize(8);

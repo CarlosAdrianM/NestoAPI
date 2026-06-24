@@ -1752,6 +1752,9 @@
       <DependentUpon>201603171731031_InitialCreate.cs</DependentUpon>
       <SubType>Designer</SubType>
     </EmbeddedResource>
+    <EmbeddedResource Include="Resources\madrid-excelente-reducido.png">
+      <LogicalName>NestoAPI.Resources.SelloMadridExcelenteReducido.png</LogicalName>
+    </EmbeddedResource>
     <Content Include="Models\Facturas\Factura.rdlc">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>

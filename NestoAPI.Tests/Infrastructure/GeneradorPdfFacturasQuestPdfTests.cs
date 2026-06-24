@@ -22,6 +22,30 @@ namespace NestoAPI.Tests.Infrastructure
             _generador = new GeneradorPdfFacturasQuestPdf();
         }
 
+        #region Sello Madrid Excelente (NestoAPI#244)
+
+        [TestMethod]
+        public void SelloMadridExcelente_RecursoEmbebido_ExisteYEsPng()
+        {
+            // Guarda el recurso embebido y su LogicalName: si alguien renombra/quita el PNG o cambia el
+            // nombre lógico, el sello dejaría de salir SILENCIOSAMENTE en producción. Este test lo caza.
+            var assembly = typeof(GeneradorPdfFacturasQuestPdf).Assembly;
+            using (var stream = assembly.GetManifestResourceStream("NestoAPI.Resources.SelloMadridExcelenteReducido.png"))
+            {
+                Assert.IsNotNull(stream, "El sello Madrid Excelente debe estar embebido con ese LogicalName.");
+                var firma = new byte[8];
+                int leidos = stream.Read(firma, 0, 8);
+                Assert.AreEqual(8, leidos, "El recurso del sello está vacío o truncado.");
+                // Firma de fichero PNG: 89 'P' 'N' 'G' 0D 0A 1A 0A
+                Assert.AreEqual(0x89, firma[0]);
+                Assert.AreEqual((byte)'P', firma[1]);
+                Assert.AreEqual((byte)'N', firma[2]);
+                Assert.AreEqual((byte)'G', firma[3]);
+            }
+        }
+
+        #endregion
+
         #region Tests de validación de configuración
 
         [TestMethod]
