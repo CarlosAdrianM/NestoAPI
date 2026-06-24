@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 
@@ -22,17 +24,21 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         internal const decimal ALTO_POR_DEFECTO = 29m;
 
         private readonly OperacionesEnviosDataTrans _operaciones;
+        private readonly OperacionesLecturaDataTrans _lectura;
         private readonly DireccionDataTrans _remitente;
         private readonly RegistroIntercambiosRemotos _registro;
 
         public AgenciaRemotaInnovatrans(OperacionesEnviosDataTrans operaciones, DireccionDataTrans remitente,
-            RegistroIntercambiosRemotos registro = null)
+            RegistroIntercambiosRemotos registro = null, OperacionesLecturaDataTrans lectura = null)
         {
             _operaciones = operaciones ?? throw new ArgumentNullException(nameof(operaciones));
             _remitente = remitente ?? throw new ArgumentNullException(nameof(remitente));
             // Si no se inyecta registro, uno vacío (Intercambios nunca es null). Para que capture algo,
             // el cliente SOAP tiene que compartir ESTE mismo registro (lo cablea la factory).
             _registro = registro ?? new RegistroIntercambiosRemotos();
+            // Operaciones de lectura (ConsultarEstados/Incidencias) para el seguimiento; la factory las
+            // cablea con el mismo cliente SOAP. Si no se inyectan, ConsultarSeguimientoAsync no se puede usar.
+            _lectura = lectura;
         }
 
         public IReadOnlyList<IntercambioRemoto> Intercambios => _registro.Intercambios;
@@ -117,6 +123,90 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
 
         public Task<EtiquetaDataTrans> ReimprimirAsync(string albaran, int? desdeBulto = null, int? hastaBulto = null)
             => _operaciones.BuscarEtiquetaAsync(albaran, FormatoEtiquetaDataTrans.Zpl, desdeBulto, hastaBulto);
+
+        /// <summary>
+        /// Seguimiento normalizado de Innovatrans: combina ConsultarEstados (entrega) y
+        /// ConsultarIncidencias (incidencia sin resolver). Prioridad: una incidencia abierta manda
+        /// (Incidentado), aunque ya conste la entrega; si no, entrega (Entregado + FechaEntrega real);
+        /// si no, sigue Tramitado. Aquí vive TODA la interpretación de DataTrans (nombres/códigos).
+        /// </summary>
+        public async Task<SeguimientoEnvioRemoto> ConsultarSeguimientoAsync(string albaran)
+        {
+            if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));
+            if (_lectura == null) throw new InvalidOperationException("Innovatrans no tiene operaciones de lectura configuradas para consultar el seguimiento.");
+
+            ResultadoConsultaEstados estados = await _lectura.ConsultarEstadosAsync(albaran).ConfigureAwait(false);
+            ResultadoConsultaIncidencias incidencias = await _lectura.ConsultarIncidenciasAsync(albaran).ConfigureAwait(false);
+
+            // El estado se identifica por el NOMBRE (descriptivo); "ENTREG" cubre ENTREGADO/ENTREGA,
+            // "DEVUEL"/"DEVOLUC" la devolución a origen.
+            EstadoEnvioDataTrans devolucion = estados.Estados
+                .Where(e => NombreContiene(e, "DEVUEL", "DEVOLUC"))
+                .OrderByDescending(e => e.Numero ?? 0)
+                .FirstOrDefault();
+            EstadoEnvioDataTrans entrega = estados.Estados
+                .Where(e => NombreContiene(e, "ENTREG"))
+                .OrderByDescending(e => e.Numero ?? 0)
+                .FirstOrDefault();
+            IncidenciaDataTrans incidenciaAbierta = incidencias.Incidencias.FirstOrDefault(i => !i.Resuelta);
+
+            // Devuelto a origen es terminal y manda sobre todo lo demás (el paquete ya ha vuelto).
+            if (devolucion != null)
+            {
+                return new SeguimientoEnvioRemoto
+                {
+                    Estado = EstadoEnvioSeguimiento.Devuelto,
+                    Detalle = devolucion.Nombre
+                };
+            }
+            if (incidenciaAbierta != null)
+            {
+                return new SeguimientoEnvioRemoto
+                {
+                    Estado = EstadoEnvioSeguimiento.Incidentado,
+                    FechaEntrega = ParsearFechaHora(entrega),
+                    Detalle = incidenciaAbierta.Nombre
+                };
+            }
+            if (entrega != null)
+            {
+                return new SeguimientoEnvioRemoto
+                {
+                    Estado = EstadoEnvioSeguimiento.Entregado,
+                    FechaEntrega = ParsearFechaHora(entrega),
+                    Detalle = entrega.Nombre
+                };
+            }
+            return new SeguimientoEnvioRemoto
+            {
+                Estado = EstadoEnvioSeguimiento.Tramitado,
+                Detalle = estados.Estados.OrderByDescending(e => e.Numero ?? 0).FirstOrDefault()?.Nombre
+            };
+        }
+
+        // ¿El nombre del estado (en mayúsculas) contiene alguna de las claves? Identifica el tipo de
+        // evento por su texto descriptivo (DataTrans no publica un catálogo fijo de códigos).
+        private static bool NombreContiene(EstadoEnvioDataTrans estado, params string[] claves)
+        {
+            string nombre = (estado.Nombre ?? string.Empty).ToUpperInvariant();
+            return claves.Any(c => nombre.Contains(c));
+        }
+
+        // Combina fecha (dd/MM/yyyy) y hora (HH:mm:ss) de DataTrans en un DateTime; null si no hay fecha.
+        private static DateTime? ParsearFechaHora(EstadoEnvioDataTrans estado)
+        {
+            if (estado == null || string.IsNullOrWhiteSpace(estado.Fecha)) return null;
+            string texto = (estado.Fecha.Trim() + " " + (estado.Hora ?? string.Empty).Trim()).Trim();
+            string[] formatos = { "dd/MM/yyyy HH:mm:ss", "dd/MM/yyyy HH:mm", "dd/MM/yyyy" };
+            foreach (string formato in formatos)
+            {
+                if (DateTime.TryParseExact(texto, formato, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime fecha))
+                {
+                    return fecha;
+                }
+            }
+            return null;
+        }
 
         private EnvioDataTrans ConstruirPeticion(DatosEnvioRemoto envio)
         {

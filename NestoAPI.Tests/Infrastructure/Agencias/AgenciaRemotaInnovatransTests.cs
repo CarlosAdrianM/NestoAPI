@@ -241,6 +241,78 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             StringAssert.Contains(fake.Llamadas[0].Xml, "<mes:formato>1</mes:formato>");
         }
 
+        [TestMethod]
+        public async Task ConsultarSeguimiento_EstadoEntregado_DevuelveEntregadoConFechaReal()
+        {
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(
+                ("DOCUMENTADO", "24/06/2026", "12:06:00"),
+                ("ENTREGADO", "25/06/2026", "10:30:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias()); // sin incidencias
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Entregado, seg.Estado);
+            Assert.AreEqual(new System.DateTime(2026, 6, 25, 10, 30, 0), seg.FechaEntrega);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_IncidenciaSinResolver_DevuelveIncidentado()
+        {
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(("EN TRÁNSITO", "24/06/2026", "18:00:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias(("AUSENTE", false)));
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Incidentado, seg.Estado);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_IncidenciaResueltaYEntregado_DevuelveEntregado()
+        {
+            // Una incidencia YA resuelta no cuenta como incidentado: si está entregado, es Entregado.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(("ENTREGADO", "26/06/2026", "09:15:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias(("DIRECCIÓN ERRÓNEA", true)));
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Entregado, seg.Estado);
+            Assert.AreEqual(new System.DateTime(2026, 6, 26, 9, 15, 0), seg.FechaEntrega);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_SinEntregaNiIncidencia_DevuelveTramitado()
+        {
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(("DOCUMENTADO", "24/06/2026", "12:06:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias());
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, seg.Estado);
+            Assert.IsNull(seg.FechaEntrega);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_DevueltoAOrigen_DevuelveDevuelto()
+        {
+            // Devuelto es terminal y manda aunque la incidencia esté cerrada: el paquete ya volvió.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(
+                ("EN TRÁNSITO", "24/06/2026", "18:00:00"),
+                ("DEVUELTO A ORIGEN", "27/06/2026", "11:00:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias(("AUSENTE REITERADO", true)));
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Devuelto, seg.Estado);
+        }
+
+        private static AgenciaRemotaInnovatrans NuevaAgenciaConLectura(FakeClienteSoap fake)
+            => new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente(), null, new OperacionesLecturaDataTrans(fake));
+
         private static DireccionDataTrans Remitente() => new DireccionDataTrans
         {
             Nombre = "NUEVA VISION", Telefono = "916280826", CodigoPostal = "28119",
@@ -286,6 +358,45 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                   <ns5:codificacion xmlns:ns5=""http://listType.dtx.sw"">base64</ns5:codificacion>
                   <ns5:contenido xmlns:ns5=""http://listType.dtx.sw"">JVBERi0xLjcK</ns5:contenido>
                 </ns4:return><ns4:returnError/></ns4:BusquedaEtiquetasTypeOut></soapenv:Body></soapenv:Envelope>";
+
+        // Respuesta de ConsultarEstados con N eventos (nombre/fecha/hora). Sin eventos -> respuesta 300.
+        private static string RespEstados(params (string Nombre, string Fecha, string Hora)[] estados)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < estados.Length; i++)
+            {
+                sb.Append($@"<ns5:resultado>
+                  <ns2:numero xmlns:ns2=""http://complexType.dtx.sw"">{i + 1}</ns2:numero>
+                  <ns2:codigo xmlns:ns2=""http://complexType.dtx.sw"">{i}</ns2:codigo>
+                  <ns2:nombre xmlns:ns2=""http://complexType.dtx.sw"">{estados[i].Nombre}</ns2:nombre>
+                  <ns2:fecha xmlns:ns2=""http://complexType.dtx.sw"">{estados[i].Fecha}</ns2:fecha>
+                  <ns2:hora xmlns:ns2=""http://complexType.dtx.sw"">{estados[i].Hora}</ns2:hora>
+                </ns5:resultado>");
+            }
+            return $@"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>
+                <ns5:ConsultarEstadosTypeOut xmlns:ns5=""http://messageout.dtx.sw"">{sb}<ns5:respuesta>{(estados.Length > 0 ? 200 : 300)}</ns5:respuesta></ns5:ConsultarEstadosTypeOut>
+              </soapenv:Body></soapenv:Envelope>";
+        }
+
+        // Respuesta de ConsultarIncidencias con N incidencias (nombre/resuelta). Sin incidencias -> respuesta 300.
+        private static string RespIncidencias(params (string Nombre, bool Resuelta)[] incidencias)
+        {
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < incidencias.Length; i++)
+            {
+                sb.Append($@"<ns5:resultado>
+                  <ns2:numero xmlns:ns2=""http://complexType.dtx.sw"">{i + 1}</ns2:numero>
+                  <ns2:codigo xmlns:ns2=""http://complexType.dtx.sw"">{i}</ns2:codigo>
+                  <ns2:nombre xmlns:ns2=""http://complexType.dtx.sw"">{incidencias[i].Nombre}</ns2:nombre>
+                  <ns2:resuelta xmlns:ns2=""http://complexType.dtx.sw"">{(incidencias[i].Resuelta ? "1" : "0")}</ns2:resuelta>
+                  <ns2:fecha xmlns:ns2=""http://complexType.dtx.sw"">24/06/2026</ns2:fecha>
+                  <ns2:hora xmlns:ns2=""http://complexType.dtx.sw"">18:00:00</ns2:hora>
+                </ns5:resultado>");
+            }
+            return $@"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>
+                <ns5:ConsultarIncidenciasTypeOut xmlns:ns5=""http://messageout.dtx.sw"">{sb}<ns5:respuesta>{(incidencias.Length > 0 ? 200 : 300)}</ns5:respuesta></ns5:ConsultarIncidenciasTypeOut>
+              </soapenv:Body></soapenv:Envelope>";
+        }
 
         /// <summary>Fake de IClienteSoapDataTrans: responde por operación y captura las llamadas.</summary>
         private class FakeClienteSoap : IClienteSoapDataTrans

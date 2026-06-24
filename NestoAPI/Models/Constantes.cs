@@ -27,8 +27,16 @@ namespace NestoAPI.Models
             // CTT Express. Alta en AgenciasTransporte con Numero=13 y EsSombra=1 (agencia sombra:
             // compite en el comparador para medir cuántos envíos ganaría, pero nunca se auto-selecciona).
             public const int AGENCIA_CTT = 13;
+            // Ciclo de vida del envío (EnviosAgencia.Estado). Numeración canónica unificada (#247),
+            // común a todas las agencias y clientes: Pendiente (-1) → En curso (0, etiqueta creada) →
+            // Tramitado (1, cerrado el día/entregado a la agencia) → Entregado (2) / Incidentado (3).
+            // Entregado e Incidentado los rellena el poll de seguimiento por agencia (#248).
             public const int ESTADO_PENDIENTE = -1;
             public const int ESTADO_EN_CURSO = 0;
+            public const short ESTADO_TRAMITADO = 1;
+            public const short ESTADO_ENTREGADO = 2;
+            public const short ESTADO_INCIDENTADO = 3;
+            public const short ESTADO_DEVUELTO = 4; // devuelto a origen (fallo terminal de entrega)
             public const decimal REEMBOLSO_NO_COBRAR = -1M;
         }
 

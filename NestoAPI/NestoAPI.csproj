@@ -574,6 +574,7 @@
     <Compile Include="Infraestructure\Agencias\Innovatrans\NormalizadorZplDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorTipoServicioDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\AgenciaRemotaInnovatrans.cs" />
+    <Compile Include="Infraestructure\Agencias\Gls\AgenciaRemotaGls.cs" />
     <Compile Include="Infraestructure\Agencias\IAgenciaRemota.cs" />
     <Compile Include="Infraestructure\Agencias\RegistroIntercambiosRemotos.cs" />
     <Compile Include="Infraestructure\Agencias\FabricaAgenciasRemotas.cs" />
@@ -710,6 +711,7 @@
     <Compile Include="Infraestructure\Seguridad\ValidadorAccesoCliente.cs" />
     <Compile Include="Infraestructure\SeEstaVendiendo\GestorSeEstaVendiendo.cs" />
     <Compile Include="Infraestructure\ServicioAgencias.cs" />
+    <Compile Include="Infraestructure\SeguimientoEnviosJobsService.cs" />
     <Compile Include="Infraestructure\SincronizacionJobsService.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
     <Compile Include="Infraestructure\Verifactu\IServicioVerifactu.cs" />

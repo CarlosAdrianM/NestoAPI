@@ -42,12 +42,54 @@ namespace NestoAPI.Infraestructure.Agencias
     }
 
     /// <summary>
-    /// Estrategia de gestión remota de una agencia (server-side): tramitar un envío contra la API de
-    /// la agencia y obtener/reimprimir su etiqueta. Hoy solo la implementa Innovatrans (DataTrans);
-    /// GLS/ASM será la siguiente. Las agencias sin integración (Canteras, etc.) NO la implementan: la
-    /// factory devuelve null y el flujo común sigue siendo solo BD.
+    /// Estado de seguimiento de un envío, NORMALIZADO e independiente de la agencia. Los valores
+    /// coinciden con <c>EnviosAgencia.Estado</c> (#247), de modo que persistir es un cast directo
+    /// (sin mapas ni switches): <c>envio.Estado = (short)seguimiento.Estado</c>.
     /// </summary>
-    public interface IAgenciaRemota
+    public enum EstadoEnvioSeguimiento : short
+    {
+        EnCurso = 0,
+        Tramitado = 1,
+        Entregado = 2,
+        Incidentado = 3,
+        // Devuelto a origen: la agencia no pudo entregar y el paquete ha vuelto. Terminal y distinto
+        // de Entregado (no llegó al cliente) y de Incidentado (eso es un problema aún en curso).
+        Devuelto = 4
+    }
+
+    /// <summary>
+    /// Resultado de consultar el seguimiento de un envío en la agencia, ya traducido al modelo común.
+    /// Cada agencia interpreta SU propio servicio (códigos/estados/incidencias) y devuelve esto;
+    /// el job y la persistencia no saben de agencias. <see cref="FechaEntrega"/> solo viene informada
+    /// cuando hay entrega real; <see cref="Detalle"/> es el texto de la agencia (auditoría/diagnóstico).
+    /// </summary>
+    public class SeguimientoEnvioRemoto
+    {
+        public EstadoEnvioSeguimiento Estado { get; set; }
+        public System.DateTime? FechaEntrega { get; set; }
+        public string Detalle { get; set; }
+    }
+
+    /// <summary>
+    /// SEGUIMIENTO remoto de una agencia (solo lectura): consultar el estado de un envío por su albarán.
+    /// Lo cumplen tanto las agencias con tramitación server-side (Innovatrans) como las que SOLO
+    /// exponen seguimiento (GLS/ASM, vía su web de tracking). Interfaz separado de la tramitación para
+    /// que una agencia que solo sigue (GLS) no tenga que implementar Insertar/Reimprimir.
+    /// </summary>
+    public interface ISeguimientoAgenciaRemota
+    {
+        /// <summary>Consulta el seguimiento del envío (por su albarán) y lo devuelve normalizado.</summary>
+        Task<SeguimientoEnvioRemoto> ConsultarSeguimientoAsync(string albaran);
+    }
+
+    /// <summary>
+    /// Estrategia de gestión remota de una agencia (server-side): tramitar un envío contra la API de
+    /// la agencia y obtener/reimprimir su etiqueta (ADEMÁS de su seguimiento, vía
+    /// <see cref="ISeguimientoAgenciaRemota"/>). Hoy solo la implementa Innovatrans (DataTrans). Las
+    /// agencias sin integración de tramitación (GLS, Canteras…) NO la implementan: la factory devuelve
+    /// null en <c>Crear</c> y el flujo común sigue siendo solo BD (GLS sí hace seguimiento por su lado).
+    /// </summary>
+    public interface IAgenciaRemota : ISeguimientoAgenciaRemota
     {
         /// <summary>Inserta el envío en la agencia (asigna albarán) y obtiene su etiqueta. Crea envío REAL.</summary>
         Task<ResultadoTramitacionRemota> InsertarYEtiquetarAsync(DatosEnvioRemoto envio);

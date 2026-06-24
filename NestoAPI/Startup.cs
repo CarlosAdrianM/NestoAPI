@@ -375,6 +375,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'comparativa-agencia-sombra' configurado (diario a las 6:30)");
 
+            // Cada 2 horas: poll de seguimiento de envíos (#248). Actualiza Estado (Entregado/Incidentado)
+            // y FechaEntrega real consultando a cada agencia con gestión remota (hoy Innovatrans). Acotado
+            // a los envíos desde una fecha de corte fija (SeguimientoEnviosJobsService.FECHA_CORTE), así
+            // que no recorre el histórico antiguo de GLS.
+            RecurringJob.AddOrUpdate(
+                "seguimiento-envios",
+                () => SeguimientoEnviosJobsService.ProcesarSeguimientosAsync(),
+                "0 */2 * * *", // Cron: cada 2 horas
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'seguimiento-envios' configurado (cada 2 horas)");
+
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
 #if false

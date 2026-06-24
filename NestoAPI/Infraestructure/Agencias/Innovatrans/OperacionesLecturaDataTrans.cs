@@ -26,11 +26,48 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         public List<PoblacionDataTrans> Poblaciones { get; set; } = new List<PoblacionDataTrans>();
     }
 
+    /// <summary>Un evento de seguimiento de DataTrans (ConsultarEstados). El estado lo identifica
+    /// <see cref="Nombre"/> (descriptivo: DOCUMENTADO, EN TRÁNSITO, ENTREGADO…); <see cref="Codigo"/>
+    /// es opaco. <see cref="Numero"/> es el orden del evento.</summary>
+    public class EstadoEnvioDataTrans
+    {
+        public int? Numero { get; set; }
+        public string Codigo { get; set; }
+        public string Nombre { get; set; }
+        public string Fecha { get; set; } // dd/MM/yyyy
+        public string Hora { get; set; }  // HH:mm:ss
+    }
+
+    /// <summary>Resultado de ConsultarEstados. <see cref="Respuesta"/>: 200 ok, 300 sin registros, 400 auth mal.</summary>
+    public class ResultadoConsultaEstados
+    {
+        public int Respuesta { get; set; }
+        public List<EstadoEnvioDataTrans> Estados { get; set; } = new List<EstadoEnvioDataTrans>();
+    }
+
+    /// <summary>Una incidencia de DataTrans (ConsultarIncidencias). <see cref="Resuelta"/> = ya cerrada.</summary>
+    public class IncidenciaDataTrans
+    {
+        public int? Numero { get; set; }
+        public string Codigo { get; set; }
+        public string Nombre { get; set; }
+        public bool Resuelta { get; set; }
+        public string Fecha { get; set; }
+        public string Hora { get; set; }
+        public string FechaCierre { get; set; }
+    }
+
+    /// <summary>Resultado de ConsultarIncidencias. <see cref="Respuesta"/>: 200 ok, 300 sin registros, 400 auth mal.</summary>
+    public class ResultadoConsultaIncidencias
+    {
+        public int Respuesta { get; set; }
+        public List<IncidenciaDataTrans> Incidencias { get; set; } = new List<IncidenciaDataTrans>();
+    }
+
     /// <summary>
-    /// Operaciones de LECTURA del WebService DataTrans DTX. Son seguras (no crean ni modifican
-    /// envíos), así que sirven para probar conectividad/credenciales contra producción. De momento
-    /// expone BuscarPoblacion (servicio Poblaciones); el seguimiento de estados (ConsultarEstados)
-    /// se construirá aquí mismo cuando abordemos el polling.
+    /// Operaciones de LECTURA del WebService DataTrans DTX (solo lectura: no crean ni modifican
+    /// envíos, seguras en producción). Expone BuscarPoblacion (servicio Poblaciones), ConsultarEstados
+    /// (servicio Estados) y ConsultarIncidencias (servicio Incidencias) para el poll de seguimiento.
     /// </summary>
     public class OperacionesLecturaDataTrans
     {
@@ -67,6 +104,66 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             };
         }
 
+        /// <summary>
+        /// Consulta los estados de seguimiento de un albarán (servicio Estados, operación
+        /// ConsultarEstados, buscar=1=por albarán). Solo lectura.
+        /// </summary>
+        public async Task<ResultadoConsultaEstados> ConsultarEstadosAsync(string albaran)
+        {
+            XDocument doc = await _cliente.EjecutarAsync(
+                "Estados",
+                "ConsultarEstados",
+                new XElement(ClienteSoapDataTrans.Mes + "albaran", albaran),
+                new XElement(ClienteSoapDataTrans.Mes + "buscar", "1")).ConfigureAwait(false);
+
+            return new ResultadoConsultaEstados
+            {
+                Respuesta = LeerEntero(doc, "respuesta"),
+                Estados = doc.Descendants()
+                    .Where(e => e.Name.LocalName == "resultado")
+                    .Select(r => new EstadoEnvioDataTrans
+                    {
+                        Numero = ParsearEntero(ValorHijo(r, "numero")),
+                        Codigo = ValorHijo(r, "codigo"),
+                        Nombre = ValorHijo(r, "nombre"),
+                        Fecha = ValorHijo(r, "fecha"),
+                        Hora = ValorHijo(r, "hora")
+                    })
+                    .ToList()
+            };
+        }
+
+        /// <summary>
+        /// Consulta las incidencias de un albarán (servicio Incidencias, operación ConsultarIncidencias,
+        /// buscar=1=por albarán). Solo lectura. <c>resuelta</c> llega como "1"/"0".
+        /// </summary>
+        public async Task<ResultadoConsultaIncidencias> ConsultarIncidenciasAsync(string albaran)
+        {
+            XDocument doc = await _cliente.EjecutarAsync(
+                "Incidencias",
+                "ConsultarIncidencias",
+                new XElement(ClienteSoapDataTrans.Mes + "albaran", albaran),
+                new XElement(ClienteSoapDataTrans.Mes + "buscar", "1")).ConfigureAwait(false);
+
+            return new ResultadoConsultaIncidencias
+            {
+                Respuesta = LeerEntero(doc, "respuesta"),
+                Incidencias = doc.Descendants()
+                    .Where(e => e.Name.LocalName == "resultado")
+                    .Select(r => new IncidenciaDataTrans
+                    {
+                        Numero = ParsearEntero(ValorHijo(r, "numero")),
+                        Codigo = ValorHijo(r, "codigo"),
+                        Nombre = ValorHijo(r, "nombre"),
+                        Resuelta = ValorHijo(r, "resuelta") == "1",
+                        Fecha = ValorHijo(r, "fecha"),
+                        Hora = ValorHijo(r, "hora"),
+                        FechaCierre = ValorHijo(r, "fechaCierre")
+                    })
+                    .ToList()
+            };
+        }
+
         private static string LeerTexto(XDocument doc, string nombreLocal)
             => doc.Descendants().FirstOrDefault(e => e.Name.LocalName == nombreLocal)?.Value;
 
@@ -78,5 +175,8 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
 
         private static decimal? ParsearDecimal(string texto)
             => decimal.TryParse(texto, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal valor) ? valor : (decimal?)null;
+
+        private static int? ParsearEntero(string texto)
+            => int.TryParse(texto, out int valor) ? valor : (int?)null;
     }
 }
