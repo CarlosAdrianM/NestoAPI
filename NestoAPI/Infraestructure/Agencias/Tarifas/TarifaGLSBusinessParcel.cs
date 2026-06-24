@@ -25,7 +25,12 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             new TramoCosteEnvio(3m, ZonasEnvioAgencia.Peninsular, 3.86m),
             new TramoCosteEnvio(5m, ZonasEnvioAgencia.Peninsular, 4.19m),
             new TramoCosteEnvio(10m, ZonasEnvioAgencia.Peninsular, 4.71m),
-            new TramoCosteEnvio(15m, ZonasEnvioAgencia.Peninsular, 6.07m)
+            new TramoCosteEnvio(15m, ZonasEnvioAgencia.Peninsular, 6.07m),
+            // GLS Portugal (oferta ASM_2026.pdf, "GLS PORTUGAL", 24/48 h): hasta 5 kg 13,28 €,
+            // hasta 10 kg 14,76 €, kilo adicional 0,88 €. Islas portuguesas (Azores/Madeira) "consultar":
+            // no se modelan aquí. GLS cubre Portugal, pero Innovatrans (≈7,61 €) suele ser más barata.
+            new TramoCosteEnvio(5m, ZonasEnvioAgencia.Portugal, 13.28m),
+            new TramoCosteEnvio(10m, ZonasEnvioAgencia.Portugal, 14.76m)
         };
 
         public IReadOnlyList<TramoCosteEnvio> CosteEnvio => _costeEnvio;
@@ -39,6 +44,10 @@ namespace NestoAPI.Infraestructure.Agencias.Tarifas
             if (zona == ZonasEnvioAgencia.Provincial)
             {
                 return 0.31m;
+            }
+            if (zona == ZonasEnvioAgencia.Portugal)
+            {
+                return 0.88m;
             }
             return decimal.MaxValue;
         }

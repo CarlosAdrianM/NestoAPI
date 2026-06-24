@@ -109,6 +109,44 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsNull(mejor);
         }
 
+        // Caso real del bug: GLS no tiene tarifa de Portugal (solo Provincial/Peninsular/Baleares);
+        // Innovatrans sí (14H Portugal). Para un CP portugués debe ganar Innovatrans, NUNCA GLS.
+        [TestMethod]
+        public void MasEconomica_DestinoPortugal_ConTarifasReales_EligeInnovatransNoGLS()
+        {
+            var comparador = new ComparadorAgencias(new RegistroTarifas(), FuelCero(), agenciasSombra: new[] { 13 });
+
+            var mejor = comparador.MasEconomica("1", "4590-704", peso: 1m, reembolso: 0m);
+
+            Assert.IsNotNull(mejor, "Innovatrans cubre Portugal: debe haber opción");
+            Assert.AreEqual(12, mejor.AgenciaId, "Para Portugal debe elegirse Innovatrans (12), no GLS (1)");
+        }
+
+        // GLS SÍ cubre Portugal (oferta ASM_2026.pdf: 13,28 € hasta 5 kg), aunque más cara que
+        // Innovatrans (por eso MasEconomica elige Innovatrans, pero GLS es una opción válida/de respaldo).
+        [TestMethod]
+        public void CosteDeAgencia_GLS_DestinoPortugal_ConTarifasReales_DevuelveCosteGLS()
+        {
+            var comparador = new ComparadorAgencias(new RegistroTarifas(), FuelCero(), agenciasSombra: new[] { 13 });
+
+            var coste = comparador.CosteDeAgencia("1", "4590-704", peso: 1m, reembolso: 0m, agenciaId: 1);
+
+            Assert.IsNotNull(coste, "GLS cubre Portugal");
+            Assert.AreEqual(1, coste.AgenciaId);
+            Assert.AreEqual(13.28m, coste.Coste, "GLS Portugal hasta 5 kg = 13,28 € (sin fuel en el test)");
+        }
+
+        // Zona sin cobertura en ninguna agencia portada (Extranjero) -> null -> aguas arriba es error.
+        [TestMethod]
+        public void MasEconomica_DestinoExtranjero_ConTarifasReales_DevuelveNull()
+        {
+            var comparador = new ComparadorAgencias(new RegistroTarifas(), FuelCero(), agenciasSombra: new[] { 13 });
+
+            var mejor = comparador.MasEconomica("1", "EXTER", peso: 1m, reembolso: 0m);
+
+            Assert.IsNull(mejor);
+        }
+
         [TestMethod]
         public void RegistroTarifasExistentes_SoloDevuelveLasAgenciasConFila()
         {

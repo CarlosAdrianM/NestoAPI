@@ -39,6 +39,9 @@ namespace NestoAPI.Tests.Controllers
             ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta>().AsQueryable());
             ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>().AsQueryable());
             ConfigurarFakeDbSet(fakeClientes, new List<Cliente>().AsQueryable());
+            // La validación de cobertura (agencias del comparador) consulta AgenciasTransportes;
+            // se fakea siempre para que cualquier test con GLS/Innovatrans pueda calcular cobertura.
+            ConfigurarAgenciasComparador();
 
             controller = new EnviosAgenciasController(db);
             controller.Request = new System.Net.Http.HttpRequestMessage
@@ -116,6 +119,108 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("Cliente Test", envioCreado.Atencion);
             Assert.AreEqual(0, envioCreado.Reembolso);
             Assert.AreEqual((short)0, envioCreado.Bultos);
+        }
+
+        // Cobertura: GLS no cubre Extranjero (Reino Unido) -> no se puede crear su etiqueta a esa zona.
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaGLS_DestinoExtranjero_SinTarifa_Retorna400()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1  ",
+                Número = 12345,
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            var direccion = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Nombre = "Cliente UK",
+                Dirección = "10 Downing St",
+                CodPostal = "SW1A1AA",
+                Población = "London",
+                Provincia = "",
+                Teléfono = "600000000",
+                PersonasContactoClientes = new List<PersonaContactoCliente>()
+            };
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente> { direccion }.AsQueryable());
+            ConfigurarAgenciasComparador();
+
+            var request = new CrearEtiquetaPendienteDTO { Empresa = "1  ", Pedido = 12345, Agencia = 1, Retorno = 0 };
+
+            // Act
+            var resultado = await controller.CrearEtiquetaPendiente(request);
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        // Innovatrans SÍ tiene tarifa de Portugal -> su etiqueta a Portugal se crea con normalidad.
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_AgenciaInnovatrans_DestinoPortugal_ConTarifa_Crea()
+        {
+            // Arrange
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1  ",
+                Número = 12345,
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            var direccion = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Nombre = "Cliente Portugal",
+                Dirección = "Rua das Flores 1",
+                CodPostal = "4590-704",
+                Población = "Paços de Ferreira",
+                Provincia = "",
+                Teléfono = "600000000",
+                PersonasContactoClientes = new List<PersonaContactoCliente>()
+            };
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente> { direccion }.AsQueryable());
+            ConfigurarAgenciasComparador();
+
+            EnviosAgencia envioCreado = null;
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored))
+                .Invokes((EnviosAgencia e) => envioCreado = e)
+                .ReturnsLazily((EnviosAgencia e) => e);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+
+            var request = new CrearEtiquetaPendienteDTO { Empresa = "1  ", Pedido = 12345, Agencia = 12, Retorno = 0 };
+
+            // Act
+            var resultado = await controller.CrearEtiquetaPendiente(request);
+
+            // Assert
+            Assert.IsInstanceOfType(resultado, typeof(CreatedNegotiatedContentResult<EnvioAgenciaDTO>));
+            Assert.IsNotNull(envioCreado);
+            Assert.AreEqual(12, envioCreado.Agencia);
+            Assert.AreEqual("4590-704", envioCreado.CodPostal);
+        }
+
+        // Da de alta GLS (1) e Innovatrans (12) en AgenciasTransporte con su fuel, para que el comparador
+        // las incluya y pueda decidir cobertura por zona.
+        private void ConfigurarAgenciasComparador()
+        {
+            var fakeAgencias = A.Fake<DbSet<AgenciaTransporte>>(o => o.Implements<IQueryable<AgenciaTransporte>>().Implements<IDbAsyncEnumerable<AgenciaTransporte>>());
+            A.CallTo(() => db.AgenciasTransportes).Returns(fakeAgencias);
+            ConfigurarFakeDbSet(fakeAgencias, new List<AgenciaTransporte>
+            {
+                new AgenciaTransporte { Numero = 1, Empresa = "1  ", Nombre = "ASM", EsSombra = false, RecargoCombustible = 0.1055m },
+                new AgenciaTransporte { Numero = 12, Empresa = "1  ", Nombre = "Innovatrans", EsSombra = false, RecargoCombustible = 0.025m }
+            }.AsQueryable());
         }
 
         [TestMethod]

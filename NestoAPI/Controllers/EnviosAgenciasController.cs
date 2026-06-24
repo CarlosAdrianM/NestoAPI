@@ -17,6 +17,7 @@ using System.Configuration;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Agencias.Innovatrans;
+using NestoAPI.Infraestructure.Agencias.Tarifas;
 using System.Web.Http.Cors;
 using System.Security.Claims;
 using NestoAPI.Infraestructure.Seguridad;
@@ -474,6 +475,15 @@ namespace NestoAPI.Controllers
                 return BadRequest(errorAgencia);
             }
 
+            // Cobertura de tarifa: una agencia del comparador (GLS/Innovatrans) no puede tramitar una
+            // zona en la que NO tiene tarifa (p.ej. GLS a Portugal). Mismo criterio que el comparador
+            // de Nesto, para que los 3 clientes (Nesto, NestoApp, TiendasNuevaVision) se comporten igual.
+            var errorCobertura = ValidarCoberturaTarifa(request.Agencia, direccion.CodPostal?.Trim() ?? "", request.Empresa);
+            if (errorCobertura != null)
+            {
+                return BadRequest(errorCobertura);
+            }
+
             var telefono = new Telefono(direccion.Teléfono);
             var correo = new CorreoCliente(direccion.PersonasContactoClientes);
 
@@ -577,6 +587,34 @@ namespace NestoAPI.Controllers
                 }
             }
 
+            return null;
+        }
+
+        /// <summary>
+        /// Requisito Innovatrans: una agencia gestionada por el comparador (GLS/Innovatrans) NO puede
+        /// crear una etiqueta para una zona en la que no tiene tarifa portada (p.ej. GLS a Portugal,
+        /// que solo cubre Provincial/Peninsular/Baleares). Devuelve el mensaje de error o null si la
+        /// combinación es válida. Las agencias FUERA del comparador (Canteras manual, CEX/Sending en
+        /// cuarentena, OnTime) tienen su propia lógica y NO se validan aquí.
+        /// </summary>
+        private string ValidarCoberturaTarifa(int agencia, string codPostal, string empresa)
+        {
+            bool esAgenciaComparador = new RegistroTarifas().Todas().Any(t => t.AgenciaId == agencia);
+            if (!esAgenciaComparador)
+            {
+                return null;
+            }
+
+            var numerosExistentes = db.AgenciasTransportes.Select(a => a.Numero).Distinct().ToList();
+            var idsSombra = db.AgenciasTransportes.Where(a => a.EsSombra).Select(a => a.Numero).ToList();
+            var registro = new RegistroTarifasExistentes(new RegistroTarifas(), numerosExistentes);
+            var comparador = new ComparadorAgencias(registro, new ProveedorRecargoCombustibleEF(db), idsSombra);
+
+            // peso/reembolso 0: la cobertura depende solo de que la zona tenga tramos en la tarifa.
+            if (comparador.CosteDeAgencia(empresa, codPostal, 0m, 0m, agencia) == null)
+            {
+                return $"La agencia seleccionada no tiene tarifa para la zona del destino (CP {codPostal}). No se puede crear la etiqueta.";
+            }
             return null;
         }
 

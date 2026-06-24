@@ -34,6 +34,12 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(4.19m, Precio(t, ZonasEnvioAgencia.Peninsular, 5m));
             Assert.AreEqual(3.10m, Precio(t, ZonasEnvioAgencia.Provincial, 1m));
             Assert.AreEqual(4.06m, Precio(t, ZonasEnvioAgencia.Provincial, 15m));
+
+            // GLS Portugal (ASM_2026.pdf): hasta 5 kg 13,28 €, hasta 10 kg 14,76 €, kilo adicional 0,88 €.
+            Assert.AreEqual(0.88m, t.CosteKiloAdicional(ZonasEnvioAgencia.Portugal));
+            Assert.AreEqual(2, t.CosteEnvio.Count(c => c.Zona == ZonasEnvioAgencia.Portugal));
+            Assert.AreEqual(13.28m, Precio(t, ZonasEnvioAgencia.Portugal, 5m));
+            Assert.AreEqual(14.76m, Precio(t, ZonasEnvioAgencia.Portugal, 10m));
         }
 
         [TestMethod]
