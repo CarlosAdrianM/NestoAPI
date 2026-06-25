@@ -181,11 +181,44 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                     Detalle = entrega.Nombre
                 };
             }
+            EstadoEnvioDataTrans ultimo = estados.Estados.OrderByDescending(e => e.Numero ?? 0).FirstOrDefault();
+            LoguearEstadoNoContempladoSiProcede(ultimo, albaran);
             return new SeguimientoEnvioRemoto
             {
                 Estado = EstadoEnvioSeguimiento.Tramitado,
-                Detalle = estados.Estados.OrderByDescending(e => e.Numero ?? 0).FirstOrDefault()?.Nombre
+                Detalle = ultimo?.Nombre
             };
+        }
+
+        // Estados de Innovatrans que YA sabemos que son "en tránsito" y caen bien en el catch-all
+        // (-> Tramitado). Cualquier nombre que no sea entrega/devolución/incidencia NI uno de estos se
+        // loguea en ELMAH para descubrir estados nuevos que quizá haya que tratar (NestoAPI#259). Es un
+        // log de descubrimiento temporal; ELMAH agrupa duplicados, así que no satura.
+        private static readonly string[] EstadosEnTransitoConocidos = { "DOCUMENTADO", "EN TRÁNSITO", "EN TRANSITO" };
+
+        private static void LoguearEstadoNoContempladoSiProcede(EstadoEnvioDataTrans estado, string albaran)
+        {
+            string nombre = estado?.Nombre?.Trim();
+            if (string.IsNullOrEmpty(nombre))
+            {
+                return;
+            }
+            string nombreUpper = nombre.ToUpperInvariant();
+            bool conocido = nombreUpper.Contains("ENTREG") || nombreUpper.Contains("DEVUEL") || nombreUpper.Contains("DEVOLUC")
+                || EstadosEnTransitoConocidos.Any(e => nombreUpper.Contains(e));
+            if (conocido)
+            {
+                return;
+            }
+            try
+            {
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                    $"Estado de Innovatrans no contemplado: '{nombre}' (albarán {albaran}). Revisar si hay que tratarlo (NestoAPI#259).")));
+            }
+            catch
+            {
+                // El logueo de descubrimiento NUNCA debe romper el seguimiento.
+            }
         }
 
         // ¿El nombre del estado (en mayúsculas) contiene alguna de las claves? Identifica el tipo de

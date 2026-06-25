@@ -352,6 +352,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             StringAssert.Contains(estados, "<mes:buscar>1</mes:buscar>");
         }
 
+        [TestMethod]
+        public async Task ConsultarSeguimiento_EstadoNoContemplado_DevuelveTramitadoSinRomper()
+        {
+            // Un estado que no reconocemos (ni entrega/devolución/incidencia, ni un "en tránsito" conocido)
+            // cae en el catch-all Tramitado y se loguea para descubrirlo (NestoAPI#259). El logueo nunca
+            // debe romper el seguimiento: el resultado sigue siendo Tramitado.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(("RETENIDO EN ADUANA", "26/06/2026", "09:00:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias());
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, seg.Estado);
+            Assert.AreEqual("RETENIDO EN ADUANA", seg.Detalle);
+        }
+
         private static AgenciaRemotaInnovatrans NuevaAgenciaConLectura(FakeClienteSoap fake)
             => new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente(), null, new OperacionesLecturaDataTrans(fake));
 
