@@ -16,6 +16,11 @@ namespace NestoAPI.Infraestructure
         private byte[] _logoBytes;
         private byte[] _qrBytes;
 
+        // Sello Madrid Excelente (NestoAPI#244): recurso embebido compartido. En el 347 va al PIE,
+        // discreto a la derecha del número de página (un hueco que antes quedaba en blanco). Al estar
+        // en el footer —región fija al pie de página— NO alarga el informe ni desplaza el contenido.
+        private static readonly byte[] _selloMadridExcelente = RecursosGraficos.SelloMadridExcelente;
+
         public byte[] Generar(Mod347DTO datos, Empresa empresaDeclarante, int anno)
         {
             // Cargar imágenes
@@ -346,13 +351,32 @@ namespace NestoAPI.Infraestructure
             container.Column(column =>
             {
                 column.Item().LineHorizontal(0.5f).LineColor(Colors.Grey.Lighten1);
-                column.Item().PaddingTop(5).AlignCenter().Text(text =>
+                column.Item().PaddingTop(5).Row(row =>
                 {
-                    text.DefaultTextStyle(x => x.FontSize(8).FontColor(Colors.Grey.Darken1));
-                    text.Span("Página ");
-                    text.CurrentPageNumber();
-                    text.Span(" de ");
-                    text.TotalPages();
+                    // Hueco izquierdo simétrico al sello para que la numeración quede CENTRADA igual que antes.
+                    row.RelativeItem();
+
+                    // Numeración de página (centro), como hasta ahora.
+                    row.RelativeItem().AlignMiddle().AlignCenter().Text(text =>
+                    {
+                        text.DefaultTextStyle(x => x.FontSize(8).FontColor(Colors.Grey.Darken1));
+                        text.Span("Página ");
+                        text.CurrentPageNumber();
+                        text.Span(" de ");
+                        text.TotalPages();
+                    });
+
+                    // Sello Madrid Excelente (derecha), discreto y accesorio. Versión reducida oficial,
+                    // proporciones intactas. Si no se pudiera cargar el recurso, queda el hueco vacío.
+                    if (_selloMadridExcelente != null)
+                    {
+                        row.RelativeItem().AlignMiddle().AlignRight()
+                            .Width(1.8f, Unit.Centimetre).Image(_selloMadridExcelente, ImageScaling.FitWidth);
+                    }
+                    else
+                    {
+                        row.RelativeItem();
+                    }
                 });
             });
         }
