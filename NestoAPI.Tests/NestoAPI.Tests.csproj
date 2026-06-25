@@ -243,6 +243,11 @@
     <Compile Include="Infrastructure\GeneradorPdfControlPedidosTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfKitsQueSePuedenMontarTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfModelo347Tests.cs" />
+    <Compile Include="Infrastructure\ClienteChangeDetectorTests.cs" />
+    <Compile Include="Infrastructure\PedidosVenta\SelectorSerieTests.cs" />
+    <Compile Include="Infrastructure\SeriesFacturaQuestPdfTests.cs" />
+    <Compile Include="Infrastructure\Verifactu\ServicioVerifactiTests.cs" />
+    <Compile Include="Models\Facturas\RegistroSeriesVerifactuTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfResumenVentasTests.cs" />
     <Compile Include="Infrastructure\ValidadorDescuentoPPTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfUbicacionesInventarioTests.cs" />
