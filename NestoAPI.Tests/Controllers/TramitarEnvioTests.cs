@@ -92,6 +92,61 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }
 
+        private static EnviosAgencia EnvioTramitado() => new EnviosAgencia
+        {
+            Numero = 1,
+            Agencia = Constantes.Agencias.AGENCIA_INNOVATRANS,
+            Pedido = 12345,
+            Estado = Constantes.Agencias.ESTADO_TRAMITADO,
+            CodigoBarras = "6522393001",
+            Nombre = "CLIENTE", Direccion = "Calle Mayor 1", CodPostal = "28001", Poblacion = "MADRID",
+            Telefono = "600000000", Peso = 1.5m, Bultos = 1
+        };
+
+        [TestMethod]
+        public async Task ActualizarSeguimiento_EnvioInexistente_DevuelveNotFound()
+        {
+            A.CallTo(() => fakeEnvios.FindAsync(99)).Returns(Task.FromResult<EnviosAgencia>(null));
+
+            var resultado = await controller.ActualizarSeguimiento(99);
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        [TestMethod]
+        public async Task ActualizarSeguimiento_SinAlbaran_DevuelveBadRequest()
+        {
+            var envio = EnvioTramitado();
+            envio.CodigoBarras = null;
+            ConEnvio(envio);
+
+            var resultado = await controller.ActualizarSeguimiento(envio.Numero);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task ActualizarSeguimiento_ConSeguimiento_ActualizaEstadoYDevuelveOk()
+        {
+            var envio = EnvioTramitado();   // entra Tramitado (1)
+            ConEnvio(envio);
+
+            var fakeSeguimiento = A.Fake<ISeguimientoAgenciaRemota>();
+            A.CallTo(() => fakeSeguimiento.ConsultarSeguimientoAsync(A<string>._))
+                .Returns(Task.FromResult(new SeguimientoEnvioRemoto
+                {
+                    Estado = EstadoEnvioSeguimiento.Entregado,
+                    FechaEntrega = new System.DateTime(2026, 6, 26)
+                }));
+            A.CallTo(() => fakeFabrica.CrearSeguimiento(envio.Agencia)).Returns(fakeSeguimiento);
+
+            var resultado = await controller.ActualizarSeguimiento(envio.Numero);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<SeguimientoEnvioRemoto>));
+            Assert.AreEqual((short)EstadoEnvioSeguimiento.Entregado, envio.Estado);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
         [TestMethod]
         public async Task Tramitar_AgenciaSinGestionRemota_DevuelveBadRequest()
         {

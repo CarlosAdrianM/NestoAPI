@@ -256,6 +256,48 @@ namespace NestoAPI.Controllers
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
         }
 
+        // POST: api/EnviosAgencias/5/ActualizarSeguimiento
+        // Actualiza el estado de UN envío a demanda (sin esperar al job de Hangfire que corre cada 2h):
+        // consulta el seguimiento de su agencia por el albarán y persiste Estado/FechaEntrega. Reutiliza
+        // la misma lógica que el job. Devuelve el seguimiento (Estado/FechaEntrega/Detalle).
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/ActualizarSeguimiento")]
+        [ResponseType(typeof(SeguimientoEnvioRemoto))]
+        public async Task<IHttpActionResult> ActualizarSeguimiento(int id)
+        {
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+            if (string.IsNullOrWhiteSpace(envio.CodigoBarras))
+            {
+                return BadRequest("El envío no tiene albarán todavía: no se puede consultar el seguimiento.");
+            }
+
+            SeguimientoEnvioRemoto seguimiento;
+            try
+            {
+                seguimiento = await new SeguimientoEnviosJobsService(db, fabricaAgenciasRemotas)
+                    .ActualizarSeguimientoEnvioAsync(envio);
+            }
+            catch (System.Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new System.Exception(
+                    $"Actualizar seguimiento a demanda del envío {envio.Numero} (albarán {envio.CodigoBarras?.Trim()}): {ex.Message}", ex)));
+                return Content(HttpStatusCode.BadGateway, $"No se pudo consultar el seguimiento en la agencia: {ex.Message}");
+            }
+
+            if (seguimiento == null)
+            {
+                return BadRequest("La agencia de este envío no tiene seguimiento remoto.");
+            }
+
+            await db.SaveChangesAsync();
+            return Ok(seguimiento);
+        }
+
         // Extrae el detalle de los ValidationErrors de EF (campo + mensaje); el Message genérico de
         // DbEntityValidationException no los incluye y deja el error sin diagnosticar.
         private static string DescribirErroresValidacion(Exception ex)
