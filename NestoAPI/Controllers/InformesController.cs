@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Infraestructure.Informes;
+using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Models.Informes;
 using NestoAPI.Models.Informes.SaldoCuenta555;
 
@@ -280,6 +281,58 @@ namespace NestoAPI.Controllers
 
             if (resultado == null) return NotFound();
             return Ok(resultado);
+        }
+
+        /// <summary>
+        /// Render de la "ORDEN DE COMPRA" a proveedor en PDF (QuestPDF), para que Nesto lo descargue
+        /// en vez de renderizar el RDLC PedidoCompra.rdlc en local (Nesto#340/#386). Lleva el sello
+        /// Madrid Excelente (NestoAPI#244). Si el pedido no existe devuelve 404.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/PedidoCompra/Pdf")]
+        public async Task<HttpResponseMessage> GetPedidoCompraPdf(string empresa, int pedido)
+        {
+            PedidoCompraInformeDTO resultado = await _servicio
+                .LeerPedidoCompraAsync(empresa, pedido)
+                .ConfigureAwait(false);
+
+            if (resultado == null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
+            GeneradorPdfPedidoCompra generador = new GeneradorPdfPedidoCompra();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(resultado)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
+        /// <summary>
+        /// Render de la "ORDEN DE COMPRA" a proveedor en Excel (.xlsx, ClosedXML), mismo contenido que
+        /// el PDF. Algunos proveedores prefieren el Excel; objetivo: eliminar el RDLC que hoy lo genera.
+        /// Si el pedido no existe devuelve 404.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/PedidoCompra/Excel")]
+        public async Task<HttpResponseMessage> GetPedidoCompraExcel(string empresa, int pedido)
+        {
+            PedidoCompraInformeDTO resultado = await _servicio
+                .LeerPedidoCompraAsync(empresa, pedido)
+                .ConfigureAwait(false);
+
+            if (resultado == null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
+            GeneradorExcelPedidoCompra generador = new GeneradorExcelPedidoCompra();
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarExcel(resultado)
+            };
         }
 
         [HttpGet]

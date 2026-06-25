@@ -20,35 +20,11 @@ namespace NestoAPI.Infraestructure.Facturas
         private Dictionary<string, byte[]> _imagenesProductos;
 
         // NestoAPI#244: sello Madrid Excelente (versión reducida oficial), recurso embebido en el
-        // ensamblado. Se carga una sola vez (compartido por todas las facturas). Nueva Visión es
-        // empresa certificada -> el sello aparece en la cabecera de todos los documentos, accesorio
-        // al logo. Si por lo que sea no se pudiera cargar el recurso, queda null y no se pinta (nunca
-        // rompe la generación del PDF).
-        private static readonly byte[] _selloMadridExcelente = CargarSelloMadridExcelente();
-
-        private static byte[] CargarSelloMadridExcelente()
-        {
-            try
-            {
-                var assembly = typeof(GeneradorPdfFacturasQuestPdf).Assembly;
-                using (var stream = assembly.GetManifestResourceStream("NestoAPI.Resources.SelloMadridExcelenteReducido.png"))
-                {
-                    if (stream == null)
-                    {
-                        return null;
-                    }
-                    using (var ms = new System.IO.MemoryStream())
-                    {
-                        stream.CopyTo(ms);
-                        return ms.ToArray();
-                    }
-                }
-            }
-            catch
-            {
-                return null;
-            }
-        }
+        // ensamblado y compartido con el resto de generadores de PDF (ver RecursosGraficos). Nueva
+        // Visión es empresa certificada -> el sello aparece en la cabecera de todos los documentos,
+        // accesorio al logo. Si no se pudiera cargar el recurso, queda null y no se pinta (nunca rompe
+        // la generación del PDF).
+        private static readonly byte[] _selloMadridExcelente = RecursosGraficos.SelloMadridExcelente;
 
         public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false, bool mostrarImagenes = false)
         {

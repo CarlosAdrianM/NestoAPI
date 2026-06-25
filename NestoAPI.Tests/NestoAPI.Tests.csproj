@@ -43,6 +43,10 @@
     <Reference Include="Castle.Core, Version=5.0.0.0, Culture=neutral, PublicKeyToken=407dd0808d44fbdc, processorArchitecture=MSIL">
       <HintPath>..\packages\Castle.Core.5.2.1\lib\net462\Castle.Core.dll</HintPath>
     </Reference>
+    <Reference Include="DocumentFormat.OpenXml, Version=2.16.0.0, Culture=neutral, PublicKeyToken=8fb06cb64d019a17, processorArchitecture=MSIL">
+      <HintPath>..\packages\DocumentFormat.OpenXml.2.16.0\lib\net46\DocumentFormat.OpenXml.dll</HintPath>
+    </Reference>
+    <Reference Include="WindowsBase" />
     <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
       <HintPath>..\packages\EntityFramework.6.5.1\lib\net45\EntityFramework.dll</HintPath>
     </Reference>
@@ -241,6 +245,8 @@
     <Compile Include="Infrastructure\GeneradorPdfResumenVentasTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfUbicacionesInventarioTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfFacturasQuestPdfTests.cs" />
+    <Compile Include="Infrastructure\GeneradorExcelPedidoCompraTests.cs" />
+    <Compile Include="Infrastructure\GeneradorPdfPedidoCompraTests.cs" />
     <Compile Include="Infrastructure\SuPedidoTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasMotorSelectionTests.cs" />
