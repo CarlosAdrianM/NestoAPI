@@ -64,6 +64,9 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
             _cliente = cliente ?? throw new ArgumentNullException(nameof(cliente));
         }
 
+        // GLS está rodada: sin logging detallado (NestoAPI#259).
+        public bool LoggingDetallado => false;
+
         public async Task<SeguimientoEnvioRemoto> ConsultarSeguimientoAsync(string albaran)
         {
             if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));

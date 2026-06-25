@@ -43,6 +43,11 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
 
         public IReadOnlyList<IntercambioRemoto> Intercambios => _registro.Intercambios;
 
+        // Innovatrans está recién integrada: logging detallado ON para vigilarla de cerca (estados no
+        // contemplados, bultos discrepantes, fallos de tramitación). Poner a false cuando esté rodada
+        // (NestoAPI#259).
+        public bool LoggingDetallado => true;
+
         public async Task<ResultadoTramitacionRemota> InsertarYEtiquetarAsync(DatosEnvioRemoto envio)
         {
             if (envio == null) throw new ArgumentNullException(nameof(envio));
@@ -83,7 +88,10 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // que es el que genera las N etiquetas. Nos quedamos con el mayor para no perder bultos
             // (un envío de 3 bultos quedaba persistido como 1).
             int bultosRespuesta = ParsearBultos(insercion.Bultos);
-            LoguearBultosDiscrepantesSiProcede(envio.Bultos, bultosRespuesta, insercion.Albaran);
+            if (LoggingDetallado)
+            {
+                LoguearBultosDiscrepantesSiProcede(envio.Bultos, bultosRespuesta, insercion.Albaran);
+            }
             int bultos = Math.Max(envio.Bultos, bultosRespuesta);
 
             EtiquetaDataTrans etiqueta;
@@ -184,7 +192,10 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 };
             }
             EstadoEnvioDataTrans ultimo = estados.Estados.OrderByDescending(e => e.Numero ?? 0).FirstOrDefault();
-            LoguearEstadoNoContempladoSiProcede(ultimo, albaran);
+            if (LoggingDetallado)
+            {
+                LoguearEstadoNoContempladoSiProcede(ultimo, albaran);
+            }
             return new SeguimientoEnvioRemoto
             {
                 Estado = EstadoEnvioSeguimiento.Tramitado,

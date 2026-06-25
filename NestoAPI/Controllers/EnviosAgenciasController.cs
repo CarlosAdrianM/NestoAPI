@@ -304,7 +304,8 @@ namespace NestoAPI.Controllers
             // además la logueamos en ELMAH con contexto para detectarla desde el primer momento (antes
             // solo se veía revisando la tabla de llamadas o cuando se quejaba el almacén). Cubre todas
             // las rutas de fallo que pasan por aquí: DataTransException, BadGateway, sin ZPL, reimpresión.
-            if (!exito)
+            // Gobernado por el flag de logging detallado de la agencia (hoy ON solo en Innovatrans).
+            if (!exito && agencia?.LoggingDetallado == true)
             {
                 try
                 {

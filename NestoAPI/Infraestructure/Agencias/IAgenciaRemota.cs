@@ -80,6 +80,14 @@ namespace NestoAPI.Infraestructure.Agencias
     {
         /// <summary>Consulta el seguimiento del envío (por su albarán) y lo devuelve normalizado.</summary>
         Task<SeguimientoEnvioRemoto> ConsultarSeguimientoAsync(string albaran);
+
+        /// <summary>
+        /// Si es true, la agencia emite logging DETALLADO en ELMAH (estados no contemplados, bultos
+        /// discrepantes, fallos de tramitación...). Pensado para vigilar de cerca una agencia recién
+        /// integrada (hoy Innovatrans): se pone a false cuando ya está rodada y a true en la siguiente
+        /// agencia que se integre. No afecta a la operativa, solo a la verbosidad del log (NestoAPI#259).
+        /// </summary>
+        bool LoggingDetallado { get; }
     }
 
     /// <summary>
