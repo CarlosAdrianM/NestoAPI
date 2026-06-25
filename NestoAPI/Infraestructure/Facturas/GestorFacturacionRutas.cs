@@ -1202,6 +1202,21 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
                 infoBuilder.AppendLine();
 
+                // Validador del descuento pronto pago (Issue #243): cuantifica cuánto del descuadre
+                // proviene del redondeo del PP, comparando el total línea-a-línea con el total aplicando
+                // el PP sobre la suma de bases. Solo diagnóstico (no modifica el pedido ni la factura).
+                if (pedidoDTO != null)
+                {
+                    var validacionPP = ValidadorDescuentoPP.ValidarDescuentoPP(pedidoDTO);
+                    infoBuilder.AppendLine($"--- VALIDADOR DESCUENTO PP (Issue #243) ---");
+                    infoBuilder.AppendLine($"  {validacionPP.Mensaje}");
+                    infoBuilder.AppendLine($"  Total línea a línea: {validacionPP.TotalLineaALinea:F2} | " +
+                        $"Total sobre suma: {validacionPP.TotalSobreSuma:F2} | " +
+                        $"Diferencia: {validacionPP.DiferenciaDetectada:F4}€ | " +
+                        $"Dentro de umbral ({ValidadorDescuentoPP.UmbralDiferenciaMaxima:F2}€): {validacionPP.EsValido}");
+                    infoBuilder.AppendLine();
+                }
+
                 // Agrupación por IVA (como hace la vista vstContabilizarFacturaVta)
                 infoBuilder.AppendLine($"--- AGRUPACIÓN POR IVA (como vstContabilizarFacturaVta) ---");
                 if (pedido.LinPedidoVtas != null && pedido.LinPedidoVtas.Any())

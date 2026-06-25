@@ -12,7 +12,6 @@ namespace NestoAPI.Tests.Infrastructure
         public void Setup()
         {
             RoundingHelper.UsarAwayFromZero = true;
-            ValidadorDescuentoPP.UmbralDiferenciaMaxima = 0.02m;
         }
 
         [TestMethod]
@@ -144,16 +143,13 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void ValidadorDescuentoPP_UmbralPersonalizado_Respetado()
         {
-            // Arrange
-            ValidadorDescuentoPP.UmbralDiferenciaMaxima = 0.001m; // Umbral muy bajo
-
+            // Arrange - el umbral se pasa por parámetro (ya no por estado estático mutable)
             var pedido = CrearPedidoConLineas(descuentoPP: 0.02m, cantidadLineas: 10, precioLinea: 10.005m);
 
-            // Act
-            var resultado = ValidadorDescuentoPP.ValidarDescuentoPP(pedido);
+            // Act - umbral muy bajo: cualquier diferencia mínima lo invalidará
+            var resultado = ValidadorDescuentoPP.ValidarDescuentoPP(pedido, umbral: 0.001m);
 
             // Assert
-            // Con umbral muy bajo, cualquier diferencia mínima lo invalidará
             Assert.IsNotNull(resultado);
         }
 

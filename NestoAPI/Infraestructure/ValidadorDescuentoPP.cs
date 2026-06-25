@@ -14,10 +14,10 @@ namespace NestoAPI.Infraestructure
     public static class ValidadorDescuentoPP
     {
         /// <summary>
-        /// Umbral máximo de diferencia aceptable (en euros).
-        /// Por defecto 0.02€, que es el umbral usado en el procedimiento de facturación.
+        /// Umbral máximo de diferencia aceptable por defecto (en euros).
+        /// 0.02€ es el umbral que usa el procedimiento de facturación.
         /// </summary>
-        public static decimal UmbralDiferenciaMaxima { get; set; } = 0.02m;
+        public const decimal UmbralDiferenciaMaxima = 0.02m;
 
         /// <summary>
         /// Calcula la diferencia entre el total calculado línea a línea
@@ -25,10 +25,16 @@ namespace NestoAPI.Infraestructure
         /// </summary>
         /// <typeparam name="T">Tipo de línea de pedido</typeparam>
         /// <param name="pedido">Pedido a validar</param>
+        /// <param name="umbral">
+        /// Umbral de diferencia aceptable (en euros). Si es null se usa <see cref="UmbralDiferenciaMaxima"/>.
+        /// Se pasa por parámetro (no por estado compartido) para que sea thread-safe.
+        /// </param>
         /// <returns>Resultado de la validación con la diferencia detectada</returns>
-        public static ResultadoValidacionPP ValidarDescuentoPP<T>(PedidoBase<T> pedido)
+        public static ResultadoValidacionPP ValidarDescuentoPP<T>(PedidoBase<T> pedido, decimal? umbral = null)
             where T : LineaPedidoBase
         {
+            decimal umbralEfectivo = umbral ?? UmbralDiferenciaMaxima;
+
             if (pedido == null || pedido.Lineas == null || !pedido.Lineas.Any())
             {
                 return new ResultadoValidacionPP
@@ -63,12 +69,12 @@ namespace NestoAPI.Infraestructure
 
             return new ResultadoValidacionPP
             {
-                EsValido = diferencia <= UmbralDiferenciaMaxima,
+                EsValido = diferencia <= umbralEfectivo,
                 DiferenciaDetectada = diferencia,
                 TotalLineaALinea = totalLineaALinea,
                 TotalSobreSuma = totalSobreSuma,
-                Mensaje = diferencia > UmbralDiferenciaMaxima
-                    ? $"Diferencia de redondeo PP: {diferencia:F2}€ (umbral: {UmbralDiferenciaMaxima:F2}€)"
+                Mensaje = diferencia > umbralEfectivo
+                    ? $"Diferencia de redondeo PP: {diferencia:F2}€ (umbral: {umbralEfectivo:F2}€)"
                     : diferencia > 0
                         ? $"Diferencia menor al umbral: {diferencia:F2}€"
                         : "Sin diferencia de redondeo"

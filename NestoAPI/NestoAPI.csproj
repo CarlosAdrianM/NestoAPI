@@ -728,6 +728,7 @@
     <Compile Include="Infraestructure\Rapports\ServicioRapports.cs" />
     <Compile Include="Infraestructure\RespuestaAgencia.cs" />
     <Compile Include="Infraestructure\RoundingHelper.cs" />
+    <Compile Include="Infraestructure\ValidadorDescuentoPP.cs" />
     <Compile Include="Infraestructure\Seguridad\ClaimsVendedorHelper.cs" />
     <Compile Include="Infraestructure\Seguridad\IServicioUsuarioVendedor.cs" />
     <Compile Include="Infraestructure\Seguridad\ServicioUsuarioVendedor.cs" />
