@@ -134,16 +134,18 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         }
 
         /// <summary>
-        /// Consulta las incidencias de un albarán (servicio Incidencias, operación ConsultarIncidencias,
-        /// buscar=1=por albarán). Solo lectura. <c>resuelta</c> llega como "1"/"0".
+        /// Consulta las incidencias de un albarán (servicio Incidencias, operación ConsultarIncidencias).
+        /// Solo lectura. <c>resuelta</c> llega como "1"/"0".
+        /// IMPORTANTE: a diferencia de ConsultarEstados, el WSDL de Incidencias NO define el subelemento
+        /// <c>buscar</c> (ver doc oficial DTX, ConsultarIncidenciasTypeIn = autenticacion + albaran). Enviarlo
+        /// provoca HTTP 500 "Unexpected subelement buscar" en Axis2 y tumba todo el seguimiento (issue #254).
         /// </summary>
         public async Task<ResultadoConsultaIncidencias> ConsultarIncidenciasAsync(string albaran)
         {
             XDocument doc = await _cliente.EjecutarAsync(
                 "Incidencias",
                 "ConsultarIncidencias",
-                new XElement(ClienteSoapDataTrans.Mes + "albaran", albaran),
-                new XElement(ClienteSoapDataTrans.Mes + "buscar", "1")).ConfigureAwait(false);
+                new XElement(ClienteSoapDataTrans.Mes + "albaran", albaran)).ConfigureAwait(false);
 
             return new ResultadoConsultaIncidencias
             {

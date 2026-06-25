@@ -310,6 +310,28 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual(EstadoEnvioSeguimiento.Devuelto, seg.Estado);
         }
 
+        [TestMethod]
+        public async Task ConsultarSeguimiento_ConsultarIncidencias_NoEnviaBuscar()
+        {
+            // Regresión #254: el WSDL del servicio Incidencias NO define el subelemento <buscar> (sí el de
+            // Estados). Enviarlo provocaba HTTP 500 "Unexpected subelement buscar" en Axis2 y dejaba sin
+            // efecto TODO el seguimiento (la excepción abortaba ConsultarSeguimiento para cada envío).
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(("DOCUMENTADO", "24/06/2026", "12:06:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias());
+
+            await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            string incidencias = fake.Llamadas.Single(l => l.Operacion == "ConsultarIncidencias").Xml;
+            StringAssert.Contains(incidencias, "<mes:albaran>6521905001</mes:albaran>");
+            Assert.IsFalse(incidencias.Contains("buscar"),
+                "ConsultarIncidencias no debe enviar <buscar>: Axis2 lo rechaza con HTTP 500.");
+
+            // ConsultarEstados sí lo admite y debe seguir enviándolo.
+            string estados = fake.Llamadas.Single(l => l.Operacion == "ConsultarEstados").Xml;
+            StringAssert.Contains(estados, "<mes:buscar>1</mes:buscar>");
+        }
+
         private static AgenciaRemotaInnovatrans NuevaAgenciaConLectura(FakeClienteSoap fake)
             => new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente(), null, new OperacionesLecturaDataTrans(fake));
 
