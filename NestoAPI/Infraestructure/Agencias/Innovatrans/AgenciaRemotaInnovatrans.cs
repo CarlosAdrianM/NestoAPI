@@ -82,7 +82,9 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // vacío -> ParsearBultos cae a 1). El recuento real es el que ENVIAMOS como Paqs (envio.Bultos),
             // que es el que genera las N etiquetas. Nos quedamos con el mayor para no perder bultos
             // (un envío de 3 bultos quedaba persistido como 1).
-            int bultos = Math.Max(envio.Bultos, ParsearBultos(insercion.Bultos));
+            int bultosRespuesta = ParsearBultos(insercion.Bultos);
+            LoguearBultosDiscrepantesSiProcede(envio.Bultos, bultosRespuesta, insercion.Albaran);
+            int bultos = Math.Max(envio.Bultos, bultosRespuesta);
 
             EtiquetaDataTrans etiqueta;
             try
@@ -195,6 +197,28 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         // loguea en ELMAH para descubrir estados nuevos que quizá haya que tratar (NestoAPI#259). Es un
         // log de descubrimiento temporal; ELMAH agrupa duplicados, así que no satura.
         private static readonly string[] EstadosEnTransitoConocidos = { "DOCUMENTADO", "EN TRÁNSITO", "EN TRANSITO" };
+
+        // Observabilidad (NestoAPI#259): si DataTrans devuelve en el insert un nº de bultos distinto del
+        // que pedimos (Paqs), lo logueamos. Hoy DataTrans suele devolverlo vacío (-> 1) aunque pidamos
+        // 2/3, lo que provocaba que se persistiera 1 (casos Estela/Dumapacar/Belén, 25-jun-2026). El log
+        // va en try/catch: nunca rompe la tramitación.
+        private static void LoguearBultosDiscrepantesSiProcede(int bultosPedidos, int bultosRespuesta, string albaran)
+        {
+            if (bultosPedidos <= 0 || bultosRespuesta == bultosPedidos)
+            {
+                return;
+            }
+            try
+            {
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                    $"Innovatrans: bultos pedidos ({bultosPedidos}) distintos de los de la respuesta del insert " +
+                    $"({bultosRespuesta}) en el albarán {albaran}. Se persiste el mayor (NestoAPI#259).")));
+            }
+            catch
+            {
+                // El logueo de observabilidad NUNCA debe romper la tramitación.
+            }
+        }
 
         private static void LoguearEstadoNoContempladoSiProcede(EstadoEnvioDataTrans estado, string albaran)
         {

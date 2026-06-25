@@ -300,6 +300,24 @@ namespace NestoAPI.Controllers
 
         private async Task AuditarTramitacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
         {
+            // NestoAPI#259: una tramitación fallida queda en AgenciasLlamadasWeb (Exito=false), pero
+            // además la logueamos en ELMAH con contexto para detectarla desde el primer momento (antes
+            // solo se veía revisando la tabla de llamadas o cuando se quejaba el almacén). Cubre todas
+            // las rutas de fallo que pasan por aquí: DataTransException, BadGateway, sin ZPL, reimpresión.
+            if (!exito)
+            {
+                try
+                {
+                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                        $"Tramitación de agencia fallida: envío {envio.Numero} (pedido {envio.Pedido}, " +
+                        $"cliente {envio.Cliente?.Trim()}, albarán {envio.CodigoBarras?.Trim()}): {error}")));
+                }
+                catch
+                {
+                    // El logueo nunca debe enmascarar ni romper la tramitación.
+                }
+            }
+
             // La auditoría es best-effort: si falla (validación, etc.) NUNCA debe enmascarar el error
             // real de la tramitación ni revertir el registro ya guardado del envío.
             try
