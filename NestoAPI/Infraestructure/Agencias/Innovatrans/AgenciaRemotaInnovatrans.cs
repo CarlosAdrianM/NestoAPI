@@ -78,7 +78,11 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // con la etiqueta, devolvemos SIEMPRE el albarán y los bultos: así el llamante puede
             // persistirlo y un reintento solo reimprime, en vez de reinsertar (envío fantasma + cobro
             // doble). El Exito=false con albarán = "registrado pero sin etiqueta".
-            int bultos = ParsearBultos(insercion.Bultos);
+            // El <bultos> de la respuesta de InsertarEnvios es POCO FIABLE (DataTrans suele devolverlo
+            // vacío -> ParsearBultos cae a 1). El recuento real es el que ENVIAMOS como Paqs (envio.Bultos),
+            // que es el que genera las N etiquetas. Nos quedamos con el mayor para no perder bultos
+            // (un envío de 3 bultos quedaba persistido como 1).
+            int bultos = Math.Max(envio.Bultos, ParsearBultos(insercion.Bultos));
 
             EtiquetaDataTrans etiqueta;
             try

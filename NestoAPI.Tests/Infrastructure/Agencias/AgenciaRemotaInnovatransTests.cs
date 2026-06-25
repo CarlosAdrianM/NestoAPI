@@ -229,6 +229,26 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task InsertarYEtiquetar_RespuestaBultosMenorQueLoPedido_ConservaLosBultosReales()
+        {
+            // DataTrans devuelve <bultos>=1 en el insert (poco fiable) pero pedimos 3 bultos (Paqs=3):
+            // el resultado debe conservar 3 (los que generan las 3 etiquetas), no caer a 1. Regresión:
+            // envíos de varios bultos quedaban persistidos como 1 (casos reales Estela/Dumapacar 25-jun-2026).
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertar("6522393002", "1"));
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
+
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.Bultos = 3;
+
+            ResultadoTramitacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .InsertarYEtiquetarAsync(envio);
+
+            Assert.IsTrue(r.Exito);
+            Assert.AreEqual(3, r.Bultos, "Debe conservar los bultos pedidos (Paqs), no el <bultos> de la respuesta.");
+        }
+
+        [TestMethod]
         public async Task Reimprimir_PideLaEtiquetaZplDelAlbaran()
         {
             var fake = new FakeClienteSoap();
