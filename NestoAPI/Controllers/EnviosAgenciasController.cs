@@ -276,25 +276,27 @@ namespace NestoAPI.Controllers
                 return BadRequest("El envío no tiene albarán todavía: no se puede consultar el seguimiento.");
             }
 
-            SeguimientoEnvioRemoto seguimiento;
-            try
-            {
-                seguimiento = await new SeguimientoEnviosJobsService(db, fabricaAgenciasRemotas)
-                    .ActualizarSeguimientoEnvioAsync(envio);
-            }
-            catch (System.Exception ex)
-            {
-                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new System.Exception(
-                    $"Actualizar seguimiento a demanda del envío {envio.Numero} (albarán {envio.CodigoBarras?.Trim()}): {ex.Message}", ex)));
-                return Content(HttpStatusCode.BadGateway, $"No se pudo consultar el seguimiento en la agencia: {ex.Message}");
-            }
-
-            if (seguimiento == null)
+            ISeguimientoAgenciaRemota agencia = fabricaAgenciasRemotas.CrearSeguimiento(envio.Agencia);
+            if (agencia == null)
             {
                 return BadRequest("La agencia de este envío no tiene seguimiento remoto.");
             }
 
-            await db.SaveChangesAsync();
+            SeguimientoEnvioRemoto seguimiento;
+            try
+            {
+                seguimiento = await agencia.ConsultarSeguimientoAsync(envio.CodigoBarras.Trim());
+            }
+            catch (System.Exception ex)
+            {
+                // AuditarSeguimiento registra el fallo en AgenciasLlamadasWeb (con el SOAP crudo) y en ELMAH.
+                await AuditarSeguimiento(envio, agencia, false, ex.Message);
+                return Content(HttpStatusCode.BadGateway, $"No se pudo consultar el seguimiento en la agencia: {ex.Message}");
+            }
+
+            SeguimientoEnviosJobsService.AplicarSeguimiento(envio, seguimiento);
+            await db.SaveChangesAsync();                            // persiste el nuevo estado (lo importante) antes de auditar
+            await AuditarSeguimiento(envio, agencia, true, null);   // audita la llamada (best-effort; captura denegaciones suaves)
             return Ok(seguimiento);
         }
 
@@ -365,7 +367,8 @@ namespace NestoAPI.Controllers
             // real de la tramitación ni revertir el registro ya guardado del envío.
             try
             {
-                db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(envio, agencia, exito, error));
+                db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(agencia.Intercambios,
+                    $"Tramitar envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})", exito, error));
                 await db.SaveChangesAsync();
             }
             catch (Exception ex)
@@ -375,22 +378,58 @@ namespace NestoAPI.Controllers
             }
         }
 
-        private AgenciaLlamadaWeb ConstruirAuditoria(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
+        // NestoAPI#259: audita en AgenciasLlamadasWeb la consulta de seguimiento a demanda (éxito y fallo),
+        // igual que la tramitación. Clave: guarda el CuerpoRespuesta crudo, así que captura también las
+        // denegaciones "suaves" de la agencia (p.ej. respuesta=400 con HTTP 200, que NO lanzan excepción).
+        // En fallo, además loguea en ELMAH (gobernado por LoggingDetallado de la agencia). Best-effort:
+        // la auditoría nunca debe romper la operación.
+        private async Task AuditarSeguimiento(EnviosAgencia envio, ISeguimientoAgenciaRemota agencia, bool exito, string error)
         {
-            // Las columnas de AgenciasLlamadasWeb son NOT NULL y varias tienen longitud máxima
-            // (UrlLlamada/TextoRespuestaError 255, Usuario 30, Agencia 50); CuerpoLlamada/Respuesta son
-            // nvarchar(max). Hay que respetar ambas o EF lanza DbEntityValidationException.
-            var intercambios = agencia.Intercambios;
+            if (!exito && agencia?.LoggingDetallado == true)
+            {
+                try
+                {
+                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                        $"Seguimiento a demanda fallido: envío {envio.Numero} (cliente {envio.Cliente?.Trim()}, " +
+                        $"albarán {envio.CodigoBarras?.Trim()}): {error}")));
+                }
+                catch
+                {
+                    // El logueo nunca debe romper la operación.
+                }
+            }
+
+            try
+            {
+                // Las llamadas SOAP del seguimiento se registran en Intercambios si la estrategia las
+                // expone (Innovatrans, que es IAgenciaRemota); GLS sigue por su web de tracking y no.
+                IReadOnlyList<IntercambioRemoto> intercambios = (agencia as IAgenciaRemota)?.Intercambios
+                    ?? new List<IntercambioRemoto>();
+                db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(intercambios,
+                    $"Consultar seguimiento envío {envio.Numero} (pedido {envio.Pedido}, albarán {envio.CodigoBarras?.Trim()})", exito, error));
+                await db.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                    $"Fallo auditando el seguimiento del envío {envio.Numero}: {DescribirErroresValidacion(ex)}", ex)));
+            }
+        }
+
+        // Construye la fila de auditoría de AgenciasLlamadasWeb a partir de los intercambios SOAP crudos
+        // (petición/respuesta) y una cabecera de contexto. La usan tanto la tramitación como el seguimiento.
+        // Las columnas son NOT NULL con longitud máxima (UrlLlamada/TextoRespuestaError 255, Usuario 30,
+        // Agencia 50); CuerpoLlamada/Respuesta son nvarchar(max). Hay que respetar ambas o EF lanza
+        // DbEntityValidationException.
+        private AgenciaLlamadaWeb ConstruirAuditoria(IReadOnlyList<IntercambioRemoto> intercambios, string cabecera, bool exito, string error)
+        {
             return new AgenciaLlamadaWeb
             {
                 Agencia = Limitar("Innovatrans", 50),
                 Fecha = DateTime.Now,
                 Exito = exito,
                 UrlLlamada = Limitar(intercambios.LastOrDefault()?.Url ?? ConfigurationManager.AppSettings["Innovatrans:Url"], 255),
-                // SOAP crudo de cada intercambio (insertar + etiquetar). Con la cabecera del envío
-                // para no perder el contexto al revisar la auditoría.
-                CuerpoLlamada = $"Tramitar envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})\n\n"
-                    + (Serializar(intercambios, i => i.Peticion) ?? string.Empty),
+                CuerpoLlamada = cabecera + "\n\n" + (Serializar(intercambios, i => i.Peticion) ?? string.Empty),
                 CuerpoRespuesta = Serializar(intercambios, i => i.Respuesta) ?? string.Empty,
                 TextoRespuestaError = Limitar(error, 255),
                 Usuario = Limitar(User?.Identity?.Name ?? "NestoAPI", 30)

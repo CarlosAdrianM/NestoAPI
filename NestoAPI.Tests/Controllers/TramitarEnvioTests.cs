@@ -145,6 +145,30 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<SeguimientoEnvioRemoto>));
             Assert.AreEqual((short)EstadoEnvioSeguimiento.Entregado, envio.Estado);
             A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+            // Audita la consulta de seguimiento en AgenciasLlamadasWeb (éxito).
+            Assert.IsNotNull(auditoria, "Debe auditar la consulta de seguimiento.");
+            Assert.IsTrue(auditoria.Exito);
+            StringAssert.Contains(auditoria.CuerpoLlamada, "Consultar seguimiento");
+        }
+
+        [TestMethod]
+        public async Task ActualizarSeguimiento_AgenciaFalla_DevuelveBadGatewayYAuditaElFallo()
+        {
+            var envio = EnvioTramitado();
+            ConEnvio(envio);
+
+            var fakeSeguimiento = A.Fake<ISeguimientoAgenciaRemota>();
+            A.CallTo(() => fakeSeguimiento.ConsultarSeguimientoAsync(A<string>._))
+                .Throws(new System.Exception("La agencia denegó la consulta"));
+            A.CallTo(() => fakeFabrica.CrearSeguimiento(envio.Agencia)).Returns(fakeSeguimiento);
+
+            var resultado = await controller.ActualizarSeguimiento(envio.Numero);
+
+            // 502 y el fallo queda auditado en AgenciasLlamadasWeb (con el motivo).
+            Assert.IsInstanceOfType(resultado, typeof(NegotiatedContentResult<string>));
+            Assert.IsNotNull(auditoria, "Un fallo de seguimiento también debe auditarse.");
+            Assert.IsFalse(auditoria.Exito);
+            StringAssert.Contains(auditoria.TextoRespuestaError, "denegó");
         }
 
         [TestMethod]

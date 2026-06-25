@@ -119,32 +119,10 @@ namespace NestoAPI.Infraestructure
             return actualizados;
         }
 
-        /// <summary>
-        /// Actualiza el seguimiento de UN envío a demanda (sin esperar al job de Hangfire): consulta la
-        /// agencia por su albarán y aplica Estado/FechaEntrega EN MEMORIA (el llamante hace SaveChanges).
-        /// Devuelve el seguimiento consultado, o null si la agencia no tiene seguimiento remoto o el
-        /// envío no tiene albarán. Comparte con el job la misma lógica de aplicación (<see cref="AplicarSeguimiento"/>).
-        /// </summary>
-        public async Task<SeguimientoEnvioRemoto> ActualizarSeguimientoEnvioAsync(EnviosAgencia envio)
-        {
-            if (envio == null || string.IsNullOrWhiteSpace(envio.CodigoBarras))
-            {
-                return null;
-            }
-            ISeguimientoAgenciaRemota agencia = _fabrica.CrearSeguimiento(envio.Agencia);
-            if (agencia == null)
-            {
-                return null;
-            }
-            SeguimientoEnvioRemoto seguimiento = await agencia
-                .ConsultarSeguimientoAsync(envio.CodigoBarras.Trim()).ConfigureAwait(false);
-            AplicarSeguimiento(envio, seguimiento);
-            return seguimiento;
-        }
-
         // Aplica el seguimiento consultado al envío (Estado/FechaEntrega) en memoria. Devuelve true si
-        // algo cambió. Lo comparten el job (en bulk) y la actualización a demanda de un solo envío.
-        private static bool AplicarSeguimiento(EnviosAgencia envio, SeguimientoEnvioRemoto seguimiento)
+        // algo cambió. Lo comparten el job (en bulk) y la actualización a demanda de un solo envío
+        // (EnviosAgenciasController, que además audita la llamada SOAP en AgenciasLlamadasWeb).
+        public static bool AplicarSeguimiento(EnviosAgencia envio, SeguimientoEnvioRemoto seguimiento)
         {
             bool cambiaEstado = envio.Estado != (short)seguimiento.Estado;
             bool cambiaFecha = seguimiento.FechaEntrega.HasValue && envio.FechaEntrega != seguimiento.FechaEntrega.Value;
