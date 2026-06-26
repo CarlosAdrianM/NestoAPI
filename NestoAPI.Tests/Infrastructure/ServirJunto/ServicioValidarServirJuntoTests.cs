@@ -35,7 +35,7 @@ namespace NestoAPI.Tests.Infrastructure.ServirJunto
 
             IProductoService productoService = A.Fake<IProductoService>();
             // Stock 0 => CantidadDisponible 0 < 1 pedido => el MMP se quedaría pendiente => deniega.
-            A.CallTo(() => productoService.CalcularStockProducto("MMP1", "ALG"))
+            A.CallTo(() => productoService.CalcularStockProducto("MMP1", "ALG", A<int?>._))
                 .Returns(Task.FromResult(new ProductoDTO.StockProducto { Almacen = "ALG", Stock = 0 }));
 
             ILogService logService = A.Fake<ILogService>();
@@ -55,6 +55,51 @@ namespace NestoAPI.Tests.Infrastructure.ServirJunto
             Assert.IsFalse(resultado.PuedeDesmarcar, "El MMP sin stock debe impedir desmarcar servir junto");
             A.CallTo(() => logService.LogError(A<string>.That.Contains("MMP1"), A<Exception>._))
                 .MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Validar_MMP_ExcluyeElPropioPedidoDelStock_PermiteSiHayStockLibre()
+        {
+            // NestoAPI#262: regresión del caso real (pedido 920796, muestra 45171: stock 2, 1 unidad
+            // pendiente de OTRO pedido). Antes la propia línea del pedido se contaba contra sí misma
+            // (PendienteEntregar incluía su reserva) y se denegaba aunque hubiera 1 unidad libre. Ahora se
+            // excluye el pedido del cálculo de stock; con el pedido excluido hay disponibilidad suficiente
+            // (2 - 1 = 1 >= 1) y se permite desmarcar.
+            //
+            // Es rojo sin el fix: si el código no pasara el nº de pedido, el fake configurado para
+            // (..., 920796) no casaría, devolvería StockProducto por defecto (Stock 0) y denegaría.
+            NVEntities db = A.Fake<NVEntities>();
+            Producto productoMMP = new Producto
+            {
+                Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Número = "MMP1",
+                Nombre = "MUESTRA HYDRO MILK CLEANSER",
+                SubGrupo = Constantes.Productos.SUBGRUPO_MUESTRAS
+            };
+            A.CallTo(() => db.Productos).Returns(FakeDbSet(new List<Producto> { productoMMP }));
+
+            IProductoService productoService = A.Fake<IProductoService>();
+            A.CallTo(() => productoService.CalcularStockProducto("MMP1", "ALG", 920796))
+                .Returns(Task.FromResult(new ProductoDTO.StockProducto { Almacen = "ALG", Stock = 2, PendienteEntregar = 1 }));
+
+            ILogService logService = A.Fake<ILogService>();
+            ServicioValidarServirJunto servicio = new ServicioValidarServirJunto(db, productoService, logService);
+
+            ValidarServirJuntoRequest request = new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                Pedido = 920796,
+                LineasPedido = new List<ProductoBonificadoConCantidadRequest>
+                {
+                    new ProductoBonificadoConCantidadRequest { ProductoId = "MMP1", Cantidad = 1, EsBonificadoGanavisiones = false }
+                }
+            };
+
+            ValidarServirJuntoResponse resultado = await servicio.Validar(request);
+
+            Assert.IsTrue(resultado.PuedeDesmarcar, "Con stock libre suficiente (excluyendo el propio pedido) debe permitir desmarcar");
+            A.CallTo(() => productoService.CalcularStockProducto("MMP1", "ALG", 920796)).MustHaveHappened();
+            A.CallTo(() => logService.LogError(A<string>._, A<Exception>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

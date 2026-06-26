@@ -57,7 +57,7 @@ namespace NestoAPI.Infraestructure.Kits
             }
         }
 
-        public async Task<ProductoDTO.StockProducto> CalcularStockProducto(string producto, string almacen)
+        public async Task<ProductoDTO.StockProducto> CalcularStockProducto(string producto, string almacen, int? pedidoExcluir = null)
         {
             using (var db = new NVEntities())
             {
@@ -65,7 +65,9 @@ namespace NestoAPI.Infraestructure.Kits
                 {
                     Almacen = almacen,
                     Stock = await db.ExtractosProducto.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Número == producto).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync(),
-                    PendienteEntregar = await db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync(),
+                    // pedidoExcluir (NestoAPI#262): no contar las líneas del propio pedido como pendiente
+                    // (si no, la línea que queremos servir cuenta contra sí misma).
+                    PendienteEntregar = await db.LinPedidoVtas.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && (pedidoExcluir == null || e.Número != pedidoExcluir.Value)).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync(),
                     PendienteRecibir = await db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && (e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && e.Enviado == true).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync(),
                     FechaEstimadaRecepcion = (DateTime)await db.LinPedidoCmps.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto == producto && ((e.Estado == Constantes.EstadosLineaVenta.EN_CURSO || e.Estado == Constantes.EstadosLineaVenta.PENDIENTE) && e.Enviado == true)).Select(e => e.FechaRecepción).DefaultIfEmpty(DateTime.MaxValue).MinAsync(),
                     PendienteReposicion = await db.PreExtrProductos.Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO) && e.Almacén == almacen && e.Producto.Número == producto && e.NºTraspaso != null && e.NºTraspaso > 0).Select(e => (int)e.Cantidad).DefaultIfEmpty(0).SumAsync()

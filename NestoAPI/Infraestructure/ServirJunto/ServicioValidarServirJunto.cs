@@ -64,7 +64,7 @@ namespace NestoAPI.Infraestructure.ServirJunto
 
             foreach (var validador in validadores)
             {
-                var resultado = await validador.Validar(request.Almacen, productosUnificados, lineasPedido).ConfigureAwait(false);
+                var resultado = await validador.Validar(request.Almacen, productosUnificados, lineasPedido, request.Pedido).ConfigureAwait(false);
                 if (!resultado.PuedeDesmarcar)
                 {
                     // NestoAPI#220: dejamos constancia en ELMAH del porqué se denegó desmarcar "servir

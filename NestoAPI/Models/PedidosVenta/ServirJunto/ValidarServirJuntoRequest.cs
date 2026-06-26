@@ -12,6 +12,14 @@ namespace NestoAPI.Models.PedidosVenta.ServirJunto
         public string Almacen { get; set; }
 
         /// <summary>
+        /// NestoAPI#262: número del pedido que se está validando. Permite excluir sus propias líneas
+        /// del cálculo de stock disponible (si no, una línea del pedido cuenta su reserva contra sí
+        /// misma y se deniega aunque haya stock libre). Opcional — si es null/0 no se excluye nada
+        /// (retrocompatible con clientes que no lo envíen).
+        /// </summary>
+        public int? Pedido { get; set; }
+
+        /// <summary>
         /// Formato antiguo (NestoApp): solo IDs de productos, asume cantidad=1.
         /// </summary>
         public List<string> ProductosBonificados { get; set; }

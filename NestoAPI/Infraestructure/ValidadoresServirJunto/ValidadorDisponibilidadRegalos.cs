@@ -26,7 +26,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
         public async Task<ValidarServirJuntoResponse> Validar(
             string almacen,
             List<ProductoBonificadoConCantidadRequest> productos,
-            List<ProductoBonificadoConCantidadRequest> lineasPedido)
+            List<ProductoBonificadoConCantidadRequest> lineasPedido,
+            int? pedido = null)
         {
             // NestoAPI#175: además de los bonificados explícitos (productos), considerar
             // las líneas del pedido marcadas como EsBonificadoGanavisiones. Cierra el
@@ -45,7 +46,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
             foreach (var producto in productos)
             {
                 var productoIdTrimmed = producto.ProductoId?.Trim();
-                var stockEnAlmacen = await productoService.CalcularStockProducto(producto.ProductoId, almacen.Trim()).ConfigureAwait(false);
+                // pedido excluido (NestoAPI#262): la reserva del propio pedido no cuenta contra sí misma.
+                var stockEnAlmacen = await productoService.CalcularStockProducto(producto.ProductoId, almacen.Trim(), pedido).ConfigureAwait(false);
 
                 if (stockEnAlmacen.CantidadDisponible < producto.Cantidad)
                 {
@@ -53,7 +55,7 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
                     foreach (var sede in Constantes.Sedes.ListaSedes)
                     {
                         if (sede.Trim() == almacen.Trim()) continue;
-                        var stockOtroAlmacen = await productoService.CalcularStockProducto(producto.ProductoId, sede).ConfigureAwait(false);
+                        var stockOtroAlmacen = await productoService.CalcularStockProducto(producto.ProductoId, sede, pedido).ConfigureAwait(false);
                         if (stockOtroAlmacen.CantidadDisponible >= producto.Cantidad)
                         {
                             almacenConStock = sede;

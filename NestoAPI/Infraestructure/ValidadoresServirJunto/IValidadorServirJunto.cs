@@ -20,9 +20,14 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
         /// ValidadorMaterialPromocional. Clientes que no lo envíen mantienen el
         /// comportamiento anterior.
         /// </param>
+        /// <param name="pedido">
+        /// NestoAPI#262: número del pedido que se valida. Se excluye del cálculo de stock para que las
+        /// líneas del propio pedido no cuenten su reserva contra sí mismas. null = no excluye (retrocompat).
+        /// </param>
         Task<ValidarServirJuntoResponse> Validar(
             string almacen,
             List<ProductoBonificadoConCantidadRequest> productos,
-            List<ProductoBonificadoConCantidadRequest> lineasPedido);
+            List<ProductoBonificadoConCantidadRequest> lineasPedido,
+            int? pedido = null);
     }
 }

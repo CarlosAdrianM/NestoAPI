@@ -56,7 +56,7 @@ namespace NestoAPI.Tests.Controllers
             ConfigurarFakeDbSet(fakeLinPedidoVtas, new List<LinPedidoVta>().AsQueryable());
 
             // Por defecto, CalcularStockProducto devuelve stock 0 para cualquier producto/almacen
-            A.CallTo(() => fakeProductoService.CalcularStockProducto(A<string>._, A<string>._))
+            A.CallTo(() => fakeProductoService.CalcularStockProducto(A<string>._, A<string>._, A<int?>._))
                 .Returns(Task.FromResult(new ProductoDTO.StockProducto()));
 
             controller = new GanavisionesController(db, fakeProductoService);
@@ -2525,7 +2525,7 @@ namespace NestoAPI.Tests.Controllers
         /// </summary>
         private void MockStock(string productoId, string almacen, int stock, int pendienteEntregar = 0)
         {
-            A.CallTo(() => fakeProductoService.CalcularStockProducto(productoId, almacen))
+            A.CallTo(() => fakeProductoService.CalcularStockProducto(productoId, almacen, A<int?>._))
                 .Returns(Task.FromResult(new ProductoDTO.StockProducto
                 {
                     Almacen = almacen,

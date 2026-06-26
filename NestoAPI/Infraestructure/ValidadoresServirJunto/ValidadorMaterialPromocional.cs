@@ -33,7 +33,8 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
         public async Task<ValidarServirJuntoResponse> Validar(
             string almacen,
             List<ProductoBonificadoConCantidadRequest> productos,
-            List<ProductoBonificadoConCantidadRequest> lineasPedido)
+            List<ProductoBonificadoConCantidadRequest> lineasPedido,
+            int? pedido = null)
         {
             if (lineasPedido == null || !lineasPedido.Any())
             {
@@ -63,7 +64,9 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
                 var productoIdTrimmed = linea.ProductoId?.Trim();
                 if (productoIdTrimmed == null || !idsMMP.Contains(productoIdTrimmed)) continue;
 
-                var stockEnAlmacen = await productoService.CalcularStockProducto(linea.ProductoId, almacen.Trim()).ConfigureAwait(false);
+                // pedido excluido (NestoAPI#262): la reserva de la propia línea del pedido no debe contar
+                // contra sí misma. Sin esto se denegaba aunque hubiera stock libre suficiente.
+                var stockEnAlmacen = await productoService.CalcularStockProducto(linea.ProductoId, almacen.Trim(), pedido).ConfigureAwait(false);
                 if (stockEnAlmacen.CantidadDisponible >= linea.Cantidad) continue;
 
                 var nombreProducto = productosMMP

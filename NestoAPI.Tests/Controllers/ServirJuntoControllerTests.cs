@@ -45,7 +45,7 @@ namespace NestoAPI.Tests.Controllers
             A.CallTo(() => db.Ganavisiones).Returns(fakeGanavisiones);
             ConfigurarFakeDbSet(fakeGanavisiones, new List<Ganavision>().AsQueryable());
 
-            A.CallTo(() => fakeProductoService.CalcularStockProducto(A<string>._, A<string>._))
+            A.CallTo(() => fakeProductoService.CalcularStockProducto(A<string>._, A<string>._, A<int?>._))
                 .Returns(Task.FromResult(new ProductoDTO.StockProducto()));
 
             var servicio = new ServicioValidarServirJunto(db, fakeProductoService);
@@ -613,7 +613,7 @@ namespace NestoAPI.Tests.Controllers
 
         private void MockStock(string productoId, string almacen, int stock, int pendienteEntregar = 0)
         {
-            A.CallTo(() => fakeProductoService.CalcularStockProducto(productoId, almacen))
+            A.CallTo(() => fakeProductoService.CalcularStockProducto(productoId, almacen, A<int?>._))
                 .Returns(Task.FromResult(new ProductoDTO.StockProducto
                 {
                     Almacen = almacen,
