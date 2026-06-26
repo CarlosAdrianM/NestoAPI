@@ -207,7 +207,12 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         // (-> Tramitado). Cualquier nombre que no sea entrega/devolución/incidencia NI uno de estos se
         // loguea en ELMAH para descubrir estados nuevos que quizá haya que tratar (NestoAPI#259). Es un
         // log de descubrimiento temporal; ELMAH agrupa duplicados, así que no satura.
-        private static readonly string[] EstadosEnTransitoConocidos = { "DOCUMENTADO", "EN TRÁNSITO", "EN TRANSITO" };
+        // REPARTO y LEIDO EN DESTINO confirmados como tránsito el 26/06/2026 (NestoAPI#260): en el
+        // albarán 6521905001 ambos preceden a ENTREGADO (LEIDO 08:08 -> REPARTO 08:27 -> ENTREGADO 16:08),
+        // así que NO son entrega, solo eventos intermedios. Se catalogan para que dejen de salir como
+        // "no contemplado" en ELMAH; el comportamiento no cambia (catch-all -> Tramitado).
+        private static readonly string[] EstadosEnTransitoConocidos =
+            { "DOCUMENTADO", "EN TRÁNSITO", "EN TRANSITO", "REPARTO", "LEIDO EN DESTINO", "LEÍDO EN DESTINO" };
 
         // Observabilidad (NestoAPI#259): si DataTrans devuelve en el insert un nº de bultos distinto del
         // que pedimos (Paqs), lo logueamos. Hoy DataTrans suele devolverlo vacío (-> 1) aunque pidamos

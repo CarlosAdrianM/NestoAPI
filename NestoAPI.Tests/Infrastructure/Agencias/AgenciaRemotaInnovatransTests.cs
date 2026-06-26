@@ -368,6 +368,46 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual("RETENIDO EN ADUANA", seg.Detalle);
         }
 
+        [TestMethod]
+        public async Task ConsultarSeguimiento_SecuenciaRealConReparto_DevuelveEntregado()
+        {
+            // Caso real albarán 6521905001 (NestoAPI#260): la web de GLS marcaba Entregado pero el WS iba
+            // por detrás y su último evento era REPARTO. Al día siguiente sí constaba ENTREGADO. La secuencia
+            // completa (LEIDO EN DESTINO 08:08 -> REPARTO 08:27 -> ENTREGADO 16:08) debe resolver a Entregado
+            // con la fecha real, sin que los estados intermedios despisten a la detección de entrega.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(
+                ("DOCUMENTADO", "24/06/2026", "16:43:06"),
+                ("DOCUMENTADO", "24/06/2026", "17:01:26"),
+                ("LEIDO EN DESTINO", "25/06/2026", "08:08:11"),
+                ("REPARTO", "25/06/2026", "08:27:39"),
+                ("ENTREGADO", "25/06/2026", "16:08:24")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias());
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Entregado, seg.Estado);
+            Assert.AreEqual(new System.DateTime(2026, 6, 25, 16, 8, 24), seg.FechaEntrega);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_RepartoSinEntrega_DevuelveTramitado()
+        {
+            // REPARTO/LEIDO EN DESTINO son tránsito intermedio (catalogados en NestoAPI#260): mientras no
+            // haya ENTREGADO, el envío sigue Tramitado (no terminal), y ya no se loguean como "no contemplado".
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(
+                ("LEIDO EN DESTINO", "25/06/2026", "08:08:11"),
+                ("REPARTO", "25/06/2026", "08:27:39")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias());
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6521905001");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, seg.Estado);
+            Assert.AreEqual("REPARTO", seg.Detalle);
+            Assert.IsNull(seg.FechaEntrega);
+        }
+
         private static AgenciaRemotaInnovatrans NuevaAgenciaConLectura(FakeClienteSoap fake)
             => new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente(), null, new OperacionesLecturaDataTrans(fake));
 
