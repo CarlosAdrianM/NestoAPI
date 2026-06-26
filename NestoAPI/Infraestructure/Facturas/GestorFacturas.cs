@@ -222,8 +222,12 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 LineaFactura lineaNueva = new LineaFactura
                 {
-                    Albaran = (int)linea.Nº_Albarán,
-                    FechaAlbaran = (DateTime)linea.Fecha_Albarán,
+                    // Hay líneas de factura sin albarán (Nº_Albarán/Fecha_Albarán null): forzar el cast
+                    // lanzaba InvalidOperationException ("El objeto que acepta valores Null debe tener un
+                    // valor") y tumbaba el envío del día (EnviarFacturasDia). El modelo ya contempla
+                    // Albaran == 0 (TextoAlbaran muestra "Pedido N" en vez de "Albarán...").
+                    Albaran = linea.Nº_Albarán ?? 0,
+                    FechaAlbaran = linea.Fecha_Albarán ?? default(DateTime),
                     Cantidad = linea.Cantidad,
                     Descripcion = linea.Texto?.Trim(),
                     Descuento = linea.SumaDescuentos,
@@ -937,8 +941,10 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 LineaFactura lineaNueva = new LineaFactura
                 {
-                    Albaran = (int)linea.Nº_Albarán,
-                    FechaAlbaran = (DateTime)linea.Fecha_Albarán,
+                    // Defensivo (mismo patrón que LeerFactura): aunque aquí Nº_Albarán viene filtrado y no
+                    // debería ser null, evitamos el InvalidOperationException si Fecha_Albarán llegara null.
+                    Albaran = linea.Nº_Albarán ?? 0,
+                    FechaAlbaran = linea.Fecha_Albarán ?? default(DateTime),
                     Cantidad = linea.Cantidad,
                     Descripcion = linea.Texto?.Trim(),
                     Descuento = ponerPrecios ? linea.SumaDescuentos : 0,

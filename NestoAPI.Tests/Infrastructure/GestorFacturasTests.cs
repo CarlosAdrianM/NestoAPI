@@ -646,6 +646,53 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorFacturas_LeerFactura_ConLineaSinAlbaran_NoLanzaExcepcionYAlbaranEsCero()
+        {
+            // Regresión: una línea de factura sin albarán (Nº_Albarán/Fecha_Albarán null) hacía que el
+            // cast (int)/(DateTime) lanzara InvalidOperationException ("El objeto que acepta valores Null
+            // debe tener un valor") y tumbaba el envío del día (EnviarFacturasDia). ELMAH, usuario Manuel,
+            // 25/06/2026. El modelo ya contempla Albaran == 0.
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            CabFacturaVta cab = A.Fake<CabFacturaVta>();
+            cab.Vendedor = "VD";
+            cab.Nº_Cliente = "1111";
+            cab.Serie = "NV";
+            LinPedidoVta linea = new LinPedidoVta
+            {
+                Nº_Albarán = null,
+                Fecha_Albarán = null,
+                Cantidad = 1,
+                Texto = "PRODUCTO SIN ALBARAN",
+                Precio = 614.95M,
+                Producto = "12345",
+                Base_Imponible = 614.95M,
+                ImporteIVA = 129.14M,
+                ImporteRE = 0,
+                Total = 744.09M,
+                PorcentajeIVA = 21,
+                PorcentajeRE = 0M
+            };
+            cab.LinPedidoVtas.Add(linea);
+            A.CallTo(() => servicio.CargarCabFactura("1", "NV11111")).Returns(cab);
+            VencimientoFactura vto1 = new VencimientoFactura
+            {
+                FormaPago = "EFC",
+                Importe = 744.09M,
+                ImportePendiente = 744.09M
+            };
+            A.CallTo(() => servicio.CargarVencimientosExtracto(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(new List<VencimientoFactura> { vto1 });
+            IGestorFacturas gestor = new GestorFacturas(servicio);
+
+            Factura factura = gestor.LeerFactura("1", "NV11111");
+
+            LineaFactura lineaFactura = factura.Lineas.Single();
+            Assert.AreEqual(0, lineaFactura.Albaran);
+            // Con Albaran == 0 el modelo muestra "Pedido N" en vez de "Albarán...".
+            StringAssert.StartsWith(lineaFactura.TextoAlbaran, "Pedido");
+        }
+
+        [TestMethod]
         public void GestorFacturas_LeerFactura_ConLineasCalculaImporteTotalCorrectamente()
         {
             // Arrange - Este test verifica que cuando las líneas SÍ se cargan,
