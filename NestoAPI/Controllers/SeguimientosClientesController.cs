@@ -771,7 +771,7 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
                 throw new Exception(string.Format("Ya existe un seguimiento del cliente {0}/{1} para el día {2}", seguimientoClienteDTO.Cliente.Trim(), seguimientoClienteDTO.Contacto.Trim(), fechaDesde.ToShortDateString()));
             }
 
-            string vendedorFicha = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto).Vendedor?.Trim();
+            string vendedorFicha = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto)?.Vendedor?.Trim();
             string vendedorPeluqueria = db.VendedoresClientesGruposProductos.SingleOrDefault(v => v.Empresa == seguimientoClienteDTO.Empresa && v.Cliente == seguimientoClienteDTO.Cliente && v.Contacto == seguimientoClienteDTO.Contacto && v.GrupoProducto == "PEL")?.Vendedor?.Trim();
             string vendedorUsuario = ParametrosUsuarioController.LeerParametro(seguimientoClienteDTO.Empresa, seguimientoClienteDTO.Usuario, "Vendedor");
 
