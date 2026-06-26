@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
+using NestoAPI.Infraestructure;
 
 namespace NestoAPI.Infraestructure.Agencias.Innovatrans
 {
@@ -224,16 +225,12 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             {
                 return;
             }
-            try
-            {
-                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                    $"Innovatrans: bultos pedidos ({bultosPedidos}) distintos de los de la respuesta del insert " +
-                    $"({bultosRespuesta}) en el albarán {albaran}. Se persiste el mayor (NestoAPI#259).")));
-            }
-            catch
-            {
-                // El logueo de observabilidad NUNCA debe romper la tramitación.
-            }
+            // Esto ocurre durante la tramitación (siempre hay petición HTTP del usuario que imprime), así
+            // que ELMAH ya pondrá su usuario; el fallback solo cubre el caso raro de no haberlo.
+            ElmahHelper.Log(new Exception(
+                $"Innovatrans: bultos pedidos ({bultosPedidos}) distintos de los de la respuesta del insert " +
+                $"({bultosRespuesta}) en el albarán {albaran}. Se persiste el mayor (NestoAPI#259)."),
+                "Sistema (tramitación de envíos)");
         }
 
         private static void LoguearEstadoNoContempladoSiProcede(EstadoEnvioDataTrans estado, string albaran)
@@ -250,15 +247,12 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             {
                 return;
             }
-            try
-            {
-                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                    $"Estado de Innovatrans no contemplado: '{nombre}' (albarán {albaran}). Revisar si hay que tratarlo (NestoAPI#259).")));
-            }
-            catch
-            {
-                // El logueo de descubrimiento NUNCA debe romper el seguimiento.
-            }
+            // Suele dispararlo el poll de Hangfire (sin usuario HTTP): el fallback identifica que lo
+            // originó el proceso automático de seguimiento, no una persona. Si lo dispara la actualización
+            // a demanda (EnviosAgenciasController), ELMAH ya tendrá el usuario real y el fallback no se usa.
+            ElmahHelper.Log(new Exception(
+                $"Estado de Innovatrans no contemplado: '{nombre}' (albarán {albaran}). Revisar si hay que tratarlo (NestoAPI#259)."),
+                "Sistema (seguimiento de envíos)");
         }
 
         // ¿El nombre del estado (en mayúsculas) contiene alguna de las claves? Identifica el tipo de

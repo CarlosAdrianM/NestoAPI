@@ -106,9 +106,12 @@ namespace NestoAPI.Infraestructure
                 }
                 catch (Exception ex)
                 {
-                    // Un envío que falla no debe tumbar el job: se loguea y se sigue con el resto.
-                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                        $"Seguimiento del envío {envio.Numero} (albarán {envio.CodigoBarras?.Trim()}): {ex.Message}", ex)));
+                    // Un envío que falla no debe tumbar el job: se loguea y se sigue con el resto. Como el
+                    // poll corre en Hangfire (sin usuario HTTP), se estampa el proceso automático para
+                    // saber que no hay una persona a quien preguntar (ver ElmahHelper).
+                    ElmahHelper.Log(new Exception(
+                        $"Seguimiento del envío {envio.Numero} (albarán {envio.CodigoBarras?.Trim()}): {ex.Message}", ex),
+                        "Sistema (seguimiento de envíos)");
                 }
             }
 
