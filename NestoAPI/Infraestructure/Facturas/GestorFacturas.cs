@@ -1045,8 +1045,13 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     if (!string.IsNullOrEmpty(mailAnterior))
                     {
-                        mail.Subject = mail.Subject.Trim().TrimEnd(',');
-                        listaCorreos.Add(mail);
+                        // Solo encolamos el correo si tiene alguna factura adjunta: si todas las del
+                        // cliente fallaron al generarse, no mandamos un correo vacío (ya se logueó cada fallo).
+                        if (mail.Attachments.Count > 0)
+                        {
+                            mail.Subject = mail.Subject.Trim().TrimEnd(',');
+                            listaCorreos.Add(mail);
+                        }
                     }
                     mailAnterior = fra.Correo;
                     ISerieFactura serieFactura;
@@ -1090,13 +1095,30 @@ namespace NestoAPI.Infraestructure.Facturas
                     mail.Body = (await GenerarCorreoHTML(fra)).ToString();
                     mail.IsBodyHtml = true;
                 }
-                mail.Subject += fra.Factura + ", ";
-                ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura);
-                Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), fra.Factura + ".pdf");
-                mail.Attachments.Add(attachment);
+                try
+                {
+                    ByteArrayContent facturaPdf = FacturaEnPDF(fra.Empresa, fra.Factura);
+                    Attachment attachment = new Attachment(new MemoryStream(await facturaPdf.ReadAsByteArrayAsync()), fra.Factura + ".pdf");
+                    mail.Attachments.Add(attachment);
+                    // El nº de factura se añade al asunto SOLO si se ha podido adjuntar.
+                    mail.Subject += fra.Factura + ", ";
+                }
+                catch (Exception ex)
+                {
+                    // Una factura que no se puede generar (PDF/datos) NO debe impedir el envío del resto
+                    // del día: antes una sola factura mala abortaba todo el lote. Se loguea a ELMAH con la
+                    // factura concreta y se continúa; administración la reenvía a mano.
+                    ElmahHelper.Log(new Exception(
+                        $"No se pudo generar la factura {fra.Factura} (empresa {fra.Empresa}) en el envío del día; se omite y se continúa con el resto.", ex),
+                        "Sistema (envío facturas del día)");
+                }
             }
-            mail.Subject = mail.Subject.Trim().TrimEnd(',');
-            listaCorreos.Add(mail);
+            // Igual que arriba: no encolar el último correo si se quedó sin adjuntos.
+            if (mail.Attachments.Count > 0)
+            {
+                mail.Subject = mail.Subject.Trim().TrimEnd(',');
+                listaCorreos.Add(mail);
+            }
             SmtpClient client = CrearClienteSMTP();
 
             foreach (MailMessage correo in listaCorreos)
