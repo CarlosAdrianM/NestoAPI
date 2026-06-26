@@ -75,7 +75,7 @@ namespace NestoAPI.Models.PedidosCompra
                     Estado = (short)linea.Estado,
                     TipoLínea = linea.TipoLinea,
                     Producto = linea.Producto,
-                    Texto = linea.Texto,
+                    Texto = TruncarTexto(linea.Texto),
                     FechaRecepción = new DateTime(linea.FechaRecepcion.Year, linea.FechaRecepcion.Month, linea.FechaRecepcion.Day),
                     Cantidad = (short)(linea.CantidadCobrada != null ? linea.CantidadCobrada : linea.Cantidad),
                     Precio = linea.PrecioUnitario,
@@ -115,7 +115,7 @@ namespace NestoAPI.Models.PedidosCompra
                         Estado = (short)linea.Estado,
                         TipoLínea = linea.TipoLinea,
                         Producto = linea.Producto,
-                        Texto = linea.Texto,
+                        Texto = TruncarTexto(linea.Texto),
                         FechaRecepción = new DateTime(linea.FechaRecepcion.Year, linea.FechaRecepcion.Month, linea.FechaRecepcion.Day),
                         Cantidad = (short)linea.CantidadRegalo,
                         Precio = 0,
@@ -145,5 +145,12 @@ namespace NestoAPI.Models.PedidosCompra
 
             return cabecera;
         }
+
+        // El campo Texto de LinPedidoCmp es nvarchar(50): si la descripción de la línea es más larga,
+        // EF rechaza el SaveChanges con DbEntityValidationException (alta del pedido de compra fallida).
+        // Se trunca a la longitud de la columna, igual que ya hace el pedido de venta
+        // (GestorPedidosVenta.CrearLineaPedido).
+        private static string TruncarTexto(string texto)
+            => texto != null && texto.Length > 50 ? texto.Substring(0, 50) : texto;
     }
 }

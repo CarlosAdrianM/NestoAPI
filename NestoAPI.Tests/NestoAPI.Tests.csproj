@@ -258,6 +258,7 @@
     <Compile Include="Infrastructure\GeneradorPdfFacturasQuestPdfTests.cs" />
     <Compile Include="Infrastructure\GeneradorExcelPedidoCompraTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPedidoCompraTests.cs" />
+    <Compile Include="Models\PedidosCompra\PedidoCompraDTOTests.cs" />
     <Compile Include="Infrastructure\SuPedidoTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasTests.cs" />
     <Compile Include="Infrastructure\GestorFacturasMotorSelectionTests.cs" />
