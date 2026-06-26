@@ -48,6 +48,11 @@ namespace NestoAPI.Infraestructure.Agencias
     /// </summary>
     public enum EstadoEnvioSeguimiento : short
     {
+        // NestoAPI#264: la agencia no pudo determinar el estado (p. ej. GLS devuelve "no se encuentra la
+        // expedición": uid de seguimiento incorrecta, o envío aún no registrado en la agencia). NO es un
+        // estado real y NUNCA debe persistirse: AplicarSeguimiento lo trata como "sin cambio" para no
+        // pisar un Incidentado/Entregado existente con un Tramitado falso. Valor fuera del rango 0-4.
+        Desconocido = -1,
         EnCurso = 0,
         Tramitado = 1,
         Entregado = 2,

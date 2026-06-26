@@ -31,6 +31,14 @@ namespace NestoAPI.Infraestructure
         // ejecuciones el backlog se vacía y queda solo el conjunto activo (pequeño), que sí cabe entero.
         public const int MAX_POR_EJECUCION = 500;
 
+        // NestoAPI#264: pausa entre consultas de seguimiento. El poll lanzaba ~124 llamadas a GLS de
+        // golpe cada 2h; GLS/asmred lo trataba como ráfaga abusiva y devolvía "no se encuentra la
+        // expedición" (HTTP 200) para casi todas, lo que dejaba los envíos sin actualizar (y vaciaba los
+        // incidentados). A demanda (una sola llamada) nunca falla. Espaciar las consultas imita ese
+        // comportamiento y evita el rate-limit. 250 ms => ~4 req/s, ~35 s extra para 135 envíos (un job
+        // de fondo cada 2h, irrelevante).
+        public const int PAUSA_ENTRE_CONSULTAS_MS = 250;
+
         private readonly NVEntities _db;
         private readonly IFabricaAgenciasRemotas _fabrica;
 
@@ -88,6 +96,7 @@ namespace NestoAPI.Infraestructure
                 .ToDictionary(id => id, id => _fabrica.CrearSeguimiento(id));
 
             int actualizados = 0;
+            int desconocidos = 0;
             foreach (EnviosAgencia envio in envios)
             {
                 ISeguimientoAgenciaRemota agencia = estrategias[envio.Agencia];
@@ -99,6 +108,14 @@ namespace NestoAPI.Infraestructure
                 {
                     SeguimientoEnvioRemoto seguimiento = await agencia
                         .ConsultarSeguimientoAsync(envio.CodigoBarras.Trim()).ConfigureAwait(false);
+                    // NestoAPI#264: Desconocido = la agencia no devolvió datos del envío. Algún suelto es
+                    // normal (envío recién creado aún no registrado), pero MUCHOS a la vez delatan un
+                    // problema (rate-limit de GLS por ráfaga, uid mal, WS caído) que antes pasaba
+                    // desapercibido porque se tragaba como "Tramitado". Se cuentan para avisar al final.
+                    if (seguimiento.Estado == EstadoEnvioSeguimiento.Desconocido)
+                    {
+                        desconocidos++;
+                    }
                     if (AplicarSeguimiento(envio, seguimiento))
                     {
                         actualizados++;
@@ -113,11 +130,28 @@ namespace NestoAPI.Infraestructure
                         $"Seguimiento del envío {envio.Numero} (albarán {envio.CodigoBarras?.Trim()}): {ex.Message}", ex),
                         "Sistema (seguimiento de envíos)");
                 }
+
+                // NestoAPI#264: espaciar las consultas para no parecer una ráfaga abusiva a la agencia
+                // (GLS rate-limitaba el lote y devolvía "no encontrada" para casi todos). A demanda, que es
+                // una sola llamada, nunca falla; esto imita ese ritmo.
+                await Task.Delay(PAUSA_ENTRE_CONSULTAS_MS).ConfigureAwait(false);
             }
 
             if (actualizados > 0)
             {
                 await _db.SaveChangesAsync().ConfigureAwait(false);
+            }
+
+            // NestoAPI#264: si una parte grande de los envíos no devuelve estado (Desconocido), casi seguro
+            // es un fallo de configuración de seguimiento (uid mal, WS caído), no que todos sean nuevos.
+            // Avisamos en ELMAH para no volver a quedarnos ciegos (caso GLS, 24-26/06/2026).
+            if (desconocidos >= 10 || (envios.Count > 0 && desconocidos > envios.Count / 2))
+            {
+                ElmahHelper.Log(new Exception(
+                    $"Seguimiento de agencias: {desconocidos} de {envios.Count} envíos no devolvieron estado " +
+                    $"(Desconocido). Suele indicar un problema de configuración del seguimiento (p. ej. uid de " +
+                    $"GLS incorrecta) o el WS caído. Revisar."),
+                    "Sistema (seguimiento de envíos)");
             }
             return actualizados;
         }
@@ -127,6 +161,14 @@ namespace NestoAPI.Infraestructure
         // (EnviosAgenciasController, que además audita la llamada SOAP en AgenciasLlamadasWeb).
         public static bool AplicarSeguimiento(EnviosAgencia envio, SeguimientoEnvioRemoto seguimiento)
         {
+            // NestoAPI#264: Desconocido = la agencia no pudo determinar el estado (p. ej. GLS no encuentra
+            // la expedición por uid mal). NO es un estado real: se deja el envío como está (no se pisa un
+            // Incidentado/Entregado con un Tramitado falso). Era lo que vaciaba la pestaña de incidentados.
+            if (seguimiento.Estado == EstadoEnvioSeguimiento.Desconocido)
+            {
+                return false;
+            }
+
             bool cambiaEstado = envio.Estado != (short)seguimiento.Estado;
             bool cambiaFecha = seguimiento.FechaEntrega.HasValue && envio.FechaEntrega != seguimiento.FechaEntrega.Value;
             if (!cambiaEstado && !cambiaFecha)

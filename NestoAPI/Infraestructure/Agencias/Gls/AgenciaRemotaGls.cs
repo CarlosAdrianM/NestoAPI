@@ -75,8 +75,13 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
             XElement exp = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "exp");
             if (exp == null)
             {
-                // GLS aún no tiene datos del envío: sigue tramitado, sin novedad.
-                return new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Tramitado };
+                // No hay <exp>: GLS no devuelve datos del envío. Esto pasa con un envío aún no registrado
+                // en GLS, PERO TAMBIÉN con una uid de seguimiento incorrecta (devuelve <Error>No se
+                // encuentra la expedición</Error>). NO podemos distinguirlo con certeza, así que NO lo
+                // tratamos como "Tramitado": eso pisaría un Incidentado/Entregado real con un estado falso
+                // (NestoAPI#264 — fue lo que vació los incidentados). Devolvemos Desconocido = sin cambio.
+                string error = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "Error")?.Value?.Trim();
+                return new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Desconocido, Detalle = error };
             }
 
             string estado = (Valor(exp, "estado") ?? string.Empty).ToUpperInvariant();

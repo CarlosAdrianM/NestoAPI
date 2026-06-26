@@ -57,13 +57,29 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public async Task ConsultarSeguimiento_SinDatosEnGls_DevuelveTramitado()
+        public async Task ConsultarSeguimiento_SinExpEnGls_DevuelveDesconocido()
         {
+            // NestoAPI#264: sin <exp> NO es "Tramitado" (eso pisaba un Incidentado/Entregado real con un
+            // estado falso). Es Desconocido = sin cambio. Pasa con envío nuevo o con uid de seguimiento mal.
             var agencia = new AgenciaRemotaGls(Fake("<expediciones></expediciones>"));
 
             SeguimientoEnvioRemoto seg = await agencia.ConsultarSeguimientoAsync("61197140245758");
 
-            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, seg.Estado);
+            Assert.AreEqual(EstadoEnvioSeguimiento.Desconocido, seg.Estado);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_ErrorNoEncuentraExpedicion_DevuelveDesconocidoConDetalle()
+        {
+            // Caso real (NestoAPI#264): uid de seguimiento incorrecta -> GLS devuelve <Error>. NO debe
+            // tratarse como Tramitado (vaciaba los incidentados); Desconocido = sin cambio, con el detalle.
+            var agencia = new AgenciaRemotaGls(Fake(
+                "<expediciones><Error>No se encuentra la expedición</Error></expediciones>"));
+
+            SeguimientoEnvioRemoto seg = await agencia.ConsultarSeguimientoAsync("61197140245758");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Desconocido, seg.Estado);
+            Assert.AreEqual("No se encuentra la expedición", seg.Detalle);
         }
 
         private static string Exp(string estado, string incidencia, string pod) =>
