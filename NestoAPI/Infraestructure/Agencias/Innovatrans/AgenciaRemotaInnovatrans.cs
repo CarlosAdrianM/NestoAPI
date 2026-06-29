@@ -193,6 +193,20 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 };
             }
             EstadoEnvioDataTrans ultimo = estados.Estados.OrderByDescending(e => e.Numero ?? 0).FirstOrDefault();
+            // Una incidencia puede llegar como ESTADO en ConsultarEstados (p. ej. 'INCIDENCIA'), no solo
+            // en ConsultarIncidencias (que a veces viene vacío para el mismo envío). Si el ÚLTIMO evento es
+            // una incidencia (no hay entrega/devolución que mande, ya comprobadas arriba), el envío está
+            // incidentado. Antes caía en el catch-all -> Tramitado y NO entraba en "Incidentados"
+            // (NestoAPI#259, albarán 6522393004, 27-29/06/2026). Se mira el último porque una INCIDENCIA
+            // seguida de un evento de tránsito posterior ya estaría resuelta (el último manda).
+            if (ultimo != null && NombreContiene(ultimo, "INCIDEN"))
+            {
+                return new SeguimientoEnvioRemoto
+                {
+                    Estado = EstadoEnvioSeguimiento.Incidentado,
+                    Detalle = ultimo.Nombre
+                };
+            }
             if (LoggingDetallado)
             {
                 LoguearEstadoNoContempladoSiProcede(ultimo, albaran);

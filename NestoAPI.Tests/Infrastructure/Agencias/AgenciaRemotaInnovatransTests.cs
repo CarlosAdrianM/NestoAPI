@@ -391,6 +391,41 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
+        public async Task ConsultarSeguimiento_EstadoIncidencia_DevuelveIncidentado()
+        {
+            // Caso real albarán 6522393004 (NestoAPI#259): DataTrans devuelve la incidencia como ESTADO en
+            // ConsultarEstados ('INCIDENCIA'), pero ConsultarIncidencias viene vacío para el mismo envío.
+            // Antes caía en el catch-all -> Tramitado y NO entraba en "Incidentados". Debe ser Incidentado.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(
+                ("DOCUMENTADO", "26/06/2026", "12:06:00"),
+                ("INCIDENCIA", "27/06/2026", "09:00:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias()); // sin incidencias en el servicio Incidencias
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6522393004");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Incidentado, seg.Estado);
+            Assert.AreEqual("INCIDENCIA", seg.Detalle);
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_IncidenciaSeguidaDeTransito_DevuelveTramitado()
+        {
+            // Una INCIDENCIA resuelta (seguida de un evento de tránsito posterior) NO es incidentado: manda
+            // el último evento. Garantiza que no marcamos incidentado un envío que ya volvió a circular.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ConsultarEstados", RespEstados(
+                ("INCIDENCIA", "27/06/2026", "09:00:00"),
+                ("EN TRÁNSITO", "28/06/2026", "08:00:00")));
+            fake.Responder("ConsultarIncidencias", RespIncidencias());
+
+            SeguimientoEnvioRemoto seg = await NuevaAgenciaConLectura(fake).ConsultarSeguimientoAsync("6522393004");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Tramitado, seg.Estado);
+            Assert.AreEqual("EN TRÁNSITO", seg.Detalle);
+        }
+
+        [TestMethod]
         public async Task ConsultarSeguimiento_RepartoSinEntrega_DevuelveTramitado()
         {
             // REPARTO/LEIDO EN DESTINO son tránsito intermedio (catalogados en NestoAPI#260): mientras no
