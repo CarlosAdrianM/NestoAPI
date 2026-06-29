@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Threading.Tasks;
 using System.Xml.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -82,6 +83,34 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual("No se encuentra la expedición", seg.Detalle);
         }
 
+        [TestMethod]
+        public async Task ConsultarSeguimiento_GlsDevuelveHttp500_DevuelveDesconocido()
+        {
+            // Caso real (NestoAPI#264): asmred devuelve HTTP 500 para un albarán concreto (albarán
+            // 61197140246050, 27/06/2026). GetStringAsync lanza HttpRequestException. NO debe tumbar el job
+            // ni pisar el estado real: Desconocido = sin cambio. El detalle conserva el mensaje del fallo.
+            var agencia = new AgenciaRemotaGls(new FakeTrackingGlsQueFalla(
+                new HttpRequestException("El código de estado de la respuesta no indica un resultado correcto: 500 (Internal Server Error).")));
+
+            SeguimientoEnvioRemoto seg = await agencia.ConsultarSeguimientoAsync("61197140246050");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Desconocido, seg.Estado);
+            StringAssert.Contains(seg.Detalle, "500");
+        }
+
+        [TestMethod]
+        public async Task ConsultarSeguimiento_GlsTimeout_DevuelveDesconocido()
+        {
+            // El timeout del HttpClient lanza TaskCanceledException, no HttpRequestException. En la misma
+            // caída del 27/06/2026 hubo 2 timeouts: también deben ser Desconocido (sin cambio), no tumbar el job.
+            var agencia = new AgenciaRemotaGls(new FakeTrackingGlsQueFalla(
+                new TaskCanceledException("Se canceló una tarea.")));
+
+            SeguimientoEnvioRemoto seg = await agencia.ConsultarSeguimientoAsync("61197140246050");
+
+            Assert.AreEqual(EstadoEnvioSeguimiento.Desconocido, seg.Estado);
+        }
+
         private static string Exp(string estado, string incidencia, string pod) =>
             $@"<expediciones><exp>
                  <estado>{estado}</estado>
@@ -97,6 +126,14 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             private readonly string _xml;
             public FakeTrackingGls(string xml) => _xml = xml;
             public Task<XDocument> ConsultarAsync(string albaran) => Task.FromResult(XDocument.Parse(_xml));
+        }
+
+        // Fake que simula un fallo HTTP de asmred (p. ej. 500): GetStringAsync lanza HttpRequestException.
+        private class FakeTrackingGlsQueFalla : IClienteTrackingGls
+        {
+            private readonly Exception _ex;
+            public FakeTrackingGlsQueFalla(Exception ex) => _ex = ex;
+            public Task<XDocument> ConsultarAsync(string albaran) => Task.FromException<XDocument>(_ex);
         }
     }
 }

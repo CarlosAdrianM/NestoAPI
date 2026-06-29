@@ -71,7 +71,22 @@ namespace NestoAPI.Infraestructure.Agencias.Gls
         {
             if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));
 
-            XDocument doc = await _cliente.ConsultarAsync(albaran).ConfigureAwait(false);
+            XDocument doc;
+            try
+            {
+                doc = await _cliente.ConsultarAsync(albaran).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is HttpRequestException || ex is TaskCanceledException)
+            {
+                // asmred (WS de GLS) falla a veces con HTTP 500 (hipo del servidor o un código que no le
+                // cuadra) o con timeout (TaskCanceledException, el WS tarda más que el Timeout del HttpClient).
+                // Caso real 27/06/2026 14:00-14:02: una caída momentánea tumbó ~38 consultas de golpe (36 con
+                // 500 + 2 timeouts). NO es un estado real: Desconocido = sin cambio (no pisa un Incidentado/
+                // Entregado existente con un Tramitado falso, igual que el caso sin <exp>). Además no tumba el
+                // job ni satura ELMAH con una excepción por envío cada 2h. Si fallan MUCHOS a la vez, salta el
+                // aviso de "demasiados Desconocido" del job y delata la caída general del WS (NestoAPI#264).
+                return new SeguimientoEnvioRemoto { Estado = EstadoEnvioSeguimiento.Desconocido, Detalle = ex.Message };
+            }
             XElement exp = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "exp");
             if (exp == null)
             {
