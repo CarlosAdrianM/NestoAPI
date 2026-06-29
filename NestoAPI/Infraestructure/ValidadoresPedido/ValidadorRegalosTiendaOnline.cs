@@ -54,8 +54,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
         private bool EstamosDeBlackFriday()
         {
-            DateTime comienzaBlackFriday = new DateTime(2025, 11, 25);
-            DateTime terminaBlackFriday = new DateTime(2025, 12, 2);
+            // Reutilizado para las REBAJAS de verano 2026 (no es Black Friday): se abre la ventana
+            // desde hoy hasta el 31/07/2026 para no dar error mientras Carlos está de viaje.
+            DateTime comienzaBlackFriday = new DateTime(2026, 6, 29);
+            DateTime terminaBlackFriday = new DateTime(2026, 7, 31);
             return DateTime.Today >= comienzaBlackFriday && DateTime.Today <= terminaBlackFriday;
         }
     }
