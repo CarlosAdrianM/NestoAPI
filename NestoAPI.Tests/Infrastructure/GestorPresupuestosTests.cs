@@ -716,5 +716,26 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarLineaPO("   "));
         }
 
+        // NestoAPI#272: un pedido sin vendedor válido (db.Vendedores devuelve null) provocaba NRE al enviar
+        // el correo. El correo debe caer a INFORMATICA en vez de reventar.
+        [TestMethod]
+        public void CorreoVendedorOInformatica_VendedorNull_DevuelveInformatica()
+        {
+            Assert.AreEqual(Constantes.Correos.INFORMATICA, GestorPresupuestos.CorreoVendedorOInformatica(null));
+        }
+
+        [TestMethod]
+        public void CorreoVendedorOInformatica_VendedorSinMail_DevuelveInformatica()
+        {
+            Assert.AreEqual(Constantes.Correos.INFORMATICA, GestorPresupuestos.CorreoVendedorOInformatica(new Vendedor { Mail = null }));
+            Assert.AreEqual(Constantes.Correos.INFORMATICA, GestorPresupuestos.CorreoVendedorOInformatica(new Vendedor { Mail = "   " }));
+        }
+
+        [TestMethod]
+        public void CorreoVendedorOInformatica_VendedorConMail_DevuelveElMailRecortado()
+        {
+            Assert.AreEqual("ana@nuevavision.es", GestorPresupuestos.CorreoVendedorOInformatica(new Vendedor { Mail = "  ana@nuevavision.es  " }));
+        }
+
     }
 }

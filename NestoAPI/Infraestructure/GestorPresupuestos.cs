@@ -66,6 +66,12 @@ namespace NestoAPI.Infraestructure
             await EnviarCorreo("Nuevo");
         }
 
+        // Correo del vendedor con fallback a INFORMATICA cuando el vendedor no existe (pedido sin vendedor
+        // válido) o no tiene mail. Antes, un vendedor null provocaba NullReferenceException al enviar el
+        // correo del pedido/presupuesto (NestoAPI#272).
+        internal static string CorreoVendedorOInformatica(Vendedor vendedor)
+            => !string.IsNullOrWhiteSpace(vendedor?.Mail) ? vendedor.Mail.Trim() : Constantes.Correos.INFORMATICA;
+
         public async Task EnviarCorreo(string tipoCorreo)
         {
             if (pedido.Lineas.Count == 0)
@@ -82,19 +88,21 @@ namespace NestoAPI.Infraestructure
             string correoVendedorPeluqueria = null;
             string correoUsuario = null;
 
-            // Miramos si ponemos copia al vendedor de la cabecera
+            // Miramos si ponemos copia al vendedor de la cabecera. OJO: el vendedor puede ser null si el
+            // pedido no tiene un vendedor válido (p.ej. aún sin asignar al crearlo), en cuyo caso el correo
+            // cae a INFORMATICA en vez de reventar con NRE (NestoAPI#272).
             Vendedor vendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == pedido.empresa && v.Número == pedido.vendedor);
-            correoVendedor = vendedor.Mail != null ? vendedor.Mail.Trim() : Constantes.Correos.INFORMATICA;
+            correoVendedor = CorreoVendedorOInformatica(vendedor);
             bool tieneLineasNoPeluqueria = db.LinPedidoVtas.Any(l => l.Empresa == pedido.empresa && l.Número == pedido.numero && l.Grupo != "PEL" && l.Base_Imponible != 0);
             if (tieneLineasNoPeluqueria)
             {
                 mail.To.Add(new MailAddress(correoVendedor.ToLower()));
-                nombreVendedorCabecera = vendedor.Descripción?.Trim();
+                nombreVendedorCabecera = vendedor?.Descripción?.Trim();
                 var jefeVentas = await servicioVendedores.JefeEquipo(Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido.vendedor);
                 if (!(jefeVentas is null))
                 {
                     var jefeVentasVendedor = db.Vendedores.SingleOrDefault(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Número == jefeVentas.vendedor);
-                    var correoJefeVentas = jefeVentasVendedor.Mail != null ? jefeVentasVendedor.Mail.Trim() : Constantes.Correos.INFORMATICA;
+                    var correoJefeVentas = CorreoVendedorOInformatica(jefeVentasVendedor);
                     mail.CC.Add(new MailAddress(correoJefeVentas.ToLower()));
                 }
             }
