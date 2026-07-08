@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using NestoAPI.Infraestructure.Agencias.Tarifas;
 using NestoAPI.Infraestructure;
@@ -84,16 +85,12 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // con la etiqueta, devolvemos SIEMPRE el albarán y los bultos: así el llamante puede
             // persistirlo y un reintento solo reimprime, en vez de reinsertar (envío fantasma + cobro
             // doble). El Exito=false con albarán = "registrado pero sin etiqueta".
-            // El <bultos> de la respuesta de InsertarEnvios es POCO FIABLE (DataTrans suele devolverlo
-            // vacío -> ParsearBultos cae a 1). El recuento real es el que ENVIAMOS como Paqs (envio.Bultos),
-            // que es el que genera las N etiquetas. Nos quedamos con el mayor para no perder bultos
-            // (un envío de 3 bultos quedaba persistido como 1).
-            int bultosRespuesta = ParsearBultos(insercion.Bultos);
-            if (LoggingDetallado)
-            {
-                LoguearBultosDiscrepantesSiProcede(envio.Bultos, bultosRespuesta, insercion.Albaran);
-            }
-            int bultos = Math.Max(envio.Bultos, bultosRespuesta);
+            // NestoAPI#270: el <bultos> de la respuesta de InsertarEnvios NO es fiable (DTX lo devuelve
+            // SIEMPRE vacío/1 aunque pidamos N como paqs -> confirmado con paqs 2/3/4/5/6/12). La fuente de
+            // verdad es el nº de etiquetas ZPL que genera DTX (un bloque ^XA por bulto), que contamos más
+            // abajo con la etiqueta en la mano. Hasta entonces, como base usamos lo pedido (envio.Bultos):
+            // es lo que hay que persistir si la etiqueta no llega a obtenerse.
+            int bultos = envio.Bultos > 0 ? envio.Bultos : 1;
 
             EtiquetaDataTrans etiqueta;
             try
@@ -125,6 +122,19 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                     Error = $"El envío se registró en Innovatrans (albarán {insercion.Albaran}) pero no devolvió una etiqueta ZPL válida"
                         + (string.IsNullOrWhiteSpace(etiqueta?.Error) ? "." : $": {etiqueta.Error}")
                 };
+            }
+
+            // Fuente de verdad de los bultos: el nº de etiquetas ZPL que ha generado DTX (un bloque ^XA por
+            // bulto). Es lo que se imprime y lo que la agencia ha registrado. Si no coincide con lo pedido,
+            // DTX no ha honrado paqs -> se avisa para escalar, en vez de taparlo con Math.Max (NestoAPI#270).
+            int etiquetasReales = ContarEtiquetasZpl(etiqueta.Contenido);
+            if (etiquetasReales > 0)
+            {
+                bultos = etiquetasReales;
+                if (LoggingDetallado)
+                {
+                    LoguearBultosDiscrepantesSiProcede(envio.Bultos, etiquetasReales, insercion.Albaran);
+                }
             }
 
             return new ResultadoTramitacionRemota
@@ -229,21 +239,23 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         private static readonly string[] EstadosEnTransitoConocidos =
             { "DOCUMENTADO", "EN TRÁNSITO", "EN TRANSITO", "REPARTO", "LEIDO EN DESTINO", "LEÍDO EN DESTINO" };
 
-        // Observabilidad (NestoAPI#259): si DataTrans devuelve en el insert un nº de bultos distinto del
-        // que pedimos (Paqs), lo logueamos. Hoy DataTrans suele devolverlo vacío (-> 1) aunque pidamos
-        // 2/3, lo que provocaba que se persistiera 1 (casos Estela/Dumapacar/Belén, 25-jun-2026). El log
-        // va en try/catch: nunca rompe la tramitación.
-        private static void LoguearBultosDiscrepantesSiProcede(int bultosPedidos, int bultosRespuesta, string albaran)
+        // Observabilidad (NestoAPI#270): la fuente fiable de bultos es el nº de etiquetas ZPL que genera
+        // DTX (un ^XA por bulto), NO el <bultos> del insert (siempre 1). Si las etiquetas realmente
+        // generadas no coinciden con las pedidas (paqs), DTX no ha honrado la petición: se avisa para
+        // escalar al integrador (esto SÍ es un problema real; antes el log saltaba en cada envío
+        // multi-bulto legítimo por comparar contra el <bultos> espurio). El log va en try/catch dentro de
+        // ElmahHelper: nunca rompe la tramitación.
+        private static void LoguearBultosDiscrepantesSiProcede(int bultosPedidos, int etiquetasGeneradas, string albaran)
         {
-            if (bultosPedidos <= 0 || bultosRespuesta == bultosPedidos)
+            if (bultosPedidos <= 0 || etiquetasGeneradas == bultosPedidos)
             {
                 return;
             }
             // Esto ocurre durante la tramitación (siempre hay petición HTTP del usuario que imprime), así
             // que ELMAH ya pondrá su usuario; el fallback solo cubre el caso raro de no haberlo.
             ElmahHelper.Log(new Exception(
-                $"Innovatrans: bultos pedidos ({bultosPedidos}) distintos de los de la respuesta del insert " +
-                $"({bultosRespuesta}) en el albarán {albaran}. Se persiste el mayor (NestoAPI#259)."),
+                $"Innovatrans: se pidieron {bultosPedidos} bultos (paqs) pero DTX generó {etiquetasGeneradas} " +
+                $"etiqueta(s) en el albarán {albaran}. Revisar con el integrador (NestoAPI#270)."),
                 "Sistema (tramitación de envíos)");
         }
 
@@ -326,7 +338,37 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             };
         }
 
-        private static int ParsearBultos(string bultos)
-            => int.TryParse(bultos, out int valor) && valor > 0 ? valor : 1;
+        // Cuenta las etiquetas ZPL de un contenido: DTX devuelve un bloque ^XA...^XZ por bulto, así que el
+        // nº de "^XA" = nº de bultos realmente generados. El contenido puede venir en ZPL crudo (empieza
+        // por ^XA) o en base64 (XlhB... = base64 de ^XA), igual que contempla EtiquetaDataTrans.EsZpl: si
+        // es base64 se decodifica antes de contar. Devuelve 0 si no se reconoce como ZPL (el llamante cae
+        // entonces a los bultos pedidos).
+        internal static int ContarEtiquetasZpl(string contenido)
+        {
+            if (string.IsNullOrWhiteSpace(contenido))
+            {
+                return 0;
+            }
+            string zpl = contenido.TrimStart();
+            if (zpl.StartsWith("XlhB", StringComparison.Ordinal))
+            {
+                try
+                {
+                    zpl = Encoding.UTF8.GetString(Convert.FromBase64String(contenido.Trim()));
+                }
+                catch (FormatException)
+                {
+                    return 0;
+                }
+            }
+            int cuenta = 0;
+            int indice = 0;
+            while ((indice = zpl.IndexOf("^XA", indice, StringComparison.Ordinal)) >= 0)
+            {
+                cuenta++;
+                indice += 3;
+            }
+            return cuenta;
+        }
     }
 }

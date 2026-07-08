@@ -45,6 +45,8 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         public async Task InsertarYEtiquetar_Exito_InsertaConLosDatosYDevuelveAlbaranYEtiqueta()
         {
             var fake = new FakeClienteSoap();
+            // El <bultos> del insert (aquí "2") se IGNORA: DTX lo devuelve siempre 1/vacío. Los bultos
+            // salen del nº de etiquetas ZPL reales (NestoAPI#270); RespEtiquetaZpl trae 1 etiqueta.
             fake.Responder("InsertarEnvios", RespInsertar("0123456789", "2"));
             fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
 
@@ -54,7 +56,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.IsTrue(r.Exito);
             Assert.AreEqual("0123456789", r.Albaran);
-            Assert.AreEqual(2, r.Bultos);
+            Assert.AreEqual(1, r.Bultos, "Los bultos salen del nº de etiquetas ZPL, no del <bultos> del insert.");
             Assert.IsTrue(r.Etiqueta.Exito);
             Assert.AreEqual("XlhBfkNJMTUw", r.Etiqueta.Contenido);
 
@@ -229,14 +231,14 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public async Task InsertarYEtiquetar_RespuestaBultosMenorQueLoPedido_ConservaLosBultosReales()
+        public async Task InsertarYEtiquetar_TresEtiquetas_PersisteTresBultos()
         {
-            // DataTrans devuelve <bultos>=1 en el insert (poco fiable) pero pedimos 3 bultos (Paqs=3):
-            // el resultado debe conservar 3 (los que generan las 3 etiquetas), no caer a 1. Regresión:
+            // DataTrans devuelve <bultos>=1 en el insert (siempre, poco fiable) pero pedimos 3 bultos y DTX
+            // genera 3 etiquetas ZPL: se persisten 3 (el recuento real de etiquetas), no 1. Regresión:
             // envíos de varios bultos quedaban persistidos como 1 (casos reales Estela/Dumapacar 25-jun-2026).
             var fake = new FakeClienteSoap();
             fake.Responder("InsertarEnvios", RespInsertar("6522393002", "1"));
-            fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaZplConEtiquetas(3));
 
             DatosEnvioRemoto envio = EnvioMadrid();
             envio.Bultos = 3;
@@ -245,7 +247,53 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                 .InsertarYEtiquetarAsync(envio);
 
             Assert.IsTrue(r.Exito);
-            Assert.AreEqual(3, r.Bultos, "Debe conservar los bultos pedidos (Paqs), no el <bultos> de la respuesta.");
+            Assert.AreEqual(3, r.Bultos, "Debe persistir el nº de etiquetas ZPL realmente generadas.");
+        }
+
+        [TestMethod]
+        public async Task InsertarYEtiquetar_MenosEtiquetasQueBultosPedidos_PersisteLasEtiquetasReales()
+        {
+            // NestoAPI#270: se piden 6 bultos pero DTX solo genera 1 etiqueta. Antes se persistía el mayor
+            // (6) tapando el problema; ahora persistimos la realidad (1 etiqueta = 1 bulto), que es lo que
+            // se imprime y lo que la agencia ha registrado. La discrepancia se registra aparte para escalar.
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertar("6527885001", "1"));
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaZplConEtiquetas(1));
+
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.Bultos = 6;
+
+            ResultadoTramitacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .InsertarYEtiquetarAsync(envio);
+
+            Assert.IsTrue(r.Exito);
+            Assert.AreEqual(1, r.Bultos, "No debe persistir el mayor: gana el nº de etiquetas realmente generadas.");
+        }
+
+        // --- NestoAPI#270: el recuento de bultos sale del nº de etiquetas ^XA reales ---
+
+        [TestMethod]
+        public void ContarEtiquetasZpl_Base64ConVariasEtiquetas_CuentaLosBloquesXA()
+        {
+            string zpl = "^XA^CI28^FDbulto1^FS^XZ^XA^CI28^FDbulto2^FS^XZ";
+            string base64 = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(zpl));
+
+            Assert.AreEqual(2, AgenciaRemotaInnovatrans.ContarEtiquetasZpl(base64));
+        }
+
+        [TestMethod]
+        public void ContarEtiquetasZpl_ZplEnCrudo_CuentaLosBloquesXA()
+        {
+            Assert.AreEqual(3, AgenciaRemotaInnovatrans.ContarEtiquetasZpl("^XA...^XZ^XA...^XZ^XA...^XZ"));
+        }
+
+        [TestMethod]
+        public void ContarEtiquetasZpl_ContenidoNoZpl_DevuelveCero()
+        {
+            // PDF (base64 de "%PDF"), vacío y base64 inválido: no se reconoce -> 0 (el llamante cae a lo pedido).
+            Assert.AreEqual(0, AgenciaRemotaInnovatrans.ContarEtiquetasZpl("JVBERi0xLjcK"));
+            Assert.AreEqual(0, AgenciaRemotaInnovatrans.ContarEtiquetasZpl(""));
+            Assert.AreEqual(0, AgenciaRemotaInnovatrans.ContarEtiquetasZpl("XlhB@@@no-es-base64"));
         }
 
         [TestMethod]
@@ -481,6 +529,21 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                   <ns5:codificacion xmlns:ns5=""http://listType.dtx.sw"">base64</ns5:codificacion>
                   <ns5:contenido xmlns:ns5=""http://listType.dtx.sw"">XlhBfkNJMTUw</ns5:contenido>
                 </ns4:return><ns4:returnError/></ns4:BusquedaEtiquetasTypeOut></soapenv:Body></soapenv:Envelope>";
+
+        // Etiqueta ZPL con N bloques (^XA...^XZ), como DTX devuelve un envío de N bultos (un ^XA por bulto),
+        // en base64 (igual que la respuesta real). Sirve para verificar que los bultos persistidos salen del
+        // recuento real de etiquetas y no del <bultos> del insert (NestoAPI#270).
+        private static string RespEtiquetaZplConEtiquetas(int numeroEtiquetas)
+        {
+            string zpl = string.Concat(Enumerable.Repeat("^XA^CI28^FDbulto^FS^XZ", numeroEtiquetas));
+            string base64 = System.Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(zpl));
+            return $@"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>
+                <ns4:BusquedaEtiquetasTypeOut xmlns:ns4=""http://messageout.dtx.sw""><ns4:return>
+                  <ns5:tipo xmlns:ns5=""http://listType.dtx.sw"">application/zpl</ns5:tipo>
+                  <ns5:codificacion xmlns:ns5=""http://listType.dtx.sw"">base64</ns5:codificacion>
+                  <ns5:contenido xmlns:ns5=""http://listType.dtx.sw"">{base64}</ns5:contenido>
+                </ns4:return><ns4:returnError/></ns4:BusquedaEtiquetasTypeOut></soapenv:Body></soapenv:Envelope>";
+        }
 
         // Etiqueta que DTX devuelve cuando NO tiene ZPL para el envío: un PDF en base64 (empieza por
         // "JVBE" = base64 de "%PDF"). EsZpl debe rechazarla.
