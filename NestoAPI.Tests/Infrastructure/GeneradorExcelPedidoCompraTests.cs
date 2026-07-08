@@ -79,6 +79,30 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(textos.Any(t => t.Contains("Muchas gracias")), "Falta el cierre");
         }
 
+        [TestMethod]
+        public void GenerarExcel_UnidadDeMedida_VaEnElTamannoNoEnLaCantidad()
+        {
+            // NestoAPI#269: producto de 100 ml del que se piden 1000 uds. La unidad ("ml") califica al
+            // Tamaño ("100 ml"), no a la Cantidad. Además la Cantidad debe quedar como número puro
+            // (celda numérica -> no aparece en la tabla de cadenas compartidas).
+            var pedido = PedidoEjemplo(valorado: true);
+            pedido.Lineas = new List<LineaPedidoCompraInformeDTO>
+            {
+                new LineaPedidoCompraInformeDTO
+                {
+                    SuReferencia = "REF", NuestraReferencia = "99999",
+                    Descripcion = "Producto de cien mililitros", Tamanno = 100, UnidadMedida = "ml",
+                    Cantidad = 1000, PrecioUnitario = 1m, SumaDescuentos = 0m, BaseImponible = 1000m
+                }
+            };
+
+            List<string> textos = LeerTextosCompartidos(GenerarBytes(pedido));
+
+            Assert.IsTrue(textos.Any(t => t == "100 ml"), "El Tamaño debe llevar la unidad de medida (\"100 ml\")");
+            Assert.IsFalse(textos.Any(t => t.Contains("1000 ml")), "La Cantidad no debe llevar la unidad de medida (era el bug)");
+            Assert.IsFalse(textos.Any(t => t == "1000"), "La Cantidad debe ser numérica, no texto");
+        }
+
         private byte[] GenerarBytes(PedidoCompraInformeDTO pedido)
         {
             var contenido = _generador.GenerarExcel(pedido);

@@ -239,8 +239,8 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                         CeldaDato(table.Cell(), linea.SuReferencia);
                         CeldaDato(table.Cell(), linea.NuestraReferencia);
                         CeldaDato(table.Cell(), linea.Descripcion);
-                        CeldaDato(table.Cell(), FormatoTamanno(linea.Tamanno), alinearDerecha: true);
-                        CeldaDato(table.Cell(), FormatoCantidad(linea.Cantidad, linea.UnidadMedida), alinearDerecha: true);
+                        CeldaDato(table.Cell(), FormatoTamanno(linea.Tamanno, linea.UnidadMedida), alinearDerecha: true);
+                        CeldaDato(table.Cell(), FormatoCantidad(linea.Cantidad), alinearDerecha: true);
                         if (mostrarPrecios)
                         {
                             CeldaDato(table.Cell(), FormatoImporte(linea.PrecioUnitario), alinearDerecha: true);
@@ -284,14 +284,20 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             return $"{pedido.CodigoPostal} {pedido.Poblacion}{provincia}".Trim();
         }
 
-        private static string FormatoTamanno(short? tamanno)
-            => tamanno.HasValue && tamanno.Value != 0 ? tamanno.Value.ToString(Cultura) : "";
-
-        private static string FormatoCantidad(short? cantidad, string unidadMedida)
+        // El Tamaño es el que lleva la unidad de medida: "100 ml" (100 = tamaño del envase, "ml" = unidad).
+        // La Cantidad pedida es un recuento de unidades, sin unidad de medida (NestoAPI#269).
+        internal static string FormatoTamanno(short? tamanno, string unidadMedida)
         {
-            string valor = (cantidad ?? 0).ToString(Cultura);
+            if (!tamanno.HasValue || tamanno.Value == 0)
+            {
+                return "";
+            }
+            string valor = tamanno.Value.ToString(Cultura);
             return string.IsNullOrWhiteSpace(unidadMedida) ? valor : $"{valor} {unidadMedida.Trim()}";
         }
+
+        internal static string FormatoCantidad(short? cantidad)
+            => (cantidad ?? 0).ToString(Cultura);
 
         private static string FormatoImporte(decimal importe)
             => importe.ToString("N2", Cultura) + " €";

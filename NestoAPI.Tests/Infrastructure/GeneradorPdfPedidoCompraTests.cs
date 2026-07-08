@@ -85,6 +85,36 @@ namespace NestoAPI.Tests.Infrastructure
             _generador.GenerarPdf(null);
         }
 
+        // --- NestoAPI#269: la unidad de medida califica al Tamaño (100 ml), no a la Cantidad (1000) ---
+
+        [TestMethod]
+        public void FormatoTamanno_ConUnidad_ConcatenaLaUnidadAlTamanno()
+        {
+            Assert.AreEqual("100 ml", GeneradorPdfPedidoCompra.FormatoTamanno(100, "ml"));
+        }
+
+        [TestMethod]
+        public void FormatoTamanno_SinUnidad_SoloElNumero()
+        {
+            Assert.AreEqual("100", GeneradorPdfPedidoCompra.FormatoTamanno(100, null));
+            Assert.AreEqual("100", GeneradorPdfPedidoCompra.FormatoTamanno(100, "  "));
+        }
+
+        [TestMethod]
+        public void FormatoTamanno_SinTamanno_Vacio()
+        {
+            Assert.AreEqual("", GeneradorPdfPedidoCompra.FormatoTamanno(null, "ml"));
+            Assert.AreEqual("", GeneradorPdfPedidoCompra.FormatoTamanno(0, "ml"));
+        }
+
+        [TestMethod]
+        public void FormatoCantidad_NoLlevaUnidadDeMedida()
+        {
+            // El bug (#269): la cantidad salía como "1000 ml"; debe ser solo el recuento "1000".
+            Assert.AreEqual("1000", GeneradorPdfPedidoCompra.FormatoCantidad(1000));
+            Assert.AreEqual("0", GeneradorPdfPedidoCompra.FormatoCantidad(null));
+        }
+
         private static PedidoCompraInformeDTO PedidoEjemplo(bool valorado)
         {
             return new PedidoCompraInformeDTO

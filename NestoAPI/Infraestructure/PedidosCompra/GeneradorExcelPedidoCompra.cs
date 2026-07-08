@@ -176,12 +176,22 @@ namespace NestoAPI.Infraestructure.PedidosCompra
                     ws.Cell(fila, 1).Value = linea.SuReferencia ?? "";
                     ws.Cell(fila, 2).Value = linea.NuestraReferencia ?? "";
                     ws.Cell(fila, 3).Value = linea.Descripcion ?? "";
+                    // Tamaño lleva la unidad de medida ("100 ml"). Si hay unidad la celda es texto; si no,
+                    // se deja el número puro para poder ordenar/operar (NestoAPI#269).
                     if (linea.Tamanno.HasValue && linea.Tamanno.Value != 0)
                     {
-                        ws.Cell(fila, 4).Value = linea.Tamanno.Value;
+                        if (string.IsNullOrWhiteSpace(linea.UnidadMedida))
+                        {
+                            ws.Cell(fila, 4).Value = linea.Tamanno.Value;
+                        }
+                        else
+                        {
+                            ws.Cell(fila, 4).Value = $"{linea.Tamanno.Value} {linea.UnidadMedida.Trim()}";
+                        }
                     }
                     ws.Cell(fila, 4).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
-                    ws.Cell(fila, 5).Value = FormatoCantidad(linea.Cantidad, linea.UnidadMedida);
+                    // Cantidad = recuento de unidades, valor numérico puro (sin unidad, para poder sumar).
+                    ws.Cell(fila, 5).Value = linea.Cantidad ?? 0;
                     ws.Cell(fila, 5).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
                     if (mostrarPrecios)
                     {
@@ -296,12 +306,6 @@ namespace NestoAPI.Infraestructure.PedidosCompra
         {
             string provincia = string.IsNullOrWhiteSpace(pedido.Provincia) ? "" : $" ({pedido.Provincia})";
             return $"{pedido.CodigoPostal} {pedido.Poblacion}{provincia}".Trim();
-        }
-
-        private static string FormatoCantidad(short? cantidad, string unidadMedida)
-        {
-            string valor = (cantidad ?? 0).ToString();
-            return string.IsNullOrWhiteSpace(unidadMedida) ? valor : $"{valor} {unidadMedida.Trim()}";
         }
 
         private static byte[] CargarLogoDesdeUrl()
