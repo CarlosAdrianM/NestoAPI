@@ -6,8 +6,11 @@ using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Rectificativas;
 using NestoAPI.Models;
 using NestoAPI.Models.Rectificativas;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -993,6 +996,108 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
 
             // Assert
             Assert.AreEqual("MAD", lineaNueva.Delegación);
+        }
+
+        #endregion
+
+        #region Tests de datos fiscales del abono (NestoAPI#268)
+
+        // El abono es el espejo documental de la factura que anula: debe llevar los datos fiscales que
+        // constaban en la factura original (dirección histórica), no los de la ficha actual del cliente.
+
+        [TestMethod]
+        public async Task CopiarDatosFiscalesDesdeFacturaOriginal_CopiaLosDatosDeLaFacturaRectificada()
+        {
+            // Arrange: la factura original tiene la dirección ANTIGUA (erronea); ServicioFacturas ya ha
+            // rellenado el abono con la dirección NUEVA (de la ficha actual). Tras la corrección, el abono
+            // debe quedar con la dirección ANTIGUA de la factura original.
+            var facturaOriginal = new CabFacturaVta
+            {
+                Empresa = "1",
+                Número = "NV26/001234",
+                NombreFiscal = "CLIENTE EJEMPLO SL",
+                CifNif = "B12345678",
+                DireccionFiscal = "C/ Antigua, 1",
+                CodPostalFiscal = "28001",
+                PoblacionFiscal = "Madrid",
+                ProvinciaFiscal = "Madrid"
+            };
+            var abono = new CabFacturaVta
+            {
+                Empresa = "1",
+                Número = "NV26/005678",
+                NombreFiscal = "CLIENTE EJEMPLO SL",
+                CifNif = "B12345678",
+                DireccionFiscal = "C/ Nueva, 99",
+                CodPostalFiscal = "08001",
+                PoblacionFiscal = "Barcelona",
+                ProvinciaFiscal = "Barcelona"
+            };
+            var gestor = CrearGestorConFacturas(facturaOriginal, abono);
+
+            // Act
+            await gestor.CopiarDatosFiscalesDesdeFacturaOriginal("1", "NV26/001234", "NV26/005678");
+
+            // Assert: el abono queda con los datos fiscales de la factura original (dirección antigua).
+            Assert.AreEqual("C/ Antigua, 1", abono.DireccionFiscal);
+            Assert.AreEqual("28001", abono.CodPostalFiscal);
+            Assert.AreEqual("Madrid", abono.PoblacionFiscal);
+            Assert.AreEqual("Madrid", abono.ProvinciaFiscal);
+            Assert.AreEqual("CLIENTE EJEMPLO SL", abono.NombreFiscal);
+            Assert.AreEqual("B12345678", abono.CifNif);
+        }
+
+        [TestMethod]
+        public async Task CopiarDatosFiscalesDesdeFacturaOriginal_FacturaPreVerifactuSinDatos_ConservaElSnapshotActual()
+        {
+            // Arrange: factura original anterior a Verifactu (sin NombreFiscal persistido). El abono debe
+            // conservar el snapshot que ya hizo ServicioFacturas desde la ficha actual (fallback).
+            var facturaOriginal = new CabFacturaVta
+            {
+                Empresa = "1",
+                Número = "NV20/000001",
+                NombreFiscal = null // pre-Verifactu
+            };
+            var abono = new CabFacturaVta
+            {
+                Empresa = "1",
+                Número = "NV26/005678",
+                NombreFiscal = "CLIENTE EJEMPLO SL",
+                DireccionFiscal = "C/ Actual, 5"
+            };
+            var gestor = CrearGestorConFacturas(facturaOriginal, abono);
+
+            // Act
+            await gestor.CopiarDatosFiscalesDesdeFacturaOriginal("1", "NV20/000001", "NV26/005678");
+
+            // Assert: no se sobrescribe nada.
+            Assert.AreEqual("CLIENTE EJEMPLO SL", abono.NombreFiscal);
+            Assert.AreEqual("C/ Actual, 5", abono.DireccionFiscal);
+        }
+
+        private static GestorCopiaPedidos CrearGestorConFacturas(params CabFacturaVta[] facturas)
+        {
+            var db = A.Fake<NVEntities>();
+            var fakeFacturas = A.Fake<DbSet<CabFacturaVta>>(o =>
+                o.Implements<IQueryable<CabFacturaVta>>().Implements<IDbAsyncEnumerable<CabFacturaVta>>());
+            var data = facturas.AsQueryable();
+
+            A.CallTo(() => ((IDbAsyncEnumerable<CabFacturaVta>)fakeFacturas).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<CabFacturaVta>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<CabFacturaVta>)fakeFacturas).Provider)
+                .Returns(new TestDbAsyncQueryProvider<CabFacturaVta>(data.Provider));
+            A.CallTo(() => ((IQueryable<CabFacturaVta>)fakeFacturas).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<CabFacturaVta>)fakeFacturas).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<CabFacturaVta>)fakeFacturas).GetEnumerator()).Returns(data.GetEnumerator());
+
+            A.CallTo(() => db.CabsFacturasVtas).Returns(fakeFacturas);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(0));
+
+            return new GestorCopiaPedidos(
+                db,
+                A.Fake<IServicioPedidosVenta>(),
+                A.Fake<IServicioAlbaranesVenta>(),
+                A.Fake<IServicioFacturas>());
         }
 
         #endregion

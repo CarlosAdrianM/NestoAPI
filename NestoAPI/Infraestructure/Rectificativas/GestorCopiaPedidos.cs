@@ -991,12 +991,65 @@ namespace NestoAPI.Infraestructure.Rectificativas
             if (request.CrearAlbaranYFactura)
             {
                 await CrearAlbaranYFactura(request, response, numeroPedido, usuario, lineasCopiadas);
+
+                // NestoAPI#268: una rectificativa/abono es el espejo documental de la factura que anula,
+                // por lo que debe mostrar los datos fiscales que constaban en la factura original
+                // (dirección histórica), no los de la ficha actual del cliente. ServicioFacturas ya ha
+                // persistido los de la ficha actual al crear la factura; aquí los sobrescribimos con los
+                // de la CabFacturaVta rectificada. El CARGO (InvertirCantidades = false) NO se toca:
+                // debe llevar los datos actuales correctos.
+                if (request.InvertirCantidades && !string.IsNullOrEmpty(response.NumeroFactura))
+                {
+                    await CopiarDatosFiscalesDesdeFacturaOriginal(
+                        request.Empresa, request.NumeroFactura, response.NumeroFactura);
+                }
             }
 
             response.Exitoso = true;
             response.Mensaje = GenerarMensajeExito(response, request);
 
             return response;
+        }
+
+        /// <summary>
+        /// Copia los datos fiscales persistidos (NombreFiscal, CIF/NIF y dirección fiscal) de la factura
+        /// original a la rectificativa/abono, para que el abono sea el espejo exacto del documento que
+        /// anula (NestoAPI#268). Si la factura original es anterior a Verifactu y no tiene datos fiscales
+        /// persistidos, se conserva el snapshot que ya hizo ServicioFacturas desde la ficha actual.
+        /// </summary>
+        internal async Task CopiarDatosFiscalesDesdeFacturaOriginal(
+            string empresa, string numeroFacturaOriginal, string numeroFacturaRectificativa)
+        {
+            if (string.IsNullOrWhiteSpace(numeroFacturaOriginal) || string.IsNullOrWhiteSpace(numeroFacturaRectificativa))
+            {
+                return;
+            }
+
+            var facturaOriginal = await _db.CabsFacturasVtas
+                .FirstOrDefaultAsync(f => f.Empresa == empresa && f.Número == numeroFacturaOriginal.Trim());
+
+            // Fallback pre-Verifactu: sin datos fiscales persistidos, dejar el snapshot de la ficha actual.
+            if (facturaOriginal == null || string.IsNullOrWhiteSpace(facturaOriginal.NombreFiscal))
+            {
+                return;
+            }
+
+            var facturaRectificativa = await _db.CabsFacturasVtas
+                .FirstOrDefaultAsync(f => f.Empresa == empresa && f.Número == numeroFacturaRectificativa.Trim());
+
+            if (facturaRectificativa == null)
+            {
+                return;
+            }
+
+            facturaRectificativa.NombreFiscal = facturaOriginal.NombreFiscal;
+            facturaRectificativa.CifNif = facturaOriginal.CifNif;
+            facturaRectificativa.DireccionFiscal = facturaOriginal.DireccionFiscal;
+            facturaRectificativa.CodPostalFiscal = facturaOriginal.CodPostalFiscal;
+            facturaRectificativa.PoblacionFiscal = facturaOriginal.PoblacionFiscal;
+            facturaRectificativa.ProvinciaFiscal = facturaOriginal.ProvinciaFiscal;
+
+            await _db.SaveChangesAsync();
         }
     }
 }
