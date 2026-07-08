@@ -92,6 +92,37 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task CrearFactura_RutaInexistente_LanzaAntesDeLlamarAlSP()
+        {
+            // NestoAPI#276: si la ruta del pedido no existe en Rutas, el SP prdCrearFacturaVta fallaría al
+            // insertar el apunte en ExtractoCliente (FK_ExtractoCliente_Rutas) dejando el @@TRANCOUNT
+            // descuadrado. Debemos cortar antes con un mensaje claro sobre la ruta.
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "2",
+                Número = 400,
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                Agrupada = false,
+                IVA = "G", // con IVA, para pasar la validación de IVA y llegar a la de ruta
+                Ruta = "16 ", // ruta que NO existe en Rutas
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            // db.Rutas vacío -> la ruta "16" no existe
+            var fakeRutas = A.Fake<DbSet<Ruta>>(o => o.Implements<IQueryable<Ruta>>().Implements<IDbAsyncEnumerable<Ruta>>());
+            ConfigurarFakeDbSet(fakeRutas, new List<Ruta>().AsQueryable());
+            A.CallTo(() => db.Rutas).Returns(fakeRutas);
+
+            var servicio = new ServicioFacturas(db);
+
+            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => servicio.CrearFactura("2", 400, "test"));
+            Assert.IsTrue(ex.Message.Contains("ruta"), $"El mensaje debe mencionar la ruta. Actual: {ex.Message}");
+            Assert.IsTrue(ex.Message.Contains("16"), "El mensaje debe indicar la ruta problemática.");
+        }
+
+        [TestMethod]
         public async Task CrearFactura_PedidoNormal_NoAgrupada_NoBloqueaPorFDM()
         {
             // Arrange

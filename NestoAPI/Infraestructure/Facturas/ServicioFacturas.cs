@@ -400,6 +400,22 @@ namespace NestoAPI.Infraestructure.Facturas
                     usuario: usuario);
             }
 
+            // PREVENTIVO (NestoAPI#276): la ruta del pedido debe existir en Rutas. Si no, el SP
+            // prdCrearFacturaVta falla al insertar el apunte en ExtractoCliente (FK_ExtractoCliente_Rutas)
+            // y encima deja el @@TRANCOUNT descuadrado (ROLLBACK sin BEGIN), lo que corrompe el estado de
+            // la conexión. Cortamos antes con un mensaje accionable en vez del error críptico del SP.
+            if (!string.IsNullOrWhiteSpace(cabPedido.Ruta)
+                && !await db.Rutas.AnyAsync(r => r.Empresa == empresa && r.Número == cabPedido.Ruta))
+            {
+                throw new FacturacionException(
+                    $"El pedido {pedido} no se puede facturar porque su ruta '{cabPedido.Ruta.Trim()}' no existe en la tabla de Rutas. " +
+                    "Corrija la ruta del cliente/pedido antes de facturar.",
+                    "FACTURACION_RUTA_INEXISTENTE",
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario);
+            }
+
             // PREVENTIVO: Recalcular líneas ANTES de llamar al stored procedure
             // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
             // El recálculo se hace antes porque después del SP (incluso con rollback),
