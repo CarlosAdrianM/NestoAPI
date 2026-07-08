@@ -115,6 +115,27 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
+        /// Render del "EXTRACTO CONTABLE" (libro mayor de una cuenta) en PDF (QuestPDF), para que Nesto
+        /// lo descargue en vez de renderizar el RDLC ExtractoContable.rdlc en local (Nesto#340, Fase 2).
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/ExtractoContable/Pdf")]
+        public async Task<HttpResponseMessage> GetExtractoContablePdf(string empresa, string cuenta, DateTime fechaDesde, DateTime fechaHasta)
+        {
+            List<ExtractoContableDTO> lineas = await _servicio
+                .LeerExtractoContableAsync(empresa, cuenta, fechaDesde, fechaHasta)
+                .ConfigureAwait(false);
+
+            GeneradorPdfExtractoContable generador = new GeneradorPdfExtractoContable();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(cuenta, fechaDesde, fechaHasta, lineas)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
+        /// <summary>
         /// Issue Nesto#349 Fase 2a: apuntes del extracto contable de un proveedor concreto
         /// (p. ej. 999 = Amazon) en el rango indicado. Pensado para alimentar el Cuadre
         /// Canales Externos en el lado Nesto.
