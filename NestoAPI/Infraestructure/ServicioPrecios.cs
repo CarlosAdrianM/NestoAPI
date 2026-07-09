@@ -59,13 +59,27 @@ namespace NestoAPI.Infraestructure
                     return null;
                 }
 
-                return db.DescuentosProductoes.Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && 
+                return db.DescuentosProductoes.Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
                     d.NºProveedor == null &&
-                    (d.Nº_Producto == numeroProducto.Trim() || d.Familia == producto.Familia || d.GrupoProducto == producto.Grupo || (d.Familia == producto.Familia && producto.Nombre.StartsWith(d.FiltroProducto))) &&
-                    (d.Nº_Cliente == null || d.Nº_Cliente == numeroCliente) &&
-                    (d.Contacto == null || (d.Nº_Cliente == numeroCliente && d.Contacto == contactoCliente))
-                    ).ToList();
+                    (d.Nº_Producto == numeroProducto.Trim() || d.Familia == producto.Familia || d.GrupoProducto == producto.Grupo || (d.Familia == producto.Familia && producto.Nombre.StartsWith(d.FiltroProducto))))
+                    .Where(FiltroClienteContacto(numeroCliente, contactoCliente))
+                    .ToList();
             }
+        }
+
+        // Issue #278: una fila GLOBAL (Nº_Cliente == null) se aplica a todos los clientes
+        // independientemente del Contacto, igual que hace el cálculo del precio
+        // (GestorPrecios.calcularDescuentoProducto, que en las filas globales ignora el Contacto).
+        // El filtro anterior exigía Nº_Cliente == numeroCliente cuando el Contacto no era null, así
+        // que una fila global con un Contacto espurio (dato mal introducido, p. ej. Contacto='0' con
+        // Nº_Cliente NULL) se usaba para CALCULAR el precio pero se descartaba al VALIDARLo → un pedido
+        // correcto se denegaba con "No se encuentra autorizado el descuento". Se extrae a un método para
+        // poder testearlo en memoria (la consulta real instancia NVEntities y no es unit-testable).
+        internal static System.Linq.Expressions.Expression<Func<DescuentosProducto, bool>> FiltroClienteContacto(string numeroCliente, string contactoCliente)
+        {
+            return d =>
+                (d.Nº_Cliente == null || d.Nº_Cliente == numeroCliente) &&
+                (d.Nº_Cliente == null || d.Contacto == null || d.Contacto == contactoCliente);
         }
 
         public List<OfertaCombinada> BuscarOfertasCombinadas(string numeroProducto)

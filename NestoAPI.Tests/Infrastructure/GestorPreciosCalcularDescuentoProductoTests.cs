@@ -166,4 +166,64 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
         }
     }
+
+    /// <summary>
+    /// Regresión Issue #278: en DescuentosProducto una fila GLOBAL (Nº_Cliente NULL) se aplica a
+    /// todos los clientes independientemente del Contacto (igual que el cálculo del precio, que en
+    /// las filas globales ignora el Contacto). Antes, si una fila global tenía el Contacto relleno
+    /// por error (p. ej. Contacto='0' con Nº_Cliente NULL), se usaba para calcular el precio pero
+    /// se descartaba al validarlo → un pedido correcto se denegaba con "No se encuentra autorizado
+    /// el descuento". Se comprueba el predicado extraído ServicioPrecios.FiltroClienteContacto.
+    /// </summary>
+    [TestClass]
+    public class ServicioPreciosFiltroClienteContactoTests
+    {
+        private static bool Aplica(DescuentosProducto fila, string cliente, string contacto)
+        {
+            return ServicioPrecios.FiltroClienteContacto(cliente, contacto).Compile()(fila);
+        }
+
+        [TestMethod]
+        public void FiltroClienteContacto_FilaGlobalConContactoEspurio_SeIncluye()
+        {
+            // El caso del bug (pedido 921838, producto 39984): fila global con Contacto='0'.
+            DescuentosProducto fila = new DescuentosProducto { Nº_Cliente = null, Contacto = "0" };
+            Assert.IsTrue(Aplica(fila, "12786", "0"));
+        }
+
+        [TestMethod]
+        public void FiltroClienteContacto_FilaGlobalSinContacto_SeIncluye()
+        {
+            DescuentosProducto fila = new DescuentosProducto { Nº_Cliente = null, Contacto = null };
+            Assert.IsTrue(Aplica(fila, "12786", "0"));
+        }
+
+        [TestMethod]
+        public void FiltroClienteContacto_FilaClienteContactoCoincide_SeIncluye()
+        {
+            DescuentosProducto fila = new DescuentosProducto { Nº_Cliente = "12786", Contacto = "0" };
+            Assert.IsTrue(Aplica(fila, "12786", "0"));
+        }
+
+        [TestMethod]
+        public void FiltroClienteContacto_FilaClienteSinContacto_SeIncluye()
+        {
+            DescuentosProducto fila = new DescuentosProducto { Nº_Cliente = "12786", Contacto = null };
+            Assert.IsTrue(Aplica(fila, "12786", "0"));
+        }
+
+        [TestMethod]
+        public void FiltroClienteContacto_FilaClienteContactoDistinto_SeExcluye()
+        {
+            DescuentosProducto fila = new DescuentosProducto { Nº_Cliente = "12786", Contacto = "1" };
+            Assert.IsFalse(Aplica(fila, "12786", "0"));
+        }
+
+        [TestMethod]
+        public void FiltroClienteContacto_FilaDeOtroCliente_SeExcluye()
+        {
+            DescuentosProducto fila = new DescuentosProducto { Nº_Cliente = "99999", Contacto = null };
+            Assert.IsFalse(Aplica(fila, "12786", "0"));
+        }
+    }
 }
