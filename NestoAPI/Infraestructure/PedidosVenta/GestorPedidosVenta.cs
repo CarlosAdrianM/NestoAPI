@@ -231,6 +231,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         throw new Exception("No se pueden crear líneas de producto con cantidad 0");
                     }
                     Producto producto = servicio.LeerProducto(empresa, linea.Producto);
+                    // Issue #280: LeerProducto usa SingleOrDefault → null si el producto no existe en
+                    // la empresa (código inexistente, descatalogado, empresa equivocada). Sin este guard,
+                    // producto.Estado lanzaba una NullReferenceException opaca en vez de un mensaje útil.
+                    if (producto == null)
+                    {
+                        throw new Exception($"No existe el producto {linea.Producto?.Trim()} en la empresa {empresa?.Trim()}");
+                    }
                     if (producto.Estado < Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
                     {
                         throw new Exception($"El producto {producto.Número.Trim()} ({producto.Nombre?.Trim()}) está en un estado nulo ({producto.Estado})");

@@ -457,5 +457,43 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region CrearLineaVta - Issue #280
+
+        [TestMethod]
+        public void CrearLineaVta_ProductoNoExiste_LanzaExcepcionClaraNoNRE()
+        {
+            // Issue #280: LeerProducto (SingleOrDefault) devuelve null si el producto no existe en la
+            // empresa; antes CrearLineaVta lanzaba una NullReferenceException opaca al hacer producto.Estado.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerProducto(A<string>._, A<string>._)).Returns(null);
+            var gestor = new GestorPedidosVenta(servicio);
+
+            var linea = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "99999999",
+                Cantidad = 1,
+                texto = "PRODUCTO INEXISTENTE",
+                fechaEntrega = DateTime.Today
+            };
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            Exception excepcion = null;
+            try
+            {
+                gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+            }
+            catch (Exception ex)
+            {
+                excepcion = ex;
+            }
+
+            Assert.IsNotNull(excepcion, "Debe lanzar una excepción cuando el producto no existe");
+            Assert.IsFalse(excepcion is NullReferenceException, "No debe ser una NullReferenceException opaca");
+            StringAssert.Contains(excepcion.Message, "99999999");
+        }
+
+        #endregion
     }
 }
