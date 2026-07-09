@@ -1001,6 +1001,8 @@ namespace NestoAPI.Controllers
                     l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
                     l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
 
+                // NestoAPI#277: vendedor de las líneas de cuenta contable (portes/reembolso) = predominante por grupo.
+                string vendedorContablePut = this.gestor.CalcularVendedorCuentaContable(pedido);
                 // Añadir portes si no los tiene y los necesita
                 if (resultadoPortesPut.ImportePortes > 0 && !resultadoPortesPut.PortesGratis && !yaLlevaPortesBD)
                 {
@@ -1023,7 +1025,7 @@ namespace NestoAPI.Controllers
                             usuario = lineaRefPut.usuario,
                             fechaEntrega = lineaRefPut.fechaEntrega
                         };
-                        var linPedidoPortes = this.gestor.CrearLineaVta(lineaPortesPut, pedido.empresa, pedido.numero);
+                        var linPedidoPortes = this.gestor.CrearLineaVta(lineaPortesPut, pedido.empresa, pedido.numero, vendedorContablePut);
                         _ = db.LinPedidoVtas.Add(linPedidoPortes);
                         pedido.Lineas.Add(lineaPortesPut);
                     }
@@ -1089,7 +1091,7 @@ namespace NestoAPI.Controllers
                                 usuario = lineaRefReemb.usuario,
                                 fechaEntrega = lineaRefReemb.fechaEntrega
                             };
-                            var linPedidoReemb = this.gestor.CrearLineaVta(lineaReembolso, pedido.empresa, pedido.numero);
+                            var linPedidoReemb = this.gestor.CrearLineaVta(lineaReembolso, pedido.empresa, pedido.numero, vendedorContablePut);
                             _ = db.LinPedidoVtas.Add(linPedidoReemb);
                             pedido.Lineas.Add(lineaReembolso);
                         }
@@ -1337,6 +1339,12 @@ namespace NestoAPI.Controllers
                 pedido.numero = contador.Pedidos;
             }
 
+            // NestoAPI#277: garantizar el vendedor base en la cabecera (ningún trigger lo rellena, así que
+            // sin esto un DTO sin vendedor se guardaría con vendedor NULL) y calcular el vendedor de las
+            // líneas de cuenta contable (portes/reembolso) por grupo predominante.
+            pedido.vendedor = this.gestor.ResolverVendedorBase(pedido);
+            string vendedorContable = this.gestor.CalcularVendedorCuentaContable(pedido);
+
             // NestoAPI#200: normalizar el DTO antes de construir la cabecera para que el
             // correo (que lee del DTO) y la BD muestren los mismos valores cuando iva=null.
             NormalizarPedidoSiIvaNull(pedido, empresa);
@@ -1458,7 +1466,7 @@ namespace NestoAPI.Controllers
                         lineaPortes.PorcentajeIva = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == lineaPortes.iva?.Trim()).PorcentajeIvaProducto;
                         lineaPortes.PorcentajeRecargoEquivalencia = pedido.ParametrosIva.Single(p => p.CodigoIvaProducto == lineaPortes.iva?.Trim()).PorcentajeRecargoEquivalencia;
                     }
-                    linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
+                    linPedido = this.gestor.CrearLineaVta(lineaPortes, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, vendedorContable);
                     //lineaPortes.BaseImponible = linPedido.Base_Imponible;
                     //lineaPortes.Total = linPedido.Total;
                     //pedido.LineasPedido.Add(lineaPortes);
@@ -1522,7 +1530,7 @@ namespace NestoAPI.Controllers
                         (l.Producto.Trim().StartsWith("624") || l.texto?.Contains("reembolso") == true) &&
                         !lineasPedidoInsertar.Any(li => li.Producto?.Trim() == l.Producto?.Trim())))
                     {
-                        linPedido = this.gestor.CrearLineaVta(lineaNueva, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
+                        linPedido = this.gestor.CrearLineaVta(lineaNueva, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, vendedorContable);
                         lineasPedidoInsertar.Add(linPedido);
                     }
                 }

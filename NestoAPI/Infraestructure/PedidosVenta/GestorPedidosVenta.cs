@@ -36,6 +36,73 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             return servicio.CalcularCentroCoste(empresa, vendedor);
         }
+
+        // NestoAPI#277: vendedor base del pedido = el del DTO o, si no viene, el de la ficha del cliente.
+        // Ningún trigger lo rellena, así que hay que garantizarlo para no guardar la cabecera con vendedor NULL.
+        internal string ResolverVendedorBase(PedidoVentaDTO pedido)
+        {
+            return !string.IsNullOrWhiteSpace(pedido.vendedor)
+                ? pedido.vendedor.Trim()
+                : servicio.LeerVendedorCliente(pedido.empresa, pedido.cliente, pedido.contacto);
+        }
+
+        // NestoAPI#277: vendedor de las líneas de cuenta contable (portes/reembolso). Como esas líneas no
+        // tienen grupo, se les asigna el vendedor PREDOMINANTE del pedido: se calcula el vendedor de cada
+        // línea de producto igual que prdActualizarComisionesPorGrupoProducto (vendedor de su grupo si existe,
+        // si no el base) y se coge el más frecuente. Empate → base.
+        internal string CalcularVendedorCuentaContable(PedidoVentaDTO pedido)
+        {
+            string vendedorBase = ResolverVendedorBase(pedido);
+
+            IEnumerable<VendedorGrupoProductoDTO> vendedoresGrupo =
+                pedido.VendedoresGrupoProducto != null && pedido.VendedoresGrupoProducto.Any()
+                    ? pedido.VendedoresGrupoProducto
+                    : servicio.LeerVendedoresClienteGrupo(pedido.empresa, pedido.cliente, pedido.contacto);
+
+            Dictionary<string, string> vendedoresPorGrupo = vendedoresGrupo
+                .Where(v => !string.IsNullOrWhiteSpace(v.grupoProducto) && !string.IsNullOrWhiteSpace(v.vendedor))
+                .GroupBy(v => v.grupoProducto.Trim())
+                .ToDictionary(g => g.Key, g => g.First().vendedor.Trim());
+
+            List<string> gruposLineasProducto = (pedido.Lineas ?? new List<LineaPedidoVentaDTO>())
+                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO && l.Cantidad > 0 && !string.IsNullOrWhiteSpace(l.Producto))
+                .Select(l => !string.IsNullOrWhiteSpace(l.GrupoProducto)
+                    ? l.GrupoProducto
+                    : servicio.LeerProducto(pedido.empresa, l.Producto)?.Grupo)
+                .ToList();
+
+            return CalcularVendedorPredominanteContable(gruposLineasProducto, vendedoresPorGrupo, vendedorBase);
+        }
+
+        // Función pura (testeable): dado el grupo de cada línea de producto, los vendedores por grupo y el
+        // vendedor base, devuelve el vendedor de línea más frecuente (cada línea = vendedor de su grupo o base).
+        // Empate → base. Sin líneas de producto → base.
+        internal static string CalcularVendedorPredominanteContable(
+            IEnumerable<string> gruposLineasProducto,
+            IDictionary<string, string> vendedoresPorGrupo,
+            string vendedorBase)
+        {
+            List<string> vendedoresLinea = gruposLineasProducto
+                .Select(grupo =>
+                {
+                    string g = grupo?.Trim();
+                    return g != null && vendedoresPorGrupo.TryGetValue(g, out string vg) && !string.IsNullOrWhiteSpace(vg)
+                        ? vg.Trim()
+                        : vendedorBase;
+                })
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .ToList();
+
+            if (vendedoresLinea.Count == 0)
+            {
+                return vendedorBase;
+            }
+
+            var conteo = vendedoresLinea.GroupBy(v => v).Select(g => new { Vendedor = g.Key, N = g.Count() }).ToList();
+            int maxN = conteo.Max(c => c.N);
+            List<string> ganadores = conteo.Where(c => c.N == maxN).Select(c => c.Vendedor).ToList();
+            return ganadores.Count == 1 ? ganadores[0] : vendedorBase; // empate → base
+        }
         internal string CalcularDelegacion(string usuario, string empresa, int numeroPedido)
         {
             return servicio.CalcularDelegacion(usuario, empresa, numeroPedido);
@@ -189,6 +256,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
         public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, string empresa, int numeroPedido)
         {
+            return CrearLineaVta(linea, empresa, numeroPedido, null);
+        }
+        // NestoAPI#277: overload que permite forzar el vendedor de la línea (p. ej. el predominante para las
+        // líneas de cuenta contable). Si vendedorContable es null se usa el de la cabecera (comportamiento previo).
+        public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, string empresa, int numeroPedido, string vendedorContable)
+        {
             // Si hubiese en dos empresas el mismo pedido, va a dar error
             CabPedidoVta pedido = servicio.LeerCabPedidoVta(empresa, numeroPedido);
             PlazoPago plazo = servicio.LeerPlazosPago(pedido.Empresa, pedido.PlazosPago);
@@ -202,7 +275,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 PlanCuenta cuenta = servicio.LeerPlanCuenta(empresa, linea.Producto);
                 linea.iva = cuenta.IVA;
             }
-            return CrearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta, pedido.Vendedor);
+            string vendedor = string.IsNullOrWhiteSpace(vendedorContable) ? pedido.Vendedor : vendedorContable;
+            return CrearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta, vendedor);
         }
         public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto)
         {

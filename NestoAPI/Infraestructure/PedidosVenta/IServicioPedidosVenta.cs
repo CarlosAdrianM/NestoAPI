@@ -23,6 +23,10 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         PlanCuenta LeerPlanCuenta(string empresa, string cuenta);
         PlazoPago LeerPlazosPago(string empresa, string plazosPago);
         Producto LeerProducto(string empresa, string producto);
+        // NestoAPI#277: vendedor base del cliente (ficha) y sus vendedores por grupo, para calcular el
+        // vendedor de las líneas de cuenta contable (portes/reembolso) cuando el DTO no lo trae.
+        string LeerVendedorCliente(string empresa, string cliente, string contacto);
+        List<VendedorGrupoProductoDTO> LeerVendedoresClienteGrupo(string empresa, string cliente, string contacto);
         string LeerTipoExclusiva(string empresa, string producto);
         List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido);
         List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido);

@@ -495,5 +495,84 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region Vendedor de líneas de cuenta contable (portes/reembolso) - Issue #277
+
+        private static IDictionary<string, string> Grupos(params string[] grupoVendedor)
+        {
+            var d = new Dictionary<string, string>();
+            for (int i = 0; i < grupoVendedor.Length; i += 2)
+            {
+                d[grupoVendedor[i]] = grupoVendedor[i + 1];
+            }
+            return d;
+        }
+
+        [TestMethod]
+        public void VendedorPredominanteContable_TodasPeluqueria_DevuelveVendedorPeluqueria()
+        {
+            // 5 líneas PEL (grupo→IF), base DV (cosmética) → portes IF (el caso que planteaste).
+            var grupos = new[] { "PEL", "PEL", "PEL", "PEL", "PEL" };
+            Assert.AreEqual("IF", GestorPedidosVenta.CalcularVendedorPredominanteContable(grupos, Grupos("PEL", "IF"), "DV"));
+        }
+
+        [TestMethod]
+        public void VendedorPredominanteContable_MasPeluqueriaQueResto_DevuelveVendedorPeluqueria()
+        {
+            // 3 COS (base DV) + 7 PEL (IF) → 7 IF vs 3 DV → IF.
+            var grupos = new[] { "COS", "COS", "COS", "PEL", "PEL", "PEL", "PEL", "PEL", "PEL", "PEL" };
+            Assert.AreEqual("IF", GestorPedidosVenta.CalcularVendedorPredominanteContable(grupos, Grupos("PEL", "IF"), "DV"));
+        }
+
+        [TestMethod]
+        public void VendedorPredominanteContable_MasRestoQuePeluqueria_DevuelveBase()
+        {
+            // 7 COS (base DV) + 3 PEL (IF) → 7 DV vs 3 IF → DV (base).
+            var grupos = new[] { "COS", "COS", "COS", "COS", "COS", "COS", "COS", "PEL", "PEL", "PEL" };
+            Assert.AreEqual("DV", GestorPedidosVenta.CalcularVendedorPredominanteContable(grupos, Grupos("PEL", "IF"), "DV"));
+        }
+
+        [TestMethod]
+        public void VendedorPredominanteContable_Empate_DevuelveBase()
+        {
+            // 3 PEL (IF) + 3 COS (base DV) → empate → base.
+            var grupos = new[] { "PEL", "PEL", "PEL", "COS", "COS", "COS" };
+            Assert.AreEqual("DV", GestorPedidosVenta.CalcularVendedorPredominanteContable(grupos, Grupos("PEL", "IF"), "DV"));
+        }
+
+        [TestMethod]
+        public void VendedorPredominanteContable_SinLineasProducto_DevuelveBase()
+        {
+            Assert.AreEqual("DV", GestorPedidosVenta.CalcularVendedorPredominanteContable(new string[0], Grupos("PEL", "IF"), "DV"));
+        }
+
+        [TestMethod]
+        public void CalcularVendedorCuentaContable_SinVendedorEnDto_ResuelveBaseYGrupoDeLaFicha()
+        {
+            // El pedido no trae vendedor ni vendedores de grupo (caso del crash): se reconstruyen de la ficha.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerVendedorCliente(EMPRESA, "12786", "0")).Returns("DV");
+            A.CallTo(() => servicio.LeerVendedoresClienteGrupo(EMPRESA, "12786", "0"))
+                .Returns(new List<VendedorGrupoProductoDTO> { new VendedorGrupoProductoDTO { grupoProducto = "PEL", vendedor = "IF" } });
+            var gestor = new GestorPedidosVenta(servicio);
+            var pedido = new PedidoVentaDTO
+            {
+                empresa = EMPRESA,
+                cliente = "12786",
+                contacto = "0",
+                vendedor = null,
+                VendedoresGrupoProducto = null,
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "1", Cantidad = 1, GrupoProducto = "PEL" },
+                    new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "2", Cantidad = 1, GrupoProducto = "PEL" }
+                }
+            };
+
+            // Todo peluquería → vendedor peluquería IF, aunque el base de la ficha sea DV.
+            Assert.AreEqual("IF", gestor.CalcularVendedorCuentaContable(pedido));
+        }
+
+        #endregion
     }
 }

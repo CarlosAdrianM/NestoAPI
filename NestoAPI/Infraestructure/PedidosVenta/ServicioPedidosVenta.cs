@@ -177,6 +177,31 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return db.Productos.SingleOrDefault(p => p.Empresa == empresa && p.Número == producto);
         }
 
+        // NestoAPI#277: vendedor base de la ficha del cliente (contacto exacto, con fallback al contacto '0').
+        public string LeerVendedorCliente(string empresa, string cliente, string contacto)
+        {
+            string vendedor = db.Clientes
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto)
+                .Select(c => c.Vendedor).FirstOrDefault();
+            if (string.IsNullOrWhiteSpace(vendedor))
+            {
+                vendedor = db.Clientes
+                    .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == "0")
+                    .Select(c => c.Vendedor).FirstOrDefault();
+            }
+            return vendedor?.Trim();
+        }
+
+        // NestoAPI#277: vendedores por grupo de producto de la ficha del cliente (VendedoresClienteGrupoProducto),
+        // que es de donde prdActualizarComisionesPorGrupoProducto reconstruye los del pedido.
+        public List<VendedorGrupoProductoDTO> LeerVendedoresClienteGrupo(string empresa, string cliente, string contacto)
+        {
+            return db.VendedoresClientesGruposProductos
+                .Where(v => v.Empresa == empresa && v.Cliente == cliente && v.Contacto == contacto)
+                .Select(v => new VendedorGrupoProductoDTO { vendedor = v.Vendedor, grupoProducto = v.GrupoProducto })
+                .ToList();
+        }
+
         public string LeerTipoExclusiva(string empresa, string numeroProducto)
         {
             // la cláusula include es case sensitive, por lo que la familia "pure" es distinta a "Pure" y no la encuentra (es lo que da error)
