@@ -944,12 +944,34 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
 
             if (request.EliminarOrigen)
             {
-                db.SeguimientosClientes.RemoveRange(seguimientosOrigen);
+                // Issue #267: los seguimientos origen pueden tener marcas de "leído" en
+                // SeguimientosLeidos (FK hacia SeguimientoCliente, tabla SIN mapear en el EDMX).
+                // Al MOVER hay que borrar esas marcas ANTES que los padres o el DELETE viola la FK
+                // y falla todo el movimiento. Se borran (no se reasignan): la copia en el destino
+                // es un seguimiento nuevo y debe aparecer como no leída. Todo en una transacción
+                // para que la copia y el borrado del origen vayan juntos.
+                using (var transaccion = db.Database.BeginTransaction())
+                {
+                    _ = await db.Database.ExecuteSqlCommandAsync(
+                        SqlBorrarMarcasLeidoDeSeguimientos(seguimientosOrigen.Select(s => s.NºOrden)));
+                    db.SeguimientosClientes.RemoveRange(seguimientosOrigen);
+                    _ = await db.SaveChangesAsync();
+                    transaccion.Commit();
+                }
+            }
+            else
+            {
+                _ = await db.SaveChangesAsync();
             }
 
-            await db.SaveChangesAsync();
-
             return Ok(seguimientosOrigen.Count);
+        }
+
+        // Issue #267: DELETE de las marcas de leído de los seguimientos indicados. Los NºOrden son
+        // enteros (PK identity de SeguimientoCliente), así que la interpolación es segura.
+        internal static string SqlBorrarMarcasLeidoDeSeguimientos(IEnumerable<int> numerosOrden)
+        {
+            return $"DELETE FROM SeguimientosLeidos WHERE NºOrden IN ({string.Join(",", numerosOrden)})";
         }
 
         protected override void Dispose(bool disposing)

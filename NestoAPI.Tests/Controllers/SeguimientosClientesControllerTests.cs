@@ -99,5 +99,17 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsFalse(request.EliminarOrigen);
         }
+
+        [TestMethod]
+        public void SqlBorrarMarcasLeido_BorraDeSeguimientosLeidosPorNumeroOrden()
+        {
+            // Regresión NestoAPI#267: al mover seguimientos (EliminarOrigen=true), las marcas de
+            // "leído" (SeguimientosLeidos, FK hacia SeguimientoCliente, sin mapear en el EDMX) deben
+            // borrarse ANTES que los padres o el DELETE viola FK_SeguimientosLeidos_SeguimientoCliente.
+            string sql = NestoAPI.Controllers.SeguimientosClientesController
+                .SqlBorrarMarcasLeidoDeSeguimientos(new[] { 5, 9, 12 });
+
+            Assert.AreEqual("DELETE FROM SeguimientosLeidos WHERE NºOrden IN (5,9,12)", sql);
+        }
     }
 }
