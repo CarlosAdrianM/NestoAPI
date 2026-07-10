@@ -725,7 +725,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 // NestoAPI#216: las NestoBusinessException (p. ej. PedidoValidacionException) se dejan
                 // pasar SIN envolver, para no perder el código PEDIDO_VALIDACION_FALLO que el cliente
                 // necesita para ofrecer "¿Crear el pedido de todas formas?" también al unir pedidos.
-                throw new Exception(ex.Message);
+                // Issue #274: se conserva la cadena de InnerException para que ELMAH registre la causa.
+                throw new Exception(ex.Message, ex);
             }
         }
 
@@ -741,7 +742,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 // NestoAPI#216: las NestoBusinessException (p. ej. PedidoValidacionException) se dejan
                 // pasar SIN envolver, para no perder el código PEDIDO_VALIDACION_FALLO que el cliente
                 // necesita para ofrecer "¿Crear el pedido de todas formas?" también al unir pedidos.
-                throw new Exception(ex.Message);
+                // Issue #274: se conserva la cadena de InnerException para que ELMAH registre la causa.
+                throw new Exception(ex.Message, ex);
             }
         }
 
@@ -758,18 +760,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
                 catch (TransactionAbortedException ex)
                 {
-                    throw new Exception(ex.Message);
+                    // Issue #274: la causa real del abort (deadlock, timeout del scope, DTC...) viene
+                    // en la cadena de InnerException; sin conservarla, ELMAH solo registra "Se anuló
+                    // la transacción" y el error es indiagnosticable. Se saca la causa raíz al mensaje
+                    // (la ve también el usuario) y se conserva la cadena para el log.
+                    Exception causaRaiz = ex.GetBaseException();
+                    string causa = causaRaiz != ex ? " Causa: " + causaRaiz.Message : string.Empty;
+                    throw new Exception(ex.Message + causa, ex);
                 }
                 catch (HttpResponseException ex)
                 {
-                    throw new Exception(ex.Response.ReasonPhrase);
+                    throw new Exception(ex.Response.ReasonPhrase, ex);
                 }
                 catch (Exception ex) when (!(ex is NestoBusinessException))
                 {
                     // NestoAPI#216: PutPedidoVenta lanza PedidoValidacionException (código
                     // PEDIDO_VALIDACION_FALLO) cuando el pedido unido no pasa validación. La dejamos
                     // propagar sin envolver para que el cliente ofrezca "¿Crear de todas formas?".
-                    throw new Exception(ex.Message);
+                    throw new Exception(ex.Message, ex);
                 }
             }
 

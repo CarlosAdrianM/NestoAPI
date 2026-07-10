@@ -436,6 +436,42 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("boom", ex.Message);
         }
 
+        [TestMethod]
+        public void UnirPedidos_TransactionAborted_ConservaLaCausaRaizEnMensajeYCadena()
+        {
+            // Regresión NestoAPI#274: la causa real del abort (deadlock, timeout del scope, DTC) viene
+            // en la cadena de InnerException. Antes se envolvía con new Exception(ex.Message) y ELMAH
+            // solo registraba "Se anuló la transacción", indiagnosticable. Ahora la causa raíz va en
+            // el mensaje y la cadena se conserva.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var abort = new System.Transactions.TransactionAbortedException(
+                "Se anuló la transacción.",
+                new TimeoutException("Transaction Timeout"));
+            var gestor = new GestorUnirPedidosConFallo(servicio, abort);
+
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                gestor.UnirPedidos(NuevoPedidoDto(), NuevoPedidoDto()).GetAwaiter().GetResult());
+
+            StringAssert.Contains(ex.Message, "Se anuló la transacción.");
+            StringAssert.Contains(ex.Message, "Causa: Transaction Timeout");
+            Assert.IsInstanceOfType(ex.GetBaseException(), typeof(TimeoutException),
+                "La cadena de InnerException debe conservarse para que ELMAH registre la causa real");
+        }
+
+        [TestMethod]
+        public void UnirPedidos_ExcepcionGenerica_ConservaLaCadenaParaElmah()
+        {
+            // NestoAPI#274: también el catch genérico conserva ahora el InnerException.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var gestor = new GestorUnirPedidosConFallo(servicio,
+                new InvalidOperationException("boom", new Exception("causa profunda")));
+
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                gestor.UnirPedidos(NuevoPedidoDto(), NuevoPedidoDto()).GetAwaiter().GetResult());
+
+            Assert.AreEqual("causa profunda", ex.GetBaseException().Message);
+        }
+
         /// <summary>
         /// Sustituye la persistencia real (controller + BD) por el lanzamiento de una excepción dada,
         /// para verificar el manejo de excepciones de UnirPedidos sin tocar la BD.
