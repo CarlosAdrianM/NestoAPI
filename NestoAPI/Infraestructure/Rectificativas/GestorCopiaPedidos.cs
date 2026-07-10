@@ -462,10 +462,9 @@ namespace NestoAPI.Infraestructure.Rectificativas
             var pedidoOriginal = await _db.CabPedidoVtas
                 .FirstOrDefaultAsync(p => p.Empresa == request.Empresa && p.Número == lineaReferencia.Número);
 
-            // Obtener siguiente número de pedido
-            var contador = await _db.ContadoresGlobales.FirstOrDefaultAsync();
-            contador.Pedidos++;
-            int numeroPedido = contador.Pedidos;
+            // Obtener siguiente número de pedido (Issue #275: reserva atómica, mismo punto único
+            // que PostPedidoVenta, para que dos peticiones concurrentes no cojan el mismo número)
+            int numeroPedido = _db.TomarSiguienteNumeroPedido();
 
             // Calcular primer vencimiento
             var plazoPago = await _db.PlazosPago

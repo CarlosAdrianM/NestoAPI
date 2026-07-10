@@ -1331,12 +1331,14 @@ namespace NestoAPI.Controllers
                 pedido.ParametrosIva = await parametros.ToListAsync().ConfigureAwait(false);
             }
 
-            // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales
+            // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales.
+            // Issue #275: la reserva del número es ATÓMICA (UPDATE ... OUTPUT) para que dos
+            // peticiones concurrentes no cojan el mismo y una pierda el pedido por PK duplicada.
+            // El contador se sigue leyendo para el resto de campos (Oferta).
             ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
             if (pedido.numero == 0)
             {
-                contador.Pedidos++;
-                pedido.numero = contador.Pedidos;
+                pedido.numero = db.TomarSiguienteNumeroPedido();
             }
 
             // NestoAPI#277: garantizar el vendedor base en la cabecera (ningún trigger lo rellena, así que
