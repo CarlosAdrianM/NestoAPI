@@ -1362,6 +1362,17 @@
           <Property Name="Familia" Type="char" MaxLength="10" />
           <Property Name="FiltroProducto" Type="nvarchar" MaxLength="50" />
         </EntityType>
+        <EntityType Name="ProductosGruposComisionablesAlternativos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="GrupoAlternativo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="OfertasEscalonadas">
           <Key>
             <PropertyRef Name="Id" />
@@ -5509,6 +5520,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ProductosGruposComisionablesAlternativos" EntityType="Self.ProductosGruposComisionablesAlternativos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasEscalonadas" EntityType="Self.OfertasEscalonadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasEscalonadasProductos" EntityType="Self.OfertasEscalonadasProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasEscalonadasTramos" EntityType="Self.OfertasEscalonadasTramos" Schema="dbo" store:Type="Tables" />
@@ -7137,6 +7149,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </AssociationSet>
           <EntitySet Name="OfertasCombinadas" EntityType="NVModel.OfertaCombinada" />
           <EntitySet Name="OfertasCombinadasDetalles" EntityType="NVModel.OfertaCombinadaDetalle" />
+          <EntitySet Name="ProductosGruposComisionablesAlternativos" EntityType="NVModel.ProductoGrupoComisionableAlternativo" />
           <AssociationSet Name="FK_OfertasCombinadas_Empresas" Association="NVModel.FK_OfertasCombinadas_Empresas">
             <End Role="Empresa" EntitySet="Empresas" />
             <End Role="OfertasCombinada" EntitySet="OfertasCombinadas" />
@@ -10742,6 +10755,17 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="PermitirCantidadMenor" Type="Boolean" Nullable="false" />
           <Property Name="Familia" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+        </EntityType>
+        <EntityType Name="ProductoGrupoComisionableAlternativo">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Producto" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="GrupoAlternativo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
         </EntityType>
         <Association Name="FK_OfertasCombinadas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -14594,6 +14618,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="FechaDesde" ColumnName="FechaDesde" />
                 <ScalarProperty Name="ImporteMinimo" ColumnName="ImporteMinimo" />
                 <ScalarProperty Name="Nombre" ColumnName="Nombre" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="ProductosGruposComisionablesAlternativos">
+            <EntityTypeMapping TypeName="NVModel.ProductoGrupoComisionableAlternativo">
+              <MappingFragment StoreEntitySet="ProductosGruposComisionablesAlternativos">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="GrupoAlternativo" ColumnName="GrupoAlternativo" />
+                <ScalarProperty Name="Producto" ColumnName="Producto" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
                 <ScalarProperty Name="Id" ColumnName="Id" />
               </MappingFragment>

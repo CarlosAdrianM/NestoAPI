@@ -1205,6 +1205,9 @@
     <Compile Include="Models\OfertaCombinadaDetalle.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\ProductoGrupoComisionableAlternativo.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\OfertaEscalonada.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
@@ -1323,6 +1326,7 @@
     <Compile Include="Models\Productos\ControlStockBase.cs" />
     <Compile Include="Models\Productos\ControlStockProductoModel.cs" />
     <Compile Include="Models\Productos\DiarioProductoDTO.cs" />
+    <Compile Include="Models\Productos\ProductoGruposComisionablesDTO.cs" />
     <Compile Include="Models\Productos\KitContienePerteneceModel.cs" />
     <Compile Include="Models\Productos\ParametrosDiarioProducto.cs" />
     <Compile Include="Models\Productos\ProductoCodigoBarrasDuplicadoDTO.cs" />

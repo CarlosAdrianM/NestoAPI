@@ -27,6 +27,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         // vendedor de las líneas de cuenta contable (portes/reembolso) cuando el DTO no lo trae.
         string LeerVendedorCliente(string empresa, string cliente, string contacto);
         List<VendedorGrupoProductoDTO> LeerVendedoresClienteGrupo(string empresa, string cliente, string contacto);
+        // NestoAPI#249: grupos alternativos por los que puede comisionar un producto marcado
+        // (tabla ProductosGruposComisionablesAlternativos) y vendedor asociado a un usuario
+        // (ParametrosUsuario, clave "Vendedor"; null si no tiene).
+        List<string> LeerGruposComisionablesAlternativos(string empresa, string producto);
+        string LeerVendedorDeUsuario(string empresa, string usuario);
         string LeerTipoExclusiva(string empresa, string producto);
         List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido);
         List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido);

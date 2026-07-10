@@ -349,6 +349,65 @@ namespace NestoAPI.Controllers
         }
 
 
+        // NestoAPI#249: grupos alternativos por los que puede comisionar un producto marcado
+        // (además del de su ficha). Los mantiene Nesto desde la ficha del producto.
+        [ResponseType(typeof(List<string>))]
+        [Route("api/Productos/GruposComisionables")]
+        public async Task<IHttpActionResult> GetGruposComisionables(string empresa, string producto)
+        {
+            List<string> grupos = await db.ProductosGruposComisionablesAlternativos
+                .Where(g => g.Empresa == empresa && g.Producto == producto)
+                .OrderBy(g => g.Id)
+                .Select(g => g.GrupoAlternativo)
+                .ToListAsync()
+                .ConfigureAwait(false);
+            return Ok(grupos.Select(g => g.Trim()).ToList());
+        }
+
+        // NestoAPI#249: sustituye el conjunto de grupos alternativos del producto por el recibido
+        // (lista vacía = desmarcar el producto). El usuario de auditoría sale del Identity.
+        [HttpPut]
+        [Authorize]
+        [Route("api/Productos/GruposComisionables")]
+        public async Task<IHttpActionResult> PutGruposComisionables([FromBody] ProductoGruposComisionablesDTO dto)
+        {
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Empresa) || string.IsNullOrWhiteSpace(dto.Producto))
+            {
+                return BadRequest("Empresa y Producto son obligatorios");
+            }
+            List<string> gruposNuevos = (dto.Grupos ?? new List<string>())
+                .Where(g => !string.IsNullOrWhiteSpace(g))
+                .Select(g => g.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            string empresa = dto.Empresa.Trim();
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            var actuales = await db.ProductosGruposComisionablesAlternativos
+                .Where(g => g.Empresa == empresa && g.Producto == dto.Producto)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            foreach (var actual in actuales.Where(a => !gruposNuevos.Contains(a.GrupoAlternativo.Trim(), StringComparer.OrdinalIgnoreCase)))
+            {
+                _ = db.ProductosGruposComisionablesAlternativos.Remove(actual);
+            }
+            foreach (string grupo in gruposNuevos.Where(g => !actuales.Any(a => a.GrupoAlternativo.Trim().Equals(g, StringComparison.OrdinalIgnoreCase))))
+            {
+                _ = db.ProductosGruposComisionablesAlternativos.Add(new ProductoGrupoComisionableAlternativo
+                {
+                    Empresa = empresa,
+                    Producto = dto.Producto,
+                    GrupoAlternativo = grupo,
+                    Usuario = usuario,
+                    FechaModificacion = DateTime.Now
+                });
+            }
+
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            return Ok(gruposNuevos);
+        }
+
         [ResponseType(typeof(List<KitContienePerteneceModel>))]
         [Route("api/Productos/KitsProducto")]
         public async Task<IHttpActionResult> GetKitsProducto(string empresa, string producto)

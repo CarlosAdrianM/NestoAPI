@@ -660,7 +660,10 @@ namespace NestoAPI.Controllers
                             errorPersonalizado($"El producto {producto.Número} está en un estado nulo ({producto.Estado})");
                         }
                         linea.Producto = producto.Número;
-                        linea.Grupo = producto.Grupo;
+                        // NestoAPI#249: al cambiar el producto, el grupo se resuelve igual que al
+                        // crear la línea (productos marcados pueden comisionar por otro grupo según
+                        // quién modifica el pedido).
+                        linea.Grupo = this.gestor.ResolverGrupoProducto(producto, pedido.empresa, pedido.cliente, pedido.contacto, pedido.vendedor, pedido.Usuario);
                         linea.SubGrupo = producto.SubGrupo;
                         linea.Familia = producto.Familia;
                         linea.TipoExclusiva = producto.Familia1.TipoExclusiva;
@@ -1417,7 +1420,9 @@ namespace NestoAPI.Controllers
                 // Carlos 02/12/25: VistoBueno siempre true para evitar bloqueos en tiendas (Issue #45)
                 // Solución temporal mientras se define la lógica definitiva
                 linea.vistoBueno = true;
-                linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor);
+                // NestoAPI#249: se pasa el usuario que mete el pedido para resolver el grupo
+                // comisionable de los productos marcados (guantes COS/PEL).
+                linPedido = this.gestor.CrearLineaVta(linea, pedido.numero, pedido.empresa, pedido.iva, plazoPago, pedido.cliente, pedido.contacto, pedido.ruta, pedido.vendedor, pedido.Usuario);
                 //linea.BaseImponible = linPedido.Base_Imponible;
                 if (linea.GrupoProducto != linPedido.Grupo)
                 {

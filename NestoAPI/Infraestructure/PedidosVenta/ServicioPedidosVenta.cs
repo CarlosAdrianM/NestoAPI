@@ -202,6 +202,30 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .ToList();
         }
 
+        // NestoAPI#249: grupos alternativos por los que puede comisionar un producto marcado.
+        public List<string> LeerGruposComisionablesAlternativos(string empresa, string producto)
+        {
+            return db.ProductosGruposComisionablesAlternativos
+                .Where(g => g.Empresa == empresa && g.Producto == producto)
+                .OrderBy(g => g.Id)
+                .Select(g => g.GrupoAlternativo)
+                .ToList();
+        }
+
+        // NestoAPI#249: vendedor asociado al usuario que mete el pedido (ParametrosUsuario, clave
+        // "Vendedor"). El usuario puede venir con dominio (DOMINIO\usuario): se quita, como hace
+        // PostPedidoVenta con UltNumPedidoVta. Devuelve null si el usuario no tiene vendedor.
+        public string LeerVendedorDeUsuario(string empresa, string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            string usuarioSinDominio = usuario.Substring(usuario.IndexOf('\\') + 1);
+            string vendedor = Controllers.ParametrosUsuarioController.LeerParametro(empresa, usuarioSinDominio, "Vendedor");
+            return string.IsNullOrWhiteSpace(vendedor) ? null : vendedor.Trim();
+        }
+
         public string LeerTipoExclusiva(string empresa, string numeroProducto)
         {
             // la cláusula include es case sensitive, por lo que la familia "pure" es distinta a "Pure" y no la encuentra (es lo que da error)

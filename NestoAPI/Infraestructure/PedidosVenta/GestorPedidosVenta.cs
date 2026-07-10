@@ -276,14 +276,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 linea.iva = cuenta.IVA;
             }
             string vendedor = string.IsNullOrWhiteSpace(vendedorContable) ? pedido.Vendedor : vendedorContable;
-            return CrearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta, vendedor);
+            return CrearLineaVta(linea, numeroPedido, pedido.Empresa, pedido.IVA, plazo, pedido.Nº_Cliente, pedido.Contacto, pedido.Ruta, vendedor, pedido.Usuario);
         }
         public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto)
         {
             CabPedidoVta pedido = servicio.LeerCabPedidoVta(empresa, numeroPedido);
-            return CrearLineaVta(linea, numeroPedido, empresa, iva, plazoPago, cliente, contacto, pedido.Ruta, pedido.Vendedor);
+            return CrearLineaVta(linea, numeroPedido, empresa, iva, plazoPago, cliente, contacto, pedido.Ruta, pedido.Vendedor, pedido.Usuario);
         }
-        public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto, string ruta, string vendedor)
+        // NestoAPI#249: usuarioPedido = quien mete el pedido; decide el grupo comisionable de los
+        // productos marcados. Con null no se convierte nada (queda el grupo de la ficha).
+        public LinPedidoVta CrearLineaVta(LineaPedidoVentaDTO linea, int numeroPedido, string empresa, string iva, PlazoPago plazoPago, string cliente, string contacto, string ruta, string vendedor, string usuarioPedido = null)
         {
             string tipoExclusiva, grupo, subGrupo, familia;
             decimal coste, precioTarifa;
@@ -318,7 +320,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                     precioTarifa = (decimal)producto.PVP;
                     coste = (decimal)producto.PrecioMedio;
-                    grupo = producto.Grupo;
+                    // NestoAPI#249: los productos marcados pueden comisionar por otro grupo según
+                    // quién mete el pedido (guantes COS/PEL). Para el resto, el de la ficha.
+                    grupo = ResolverGrupoProducto(producto, empresa, cliente, contacto, vendedor, usuarioPedido);
                     subGrupo = producto.SubGrupo;
                     familia = producto.Familia;
                     _ = producto.IVA_Repercutido; // ¿Se usa? Ojo, que puede venir el IVA nulo y estar bien
@@ -425,6 +429,38 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private bool EsSobrePedido(string producto, short cantidad)
         {
             return servicio.EsSobrePedido(producto, cantidad);
+        }
+
+        // NestoAPI#249: grupo de la línea de un producto. Para los NO marcados (lo normal) devuelve el
+        // de la ficha con una sola consulta extra (los grupos alternativos). Para los marcados resuelve
+        // con la regla de GestorComisiones.ResolverGrupoComisionable a partir de los vendedores por
+        // grupo de la ficha del cliente (mismo origen que usa prdActualizarComisionesPorGrupoProducto).
+        internal string ResolverGrupoProducto(Producto producto, string empresa, string cliente, string contacto, string vendedorCabecera, string usuarioPedido)
+        {
+            string grupoFicha = producto.Grupo;
+            if (string.IsNullOrWhiteSpace(usuarioPedido))
+            {
+                return grupoFicha;
+            }
+
+            List<string> gruposAlternativos = servicio.LeerGruposComisionablesAlternativos(empresa, producto.Número);
+            if (gruposAlternativos == null || gruposAlternativos.Count == 0)
+            {
+                return grupoFicha;
+            }
+
+            string vendedorUsuario = servicio.LeerVendedorDeUsuario(empresa, usuarioPedido);
+            if (string.IsNullOrWhiteSpace(vendedorUsuario))
+            {
+                return grupoFicha;
+            }
+
+            Dictionary<string, string> vendedoresPorGrupo = (servicio.LeerVendedoresClienteGrupo(empresa, cliente, contacto) ?? new List<VendedorGrupoProductoDTO>())
+                .Where(v => !string.IsNullOrWhiteSpace(v.grupoProducto))
+                .GroupBy(v => v.grupoProducto.Trim())
+                .ToDictionary(g => g.Key, g => g.First().vendedor);
+
+            return GestorComisiones.ResolverGrupoComisionable(grupoFicha, gruposAlternativos, vendedoresPorGrupo, vendedorCabecera, vendedorUsuario);
         }
 
         // A las 11h de la mañana se cierra la ruta y los pedidos que se metan son ya para el día siguiente
