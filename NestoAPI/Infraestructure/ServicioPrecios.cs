@@ -87,16 +87,45 @@ namespace NestoAPI.Infraestructure
             //TODO: comprobar con el SQL Profiler que hace lo que queremos
             using (NVEntities db = new NVEntities())
             {
-                IQueryable<OfertaCombinada> listaOfertas = db.OfertasCombinadas.Include("OfertasCombinadasDetalles")
-                    .Where(o => 
-                        o.OfertasCombinadasDetalles.Any(d => d.Producto == numeroProducto) &&
+                // Issue #282: además de las ofertas que llevan el producto concreto en el detalle,
+                // hay que traer las que lo casan por FILTRO (fila con Producto NULL + Familia y/o
+                // prefijo de nombre). Las candidatas con filtro se traen a memoria (las ofertas
+                // activas son pocas) y se casan contra la familia/nombre del producto.
+                List<OfertaCombinada> listaOfertas = db.OfertasCombinadas.Include("OfertasCombinadasDetalles")
+                    .Where(o =>
+                        o.OfertasCombinadasDetalles.Any(d => d.Producto == numeroProducto || d.Producto == null) &&
                         (o.FechaHasta == null || o.FechaHasta >= DateTime.Today) &&
                         (o.FechaDesde == null || o.FechaDesde <= DateTime.Today)
-                    );
+                    ).ToList();
 
-                return listaOfertas.ToList();
+                if (!listaOfertas.Any(o => o.OfertasCombinadasDetalles.Any(d => d.Producto == null)))
+                {
+                    return listaOfertas;
+                }
+
+                Producto producto = db.Productos.SingleOrDefault(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == numeroProducto.Trim());
+
+                return listaOfertas.Where(o => o.OfertasCombinadasDetalles.Any(d =>
+                    (d.Producto != null && d.Producto.Trim() == numeroProducto.Trim())
+                    || DetalleFiltroCasaConProducto(d, producto)
+                )).ToList();
             }
-            
+
+        }
+
+        // Issue #282: ¿la fila de filtro (Producto NULL) casa con este producto? Mismo matching que
+        // FiltrarLineas: familia igual (si la fila la exige) y nombre que empiece por el prefijo.
+        internal static bool DetalleFiltroCasaConProducto(OfertaCombinadaDetalle detalle, Producto producto)
+        {
+            if (detalle.Producto != null || producto == null)
+            {
+                return false;
+            }
+            bool familiaOk = detalle.Familia == null
+                || (producto.Familia != null && producto.Familia.Trim().Equals(detalle.Familia.Trim(), StringComparison.OrdinalIgnoreCase));
+            bool filtroOk = detalle.FiltroProducto == null
+                || (producto.Nombre != null && producto.Nombre.StartsWith(detalle.FiltroProducto, StringComparison.OrdinalIgnoreCase));
+            return familiaOk && filtroOk;
         }
 
         public List<OfertaEscalonada> BuscarOfertasEscalonadas(string numeroProducto)

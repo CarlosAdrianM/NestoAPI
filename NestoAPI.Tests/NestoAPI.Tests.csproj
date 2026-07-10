@@ -277,6 +277,7 @@
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Infrastructure\GestorPresupuestosTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasCantidadMenorTests.cs" />
+    <Compile Include="Infrastructure\ValidadorOfertasCombinadasFiltrosTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasGruposTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasImporteMinimoTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasTramosTests.cs" />

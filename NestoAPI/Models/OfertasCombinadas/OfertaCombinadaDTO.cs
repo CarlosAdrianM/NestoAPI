@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 
 namespace NestoAPI.Models.OfertasCombinadas
@@ -21,6 +21,9 @@ namespace NestoAPI.Models.OfertasCombinadas
         public int Id { get; set; }
         public string Producto { get; set; }
         public string ProductoNombre { get; set; }
+        // Issue #282: fila de FILTRO (Producto null): casa por familia y/o prefijo del nombre.
+        public string Familia { get; set; }
+        public string FiltroProducto { get; set; }
         public short Cantidad { get; set; }
         public decimal Precio { get; set; }
         // Líneas con el mismo GrupoAlternativa son intercambiables ("elige 1"); null = obligatoria.
@@ -44,6 +47,9 @@ namespace NestoAPI.Models.OfertasCombinadas
     {
         public int Id { get; set; }
         public string Producto { get; set; }
+        // Issue #282: fila de FILTRO (Producto null): casa por familia y/o prefijo del nombre.
+        public string Familia { get; set; }
+        public string FiltroProducto { get; set; }
         public short Cantidad { get; set; }
         public decimal Precio { get; set; }
         public int? GrupoAlternativa { get; set; }

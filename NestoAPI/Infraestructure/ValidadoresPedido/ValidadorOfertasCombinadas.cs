@@ -31,9 +31,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             OfertaCombinada ofertaCumplida = ofertasCombinadas.FirstOrDefault(o =>
                 o.OfertasCombinadasDetalles.Where(d=> d.Cantidad > 0 && d.GrupoAlternativa == null).All(d =>
-                    DetalleSatisfecho(d, pedido)
+                    DetalleSatisfecho(d, pedido, servicio)
                 )
-                && GruposSatisfechos(o, pedido, InstanciasEnPedido(o, pedido))
+                && GruposSatisfechos(o, pedido, InstanciasEnPedido(o, pedido, servicio))
             );
 
             if (ofertaCumplida != null)
@@ -42,14 +42,16 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 // producto distinto del que se valida (si no, no sería una "combinada").
                 // Las ofertas de un solo producto (p. ej. 2ª unidad al 50 %) no tienen ese
                 // otro producto por definición, así que esa exigencia no se les aplica.
+                // Las filas de FILTRO cuentan por su clave familia|prefijo (Issue #282).
                 bool esOfertaDeUnSoloProducto = ofertaCumplida.OfertasCombinadasDetalles
-                    .Select(d => d.Producto.Trim()).Distinct().Count() == 1;
+                    .Select(d => d.Producto?.Trim() ?? $"F:{d.Familia?.Trim()}|{d.FiltroProducto}")
+                    .Distinct().Count() == 1;
 
                 if (!esOfertaDeUnSoloProducto)
                 {
                     bool tieneAlgunProducto = ofertasCombinadas.FirstOrDefault(o =>
-                            o.OfertasCombinadasDetalles.Where(d => d.Producto != numeroProducto).Any(d =>
-                                DetalleSatisfecho(d, pedido)
+                            o.OfertasCombinadasDetalles.Where(d => d.Producto == null || d.Producto != numeroProducto).Any(d =>
+                                DetalleSatisfecho(d, pedido, servicio)
                             )
                         ) != null;
 
@@ -65,9 +67,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 IEnumerable<OfertaCombinada> ofertasConImporteMinimo = ofertasCombinadas.Where(o =>
                     o.ImporteMinimo > 0
                     && o.OfertasCombinadasDetalles.Where(d => d.GrupoAlternativa == null).All(d =>
-                        DetalleSatisfecho(d, pedido)
+                        DetalleSatisfecho(d, pedido, servicio)
                     )
-                    && GruposSatisfechos(o, pedido, InstanciasEnPedido(o, pedido))
+                    && GruposSatisfechos(o, pedido, InstanciasEnPedido(o, pedido, servicio))
                 );
                 OfertaCombinada ofertaConImporteMinimo;
                 for (int i = 0; i < ofertasConImporteMinimo.Count(); i++)
@@ -77,14 +79,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
                     if (ofertaConImporteMinimo != null)
                     {
-                        IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.Lineas.Where(l =>
-                            ofertaConImporteMinimo.OfertasCombinadasDetalles.Select(d => d.Producto.Trim()).Contains(l.Producto.Trim())
-                        );
+                        // Al importe mínimo suman las líneas que casan con CUALQUIER línea de la
+                        // oferta, sea de producto o de filtro (Issue #282). Distinct: FiltrarLineas
+                        // devuelve las mismas instancias de línea del pedido, no copias.
+                        IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = ofertaConImporteMinimo.OfertasCombinadasDetalles
+                            .SelectMany(d => LineasQueCasan(d, pedido, servicio))
+                            .Distinct();
                         var sumaImporte = lineasOfertaPedido.Sum(l => l.BaseImponible);
                         // El importe mínimo es por instancia de oferta: si el pedido lleva N veces
                         // las cantidades de la oferta, hay que cumplirlo N veces (antes se exigía una
                         // sola vez, lo que dejaba pasar varias instancias con un único suelo).
-                        int instancias = InstanciasEnPedido(ofertaConImporteMinimo, pedido);
+                        int instancias = InstanciasEnPedido(ofertaConImporteMinimo, pedido, servicio);
                         decimal importeMinimoRequerido = instancias * ofertaConImporteMinimo.ImporteMinimo;
                         // Tolerancia de redondeo: ImporteMinimo se guarda a 2 decimales (suele ser el
                         // precio con el descuento de la oferta) y aquí se multiplica por las instancias,
@@ -115,7 +120,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // unidades justas: las que sobran son material promocional suelto. Rechazamos este producto
             // (NO la oferta entera) para que el pipeline pase a ValidadorMuestrasYMaterialPromocional,
             // que cuenta solo las unidades sobrantes contra el 5 % del pedido.
-            if (ofertaCumplida != null && ProductoEnGrupoSobresurtido(ofertaCumplida, pedido, numeroProducto))
+            if (ofertaCumplida != null && ProductoEnGrupoSobresurtido(ofertaCumplida, pedido, numeroProducto, servicio))
             {
                 return new RespuestaValidacion
                 {
@@ -127,12 +132,29 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 };
             }
 
-            // Comprobamos los múltiplos
+            // Si el producto validado solo lo cubre una fila de FILTRO y las líneas que casan con ese
+            // filtro superan la cantidad de la oferta (× instancias), las unidades sobrantes no las
+            // cubre la oferta: son material promocional suelto (mismo criterio que los grupos de
+            // alternativas). Sin esto, cumplida la oferta colarían unidades gratis extra del filtro.
+            if (ofertaCumplida != null && FiltroSobresurtido(ofertaCumplida, pedido, numeroProducto, servicio))
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    Motivo = "La oferta " + ofertaCumplida.Id.ToString()
+                        + " solo cubre las unidades justas del filtro; las que sobran del producto "
+                        + numeroProducto + " son material promocional suelto",
+                    ProductoId = numeroProducto
+                };
+            }
+
+            // Comprobamos los múltiplos (solo aplica a filas de producto concreto: si el producto
+            // únicamente lo cubre un filtro, cantidadOferta sería 0 y el control es FiltroSobresurtido)
             if (ofertaCumplida != null)
             {
                 var cantidadLineas = pedido.Lineas.Where(l => l.Producto == numeroProducto).Sum(l => l.Cantidad);
                 var cantidadOferta = ofertaCumplida.OfertasCombinadasDetalles.Where(o => o.Producto == numeroProducto).Sum(o => o.Cantidad);
-                if (cantidadLineas > cantidadOferta)
+                if (cantidadOferta > 0 && cantidadLineas > cantidadOferta)
                 {
                     IEnumerable<LineaPedidoVentaDTO> lineasOfertaPedido = pedido.Lineas.Where(l =>
                         ofertaCumplida.OfertasCombinadasDetalles.Where(o => !o.PermitirCantidadMenor && (float)l.Cantidad / o.Cantidad < (float)cantidadLineas / cantidadOferta).Select(d => d.Producto).Contains(l.Producto)
@@ -184,12 +206,28 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// a precio completo + 1 línea con el 50 % (Nesto#371). Antes se comprobaba línea a línea y un
         /// 1+1 no validaba contra una oferta de cantidad 2.
         /// </summary>
-        private static bool DetalleSatisfecho(OfertaCombinadaDetalle d, PedidoVentaDTO pedido)
+        /// <summary>
+        /// Líneas del pedido que casan con la línea de oferta: si el detalle es de PRODUCTO, las del
+        /// producto concreto; si es de FILTRO (Issue #282: Producto NULL + Familia y/o prefijo de
+        /// nombre), las que devuelve el mismo matching de OfertasPermitidas (FiltrarLineas). En ambos
+        /// casos las cantidades se cuentan AGREGADAS sobre todas las líneas que casan.
+        /// </summary>
+        private static List<LineaPedidoVentaDTO> LineasQueCasan(OfertaCombinadaDetalle d, PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
-            var lineasProducto = pedido.Lineas
-                .Where(p => p.Producto != null
-                            && p.Producto.Trim() == d.Producto.Trim()
-                            && p.PrecioUnitario >= d.Precio);
+            if (d.Producto != null)
+            {
+                return pedido.Lineas
+                    .Where(p => p.Producto != null && p.Producto.Trim() == d.Producto.Trim())
+                    .ToList();
+            }
+            return servicio.FiltrarLineas(pedido, d.FiltroProducto ?? string.Empty, d.Familia?.Trim())
+                ?? new List<LineaPedidoVentaDTO>();
+        }
+
+        private static bool DetalleSatisfecho(OfertaCombinadaDetalle d, PedidoVentaDTO pedido, IServicioPrecios servicio)
+        {
+            var lineasProducto = LineasQueCasan(d, pedido, servicio)
+                .Where(p => p.PrecioUnitario >= d.Precio);
 
             // "Permitir cantidad menor" (NestoAPI#239): la Cantidad es un MÁXIMO, no una cantidad
             // exacta. La línea se satisface con cualquier cantidad de 0 a Cantidad (extra opcional:
@@ -210,8 +248,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// </summary>
         private static int UnidadesRequeridas(OfertaCombinada oferta)
         {
+            // Las filas de filtro (Producto == null) también son obligatorias y exigen su cantidad.
             int obligatorias = oferta.OfertasCombinadasDetalles
-                .Where(d => d.Cantidad > 0 && d.Producto != null && d.GrupoAlternativa == null && !d.PermitirCantidadMenor)
+                .Where(d => d.Cantidad > 0 && d.GrupoAlternativa == null && !d.PermitirCantidadMenor)
                 .Sum(d => (int)d.Cantidad);
             int grupos = oferta.OfertasCombinadasDetalles
                 .Where(d => d.GrupoAlternativa.HasValue)
@@ -224,22 +263,56 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// Nº de instancias de la oferta representadas en el pedido: el mínimo, entre los productos
         /// de la oferta (con Cantidad &gt; 0), de cuántas veces cabe su cantidad en la pedida.
         /// </summary>
-        private static int InstanciasEnPedido(OfertaCombinada oferta, PedidoVentaDTO pedido)
+        private static int InstanciasEnPedido(OfertaCombinada oferta, PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
             int instancias = int.MaxValue;
             foreach (OfertaCombinadaDetalle d in oferta.OfertasCombinadasDetalles)
             {
                 // Las líneas agrupadas (alternativas) no definen el nº de instancias: se comprueban
                 // aparte en GruposSatisfechos. Las de "cantidad menor" tampoco: son extras opcionales
-                // (0..máx) que no escalan la oferta. El nº de instancias lo marcan las líneas obligatorias.
-                if (d.Cantidad <= 0 || d.Producto == null || d.GrupoAlternativa != null || d.PermitirCantidadMenor) continue;
-                int cantidad = (int)pedido.Lineas
-                    .Where(l => l.Producto != null && l.Producto.Trim() == d.Producto.Trim())
-                    .Sum(l => l.Cantidad);
+                // (0..máx) que no escalan la oferta. El nº de instancias lo marcan las líneas obligatorias
+                // (de producto concreto o de filtro, con la cantidad agregada de las líneas que casan).
+                if (d.Cantidad <= 0 || d.GrupoAlternativa != null || d.PermitirCantidadMenor) continue;
+                int cantidad = (int)LineasQueCasan(d, pedido, servicio).Sum(l => l.Cantidad);
                 int posibles = cantidad / d.Cantidad;
                 if (posibles < instancias) instancias = posibles;
             }
             return instancias == int.MaxValue || instancias < 1 ? 1 : instancias;
+        }
+
+        /// <summary>
+        /// ¿El producto validado lo cubre una fila de FILTRO cuyas líneas casadas superan la cantidad
+        /// de la oferta (× instancias)? Espejo de ProductoEnGrupoSobresurtido para filas de filtro
+        /// (Issue #282): la oferta autoriza solo las unidades justas; las sobrantes se tratan como
+        /// material promocional suelto. Las filas del mismo filtro se agrupan por si el alta reparte
+        /// la cantidad en varias filas.
+        /// </summary>
+        private static bool FiltroSobresurtido(OfertaCombinada oferta, PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
+        {
+            var gruposFiltro = oferta.OfertasCombinadasDetalles
+                .Where(d => d.Producto == null && d.GrupoAlternativa == null && d.Cantidad > 0)
+                .GroupBy(d => new { Familia = d.Familia?.Trim(), d.FiltroProducto });
+
+            int instancias = 0; // se calcula solo si hay filtros (evita el coste si no los hay)
+            foreach (var grupo in gruposFiltro)
+            {
+                List<LineaPedidoVentaDTO> lineas = LineasQueCasan(grupo.First(), pedido, servicio);
+                if (!lineas.Any(l => l.Producto != null && l.Producto.Trim() == numeroProducto.Trim()))
+                {
+                    continue;
+                }
+                if (instancias == 0)
+                {
+                    instancias = InstanciasEnPedido(oferta, pedido, servicio);
+                }
+                int cuota = grupo.Sum(d => (int)d.Cantidad) * instancias;
+                int pedidas = (int)lineas.Sum(l => l.Cantidad);
+                if (pedidas > cuota)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
@@ -289,7 +362,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// que sobran son material promocional suelto. (Las ofertas reales 244/245 dan 1 camiseta; si
         /// el pedido lleva 2, la 2ª sobra.)
         /// </summary>
-        private static bool ProductoEnGrupoSobresurtido(OfertaCombinada oferta, PedidoVentaDTO pedido, string numeroProducto)
+        private static bool ProductoEnGrupoSobresurtido(OfertaCombinada oferta, PedidoVentaDTO pedido, string numeroProducto, IServicioPrecios servicio)
         {
             OfertaCombinadaDetalle detalleGrupo = oferta.OfertasCombinadasDetalles
                 .FirstOrDefault(d => d.GrupoAlternativa.HasValue
@@ -300,7 +373,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return false;
             }
 
-            int instancias = InstanciasEnPedido(oferta, pedido);
+            int instancias = InstanciasEnPedido(oferta, pedido, servicio);
             int cantidadGrupo = oferta.OfertasCombinadasDetalles
                 .Where(d => d.GrupoAlternativa == detalleGrupo.GrupoAlternativa)
                 .Max(d => (int)d.Cantidad);
@@ -336,20 +409,25 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             int mejor = 0;
             foreach (OfertaCombinada oferta in ofertas)
             {
-                if (!OfertaCubreElPedido(oferta, pedido))
+                if (!OfertaCubreElPedido(oferta, pedido, servicio))
                 {
                     continue;
                 }
 
+                // Cuentan tanto las filas del producto concreto como las de FILTRO que lo casan
+                // (Issue #282): en éstas la cuota es agregada para todos los productos del filtro,
+                // lo que es generoso al descontar muestras; el exceso real lo corta FiltroSobresurtido.
                 List<OfertaCombinadaDetalle> detallesProducto = oferta.OfertasCombinadasDetalles
-                    .Where(d => d.Producto != null && d.Producto.Trim() == numeroProducto.Trim())
+                    .Where(d => (d.Producto != null && d.Producto.Trim() == numeroProducto.Trim())
+                        || (d.Producto == null && LineasQueCasan(d, pedido, servicio)
+                                .Any(l => l.Producto != null && l.Producto.Trim() == numeroProducto.Trim())))
                     .ToList();
                 if (detallesProducto.Count == 0)
                 {
                     continue;
                 }
 
-                int instancias = InstanciasEnPedido(oferta, pedido);
+                int instancias = InstanciasEnPedido(oferta, pedido, servicio);
                 OfertaCombinadaDetalle detalleGrupo = detallesProducto.FirstOrDefault(d => d.GrupoAlternativa.HasValue);
                 int cuota;
                 if (detalleGrupo != null)
@@ -379,17 +457,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// grupos de alternativas con al menos lo requerido e importe mínimo cumplido por instancia).
         /// Se usa para contar unidades cubiertas; reutiliza la misma lógica que el matching principal.
         /// </summary>
-        private static bool OfertaCubreElPedido(OfertaCombinada oferta, PedidoVentaDTO pedido)
+        private static bool OfertaCubreElPedido(OfertaCombinada oferta, PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
             bool obligatoriasOk = oferta.OfertasCombinadasDetalles
                 .Where(d => d.Cantidad > 0 && d.GrupoAlternativa == null)
-                .All(d => DetalleSatisfecho(d, pedido));
+                .All(d => DetalleSatisfecho(d, pedido, servicio));
             if (!obligatoriasOk)
             {
                 return false;
             }
 
-            int instancias = InstanciasEnPedido(oferta, pedido);
+            int instancias = InstanciasEnPedido(oferta, pedido, servicio);
             if (!GruposSatisfechos(oferta, pedido, instancias))
             {
                 return false;
@@ -397,9 +475,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
 
             if (oferta.ImporteMinimo > 0)
             {
-                IEnumerable<LineaPedidoVentaDTO> lineasOferta = pedido.Lineas.Where(l =>
-                    l.Producto != null
-                    && oferta.OfertasCombinadasDetalles.Select(d => d.Producto.Trim()).Contains(l.Producto.Trim()));
+                IEnumerable<LineaPedidoVentaDTO> lineasOferta = oferta.OfertasCombinadasDetalles
+                    .SelectMany(d => LineasQueCasan(d, pedido, servicio))
+                    .Distinct();
                 decimal suma = lineasOferta.Sum(l => l.BaseImponible);
                 decimal requerido = instancias * oferta.ImporteMinimo;
                 decimal tolerancia = 0.005m * (instancias + 1);

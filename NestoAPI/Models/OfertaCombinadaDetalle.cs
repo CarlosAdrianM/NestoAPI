@@ -24,7 +24,9 @@ namespace NestoAPI.Models
         public short Cantidad { get; set; }
         public Nullable<int> GrupoAlternativa { get; set; }
         public bool PermitirCantidadMenor { get; set; }
-    
+        public string Familia { get; set; }
+        public string FiltroProducto { get; set; }
+
         public virtual Empresa Empresa1 { get; set; }
         public virtual OfertaCombinada OfertasCombinada { get; set; }
         public virtual Producto Producto1 { get; set; }

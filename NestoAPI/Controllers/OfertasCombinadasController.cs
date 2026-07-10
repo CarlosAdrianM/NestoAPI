@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Models;
 using NestoAPI.Models.OfertasCombinadas;
 using System;
@@ -90,8 +90,8 @@ namespace NestoAPI.Controllers
 
             string empresaPadded = dto.Empresa.PadRight(3);
 
-            // Validar que todos los productos existen
-            var productosIds = dto.Detalles.Select(d => d.Producto).ToList();
+            // Validar que todos los productos existen (las filas de FILTRO no llevan producto)
+            var productosIds = dto.Detalles.Where(d => d.Producto != null).Select(d => d.Producto).ToList();
             var productosExistentes = await db.Productos
                 .Where(p => p.Empresa == empresaPadded && productosIds.Contains(p.Número))
                 .Select(p => p.Número)
@@ -127,6 +127,8 @@ namespace NestoAPI.Controllers
                 {
                     Empresa = empresaPadded,
                     Producto = detDTO.Producto,
+                    Familia = detDTO.Familia?.Trim(),
+                    FiltroProducto = detDTO.FiltroProducto?.Trim(),
                     Cantidad = detDTO.Cantidad,
                     Precio = detDTO.Precio,
                     GrupoAlternativa = detDTO.GrupoAlternativa,
@@ -177,8 +179,8 @@ namespace NestoAPI.Controllers
 
             string empresaPadded = dto.Empresa.PadRight(3);
 
-            // Validar que todos los productos existen
-            var productosIds = dto.Detalles.Select(d => d.Producto).ToList();
+            // Validar que todos los productos existen (las filas de FILTRO no llevan producto)
+            var productosIds = dto.Detalles.Where(d => d.Producto != null).Select(d => d.Producto).ToList();
             var productosExistentes = await db.Productos
                 .Where(p => p.Empresa == empresaPadded && productosIds.Contains(p.Número))
                 .Select(p => p.Número)
@@ -229,6 +231,8 @@ namespace NestoAPI.Controllers
                     if (detExistente != null)
                     {
                         detExistente.Producto = detDTO.Producto;
+                        detExistente.Familia = detDTO.Familia?.Trim();
+                        detExistente.FiltroProducto = detDTO.FiltroProducto?.Trim();
                         detExistente.Cantidad = detDTO.Cantidad;
                         detExistente.Precio = detDTO.Precio;
                         detExistente.GrupoAlternativa = detDTO.GrupoAlternativa;
@@ -245,6 +249,8 @@ namespace NestoAPI.Controllers
                         Empresa = empresaPadded,
                         OfertaId = oferta.Id,
                         Producto = detDTO.Producto,
+                        Familia = detDTO.Familia?.Trim(),
+                        FiltroProducto = detDTO.FiltroProducto?.Trim(),
                         Cantidad = detDTO.Cantidad,
                         Precio = detDTO.Precio,
                         GrupoAlternativa = detDTO.GrupoAlternativa,
@@ -331,6 +337,15 @@ namespace NestoAPI.Controllers
 
             foreach (var det in dto.Detalles)
             {
+                // Issue #282: cada fila debe identificar QUE casa: producto concreto o filtro.
+                if (det.Producto == null && string.IsNullOrWhiteSpace(det.Familia) && string.IsNullOrWhiteSpace(det.FiltroProducto))
+                {
+                    return "Cada linea debe llevar un producto o un filtro (familia y/o principio del nombre)";
+                }
+                if (det.Producto == null && det.GrupoAlternativa.HasValue)
+                {
+                    return "Las lineas de filtro no pueden pertenecer a un grupo de alternativas";
+                }
                 if (det.Precio < 0)
                 {
                     return $"El precio del producto '{det.Producto}' no puede ser negativo";
@@ -377,6 +392,8 @@ namespace NestoAPI.Controllers
                     Id = d.Id,
                     Producto = d.Producto?.Trim(),
                     ProductoNombre = d.Producto1?.Nombre?.Trim(),
+                    Familia = d.Familia?.Trim(),
+                    FiltroProducto = d.FiltroProducto?.Trim(),
                     Cantidad = d.Cantidad,
                     Precio = d.Precio,
                     GrupoAlternativa = d.GrupoAlternativa,

@@ -1352,13 +1352,15 @@
           <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
           <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="OfertaId" Type="int" Nullable="false" />
-          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Producto" Type="char" MaxLength="15" />
           <Property Name="Cantidad" Type="smallint" Nullable="false" />
           <Property Name="Precio" Type="money" Nullable="false" />
           <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="GrupoAlternativa" Type="int" />
           <Property Name="PermitirCantidadMenor" Type="bit" Nullable="false" />
+          <Property Name="Familia" Type="char" MaxLength="10" />
+          <Property Name="FiltroProducto" Type="nvarchar" MaxLength="50" />
         </EntityType>
         <EntityType Name="OfertasEscalonadas">
           <Key>
@@ -4390,7 +4392,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </ReferentialConstraint>
         </Association>
         <Association Name="FK_OfertasCombinadasDetalle_Productos">
-          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="Productos" Type="Self.Productos" Multiplicity="0..1" />
           <End Role="OfertasCombinadasDetalle" Type="Self.OfertasCombinadasDetalle" Multiplicity="*" />
           <ReferentialConstraint>
             <Principal Role="Productos">
@@ -10728,7 +10730,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
           <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="OfertaId" Type="Int32" Nullable="false" />
-          <Property Name="Producto" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Producto" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
           <Property Name="Precio" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
@@ -10738,6 +10740,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Cantidad" Type="Int16" Nullable="false" />
           <Property Name="GrupoAlternativa" Type="Int32" />
           <Property Name="PermitirCantidadMenor" Type="Boolean" Nullable="false" />
+          <Property Name="Familia" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
         </EntityType>
         <Association Name="FK_OfertasCombinadas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -10778,7 +10782,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           </ReferentialConstraint>
         </Association>
         <Association Name="FK_OfertasCombinadasDetalle_Productos">
-          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="0..1" />
           <End Type="NVModel.OfertaCombinadaDetalle" Role="OfertasCombinadasDetalle" Multiplicity="*" />
           <ReferentialConstraint>
             <Principal Role="Producto">
@@ -14598,6 +14602,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="OfertasCombinadasDetalles">
             <EntityTypeMapping TypeName="NVModel.OfertaCombinadaDetalle">
               <MappingFragment StoreEntitySet="OfertasCombinadasDetalle">
+                <ScalarProperty Name="FiltroProducto" ColumnName="FiltroProducto" />
+                <ScalarProperty Name="Familia" ColumnName="Familia" />
                 <ScalarProperty Name="PermitirCantidadMenor" ColumnName="PermitirCantidadMenor" />
                 <ScalarProperty Name="GrupoAlternativa" ColumnName="GrupoAlternativa" />
                 <ScalarProperty Name="Cantidad" ColumnName="Cantidad" />
