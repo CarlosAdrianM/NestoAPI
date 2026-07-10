@@ -31,6 +31,12 @@ namespace NestoAPI.Models.PedidosVenta
         // Se usa para determinar si se puede cambiar el almacén de la línea
         public bool EsFicticio { get; set; }
 
+        // Issue #279: regalo del sistema Ganavisiones, CONFIRMADO contra la tabla Ganavision al leer
+        // el pedido (no la heurística de texto '(BONIFICADO)', que se trunca a 50 caracteres). Permite
+        // a los clientes (Nesto#397) reconstruir en la plantilla qué líneas a 0€ son Ganavisiones y
+        // cuáles MMP/regalos por importe. Solo se rellena en el GET; en escrituras se ignora (derivado).
+        public bool EsBonificadoGanavisiones { get; set; }
+
         // Carlos 23/10/25: para controlar en modificaciones qué líneas son nuevas o tienen cantidad modificada
         [JsonIgnore]
         public int? CantidadAnterior { get; set; }

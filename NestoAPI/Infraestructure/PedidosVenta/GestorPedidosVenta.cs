@@ -597,6 +597,9 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 {
                     linea.Pedido = pedido;
                 }
+
+                await MarcarBonificadosGanavisionesAsync(db, lineasPedido).ConfigureAwait(false);
+
                 pedido.Lineas = lineasPedido;
                 pedido.VendedoresGrupoProducto = vendedoresGrupoProductoPedido;
                 pedido.Prepagos = prepagos;
@@ -611,6 +614,34 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 }
 
                 return pedido;
+            }
+        }
+
+        // Issue #279: marcar los regalos Ganavisiones CONFIRMADOS contra la tabla Ganavision (mismo
+        // criterio de candidato y misma confirmación en lote que el flujo ServirJunto), para que los
+        // clientes (Nesto#397) reconstruyan el pedido en la plantilla sin heurísticas de texto.
+        internal static async Task MarcarBonificadosGanavisionesAsync(NVEntities db, List<LineaPedidoVentaDTO> lineasPedido)
+        {
+            var candidatos = lineasPedido
+                .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO
+                         && !string.IsNullOrWhiteSpace(l.Producto)
+                         && l.Cantidad > 0
+                         && l.BaseImponible == 0
+                         && (l.oferta == null || l.oferta == 0))
+                .ToList();
+
+            if (!candidatos.Any())
+            {
+                return;
+            }
+
+            HashSet<string> confirmados = await ServirJunto.ServicioValidarServirJunto
+                .ConfirmarGanavisionesContraBdAsync(db, candidatos.Select(l => l.Producto.Trim()).Distinct().ToList())
+                .ConfigureAwait(false);
+
+            foreach (var linea in candidatos)
+            {
+                linea.EsBonificadoGanavisiones = confirmados.Contains(linea.Producto.Trim());
             }
         }
 

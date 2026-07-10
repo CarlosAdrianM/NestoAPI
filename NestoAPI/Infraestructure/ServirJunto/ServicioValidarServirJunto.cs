@@ -133,6 +133,30 @@ namespace NestoAPI.Infraestructure.ServirJunto
             return response;
         }
 
+        /// <summary>
+        /// Único punto de confirmación contra la tabla Ganavision: de los ids candidatos (líneas a 0€
+        /// sin oferta), devuelve los que son regalos reales del sistema Ganavisiones. Lo usan el flujo
+        /// ServirJunto y el GET de PedidosVenta (Issue #279, flag EsBonificadoGanavisiones por línea).
+        /// Consulta en lote, sin N+1.
+        /// </summary>
+        internal static async Task<HashSet<string>> ConfirmarGanavisionesContraBdAsync(NVEntities db, ICollection<string> candidatosIds)
+        {
+            if (candidatosIds == null || !candidatosIds.Any())
+            {
+                return new HashSet<string>();
+            }
+
+            var idsEnBd = await db.Ganavisiones
+                .Where(g => g.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                         && candidatosIds.Contains(g.ProductoId))
+                .Select(g => g.ProductoId)
+                .Distinct()
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return new HashSet<string>(idsEnBd.Select(id => id.Trim()));
+        }
+
         private async Task<List<ProductoBonificadoConCantidadRequest>> ConfirmarBonificadosContraBdAsync(
             List<ProductoBonificadoConCantidadRequest> lineasPedido)
         {
@@ -148,15 +172,7 @@ namespace NestoAPI.Infraestructure.ServirJunto
                 return lineasPedido;
             }
 
-            var idsEnBd = await db.Ganavisiones
-                .Where(g => g.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
-                         && candidatosIds.Contains(g.ProductoId))
-                .Select(g => g.ProductoId)
-                .Distinct()
-                .ToListAsync()
-                .ConfigureAwait(false);
-
-            var confirmados = new HashSet<string>(idsEnBd.Select(id => id.Trim()));
+            var confirmados = await ConfirmarGanavisionesContraBdAsync(db, candidatosIds).ConfigureAwait(false);
 
             return lineasPedido.Select(l =>
             {

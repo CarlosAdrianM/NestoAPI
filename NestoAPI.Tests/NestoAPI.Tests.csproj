@@ -275,6 +275,7 @@
     <Compile Include="Controllers\NovedadesControllerTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
+    <Compile Include="Infrastructure\GestorPedidosVentaGanavisionesTests.cs" />
     <Compile Include="Infrastructure\GestorPresupuestosTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasCantidadMenorTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasFiltrosTests.cs" />
