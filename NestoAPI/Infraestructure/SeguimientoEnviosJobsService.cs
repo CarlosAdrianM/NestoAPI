@@ -74,8 +74,11 @@ namespace NestoAPI.Infraestructure
             short incidentado = Constantes.Agencias.ESTADO_INCIDENTADO;
 
             // En vuelo = Tramitado (1) o Incidentado (3, por si se resuelve/entrega). Entregado (2) y
-            // Devuelto (4) son terminales: no se vuelven a consultar. Tope por ejecución, los menos
-            // recientemente tocados primero (FechaModificacion asc) para vaciar el backlog antiguo.
+            // Devuelto (4) son terminales: no se vuelven a consultar. Tope por ejecución. OJO (#265):
+            // FechaModificacion es columna Computed (EF nunca la escribe), así que aquí vale la hora
+            // de TRAMITACIÓN del envío: se procesan los envíos más antiguos primero, NO "los menos
+            // recientemente consultados" (si algún día el conjunto en vuelo supera el tope y hace
+            // falta ese orden real, habría que añadir una columna FechaUltimoSeguimiento propia).
             List<EnviosAgencia> envios = await _db.EnviosAgencias
                 .Where(e => remotas.Contains(e.Agencia)
                     && (e.Estado == tramitado || e.Estado == incidentado)
@@ -97,6 +100,11 @@ namespace NestoAPI.Infraestructure
 
             int actualizados = 0;
             int desconocidos = 0;
+            // NestoAPI#266: motivo de cada Desconocido (el <Error> de GLS, el mensaje del timeout...),
+            // agregado para que el aviso diga POR QUÉ y no haya que adivinar entre uid mal / WS caído /
+            // envíos nuevos. Con el aviso a ciegas estuvimos 10 días sin saber que GLS no encontraba
+            // NINGUNA expedición desde el servidor.
+            Dictionary<string, int> motivosDesconocido = new Dictionary<string, int>();
             foreach (EnviosAgencia envio in envios)
             {
                 ISeguimientoAgenciaRemota agencia = estrategias[envio.Agencia];
@@ -115,6 +123,8 @@ namespace NestoAPI.Infraestructure
                     if (seguimiento.Estado == EstadoEnvioSeguimiento.Desconocido)
                     {
                         desconocidos++;
+                        string motivo = string.IsNullOrWhiteSpace(seguimiento.Detalle) ? "(sin detalle)" : seguimiento.Detalle.Trim();
+                        motivosDesconocido[motivo] = motivosDesconocido.TryGetValue(motivo, out int veces) ? veces + 1 : 1;
                     }
                     if (AplicarSeguimiento(envio, seguimiento))
                     {
@@ -147,10 +157,16 @@ namespace NestoAPI.Infraestructure
             // Avisamos en ELMAH para no volver a quedarnos ciegos (caso GLS, 24-26/06/2026).
             if (desconocidos >= 10 || (envios.Count > 0 && desconocidos > envios.Count / 2))
             {
+                // NestoAPI#266: los 3 motivos más frecuentes, con recuento, para diagnosticar de un
+                // vistazo (p. ej. 74× "No se encuentra la expedición" = uid mal; timeouts = WS caído).
+                string motivos = string.Join("; ", motivosDesconocido
+                    .OrderByDescending(m => m.Value)
+                    .Take(3)
+                    .Select(m => $"{m.Value}× \"{m.Key}\""));
                 ElmahHelper.Log(new Exception(
                     $"Seguimiento de agencias: {desconocidos} de {envios.Count} envíos no devolvieron estado " +
                     $"(Desconocido). Suele indicar un problema de configuración del seguimiento (p. ej. uid de " +
-                    $"GLS incorrecta) o el WS caído. Revisar."),
+                    $"GLS incorrecta) o el WS caído. Motivos más frecuentes: {motivos}."),
                     "Sistema (seguimiento de envíos)");
             }
             return actualizados;
@@ -180,7 +196,8 @@ namespace NestoAPI.Infraestructure
             {
                 envio.FechaEntrega = seguimiento.FechaEntrega.Value;
             }
-            envio.FechaModificacion = DateTime.Now;
+            // #265: NO sellar FechaModificacion: es columna Computed en el EDMX y EF la ignora
+            // (era código muerto que engañaba — parecía que reflejaba la última pasada del poll).
             return true;
         }
     }
