@@ -203,11 +203,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         // NestoAPI#249: grupos alternativos por los que puede comisionar un producto marcado.
+        // Orden ALFABÉTICO: es el desempate cuando quien mete el pedido comisiona por varios
+        // candidatos (determinista y explicable, en vez del orden de alta de las filas).
         public List<string> LeerGruposComisionablesAlternativos(string empresa, string producto)
         {
             return db.ProductosGruposComisionablesAlternativos
                 .Where(g => g.Empresa == empresa && g.Producto == producto)
-                .OrderBy(g => g.Id)
+                .OrderBy(g => g.GrupoAlternativo)
                 .Select(g => g.GrupoAlternativo)
                 .ToList();
         }

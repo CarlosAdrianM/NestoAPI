@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using System.Collections.Generic;
 
@@ -123,7 +123,8 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void VariosCandidatos_GanaElPrimeroPorElQueComisiona()
         {
-            // Desempate documentado: orden de alta en la tabla.
+            // Desempate documentado: el orden de la colección, que el servicio entrega ALFABÉTICO
+            // (LeerGruposComisionablesAlternativos ordena por GrupoAlternativo).
             var vendedores = new Dictionary<string, string> { { PEL, IF }, { "ACC", IF } };
             string grupo = GestorComisiones.ResolverGrupoComisionable(COS, new List<string> { "ACC", PEL }, vendedores, JE, IF);
 

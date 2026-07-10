@@ -77,7 +77,8 @@ namespace NestoAPI.Infraestructure
                 return grupoFicha;
             }
 
-            // Primer grupo candidato por el que comisiona quien mete el pedido (desempate: orden de alta).
+            // Primer grupo candidato por el que comisiona quien mete el pedido. El desempate lo da el
+            // orden de la colección: el servicio los entrega en orden ALFABÉTICO (determinista).
             foreach (string alternativo in gruposAlternativos)
             {
                 if (string.IsNullOrWhiteSpace(alternativo))
