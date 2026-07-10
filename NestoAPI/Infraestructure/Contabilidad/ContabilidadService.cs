@@ -123,13 +123,57 @@ namespace NestoAPI.Infraestructure.Contabilidad
 
         public async Task<int> CrearLineas(List<PreContabilidad> lineas)
         {
-            using (NVEntities db = new NVEntities())
+            return await ReintentarSiDeadlock(async () =>
             {
-                return await CrearLineas(db, lineas);
+                using (NVEntities db = new NVEntities())
+                {
+                    return await CrearLineas(db, lineas);
+                }
+            }).ConfigureAwait(false);
+        }
+
+        // Issue #273: los apuntes concurrentes (Cajas/TPV/Bancos) deadlockean con la contabilización
+        // (víctima 1205, ~10 casos entre el 29/06 y el 09/07). Un deadlock es transitorio por
+        // definición: SQL Server revierte ENTERA la transacción víctima y la otra continúa, así que
+        // reintentar la operación completa con contexto nuevo es seguro (prdCopiarCliente, que se
+        // ejecuta fuera de la transacción del SaveChanges, es idempotente). NO se aplica al overload
+        // que recibe el NVEntities: ahí la transacción es del llamante y el reintento le corresponde.
+        internal static async Task<T> ReintentarSiDeadlock<T>(Func<Task<T>> operacion, int maxIntentos = 3, int retrasoBaseMs = 200)
+        {
+            for (int intento = 1; ; intento++)
+            {
+                try
+                {
+                    return await operacion().ConfigureAwait(false);
+                }
+                catch (Exception ex) when (intento < maxIntentos && EsVictimaDeDeadlock(ex))
+                {
+                    await Task.Delay(retrasoBaseMs * intento).ConfigureAwait(false);
+                }
             }
         }
 
+        // ¿Hay un SqlException 1205 (elegido como víctima de interbloqueo) en la cadena?
+        internal static bool EsVictimaDeDeadlock(Exception ex)
+        {
+            for (Exception e = ex; e != null; e = e.InnerException)
+            {
+                if (e is SqlException sql && sql.Number == 1205)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public async Task<int> CrearLineasYContabilizarDiario(List<PreContabilidad> lineas)
+        {
+            // Issue #273: reintento ante deadlock de la operación COMPLETA (transacción nueva en cada
+            // intento; la víctima se revierte entera, no queda nada a medias).
+            return await ReintentarSiDeadlock(() => CrearLineasYContabilizarDiarioUnaVez(lineas)).ConfigureAwait(false);
+        }
+
+        private async Task<int> CrearLineasYContabilizarDiarioUnaVez(List<PreContabilidad> lineas)
         {
             using (NVEntities db = new NVEntities())
             {
