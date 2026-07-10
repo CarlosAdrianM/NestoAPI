@@ -12,15 +12,15 @@
 -- La FK compuesta (Empresa, Producto) → Productos no se aplica en filas con Producto NULL
 -- (comportamiento estándar de SQL Server con FK multicolumna y NULL), no hay que tocarla.
 
-ALTER TABLE OfertasCombinadasDetalles ALTER COLUMN Producto char(15) NULL;
+ALTER TABLE OfertasCombinadasDetalle ALTER COLUMN Producto char(15) NULL;
 GO
 
-ALTER TABLE OfertasCombinadasDetalles ADD
+ALTER TABLE OfertasCombinadasDetalle ADD
     Familia char(10) NULL,
     FiltroProducto nvarchar(50) NULL;
 GO
 
 -- Toda fila debe identificar QUÉ casa: un producto concreto o un filtro (familia y/o prefijo).
-ALTER TABLE OfertasCombinadasDetalles ADD CONSTRAINT CK_OfertasCombinadasDetalles_ProductoOFiltro
+ALTER TABLE OfertasCombinadasDetalle ADD CONSTRAINT CK_OfertasCombinadasDetalle_ProductoOFiltro
     CHECK (Producto IS NOT NULL OR Familia IS NOT NULL OR FiltroProducto IS NOT NULL);
 GO
