@@ -1,0 +1,189 @@
+using FakeItEasy;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.ValidadoresPedido;
+using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
+using System.Collections.Generic;
+
+namespace NestoAPI.Tests.Infrastructure
+{
+    /// <summary>
+    /// Issue #290: 2+1 combinable entre referencias de PRECIOS DISTINTOS. Con RegalarMenorImporte
+    /// la unidad a base 0 debe ser la de menor tarifa del conjunto y las pagadas deben cubrir su
+    /// tarifa (suelo dinámico por combinación, imposible con el ImporteMinimo fijo).
+    /// Caso: A=10€, B=12€, C=15€; oferta 2+1 con mezcla libre (grupos de alternativas).
+    /// </summary>
+    [TestClass]
+    public class ValidadorOfertasCombinadasRegalarMenorImporteTests
+    {
+        private const string PROD_A = "PROD_A"; // tarifa 10
+        private const string PROD_B = "PROD_B"; // tarifa 12
+        private const string PROD_C = "PROD_C"; // tarifa 15
+
+        private IServicioPrecios _servicio;
+        private ValidadorOfertasCombinadas _validador;
+
+        [TestInitialize]
+        public void Setup()
+        {
+            _servicio = A.Fake<IServicioPrecios>();
+            _validador = new ValidadorOfertasCombinadas();
+            A.CallTo(() => _servicio.BuscarProducto(PROD_A)).Returns(new Producto { Número = PROD_A, PVP = 10m });
+            A.CallTo(() => _servicio.BuscarProducto(PROD_B)).Returns(new Producto { Número = PROD_B, PVP = 12m });
+            A.CallTo(() => _servicio.BuscarProducto(PROD_C)).Returns(new Producto { Número = PROD_C, PVP = 15m });
+        }
+
+        // Oferta 2+1 mezclable: UN grupo de alternativas A/B/C con cantidad 3 (unidades totales,
+        // combinables como se quiera) y sin restricción de precio por fila. Con
+        // RegalarMenorImporte el propio motor exige que la unidad a base 0 sea la más barata y
+        // que las pagadas cubran su tarifa (suelo dinámico) — no hace falta ImporteMinimo fijo.
+        private OfertaCombinada CrearOferta2Mas1(bool regalarMenorImporte = true)
+        {
+            return new OfertaCombinada
+            {
+                Id = 300,
+                Empresa = "1",
+                ImporteMinimo = 0,
+                RegalarMenorImporte = regalarMenorImporte,
+                OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                {
+                    new OfertaCombinadaDetalle { OfertaId = 300, Empresa = "1", Producto = PROD_A, Precio = 0, Cantidad = 3, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 300, Empresa = "1", Producto = PROD_B, Precio = 0, Cantidad = 3, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 300, Empresa = "1", Producto = PROD_C, Precio = 0, Cantidad = 3, GrupoAlternativa = 1 }
+                }
+            };
+        }
+
+        private void FakeOferta(OfertaCombinada oferta)
+        {
+            var lista = new List<OfertaCombinada> { oferta };
+            A.CallTo(() => _servicio.BuscarOfertasCombinadas(PROD_A)).Returns(lista);
+            A.CallTo(() => _servicio.BuscarOfertasCombinadas(PROD_B)).Returns(lista);
+            A.CallTo(() => _servicio.BuscarOfertasCombinadas(PROD_C)).Returns(lista);
+        }
+
+        private static LineaPedidoVentaDTO Linea(string producto, int cantidad, decimal precio, decimal descuento = 0)
+        {
+            return new LineaPedidoVentaDTO
+            {
+                Producto = producto,
+                Cantidad = cantidad,
+                PrecioUnitario = precio,
+                DescuentoLinea = descuento,
+                AplicarDescuento = false
+            };
+        }
+
+        private static PedidoVentaDTO CrearPedido(params LineaPedidoVentaDTO[] lineas)
+        {
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.cliente = "5";
+            pedido.contacto = "0";
+            foreach (var l in lineas)
+            {
+                pedido.Lineas.Add(l);
+            }
+            return pedido;
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_PaganLasDosCarasYRegalanLaBarata_EsValido()
+        {
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            // B y C pagadas a tarifa; A (la más barata) gratis.
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_B, 1, 12m),
+                Linea(PROD_C, 1, 15m),
+                Linea(PROD_A, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_A, _servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_RegalanLaCaraPagandoLasBaratas_SeRechaza()
+        {
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            // A y B pagadas; C (la más cara) gratis → prohibido.
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_A, 1, 10m),
+                Linea(PROD_B, 1, 12m),
+                Linea(PROD_C, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            StringAssert.Contains(respuesta.Motivo, "menor importe");
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_TresIguales_EsValido()
+        {
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            // 3×C: 2 pagadas + 1 gratis. Empate de tarifa: vale.
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_C, 2, 15m),
+                Linea(PROD_C, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_PagadasConDescuento_SeRechazaPorElSueloDinamico()
+        {
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            // B y C "pagadas" pero al 50 % de descuento: no cubren su tarifa → rechazo.
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_B, 1, 12m, descuento: 0.5m),
+                Linea(PROD_C, 1, 15m, descuento: 0.5m),
+                Linea(PROD_A, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_A, _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            StringAssert.Contains(respuesta.Motivo, "tarifa");
+        }
+
+        [TestMethod]
+        public void SinRegalarMenorImporte_RegalarLaCara_SigueValiendo()
+        {
+            // Regresión: con el flag a false, el comportamiento actual queda intacto (hay ofertas
+            // reales que regalan a propósito un artículo más caro que lo comprado, p. ej. Lisap
+            // regala un aparato de 130 € — por eso las ofertas EXISTENTES migran con false).
+            OfertaCombinada oferta = CrearOferta2Mas1(regalarMenorImporte: false);
+            FakeOferta(oferta);
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_A, 1, 10m),
+                Linea(PROD_B, 1, 12m),
+                Linea(PROD_C, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_DosInstancias_LasDosGratisSonLasDosMasBaratas()
+        {
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            // 2×(2+1): pagadas 2×C + 2×B, gratis 2×A (las más baratas del conjunto) → válido.
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_C, 2, 15m),
+                Linea(PROD_B, 2, 12m),
+                Linea(PROD_A, 2, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_A, _servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
+        }
+    }
+}

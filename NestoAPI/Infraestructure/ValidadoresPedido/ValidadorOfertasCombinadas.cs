@@ -47,11 +47,28 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     .Select(d => d.Producto?.Trim() ?? $"F:{d.Familia?.Trim()}|{d.FiltroProducto}")
                     .Distinct().Count() == 1;
 
-                if (!esOfertaDeUnSoloProducto)
+                // Issue #290: si el producto validado está en un GRUPO de alternativas, no se le
+                // exige "otro producto": las alternativas son intercambiables por definición y
+                // llevar todas las unidades del mismo producto (3 iguales en un 2+1 mezclable) es
+                // una elección legítima del grupo. El abuso lo evita la cantidad del grupo
+                // (GruposSatisfechos) y el sobresurtido.
+                bool cubiertoPorGrupo = ofertaCumplida.OfertasCombinadasDetalles.Any(d =>
+                    d.GrupoAlternativa.HasValue
+                    && d.Producto != null
+                    && d.Producto.Trim() == numeroProducto.Trim());
+
+                if (!esOfertaDeUnSoloProducto && !cubiertoPorGrupo)
                 {
+                    // Issue #290: en las filas de GRUPO basta con que el pedido lleve alguna unidad
+                    // del producto (a precio de la fila): la cantidad del grupo es del grupo entero,
+                    // no de cada fila, y exigirla por fila impedía las combinaciones mezcladas
+                    // (2+1 entre A/B/C con 1 unidad de cada). La cantidad real la vigila
+                    // GruposSatisfechos.
                     bool tieneAlgunProducto = ofertasCombinadas.FirstOrDefault(o =>
                             o.OfertasCombinadasDetalles.Where(d => d.Producto == null || d.Producto != numeroProducto).Any(d =>
-                                DetalleSatisfecho(d, pedido, servicio)
+                                d.GrupoAlternativa.HasValue
+                                    ? LineasQueCasan(d, pedido, servicio).Any(l => l.Cantidad > 0 && l.PrecioUnitario >= d.Precio)
+                                    : DetalleSatisfecho(d, pedido, servicio)
                             )
                         ) != null;
 
@@ -146,6 +163,24 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                         + numeroProducto + " son material promocional suelto",
                     ProductoId = numeroProducto
                 };
+            }
+
+            // Issue #290: ofertas con "regalar menor importe" (2+1 combinable entre referencias de
+            // precios distintos): la(s) unidad(es) a base 0 deben ser las de menor tarifa del
+            // conjunto, y las pagadas deben cubrir su tarifa (suelo dinámico por combinación, que
+            // el ImporteMinimo fijo no puede expresar).
+            if (ofertaCumplida != null && ofertaCumplida.RegalarMenorImporte)
+            {
+                string motivoRegalo = MotivoRegaloNoEsMenorImporte(ofertaCumplida, pedido, servicio);
+                if (motivoRegalo != null)
+                {
+                    return new RespuestaValidacion
+                    {
+                        ValidacionSuperada = false,
+                        Motivo = motivoRegalo,
+                        ProductoId = numeroProducto
+                    };
+                }
             }
 
             // Comprobamos los múltiplos (solo aplica a filas de producto concreto: si el producto
@@ -277,7 +312,85 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 int posibles = cantidad / d.Cantidad;
                 if (posibles < instancias) instancias = posibles;
             }
+
+            // Issue #290: si la oferta es SOLO de grupos (2+1 mezclable entre N referencias, sin
+            // líneas obligatorias), las instancias las marcan los propios grupos: cuántas veces
+            // cabe la cantidad del grupo en las unidades pedidas que casan (a precio de cada fila).
+            // Sin esto, un pedido con 2×(2+1) se quedaba en 1 instancia y el control de
+            // sobresurtido rechazaba las unidades de la segunda.
+            if (instancias == int.MaxValue)
+            {
+                foreach (var grupo in oferta.OfertasCombinadasDetalles
+                    .Where(d => d.GrupoAlternativa.HasValue && d.Producto != null)
+                    .GroupBy(d => d.GrupoAlternativa.Value))
+                {
+                    int cantidadGrupo = grupo.Max(d => d.Cantidad);
+                    if (cantidadGrupo <= 0) continue;
+                    int pedidas = grupo.Sum(det => (int)pedido.Lineas
+                        .Where(l => l.Producto != null
+                                    && l.Producto.Trim() == det.Producto.Trim()
+                                    && l.PrecioUnitario >= det.Precio)
+                        .Sum(l => l.Cantidad));
+                    int posibles = pedidas / cantidadGrupo;
+                    if (posibles < instancias) instancias = posibles;
+                }
+            }
+
             return instancias == int.MaxValue || instancias < 1 ? 1 : instancias;
+        }
+
+        /// <summary>
+        /// Issue #290: en ofertas con RegalarMenorImporte, comprueba que del conjunto de líneas que
+        /// casan con la oferta (a) toda unidad a base 0 tenga tarifa &lt;= que toda unidad pagada
+        /// (regalar solo la más barata; los empates de tarifa valen), y (b) lo pagado cubra la
+        /// tarifa (PVP) de las unidades no regaladas — el suelo pasa a ser DINÁMICO por combinación,
+        /// que es lo que un ImporteMinimo fijo no puede expresar cuando los precios difieren.
+        /// Devuelve null si la regla se cumple, o el motivo del rechazo.
+        /// </summary>
+        internal static string MotivoRegaloNoEsMenorImporte(OfertaCombinada oferta, PedidoVentaDTO pedido, IServicioPrecios servicio)
+        {
+            List<LineaPedidoVentaDTO> conjunto = oferta.OfertasCombinadasDetalles
+                .SelectMany(d => LineasQueCasan(d, pedido, servicio))
+                .Distinct()
+                .Where(l => l.Producto != null && l.Cantidad > 0)
+                .ToList();
+
+            List<LineaPedidoVentaDTO> gratis = conjunto.Where(l => l.BaseImponible == 0).ToList();
+            List<LineaPedidoVentaDTO> pagadas = conjunto.Where(l => l.BaseImponible != 0).ToList();
+            if (!gratis.Any() || !pagadas.Any())
+            {
+                return null; // sin unidad regalada no hay nada que ordenar (lo demás lo ven otros controles)
+            }
+
+            Dictionary<string, decimal> tarifas = conjunto
+                .Select(l => l.Producto.Trim())
+                .Distinct()
+                .ToDictionary(p => p, p => servicio.BuscarProducto(p)?.PVP ?? 0);
+
+            LineaPedidoVentaDTO gratisMasCara = gratis.OrderByDescending(l => tarifas[l.Producto.Trim()]).First();
+            LineaPedidoVentaDTO pagadaMasBarata = pagadas.OrderBy(l => tarifas[l.Producto.Trim()]).First();
+            decimal tarifaGratis = tarifas[gratisMasCara.Producto.Trim()];
+            decimal tarifaPagada = tarifas[pagadaMasBarata.Producto.Trim()];
+            if (tarifaGratis > tarifaPagada)
+            {
+                return "La oferta " + oferta.Id + " solo permite regalar la referencia de menor importe: no se puede regalar "
+                    + gratisMasCara.Producto.Trim() + " (tarifa " + tarifaGratis.ToString("C") + ") mientras se cobra "
+                    + pagadaMasBarata.Producto.Trim() + " (tarifa " + tarifaPagada.ToString("C") + ")";
+            }
+
+            // Suelo dinámico: la base del conjunto debe cubrir la tarifa de las unidades pagadas
+            // (la oferta no acumula otros descuentos en las unidades de pago). Misma tolerancia
+            // de redondeo que el ImporteMinimo fijo.
+            decimal requerido = pagadas.Sum(l => l.Cantidad * tarifas[l.Producto.Trim()]);
+            decimal pagado = conjunto.Sum(l => l.BaseImponible);
+            decimal tolerancia = 0.005m * (pagadas.Count + 1);
+            if (pagado < requerido - tolerancia)
+            {
+                return "La oferta " + oferta.Id + " exige cobrar a tarifa las unidades no regaladas: el importe de las líneas de la oferta debe ser al menos "
+                    + requerido.ToString("C");
+            }
+
+            return null;
         }
 
         /// <summary>

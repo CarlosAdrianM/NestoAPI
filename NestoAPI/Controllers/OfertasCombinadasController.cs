@@ -117,6 +117,7 @@ namespace NestoAPI.Controllers
                 ImporteMinimo = dto.ImporteMinimo,
                 FechaDesde = dto.FechaDesde,
                 FechaHasta = dto.FechaHasta,
+                RegalarMenorImporte = dto.RegalarMenorImporte,
                 Usuario = usuarioAuditoria,
                 FechaModificacion = ahora
             };
@@ -205,6 +206,7 @@ namespace NestoAPI.Controllers
             oferta.ImporteMinimo = dto.ImporteMinimo;
             oferta.FechaDesde = dto.FechaDesde;
             oferta.FechaHasta = dto.FechaHasta;
+            oferta.RegalarMenorImporte = dto.RegalarMenorImporte;
             oferta.Usuario = usuarioAuditoria;
             oferta.FechaModificacion = ahora;
 
@@ -385,6 +387,7 @@ namespace NestoAPI.Controllers
                 ImporteMinimo = oferta.ImporteMinimo,
                 FechaDesde = oferta.FechaDesde,
                 FechaHasta = oferta.FechaHasta,
+                RegalarMenorImporte = oferta.RegalarMenorImporte,
                 Usuario = oferta.Usuario?.Trim(),
                 FechaModificacion = oferta.FechaModificacion,
                 Detalles = oferta.OfertasCombinadasDetalles?.Select(d => new OfertaCombinadaDetalleDTO

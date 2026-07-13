@@ -13,6 +13,9 @@ namespace NestoAPI.Models.OfertasCombinadas
         public DateTime? FechaHasta { get; set; }
         public string Usuario { get; set; }
         public DateTime FechaModificacion { get; set; }
+        // Issue #290: 2+1 combinable entre referencias de precios distintos. La unidad a base 0
+        // debe ser la de menor tarifa del conjunto y las pagadas cubren su tarifa (suelo dinámico).
+        public bool RegalarMenorImporte { get; set; }
         public List<OfertaCombinadaDetalleDTO> Detalles { get; set; }
     }
 
@@ -40,6 +43,10 @@ namespace NestoAPI.Models.OfertasCombinadas
         public decimal ImporteMinimo { get; set; }
         public DateTime? FechaDesde { get; set; }
         public DateTime? FechaHasta { get; set; }
+        // Issue #290: ver OfertaCombinadaDTO.RegalarMenorImporte. Por defecto TRUE (decisión de
+        // Carlos 13/07/26): las ofertas nuevas nacen con la regla activada salvo que se desmarque
+        // (p. ej. promos que regalan a propósito un artículo más caro que lo comprado).
+        public bool RegalarMenorImporte { get; set; } = true;
         public List<OfertaCombinadaDetalleCreateDTO> Detalles { get; set; }
     }
 
