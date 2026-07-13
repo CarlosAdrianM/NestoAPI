@@ -117,6 +117,18 @@ GO
 -- Nesto.Models; eliminarla requiere regenerar modelos (hacerlo en una fase posterior).
 
 ------------------------------------------------------------------------------------------------
+-- VUELTA ATRÁS (por si algo falla tras el cambio)
+------------------------------------------------------------------------------------------------
+-- ANTES de editar prdContabilizar: guardar su fuente actual (clic derecho en SSMS →
+-- 'Incluir procedimiento almacenado como' → ALTER) en un .sql aparte.
+--
+-- Para revertir: (1) resincronizar la columna vieja con el valor vivo del contador nuevo:
+--     UPDATE e SET e.UltAsientoContable = c.UltAsientoContable
+--     FROM Empresas e INNER JOIN ContadoresEmpresa c ON c.Empresa = e.Número;
+-- (2) restaurar el prdContabilizar original guardado. La tabla ContadoresEmpresa puede quedarse
+-- (inofensiva); no hay que tocar nada más.
+
+------------------------------------------------------------------------------------------------
 -- VERIFICACIÓN (tras aplicar parte 1 + parte 2 y contabilizar un diario de prueba)
 ------------------------------------------------------------------------------------------------
 -- 1) El contador nuevo avanza y el viejo queda congelado:
