@@ -106,6 +106,12 @@ namespace NestoAPI.Controllers
 
                 return Ok(asiento);
             }
+            catch (ArgumentException ex)
+            {
+                // Issue #284: error de validación (p. ej. FormaPago inexistente en línea de
+                // cliente) → 400 con mensaje claro, en vez del 500 de SQL desde dentro del SP.
+                return BadRequest(ex.Message);
+            }
             catch (Exception ex)
             {
                 throw new Exception("No se pudo contabilizar", ex);

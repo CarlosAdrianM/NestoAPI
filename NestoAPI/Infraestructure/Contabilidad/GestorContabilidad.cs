@@ -29,7 +29,37 @@ namespace NestoAPI.Infraestructure.Contabilidad
             // test: si hay varios diarios en lineas hay que dar error
             // lo mismo si hay varias empresas
 
+            await ValidarFormasPagoLineasCliente(lineas).ConfigureAwait(false);
             return await _servicio.CrearLineasYContabilizarDiario(lineas);
+        }
+
+        // Issue #284: prdContabilizar inserta el apunte de pago de las líneas de CLIENTE en
+        // ExtractoCliente con su FormaPago; si no existe en FormasPago, la FK revienta DENTRO
+        // del SP (error SQL críptico y trancount descuadrado, caso ELMAH 13/07/26). Se valida
+        // aquí ANTES para devolver un 400 con la línea y el valor exactos.
+        internal async Task ValidarFormasPagoLineasCliente(List<PreContabilidad> lineas)
+        {
+            List<PreContabilidad> lineasCliente = (lineas ?? new List<PreContabilidad>())
+                .Where(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE)
+                .ToList();
+            if (!lineasCliente.Any())
+            {
+                return;
+            }
+
+            foreach (var grupoEmpresa in lineasCliente.GroupBy(l => l.Empresa?.Trim()))
+            {
+                HashSet<string> formasValidas = await _servicio.LeerFormasPago(grupoEmpresa.Key).ConfigureAwait(false);
+                PreContabilidad lineaInvalida = grupoEmpresa.FirstOrDefault(l =>
+                    string.IsNullOrWhiteSpace(l.FormaPago) || !formasValidas.Contains(l.FormaPago.Trim()));
+                if (lineaInvalida != null)
+                {
+                    string valor = string.IsNullOrWhiteSpace(lineaInvalida.FormaPago) ? "(vacía)" : lineaInvalida.FormaPago.Trim();
+                    throw new ArgumentException(
+                        $"La línea de la cuenta {lineaInvalida.Nº_Cuenta?.Trim()} (documento {lineaInvalida.Nº_Documento?.Trim()}) " +
+                        $"lleva una forma de pago que no existe: {valor}. Corrígela antes de contabilizar.");
+                }
+            }
         }
 
         public static async Task<ContenidoCuaderno43> LeerCuaderno43(string contenido)

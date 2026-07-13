@@ -16,6 +16,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
         Task<int> CrearLineas(NVEntities db, List<PreContabilidad> lineas);
         Task<int> CrearLineasYContabilizarDiario(List<PreContabilidad> lineas);
         Task<int> CrearLineasYContabilizarDiario(List<PreContabilidad> lineas, NVEntities db);
+        // Issue #284: formas de pago existentes de la empresa, para validar ANTES de llamar a
+        // prdContabilizar (una FormaPago inválida en una línea de cliente revienta la FK de
+        // ExtractoCliente dentro del SP y deja el trancount descuadrado).
+        Task<HashSet<string>> LeerFormasPago(string empresa);
         Task<string> LeerProveedorPorNif(string nifProveedor);
         Task<string> LeerProveedorPorNombre(string nombreProveedor);
         Task<ExtractoProveedorDTO> PagoPendienteUnico(string proveedor, decimal importe);

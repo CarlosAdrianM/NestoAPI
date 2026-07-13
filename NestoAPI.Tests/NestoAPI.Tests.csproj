@@ -319,6 +319,7 @@
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorOfertaSinBeneficioTests.cs" />
     <Compile Include="Infrastructure\ValidadoresPedido\ValidadorLimiteRegalosTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ExtractoAdaptersTests.cs" />
+    <Compile Include="Infrastructure\Contabilidad\GestorContabilidadFormasPagoTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\CalculadorSaldoMayorTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ContabilidadServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PrestashopProductosSyncHandlerTests.cs" />

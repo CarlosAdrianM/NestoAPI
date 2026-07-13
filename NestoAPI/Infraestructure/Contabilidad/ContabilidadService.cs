@@ -33,6 +33,20 @@ namespace NestoAPI.Infraestructure.Contabilidad
             }
         }
 
+        // Issue #284: para validar las FormaPago de las líneas de cliente antes de contabilizar.
+        public async Task<HashSet<string>> LeerFormasPago(string empresa)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                List<string> formas = await db.FormasPago
+                    .Where(f => f.Empresa == empresa)
+                    .Select(f => f.Número)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                return new HashSet<string>(formas.Select(f => f.Trim()), StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
         public async Task<int> ContabilizarDiario(NVEntities db, string empresa, string diario, string usuario)
         {
             SqlParameter empresaParametro = new SqlParameter("@Empresa", SqlDbType.Char, 3)
