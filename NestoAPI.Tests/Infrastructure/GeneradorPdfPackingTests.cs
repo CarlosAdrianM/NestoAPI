@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Models.Informes;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -110,6 +111,93 @@ namespace NestoAPI.Tests.Infrastructure
             byte[] bytes = resultado.ReadAsByteArrayAsync().Result;
             Assert.IsTrue(bytes.Length > 0);
             ComprobarCabeceraPdf(bytes);
+        }
+
+        // ----- Estructura del informe (caso real: picking 98900, 13/07/26) -----
+        // El RDLC agrupa por CLIENTE (salto de página entre clientes, no por pedido), con los
+        // pedidos del cliente en secuencia y TODAS sus pendientes en una única sección al final.
+        // La primera versión QuestPDF agrupaba por pedido y salía en 3 páginas con el pedido
+        // 907562 (todo pendientes) como bloque propio. Estos tests fijan la estructura correcta.
+
+        private static List<PackingDTO> LineasPicking98900()
+        {
+            return new List<PackingDTO>
+            {
+                // Pedido 907562: SOLO tiene una línea pendiente (no debe tener bloque propio).
+                Linea(907562, "38819", tipo: "Pendientes"),
+                // Pedido 922166: líneas a servir (la primera SIN ruta ni usuario, como el SP real)
+                // y una pendiente.
+                SinRutaNiUsuario(Linea(922166, "42973")),
+                Linea(922166, "17404"),
+                Linea(922166, "39288", tipo: "Pendientes"),
+                // Pedido 920569: líneas a servir.
+                Linea(920569, "41149"),
+                Linea(920569, "39288")
+            };
+        }
+
+        private static PackingDTO SinRutaNiUsuario(PackingDTO linea)
+        {
+            linea.Ruta = null;
+            linea.Usuario = "  ";
+            return linea;
+        }
+
+        [TestMethod]
+        public void Agrupar_MismoClienteYDireccion_UnSoloBloque()
+        {
+            var bloques = GeneradorPdfPacking.Agrupar(LineasPicking98900());
+
+            Assert.AreEqual(1, bloques.Count, "Todos los pedidos del mismo cliente/dirección van en UN bloque (una página)");
+            Assert.AreEqual("15191", bloques[0].Cliente);
+        }
+
+        [TestMethod]
+        public void Agrupar_PedidoSoloConPendientes_NoTieneBloquePropio()
+        {
+            var bloques = GeneradorPdfPacking.Agrupar(LineasPicking98900());
+
+            CollectionAssert.AreEqual(new[] { 920569, 922166 },
+                bloques[0].Pedidos.Select(p => p.Numero).ToArray(),
+                "Solo los pedidos con líneas a servir tienen bloque, ordenados por número; el 907562 (todo pendientes) no");
+        }
+
+        [TestMethod]
+        public void Agrupar_LasPendientesDeTodosLosPedidos_VanJuntasAlFinalDelCliente()
+        {
+            var bloques = GeneradorPdfPacking.Agrupar(LineasPicking98900());
+
+            CollectionAssert.AreEqual(new[] { "38819", "39288" },
+                bloques[0].Pendientes.Select(p => p.NºProducto).ToArray(),
+                "Las pendientes del 907562 y del 922166 van en una única sección, ordenadas por pedido");
+            Assert.AreEqual(2, bloques[0].Pedidos.Single(p => p.Numero == 922166).Lineas.Count,
+                "Las pendientes NO se mezclan con las líneas a servir del pedido");
+        }
+
+        [TestMethod]
+        public void Agrupar_RutaYUsuarioVacios_SeCogeElPrimerValorNoVacio()
+        {
+            // El SP no rellena Ruta/Usuario en todas las filas: si la primera del pedido viene
+            // vacía, se toma de otra línea (del pedido o del bloque). Era el 'Ruta:' en blanco
+            // del 922166 en la primera versión.
+            var bloques = GeneradorPdfPacking.Agrupar(LineasPicking98900());
+
+            var pedido922166 = bloques[0].Pedidos.Single(p => p.Numero == 922166);
+            Assert.AreEqual("AT", pedido922166.Ruta);
+            StringAssert.Contains(pedido922166.Usuario, "Carlos");
+        }
+
+        [TestMethod]
+        public void Agrupar_ClientesDistintos_BloquesSeparados()
+        {
+            var lineas = LineasPicking98900();
+            var otroCliente = Linea(930000, "12345");
+            otroCliente.NºCliente = "22222";
+            lineas.Add(otroCliente);
+
+            var bloques = GeneradorPdfPacking.Agrupar(lineas);
+
+            Assert.AreEqual(2, bloques.Count, "Cada cliente/dirección es un bloque (salto de página entre ellos)");
         }
 
         // Los PDF empiezan por la firma "%PDF" (0x25 0x50 0x44 0x46).
