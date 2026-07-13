@@ -39,13 +39,21 @@ namespace NestoAPI.Infraestructure
         // de fondo cada 2h, irrelevante).
         public const int PAUSA_ENTRE_CONSULTAS_MS = 250;
 
+        // NestoAPI#266: cuando una pasada viene masivamente en Desconocido (WS de la agencia caído,
+        // p. ej. asmred en su punta de las 10:00 devolviendo "Servicio no disponible"), se programa UN
+        // reintento en vez de avisar; el aviso solo salta si el reintento también falla. 45 min deja
+        // pasar la degradación típica de GLS sin solaparse con la siguiente pasada regular (cada 2h).
+        public const int REINTENTO_TRAS_MINUTOS = 45;
+
         private readonly NVEntities _db;
         private readonly IFabricaAgenciasRemotas _fabrica;
+        private readonly Action _programarReintento;
 
-        public SeguimientoEnviosJobsService(NVEntities db, IFabricaAgenciasRemotas fabrica)
+        public SeguimientoEnviosJobsService(NVEntities db, IFabricaAgenciasRemotas fabrica, Action programarReintento = null)
         {
             _db = db;
             _fabrica = fabrica;
+            _programarReintento = programarReintento;
         }
 
         /// <summary>Punto de entrada para Hangfire (compone sus propias dependencias).</summary>
@@ -53,8 +61,23 @@ namespace NestoAPI.Infraestructure
         {
             var db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
-            return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db))
+            return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db),
+                    programarReintento: () => Hangfire.BackgroundJob.Schedule(
+                        () => ProcesarSeguimientosReintentoAsync(),
+                        TimeSpan.FromMinutes(REINTENTO_TRAS_MINUTOS)))
                 .ActualizarSeguimientosAsync(FECHA_CORTE);
+        }
+
+        /// <summary>
+        /// NestoAPI#266: reintento único programado tras una pasada masivamente Desconocida. Sin
+        /// programador de reintentos (no se encadena) y con esReintento: si vuelve a fallar, avisa.
+        /// </summary>
+        public static Task ProcesarSeguimientosReintentoAsync()
+        {
+            var db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+            return new SeguimientoEnviosJobsService(db, new FabricaAgenciasRemotas(db))
+                .ActualizarSeguimientosAsync(FECHA_CORTE, esReintento: true);
         }
 
         /// <summary>
@@ -62,7 +85,7 @@ namespace NestoAPI.Infraestructure
         /// desde <paramref name="fechaCorte"/>, y actualiza su estado/fecha de entrega. Devuelve cuántos
         /// cambiaron. Best-effort por envío: un fallo de una agencia no detiene el resto (se loguea).
         /// </summary>
-        public async Task<int> ActualizarSeguimientosAsync(DateTime fechaCorte)
+        public async Task<int> ActualizarSeguimientosAsync(DateTime fechaCorte, bool esReintento = false)
         {
             int[] remotas = _fabrica.AgenciasConSeguimiento.ToArray();
             if (remotas.Length == 0)
@@ -154,20 +177,33 @@ namespace NestoAPI.Infraestructure
 
             // NestoAPI#264: si una parte grande de los envíos no devuelve estado (Desconocido), casi seguro
             // es un fallo de configuración de seguimiento (uid mal, WS caído), no que todos sean nuevos.
-            // Avisamos en ELMAH para no volver a quedarnos ciegos (caso GLS, 24-26/06/2026).
             if (desconocidos >= 10 || (envios.Count > 0 && desconocidos > envios.Count / 2))
             {
-                // NestoAPI#266: los 3 motivos más frecuentes, con recuento, para diagnosticar de un
-                // vistazo (p. ej. 74× "No se encuentra la expedición" = uid mal; timeouts = WS caído).
-                string motivos = string.Join("; ", motivosDesconocido
-                    .OrderByDescending(m => m.Value)
-                    .Take(3)
-                    .Select(m => $"{m.Value}× \"{m.Key}\""));
-                ElmahHelper.Log(new Exception(
-                    $"Seguimiento de agencias: {desconocidos} de {envios.Count} envíos no devolvieron estado " +
-                    $"(Desconocido). Suele indicar un problema de configuración del seguimiento (p. ej. uid de " +
-                    $"GLS incorrecta) o el WS caído. Motivos más frecuentes: {motivos}."),
-                    "Sistema (seguimiento de envíos)");
+                // NestoAPI#266: las degradaciones del WS de GLS son transitorias (ráfagas de 15-50 min en
+                // sus puntas de mañana devolviendo "Servicio no disponible"): la primera pasada masivamente
+                // Desconocida NO avisa, programa UN reintento; el aviso queda para cuando el reintento
+                // también falla (problema real y persistente: uid mal, WS caído de verdad).
+                if (!esReintento && _programarReintento != null)
+                {
+                    _programarReintento();
+                }
+                else
+                {
+                    // Los 3 motivos más frecuentes, con recuento, para diagnosticar de un vistazo
+                    // (p. ej. 74× "No se encuentra la expedición" = uid mal; timeouts = WS caído).
+                    string motivos = string.Join("; ", motivosDesconocido
+                        .OrderByDescending(m => m.Value)
+                        .Take(3)
+                        .Select(m => $"{m.Value}× \"{m.Key}\""));
+                    string persistencia = esReintento
+                        ? $" Persiste tras el reintento automático de {REINTENTO_TRAS_MINUTOS} min."
+                        : string.Empty;
+                    ElmahHelper.Log(new Exception(
+                        $"Seguimiento de agencias: {desconocidos} de {envios.Count} envíos no devolvieron estado " +
+                        $"(Desconocido). Suele indicar un problema de configuración del seguimiento (p. ej. uid de " +
+                        $"GLS incorrecta) o el WS caído.{persistencia} Motivos más frecuentes: {motivos}."),
+                        "Sistema (seguimiento de envíos)");
+                }
             }
             return actualizados;
         }
