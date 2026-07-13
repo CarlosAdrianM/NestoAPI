@@ -47,8 +47,13 @@ INSERT INTO ContadoresEmpresa (Empresa, UltAsientoContable)
     SELECT Número, UltAsientoContable FROM Empresas;
 GO
 
--- BD de negocio (NestoConnection): GRANT a la cuenta de máquina del API. Hoy solo el SP toca la
--- tabla (ownership chaining bastaría), pero así queda lista si algún día EF la lee directamente.
+-- PERMISOS (verificado 13/07/26): los usuarios de Nesto viejo NO necesitan permisos sobre esta
+-- tabla, aunque contabilicen con su propio login. prdContabilizar tiene GRANT EXECUTE a public
+-- y, por OWNERSHIP CHAINING (SP dbo → tabla dbo, sin SQL dinámico en los bloques del contador),
+-- SQL Server no comprueba permisos sobre las tablas que el SP toca — igual que hoy, que el SP
+-- actualiza Empresas sin que los usuarios tengan UPDATE sobre ella. NO dar GRANT a public: sería
+-- abrir el contador a escritura directa desde cualquier sesión. El GRANT de abajo a la cuenta de
+-- máquina del API es solo por si algún día EF lee/escribe la tabla directamente.
 GRANT SELECT, INSERT, UPDATE ON ContadoresEmpresa TO [NUEVAVISION\RDS2016$];
 GO
 
