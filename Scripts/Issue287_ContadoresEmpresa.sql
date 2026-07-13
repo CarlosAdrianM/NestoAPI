@@ -16,9 +16,19 @@
 -- La toma del número sigue DENTRO de la transacción: si hay rollback, el contador se revierte
 -- con todo lo demás (CERO huecos en la numeración de asientos, requisito de Carlos).
 --
--- ⚠️ EJECUTAR FUERA DE HORARIO (sin contabilizaciones en curso), y aplicar la PARTE 2 (edición
--- de prdContabilizar en SSMS) inmediatamente después, en la misma ventana de mantenimiento:
--- entre la parte 1 y la parte 2 el SP sigue usando la columna vieja.
+-- ⚠️ ORDEN SEGURO (13/07/26). El cambio es INDEPENDIENTE del deploy de Nesto/NestoAPI (el C#
+-- no toca este contador): no hay que esperar a publicar nada.
+--   1) La PARTE 1 (tabla + semilla + GRANT) puede ejecutarse EN CUALQUIER MOMENTO: es inofensiva,
+--      nada usa la tabla hasta que se cambie el SP.
+--   2) En el momento de aplicar la PARTE 2, ejecutar PEGADOS en la misma sesión de SSMS:
+--      (a) la RESINCRONIZACIÓN de abajo (por si alguna contabilización avanzó el contador viejo
+--          desde la semilla — sin ella, el SP nuevo repartiría números de asiento DUPLICADOS), y
+--      (b) el ALTER PROCEDURE, acto seguido.
+--      Elegir un momento sin contabilizaciones en curso (segundos de ventana bastan).
+--
+-- RESINCRONIZACIÓN (ejecutar justo antes del ALTER de la parte 2):
+--     UPDATE c SET c.UltAsientoContable = e.UltAsientoContable
+--     FROM ContadoresEmpresa c INNER JOIN Empresas e ON c.Empresa = e.Número;
 
 ------------------------------------------------------------------------------------------------
 -- PARTE 1: tabla satélite de contadores por empresa (ejecutable tal cual)
