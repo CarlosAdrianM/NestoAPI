@@ -37,6 +37,14 @@ using System.Web.Http.Description;
 
 namespace NestoAPI.Controllers
 {
+    // Issue #186: [Authorize] de clase. Sin él, un JWT caducado NO daba 401: OWIN lo rechazaba en
+    // silencio y el controller se ejecutaba como anónimo (pedidos creados sin usuario en ELMAH;
+    // caso Javier 5 días con token caducado). Llamantes auditados 13/07/26: Nesto (JWT vía
+    // IClienteApiFactory/ConfigurarAutorizacion desde 1.10.9.0, INCLUIDO CanalesExternos, que crea
+    // pedidos por IPedidoVentaService y cuadra por PorCanalExterno con ConfigurarAutorizacion) y
+    // NestoApp (interceptor Bearer + refresh transparente desde v2.17.2). TiendasNuevaVision no
+    // llama a este controller. Ninguna ruta necesita ser anónima.
+    [Authorize]
     public class PedidosVentaController : ApiController
     {
         private const int ESTADO_LINEA_EN_CURSO = Constantes.EstadosLineaVenta.EN_CURSO;

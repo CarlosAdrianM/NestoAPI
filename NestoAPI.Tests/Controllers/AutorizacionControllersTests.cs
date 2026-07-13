@@ -76,6 +76,14 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void PedidosVentaController_TieneAuthorizeDeClase()
+        {
+            // Issue #186: sin [Authorize], un JWT caducado no daba 401 y el pedido se creaba como
+            // anónimo (ELMAH sin usuario). Este test impide que el atributo desaparezca.
+            AssertAuthorizeDeClase(typeof(PedidosVentaController));
+        }
+
+        [TestMethod]
         public void SyncWebhookController_EsAnonimoExplicito()
         {
             // Lo llama Google Pub/Sub (push) sin JWT nuestro: anónimo a propósito y documentado.
