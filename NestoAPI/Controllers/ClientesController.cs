@@ -559,6 +559,12 @@ namespace NestoAPI.Controllers
 
                 _ = await db.SaveChangesAsync();
             }
+            catch (NotFoundException ex)
+            {
+                // Issue #283: cliente/contacto inexistente -> 404 con mensaje claro (antes era
+                // un 500 'Sequence contains no elements' del SingleAsync).
+                return Content(HttpStatusCode.NotFound, ex.Message);
+            }
             catch (DbUpdateConcurrencyException)
             {
                 if (!ClienteExists(cliente.Empresa, cliente.Cliente, cliente.Contacto))
@@ -569,10 +575,6 @@ namespace NestoAPI.Controllers
                 {
                     throw;
                 }
-            }
-            catch (Exception ex)
-            {
-                throw ex;
             }
 
             return StatusCode(HttpStatusCode.NoContent);

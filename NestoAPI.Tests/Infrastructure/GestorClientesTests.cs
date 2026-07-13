@@ -1079,6 +1079,30 @@ namespace NestoAPI.Tests.Infrastructure
         // SiNoHayGrupo -> se lo quita el de estética
 
         [TestMethod]
+        public async Task GestorClientes_DejarDeVisitar_ClienteInexistente_LanzaNotFoundConMensajeClaro()
+        {
+            // Regresión #283: si el cliente/contacto no existe, BuscarCliente (SingleAsync)
+            // devolvía 'Sequence contains no elements' y el usuario veía un 500 críptico.
+            // El contrato pasa a ser: BuscarCliente devuelve null y el gestor lanza
+            // NotFoundException con un mensaje que identifica al cliente.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult<Cliente>(null));
+            GestorClientes gestor = CrearGestorClientes(servicio);
+            ClienteCrear cliente = new ClienteCrear { Empresa = "1", Cliente = "99999", Contacto = "9" };
+
+            try
+            {
+                _ = await gestor.DejarDeVisitar(db, cliente);
+                Assert.Fail("Debe lanzar NotFoundException");
+            }
+            catch (NotFoundException ex)
+            {
+                StringAssert.Contains(ex.Message, "99999", "El mensaje debe identificar al cliente que no existe");
+            }
+        }
+
+        [TestMethod]
         public void GestorClientes_DejarDeVisitar_DevuelveElVendedorYEstadoCambiados()
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();

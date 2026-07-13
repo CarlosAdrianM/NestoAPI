@@ -423,6 +423,10 @@ namespace NestoAPI.Infraestructure
         public async Task<ClienteCrear> ConstruirClienteCrear(string empresa, string cliente, string contacto)
         {
             Cliente clienteDb = await servicio.BuscarCliente(empresa, cliente, contacto);
+            if (clienteDb == null)
+            {
+                throw new NotFoundException($"No existe el cliente {empresa}/{cliente}/{contacto}");
+            }
             ClienteCrear clienteCrear = new ClienteCrear
             {
                 Empresa = clienteDb.Empresa.Trim(),
@@ -502,6 +506,10 @@ namespace NestoAPI.Infraestructure
             List<Cliente> clientesModificados = new List<Cliente>();
 
             Cliente clienteDB = await servicio.BuscarCliente(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
+            if (clienteDB == null)
+            {
+                throw new NotFoundException($"No existe el cliente {cliente.Empresa}/{cliente.Cliente}/{cliente.Contacto}");
+            }
             string nuevoVendedor = string.Empty;
             short nuevoEstado = Constantes.Clientes.Estados.VISITA_TELEFONICA;
             List<Cliente> contactos = await servicio.BuscarContactos(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
@@ -1053,6 +1061,10 @@ namespace NestoAPI.Infraestructure
         public async Task<Mandato> LeerMandato(string empresa, string cliente, string contacto, string ccc)
         {
             Cliente clienteDB = await servicio.BuscarCliente(empresa, cliente, contacto).ConfigureAwait(false);
+            if (clienteDB == null)
+            {
+                throw new NotFoundException($"No existe el cliente {empresa}/{cliente}/{contacto}");
+            }
             CCC cccDB = await servicio.BuscarCCC(empresa, cliente, contacto, ccc).ConfigureAwait(false);
 
             Mandato mandato = new Mandato
@@ -1542,5 +1554,9 @@ namespace NestoAPI.Infraestructure
     }
 }
 
-public class NotFoundException : Exception { }
+public class NotFoundException : Exception
+{
+    public NotFoundException() { }
+    public NotFoundException(string message) : base(message) { }
+}
 public class ConflictException : Exception { }
