@@ -258,6 +258,7 @@
     <Compile Include="Infrastructure\ValidadorDescuentoPPTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfUbicacionesInventarioTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPickingTests.cs" />
+    <Compile Include="Infrastructure\UsuarioContextInfoInterceptorTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPackingTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfFacturasQuestPdfTests.cs" />
     <Compile Include="Infrastructure\GeneradorExcelPedidoCompraTests.cs" />

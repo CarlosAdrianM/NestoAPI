@@ -788,6 +788,7 @@
     <Compile Include="Infraestructure\Rectificativas\IGestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\Rectificativas\GestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
+    <Compile Include="Infraestructure\UsuarioContextInfoInterceptor.cs" />
     <Compile Include="Infraestructure\UsuarioAuditoriaHelper.cs" />
     <Compile Include="Infraestructure\ElmahHelper.cs" />
     <Compile Include="Infraestructure\ServirJunto\IServicioValidarServirJunto.cs" />

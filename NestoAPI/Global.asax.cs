@@ -1,5 +1,7 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure;
+using System;
 using System.Collections.Generic;
+using System.Data.Entity.Infrastructure.Interception;
 using System.Linq;
 using System.Web;
 using System.Web.Http;
@@ -18,6 +20,8 @@ namespace NestoAPI
             FilterConfig.RegisterGlobalFilters(GlobalFilters.Filters);
             RouteConfig.RegisterRoutes(RouteTable.Routes);
             BundleConfig.RegisterBundles(BundleTable.Bundles);
+            // Issue #286: usuario real en CONTEXT_INFO en TODAS las conexiones de EF (punto único).
+            DbInterception.Add(new UsuarioContextInfoInterceptor());
         }
 
         protected void Application_BeginRequest(object sender, EventArgs e)
