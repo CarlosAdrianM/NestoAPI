@@ -52,6 +52,10 @@ namespace NestoAPI.Models.PedidosVenta
         // existentes en vez de recrearlas (0/null = línea que no existía).
         public int IdLineaPago { get; set; }
         public int? IdLineaOferta { get; set; }
+        // Las líneas con PICKING ya están preparadas en el almacén: no se pueden modificar ni
+        // quitar desde la plantilla (el cliente lo valida antes del PUT con datos frescos).
+        public bool PagoTienePicking { get; set; }
+        public bool OfertaTienePicking { get; set; }
     }
 
     /// <summary>Regalo Ganavisiones (confirmado contra la tabla Ganavision por el GET, #279).</summary>
@@ -61,5 +65,6 @@ namespace NestoAPI.Models.PedidosVenta
         public string Texto { get; set; }
         public int Cantidad { get; set; }
         public int IdLinea { get; set; }
+        public bool TienePicking { get; set; }
     }
 }

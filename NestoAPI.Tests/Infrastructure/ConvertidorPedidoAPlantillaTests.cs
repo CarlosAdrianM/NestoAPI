@@ -143,6 +143,26 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void Convertir_LineasConPicking_LlevanElFlagParaBloquearlasEnLaPlantilla()
+        {
+            // Las líneas con picking ya están preparadas en el almacén: la plantilla no debe
+            // permitir modificarlas ni quitarlas (lo valida el cliente antes del PUT).
+            var lineaConPicking = Linea(801, "38697", 2, 15m);
+            lineaConPicking.picking = 98900;
+            var regaloConPicking = Linea(802, "45473", 1, 0m, descuento: 1m, ganavisiones: true);
+            regaloConPicking.picking = 98900;
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(
+                lineaConPicking,
+                Linea(803, "12345", 1, 10m),
+                regaloConPicking));
+
+            Assert.IsTrue(resultado.Lineas.Single(l => l.Producto == "38697").PagoTienePicking);
+            Assert.IsFalse(resultado.Lineas.Single(l => l.Producto == "12345").PagoTienePicking);
+            Assert.IsTrue(resultado.Regalos.Single().TienePicking);
+        }
+
+        [TestMethod]
         public void Convertir_Cabecera_MapeaIdentidadYEntrega()
         {
             var resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(
