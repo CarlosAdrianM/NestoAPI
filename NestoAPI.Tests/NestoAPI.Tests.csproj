@@ -290,6 +290,7 @@
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasCantidadMenorTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasFiltrosTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasRegalarMenorImporteTests.cs" />
+    <Compile Include="Infrastructure\ValidadorOfertasCombinadasGrupoSubgrupoTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasGruposTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasImporteMinimoTests.cs" />
     <Compile Include="Infrastructure\ValidadorOfertasCombinadasTramosTests.cs" />

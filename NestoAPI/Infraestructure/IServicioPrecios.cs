@@ -13,6 +13,10 @@ namespace NestoAPI.Infraestructure
         List<OfertaEscalonada> BuscarOfertasEscalonadas(string numeroProducto);
         decimal CalcularImporteGrupo(PedidoVentaDTO pedido, string grupo, string subGrupo);
         List<LineaPedidoVentaDTO> FiltrarLineas(PedidoVentaDTO pedido, string filtroProducto, string familia);
+        // Issue #289: como la anterior pero filtrando ademas por Grupo y/o Subgrupo del producto
+        // (todos los criterios informados en AND). Se mantiene la sobrecarga corta para no tocar
+        // los llamantes que no filtran por grupo (OfertasPermitidas).
+        List<LineaPedidoVentaDTO> FiltrarLineas(PedidoVentaDTO pedido, string filtroProducto, string familia, string grupo, string subgrupo);
         List<RegaloImportePedido> BuscarRegaloPorImportePedido(string numeroProducto);
 
         /// <summary>

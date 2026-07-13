@@ -391,12 +391,15 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task PostOfertaCombinada_UnaLineaSinImporteMinimo_RetornaBadRequest()
         {
-            // Arrange: una sola línea sin importe mínimo no la podría autorizar el validador de precios
+            // Arrange: una sola línea sin importe mínimo no la podría autorizar el validador de precios.
+            // Issue #289: con RegalarMenorImporte (default true) esa config SÍ vale (suelo dinámico),
+            // así que este test cubre el caso en que el flag va desmarcado.
             var dto = new OfertaCombinadaCreateDTO
             {
                 Empresa = "1",
                 Nombre = "Oferta Invalida",
                 ImporteMinimo = 0,
+                RegalarMenorImporte = false,
                 Detalles = new List<OfertaCombinadaDetalleCreateDTO>
                 {
                     new OfertaCombinadaDetalleCreateDTO { Producto = "PROD1", Cantidad = 1, Precio = 10 }
@@ -711,6 +714,92 @@ namespace NestoAPI.Tests.Controllers
             string error = OfertasCombinadasController.ValidarDTO(dto);
 
             Assert.IsNull(error, error);
+        }
+
+        #endregion
+
+        #region Filtros por grupo/subgrupo (ValidarDTO, Issue #289)
+
+        [TestMethod]
+        public void ValidarDTO_FilaDeFiltroSoloConGrupo_NoDevuelveError()
+        {
+            var dto = CrearDtoConDetalles(
+                new OfertaCombinadaDetalleCreateDTO { Producto = null, Grupo = "COS", Cantidad = 3, Precio = 0 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "REGALO", Cantidad = 1, Precio = 0 });
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNull(error, error);
+        }
+
+        [TestMethod]
+        public void ValidarDTO_FilaConSubgrupoSinGrupo_DevuelveError()
+        {
+            // Los números de subgrupo se repiten entre grupos: un subgrupo suelto sería ambiguo.
+            var dto = CrearDtoConDetalles(
+                new OfertaCombinadaDetalleCreateDTO { Producto = null, Subgrupo = "107", Cantidad = 3, Precio = 0 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "REGALO", Cantidad = 1, Precio = 0 });
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "grupo");
+        }
+
+        [TestMethod]
+        public void ValidarDTO_FilaSinProductoNiNingunFiltro_SigueDandoError()
+        {
+            var dto = CrearDtoConDetalles(
+                new OfertaCombinadaDetalleCreateDTO { Producto = null, Cantidad = 3, Precio = 0 },
+                new OfertaCombinadaDetalleCreateDTO { Producto = "REGALO", Cantidad = 1, Precio = 0 });
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "producto o un filtro");
+        }
+
+        [TestMethod]
+        public void ValidarDTO_UnaSolaFilaSinImporteMinimoConRegalarMenorImporte_NoDevuelveError()
+        {
+            // Config natural del 2+1 por subgrupo (#289+#290): una única fila de filtro con la
+            // cantidad total; el suelo lo pone la regla del menor importe, no el ImporteMinimo.
+            var dto = new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
+                Nombre = "2+1 aceites CV",
+                ImporteMinimo = 0,
+                RegalarMenorImporte = true,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>
+                {
+                    new OfertaCombinadaDetalleCreateDTO { Producto = null, Familia = "CV", Grupo = "COS", Subgrupo = "107", Cantidad = 3, Precio = 0 }
+                }
+            };
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNull(error, error);
+        }
+
+        [TestMethod]
+        public void ValidarDTO_UnaSolaFilaSinImporteMinimoSinRegalarMenorImporte_SigueDandoError()
+        {
+            var dto = new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
+                Nombre = "Inservible",
+                ImporteMinimo = 0,
+                RegalarMenorImporte = false,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>
+                {
+                    new OfertaCombinadaDetalleCreateDTO { Producto = null, Grupo = "COS", Subgrupo = "107", Cantidad = 3, Precio = 0 }
+                }
+            };
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "importe mínimo");
         }
 
         #endregion

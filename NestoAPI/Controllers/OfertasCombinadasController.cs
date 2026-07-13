@@ -130,6 +130,8 @@ namespace NestoAPI.Controllers
                     Producto = detDTO.Producto,
                     Familia = detDTO.Familia?.Trim(),
                     FiltroProducto = detDTO.FiltroProducto?.Trim(),
+                    Grupo = LimpiarONull(detDTO.Grupo),
+                    Subgrupo = LimpiarONull(detDTO.Subgrupo),
                     Cantidad = detDTO.Cantidad,
                     Precio = detDTO.Precio,
                     GrupoAlternativa = detDTO.GrupoAlternativa,
@@ -235,6 +237,8 @@ namespace NestoAPI.Controllers
                         detExistente.Producto = detDTO.Producto;
                         detExistente.Familia = detDTO.Familia?.Trim();
                         detExistente.FiltroProducto = detDTO.FiltroProducto?.Trim();
+                        detExistente.Grupo = LimpiarONull(detDTO.Grupo);
+                        detExistente.Subgrupo = LimpiarONull(detDTO.Subgrupo);
                         detExistente.Cantidad = detDTO.Cantidad;
                         detExistente.Precio = detDTO.Precio;
                         detExistente.GrupoAlternativa = detDTO.GrupoAlternativa;
@@ -253,6 +257,8 @@ namespace NestoAPI.Controllers
                         Producto = detDTO.Producto,
                         Familia = detDTO.Familia?.Trim(),
                         FiltroProducto = detDTO.FiltroProducto?.Trim(),
+                        Grupo = LimpiarONull(detDTO.Grupo),
+                        Subgrupo = LimpiarONull(detDTO.Subgrupo),
                         Cantidad = detDTO.Cantidad,
                         Precio = detDTO.Precio,
                         GrupoAlternativa = detDTO.GrupoAlternativa,
@@ -327,7 +333,11 @@ namespace NestoAPI.Controllers
             //    cada una con su precio, p. ej. una unidad a precio completo y otra a mitad.
             // Una oferta de una sola línea sin importe mínimo no la podría autorizar nunca el
             // validador de precios, así que se rechaza para no crear ofertas inservibles.
-            if (dto.Detalles.Count == 1 && dto.ImporteMinimo <= 0)
+            // Excepción (#289/#290): con RegalarMenorImporte la oferta lleva suelo dinámico (las
+            // unidades pagadas deben cubrir su tarifa y el regalo ser el más barato), así que SÍ es
+            // autorizable sin importe mínimo — es la config natural del 2+1 por filtro (p. ej. una
+            // sola fila de Grupo/Subgrupo con cantidad 3).
+            if (dto.Detalles.Count == 1 && dto.ImporteMinimo <= 0 && !dto.RegalarMenorImporte)
             {
                 return "Una oferta combinada de una sola línea debe tener un importe mínimo mayor que cero";
             }
@@ -340,9 +350,17 @@ namespace NestoAPI.Controllers
             foreach (var det in dto.Detalles)
             {
                 // Issue #282: cada fila debe identificar QUE casa: producto concreto o filtro.
-                if (det.Producto == null && string.IsNullOrWhiteSpace(det.Familia) && string.IsNullOrWhiteSpace(det.FiltroProducto))
+                // Issue #289: el filtro tambien puede ser por grupo y/o subgrupo del producto.
+                if (det.Producto == null && string.IsNullOrWhiteSpace(det.Familia) && string.IsNullOrWhiteSpace(det.FiltroProducto)
+                    && string.IsNullOrWhiteSpace(det.Grupo) && string.IsNullOrWhiteSpace(det.Subgrupo))
                 {
-                    return "Cada linea debe llevar un producto o un filtro (familia y/o principio del nombre)";
+                    return "Cada linea debe llevar un producto o un filtro (familia, principio del nombre, grupo y/o subgrupo)";
+                }
+                // Los numeros de subgrupo se repiten entre grupos, asi que un subgrupo suelto
+                // seria ambiguo: siempre debe ir acompañado de su grupo.
+                if (!string.IsNullOrWhiteSpace(det.Subgrupo) && string.IsNullOrWhiteSpace(det.Grupo))
+                {
+                    return "Una linea con subgrupo debe llevar tambien el grupo";
                 }
                 if (det.Producto == null && det.GrupoAlternativa.HasValue)
                 {
@@ -397,12 +415,21 @@ namespace NestoAPI.Controllers
                     ProductoNombre = d.Producto1?.Nombre?.Trim(),
                     Familia = d.Familia?.Trim(),
                     FiltroProducto = d.FiltroProducto?.Trim(),
+                    Grupo = d.Grupo?.Trim(),
+                    Subgrupo = d.Subgrupo?.Trim(),
                     Cantidad = d.Cantidad,
                     Precio = d.Precio,
                     GrupoAlternativa = d.GrupoAlternativa,
                     PermitirCantidadMenor = d.PermitirCantidadMenor
                 }).ToList() ?? new List<OfertaCombinadaDetalleDTO>()
             };
+        }
+
+        // Issue #289: en BD el filtro vacio debe ser NULL (el CHECK y el matching distinguen
+        // NULL de cadena vacia).
+        private static string LimpiarONull(string valor)
+        {
+            return string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
         }
     }
 }

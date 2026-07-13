@@ -27,6 +27,10 @@ namespace NestoAPI.Models.OfertasCombinadas
         // Issue #282: fila de FILTRO (Producto null): casa por familia y/o prefijo del nombre.
         public string Familia { get; set; }
         public string FiltroProducto { get; set; }
+        // Issue #289: la fila de filtro tambien puede casar por Grupo y/o Subgrupo del producto
+        // (todos los criterios informados en AND). En blanco = igual que antes.
+        public string Grupo { get; set; }
+        public string Subgrupo { get; set; }
         public short Cantidad { get; set; }
         public decimal Precio { get; set; }
         // Líneas con el mismo GrupoAlternativa son intercambiables ("elige 1"); null = obligatoria.
@@ -57,6 +61,9 @@ namespace NestoAPI.Models.OfertasCombinadas
         // Issue #282: fila de FILTRO (Producto null): casa por familia y/o prefijo del nombre.
         public string Familia { get; set; }
         public string FiltroProducto { get; set; }
+        // Issue #289: filtro por Grupo y/o Subgrupo del producto (AND con familia/prefijo).
+        public string Grupo { get; set; }
+        public string Subgrupo { get; set; }
         public short Cantidad { get; set; }
         public decimal Precio { get; set; }
         public int? GrupoAlternativa { get; set; }

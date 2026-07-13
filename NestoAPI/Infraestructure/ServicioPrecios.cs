@@ -115,6 +115,7 @@ namespace NestoAPI.Infraestructure
 
         // Issue #282: ¿la fila de filtro (Producto NULL) casa con este producto? Mismo matching que
         // FiltrarLineas: familia igual (si la fila la exige) y nombre que empiece por el prefijo.
+        // Issue #289: y ademas grupo/subgrupo iguales, si la fila los exige.
         internal static bool DetalleFiltroCasaConProducto(OfertaCombinadaDetalle detalle, Producto producto)
         {
             if (detalle.Producto != null || producto == null)
@@ -125,7 +126,11 @@ namespace NestoAPI.Infraestructure
                 || (producto.Familia != null && producto.Familia.Trim().Equals(detalle.Familia.Trim(), StringComparison.OrdinalIgnoreCase));
             bool filtroOk = detalle.FiltroProducto == null
                 || (producto.Nombre != null && producto.Nombre.StartsWith(detalle.FiltroProducto, StringComparison.OrdinalIgnoreCase));
-            return familiaOk && filtroOk;
+            bool grupoOk = detalle.Grupo == null
+                || (producto.Grupo != null && producto.Grupo.Trim().Equals(detalle.Grupo.Trim(), StringComparison.OrdinalIgnoreCase));
+            bool subgrupoOk = detalle.Subgrupo == null
+                || (producto.SubGrupo != null && producto.SubGrupo.Trim().Equals(detalle.Subgrupo.Trim(), StringComparison.OrdinalIgnoreCase));
+            return familiaOk && filtroOk && grupoOk && subgrupoOk;
         }
 
         public List<OfertaEscalonada> BuscarOfertasEscalonadas(string numeroProducto)
@@ -167,23 +172,36 @@ namespace NestoAPI.Infraestructure
 
         public List<LineaPedidoVentaDTO> FiltrarLineas(PedidoVentaDTO pedido, string filtroProducto, string familia)
         {
+            return FiltrarLineas(pedido, filtroProducto, familia, null, null);
+        }
+
+        // Issue #289: los criterios informados (prefijo del nombre, familia, grupo, subgrupo) se
+        // combinan en AND; los que van a null no filtran, con lo que la sobrecarga corta se
+        // comporta exactamente igual que antes.
+        public List<LineaPedidoVentaDTO> FiltrarLineas(PedidoVentaDTO pedido, string filtroProducto, string familia, string grupo, string subgrupo)
+        {
             using (NVEntities db = new NVEntities())
             {
                 var listaProductosPedido = pedido.Lineas.Select(l => l.Producto);
-                var consultaFiltrados = db.Productos.Where(p => 
+                var consultaFiltrados = db.Productos.Where(p =>
                     p.Empresa == pedido.empresa
                     && listaProductosPedido.Contains(p.Número)
                     && p.Nombre.StartsWith(filtroProducto)
                 );
-                IQueryable<string> productosFiltrados;
-                if (familia!= null)
+                if (familia != null)
                 {
-                    productosFiltrados = consultaFiltrados.Where(p => p.Familia == familia).Select(p => p.Número);
-                } else
-                {
-                    productosFiltrados = consultaFiltrados.Select(p => p.Número);
+                    consultaFiltrados = consultaFiltrados.Where(p => p.Familia == familia);
                 }
-                
+                if (grupo != null)
+                {
+                    consultaFiltrados = consultaFiltrados.Where(p => p.Grupo == grupo);
+                }
+                if (subgrupo != null)
+                {
+                    consultaFiltrados = consultaFiltrados.Where(p => p.SubGrupo == subgrupo);
+                }
+                IQueryable<string> productosFiltrados = consultaFiltrados.Select(p => p.Número);
+
                 var lineas = pedido.Lineas.Where(l => productosFiltrados.Contains(l.Producto)).ToList();
                 return lineas;
             }

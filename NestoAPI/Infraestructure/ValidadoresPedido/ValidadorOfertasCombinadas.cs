@@ -44,7 +44,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 // otro producto por definición, así que esa exigencia no se les aplica.
                 // Las filas de FILTRO cuentan por su clave familia|prefijo (Issue #282).
                 bool esOfertaDeUnSoloProducto = ofertaCumplida.OfertasCombinadasDetalles
-                    .Select(d => d.Producto?.Trim() ?? $"F:{d.Familia?.Trim()}|{d.FiltroProducto}")
+                    .Select(d => d.Producto?.Trim() ?? $"F:{d.Familia?.Trim()}|{d.FiltroProducto}|{d.Grupo?.Trim()}|{d.Subgrupo?.Trim()}")
                     .Distinct().Count() == 1;
 
                 // Issue #290: si el producto validado está en un GRUPO de alternativas, no se le
@@ -244,8 +244,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// <summary>
         /// Líneas del pedido que casan con la línea de oferta: si el detalle es de PRODUCTO, las del
         /// producto concreto; si es de FILTRO (Issue #282: Producto NULL + Familia y/o prefijo de
-        /// nombre), las que devuelve el mismo matching de OfertasPermitidas (FiltrarLineas). En ambos
-        /// casos las cantidades se cuentan AGREGADAS sobre todas las líneas que casan.
+        /// nombre; Issue #289: y/o Grupo/Subgrupo), las que devuelve el mismo matching de
+        /// OfertasPermitidas (FiltrarLineas). En ambos casos las cantidades se cuentan AGREGADAS
+        /// sobre todas las líneas que casan.
         /// </summary>
         private static List<LineaPedidoVentaDTO> LineasQueCasan(OfertaCombinadaDetalle d, PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
@@ -255,7 +256,14 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     .Where(p => p.Producto != null && p.Producto.Trim() == d.Producto.Trim())
                     .ToList();
             }
-            return servicio.FiltrarLineas(pedido, d.FiltroProducto ?? string.Empty, d.Familia?.Trim())
+            // Sin grupo ni subgrupo se llama a la sobrecarga corta para que el comportamiento
+            // (y las llamadas que ven los fakes de los tests) sea idéntico al de antes de la #289.
+            if (d.Grupo == null && d.Subgrupo == null)
+            {
+                return servicio.FiltrarLineas(pedido, d.FiltroProducto ?? string.Empty, d.Familia?.Trim())
+                    ?? new List<LineaPedidoVentaDTO>();
+            }
+            return servicio.FiltrarLineas(pedido, d.FiltroProducto ?? string.Empty, d.Familia?.Trim(), d.Grupo?.Trim(), d.Subgrupo?.Trim())
                 ?? new List<LineaPedidoVentaDTO>();
         }
 
@@ -404,7 +412,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         {
             var gruposFiltro = oferta.OfertasCombinadasDetalles
                 .Where(d => d.Producto == null && d.GrupoAlternativa == null && d.Cantidad > 0)
-                .GroupBy(d => new { Familia = d.Familia?.Trim(), d.FiltroProducto });
+                .GroupBy(d => new { Familia = d.Familia?.Trim(), d.FiltroProducto, Grupo = d.Grupo?.Trim(), Subgrupo = d.Subgrupo?.Trim() });
 
             int instancias = 0; // se calcula solo si hay filtros (evita el coste si no los hay)
             foreach (var grupo in gruposFiltro)

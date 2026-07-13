@@ -1362,6 +1362,8 @@
           <Property Name="PermitirCantidadMenor" Type="bit" Nullable="false" />
           <Property Name="Familia" Type="char" MaxLength="10" />
           <Property Name="FiltroProducto" Type="nvarchar" MaxLength="50" />
+          <Property Name="Grupo" Type="char" MaxLength="3" />
+          <Property Name="Subgrupo" Type="char" MaxLength="3" />
         </EntityType>
         <EntityType Name="ProductosGruposComisionablesAlternativos">
           <Key>
@@ -10757,6 +10759,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="PermitirCantidadMenor" Type="Boolean" Nullable="false" />
           <Property Name="Familia" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="Grupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Subgrupo" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
         </EntityType>
         <EntityType Name="ProductoGrupoComisionableAlternativo">
           <Key>
@@ -14641,6 +14645,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="OfertasCombinadasDetalles">
             <EntityTypeMapping TypeName="NVModel.OfertaCombinadaDetalle">
               <MappingFragment StoreEntitySet="OfertasCombinadasDetalle">
+                <ScalarProperty Name="Subgrupo" ColumnName="Subgrupo" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
                 <ScalarProperty Name="FiltroProducto" ColumnName="FiltroProducto" />
                 <ScalarProperty Name="Familia" ColumnName="Familia" />
                 <ScalarProperty Name="PermitirCantidadMenor" ColumnName="PermitirCantidadMenor" />
