@@ -789,6 +789,7 @@
     <Compile Include="Infraestructure\Rectificativas\GestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\UsuarioContextInfoInterceptor.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\ConvertidorPedidoAPlantilla.cs" />
     <Compile Include="Infraestructure\UsuarioAuditoriaHelper.cs" />
     <Compile Include="Infraestructure\ElmahHelper.cs" />
     <Compile Include="Infraestructure\ServirJunto\IServicioValidarServirJunto.cs" />
@@ -1250,6 +1251,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\PedidosVenta\AlmacenDTO.cs" />
+    <Compile Include="Models\PedidosVenta\PedidoParaPlantillaDTO.cs" />
     <Compile Include="Models\PedidosVenta\DocumentosImpresionPedidoDTO.cs" />
     <Compile Include="Models\PedidosVenta\SerieDTO.cs" />
     <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />

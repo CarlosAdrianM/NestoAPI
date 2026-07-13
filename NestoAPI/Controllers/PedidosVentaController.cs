@@ -323,6 +323,19 @@ namespace NestoAPI.Controllers
             return pedido == null ? NotFound() : (IHttpActionResult)Ok(pedido);
         }
 
+        // Nesto#397: el pedido YA en forma de plantilla (ofertas colapsadas, Ganavisiones como
+        // regalos). La inversión vive en el backend para que Nesto y NestoApp no la dupliquen.
+        [HttpGet]
+        [Route("api/PedidosVenta/ParaPlantilla")]
+        [ResponseType(typeof(PedidoParaPlantillaDTO))]
+        public async Task<IHttpActionResult> GetPedidoParaPlantilla(string empresa, int numero)
+        {
+            PedidoVentaDTO pedido = await GestorPedidosVenta.LeerPedido(empresa, numero).ConfigureAwait(false);
+            return pedido == null
+                ? NotFound()
+                : (IHttpActionResult)Ok(ConvertidorPedidoAPlantilla.Convertir(pedido));
+        }
+
         // PUT: api/PedidosVenta/5
         [ResponseType(typeof(RespuestaModificacionPedidoDTO))]
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
