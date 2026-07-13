@@ -11,6 +11,26 @@ namespace NestoAPI.Tests.Infrastructure
     [TestClass]
     public class ServicioGestorClientesTests
     {
+        // ----- Issue #285: NormalizarNif con NIF de solo guiones/espacios -----
+
+        [TestMethod]
+        public void NormalizarNif_SoloGuionesOEspacios_DevuelveVacioSinLanzar()
+        {
+            // Regresión #285: un NIF almacenado como "-" (datos legacy sucios) quedaba en cadena
+            // vacía tras la limpieza y nif.First() lanzaba 'Sequence contains no elements',
+            // rompiendo el login por email+NIF de TiendasNuevaVision para cualquier email cuyo
+            // recorrido pasara por ese cliente.
+            Assert.AreEqual(string.Empty, ServicioGestorClientes.NormalizarNif("-"));
+            Assert.AreEqual(string.Empty, ServicioGestorClientes.NormalizarNif(" - - "));
+        }
+
+        [TestMethod]
+        public void NormalizarNif_NifNormal_QuitaGuionesEspaciosYCerosIniciales()
+        {
+            Assert.AreEqual("B12345678", ServicioGestorClientes.NormalizarNif("b-1234 5678"));
+            Assert.AreEqual("123456X", ServicioGestorClientes.NormalizarNif("00123456-X"));
+        }
+
         [TestMethod]
         public void ConstruirRespuestaCifNombre_Identificado_MarcaValidadoSinPrefijo()
         {

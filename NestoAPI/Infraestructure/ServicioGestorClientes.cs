@@ -241,10 +241,13 @@ namespace NestoAPI.Infraestructure
 
         public async Task<Cliente> BuscarCliente(NVEntities db, string empresa, string cliente, string contacto)
         {
+            // Issue #283: SingleOrDefault (no Single): si el cliente/contacto no existe se
+            // devuelve null y cada llamante decide (los flujos de usuario lanzan NotFoundException
+            // con mensaje claro en vez del 'Sequence contains no elements' de SingleAsync).
             Cliente clienteDevolver = await db.Clientes.Include(c => c.CondPagoClientes)
                 .Include(c => c.CCC1).Include(c => c.Vendedore).Include(c => c.PersonasContactoClientes)
                 .Include(c => c.VendedoresClienteGrupoProductoes)
-                .SingleAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto);
+                .SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.Contacto == contacto);
 
             return clienteDevolver;
         }
@@ -512,7 +515,7 @@ namespace NestoAPI.Infraestructure
             }
         }
 
-        private static string NormalizarNif(string nif)
+        internal static string NormalizarNif(string nif)
         {
             if (string.IsNullOrWhiteSpace(nif))
             {
@@ -521,6 +524,13 @@ namespace NestoAPI.Infraestructure
 
             // Limpieza general
             nif = nif.Trim().ToUpperInvariant().Replace("-", "").Replace(" ", "");
+
+            // Issue #285: un NIF de solo guiones/espacios queda vacío tras la limpieza y
+            // nif.First() lanzaría 'Sequence contains no elements'.
+            if (nif.Length == 0)
+            {
+                return string.Empty;
+            }
 
             // Detectamos si empieza o acaba con letra
             bool empiezaLetra = char.IsLetter(nif.First());
