@@ -351,8 +351,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         /// Issue #290: en ofertas con RegalarMenorImporte, comprueba que del conjunto de líneas que
         /// casan con la oferta (a) toda unidad a base 0 tenga tarifa &lt;= que toda unidad pagada
         /// (regalar solo la más barata; los empates de tarifa valen), y (b) lo pagado cubra la
-        /// tarifa (PVP) de las unidades no regaladas — el suelo pasa a ser DINÁMICO por combinación,
-        /// que es lo que un ImporteMinimo fijo no puede expresar cuando los precios difieren.
+        /// tarifa (PVP) de todas las unidades del conjunto MENOS la más barata por instancia — de
+        /// cada oferta completa solo puede salir gratis UNA unidad. El suelo se calcula sobre el
+        /// conjunto entero, no sobre "las unidades que el cliente decide pagar": si no, pagar 1 y
+        /// llevarse 2 gratis (o todo gratis) cumplía el suelo (#289, pregunta de Carlos 13/07).
         /// Devuelve null si la regla se cumple, o el motivo del rechazo.
         /// </summary>
         internal static string MotivoRegaloNoEsMenorImporte(OfertaCombinada oferta, PedidoVentaDTO pedido, IServicioPrecios servicio)
@@ -364,10 +366,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 .ToList();
 
             List<LineaPedidoVentaDTO> gratis = conjunto.Where(l => l.BaseImponible == 0).ToList();
-            List<LineaPedidoVentaDTO> pagadas = conjunto.Where(l => l.BaseImponible != 0).ToList();
-            if (!gratis.Any() || !pagadas.Any())
+            if (!gratis.Any())
             {
-                return null; // sin unidad regalada no hay nada que ordenar (lo demás lo ven otros controles)
+                return null; // sin unidad regalada no hay nada que vigilar
             }
 
             Dictionary<string, decimal> tarifas = conjunto
@@ -375,26 +376,36 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 .Distinct()
                 .ToDictionary(p => p, p => servicio.BuscarProducto(p)?.PVP ?? 0);
 
-            LineaPedidoVentaDTO gratisMasCara = gratis.OrderByDescending(l => tarifas[l.Producto.Trim()]).First();
-            LineaPedidoVentaDTO pagadaMasBarata = pagadas.OrderBy(l => tarifas[l.Producto.Trim()]).First();
-            decimal tarifaGratis = tarifas[gratisMasCara.Producto.Trim()];
-            decimal tarifaPagada = tarifas[pagadaMasBarata.Producto.Trim()];
-            if (tarifaGratis > tarifaPagada)
+            List<LineaPedidoVentaDTO> pagadas = conjunto.Where(l => l.BaseImponible != 0).ToList();
+            if (pagadas.Any())
             {
-                return "La oferta " + oferta.Id + " solo permite regalar la referencia de menor importe: no se puede regalar "
-                    + gratisMasCara.Producto.Trim() + " (tarifa " + tarifaGratis.ToString("C") + ") mientras se cobra "
-                    + pagadaMasBarata.Producto.Trim() + " (tarifa " + tarifaPagada.ToString("C") + ")";
+                LineaPedidoVentaDTO gratisMasCara = gratis.OrderByDescending(l => tarifas[l.Producto.Trim()]).First();
+                LineaPedidoVentaDTO pagadaMasBarata = pagadas.OrderBy(l => tarifas[l.Producto.Trim()]).First();
+                decimal tarifaGratis = tarifas[gratisMasCara.Producto.Trim()];
+                decimal tarifaPagada = tarifas[pagadaMasBarata.Producto.Trim()];
+                if (tarifaGratis > tarifaPagada)
+                {
+                    return "La oferta " + oferta.Id + " solo permite regalar la referencia de menor importe: no se puede regalar "
+                        + gratisMasCara.Producto.Trim() + " (tarifa " + tarifaGratis.ToString("C") + ") mientras se cobra "
+                        + pagadaMasBarata.Producto.Trim() + " (tarifa " + tarifaPagada.ToString("C") + ")";
+                }
             }
 
-            // Suelo dinámico: la base del conjunto debe cubrir la tarifa de las unidades pagadas
-            // (la oferta no acumula otros descuentos en las unidades de pago). Misma tolerancia
-            // de redondeo que el ImporteMinimo fijo.
-            decimal requerido = pagadas.Sum(l => l.Cantidad * tarifas[l.Producto.Trim()]);
+            // Suelo dinámico: del conjunto entero solo se regala la unidad más barata por cada
+            // instancia de la oferta; el resto debe cubrir su tarifa (la oferta no acumula otros
+            // descuentos). Misma tolerancia de redondeo que el ImporteMinimo fijo.
+            int instancias = InstanciasEnPedido(oferta, pedido, servicio);
+            List<decimal> tarifasUnidades = conjunto
+                .SelectMany(l => Enumerable.Repeat(tarifas[l.Producto.Trim()], l.Cantidad))
+                .OrderBy(t => t)
+                .ToList();
+            decimal regalable = tarifasUnidades.Take(instancias).Sum();
+            decimal requerido = tarifasUnidades.Sum() - regalable;
             decimal pagado = conjunto.Sum(l => l.BaseImponible);
-            decimal tolerancia = 0.005m * (pagadas.Count + 1);
+            decimal tolerancia = 0.005m * (conjunto.Count + 1);
             if (pagado < requerido - tolerancia)
             {
-                return "La oferta " + oferta.Id + " exige cobrar a tarifa las unidades no regaladas: el importe de las líneas de la oferta debe ser al menos "
+                return "La oferta " + oferta.Id + " exige cobrar a tarifa las unidades no regaladas (solo se regala la de menor importe por cada oferta completa): el importe de las líneas de la oferta debe ser al menos "
                     + requerido.ToString("C");
             }
 

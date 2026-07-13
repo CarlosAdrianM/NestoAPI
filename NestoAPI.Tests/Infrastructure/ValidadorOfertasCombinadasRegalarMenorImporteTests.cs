@@ -171,6 +171,57 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void RegalarMenorImporte_PagadasABajoPrecio_SeRechazaPorElSueloDinamico()
+        {
+            // Pregunta de Carlos (13/07): ¿pueden poner 2 a 1 € (tarifa 12/15) y la otra gratis?
+            // No: el suelo dinámico exige cubrir la tarifa de las unidades no regaladas.
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_B, 1, 1m),
+                Linea(PROD_C, 1, 1m),
+                Linea(PROD_A, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_A, _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            StringAssert.Contains(respuesta.Motivo, "tarifa");
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_UnaPagadaDosGratis_SeRechaza()
+        {
+            // El 2+1 regala UNA unidad por oferta completa: pagar solo la cara y llevarse las
+            // otras dos gratis debe rechazarse aunque lo pagado cubra su propia tarifa.
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_C, 1, 15m),
+                Linea(PROD_A, 1, 0m),
+                Linea(PROD_B, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_A, _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada, "Con 1 pagada y 2 gratis no hay 2+1 que valga");
+            StringAssert.Contains(respuesta.Motivo, "tarifa");
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_TodasGratis_SeRechaza()
+        {
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_A, 1, 0m),
+                Linea(PROD_B, 1, 0m),
+                Linea(PROD_C, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_A, _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada, "Las 3 gratis no las puede autorizar el 2+1");
+        }
+
+        [TestMethod]
         public void RegalarMenorImporte_DosInstancias_LasDosGratisSonLasDosMasBaratas()
         {
             OfertaCombinada oferta = CrearOferta2Mas1();
