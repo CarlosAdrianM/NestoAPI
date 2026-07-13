@@ -8,6 +8,9 @@ using System.Web.Http;
 
 namespace NestoAPI.Controllers
 {
+    // Issue #189: [Authorize] de clase. Llamantes auditados 13/07/26: Nesto (RapportService,
+    // JWT desde 1.10.9.0) y NestoApp (resumen-ventas, interceptor Bearer desde v2.17.2).
+    [Authorize]
     [RoutePrefix("api/ventascliente")]
     public class VentasClienteController : ApiController
     {

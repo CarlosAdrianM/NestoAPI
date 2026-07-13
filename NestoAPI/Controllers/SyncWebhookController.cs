@@ -15,6 +15,11 @@ namespace NestoAPI.Controllers
     /// Controlador genérico para recibir webhooks de Google Pub/Sub (Push subscription)
     /// Soporta sincronización de múltiples tablas: Clientes, Productos, Proveedores, etc.
     /// </summary>
+    // Issue #189: ANÓNIMO A PROPÓSITO Y EXPLÍCITO. /webhook lo llama Google Pub/Sub (push) sin
+    // JWT nuestro; el resto son diagnósticos (health/logs) y poison pills (Nesto los llama CON
+    // token, pero no se exige para no acoplar). ⚠️ El webhook NO valida firma/token de Pub/Sub:
+    // endurecerlo es trabajo aparte (anotado en la issue), no de autenticación JWT.
+    [AllowAnonymous]
     [RoutePrefix("api/sync")]
     public class SyncWebhookController : ApiController
     {

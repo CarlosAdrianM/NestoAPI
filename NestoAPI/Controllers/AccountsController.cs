@@ -14,6 +14,9 @@ using System.Web.Http.Cors;
 
 namespace NestoAPI.Controllers
 {
+    // Issue #189: [Authorize] de clase como red de seguridad (los métodos sensibles ya exigen
+    // rol Admin; lo anónimo va marcado explícitamente con [AllowAnonymous] y razonado).
+    [Authorize]
     [EnableCors("*", "*", "*")]
     [RoutePrefix("api/accounts")]
     public class AccountsController : BaseApiController
@@ -43,7 +46,10 @@ namespace NestoAPI.Controllers
             return user != null ? Ok(TheModelFactory.Create(user)) : (IHttpActionResult)NotFound();
         }
 
-        [AllowAnonymous]
+        // Issue #189: era [AllowAnonymous] (registro abierto a internet sin captcha ni secreto).
+        // Auditado 13/07/26: NINGÚN cliente lo llama (NestoApp registra por /oauth/token y la
+        // tienda por /api/auth/token); los usuarios se crean por administración → rol Admin.
+        [Authorize(Roles = "Admin")]
         [Route("create")]
         public async Task<IHttpActionResult> CreateUser(CreateUserBindingModel createUserModel)
         {
@@ -117,6 +123,9 @@ namespace NestoAPI.Controllers
             return Ok();
         }
 
+        // Anónimo por naturaleza: lo llama quien NO puede iniciar sesión (pantalla de login de
+        // NestoApp). Issue #189: explícito para que el [Authorize] de clase no lo tape.
+        [AllowAnonymous]
         [HttpPost]
         [Route("OlvideMiContrasenna")]
         public async Task<IHttpActionResult> OlvideMiContrasenna(string correo)

@@ -40,6 +40,10 @@ namespace NestoAPI.Controllers
         public string EtiquetaContenido { get; set; }
     }
 
+    // Issue #189: [Authorize] de clase. Llamantes auditados 13/07/26: Nesto (JWT vía
+    // IClienteApiFactory desde 1.10.9.0), NestoApp (interceptor Bearer + refresh desde v2.17.2)
+    // y TiendasNuevaVision (MyHttpClient con AuthHeaderHandler). Lo anónimo, explícito abajo.
+    [Authorize]
     public class EnviosAgenciasController : ApiController
     {
         public EnviosAgenciasController() : this(new NVEntities())
@@ -819,6 +823,9 @@ namespace NestoAPI.Controllers
             return db.EnviosAgencias.Count(e => e.Numero == id) > 0;
         }
 
+        // Anónimo a propósito (Issue #189): se llama desde navegador con CORS abierto (página
+        // externa de entrega/seguimiento), sin sesión de NestoAPI.
+        [AllowAnonymous]
         [HttpPost]
         [EnableCors(origins: "*", headers: "*", methods: "*", SupportsCredentials = true)]
         [Route("api/EnviosAgencias/EnviarCorreoEntregaAgencia")]
