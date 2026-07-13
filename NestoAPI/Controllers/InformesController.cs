@@ -279,6 +279,41 @@ namespace NestoAPI.Controllers
             return Ok(lista);
         }
 
+        // Nesto#340 (RDLC -> QuestPDF): el render de Picking/Packing pasa al backend.
+        [HttpGet]
+        [Route("api/Informes/Picking/Pdf")]
+        public async Task<HttpResponseMessage> GetPickingPdf(int picking, string empresa = "1", int personas = 1)
+        {
+            List<PickingDTO> lista = await _servicio
+                .LeerPickingAsync(picking, empresa, personas)
+                .ConfigureAwait(false);
+
+            GeneradorPdfPicking generador = new GeneradorPdfPicking();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(picking, lista)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
+        [HttpGet]
+        [Route("api/Informes/Packing/Pdf")]
+        public async Task<HttpResponseMessage> GetPackingPdf(int picking, int personas = 1)
+        {
+            List<PackingDTO> lista = await _servicio
+                .LeerPackingAsync(picking, personas)
+                .ConfigureAwait(false);
+
+            GeneradorPdfPacking generador = new GeneradorPdfPacking();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(picking, lista)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
         [HttpGet]
         [Route("api/Informes/ManifiestoAgencia")]
         [ResponseType(typeof(List<ManifiestoAgenciaDTO>))]
