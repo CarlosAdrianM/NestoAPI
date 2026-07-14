@@ -29,7 +29,10 @@
 -- nadie) y se puede relanzar más tarde. Si aun así hubiera que cancelar a mano: cancelar
 -- PRONTO (el rollback tarda tanto como lo avanzado y mantiene el bloqueo mientras deshace).
 SET LOCK_TIMEOUT 15000;
-ALTER TABLE dbo.SeguimientoCliente ADD FechaDia AS CONVERT(date, Fecha) PERSISTED;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('dbo.SeguimientoCliente') AND name = 'FechaDia')
+BEGIN
+    ALTER TABLE dbo.SeguimientoCliente ADD FechaDia AS CONVERT(date, Fecha) PERSISTED;
+END
 SET LOCK_TIMEOUT -1;
 GO
 
@@ -43,13 +46,17 @@ GO
 -- real Fecha; la unicidad POR DÍA la da FechaDia en la CLAVE del índice, que sí puede ser
 -- calculada (persistida).
 SET LOCK_TIMEOUT 15000;
-CREATE UNIQUE NONCLUSTERED INDEX UQ_SeguimientoCliente_UnoPorClienteUsuarioDia
-    ON dbo.SeguimientoCliente ([Número], Contacto, Usuario, FechaDia)
-    WHERE Estado <> 2
-      AND [Número] IS NOT NULL
-      AND Usuario IS NOT NULL
-      AND Fecha >= '20260715';  -- ⚠️ AJUSTAR si no se ejecuta el 14/07/26: día SIGUIENTE a la ejecución
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('dbo.SeguimientoCliente') AND name = 'UQ_SeguimientoCliente_UnoPorClienteUsuarioDia')
+BEGIN
+    CREATE UNIQUE NONCLUSTERED INDEX UQ_SeguimientoCliente_UnoPorClienteUsuarioDia
+        ON dbo.SeguimientoCliente ([Número], Contacto, Usuario, FechaDia)
+        WHERE Estado <> 2
+          AND [Número] IS NOT NULL
+          AND Usuario IS NOT NULL
+          AND Fecha >= '20260715';  -- ⚠️ AJUSTAR si no se ejecuta el 14/07/26: día SIGUIENTE a la ejecución
+END
 GO
+-- ✅ EJECUTADO Y VERIFICADO EN PROD el 14/07/26 14:05 (filtro sobre Fecha, error 10609 corregido).
 
 -- VERIFICACIÓN parte 2 (debe devolver 1 fila con has_filter = 1):
 SELECT name, is_unique, has_filter, filter_definition
