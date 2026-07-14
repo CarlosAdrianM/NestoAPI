@@ -760,16 +760,38 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             {
                 return BadRequest(ModelState);
             }
+            // #294: un DTO sin usuario daba NullReferenceException (500) al evaluar el check.
+            if (string.IsNullOrWhiteSpace(seguimientoClienteDTO.Usuario))
+            {
+                return BadRequest("El seguimiento debe llevar usuario.");
+            }
 
             DateTime fechaDesde = new DateTime(seguimientoClienteDTO.Fecha.Year, seguimientoClienteDTO.Fecha.Month, seguimientoClienteDTO.Fecha.Day);
             DateTime fechaHasta = fechaDesde.AddDays(1);
-            if (seguimientoClienteDTO.Estado != SeguimientoClienteDTO.EstadoSeguimientoDTO.Gestion_Administrativa && db.SeguimientosClientes.Where(s => s.Fecha >= fechaDesde &&
-                s.Fecha < fechaHasta && s.Número == seguimientoClienteDTO.Cliente &&
-                s.Contacto == seguimientoClienteDTO.Contacto &&
-                s.Usuario.ToLower() == seguimientoClienteDTO.Usuario.ToLower()).Any())
+            // Gestión administrativa exenta (varias el mismo día son legítimas). Cliente null
+            // exento: son avisos sin cliente y el check por igualdad nunca los casaría.
+            bool comprobarDuplicado = seguimientoClienteDTO.Estado != SeguimientoClienteDTO.EstadoSeguimientoDTO.Gestion_Administrativa
+                && seguimientoClienteDTO.Cliente != null;
+
+            // #294: el check era read-then-insert sin bloqueo y dos POST concurrentes (doble clic
+            // con el servidor lento) pasaban ambos el .Any() e insertaban duplicados (~19/mes).
+            // El applock serializa check+insert por cliente/contacto/usuario/día dentro de la
+            // transacción; el segundo POST espera, ve la fila del primero y recibe 409.
+            using (DbContextTransaction transaccion = db.Database.BeginTransaction())
             {
-                throw new Exception(string.Format("Ya existe un seguimiento del cliente {0}/{1} para el día {2}", seguimientoClienteDTO.Cliente.Trim(), seguimientoClienteDTO.Contacto.Trim(), fechaDesde.ToShortDateString()));
-            }
+                if (comprobarDuplicado)
+                {
+                    await BloquearRapportsDelDiaAsync(seguimientoClienteDTO, fechaDesde).ConfigureAwait(false);
+                    if (db.SeguimientosClientes.Any(s => s.Fecha >= fechaDesde &&
+                        s.Fecha < fechaHasta && s.Número == seguimientoClienteDTO.Cliente &&
+                        s.Contacto == seguimientoClienteDTO.Contacto &&
+                        s.Usuario.ToLower() == seguimientoClienteDTO.Usuario.ToLower()))
+                    {
+                        return Content(HttpStatusCode.Conflict, new HttpError(string.Format(
+                            "Ya existe un seguimiento del cliente {0}/{1} para el día {2}",
+                            seguimientoClienteDTO.Cliente?.Trim(), seguimientoClienteDTO.Contacto?.Trim(), fechaDesde.ToShortDateString())));
+                    }
+                }
 
             string vendedorFicha = db.Clientes.SingleOrDefault(c => c.Empresa == seguimientoClienteDTO.Empresa && c.Nº_Cliente == seguimientoClienteDTO.Cliente && c.Contacto == seguimientoClienteDTO.Contacto)?.Vendedor?.Trim();
             string vendedorPeluqueria = db.VendedoresClientesGruposProductos.SingleOrDefault(v => v.Empresa == seguimientoClienteDTO.Empresa && v.Cliente == seguimientoClienteDTO.Cliente && v.Contacto == seguimientoClienteDTO.Contacto && v.GrupoProducto == "PEL")?.Vendedor?.Trim();
@@ -826,9 +848,18 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             try
             {
                 _ = await db.SaveChangesAsync();
+                transaccion.Commit();
             }
-            catch (DbUpdateException)
+            catch (DbUpdateException ex)
             {
+                // Cinturón del índice único filtrado (Scripts/Issue294): si dos inserts se cuelan
+                // por una vía sin applock (p. ej. Copiar), el índice los para y devolvemos 409.
+                if (EsViolacionDeIndiceUnico(ex))
+                {
+                    return Content(HttpStatusCode.Conflict, new HttpError(string.Format(
+                        "Ya existe un seguimiento del cliente {0}/{1} para el día {2}",
+                        seguimientoClienteDTO.Cliente?.Trim(), seguimientoClienteDTO.Contacto?.Trim(), fechaDesde.ToShortDateString())));
+                }
                 if (SeguimientoClienteExists(seguimientoCliente.NºOrden))
                 {
                     return Conflict();
@@ -844,6 +875,30 @@ El mensaje resultante es importante que lo devuelvas en HTML para poner en el cu
             }
 
             return CreatedAtRoute("DefaultApi", new { id = seguimientoCliente.NºOrden }, seguimientoCliente);
+            } // using transaccion
+        }
+
+        /// <summary>
+        /// #294: serializa los POST concurrentes del mismo cliente/contacto/usuario/día con un
+        /// applock ligado a la transacción (se libera solo en commit/rollback). Timeout de 15s:
+        /// si el primer POST tarda más (bloqueos tipo #271), el segundo recibe error claro en
+        /// vez de colarse.
+        /// </summary>
+        private async Task BloquearRapportsDelDiaAsync(SeguimientoClienteDTO dto, DateTime dia)
+        {
+            string recurso = $"SeguimientoCliente:{dto.Cliente?.Trim()}:{dto.Contacto?.Trim()}:{dto.Usuario.Trim().ToLower()}:{dia:yyyyMMdd}";
+            _ = await db.Database.ExecuteSqlCommandAsync(
+                @"DECLARE @resultado int;
+                  EXEC @resultado = sp_getapplock @Resource = @p0, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000;
+                  IF @resultado < 0 RAISERROR('No se pudo obtener el bloqueo de seguimientos del día; reintente en unos segundos.', 16, 1);",
+                recurso).ConfigureAwait(false);
+        }
+
+        // 2601 (índice único) y 2627 (constraint única) de SQL Server.
+        private static bool EsViolacionDeIndiceUnico(DbUpdateException ex)
+        {
+            Exception raiz = ex.GetBaseException();
+            return raiz is System.Data.SqlClient.SqlException sql && (sql.Number == 2601 || sql.Number == 2627);
         }
         /*
         // DELETE: api/SeguimientosClientes/5
