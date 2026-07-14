@@ -102,6 +102,27 @@ namespace NestoAPI.Controllers
             return Ok(lista);
         }
 
+        /// <summary>
+        /// Render del informe de detalle de rapports en PDF (QuestPDF), para que Nesto lo descargue
+        /// en vez de renderizar el RDLC DetalleRapports.rdlc en local (Nesto#340).
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/DetalleRapports/Pdf")]
+        public async Task<HttpResponseMessage> GetDetalleRapportsPdf(DateTime fechaDesde, DateTime fechaHasta, string listaVendedores = "")
+        {
+            List<DetalleRapportsDTO> datos = await _servicio
+                .LeerDetalleRapportsAsync(fechaDesde, fechaHasta, listaVendedores)
+                .ConfigureAwait(false);
+
+            GeneradorPdfDetalleRapports generador = new GeneradorPdfDetalleRapports();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(fechaDesde, fechaHasta, datos)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
         [HttpGet]
         [Route("api/Informes/ExtractoContable")]
         [ResponseType(typeof(List<ExtractoContableDTO>))]

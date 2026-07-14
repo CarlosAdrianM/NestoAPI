@@ -246,6 +246,7 @@
     <Compile Include="Infrastructure\GestorFacturacionRutasTests.cs" />
     <Compile Include="Infrastructure\ServicioGestorClientesTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfControlPedidosTests.cs" />
+    <Compile Include="Infrastructure\GeneradorPdfDetalleRapportsTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfExtractoContableTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfKitsQueSePuedenMontarTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfModelo347Tests.cs" />
