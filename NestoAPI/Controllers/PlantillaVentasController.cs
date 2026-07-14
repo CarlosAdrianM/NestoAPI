@@ -368,6 +368,11 @@ namespace NestoAPI.Controllers
             return resultado;
         }
 
+        // #257: nº máximo de productos por lote en las consultas agrupadas de stock. Un IN()
+        // con miles de valores genera un SQL enorme y lento en EF6; en lotes siguen siendo un
+        // puñado de consultas frente a las miles del bucle antiguo.
+        internal const int TAMANO_LOTE_STOCKS = 1000;
+
         private List<LineaPlantillaVenta> PonerStockLineas(PonerStockParam param)
         {
             if (param == null || param.Lineas == null)
@@ -382,36 +387,104 @@ namespace NestoAPI.Controllers
                     ? new List<string> { param.Almacen }
                     : new List<string>();
 
+            // #257: antes se lanzaban 3 consultas por (producto × almacén) más 2 por producto
+            // (para una plantilla de 200 productos y 3 almacenes, ~2.200 round-trips secuenciales
+            // a SQL Server). Ahora el stock y el reservado de TODOS los productos/almacenes se
+            // traen en 2 consultas agrupadas (por lotes) y el resto se resuelve en memoria con
+            // los mismos valores: disponible = stock - reservado.
+            List<string> productos = param.Lineas
+                .Select(l => l.producto?.Trim())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Distinct()
+                .ToList();
+
+            Dictionary<string, int> stocks = LeerCantidadesAgrupadas(productos, almacenesConsultar, reservado: false);
+            Dictionary<string, int> reservados = LeerCantidadesAgrupadas(productos, almacenesConsultar, reservado: true);
+
             foreach (LineaPlantillaVenta linea in param.Lineas)
             {
-                ProductoPlantillaDTO productoNuevo = new ProductoPlantillaDTO(linea.producto, db);
-
                 // Poblar la lista de stocks por almacen
                 linea.stocks = new List<StockAlmacenDTO>();
                 foreach (string almacen in almacenesConsultar)
                 {
+                    int stock = CantidadDe(stocks, linea.producto, almacen);
+                    int reservadoAlmacen = CantidadDe(reservados, linea.producto, almacen);
                     linea.stocks.Add(new StockAlmacenDTO
                     {
                         almacen = almacen,
-                        stock = productoNuevo.Stock(almacen),
-                        cantidadDisponible = productoNuevo.CantidadDisponible(almacen)
+                        stock = stock,
+                        cantidadDisponible = stock - reservadoAlmacen
                     });
                 }
 
-                // Mantener compatibilidad: usar el primer almacen para los campos legacy
-                if (almacenesConsultar.Count > 0)
+                // Mantener compatibilidad: los campos legacy salen del primer almacén, que ya
+                // está calculado en stocks[0] (antes se recalculaba con 2 consultas más).
+                if (linea.stocks.Count > 0)
                 {
-                    string primerAlmacen = almacenesConsultar[0];
-                    linea.cantidadDisponible = (short)productoNuevo.CantidadDisponible(primerAlmacen);
+                    linea.cantidadDisponible = (short)linea.stocks[0].cantidadDisponible;
                 }
 
                 // Issue #286: Calcular StockDisponibleTodosLosAlmacenes como suma de todos los almacenes
-                linea.StockDisponibleTodosLosAlmacenes = linea.stocks != null
-                    ? linea.stocks.Sum(s => s.cantidadDisponible)
-                    : linea.cantidadDisponible;
+                linea.StockDisponibleTodosLosAlmacenes = linea.stocks.Sum(s => s.cantidadDisponible);
             }
 
             return param.Lineas;
+        }
+
+        // Clave (producto, almacén) normalizada: en BD son char con relleno de espacios.
+        private static string ClaveStock(string producto, string almacen)
+            => (producto?.Trim() ?? "") + "|" + (almacen?.Trim() ?? "");
+
+        private static int CantidadDe(Dictionary<string, int> cantidades, string producto, string almacen)
+            => cantidades.TryGetValue(ClaveStock(producto, almacen), out int cantidad) ? cantidad : 0;
+
+        /// <summary>
+        /// #257: suma por (producto, almacén) en una consulta agrupada por lote. Con
+        /// <paramref name="reservado"/> false suma el stock (ExtractosProducto); con true suma
+        /// lo reservado (LinPedidoVtas en curso o pendientes). Mismos criterios que
+        /// ProductoPlantillaDTO.Stock/CantidadReservada, que consultaban producto a producto.
+        /// </summary>
+        private Dictionary<string, int> LeerCantidadesAgrupadas(List<string> productos, List<string> almacenes, bool reservado)
+        {
+            Dictionary<string, int> resultado = new Dictionary<string, int>();
+            if (productos.Count == 0 || almacenes.Count == 0)
+            {
+                return resultado;
+            }
+
+            for (int i = 0; i < productos.Count; i += TAMANO_LOTE_STOCKS)
+            {
+                List<string> lote = productos.Skip(i).Take(TAMANO_LOTE_STOCKS).ToList();
+                if (reservado)
+                {
+                    var filas = db.LinPedidoVtas
+                        .Where(l => (l.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || l.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO)
+                            && almacenes.Contains(l.Almacén) && lote.Contains(l.Producto)
+                            && (l.Estado == Constantes.EstadosLineaVenta.EN_CURSO || l.Estado == Constantes.EstadosLineaVenta.PENDIENTE))
+                        .GroupBy(l => new { l.Producto, l.Almacén })
+                        .Select(g => new { g.Key.Producto, g.Key.Almacén, Cantidad = g.Sum(x => (int)x.Cantidad) })
+                        .ToList();
+                    foreach (var fila in filas)
+                    {
+                        resultado[ClaveStock(fila.Producto, fila.Almacén)] = fila.Cantidad;
+                    }
+                }
+                else
+                {
+                    var filas = db.ExtractosProducto
+                        .Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO)
+                            && almacenes.Contains(e.Almacén) && lote.Contains(e.Número))
+                        .GroupBy(e => new { e.Número, e.Almacén })
+                        .Select(g => new { g.Key.Número, g.Key.Almacén, Cantidad = g.Sum(x => (int)x.Cantidad) })
+                        .ToList();
+                    foreach (var fila in filas)
+                    {
+                        resultado[ClaveStock(fila.Número, fila.Almacén)] = fila.Cantidad;
+                    }
+                }
+            }
+
+            return resultado;
         }
 
         [HttpPost]
