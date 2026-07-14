@@ -21,7 +21,14 @@ namespace NestoAPI.Infraestructure.Informes
     /// - Al FINAL del cliente, una única sección "Productos pendientes de servir en próximos
     ///   pedidos..." con las pendientes (Tipo = "Pendientes") de TODOS sus pedidos.
     /// - Ruta/Usuario/avisos se toman del primer valor NO VACÍO de las líneas (el SP no los
-    ///   rellena en todas las filas).
+    ///   rellena en todas las filas). EXCEPCIÓN (#293): Ampliacion usa el valor de la PRIMERA
+    ///   fila del pedido, como el RDLC (semántica First de un textbox de grupo) — con primer-no-
+    ///   vacío bastaba una fila suelta con texto para marcar 'AMPLIACIÓN PEDIDO' en pedidos que
+    ///   el informe viejo no marcaba (caso real 922172).
+    /// - Los bloques de cliente van ordenados por el número de pedido de su primera fila (el
+    ///   RDLC ordena el grupo Cliente por Fields!Número.Value) para comparar hoja a hoja.
+    /// - Anchos y fuente calcados del RDLC (detalle 10pt, Subgrupo ~6,3cm, cabeceras 14pt);
+    ///   sin columna Cajas (feedback del almacén, #293).
     /// - Pie con el aviso al cliente final ("si algo no ha llegado perfecto... almacen@") igual
     ///   que el RDLC: este papel viaja DENTRO de la caja.
     /// </summary>
@@ -42,7 +49,7 @@ namespace NestoAPI.Infraestructure.Informes
                     page.Size(PageSizes.A4.Landscape());
                     page.MarginVertical(0.8f, Unit.Centimetre);
                     page.MarginHorizontal(0.8f, Unit.Centimetre);
-                    page.DefaultTextStyle(x => x.FontSize(8));
+                    page.DefaultTextStyle(x => x.FontSize(10));
 
                     page.Header().Element(c => ComponerCabecera(c, picking));
                     page.Content().Column(column =>
@@ -85,6 +92,10 @@ namespace NestoAPI.Infraestructure.Informes
                     Contacto = l.Contacto?.Trim(),
                     Direccion = l.Direccion?.Trim()
                 })
+                // El RDLC ordena el grupo Cliente por Fields!Número.Value (= el pedido de la
+                // primera fila del bloque en el orden del SP). Sin esto los bloques salen por
+                // orden de aparición y no se puede comparar hoja a hoja con el informe viejo.
+                .OrderBy(g => g.First().Número)
                 .Select(g =>
                 {
                     List<PackingDTO> delBloque = g.ToList();
@@ -111,7 +122,9 @@ namespace NestoAPI.Infraestructure.Informes
                                     Ruta = PrimeroNoVacio(delPedido, l => l.Ruta) ?? PrimeroNoVacio(delBloque, l => l.Ruta),
                                     Usuario = PrimeroNoVacio(delPedido, l => l.Usuario) ?? PrimeroNoVacio(delBloque, l => l.Usuario),
                                     Aviso = PrimeroNoVacio(delPedido, l => l.Aviso),
-                                    Ampliacion = PrimeroNoVacio(delPedido, l => l.Ampliacion),
+                                    // Semántica RDLC (primera fila del grupo, aunque esté vacía):
+                                    // ver doc de la clase (#293, falso 'AMPLIACIÓN PEDIDO').
+                                    Ampliacion = PrimeraFila(delPedido, l => l.Ampliacion),
                                     ComentarioPicking = PrimeroNoVacio(delPedido, l => l.ComentarioPicking),
                                     Lineas = delPedido
                                 };
@@ -131,6 +144,14 @@ namespace NestoAPI.Infraestructure.Informes
             return lineas.Select(selector).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim();
         }
 
+        // Valor de la PRIMERA fila (orden del SP), o null si está vacío: replica el textbox de
+        // grupo del RDLC, que evalúa First() sobre el datasource.
+        private static string PrimeraFila(List<PackingDTO> lineas, Func<PackingDTO, string> selector)
+        {
+            string valor = lineas.Select(selector).FirstOrDefault();
+            return string.IsNullOrWhiteSpace(valor) ? null : valor.Trim();
+        }
+
         private void ComponerCabecera(IContainer container, int picking)
         {
             container.PaddingBottom(5).Row(row =>
@@ -145,11 +166,19 @@ namespace NestoAPI.Infraestructure.Informes
             container.Column(column =>
             {
                 // Cabecera del cliente (una sola vez: todos sus pedidos comparten dirección).
+                // El nº de pedido va ARRIBA, junto al cliente y destacado a 14pt como en el
+                // RDLC (feedback del almacén, #293).
+                List<int> numerosPedido = bloque.Pedidos.Any()
+                    ? bloque.Pedidos.Select(p => p.Numero).ToList()
+                    : bloque.Pendientes.Select(l => l.Número).Distinct().OrderBy(n => n).ToList();
                 column.Item().Border(1).BorderColor(Colors.Grey.Lighten1).Padding(5).Column(cab =>
                 {
                     cab.Item().Text(text =>
                     {
-                        text.Span("Cliente: ").Bold();
+                        text.DefaultTextStyle(x => x.FontSize(14).Bold());
+                        text.Span(numerosPedido.Count == 1 ? "Pedido: " : "Pedidos: ");
+                        text.Span(string.Join(", ", numerosPedido));
+                        text.Span("      Cliente: ");
                         text.Span($"{bloque.Cliente}/{bloque.Contacto}");
                     });
                     cab.Item().Text($"{bloque.Direccion} - {bloque.CodPostal} {bloque.Poblacion} - Tel. {bloque.Telefono}");
@@ -159,8 +188,8 @@ namespace NestoAPI.Infraestructure.Informes
                 {
                     column.Item().PaddingTop(6).Text(text =>
                     {
-                        text.Span("Pedido: ").Bold();
-                        text.Span(pedido.Numero.ToString());
+                        text.Span("Pedido: ").Bold().FontSize(12);
+                        text.Span(pedido.Numero.ToString()).Bold().FontSize(12);
                         text.Span("      Ruta: ").Bold();
                         text.Span(pedido.Ruta ?? "");
                         text.Span("      Usuario: ").Bold();
@@ -193,21 +222,23 @@ namespace NestoAPI.Infraestructure.Informes
         {
             container.Table(table =>
             {
+                // Anchos proporcionales a los del RDLC (Descripción 8,5cm / Subgrupo 6,3cm), que
+                // son los que evitan que los subgrupos largos partan la fila en 2-3 líneas (#293).
+                // Sin columna Cajas: en el packing no aporta (feedback del almacén).
                 table.ColumnsDefinition(columns =>
                 {
-                    columns.ConstantColumn(50);   // Prov.
-                    columns.ConstantColumn(55);   // Producto
-                    columns.ConstantColumn(90);   // Cód. Barras
-                    columns.RelativeColumn(3);    // Descripción
-                    columns.ConstantColumn(45);   // Tamaño
-                    columns.ConstantColumn(35);   // U.M.
-                    columns.RelativeColumn(1);    // Subgrupo
-                    columns.ConstantColumn(40);   // Cant.
-                    columns.ConstantColumn(40);   // Cajas
-                    columns.ConstantColumn(45);   // Estado
-                    columns.ConstantColumn(30);   // Pas
-                    columns.ConstantColumn(30);   // Fil
-                    columns.ConstantColumn(30);   // Col
+                    columns.ConstantColumn(32);      // Prov.
+                    columns.ConstantColumn(54);      // Producto
+                    columns.ConstantColumn(84);      // Cód. Barras
+                    columns.RelativeColumn(2.7f);    // Descripción
+                    columns.ConstantColumn(42);      // Tamaño
+                    columns.ConstantColumn(30);      // U.M.
+                    columns.RelativeColumn(2f);      // Subgrupo
+                    columns.ConstantColumn(34);      // Cant.
+                    columns.ConstantColumn(40);      // Estado
+                    columns.ConstantColumn(24);      // Pas
+                    columns.ConstantColumn(24);      // Fil
+                    columns.ConstantColumn(28);      // Col
                 });
 
                 table.Header(header =>
@@ -220,7 +251,6 @@ namespace NestoAPI.Infraestructure.Informes
                     CeldaCabecera(header.Cell(), "U.M.", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Subgrupo", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Cant.", alinearDerecha: true);
-                    CeldaCabecera(header.Cell(), "Cajas", alinearDerecha: true);
                     CeldaCabecera(header.Cell(), "Estado", alinearDerecha: true);
                     CeldaCabecera(header.Cell(), "Pas", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Fil", alinearDerecha: false);
@@ -237,7 +267,6 @@ namespace NestoAPI.Infraestructure.Informes
                     CeldaDato(table.Cell(), linea.UnidadMedida?.Trim() ?? "", alinearDerecha: false);
                     CeldaDato(table.Cell(), linea.NombreSubGrupo?.Trim() ?? "", alinearDerecha: false);
                     CeldaDato(table.Cell(), linea.Cantidad.ToString(), alinearDerecha: true);
-                    CeldaDato(table.Cell(), linea.CantidadCajas.ToString(), alinearDerecha: true);
                     CeldaDato(table.Cell(), linea.Estado?.ToString() ?? "", alinearDerecha: true);
                     CeldaDato(table.Cell(), linea.Pasillo?.Trim() ?? "", alinearDerecha: false);
                     CeldaDato(table.Cell(), linea.Fila?.Trim() ?? "", alinearDerecha: false);
@@ -264,7 +293,7 @@ namespace NestoAPI.Infraestructure.Informes
             {
                 contenido = contenido.AlignRight();
             }
-            contenido.Text(texto).Bold().FontSize(8);
+            contenido.Text(texto).Bold().FontSize(10);
         }
 
         private static void CeldaDato(IContainer celda, string texto, bool alinearDerecha)
@@ -274,7 +303,7 @@ namespace NestoAPI.Infraestructure.Informes
             {
                 contenido = contenido.AlignRight();
             }
-            contenido.Text(texto).FontSize(8);
+            contenido.Text(texto).FontSize(10);
         }
 
         private void ComponerPie(IContainer container)

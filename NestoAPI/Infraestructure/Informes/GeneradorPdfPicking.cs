@@ -27,7 +27,9 @@ namespace NestoAPI.Infraestructure.Informes
                     page.Size(PageSizes.A4.Landscape());
                     page.MarginVertical(0.8f, Unit.Centimetre);
                     page.MarginHorizontal(0.8f, Unit.Centimetre);
-                    page.DefaultTextStyle(x => x.FontSize(8));
+                    // 10pt como el RDLC: este informe se lee de pie en los pasillos del almacén
+                    // (a veces con poca luz) — legibilidad antes que densidad (#293).
+                    page.DefaultTextStyle(x => x.FontSize(10));
 
                     page.Header().Element(c => ComponerCabecera(c, picking));
                     page.Content().Element(c => ComponerTabla(c, datos));
@@ -52,20 +54,22 @@ namespace NestoAPI.Infraestructure.Informes
         {
             container.Table(table =>
             {
+                // Anchos proporcionales a los del RDLC (Descripción 9,2cm / Subgrupo 6,5cm): con
+                // Subgrupo estrecho los nombres largos partían cada fila en 2-3 líneas (#293).
                 table.ColumnsDefinition(columns =>
                 {
-                    columns.ConstantColumn(50);   // Prov.
-                    columns.ConstantColumn(50);   // Prod.
-                    columns.ConstantColumn(90);   // Código Barras
-                    columns.RelativeColumn(3);    // Descripción
-                    columns.ConstantColumn(45);   // Tamaño
-                    columns.ConstantColumn(35);   // U.M.
-                    columns.RelativeColumn(1);    // Subgrupo
-                    columns.ConstantColumn(40);   // Cant.
-                    columns.ConstantColumn(40);   // Cajas
-                    columns.ConstantColumn(30);   // Pas
-                    columns.ConstantColumn(30);   // Fil
-                    columns.ConstantColumn(30);   // Col
+                    columns.ConstantColumn(32);      // Prov.
+                    columns.ConstantColumn(44);      // Prod.
+                    columns.ConstantColumn(84);      // Código Barras
+                    columns.RelativeColumn(2.85f);   // Descripción
+                    columns.ConstantColumn(42);      // Tamaño
+                    columns.ConstantColumn(30);      // U.M.
+                    columns.RelativeColumn(2f);      // Subgrupo
+                    columns.ConstantColumn(34);      // Cant.
+                    columns.ConstantColumn(36);      // Cajas
+                    columns.ConstantColumn(24);      // Pas
+                    columns.ConstantColumn(24);      // Fil
+                    columns.ConstantColumn(24);      // Col
                 });
 
                 table.Header(header =>
@@ -109,7 +113,7 @@ namespace NestoAPI.Infraestructure.Informes
             {
                 contenido = contenido.AlignRight();
             }
-            contenido.Text(texto).Bold().FontSize(8);
+            contenido.Text(texto).Bold().FontSize(10);
         }
 
         private static void CeldaDato(IContainer celda, string texto, bool alinearDerecha)
@@ -119,7 +123,7 @@ namespace NestoAPI.Infraestructure.Informes
             {
                 contenido = contenido.AlignRight();
             }
-            contenido.Text(texto).FontSize(8);
+            contenido.Text(texto).FontSize(10);
         }
 
         private void ComponerPie(IContainer container)

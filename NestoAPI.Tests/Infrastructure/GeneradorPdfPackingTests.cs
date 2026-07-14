@@ -200,6 +200,57 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(2, bloques.Count, "Cada cliente/dirección es un bloque (salto de página entre ellos)");
         }
 
+        [TestMethod]
+        public void Agrupar_BloquesOrdenadosPorElPedidoDeSuPrimeraFila()
+        {
+            // #293: el RDLC ordena el grupo Cliente por Fields!Número.Value (el pedido de la
+            // primera fila del bloque). Sin replicarlo, los bloques salen por orden de aparición
+            // en el SP y no se puede comparar hoja a hoja con el informe viejo.
+            var tardio = Linea(930000, "12345");
+            tardio.NºCliente = "22222";
+            var temprano = Linea(910000, "67890");
+            temprano.NºCliente = "11111";
+            var lineas = new List<PackingDTO> { tardio, temprano };
+
+            var bloques = GeneradorPdfPacking.Agrupar(lineas);
+
+            CollectionAssert.AreEqual(new[] { "11111", "22222" },
+                bloques.Select(b => b.Cliente).ToArray(),
+                "El bloque cuyo primer pedido es menor va antes, aunque el SP lo devuelva después");
+        }
+
+        [TestMethod]
+        public void Agrupar_AmpliacionSoloEnFilaPosterior_NoSeMuestra()
+        {
+            // #293 (caso real 922172): el RDLC muestra la Ampliacion de la PRIMERA fila del
+            // pedido (semántica First de un textbox de grupo). Con primer-valor-no-vacío, una
+            // fila suelta con texto marcaba 'AMPLIACIÓN PEDIDO' en pedidos que el viejo no marcaba.
+            var primera = Linea(922172, "27593");
+            primera.Ampliacion = null;
+            var posterior = Linea(922172, "12345");
+            posterior.Ampliacion = "AMPLIACIÓN PEDIDO";
+            var lineas = new List<PackingDTO> { primera, posterior };
+
+            var bloques = GeneradorPdfPacking.Agrupar(lineas);
+
+            Assert.IsNull(bloques[0].Pedidos.Single().Ampliacion,
+                "Si la primera fila del pedido no trae ampliación, el informe no la muestra (como el RDLC)");
+        }
+
+        [TestMethod]
+        public void Agrupar_AmpliacionEnPrimeraFila_SeMuestra()
+        {
+            var primera = Linea(922172, "27593");
+            primera.Ampliacion = "AMPLIACIÓN PEDIDO";
+            var posterior = Linea(922172, "12345");
+            posterior.Ampliacion = null;
+            var lineas = new List<PackingDTO> { primera, posterior };
+
+            var bloques = GeneradorPdfPacking.Agrupar(lineas);
+
+            Assert.AreEqual("AMPLIACIÓN PEDIDO", bloques[0].Pedidos.Single().Ampliacion);
+        }
+
         // Los PDF empiezan por la firma "%PDF" (0x25 0x50 0x44 0x46).
         private static void ComprobarCabeceraPdf(byte[] bytes)
         {
