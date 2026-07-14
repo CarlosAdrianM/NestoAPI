@@ -391,21 +391,24 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 }
             }
 
-            // Suelo dinámico: del conjunto entero solo se regala la unidad más barata por cada
-            // instancia de la oferta; el resto debe cubrir su tarifa (la oferta no acumula otros
-            // descuentos). Misma tolerancia de redondeo que el ImporteMinimo fijo.
+            // Suelo dinámico: del conjunto entero solo se regalan las UnidadesRegaladas más
+            // baratas por cada instancia de la oferta (#292: 1 por defecto, pero un 3+2 regala
+            // 2); el resto debe cubrir su tarifa (la oferta no acumula otros descuentos). Misma
+            // tolerancia de redondeo que el ImporteMinimo fijo.
             int instancias = InstanciasEnPedido(oferta, pedido, servicio);
+            int regaladasPorInstancia = Math.Max(oferta.UnidadesRegaladas, (short)1);
             List<decimal> tarifasUnidades = conjunto
                 .SelectMany(l => Enumerable.Repeat(tarifas[l.Producto.Trim()], l.Cantidad))
                 .OrderBy(t => t)
                 .ToList();
-            decimal regalable = tarifasUnidades.Take(instancias).Sum();
+            decimal regalable = tarifasUnidades.Take(instancias * regaladasPorInstancia).Sum();
             decimal requerido = tarifasUnidades.Sum() - regalable;
             decimal pagado = conjunto.Sum(l => l.BaseImponible);
             decimal tolerancia = 0.005m * (conjunto.Count + 1);
             if (pagado < requerido - tolerancia)
             {
-                return "La oferta " + oferta.Id + " exige cobrar a tarifa las unidades no regaladas (solo se regala la de menor importe por cada oferta completa): el importe de las líneas de la oferta debe ser al menos "
+                return "La oferta " + oferta.Id + " exige cobrar a tarifa las unidades no regaladas (solo se regalan las "
+                    + regaladasPorInstancia + " de menor importe por cada oferta completa): el importe de las líneas de la oferta debe ser al menos "
                     + requerido.ToString("C");
             }
 

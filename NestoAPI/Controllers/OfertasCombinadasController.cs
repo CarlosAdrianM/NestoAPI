@@ -118,6 +118,7 @@ namespace NestoAPI.Controllers
                 FechaDesde = dto.FechaDesde,
                 FechaHasta = dto.FechaHasta,
                 RegalarMenorImporte = dto.RegalarMenorImporte,
+                UnidadesRegaladas = dto.UnidadesRegaladas,
                 Usuario = usuarioAuditoria,
                 FechaModificacion = ahora
             };
@@ -209,6 +210,7 @@ namespace NestoAPI.Controllers
             oferta.FechaDesde = dto.FechaDesde;
             oferta.FechaHasta = dto.FechaHasta;
             oferta.RegalarMenorImporte = dto.RegalarMenorImporte;
+            oferta.UnidadesRegaladas = dto.UnidadesRegaladas;
             oferta.Usuario = usuarioAuditoria;
             oferta.FechaModificacion = ahora;
 
@@ -347,6 +349,31 @@ namespace NestoAPI.Controllers
                 return "La fecha desde no puede ser posterior a la fecha hasta";
             }
 
+            // Issue #292: unidades regaladas por instancia (3+2 → 2). Solo tiene sentido con
+            // RegalarMenorImporte (sin la regla, el regalo se expresa con filas a precio 0) y
+            // siempre debe quedar al menos una unidad cobrada por instancia.
+            if (dto.UnidadesRegaladas < 1)
+            {
+                return "Las unidades regaladas deben ser al menos 1";
+            }
+            if (dto.UnidadesRegaladas > 1)
+            {
+                if (!dto.RegalarMenorImporte)
+                {
+                    return "Para regalar más de una unidad, la oferta debe tener activado 'Regalo menor importe' (sin la regla, el regalo se expresa con líneas a precio 0)";
+                }
+                int unidadesPorInstancia = dto.Detalles == null
+                    ? 0
+                    : dto.Detalles.Where(d => d.GrupoAlternativa.HasValue)
+                        .GroupBy(d => d.GrupoAlternativa.Value)
+                        .Sum(g => (int)g.First().Cantidad)
+                      + dto.Detalles.Where(d => !d.GrupoAlternativa.HasValue).Sum(d => (int)d.Cantidad);
+                if (unidadesPorInstancia > 0 && dto.UnidadesRegaladas >= unidadesPorInstancia)
+                {
+                    return $"Las unidades regaladas ({dto.UnidadesRegaladas}) deben ser menores que el total de unidades de la oferta ({unidadesPorInstancia}): al menos una unidad debe cobrarse";
+                }
+            }
+
             foreach (var det in dto.Detalles)
             {
                 // Issue #282: cada fila debe identificar QUE casa: producto concreto o filtro.
@@ -406,6 +433,7 @@ namespace NestoAPI.Controllers
                 FechaDesde = oferta.FechaDesde,
                 FechaHasta = oferta.FechaHasta,
                 RegalarMenorImporte = oferta.RegalarMenorImporte,
+                UnidadesRegaladas = oferta.UnidadesRegaladas < 1 ? (short)1 : oferta.UnidadesRegaladas,
                 Usuario = oferta.Usuario?.Trim(),
                 FechaModificacion = oferta.FechaModificacion,
                 Detalles = oferta.OfertasCombinadasDetalles?.Select(d => new OfertaCombinadaDetalleDTO

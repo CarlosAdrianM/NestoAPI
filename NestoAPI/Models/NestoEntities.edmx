@@ -1345,6 +1345,7 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RegalarMenorImporte" Type="bit" Nullable="false" />
+          <Property Name="UnidadesRegaladas" Type="smallint" Nullable="false" />
         </EntityType>
         <EntityType Name="OfertasCombinadasDetalle">
           <Key>
@@ -10737,6 +10738,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" annotation:StoreGeneratedPattern="Computed" />
           <Property Name="RegalarMenorImporte" Type="Boolean" Nullable="false" />
+          <Property Name="UnidadesRegaladas" Type="Int16" Nullable="false" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasCombinadas_Empresas" FromRole="OfertasCombinada" ToRole="Empresa" />
           <NavigationProperty Name="OfertasCombinadasDetalles" Relationship="NVModel.FK_OfertasCombinadasDetalle_OfertasCombinadas" FromRole="OfertasCombinada" ToRole="OfertasCombinadasDetalle" />
         </EntityType>
@@ -14618,6 +14620,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="OfertasCombinadas">
             <EntityTypeMapping TypeName="NVModel.OfertaCombinada">
               <MappingFragment StoreEntitySet="OfertasCombinadas">
+                <ScalarProperty Name="UnidadesRegaladas" ColumnName="UnidadesRegaladas" />
                 <ScalarProperty Name="RegalarMenorImporte" ColumnName="RegalarMenorImporte" />
                 <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />

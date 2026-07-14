@@ -718,6 +718,78 @@ namespace NestoAPI.Tests.Controllers
 
         #endregion
 
+        #region Unidades regaladas (ValidarDTO, Issue #292)
+
+        // Oferta N+M natural: un grupo de alternativas con la cantidad TOTAL (cobradas+regaladas)
+        // y UnidadesRegaladas = M en la cabecera. El usuario piensa "3+2": la UI le pide cobradas
+        // y regaladas y calcula el total.
+        private static OfertaCombinadaCreateDTO CrearDtoNMasM(short cantidadTotal, short unidadesRegaladas, bool regalarMenorImporte = true)
+        {
+            return new OfertaCombinadaCreateDTO
+            {
+                Empresa = "1",
+                Nombre = "Oferta N+M",
+                ImporteMinimo = 0,
+                RegalarMenorImporte = regalarMenorImporte,
+                UnidadesRegaladas = unidadesRegaladas,
+                Detalles = new List<OfertaCombinadaDetalleCreateDTO>
+                {
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD_A", Cantidad = cantidadTotal, Precio = 0, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalleCreateDTO { Producto = "PROD_B", Cantidad = cantidadTotal, Precio = 0, GrupoAlternativa = 1 }
+                }
+            };
+        }
+
+        [TestMethod]
+        public void ValidarDTO_3Mas2_NoDevuelveError()
+        {
+            string error = OfertasCombinadasController.ValidarDTO(CrearDtoNMasM(cantidadTotal: 5, unidadesRegaladas: 2));
+
+            Assert.IsNull(error, error);
+        }
+
+        [TestMethod]
+        public void ValidarDTO_UnidadesRegaladasCero_DevuelveError()
+        {
+            string error = OfertasCombinadasController.ValidarDTO(CrearDtoNMasM(cantidadTotal: 3, unidadesRegaladas: 0));
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "al menos 1");
+        }
+
+        [TestMethod]
+        public void ValidarDTO_MasDeUnaRegaladaSinRegalarMenorImporte_DevuelveError()
+        {
+            string error = OfertasCombinadasController.ValidarDTO(CrearDtoNMasM(cantidadTotal: 5, unidadesRegaladas: 2, regalarMenorImporte: false));
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "Regalo menor importe");
+        }
+
+        [TestMethod]
+        public void ValidarDTO_RegaladasIgualOMayorQueElTotal_DevuelveError()
+        {
+            // 2+2 mal configurado: total 2 y regaladas 2 → todo gratis, no hay oferta.
+            string error = OfertasCombinadasController.ValidarDTO(CrearDtoNMasM(cantidadTotal: 2, unidadesRegaladas: 2));
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "al menos una unidad debe cobrarse");
+        }
+
+        [TestMethod]
+        public void ValidarDTO_UnaRegaladaSinRegalarMenorImporte_NoDevuelveError()
+        {
+            // Regresión: el default (1) no exige la regla — es el mundo pre-#292.
+            var dto = CrearDtoNMasM(cantidadTotal: 3, unidadesRegaladas: 1, regalarMenorImporte: false);
+            dto.ImporteMinimo = 50; // sin RegalarMenorImporte necesita importe mínimo o varias líneas
+
+            string error = OfertasCombinadasController.ValidarDTO(dto);
+
+            Assert.IsNull(error, error);
+        }
+
+        #endregion
+
         #region Filtros por grupo/subgrupo (ValidarDTO, Issue #289)
 
         [TestMethod]

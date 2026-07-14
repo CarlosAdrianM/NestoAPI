@@ -16,6 +16,9 @@ namespace NestoAPI.Models.OfertasCombinadas
         // Issue #290: 2+1 combinable entre referencias de precios distintos. La unidad a base 0
         // debe ser la de menor tarifa del conjunto y las pagadas cubren su tarifa (suelo dinámico).
         public bool RegalarMenorImporte { get; set; }
+        // Issue #292: cuántas unidades salen gratis por instancia de la oferta (3+2 → 2). Solo
+        // tiene efecto con RegalarMenorImporte; por defecto 1 (el 2+1 de siempre).
+        public short UnidadesRegaladas { get; set; } = 1;
         public List<OfertaCombinadaDetalleDTO> Detalles { get; set; }
     }
 
@@ -51,6 +54,8 @@ namespace NestoAPI.Models.OfertasCombinadas
         // Carlos 13/07/26): las ofertas nuevas nacen con la regla activada salvo que se desmarque
         // (p. ej. promos que regalan a propósito un artículo más caro que lo comprado).
         public bool RegalarMenorImporte { get; set; } = true;
+        // Issue #292: unidades gratis por instancia (3+2 → 2). Default 1 = comportamiento actual.
+        public short UnidadesRegaladas { get; set; } = 1;
         public List<OfertaCombinadaDetalleCreateDTO> Detalles { get; set; }
     }
 
