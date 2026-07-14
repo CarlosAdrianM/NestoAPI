@@ -271,6 +271,12 @@ namespace NestoAPI.Models
             // y siempre se aplica la comisión cuando procede.
             public static readonly DateTime FECHA_CORTE_NO_COBRAR_COMISION_REEMBOLSO = new DateTime(2026, 9, 1);
         }
+        public static class ParametrosUsuario
+        {
+            // #256: almacenes cuyo stock se muestra en la plantilla de venta (CSV, p. ej.
+            // "ALG,ALC,REI" o "ALG"). El contrato de la clave es común a Nesto y NestoApp.
+            public const string ALMACENES_PLANTILLA_VENTA = "AlmacenesPlantillaVenta";
+        }
         public static class PlazosPago
         {
             public const string CONTADO = "CONTADO";

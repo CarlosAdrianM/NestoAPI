@@ -110,6 +110,78 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public void PonerStock_ConParametroDeUsuario_LosAlmacenesDelParametroMandanSobreLosDelCliente()
+        {
+            // #256: el usuario eligió ver solo ALG; aunque el cliente (viejo) mande los tres
+            // almacenes hardcodeados, la API devuelve solo el elegido.
+            var lector = A.Fake<ILectorParametrosUsuario>();
+            A.CallTo(() => lector.LeerParametro("1", @"NUEVAVISION\Carlos", "AlmacenesPlantillaVenta"))
+                .Returns(" alg ");
+            var controller = CrearControllerConStocks(
+                new[] { Extracto("38697", "ALG", 10), Extracto("38697", "REI", 5) },
+                new LinPedidoVta[0],
+                lector);
+            controller.User = new System.Security.Principal.GenericPrincipal(
+                new System.Security.Principal.GenericIdentity(@"NUEVAVISION\Carlos"), null);
+            var param = new PlantillaVentasController.PonerStockParam
+            {
+                Almacenes = new List<string> { "ALG", "ALC", "REI" },
+                Lineas = new List<LineaPlantillaVenta> { new LineaPlantillaVenta { producto = "38697" } }
+            };
+
+            List<LineaPlantillaVenta> resultado = controller.PonerStock(param);
+
+            Assert.AreEqual(1, resultado[0].stocks.Count, "Solo el almacén del parámetro (parseado con trim y mayúsculas)");
+            Assert.AreEqual("ALG", resultado[0].stocks.Single().almacen);
+            Assert.AreEqual(10, resultado[0].stocks.Single().stock);
+        }
+
+        [TestMethod]
+        public void PonerStock_SinParametroDeUsuario_UsaLosAlmacenesDelCliente()
+        {
+            var lector = A.Fake<ILectorParametrosUsuario>();
+            A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, A<string>._)).Returns(null);
+            var controller = CrearControllerConStocks(
+                new[] { Extracto("38697", "ALG", 10), Extracto("38697", "REI", 5) },
+                new LinPedidoVta[0],
+                lector);
+            controller.User = new System.Security.Principal.GenericPrincipal(
+                new System.Security.Principal.GenericIdentity(@"NUEVAVISION\Carlos"), null);
+            var param = new PlantillaVentasController.PonerStockParam
+            {
+                Almacenes = new List<string> { "ALG", "REI" },
+                Lineas = new List<LineaPlantillaVenta> { new LineaPlantillaVenta { producto = "38697" } }
+            };
+
+            List<LineaPlantillaVenta> resultado = controller.PonerStock(param);
+
+            Assert.AreEqual(2, resultado[0].stocks.Count, "Sin parámetro se respeta lo que mande el cliente");
+        }
+
+        [TestMethod]
+        public void PonerStock_SiElLectorDeParametrosFalla_NoTumbaLaCarga()
+        {
+            var lector = A.Fake<ILectorParametrosUsuario>();
+            A.CallTo(() => lector.LeerParametro(A<string>._, A<string>._, A<string>._))
+                .Throws(new System.Exception("BD caída"));
+            var controller = CrearControllerConStocks(
+                new[] { Extracto("38697", "ALG", 10) },
+                new LinPedidoVta[0],
+                lector);
+            controller.User = new System.Security.Principal.GenericPrincipal(
+                new System.Security.Principal.GenericIdentity(@"NUEVAVISION\Carlos"), null);
+            var param = new PlantillaVentasController.PonerStockParam
+            {
+                Almacen = "ALG",
+                Lineas = new List<LineaPlantillaVenta> { new LineaPlantillaVenta { producto = "38697" } }
+            };
+
+            List<LineaPlantillaVenta> resultado = controller.PonerStock(param);
+
+            Assert.AreEqual(10, resultado[0].stocks.Single().stock);
+        }
+
+        [TestMethod]
         public void PonerStock_SumaLaEmpresaEspejoYExcluyeOtrasEmpresasYEstados()
         {
             var extractoOtraEmpresa = Extracto("38697", "ALG", 100);
@@ -139,7 +211,7 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(11, resultado[0].stocks.Single().cantidadDisponible, "Las líneas facturadas no reservan");
         }
 
-        private static PlantillaVentasController CrearControllerConStocks(ExtractoProducto[] extractos, LinPedidoVta[] reservas)
+        private static PlantillaVentasController CrearControllerConStocks(ExtractoProducto[] extractos, LinPedidoVta[] reservas, ILectorParametrosUsuario lector = null)
         {
             var db = A.Fake<NVEntities>();
             var fakeExtractos = A.Fake<DbSet<ExtractoProducto>>(o => o.Implements<IQueryable<ExtractoProducto>>().Implements<IDbAsyncEnumerable<ExtractoProducto>>());
@@ -149,7 +221,7 @@ namespace NestoAPI.Tests.Controllers
             ConfigurarFakeDbSet(fakeLineas, reservas.AsQueryable());
             A.CallTo(() => db.LinPedidoVtas).Returns(fakeLineas);
 
-            return new PlantillaVentasController(A.Fake<IServicioPlantillaVenta>(), db);
+            return new PlantillaVentasController(A.Fake<IServicioPlantillaVenta>(), db, lector);
         }
 
         private static ExtractoProducto Extracto(string producto, string almacen, short cantidad)

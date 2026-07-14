@@ -16,20 +16,24 @@ namespace NestoAPI.Controllers
     {
         private readonly NVEntities db;
         private readonly IServicioPlantillaVenta _servicio;
+        private readonly ILectorParametrosUsuario _lectorParametros;
 
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
-        public PlantillaVentasController(IServicioPlantillaVenta servicio)
+        public PlantillaVentasController(IServicioPlantillaVenta servicio, ILectorParametrosUsuario lectorParametros)
         {
             db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             _servicio = servicio;
+            _lectorParametros = lectorParametros;
         }
 
-        // Issue #214: constructor para tests (permite inyectar un NVEntities fake)
-        internal PlantillaVentasController(IServicioPlantillaVenta servicio, NVEntities db)
+        // Issue #214: constructor para tests (permite inyectar un NVEntities fake).
+        // #256: lector de parámetros opcional; sin él se usa lo que mande el cliente.
+        internal PlantillaVentasController(IServicioPlantillaVenta servicio, NVEntities db, ILectorParametrosUsuario lectorParametros = null)
         {
             this.db = db;
             _servicio = servicio;
+            _lectorParametros = lectorParametros;
         }
 
         // GET: api/PlantillaVentas
@@ -380,12 +384,16 @@ namespace NestoAPI.Controllers
                 return new List<LineaPlantillaVenta>();
             }
 
-            // Determinar los almacenes a consultar
-            List<string> almacenesConsultar = param.Almacenes != null && param.Almacenes.Count > 0
-                ? param.Almacenes
-                : !string.IsNullOrEmpty(param.Almacen)
-                    ? new List<string> { param.Almacen }
-                    : new List<string>();
+            // #256: la API es la fuente de verdad de los almacenes a consultar: manda el
+            // parámetro de usuario AlmacenesPlantillaVenta (CSV) si existe; lo que envíe el
+            // cliente queda como fallback (los clientes antiguos siguen mandando los tres
+            // hardcodeados, pero el usuario que elija uno solo obtiene el ahorro igualmente).
+            List<string> almacenesConsultar = LeerAlmacenesDelUsuario()
+                ?? (param.Almacenes != null && param.Almacenes.Count > 0
+                    ? param.Almacenes
+                    : !string.IsNullOrEmpty(param.Almacen)
+                        ? new List<string> { param.Almacen }
+                        : new List<string>());
 
             // #257: antes se lanzaban 3 consultas por (producto × almacén) más 2 por producto
             // (para una plantilla de 200 productos y 3 almacenes, ~2.200 round-trips secuenciales
@@ -429,6 +437,44 @@ namespace NestoAPI.Controllers
             }
 
             return param.Lineas;
+        }
+
+        /// <summary>
+        /// #256: lee la lista de almacenes elegida por el usuario (parámetro
+        /// AlmacenesPlantillaVenta, CSV) o null si no hay parámetro/usuario — en ese caso se
+        /// usa lo que mande el cliente. Nunca lanza: la preferencia no debe tumbar la carga.
+        /// </summary>
+        private List<string> LeerAlmacenesDelUsuario()
+        {
+            if (_lectorParametros == null)
+            {
+                return null;
+            }
+            string usuario = User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            string valor;
+            try
+            {
+                valor = _lectorParametros.LeerParametro(
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO, usuario, Constantes.ParametrosUsuario.ALMACENES_PLANTILLA_VENTA);
+            }
+            catch
+            {
+                return null;
+            }
+            if (string.IsNullOrWhiteSpace(valor))
+            {
+                return null;
+            }
+            List<string> almacenes = valor.Split(',')
+                .Select(a => a.Trim().ToUpper())
+                .Where(a => a != "")
+                .Distinct()
+                .ToList();
+            return almacenes.Any() ? almacenes : null;
         }
 
         // Clave (producto, almacén) normalizada: en BD son char con relleno de espacios.
