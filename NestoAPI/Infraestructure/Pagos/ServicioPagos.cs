@@ -46,6 +46,18 @@ namespace NestoAPI.Infraestructure.Pagos
                 throw new ArgumentException("El importe debe ser mayor que cero");
             }
 
+            // #295: el concepto acaba en el extracto del cliente ("Pago TPV {Descripcion}").
+            // Normalizamos mayúsculas y, si el enlace NO liquida efectos concretos, exigimos un
+            // concepto real (con el genérico no hay forma de saber qué pagó el cliente).
+            solicitud.Descripcion = FormateadorConcepto.Normalizar(solicitud.Descripcion);
+            List<EfectoAPagar> efectos = NormalizarEfectos(solicitud);
+            if (!efectos.Any() && FormateadorConcepto.EsGenericoOVacio(solicitud.Descripcion))
+            {
+                throw new ArgumentException(
+                    "Indique un concepto que identifique el pago (por ejemplo 'Pago pedido 123456' o " +
+                    "'Pago señal curso quiromasaje') o seleccione los efectos que paga el cliente.");
+            }
+
             string urlBase = "https://api.nuevavision.es";
             string urlNotificacion = urlBase + "/api/Pagos/NotificacionRedsys";
             string urlOk = solicitud.UrlOk ?? urlBase + "/pago/ok.html";
@@ -60,9 +72,6 @@ namespace NestoAPI.Infraestructure.Pagos
                 urlOk,
                 urlKo,
                 solicitud.MetodoPago);
-
-            // Normalizar: si vienen campos legacy sin Efectos, crear un efecto a partir de ellos
-            List<EfectoAPagar> efectos = NormalizarEfectos(solicitud);
 
             using (NVEntities db = new NVEntities())
             {

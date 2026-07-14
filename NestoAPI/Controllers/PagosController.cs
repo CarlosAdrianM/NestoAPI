@@ -1,5 +1,6 @@
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models.Pagos;
+using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
@@ -39,8 +40,17 @@ namespace NestoAPI.Controllers
             }
 
             string usuario = User?.Identity?.Name ?? "Desconocido";
-            RespuestaIniciarPago respuesta = await _servicioPagos.IniciarPago(solicitud, usuario).ConfigureAwait(false);
-            return Ok(respuesta);
+            try
+            {
+                RespuestaIniciarPago respuesta = await _servicioPagos.IniciarPago(solicitud, usuario).ConfigureAwait(false);
+                return Ok(respuesta);
+            }
+            catch (ArgumentException ex)
+            {
+                // #295: las validaciones del servicio (importe, concepto genérico sin efectos)
+                // son errores del llamante → 400 con mensaje claro, no 500.
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPost]

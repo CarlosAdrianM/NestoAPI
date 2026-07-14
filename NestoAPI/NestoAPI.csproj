@@ -755,6 +755,7 @@
     <Compile Include="Infraestructure\PlanesVentajas\IPlanesVentajasService.cs" />
     <Compile Include="Infraestructure\PlanesVentajas\PlanesVentajasService.cs" />
     <Compile Include="Infraestructure\Agencias\ReintentosAgenciaRemota.cs" />
+    <Compile Include="Infraestructure\Pagos\FormateadorConcepto.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfControlPedidos.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfDetalleRapports.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfExtractoContable.cs" />
