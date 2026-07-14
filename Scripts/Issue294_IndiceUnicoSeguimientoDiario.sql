@@ -22,7 +22,15 @@
 -- BD: NV (NestoConnection). Un índice no necesita GRANTs.
 
 -- Parte 1: columna computada persistida con el día (necesaria para poder indexar por día).
+-- La columna PERSISTED reescribe la tabla (~1M filas): segundos o pocas decenas de segundos.
+-- El LOCK_TIMEOUT evita el escenario malo: si otra transacción larga tiene la tabla ocupada,
+-- el ALTER esperaría el bloqueo INDEFINIDAMENTE y todos los usuarios se encolarían detrás.
+-- Con esto, si no consigue el bloqueo en 15 s, falla solo con el error 1222 (sin bloquear a
+-- nadie) y se puede relanzar más tarde. Si aun así hubiera que cancelar a mano: cancelar
+-- PRONTO (el rollback tarda tanto como lo avanzado y mantiene el bloqueo mientras deshace).
+SET LOCK_TIMEOUT 15000;
 ALTER TABLE dbo.SeguimientoCliente ADD FechaDia AS CONVERT(date, Fecha) PERSISTED;
+SET LOCK_TIMEOUT -1;
 GO
 
 -- VERIFICACIÓN parte 1 (debe devolver la columna FechaDia, is_persisted = 1):
@@ -30,6 +38,8 @@ SELECT name, is_persisted FROM sys.computed_columns WHERE object_id = OBJECT_ID(
 GO
 
 -- Parte 2: índice único filtrado, SOLO para filas a partir de la fecha indicada.
+-- Más ligero que la parte 1 (escaneo de lectura; bloquea escrituras solo unos segundos).
+SET LOCK_TIMEOUT 15000;
 CREATE UNIQUE NONCLUSTERED INDEX UQ_SeguimientoCliente_UnoPorClienteUsuarioDia
     ON dbo.SeguimientoCliente ([Número], Contacto, Usuario, FechaDia)
     WHERE Estado <> 2
