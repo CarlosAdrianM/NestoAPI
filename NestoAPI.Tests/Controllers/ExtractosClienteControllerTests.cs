@@ -145,6 +145,55 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(0m, resultado.Content);
         }
 
+        // ----- PutExtractoCliente (#297: CK_ExtractoCliente = un impagado no puede tener CCC) -----
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task Put_PonerCccAUnImpagado_Devuelve400SinGuardar()
+        {
+            var impagado = Crear("1", "9471", Constantes.ExtractosCliente.TiposApunte.IMPAGADO, DateTime.Today);
+            impagado.Nº_Orden = 77;
+            impagado.FechaVto = DateTime.Today;
+            impagado.Estado = "";
+            impagado.FormaPago = "RCB";
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { impagado }.AsQueryable());
+
+            var resultado = await controller.PutExtractoCliente(new ExtractoClienteDTO
+            {
+                id = 77,
+                vencimiento = DateTime.Today,
+                ccc = "1",
+                estado = "",
+                formaPago = "RCB"
+            });
+
+            Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.BadRequestErrorMessageResult));
+            StringAssert.Contains(((System.Web.Http.Results.BadRequestErrorMessageResult)resultado).Message, "impagado");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async System.Threading.Tasks.Task Put_PonerCccAUnApunteNormal_Guarda()
+        {
+            var factura = Crear("1", "9471", Constantes.ExtractosCliente.TiposApunte.FACTURA, DateTime.Today);
+            factura.Nº_Orden = 78;
+            factura.FechaVto = DateTime.Today;
+            factura.Estado = "";
+            factura.FormaPago = "RCB";
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { factura }.AsQueryable());
+
+            var resultado = await controller.PutExtractoCliente(new ExtractoClienteDTO
+            {
+                id = 78,
+                vencimiento = DateTime.Today,
+                ccc = "1",
+                estado = "",
+                formaPago = "RCB"
+            });
+
+            Assert.IsInstanceOfType(resultado, typeof(System.Web.Http.Results.StatusCodeResult));
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
         private static ExtractoCliente ConDeuda(ExtractoCliente extracto, int diasHastaVencimiento, decimal importePendiente)
         {
             extracto.FechaVto = DateTime.Today.AddDays(diasHastaVencimiento);

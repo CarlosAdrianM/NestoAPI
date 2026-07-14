@@ -398,7 +398,14 @@ namespace NestoAPI.Controllers
             {
                 throw new Exception("No hay ningún cambio que guardar");
             }
-            //db.Entry(extractoCliente).State = EntityState.Modified;
+
+            // #297: CK_ExtractoCliente = un IMPAGADO (TipoApunte 4) no puede tener CCC. Antes
+            // la combinación llegaba al CHECK de la BD y salía como 500 crudo sin explicación.
+            if (extractoActual.TipoApunte?.Trim() == Constantes.ExtractosCliente.TiposApunte.IMPAGADO
+                && !string.IsNullOrWhiteSpace(extractoActual.CCC))
+            {
+                return BadRequest("Un impagado no puede tener CCC: quite el CCC o cambie el tipo de apunte.");
+            }
 
             try
             {
@@ -419,9 +426,16 @@ namespace NestoAPI.Controllers
                     throw;
                 }
             }
+            catch (DbUpdateException ex) when ((ex.GetBaseException() as System.Data.SqlClient.SqlException)?.Number == 547)
+            {
+                // #297: cinturón para cualquier otra CHECK/FK que rechace el cambio: error del
+                // usuario (400 con el detalle), no 500.
+                return Content(HttpStatusCode.BadRequest,
+                    "El cambio no cumple las reglas del extracto: " + ex.GetBaseException().Message);
+            }
             catch (Exception ex)
             {
-                throw new Exception("Se ha producido un error al actualizar el extracto del producto", ex);
+                throw new Exception("Se ha producido un error al actualizar el extracto del cliente", ex);
             }
 
             return StatusCode(HttpStatusCode.NoContent);

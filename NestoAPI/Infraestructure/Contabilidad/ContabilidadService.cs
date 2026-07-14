@@ -78,10 +78,34 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 int resultadoProcedimiento = (int)resultadoParametro.Value;
                 return resultadoProcedimiento;
             }
+            catch (System.Data.SqlClient.SqlException ex)
+            {
+                // #296: prdContabilizar/prdLiquidar abortan con RAISERROR de negocio ("Importes
+                // con mismo signo o importe 0..."), pero el SqlException llega mezclado con el
+                // ruido del desajuste de transacciones (error 266 repetido) que entierra la
+                // causa real. Filtramos el ruido para que el usuario vea el motivo de verdad.
+                throw new Exception(ComponerMensajeSinRuidoDeTransacciones(
+                    ex.Errors.Cast<System.Data.SqlClient.SqlError>().Select(e => new KeyValuePair<int, string>(e.Number, e.Message))), ex);
+            }
             catch (Exception ex)
             {
                 throw new Exception("Error al contabilizar el diario", ex);
             }
+        }
+
+        // 266 = recuento de BEGIN/COMMIT no coincidente; 3902/3903 = COMMIT/ROLLBACK sin BEGIN.
+        // Son síntomas del aborto interno del SP, no la causa; la causa son los RAISERROR.
+        internal static string ComponerMensajeSinRuidoDeTransacciones(IEnumerable<KeyValuePair<int, string>> errores)
+        {
+            List<string> negocio = errores
+                .Where(e => e.Key != 266 && e.Key != 3902 && e.Key != 3903)
+                .Select(e => e.Value?.Trim())
+                .Where(m => !string.IsNullOrEmpty(m))
+                .Distinct()
+                .ToList();
+            return negocio.Any()
+                ? "Error al contabilizar el diario: " + string.Join(" ", negocio)
+                : "Error al contabilizar el diario";
         }
 
         public async Task<int> CrearLineas(NVEntities db, List<PreContabilidad> lineas)

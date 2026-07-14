@@ -90,6 +90,41 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(1, intentos);
         }
 
+        // ----- #296: el error de negocio del SP no debe quedar enterrado en ruido de transacciones -----
+
+        [TestMethod]
+        public void ComponerMensajeSinRuidoDeTransacciones_FiltraElRecuentoYConservaElNegocio()
+        {
+            // Caso real (Reina, 14/07): prdLiquidar aborta con RAISERROR y el SqlException llega
+            // con los errores 266 (recuento BEGIN/COMMIT) por medio, ocultando la causa.
+            var errores = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>>
+            {
+                new System.Collections.Generic.KeyValuePair<int, string>(50000, "No se ha podido liquidar el movimiento del extracto del cliente. Cliente 35615"),
+                new System.Collections.Generic.KeyValuePair<int, string>(266, "El recuento de transacciones después de EXECUTE indica un número no coincidente de instrucciones BEGIN y COMMIT."),
+                new System.Collections.Generic.KeyValuePair<int, string>(266, "El recuento de transacciones después de EXECUTE indica un número no coincidente de instrucciones BEGIN y COMMIT."),
+                new System.Collections.Generic.KeyValuePair<int, string>(50000, "Importes con mismo signo o importe 0.Cliente 35615")
+            };
+
+            string mensaje = ContabilidadService.ComponerMensajeSinRuidoDeTransacciones(errores);
+
+            StringAssert.Contains(mensaje, "No se ha podido liquidar");
+            StringAssert.Contains(mensaje, "Importes con mismo signo");
+            Assert.IsFalse(mensaje.Contains("recuento de transacciones"), "El ruido del desajuste de transacciones no debe llegar al usuario");
+        }
+
+        [TestMethod]
+        public void ComponerMensajeSinRuidoDeTransacciones_SoloRuido_DevuelveElMensajeGenerico()
+        {
+            var errores = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<int, string>>
+            {
+                new System.Collections.Generic.KeyValuePair<int, string>(266, "El recuento de transacciones...")
+            };
+
+            string mensaje = ContabilidadService.ComponerMensajeSinRuidoDeTransacciones(errores);
+
+            Assert.AreEqual("Error al contabilizar el diario", mensaje);
+        }
+
         /// <summary>
         /// SqlException no tiene constructor público: se fabrica por reflection (SqlError interno +
         /// SqlErrorCollection interna + SqlException.CreateException), truco estándar para tests.
