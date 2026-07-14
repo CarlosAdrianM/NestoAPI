@@ -27,7 +27,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         }
 
         [TestMethod]
-        public void Crear_Innovatrans_DevuelveLaEstrategia()
+        public void Crear_Innovatrans_DevuelveLaEstrategiaConReintentos()
         {
             IFabricaAgenciasRemotas fabrica = CrearFabrica(
                 new AgenciaTransporte { Numero = Constantes.Agencias.AGENCIA_INNOVATRANS, Identificador = "91253" });
@@ -35,7 +35,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             IAgenciaRemota agencia = fabrica.Crear(Constantes.Agencias.AGENCIA_INNOVATRANS);
 
             Assert.IsNotNull(agencia);
-            Assert.IsInstanceOfType(agencia, typeof(AgenciaRemotaInnovatrans));
+            // NestoAPI#288: la factory envuelve la estrategia en el decorador de reintentos de
+            // transitorios; los llamantes solo ven IAgenciaRemota.
+            Assert.IsInstanceOfType(agencia, typeof(AgenciaRemotaConReintentos));
         }
 
         [TestMethod]

@@ -99,6 +99,9 @@
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.13.0.3\lib\net45\Newtonsoft.Json.dll</HintPath>
     </Reference>
+    <Reference Include="Polly, Version=7.0.0.0, Culture=neutral, PublicKeyToken=c8a3ffc3f8f825cc, processorArchitecture=MSIL">
+      <HintPath>..\packages\Polly.7.2.4\lib\netstandard2.0\Polly.dll</HintPath>
+    </Reference>
     <Reference Include="Newtonsoft.Json.Bson, Version=1.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.Bson.1.0.3\lib\net45\Newtonsoft.Json.Bson.dll</HintPath>
     </Reference>
@@ -246,6 +249,7 @@
     <Compile Include="Infrastructure\GestorEnviosAgenciaTests.cs" />
     <Compile Include="Infrastructure\GestorFacturacionRutasTests.cs" />
     <Compile Include="Infrastructure\ServicioGestorClientesTests.cs" />
+    <Compile Include="Infrastructure\ReintentosAgenciaRemotaTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfControlPedidosTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfDetalleRapportsTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfExtractoContableTests.cs" />

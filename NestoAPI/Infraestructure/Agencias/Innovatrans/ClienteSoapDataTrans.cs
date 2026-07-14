@@ -17,6 +17,14 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
     {
         public DataTransException(string message) : base(message) { }
         public DataTransException(string message, Exception inner) : base(message, inner) { }
+
+        /// <summary>
+        /// True si el fallo es de transporte y puede desaparecer reintentando en segundos (no se
+        /// pudo conectar, HTTP 5xx). False para errores estables (respuesta no XML, SOAP Fault):
+        /// reintentarlos solo repite el mismo error. Lo usa la política de reintentos de
+        /// PoliticasAgenciasRemotas (NestoAPI#288).
+        /// </summary>
+        public bool EsTransitoria { get; set; }
     }
 
     public interface IClienteSoapDataTrans
@@ -86,7 +94,7 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 catch (HttpRequestException ex)
                 {
                     _registro?.Registrar(operacion, url, envelope, "[sin respuesta] " + ex.Message);
-                    throw new DataTransException($"No se pudo conectar con DataTrans para {operacion}: {ex.Message}", ex);
+                    throw new DataTransException($"No se pudo conectar con DataTrans para {operacion}: {ex.Message}", ex) { EsTransitoria = true };
                 }
 
                 using (resp)
@@ -95,7 +103,12 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                     _registro?.Registrar(operacion, url, envelope, cuerpo);
                     if (!resp.IsSuccessStatusCode)
                     {
-                        throw new DataTransException($"DataTrans {operacion} devolvió HTTP {(int)resp.StatusCode}: {cuerpo}");
+                        // 5xx = hipo del servidor de DataTrans (transitorio); 4xx = petición mal formada
+                        // o credenciales (estable, reintentar no lo arregla).
+                        throw new DataTransException($"DataTrans {operacion} devolvió HTTP {(int)resp.StatusCode}: {cuerpo}")
+                        {
+                            EsTransitoria = (int)resp.StatusCode >= 500
+                        };
                     }
                     XDocument doc;
                     try

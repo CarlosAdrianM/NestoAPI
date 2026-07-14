@@ -69,7 +69,7 @@ namespace NestoAPI.Infraestructure.Agencias
             if (agenciaId == Constantes.Agencias.AGENCIA_GLS)
             {
                 string uid = ConfigurationManager.AppSettings["GLS:UidSeguimiento"];
-                return new AgenciaRemotaGls(new ClienteTrackingGls(uid));
+                return new SeguimientoAgenciaRemotaConReintentos(new AgenciaRemotaGls(new ClienteTrackingGls(uid)));
             }
             return null;
         }
@@ -94,7 +94,9 @@ namespace NestoAPI.Infraestructure.Agencias
             var cliente = new ClienteSoapDataTrans(configuracion, registro: registro);
             var operaciones = new OperacionesEnviosDataTrans(cliente);
             var lectura = new OperacionesLecturaDataTrans(cliente);
-            return new AgenciaRemotaInnovatrans(operaciones, LeerRemitente(), registro, lectura);
+            // Los transitorios de transporte (5xx, timeout, conexión) se reintentan aquí, en el
+            // punto único (#288): consultar/reimprimir sí, insertar nunca (no es idempotente).
+            return new AgenciaRemotaConReintentos(new AgenciaRemotaInnovatrans(operaciones, LeerRemitente(), registro, lectura));
         }
 
         // Remitente fijo (nuestro almacén de Algete). Se configura en Web.config para no hardcodearlo.
