@@ -152,8 +152,9 @@ namespace NestoAPI.Infraestructure.Kits
                     }
                     catch (Exception ex)
                     {
-                        // Algo salió mal, realizar un rollback
-                        transaction.Rollback();
+                        // Algo salió mal, realizar un rollback. #291: seguro, para que si la
+                        // transacción está zombi no se pierda el return 0 de negocio.
+                        transaction.RollbackSeguro();
                         Console.WriteLine($"Error: {ex.Message}");
                         return 0;
                     }

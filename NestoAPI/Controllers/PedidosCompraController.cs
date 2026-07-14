@@ -14,6 +14,7 @@ using System.Web.Http;
 using System.Web.Http.Cors;
 using System.Web.Http.Description;
 using Nesto.Modulos.PedidoCompra.Models;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Models;
@@ -510,14 +511,19 @@ namespace NestoAPI.Controllers
                         }
                         else
                         {
-                            transaction.Rollback();
+                            // #291: si el SP ya abortó por dentro, la transacción está zombi y
+                            // el Rollback normal lanzaría, pisando la respuesta de negocio.
+                            transaction.RollbackSeguro();
                         }
 
                         return Ok(respuesta);
                     }
                     catch (Exception ex)
                     {
-                        transaction.Rollback();
+                        // #291: rollback seguro para que viaje SIEMPRE la excepción original
+                        // (el incidente de la #287 salió como 'failed on Rollback/connection
+                        // null' y ocultó el 'Invalid object name' real).
+                        transaction.RollbackSeguro();
                         throw new Exception("No se ha podido crear la factura de compra", ex);
                     }
                 }

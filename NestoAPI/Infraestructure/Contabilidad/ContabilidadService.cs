@@ -202,26 +202,17 @@ namespace NestoAPI.Infraestructure.Contabilidad
                         }
                         else
                         {
-                            transaction.Rollback();
+                            // #291: con la transacción zombi (SP abortado por dentro) el Rollback
+                            // normal lanzaría y convertiría el resultado de negocio en excepción.
+                            transaction.RollbackSeguro();
                         }
                         return resultado;
                     }
                     catch (Exception ex)
                     {
-                        // Carlos 02/12/25: Verificar estado de conexión antes de rollback (Issue #47)
-                        // El rollback puede fallar si la conexión ya está cerrada (timeout, error de red, etc.)
-                        try
-                        {
-                            if (db.Database.Connection.State == ConnectionState.Open)
-                            {
-                                transaction.Rollback();
-                            }
-                        }
-                        catch
-                        {
-                            // Ignorar errores en rollback - la transacción se revertirá automáticamente
-                            // cuando se cierre la conexión o expire el timeout
-                        }
+                        // Issue #47 + #291: rollback seguro (la conexión puede estar cerrada o el
+                        // SP haber revertido ya) para que viaje SIEMPRE la excepción original.
+                        transaction.RollbackSeguro();
                         throw new Exception("Error al contabilizar el diario. Inténtelo de nuevo.", ex);
                     }
                 }
@@ -730,8 +721,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
                         }
                         catch
                         {
-                            // Revertir la transacción en caso de error
-                            transaction.Rollback();
+                            // Revertir la transacción en caso de error. #291: rollback seguro,
+                            // si lanzara se saltaría el return false y saldría el error del
+                            // rollback en vez del resultado de negocio.
+                            transaction.RollbackSeguro();
                             return false;
                         }
                     }
