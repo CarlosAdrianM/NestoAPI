@@ -1464,6 +1464,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Ventas\ComparativaVentaDto.cs" />
+    <Compile Include="Models\Ventas\VentaProductoClienteDTO.cs" />
     <Compile Include="Models\Ventas\ComparativaVentasResponseDto.cs" />
     <Compile Include="Models\Video.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>

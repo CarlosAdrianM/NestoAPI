@@ -21,6 +21,47 @@ namespace NestoAPI.Controllers
             _gestor = new GestorVentasCliente(new NVEntities());
         }
 
+        // Constructor para tests: permite inyectar un NVEntities fake (FakeItEasy).
+        public VentasClienteController(NVEntities db)
+        {
+            _gestor = new GestorVentasCliente(db);
+        }
+
+        /// <summary>
+        /// Ventas de un cliente agrupadas por producto, para el grid de ventas de la ficha de
+        /// cliente de Nesto (Nesto#340, 1C.8: antes consulta EF en ClientesViewModel).
+        /// </summary>
+        /// <param name="clienteId">Código del cliente</param>
+        /// <param name="contacto">Contacto del cliente</param>
+        /// <param name="fechaDesde">Solo ventas desde esta fecha; sin ella se devuelven todas</param>
+        [HttpGet]
+        [Route("productos")]
+        public IHttpActionResult GetVentasPorProducto(string clienteId, string contacto, DateTime? fechaDesde = null)
+        {
+            if (string.IsNullOrWhiteSpace(clienteId))
+            {
+                return BadRequest("Debe proporcionar el identificador del cliente.");
+            }
+
+            try
+            {
+                var resultado = _gestor.ObtenerVentasPorProducto(clienteId, contacto, fechaDesde);
+                return Ok(resultado);
+            }
+            catch (Exception ex)
+            {
+                var telemetry = new TelemetryClient();
+                telemetry.TrackException(ex, new Dictionary<string, string>
+                {
+                    { "ClienteId", clienteId },
+                    { "Contacto", contacto },
+                    { "FechaDesde", fechaDesde?.ToString("o") }
+                });
+
+                return InternalServerError(ex);
+            }
+        }
+
         /// <summary>
         /// Devuelve la comparativa de ventas por agrupación.
         /// </summary>

@@ -1,6 +1,7 @@
 ﻿using NestoAPI.Models;
 using NestoAPI.Models.Ventas;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 
 namespace NestoAPI.Infraestructure.Ventas
@@ -101,6 +102,58 @@ namespace NestoAPI.Infraestructure.Ventas
                 FechaHastaAnterior = fechas.FechaHastaAnterior,
                 Datos = agrupado
             };
+        }
+
+        /// <summary>
+        /// Ventas de un cliente agrupadas por producto (grid de ventas de la ficha de cliente de
+        /// Nesto, antes consulta EF en ClientesViewModel — Nesto#340, 1C.8). Misma consulta que el
+        /// cliente: empresas 1 y 3, líneas facturadas o en albarán, agrupadas por producto con suma
+        /// de cantidades y fecha de la última venta.
+        /// </summary>
+        public List<VentaProductoClienteDTO> ObtenerVentasPorProducto(string clienteId, string contacto, DateTime? fechaDesde)
+        {
+            IQueryable<LinPedidoVta> lineas = _db.LinPedidoVtas
+                .Where(l => (l.Empresa == "1" || l.Empresa == "3")
+                    && l.Nº_Cliente == clienteId
+                    && l.Contacto == contacto
+                    && l.Estado >= Constantes.EstadosLineaVenta.ALBARAN
+                    && l.Fecha_Albarán != null);
+
+            if (fechaDesde.HasValue)
+            {
+                DateTime fecha = fechaDesde.Value;
+                lineas = lineas.Where(l => l.Fecha_Albarán >= fecha);
+            }
+
+            var agrupado = (from l in lineas
+                            join s in _db.SubGruposProductoes.Where(x => x.Empresa == "1")
+                                on new { l.Grupo, l.SubGrupo }
+                                equals new { s.Grupo, SubGrupo = s.Número } into subgrupos
+                            from s in subgrupos.DefaultIfEmpty()
+                            group new { l.Cantidad, l.Fecha_Albarán }
+                                by new { l.Producto, l.Texto, SubGrupo = s != null ? s.Descripción : null, l.Familia } into g
+                            select new
+                            {
+                                g.Key.Producto,
+                                g.Key.Texto,
+                                g.Key.SubGrupo,
+                                g.Key.Familia,
+                                Cantidad = g.Sum(x => (int?)x.Cantidad),
+                                FechaUltVenta = g.Max(x => x.Fecha_Albarán)
+                            }).ToList();
+
+            return agrupado
+                .Select(x => new VentaProductoClienteDTO
+                {
+                    Producto = x.Producto?.Trim(),
+                    Nombre = x.Texto?.Trim(),
+                    Cantidad = x.Cantidad ?? 0,
+                    FechaUltVenta = x.FechaUltVenta.Value,
+                    SubGrupo = x.SubGrupo?.Trim(),
+                    Familia = x.Familia?.Trim()
+                })
+                .OrderBy(x => x.Producto)
+                .ToList();
         }
 
         internal RangoFechas CalcularRangoFechas(string modoComparativa)
