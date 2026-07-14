@@ -35,7 +35,7 @@ CREATE UNIQUE NONCLUSTERED INDEX UQ_SeguimientoCliente_UnoPorClienteUsuarioDia
     WHERE Estado <> 2
       AND [Número] IS NOT NULL
       AND Usuario IS NOT NULL
-      AND FechaDia >= '20260716';  -- ⚠️ AJUSTAR: día siguiente a la ejecución
+      AND FechaDia >= '20260715';  -- ⚠️ AJUSTAR si no se ejecuta el 14/07/26: día SIGUIENTE a la ejecución
 GO
 
 -- VERIFICACIÓN parte 2 (debe devolver 1 fila con has_filter = 1):
