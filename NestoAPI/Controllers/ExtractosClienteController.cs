@@ -42,6 +42,27 @@ namespace NestoAPI.Controllers
         }
 
 
+        /// <summary>
+        /// Nesto#340 (1C.8, slice 2): deuda vencida del cliente (suma de ImportePdte con
+        /// vencimiento pasado, empresas 1 y 3) para la ficha de cliente de Nesto. Replica la
+        /// consulta EF que hacía ClientesViewModel sobre ExtractoCliente.
+        /// </summary>
+        [HttpGet]
+        [Route("api/ExtractosCliente/DeudaVencida")]
+        [ResponseType(typeof(decimal))]
+        public IHttpActionResult GetDeudaVencida(string cliente, string contacto)
+        {
+            DateTime ahora = DateTime.Now;
+            decimal deuda = db.ExtractosCliente
+                .Where(e => (e.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO || e.Empresa == Constantes.Empresas.EMPRESA_ESPEJO_POR_DEFECTO)
+                    && e.Número == cliente && e.Contacto == contacto
+                    && e.FechaVto < ahora && e.ImportePdte != 0)
+                .Select(e => (decimal?)e.ImportePdte)
+                .DefaultIfEmpty(0)
+                .Sum() ?? 0;
+            return Ok(deuda);
+        }
+
         // GET: api/ExtractosCliente
         public IQueryable<ExtractoClienteDTO> GetExtractosCliente(string cliente)
         {

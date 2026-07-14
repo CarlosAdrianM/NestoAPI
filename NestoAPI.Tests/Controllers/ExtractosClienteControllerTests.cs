@@ -110,6 +110,48 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual(0, resultado.Count);
         }
 
+        // ----- DeudaVencida (Nesto#340, 1C.8 slice 2) -----
+
+        [TestMethod]
+        public void GetDeudaVencida_SumaSoloLoVencidoDeLasEmpresas1Y3()
+        {
+            var vencidoHace30 = ConDeuda(Crear("1", "9471", "1", DateTime.Today), -30, 100.50m);
+            var vencidoEspejo = ConDeuda(Crear("3", "9471", "1", DateTime.Today), -10, 49.50m);
+            var noVencido = ConDeuda(Crear("1", "9471", "1", DateTime.Today), 30, 500m);
+            var otraEmpresa = ConDeuda(Crear("5", "9471", "1", DateTime.Today), -30, 999m);
+            var pagado = ConDeuda(Crear("1", "9471", "1", DateTime.Today), -30, 0m);
+            var otroCliente = ConDeuda(Crear("1", "11111", "1", DateTime.Today), -30, 999m);
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                vencidoHace30, vencidoEspejo, noVencido, otraEmpresa, pagado, otroCliente
+            }.AsQueryable());
+
+            var resultado = controller.GetDeudaVencida("9471", "0")
+                as System.Web.Http.Results.OkNegotiatedContentResult<decimal>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(150m, resultado.Content, "100,50 (emp. 1) + 49,50 (espejo): sin lo no vencido, pagado, de otras empresas u otros clientes");
+        }
+
+        [TestMethod]
+        public void GetDeudaVencida_SinMovimientos_DevuelveCero()
+        {
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>().AsQueryable());
+
+            var resultado = controller.GetDeudaVencida("9471", "0")
+                as System.Web.Http.Results.OkNegotiatedContentResult<decimal>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0m, resultado.Content);
+        }
+
+        private static ExtractoCliente ConDeuda(ExtractoCliente extracto, int diasHastaVencimiento, decimal importePendiente)
+        {
+            extracto.FechaVto = DateTime.Today.AddDays(diasHastaVencimiento);
+            extracto.ImportePdte = importePendiente;
+            return extracto;
+        }
+
         private static ExtractoCliente Crear(string empresa, string numero, string tipoApunte, DateTime fecha) =>
             new ExtractoCliente
             {
