@@ -39,13 +39,16 @@ GO
 
 -- Parte 2: índice único filtrado, SOLO para filas a partir de la fecha indicada.
 -- Más ligero que la parte 1 (escaneo de lectura; bloquea escrituras solo unos segundos).
+-- OJO: el FILTRO no puede usar la columna calculada (error 10609) — se filtra por la columna
+-- real Fecha; la unicidad POR DÍA la da FechaDia en la CLAVE del índice, que sí puede ser
+-- calculada (persistida).
 SET LOCK_TIMEOUT 15000;
 CREATE UNIQUE NONCLUSTERED INDEX UQ_SeguimientoCliente_UnoPorClienteUsuarioDia
     ON dbo.SeguimientoCliente ([Número], Contacto, Usuario, FechaDia)
     WHERE Estado <> 2
       AND [Número] IS NOT NULL
       AND Usuario IS NOT NULL
-      AND FechaDia >= '20260715';  -- ⚠️ AJUSTAR si no se ejecuta el 14/07/26: día SIGUIENTE a la ejecución
+      AND Fecha >= '20260715';  -- ⚠️ AJUSTAR si no se ejecuta el 14/07/26: día SIGUIENTE a la ejecución
 GO
 
 -- VERIFICACIÓN parte 2 (debe devolver 1 fila con has_filter = 1):
