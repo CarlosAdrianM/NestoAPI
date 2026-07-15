@@ -49,6 +49,28 @@ namespace NestoAPI.Infraestructure.Contabilidad
 
         public async Task<int> ContabilizarDiario(NVEntities db, string empresa, string diario, string usuario)
         {
+            // #296: prdContabilizar llama a prdLiquidar cuando la línea trae Liquidado; sus
+            // validaciones de negocio abortan con RAISERROR enterrado en ruido de transacciones.
+            // Las adelantamos aquí con un mensaje claro y accionable, ANTES de tocar el SP.
+            List<PreContabilidad> lineasQueLiquidan = await db.PreContabilidades
+                .Where(p => p.Empresa == empresa && p.Diario == diario && p.Liquidado != null && p.Liquidado != 0)
+                .ToListAsync()
+                .ConfigureAwait(false);
+            if (lineasQueLiquidan.Count > 0)
+            {
+                List<int> destinosIds = lineasQueLiquidan.Select(l => l.Liquidado.Value).Distinct().ToList();
+                Dictionary<int, ExtractoCliente> destinos = await db.ExtractosCliente
+                    .Where(e => destinosIds.Contains(e.Nº_Orden))
+                    .ToDictionaryAsync(e => e.Nº_Orden)
+                    .ConfigureAwait(false);
+                List<string> erroresLiquidacion = ErroresLiquidacionesDiario(lineasQueLiquidan,
+                    id => destinos.TryGetValue(id, out ExtractoCliente destino) ? destino : null);
+                if (erroresLiquidacion.Count > 0)
+                {
+                    throw new Exception(string.Join(" ", erroresLiquidacion));
+                }
+            }
+
             SqlParameter empresaParametro = new SqlParameter("@Empresa", SqlDbType.Char, 3)
             {
                 Value = empresa
@@ -91,6 +113,39 @@ namespace NestoAPI.Infraestructure.Contabilidad
             {
                 throw new Exception("Error al contabilizar el diario", ex);
             }
+        }
+
+        // #296: validaciones de negocio de prdLiquidar replicadas en C# ANTES de ejecutar el SP
+        // (patrón #284): destino existente, mismo cliente y signos opuestos con importes != 0.
+        // El SP las revalida igualmente; esto solo adelanta un error CLARO en vez del RAISERROR
+        // enterrado en ruido de transacciones.
+        internal static List<string> ErroresLiquidacionesDiario(
+            IEnumerable<PreContabilidad> lineasDiario,
+            Func<int, ExtractoCliente> buscarExtracto)
+        {
+            List<string> errores = new List<string>();
+            foreach (PreContabilidad linea in lineasDiario.Where(l => (l.Liquidado ?? 0) != 0))
+            {
+                int destinoId = linea.Liquidado.Value;
+                string cliente = linea.Nº_Cuenta?.Trim();
+                decimal importeLinea = linea.Debe - linea.Haber;
+                ExtractoCliente destino = buscarExtracto(destinoId);
+                if (destino == null)
+                {
+                    errores.Add($"La línea del cliente {cliente} liquida contra el movimiento {destinoId} del extracto, que no existe.");
+                    continue;
+                }
+                if (!string.Equals(destino.Número?.Trim(), cliente, StringComparison.OrdinalIgnoreCase))
+                {
+                    errores.Add($"La línea del cliente {cliente} liquida contra el movimiento {destinoId}, que es del cliente {destino.Número?.Trim()}: deben ser del mismo cliente.");
+                    continue;
+                }
+                if (importeLinea == 0 || destino.ImportePdte == 0 || Math.Sign(importeLinea) == Math.Sign(destino.ImportePdte))
+                {
+                    errores.Add($"No se puede liquidar el movimiento {destinoId} del cliente {cliente}: los importes deben tener signo contrario y ser distintos de 0 (línea {importeLinea:C}, pendiente del movimiento {destino.ImportePdte:C}).");
+                }
+            }
+            return errores;
         }
 
         // 266 = recuento de BEGIN/COMMIT no coincidente; 3902/3903 = COMMIT/ROLLBACK sin BEGIN.
