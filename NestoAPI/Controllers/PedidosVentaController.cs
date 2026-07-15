@@ -996,7 +996,9 @@ namespace NestoAPI.Controllers
                 catch { }
 
                 // NestoAPI#211: con servir junto toda la base cuenta (una entrega); sin servir junto se
-                // excluyen las líneas sobre pedido (estado != 0 sin stock en el almacén).
+                // excluyen las líneas sobre pedido (EstadoProducto != 0 sin stock en el almacén).
+                // NestoAPI#299: EstadoProducto no viene del cliente; se rellena de la ficha del producto.
+                this.gestor.RellenarEstadoProducto(pedido);
                 decimal baseImponibleProductosPut = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, pedido.servirJunto, new GestorStocks());
                 var inputPortesPut = new PedidoPortesInput
                 {
@@ -1520,7 +1522,9 @@ namespace NestoAPI.Controllers
                 catch { }
 
                 // NestoAPI#211: con servir junto toda la base cuenta (una entrega); sin servir junto se
-                // excluyen las líneas sobre pedido (estado != 0 sin stock en el almacén).
+                // excluyen las líneas sobre pedido (EstadoProducto != 0 sin stock en el almacén).
+                // NestoAPI#299: EstadoProducto no viene del cliente; se rellena de la ficha del producto.
+                this.gestor.RellenarEstadoProducto(pedido);
                 decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, pedido.servirJunto, new GestorStocks());
                 var inputPortes = new PedidoPortesInput
                 {

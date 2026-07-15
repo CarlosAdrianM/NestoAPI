@@ -28,6 +28,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             return servicio.CalcularAlmacen(usuario, empresa, numeroPedido);
         }
+
+        // Issue #299: los clientes no envían EstadoProducto; se rellena aquí desde la ficha del
+        // producto antes de calcular la base de portes (regla sobre pedido de #211). Si el
+        // producto no existe queda null (GestorPortes lo trata como no sobre pedido).
+        public void RellenarEstadoProducto(PedidoVentaDTO pedido)
+        {
+            var estadosLeidos = new Dictionary<string, short?>();
+            foreach (var linea in pedido.Lineas.Where(l =>
+                l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO && !string.IsNullOrWhiteSpace(l.Producto)))
+            {
+                string codigo = linea.Producto.Trim();
+                if (!estadosLeidos.TryGetValue(codigo, out short? estado))
+                {
+                    estado = servicio.LeerProducto(pedido.empresa, linea.Producto)?.Estado;
+                    estadosLeidos[codigo] = estado;
+                }
+                linea.EstadoProducto = estado;
+            }
+        }
         internal CentrosCoste CalcularCentroCoste(string empresa, int numeroPedido)
         {
             return servicio.CalcularCentroCoste(empresa, numeroPedido);
@@ -575,6 +594,8 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         DescuentoLinea = l.Descuento,
                         DescuentoProducto = l.DescuentoProducto,
                         estado = l.Estado,
+                        // Issue #299: estado del PRODUCTO (no confundir con `estado`, el de la línea).
+                        EstadoProducto = (short?)l.EstadoProducto,
                         fechaEntrega = l.Fecha_Entrega,
                         formaVenta = l.Forma_Venta,
                         GrupoProducto = l.Grupo,

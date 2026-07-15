@@ -18,6 +18,49 @@ namespace NestoAPI.Tests.Infrastructure
         private const string EMPRESA = "1";
         private const int PEDIDO = 12345;
 
+        #region RellenarEstadoProducto - Issue #299
+
+        // #299: los clientes no envían EstadoProducto en el PUT/POST, así que el servidor debe
+        // rellenarlo desde la ficha del producto antes de calcular la base de portes (#211).
+        [TestMethod]
+        public void RellenarEstadoProducto_CompletaLasLineasDeProductoDesdeLaFicha()
+        {
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var gestor = new GestorPedidosVenta(servicio);
+            A.CallTo(() => servicio.LeerProducto(EMPRESA, "PROD1")).Returns(new Producto { Número = "PROD1", Estado = 0 });
+            A.CallTo(() => servicio.LeerProducto(EMPRESA, "PROD4")).Returns(new Producto { Número = "PROD4", Estado = 4 });
+            var pedido = new PedidoVentaDTO { empresa = EMPRESA, numero = PEDIDO };
+            var lineaNormal = new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "PROD1", estado = 1 };
+            var lineaSobrePedido = new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "PROD4", estado = -1 };
+            var lineaCuenta = new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE, Producto = "62400002", estado = 1 };
+            pedido.Lineas.Add(lineaNormal);
+            pedido.Lineas.Add(lineaSobrePedido);
+            pedido.Lineas.Add(lineaCuenta);
+
+            gestor.RellenarEstadoProducto(pedido);
+
+            Assert.AreEqual((short)0, lineaNormal.EstadoProducto);
+            Assert.AreEqual((short)4, lineaSobrePedido.EstadoProducto);
+            Assert.IsNull(lineaCuenta.EstadoProducto, "Las cuentas contables no tienen estado de producto");
+        }
+
+        [TestMethod]
+        public void RellenarEstadoProducto_ProductoInexistente_DejaNull()
+        {
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var gestor = new GestorPedidosVenta(servicio);
+            A.CallTo(() => servicio.LeerProducto(EMPRESA, "NOEXISTE")).Returns(null);
+            var pedido = new PedidoVentaDTO { empresa = EMPRESA, numero = PEDIDO };
+            var linea = new LineaPedidoVentaDTO { tipoLinea = Constantes.TiposLineaVenta.PRODUCTO, Producto = "NOEXISTE", estado = 1 };
+            pedido.Lineas.Add(linea);
+
+            gestor.RellenarEstadoProducto(pedido);
+
+            Assert.IsNull(linea.EstadoProducto);
+        }
+
+        #endregion
+
         #region ImporteReembolso - Issue #250
 
         [TestMethod]

@@ -615,15 +615,17 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
 
         #region CalcularBaseImponibleProductos con servir junto (#211)
 
-        // Caso del issue: 3 líneas de 10€ en estado 0 + 1 línea de 10€ en estado != 0, mismo almacén.
+        // Caso del issue: 3 líneas de producto normal + 1 línea de producto estado != 0, mismo almacén.
+        // Issue #299: la regla mira el estado del PRODUCTO (EstadoProducto); el estado de la LÍNEA
+        // se pone a 1 (EN_CURSO) en todas para probar que no influye (antes se confundían).
         private static HashSet<LineaPedidoVentaDTO> LineasEjemplo211(short estadoUltima)
         {
             return new HashSet<LineaPedidoVentaDTO>
             {
-                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 0 },
-                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD2", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 0 },
-                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD3", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 0 },
-                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD4", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = estadoUltima }
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = 0 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD2", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = 0 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD3", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = 0 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD4", PrecioUnitario = 10, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = estadoUltima }
             };
         }
 
@@ -689,6 +691,90 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
             decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, gestorStocks: null);
 
             Assert.AreEqual(40, resultado);
+        }
+
+        #endregion
+
+        #region CalcularBaseImponibleProductos con EstadoProducto (#299)
+
+        // Regresión #299 (pedido real 922175): EsLineaSobrePedidoEnAlmacen comparaba el estado de
+        // la LÍNEA de venta (-1 pendiente / 1 en curso) como si fuera el estado del PRODUCTO, así
+        // que el chequeo de stock de #211 se aplicaba a TODAS las líneas vivas y se cobraban
+        // portes al cliente cuando a nosotros nos faltaba stock de un producto normal.
+        [TestMethod]
+        public void GestorPortes_CalcularBase_SinServirJunto_ProductoNormalSinStock_NoSeExcluye()
+        {
+            // Producto NORMAL (EstadoProducto = 0) en línea EN CURSO (estado de línea = 1) sin
+            // stock: nunca es sobre pedido, debe contar en la base de portes. Total < 150 para
+            // que el backstop de importe original no enmascare la regla.
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 60, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = 0 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD2", PrecioUnitario = 40, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = 0 }
+            };
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock(A<string>._, A<string>._)).Returns(0);
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, stocks);
+
+            Assert.AreEqual(100, resultado,
+                "Un producto normal (EstadoProducto = 0) cuenta en la base aunque falte stock; el estado de la LÍNEA no pinta nada aquí");
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularBase_SinServirJunto_EstadoProductoNull_NoSeExcluye()
+        {
+            // Los clientes (Nesto/NestoApp) no envían EstadoProducto: null = desconocido se trata
+            // como NO sobre pedido (mejor perder una exclusión que cobrar portes indebidos).
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 60, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = null },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD2", PrecioUnitario = 40, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = null }
+            };
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock(A<string>._, A<string>._)).Returns(0);
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, stocks);
+
+            Assert.AreEqual(100, resultado);
+        }
+
+        [TestMethod]
+        public void GestorPortes_CalcularBase_SinServirJunto_SobrePedidoRealSinStock_SiSeExcluye()
+        {
+            // La regla de #211 sigue viva con el campo correcto: producto sobre pedido de verdad
+            // (EstadoProducto != 0) sin stock en el almacén → fuera de la base de esta entrega.
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD1", PrecioUnitario = 60, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = 0 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD2", PrecioUnitario = 40, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = 4 }
+            };
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock("PROD2", "ALG")).Returns(0);
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, stocks);
+
+            Assert.AreEqual(60, resultado);
+        }
+
+        // Backstop del picking espejado en el PUT (#299 punto 2, caso real 922175: 231,04 € y se
+        // le añadieron portes): si los productos del pedido llegan a IMPORTE_SIN_PORTES (150 €),
+        // nunca hay portes, así que no se aplica ninguna exclusión por sobre pedido.
+        [TestMethod]
+        public void GestorPortes_CalcularBase_SinServirJunto_ImporteOriginalLlegaAlImporteSinPortes_CuentaTodo()
+        {
+            var lineas = new HashSet<LineaPedidoVentaDTO>
+            {
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "37515", PrecioUnitario = 33.43M, Cantidad = 5, almacen = "ALG", estado = 1, EstadoProducto = 4 },
+                new LineaPedidoVentaDTO { tipoLinea = 1, Producto = "PROD2", PrecioUnitario = 63.89M, Cantidad = 1, almacen = "ALG", estado = 1, EstadoProducto = 0 }
+            };
+            var stocks = A.Fake<IGestorStocks>();
+            A.CallTo(() => stocks.Stock("37515", "ALG")).Returns(2); // stock insuficiente (piden 5)
+
+            decimal resultado = GestorPortes.CalcularBaseImponibleProductos(lineas, servirJunto: false, stocks);
+
+            Assert.AreEqual(231.04M, resultado,
+                "Con importe original >= IMPORTE_SIN_PORTES el picking nunca cobra portes; el PUT debe comportarse igual");
         }
 
         #endregion

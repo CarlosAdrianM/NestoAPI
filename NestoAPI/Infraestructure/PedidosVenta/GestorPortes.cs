@@ -516,9 +516,18 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             bool servirJunto,
             IGestorStocks gestorStocks)
         {
+            decimal baseCompleta = CalcularBaseImponibleProductos(lineas);
             if (servirJunto || gestorStocks == null)
             {
-                return CalcularBaseImponibleProductos(lineas);
+                return baseCompleta;
+            }
+
+            // Issue #299 (espejo del backstop del picking): si los productos del pedido llegan a
+            // IMPORTE_SIN_PORTES nunca hay portes, así que no procede excluir nada por sobre pedido
+            // (GestorImportesMinimos.LosProductosDelPedidoOriginalLlegabanAlImporteSinPortes).
+            if (baseCompleta >= GestorImportesMinimos.IMPORTE_SIN_PORTES)
+            {
+                return baseCompleta;
             }
 
             return LineasParaBasePortes(lineas)
@@ -538,22 +547,28 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                             l.Producto.Trim() != Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL));
         }
 
-        // Una línea de PRODUCTO es "sobre pedido en el almacén" si su estado != 0 y no hay stock
-        // suficiente en el almacén del pedido. Las cuentas contables (no portes) nunca se excluyen.
-        // Solo se consulta el stock para líneas estado != 0 (estado 0 nunca es sobre pedido), para
-        // no añadir consultas innecesarias en el caso normal.
+        // Una línea de PRODUCTO es "sobre pedido en el almacén" si el estado del PRODUCTO != 0 y no
+        // hay stock suficiente en el almacén del pedido. Las cuentas contables (no portes) nunca se
+        // excluyen. Solo se consulta el stock para productos con estado != 0 (estado 0 nunca es
+        // sobre pedido), para no añadir consultas innecesarias en el caso normal.
+        // Issue #299: aquí se usaba linea.estado, que es el estado de la LÍNEA de venta (-1/1...),
+        // no el del producto: toda línea viva pasaba el filtro y el chequeo de stock excluía de la
+        // base productos normales sin stock → portes indebidos. EstadoProducto null (clientes que
+        // no lo envían y el servidor no pudo resolver) se trata como NO sobre pedido: mejor perder
+        // una exclusión que cobrar portes de más.
         private static bool EsLineaSobrePedidoEnAlmacen(
             Models.PedidosVenta.LineaPedidoVentaDTO linea, IGestorStocks gestorStocks)
         {
+            short estadoProducto = linea.EstadoProducto ?? Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO;
             if (linea.tipoLinea != Constantes.TiposLineaVenta.PRODUCTO ||
-                linea.estado == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
+                estadoProducto == Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
             {
                 return false;
             }
 
             int stockAlmacen = gestorStocks.Stock(linea.Producto?.Trim(), linea.almacen?.Trim());
             return EsSobrePedidoParaPortes(
-                linea.estado, linea.Cantidad, stockAlmacen,
+                estadoProducto, linea.Cantidad, stockAlmacen,
                 stockDisponibleTodosAlmacenes: 0, servirJunto: false);
         }
 

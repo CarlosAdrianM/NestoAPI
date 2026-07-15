@@ -12,6 +12,12 @@ namespace NestoAPI.Models.PedidosVenta
         public string almacen { get; set; }
         public string delegacion { get; set; }
         public short estado { get; set; }
+
+        // Issue #299: estado del PRODUCTO (Productos.Estado / LinPedidoVta.EstadoProducto), distinto
+        // del estado de la LÍNEA de venta (propiedad `estado`: -1 pendiente, 1 en curso...). Lo usa
+        // GestorPortes para la regla de "sobre pedido" (#211). El servidor lo rellena en el GET y lo
+        // recalcula en PUT/POST (RellenarEstadoProducto); si viene null se trata como no sobre pedido.
+        public short? EstadoProducto { get; set; }
         public System.DateTime fechaEntrega { get; set; }
         public string formaVenta { get; set; }
         public string GrupoProducto { get; set; }
