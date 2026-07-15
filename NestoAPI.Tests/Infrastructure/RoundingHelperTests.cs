@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
+using System;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -94,8 +95,11 @@ namespace NestoAPI.Tests.Infrastructure
         [TestMethod]
         public void RoundingHelper_DiferenciaEntreModos_CasosCriticos()
         {
-            // Este test documenta las diferencias entre ambos modos
-            decimal[] casosConDiferencia = { 2.345m, 2.465m, 0.445m, 1.235m };
+            // Este test documenta las diferencias entre ambos modos. Solo difieren cuando el
+            // dígito anterior al 5 es PAR (ToEven se queda, AwayFromZero sube): 1.235 no vale
+            // como caso (el 3 es impar y ToEven también sube a 1.24) — dato corregido al rescatar
+            // este fichero del olvido (#242, nunca había compilado).
+            decimal[] casosConDiferencia = { 2.345m, 2.465m, 0.445m, 1.225m };
 
             foreach (var valor in casosConDiferencia)
             {

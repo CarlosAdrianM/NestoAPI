@@ -9,6 +9,7 @@ using System.Web.Http;
 using System.Web.Http.Controllers;
 using System.Web.Http.Filters;
 using System.Web.Http.Hosting;
+using System.Web.Http.Routing;
 
 namespace NestoAPI.Tests.Infrastructure.Filters
 {
@@ -17,6 +18,16 @@ namespace NestoAPI.Tests.Infrastructure.Filters
     {
         private GlobalExceptionFilter _filter;
         private HttpActionExecutedContext _context;
+
+        // #242/#198: leer el JSON SERIALIZADO. CreateResponse guarda el Dictionary original en un
+        // ObjectContent y ReadAsAsync<Dictionary<string, object>> lo devolvía SIN pasar por el
+        // formatter: content["error"] era un Dictionary (no un JObject) y el "as JObject" daba
+        // null. Con ReadAsStringAsync + Parse se valida lo que de verdad viaja por el cable.
+        private Newtonsoft.Json.Linq.JObject LeerErrorDeLaRespuesta()
+        {
+            string json = _context.Response.Content.ReadAsStringAsync().Result;
+            return (Newtonsoft.Json.Linq.JObject)Newtonsoft.Json.Linq.JObject.Parse(json)["error"];
+        }
 
         [TestInitialize]
         public void Setup()
@@ -60,9 +71,8 @@ namespace NestoAPI.Tests.Infrastructure.Filters
             _filter.OnException(_context);
 
             // Assert
-            var content = _context.Response.Content.ReadAsAsync<Dictionary<string, object>>().Result;
-            Assert.IsTrue(content.ContainsKey("error"));
-            var error = content["error"] as Newtonsoft.Json.Linq.JObject;
+            var error = LeerErrorDeLaRespuesta();
+            Assert.IsNotNull(error, "La respuesta debe traer la clave 'error'");
             Assert.AreEqual("INTERNAL_ERROR", error["code"].ToString());
         }
 
@@ -77,8 +87,7 @@ namespace NestoAPI.Tests.Infrastructure.Filters
             _filter.OnException(_context);
 
             // Assert
-            var content = _context.Response.Content.ReadAsAsync<Dictionary<string, object>>().Result;
-            var error = content["error"] as Newtonsoft.Json.Linq.JObject;
+            var error = LeerErrorDeLaRespuesta();
             Assert.IsTrue(error.ContainsKey("timestamp"));
         }
 
@@ -117,8 +126,7 @@ namespace NestoAPI.Tests.Infrastructure.Filters
             _filter.OnException(_context);
 
             // Assert
-            var content = _context.Response.Content.ReadAsAsync<Dictionary<string, object>>().Result;
-            var error = content["error"] as Newtonsoft.Json.Linq.JObject;
+            var error = LeerErrorDeLaRespuesta();
             Assert.AreEqual("FACTURACION_TEST_ERROR", error["code"].ToString());
         }
 
@@ -138,8 +146,7 @@ namespace NestoAPI.Tests.Infrastructure.Filters
             _filter.OnException(_context);
 
             // Assert
-            var content = _context.Response.Content.ReadAsAsync<Dictionary<string, object>>().Result;
-            var error = content["error"] as Newtonsoft.Json.Linq.JObject;
+            var error = LeerErrorDeLaRespuesta();
 
             Assert.IsTrue(error.ContainsKey("details"));
             var details = error["details"] as Newtonsoft.Json.Linq.JObject;
@@ -160,8 +167,7 @@ namespace NestoAPI.Tests.Infrastructure.Filters
             _filter.OnException(_context);
 
             // Assert
-            var content = _context.Response.Content.ReadAsAsync<Dictionary<string, object>>().Result;
-            var error = content["error"] as Newtonsoft.Json.Linq.JObject;
+            var error = LeerErrorDeLaRespuesta();
 
             // En modo DEBUG debe incluir innerException
 #if DEBUG
@@ -205,8 +211,7 @@ namespace NestoAPI.Tests.Infrastructure.Filters
             _filter.OnException(_context);
 
             // Assert
-            var content = _context.Response.Content.ReadAsAsync<Dictionary<string, object>>().Result;
-            var error = content["error"] as Newtonsoft.Json.Linq.JObject;
+            var error = LeerErrorDeLaRespuesta();
 
             Assert.IsTrue(error.ContainsKey("details"));
             var details = error["details"] as Newtonsoft.Json.Linq.JObject;

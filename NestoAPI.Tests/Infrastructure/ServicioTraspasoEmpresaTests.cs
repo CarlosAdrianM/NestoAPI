@@ -5,6 +5,7 @@ using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure
@@ -306,9 +307,9 @@ namespace NestoAPI.Tests.Infrastructure
             // Arrange
             var lineas = new List<LinPedidoVta>
             {
-                new LinPedidoVta { Empresa = "1", Número = 1, NºOrden = 1, Producto = "PROD001" },
-                new LinPedidoVta { Empresa = "1", Número = 1, NºOrden = 2, Producto = "PROD002" },
-                new LinPedidoVta { Empresa = "1", Número = 1, NºOrden = 3, Producto = "PROD003" }
+                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 1, Producto = "PROD001" },
+                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 2, Producto = "PROD002" },
+                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 3, Producto = "PROD003" }
             };
             var pedido = new CabPedidoVta
             {
@@ -335,9 +336,9 @@ namespace NestoAPI.Tests.Infrastructure
             // Arrange: Pedido con el mismo producto en varias líneas
             var lineas = new List<LinPedidoVta>
             {
-                new LinPedidoVta { Empresa = "1", Número = 1, NºOrden = 1, Producto = "PROD001", Cantidad = 10 },
-                new LinPedidoVta { Empresa = "1", Número = 1, NºOrden = 2, Producto = "PROD001", Cantidad = 5 }, // Duplicado
-                new LinPedidoVta { Empresa = "1", Número = 1, NºOrden = 3, Producto = "PROD002", Cantidad = 3 }
+                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 1, Producto = "PROD001", Cantidad = 10 },
+                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 2, Producto = "PROD001", Cantidad = 5 }, // Duplicado
+                new LinPedidoVta { Empresa = "1", Número = 1, Nº_Orden = 3, Producto = "PROD002", Cantidad = 3 }
             };
             var pedido = new CabPedidoVta
             {
@@ -372,7 +373,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Nº_Cliente = "12345",
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
-                    new LinPedidoVta { Empresa = empresaOrigen, Número = 1, NºOrden = 1, Producto = "PROD001" }
+                    new LinPedidoVta { Empresa = empresaOrigen, Número = 1, Nº_Orden = 1, Producto = "PROD001" }
                 }
             };
 
@@ -417,7 +418,7 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Empresa = "1",
                 Número = 1,
-                NºOrden = 1,
+                Nº_Orden = 1,
                 Producto = "PROD001",
                 IVA = "G21",
                 Cantidad = 10,
@@ -442,7 +443,7 @@ namespace NestoAPI.Tests.Infrastructure
             };
 
             // Act: Traspasar de empresa 1 a empresa 3
-            await servicio.TraspasarPedidoAEmpresa(pedido, "1", "3");
+            await servicio.TraspasarPedidoAEmpresa(pedido, "1", "3", "usuarioTest");
 
             // Assert: Verificar que se llama a LeerParametroIVA con empresa "3"
             A.CallTo(() => servicioPedidos.LeerParametroIVA("3", "G21", "G21"))

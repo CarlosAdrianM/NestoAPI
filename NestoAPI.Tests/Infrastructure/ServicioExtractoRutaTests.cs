@@ -56,14 +56,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
 
             // Assert
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.Empresa == pedido.Empresa &&
                 e.Número == pedido.Nº_Cliente &&
                 e.Contacto == pedido.Contacto &&
@@ -104,14 +104,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: false);
 
             // Assert
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>._)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>._)).MustHaveHappenedOnceExactly();
             A.CallTo(() => _db.SaveChangesAsync()).MustNotHaveHappened();
         }
 
@@ -214,14 +214,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, extractos);
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
 
             // Assert - Debe usar el primer efecto con Importe=50 y FechaVto del primer efecto
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.Efecto == "1" &&
                 e.Importe == 50m &&
                 e.ImportePdte == 50m &&
@@ -257,14 +257,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
 
             // Assert - El ExtractoRuta debe tener Empresa="3"
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.Empresa == "3  " &&
                 e.Importe == 50m &&
                 e.ImportePdte == 50m
@@ -299,14 +299,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
 
             // Assert - ImportePdte DEBE ser igual a Importe (150.75), NO 0
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.Importe == 150.75m &&
                 e.ImportePdte == 150.75m // Este era el bug: antes era 0
             ))).MustHaveHappenedOnceExactly();
@@ -338,14 +338,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
 
             // Assert - Efecto debe ser "1", NO null
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.Efecto == "1" // Este era el bug: antes era NULL
             ))).MustHaveHappenedOnceExactly();
         }
@@ -379,14 +379,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, autoSave: true);
 
             // Assert - FechaVto debe ser 2025-12-15, NO 2001-01-01
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.FechaVto == fechaVtoCorrecta
             ))).MustHaveHappenedOnceExactly();
         }
@@ -427,15 +427,15 @@ namespace NestoAPI.Tests.Infrastructure
                 new ExtractoRuta { Empresa = pedido.Empresa, Nº_Orden = -50 }
             };
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
-            ConfigurarDbSetFalso(mockExtractosRuta, extractosRutaExistentes);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
+            ConfigurarDbSetFalso(mockExtractoRutas, extractosRutaExistentes);
 
             // Act
             await _servicio.InsertarDesdeAlbaran(pedido, numeroAlbaran, usuario, autoSave: true);
 
             // Assert
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.Empresa == pedido.Empresa &&
                 e.Nº_Orden == -101 && // MIN (-100) - 1
                 e.Número == pedido.Nº_Cliente &&
@@ -450,7 +450,7 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task InsertarDesdeAlbaran_SinExtractosRutaPrevios_UsaOrdenMenosUno()
+        public async Task InsertarDesdeAlbaran_SinExtractoRutasPrevios_UsaOrdenMenosUno()
         {
             // Arrange
             var pedido = CrearPedidoPrueba();
@@ -472,15 +472,15 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.Clientes.FindAsync(pedido.Empresa, pedido.Nº_Cliente, pedido.Contacto))
                 .Returns(Task.FromResult(cliente));
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
-            ConfigurarDbSetFalso(mockExtractosRuta, new List<ExtractoRuta>()); // Sin datos
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
+            ConfigurarDbSetFalso(mockExtractoRutas, new List<ExtractoRuta>()); // Sin datos
 
             // Act
             await _servicio.InsertarDesdeAlbaran(pedido, numeroAlbaran, usuario, autoSave: true);
 
             // Assert
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.Nº_Orden == -1 // Primera vez, usa -1
             ))).MustHaveHappenedOnceExactly();
         }
@@ -500,9 +500,9 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.Clientes.FindAsync(pedido.Empresa, pedido.Nº_Cliente, pedido.Contacto))
                 .Returns(Task.FromResult(cliente));
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
-            ConfigurarDbSetFalso(mockExtractosRuta, new List<ExtractoRuta>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
+            ConfigurarDbSetFalso(mockExtractoRutas, new List<ExtractoRuta>());
 
             // Act
             await _servicio.InsertarDesdeAlbaran(pedido, numeroAlbaran, usuario);
@@ -579,14 +579,14 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractosRuta = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
-            A.CallTo(() => _db.ExtractosRuta).Returns(mockExtractosRuta);
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act - Con el parámetro empresaFactura, debe buscar en empresa '3' y encontrar el efecto
             await _servicio.InsertarDesdeFactura(pedido, numeroFactura, usuario, empresaFactura, autoSave: true);
 
             // Assert - Debe haber insertado el ExtractoRuta correctamente
-            A.CallTo(() => mockExtractosRuta.Add(A<ExtractoRuta>.That.Matches(e =>
+            A.CallTo(() => mockExtractoRutas.Add(A<ExtractoRuta>.That.Matches(e =>
                 e.Empresa == empresaFactura && // El ExtractoRuta debe ser de empresa '3'
                 e.Número == pedido.Nº_Cliente &&
                 e.Importe == 196.66m

@@ -4,6 +4,7 @@ using NestoAPI.Infraestructure.NotasEntrega;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -768,7 +769,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Nº_Cliente = "1013",
                 Contacto = "0",
                 NotaEntrega = true,
-                Ruta = 1,
+                Ruta = "1",
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
                     new LinPedidoVta
@@ -885,7 +886,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Nº_Cliente = "1014",
                 Contacto = "0",
                 NotaEntrega = true,
-                Ruta = 1,
+                Ruta = "1",
                 LinPedidoVtas = new List<LinPedidoVta>
                 {
                     new LinPedidoVta
