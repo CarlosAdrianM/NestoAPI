@@ -90,6 +90,40 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(1, intentos);
         }
 
+        // ----- #288 punto 2: la variante SÍNCRONA de la policy común (GestorClientes.ObtenerClientes) -----
+
+        [TestMethod]
+        public void ReintentosSql_Sincrono_DeadlockTransitorio_ReintentaYDevuelve()
+        {
+            int intentos = 0;
+            int resultado = NestoAPI.Infraestructure.ReintentosSql.ReintentarSiDeadlock(() =>
+            {
+                intentos++;
+                if (intentos < 3)
+                {
+                    throw new Exception("wrap", CrearSqlException(SQL_DEADLOCK_VICTIM));
+                }
+                return 42;
+            }, maxIntentos: 3, retrasoBaseMs: 0);
+
+            Assert.AreEqual(42, resultado);
+            Assert.AreEqual(3, intentos);
+        }
+
+        [TestMethod]
+        public void ReintentosSql_Sincrono_ErrorQueNoEsDeadlock_NoReintenta()
+        {
+            int intentos = 0;
+            _ = Assert.ThrowsException<InvalidOperationException>(() =>
+                NestoAPI.Infraestructure.ReintentosSql.ReintentarSiDeadlock<int>(() =>
+                {
+                    intentos++;
+                    throw new InvalidOperationException("otro error");
+                }, maxIntentos: 3, retrasoBaseMs: 0));
+
+            Assert.AreEqual(1, intentos);
+        }
+
         // ----- #296: el error de negocio del SP no debe quedar enterrado en ruido de transacciones -----
 
         [TestMethod]

@@ -231,32 +231,17 @@ namespace NestoAPI.Infraestructure.Contabilidad
         // reintentar la operación completa con contexto nuevo es seguro (prdCopiarCliente, que se
         // ejecuta fuera de la transacción del SaveChanges, es idempotente). NO se aplica al overload
         // que recibe el NVEntities: ahí la transacción es del llamante y el reintento le corresponde.
-        internal static async Task<T> ReintentarSiDeadlock<T>(Func<Task<T>> operacion, int maxIntentos = 3, int retrasoBaseMs = 200)
+        // #288 punto 2: la implementación vive ahora en la policy Polly compartida ReintentosSql
+        // (segundo caso: GestorClientes.ObtenerClientes); aquí se delega para conservar la firma.
+        internal static Task<T> ReintentarSiDeadlock<T>(Func<Task<T>> operacion, int maxIntentos = 3, int retrasoBaseMs = 200)
         {
-            for (int intento = 1; ; intento++)
-            {
-                try
-                {
-                    return await operacion().ConfigureAwait(false);
-                }
-                catch (Exception ex) when (intento < maxIntentos && EsVictimaDeDeadlock(ex))
-                {
-                    await Task.Delay(retrasoBaseMs * intento).ConfigureAwait(false);
-                }
-            }
+            return ReintentosSql.ReintentarSiDeadlockAsync(operacion, maxIntentos, retrasoBaseMs);
         }
 
         // ¿Hay un SqlException 1205 (elegido como víctima de interbloqueo) en la cadena?
         internal static bool EsVictimaDeDeadlock(Exception ex)
         {
-            for (Exception e = ex; e != null; e = e.InnerException)
-            {
-                if (e is SqlException sql && sql.Number == 1205)
-                {
-                    return true;
-                }
-            }
-            return false;
+            return ReintentosSql.EsVictimaDeDeadlock(ex);
         }
 
         public async Task<int> CrearLineasYContabilizarDiario(List<PreContabilidad> lineas)

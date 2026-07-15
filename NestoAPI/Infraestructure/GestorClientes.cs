@@ -1119,7 +1119,11 @@ namespace NestoAPI.Infraestructure
                 model = mlContext.Model.Load(fileStream, out var modelInputSchema);
             }
 
-            List<ClienteInteraccion> clientes = ObtenerClientes(vendedor, tipoInteraccion);
+            // #288 punto 2: lectura pesada (CTEs a 5 años sobre SeguimientoCliente/LinPedidoVta) que
+            // sale elegida víctima de deadlock/timeout en horas de carga (casos 14/07 y #271); es una
+            // consulta pura, así que se reintenta con la policy común de deadlocks.
+            List<ClienteInteraccion> clientes = ReintentosSql.ReintentarSiDeadlock(
+                () => ObtenerClientes(vendedor, tipoInteraccion));
 
             if (!string.IsNullOrEmpty(grupoSubgrupo))
             {
