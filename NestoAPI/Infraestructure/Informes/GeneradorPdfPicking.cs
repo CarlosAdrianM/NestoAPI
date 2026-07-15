@@ -118,7 +118,10 @@ namespace NestoAPI.Infraestructure.Informes
 
         private static void CeldaDato(IContainer celda, string texto, bool alinearDerecha)
         {
-            IContainer contenido = celda.BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(2).AlignMiddle();
+            // ShowEntire (#302): una fila multi-línea que cae en el corte de página no debe
+            // partirse (las celdas ya pintadas se repetían en la continuación y el operario
+            // contaba la unidad dos veces). La fila que no cabe pasa ENTERA a la siguiente página.
+            IContainer contenido = celda.ShowEntire().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(2).AlignMiddle();
             if (alinearDerecha)
             {
                 contenido = contenido.AlignRight();

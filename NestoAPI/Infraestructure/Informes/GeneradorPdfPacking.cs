@@ -205,7 +205,12 @@ namespace NestoAPI.Infraestructure.Informes
                     }
                     if (!string.IsNullOrWhiteSpace(pedido.ComentarioPicking))
                     {
-                        column.Item().Text(pedido.ComentarioPicking).Italic();
+                        // #302 (petición del almacén): el comentario de picking destacado para que
+                        // no se pase por alto al preparar (negrita 11pt sobre fondo con borde; en
+                        // impresora B/N el fondo sale gris claro y sigue resaltando).
+                        column.Item().PaddingTop(2).Background(Colors.Yellow.Lighten3)
+                            .Border(1).BorderColor(Colors.Yellow.Darken2).Padding(3)
+                            .Text(pedido.ComentarioPicking).Bold().FontSize(11);
                     }
                     column.Item().PaddingTop(2).Element(c => ComponerTablaLineas(c, pedido.Lineas));
                 }
@@ -298,7 +303,11 @@ namespace NestoAPI.Infraestructure.Informes
 
         private static void CeldaDato(IContainer celda, string texto, bool alinearDerecha)
         {
-            IContainer contenido = celda.BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(2).AlignMiddle();
+            // ShowEntire (#302): sin esto, una fila con descripción de 2 líneas que cae en el
+            // corte de página se PARTE, y las celdas que ya cabían (referencia, cantidad) se
+            // repiten en la continuación: el operario cuenta la unidad dos veces (una por hoja)
+            // y se envía de más. Con ShowEntire la fila que no cabe pasa ENTERA a la siguiente.
+            IContainer contenido = celda.ShowEntire().BorderBottom(1).BorderColor(Colors.Grey.Lighten3).Padding(2).AlignMiddle();
             if (alinearDerecha)
             {
                 contenido = contenido.AlignRight();

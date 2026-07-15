@@ -92,6 +92,30 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GenerarPdf_MuchasFilasConDescripcionesLargas_NoLanzaPorFilasIndivisibles()
+        {
+            // #302: las filas llevan ShowEntire para que una descripción de 2-3 líneas que caiga
+            // en el corte de página no se parta (duplicaba referencia y cantidad en la hoja
+            // siguiente y el operario contaba la unidad dos veces). Este test fuerza varios
+            // saltos de página con filas multi-línea y verifica que el layout no lanza.
+            var lineas = new List<PackingDTO>();
+            for (int i = 0; i < 120; i++)
+            {
+                PackingDTO linea = Linea(900001, (10000 + i).ToString());
+                linea.Descripcion = "DESCRIPCIÓN LARGUÍSIMA DE PRODUCTO QUE OCUPA VARIAS LÍNEAS EN LA CELDA " +
+                    "PORQUE EL NOMBRE COMERCIAL INCLUYE GAMA, VARIANTE, TAMAÑO Y APELLIDOS " + i;
+                lineas.Add(linea);
+            }
+
+            var resultado = _generador.GenerarPdf(123456, lineas);
+
+            Assert.IsNotNull(resultado);
+            byte[] bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+            ComprobarCabeceraPdf(bytes);
+        }
+
+        [TestMethod]
         public void GenerarPdf_ListaVacia_DevuelvePdfValido()
         {
             var resultado = _generador.GenerarPdf(123456, new List<PackingDTO>());
