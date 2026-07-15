@@ -348,14 +348,17 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
         }
 
         /// <summary>
-        /// Issue #290: en ofertas con RegalarMenorImporte, comprueba que del conjunto de líneas que
-        /// casan con la oferta (a) toda unidad a base 0 tenga tarifa &lt;= que toda unidad pagada
-        /// (regalar solo la más barata; los empates de tarifa valen), y (b) lo pagado cubra la
-        /// tarifa (PVP) de todas las unidades del conjunto MENOS la más barata por instancia — de
-        /// cada oferta completa solo puede salir gratis UNA unidad. El suelo se calcula sobre el
-        /// conjunto entero, no sobre "las unidades que el cliente decide pagar": si no, pagar 1 y
-        /// llevarse 2 gratis (o todo gratis) cumplía el suelo (#289, pregunta de Carlos 13/07).
-        /// Devuelve null si la regla se cumple, o el motivo del rechazo.
+        /// Issue #290/#301: en ofertas con RegalarMenorImporte, comprueba que las unidades a base 0
+        /// se puedan REPARTIR EN INSTANCIAS válidas de la oferta: cada tanda de UnidadesRegaladas
+        /// (de más cara a más barata) debe emparejarse con las unidades pagadas de su instancia, y
+        /// todas ellas de tarifa &gt;= que la regalada (regalar solo la más barata de CADA instancia;
+        /// los empates de tarifa valen). Antes (#290) se exigía que las gratis fueran las más baratas
+        /// del POOL GLOBAL, lo que tiraba pedidos con varias instancias mono-producto perfectas
+        /// (caso real 922350: cinco 3+1 de cremas de tarifas distintas → #301). Además: (1) no pueden
+        /// salir gratis más unidades que UnidadesRegaladas × instancias, y (2) lo pagado debe cubrir
+        /// la tarifa (PVP) de todas las unidades del conjunto menos las regaladas reales — sin esto,
+        /// pagar 1 y llevarse 2 gratis (o todo gratis, o pagar bajo tarifa) cumplía el suelo
+        /// (#289, pregunta de Carlos 13/07). Devuelve null si la regla se cumple, o el motivo.
         /// </summary>
         internal static string MotivoRegaloNoEsMenorImporte(OfertaCombinada oferta, PedidoVentaDTO pedido, IServicioPrecios servicio)
         {
@@ -376,33 +379,48 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 .Distinct()
                 .ToDictionary(p => p, p => servicio.BuscarProducto(p)?.PVP ?? 0);
 
-            List<LineaPedidoVentaDTO> pagadas = conjunto.Where(l => l.BaseImponible != 0).ToList();
-            if (pagadas.Any())
+            int instancias = InstanciasEnPedido(oferta, pedido, servicio);
+            int regaladasPorInstancia = Math.Max(oferta.UnidadesRegaladas, (short)1);
+            int pagadasPorInstancia = Math.Max(UnidadesRequeridas(oferta) - regaladasPorInstancia, 0);
+
+            List<UnidadConTarifa> unidadesGratis = ExpandirUnidades(gratis, tarifas);
+            List<UnidadConTarifa> unidadesPagadas = ExpandirUnidades(conjunto.Where(l => l.BaseImponible != 0), tarifas);
+
+            // (1) De cada oferta completa solo salen gratis UnidadesRegaladas unidades.
+            int maximoRegalado = instancias * regaladasPorInstancia;
+            if (unidadesGratis.Count > maximoRegalado)
             {
-                LineaPedidoVentaDTO gratisMasCara = gratis.OrderByDescending(l => tarifas[l.Producto.Trim()]).First();
-                LineaPedidoVentaDTO pagadaMasBarata = pagadas.OrderBy(l => tarifas[l.Producto.Trim()]).First();
-                decimal tarifaGratis = tarifas[gratisMasCara.Producto.Trim()];
-                decimal tarifaPagada = tarifas[pagadaMasBarata.Producto.Trim()];
-                if (tarifaGratis > tarifaPagada)
+                return "La oferta " + oferta.Id + " solo regala " + regaladasPorInstancia
+                    + " unidad(es) por cada oferta completa (" + maximoRegalado + " en este pedido): "
+                    + "el resto de unidades debe cobrarse a tarifa";
+            }
+
+            // (2) Partición en instancias: cada tanda de regaladas (de cara a barata) consume las
+            // pagadas de su instancia, todas de tarifa >= que la regalada más cara de la tanda.
+            // Consumir las pagadas más caras primero maximiza la viabilidad (greedy correcto).
+            int indicePagadas = 0;
+            for (int i = 0; i < unidadesGratis.Count; i += regaladasPorInstancia)
+            {
+                UnidadConTarifa regaladaMasCara = unidadesGratis[i]; // orden descendente
+                for (int j = 0; j < pagadasPorInstancia; j++)
                 {
-                    return "La oferta " + oferta.Id + " solo permite regalar la referencia de menor importe: no se puede regalar "
-                        + gratisMasCara.Producto.Trim() + " (tarifa " + tarifaGratis.ToString("C") + ") mientras se cobra "
-                        + pagadaMasBarata.Producto.Trim() + " (tarifa " + tarifaPagada.ToString("C") + ")";
+                    if (indicePagadas >= unidadesPagadas.Count
+                        || unidadesPagadas[indicePagadas].Tarifa < regaladaMasCara.Tarifa)
+                    {
+                        return "La oferta " + oferta.Id + " solo permite regalar la referencia de menor importe de cada oferta completa: "
+                            + "no se puede regalar " + regaladaMasCara.Producto + " (tarifa " + regaladaMasCara.Tarifa.ToString("C")
+                            + ") sin " + pagadasPorInstancia + " unidad(es) pagadas de tarifa igual o superior en su misma oferta";
+                    }
+                    indicePagadas++;
                 }
             }
 
-            // Suelo dinámico: del conjunto entero solo se regalan las UnidadesRegaladas más
-            // baratas por cada instancia de la oferta (#292: 1 por defecto, pero un 3+2 regala
-            // 2); el resto debe cubrir su tarifa (la oferta no acumula otros descuentos). Misma
-            // tolerancia de redondeo que el ImporteMinimo fijo.
-            int instancias = InstanciasEnPedido(oferta, pedido, servicio);
-            int regaladasPorInstancia = Math.Max(oferta.UnidadesRegaladas, (short)1);
-            List<decimal> tarifasUnidades = conjunto
-                .SelectMany(l => Enumerable.Repeat(tarifas[l.Producto.Trim()], l.Cantidad))
-                .OrderBy(t => t)
-                .ToList();
-            decimal regalable = tarifasUnidades.Take(instancias * regaladasPorInstancia).Sum();
-            decimal requerido = tarifasUnidades.Sum() - regalable;
+            // (3) Suelo dinámico: lo pagado debe cubrir la tarifa de todas las unidades del
+            // conjunto menos las regaladas REALES (la oferta no acumula otros descuentos).
+            // Misma tolerancia de redondeo que el ImporteMinimo fijo.
+            decimal totalTarifas = conjunto.SelectMany(l => Enumerable.Repeat(tarifas[l.Producto.Trim()], l.Cantidad)).Sum();
+            decimal regalado = unidadesGratis.Sum(u => u.Tarifa);
+            decimal requerido = totalTarifas - regalado;
             decimal pagado = conjunto.Sum(l => l.BaseImponible);
             decimal tolerancia = 0.005m * (conjunto.Count + 1);
             if (pagado < requerido - tolerancia)
@@ -413,6 +431,26 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             }
 
             return null;
+        }
+
+        private sealed class UnidadConTarifa
+        {
+            public string Producto { get; set; }
+            public decimal Tarifa { get; set; }
+        }
+
+        // Expande las líneas a unidades individuales con su tarifa, ordenadas de más cara a más
+        // barata (el greedy de la partición procesa ambos lados en ese orden).
+        private static List<UnidadConTarifa> ExpandirUnidades(IEnumerable<LineaPedidoVentaDTO> lineas, Dictionary<string, decimal> tarifas)
+        {
+            return lineas
+                .SelectMany(l => Enumerable.Repeat(new UnidadConTarifa
+                {
+                    Producto = l.Producto.Trim(),
+                    Tarifa = tarifas[l.Producto.Trim()]
+                }, l.Cantidad))
+                .OrderByDescending(u => u.Tarifa)
+                .ToList();
         }
 
         /// <summary>

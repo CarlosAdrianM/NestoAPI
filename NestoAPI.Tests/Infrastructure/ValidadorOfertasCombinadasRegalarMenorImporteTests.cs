@@ -237,6 +237,78 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
         }
 
+        // ----- Issue #301: varias instancias mono-producto en el mismo pedido -----
+        // Caso real (pedido 922350, 15/07/26): el vendedor mete el N+M de VARIAS referencias a la
+        // vez, cada una con sus pagadas y su gratis (la gratis de cada instancia ES la más barata
+        // de su instancia: son del mismo producto). El gate evaluaba el pool global y exigía que
+        // todas las gratis fueran las más baratas del conjunto, tirando pedidos perfectos.
+
+        [TestMethod]
+        public void RegalarMenorImporte_VariasInstanciasMonoProducto_EsValido()
+        {
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            // 3×(2+1) mono-producto: 2 pagadas a tarifa + 1 gratis de CADA referencia.
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_A, 2, 10m), Linea(PROD_A, 1, 0m),
+                Linea(PROD_B, 2, 12m), Linea(PROD_B, 1, 0m),
+                Linea(PROD_C, 2, 15m), Linea(PROD_C, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_FiltroConVariasInstanciasMonoProducto_EsValido()
+        {
+            // Réplica del 922350 con fila de FILTRO (grupo/subgrupo, como la oferta real 260):
+            // 3+1 de cada referencia del filtro, tarifas distintas.
+            OfertaCombinada oferta = new OfertaCombinada
+            {
+                Id = 260,
+                Empresa = "1",
+                ImporteMinimo = 0,
+                RegalarMenorImporte = true,
+                UnidadesRegaladas = 1,
+                OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                {
+                    new OfertaCombinadaDetalle { OfertaId = 260, Empresa = "1", Producto = null, Precio = 0, Cantidad = 4, Grupo = "COS", Subgrupo = "025" }
+                }
+            };
+            FakeOferta(oferta);
+            A.CallTo(() => _servicio.FiltrarLineas(A<PedidoVentaDTO>._, string.Empty, null, "COS", "025"))
+                .ReturnsLazily((PedidoVentaDTO p, string filtro, string fam, string grupo, string subgrupo) =>
+                    new List<LineaPedidoVentaDTO>(p.Lineas));
+
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_A, 3, 10m), Linea(PROD_A, 1, 0m),
+                Linea(PROD_B, 3, 12m), Linea(PROD_B, 1, 0m),
+                Linea(PROD_C, 3, 15m), Linea(PROD_C, 1, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_InstanciasCruzadasRegalandoLaCara_SigueRechazandose()
+        {
+            // Guard del abuso: 2 instancias pero las gratis son las 2 unidades CARAS (no hay
+            // partición válida: ninguna instancia puede regalar C cobrando solo A y B).
+            OfertaCombinada oferta = CrearOferta2Mas1();
+            FakeOferta(oferta);
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_A, 2, 10m),
+                Linea(PROD_B, 2, 12m),
+                Linea(PROD_C, 2, 0m));
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            StringAssert.Contains(respuesta.Motivo, "menor importe");
+        }
+
         // ----- Issue #292: UnidadesRegaladas por instancia (2+2, 3+2...) -----
 
         // Oferta N+M mezclable: un grupo de alternativas A/B/C con la cantidad TOTAL por
