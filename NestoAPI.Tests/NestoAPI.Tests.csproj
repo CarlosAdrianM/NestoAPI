@@ -256,6 +256,7 @@
     <Compile Include="Infrastructure\GeneradorPdfDetalleRapportsTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfExtractoContableTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfKitsQueSePuedenMontarTests.cs" />
+    <Compile Include="Infrastructure\GeneradorPdfMontarKitProductosTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfModelo347Tests.cs" />
     <Compile Include="Infrastructure\ClienteChangeDetectorTests.cs" />
     <Compile Include="Infrastructure\PedidosVenta\SelectorSerieTests.cs" />

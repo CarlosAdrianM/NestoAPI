@@ -264,6 +264,27 @@ namespace NestoAPI.Controllers
             return Ok(lista);
         }
 
+        /// <summary>
+        /// Render del informe "Montar kit" en PDF (QuestPDF), para que Nesto lo descargue en vez
+        /// de renderizar el RDLC MontarKitProductos.rdlc en local (Nesto#340).
+        /// </summary>
+        [HttpGet]
+        [Route("api/Informes/MontarKitProductos/Pdf")]
+        public async Task<HttpResponseMessage> GetMontarKitProductosPdf(int traspaso)
+        {
+            List<MontarKitProductosDTO> datos = await _servicio
+                .LeerMontarKitProductosAsync(traspaso)
+                .ConfigureAwait(false);
+
+            GeneradorPdfMontarKitProductos generador = new GeneradorPdfMontarKitProductos();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(traspaso, datos)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
         [HttpGet]
         [Route("api/Informes/Picking")]
         [ResponseType(typeof(List<PickingDTO>))]
