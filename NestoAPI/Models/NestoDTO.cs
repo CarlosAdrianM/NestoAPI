@@ -176,6 +176,16 @@ namespace NestoAPI.Models
         public string CorreoElectronico { get; set; }
         public bool FacturacionElectronica { get; set; }
         public string Telefono { get; set; }
+        // Nesto#340 (1C.8, slice 4): campos que la ficha comercial de Nesto mostraba a través de
+        // la entidad EF (grid de personas de contacto) y que el DTO no exponía. Cargo permite a
+        // los clientes aplicar las reglas de CorreoCliente (26 = agencia, 22 = factura por correo)
+        // sin reconstruirlo desde FacturacionElectronica.
+        public short? Cargo { get; set; }
+        public string CargoDescripcion { get; set; }
+        public string Comentarios { get; set; }
+        public bool EnviarBoletin { get; set; }
+        public string Saludo { get; set; }
+        public short? Estado { get; set; }
     }
     public class PlazoPagoDTO
     {

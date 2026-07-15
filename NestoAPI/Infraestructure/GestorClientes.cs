@@ -466,11 +466,24 @@ namespace NestoAPI.Infraestructure
                 clienteCrear.Iban = cccCliente.Pais + cccCliente.DC_IBAN + cccCliente.Entidad + cccCliente.Oficina + cccCliente.DC + cccCliente.Nº_Cuenta;
             }
 
+            clienteCrear.PersonasContacto = await LeerPersonasContacto(empresa, cliente, contacto);
+
+            return clienteCrear;
+        }
+
+        // Nesto#340 (1C.8, slice 4): personas de contacto en DTO con Cargo y su descripción, para
+        // que la ficha comercial de Nesto pinte el grid y calcule el correo de agencia (cargo 26)
+        // sin la entidad EF. Lo reutiliza ConstruirClienteCrear (único punto de mapeo).
+        public async Task<List<PersonaContactoDTO>> LeerPersonasContacto(string empresa, string cliente, string contacto)
+        {
             List<PersonaContactoCliente> personas = await servicio.BuscarPersonasContacto(empresa, cliente, contacto);
-            clienteCrear.PersonasContacto = new List<PersonaContactoDTO>();
+            Dictionary<short, string> descripcionesCargos = personas.Any()
+                ? await servicio.LeerDescripcionesCargos()
+                : new Dictionary<short, string>();
+            List<PersonaContactoDTO> personasContacto = new List<PersonaContactoDTO>();
             foreach (var persona in personas)
             {
-                int numeroPersona = 0;
+                int numeroPersona;
                 try
                 {
                     numeroPersona = int.Parse(persona.Número);
@@ -479,16 +492,21 @@ namespace NestoAPI.Infraestructure
                 {
                     numeroPersona = 1;
                 }
-                clienteCrear.PersonasContacto.Add(new PersonaContactoDTO
+                personasContacto.Add(new PersonaContactoDTO
                 {
                     Numero = numeroPersona,
                     Nombre = persona.Nombre?.Trim(),
                     CorreoElectronico = persona.CorreoElectrónico?.Trim(),
-                    FacturacionElectronica = persona.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
+                    FacturacionElectronica = persona.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO,
+                    Cargo = persona.Cargo,
+                    CargoDescripcion = descripcionesCargos.TryGetValue(persona.Cargo, out string descripcion) ? descripcion : null,
+                    Comentarios = persona.Comentarios?.Trim(),
+                    EnviarBoletin = persona.EnviarBoletin,
+                    Saludo = persona.Saludo?.Trim(),
+                    Estado = persona.Estado
                 });
             }
-
-            return clienteCrear;
+            return personasContacto;
         }
 
         public async Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email)

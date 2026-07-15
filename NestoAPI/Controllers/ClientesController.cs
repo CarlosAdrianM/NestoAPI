@@ -320,7 +320,11 @@ namespace NestoAPI.Controllers
                 telefono = clienteEncontrado.Teléfono,
                 vendedor = clienteEncontrado.Vendedor,
                 web = clienteEncontrado.Web,
-                VendedoresGrupoProducto = vendedoresGrupoProducto
+                VendedoresGrupoProducto = vendedoresGrupoProducto,
+                // Nesto#340 (1C.8, slice 4): la ficha comercial de Nesto necesita las personas de
+                // contacto (grid + correo de agencia) sin cargar la entidad EF en el cliente.
+                PersonasContacto = await _gestorClientes.LeerPersonasContacto(
+                    clienteEncontrado.Empresa, clienteEncontrado.Nº_Cliente, clienteEncontrado.Contacto)
             };
 
             return Ok(clienteDTO);

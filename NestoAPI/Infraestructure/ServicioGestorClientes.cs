@@ -293,6 +293,28 @@ namespace NestoAPI.Infraestructure
             return personas;
         }
 
+        // Nesto#340 (1C.8, slice 4): la tabla Cargos no está mapeada en el EDMX de NestoAPI, así
+        // que se lee con SQL crudo aliasando las columnas con caracteres especiales a ASCII
+        // (mismo patrón que ExtractoInmovilizado en Alquileres). Es un catálogo pequeño: se trae
+        // entero y se filtra en memoria.
+        public async Task<Dictionary<short, string>> LeerDescripcionesCargos()
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                List<FilaCargo> cargos = await db.Database
+                    .SqlQuery<FilaCargo>("SELECT [NºOrden] AS Numero, [Descripción] AS Descripcion FROM Cargos")
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                return cargos.ToDictionary(c => c.Numero, c => c.Descripcion?.Trim());
+            }
+        }
+
+        private class FilaCargo
+        {
+            public short Numero { get; set; }
+            public string Descripcion { get; set; }
+        }
+
         public async Task<List<ClienteTelefonoLookup>> ClientesMismoTelefono(string telefono)
         {
             if (telefono.Length < 7)

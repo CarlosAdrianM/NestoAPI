@@ -694,6 +694,72 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("adrian@yo.com", clienteCrear.PersonasContacto.Last().CorreoElectronico);
         }
 
+        // Nesto#340 (1C.8, slice 4): el DTO lleva Cargo (para CorreoCliente: 26 = agencia) y los
+        // campos que pinta el grid de la ficha comercial (descripción del cargo, boletín, saludo,
+        // estado, comentarios).
+        [TestMethod]
+        public void GestorClientes_LeerPersonasContacto_MapeaCargoYDescripcion()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio);
+            List<PersonaContactoCliente> personas = new List<PersonaContactoCliente>
+            {
+                new PersonaContactoCliente
+                {
+                    Número = "2",
+                    Nombre = "Carlos     ",
+                    CorreoElectrónico = "carlos@yo.com     ",
+                    Cargo = 26,
+                    Comentarios = "Avisar antes  ",
+                    EnviarBoletin = true,
+                    Saludo = "Sr.  ",
+                    Estado = 1
+                },
+                new PersonaContactoCliente
+                {
+                    Número = "3",
+                    Nombre = "Adrián",
+                    CorreoElectrónico = "adrian@yo.com",
+                    Cargo = 22
+                }
+            };
+            A.CallTo(() => servicio.BuscarPersonasContacto("1", "1234", "0")).Returns(personas);
+            A.CallTo(() => servicio.LeerDescripcionesCargos()).Returns(new Dictionary<short, string>
+            {
+                { 26, "Agencia" },
+                { 22, "Factura por correo" }
+            });
+
+            var resultado = gestor.LeerPersonasContacto("1", "1234", "0").Result;
+
+            var primera = resultado.First();
+            Assert.AreEqual(2, primera.Numero);
+            Assert.AreEqual((short)26, primera.Cargo);
+            Assert.AreEqual("Agencia", primera.CargoDescripcion);
+            Assert.AreEqual("Avisar antes", primera.Comentarios);
+            Assert.IsTrue(primera.EnviarBoletin);
+            Assert.AreEqual("Sr.", primera.Saludo);
+            Assert.AreEqual((short)1, primera.Estado);
+            Assert.IsFalse(primera.FacturacionElectronica);
+            var segunda = resultado.Last();
+            Assert.AreEqual((short)22, segunda.Cargo);
+            Assert.AreEqual("Factura por correo", segunda.CargoDescripcion);
+            Assert.IsTrue(segunda.FacturacionElectronica);
+        }
+
+        [TestMethod]
+        public void GestorClientes_LeerPersonasContacto_SinPersonasNoLeeLosCargos()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio);
+            A.CallTo(() => servicio.BuscarPersonasContacto("1", "1234", "0")).Returns(new List<PersonaContactoCliente>());
+
+            var resultado = gestor.LeerPersonasContacto("1", "1234", "0").Result;
+
+            Assert.AreEqual(0, resultado.Count);
+            A.CallTo(() => servicio.LeerDescripcionesCargos()).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public void GestorClientes_PrepararClienteModificar_SiHayUnaPersonaDeContactoNuevaSeCrea() 
         {
