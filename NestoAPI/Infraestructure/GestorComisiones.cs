@@ -108,7 +108,13 @@ namespace NestoAPI.Infraestructure
             }
 
             VendedorPedidoGrupoProducto vendedorPedidoGrupoActual = vendedoresActuales.FirstOrDefault();
-            VendedorGrupoProductoDTO vendedorPedidoGrupoNuevo = pedido.VendedoresGrupoProducto.FirstOrDefault();
+            // #305: los clientes mandan VendedoresGrupoProducto a null (o vacío) habitualmente:
+            // no gestionan vendedor por grupo y no deben pisar el registro actual (antes NRE).
+            VendedorGrupoProductoDTO vendedorPedidoGrupoNuevo = pedido.VendedoresGrupoProducto?.FirstOrDefault();
+            if (vendedorPedidoGrupoNuevo == null)
+            {
+                return;
+            }
             if (vendedorPedidoGrupoActual != null)
             {
                 vendedorPedidoGrupoActual.Vendedor = vendedorPedidoGrupoNuevo.vendedor;
