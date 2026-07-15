@@ -299,6 +299,10 @@ namespace NestoAPI.Infraestructure
             List<string> erroresAcumulados = new List<string>();
             string ultimoMotivoExitoso = null;
             bool hayMotivoDeValidadorAceptacion = false; // NUEVO
+            // H1 (15/07/26): el flag de "denegado expresamente" de los errores acumulados se
+            // consolida en la respuesta final (antes se perdía y el X-Context de ELMAH y los
+            // clientes lo veían siempre a false).
+            bool algunaDenegadaExpresamente = false;
 
             foreach (IValidadorDenegacion validador in listaValidadoresDenegacion)
             {
@@ -345,6 +349,7 @@ namespace NestoAPI.Infraestructure
                             {
                                 erroresAcumulados.Add(motivoError);
                             }
+                            algunaDenegadaExpresamente |= error.AutorizadaDenegadaExpresamente;
                         }
                     }
                     else
@@ -374,6 +379,7 @@ namespace NestoAPI.Infraestructure
                         {
                             erroresAcumulados.Add(motivoDenegacion);
                         }
+                        algunaDenegadaExpresamente |= respuestaValidacion.AutorizadaDenegadaExpresamente;
                     }
                 }
             }
@@ -384,6 +390,7 @@ namespace NestoAPI.Infraestructure
             {
                 respuesta.ValidacionSuperada = false;
                 respuesta.Motivos = erroresAcumulados;
+                respuesta.AutorizadaDenegadaExpresamente = algunaDenegadaExpresamente;
             }
             else if (!string.IsNullOrEmpty(ultimoMotivoExitoso))
             {

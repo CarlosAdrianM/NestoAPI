@@ -118,6 +118,10 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsFalse(respuesta.ValidacionSuperada);
             StringAssert.Contains(respuesta.Motivo, "menor importe");
+            // El pipeline (GestorPrecios.EsPedidoValido) solo surfacea este motivo al usuario si el
+            // rechazo viene marcado como específico; sin la marca, el usuario ve el genérico
+            // "No se encuentra autorización" (indiagnosticable: pedidos 922350/922324 del 15/07/26).
+            Assert.IsTrue(respuesta.MotivoEspecifico, "El rechazo del gate debe marcarse como específico");
         }
 
         [TestMethod]
@@ -204,6 +208,7 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.IsFalse(respuesta.ValidacionSuperada, "Con 1 pagada y 2 gratis no hay 2+1 que valga");
             StringAssert.Contains(respuesta.Motivo, "tarifa");
+            Assert.IsTrue(respuesta.MotivoEspecifico, "El rechazo por exceso de gratis debe marcarse como específico");
         }
 
         [TestMethod]
@@ -377,6 +382,9 @@ namespace NestoAPI.Tests.Infrastructure
             var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
 
             Assert.IsFalse(respuesta.ValidacionSuperada, "La segunda gratis (vía dto 100 %) excede lo que regala la oferta");
+            // El sobresurtido NO se marca específico a propósito: las unidades sobrantes pasan a
+            // arbitrarse como material promocional (5 %) y ese veredicto es el mensaje bueno.
+            Assert.IsFalse(respuesta.MotivoEspecifico, "El sobresurtido es transitorio: arbitra el validador de muestras");
         }
 
         // ----- Issue #292: UnidadesRegaladas por instancia (2+2, 3+2...) -----

@@ -3186,6 +3186,114 @@ namespace NestoAPI.Tests.Infrastructure
                 "No debe quedar el mensaje genérico del 100 % para la camiseta. Motivos: " + string.Join(" | ", respuesta.Motivos));
         }
 
+        [TestMethod]
+        public void GestorPrecios_EsPedidoValido_ElRechazoDelGateDeOfertaCombinadaDaMensajeClaro()
+        {
+            // 15/07/26 (pedidos 922350/922324): el usuario solo veía "No se encuentra autorización
+            // para la oferta del producto X" aunque el gate de RegalarMenorImporte sabía exactamente
+            // por qué rechazaba. El pipeline debe surfacear el motivo del gate (vía MotivoEspecifico),
+            // igual que ya hace con el del 5 % de muestras.
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            pedido.empresa = "1";
+            pedido.cliente = "31522";
+            pedido.contacto = "1";
+
+            // 2 instancias del 2+1 mezclable (6 unidades justas), pero regalando las 2 unidades
+            // CARAS: no hay partición válida y el gate rechaza con su motivo concreto.
+            AnadirLineaCobrada(pedido, "GATE_A", 2, 10M);
+            AnadirLineaCobrada(pedido, "GATE_B", 1, 12M);
+            AnadirLineaCobrada(pedido, "GATE_C", 1, 15M);
+            pedido.Lineas.Add(new LineaPedidoVentaDTO
+            {
+                tipoLinea = 1,
+                Producto = "GATE_C",
+                AplicarDescuento = false,
+                Cantidad = 2,
+                PrecioUnitario = 0, // las dos gratis
+                GrupoProducto = Constantes.Productos.GRUPO_COSMETICA
+            });
+
+            ConfigurarProductoCobrado("GATE_A", 10M);
+            ConfigurarProductoCobrado("GATE_B", 12M);
+            ConfigurarProductoCobrado("GATE_C", 15M);
+
+            OfertaCombinada oferta = new OfertaCombinada
+            {
+                Id = 300,
+                Empresa = "1",
+                ImporteMinimo = 0,
+                RegalarMenorImporte = true,
+                UnidadesRegaladas = 1,
+                OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                {
+                    new OfertaCombinadaDetalle { OfertaId = 300, Empresa = "1", Producto = "GATE_A", Precio = 0, Cantidad = 3, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 300, Empresa = "1", Producto = "GATE_B", Precio = 0, Cantidad = 3, GrupoAlternativa = 1 },
+                    new OfertaCombinadaDetalle { OfertaId = 300, Empresa = "1", Producto = "GATE_C", Precio = 0, Cantidad = 3, GrupoAlternativa = 1 }
+                }
+            };
+            foreach (string p in new[] { "GATE_A", "GATE_B", "GATE_C" })
+            {
+                string producto = p;
+                _ = A.CallTo(() => GestorPrecios.servicio.BuscarOfertasCombinadas(producto)).Returns(new List<OfertaCombinada> { oferta });
+            }
+
+            RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada);
+            Assert.IsTrue(respuesta.Motivos.Any(m => m.Contains("menor importe")),
+                "El motivo final debe ser el del gate (regalar la de menor importe). Motivos: " + string.Join(" | ", respuesta.Motivos));
+            Assert.IsFalse(respuesta.Motivos.Any(m => m.Contains("No se encuentra autorización")),
+                "No debe quedar el genérico de denegación. Motivos: " + string.Join(" | ", respuesta.Motivos));
+        }
+
+        [TestMethod]
+        public void GestorPrecios_EsPedidoValido_ConsolidaAutorizadaDenegadaExpresamente()
+        {
+            // H1 (deuda detectada 04/06/26, visible en los X-Context de ELMAH que siempre dicen
+            // false): cuando un error de denegación viene marcado como denegado EXPRESAMENTE, el
+            // flag debe llegar consolidado a la respuesta final del pipeline.
+            List<IValidadorDenegacion> denegacionOriginal = GestorPrecios.listaValidadoresDenegacion;
+            List<IValidadorAceptacion> aceptacionOriginal = GestorPrecios.listaValidadoresAceptacion;
+            try
+            {
+                GestorPrecios.listaValidadoresDenegacion = new List<IValidadorDenegacion> { new ValidadorDenegacionExpresaStub() };
+                GestorPrecios.listaValidadoresAceptacion = new List<IValidadorAceptacion>();
+                PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+                pedido.cliente = "5";
+
+                RespuestaValidacion respuesta = GestorPrecios.EsPedidoValido(pedido);
+
+                Assert.IsFalse(respuesta.ValidacionSuperada);
+                Assert.IsTrue(respuesta.AutorizadaDenegadaExpresamente,
+                    "La denegación expresa debe llegar consolidada a la respuesta final (H1)");
+            }
+            finally
+            {
+                GestorPrecios.listaValidadoresDenegacion = denegacionOriginal;
+                GestorPrecios.listaValidadoresAceptacion = aceptacionOriginal;
+            }
+        }
+
+        private class ValidadorDenegacionExpresaStub : IValidadorDenegacion
+        {
+            public RespuestaValidacion EsPedidoValido(PedidoVentaDTO pedido, IServicioPrecios servicio)
+            {
+                return new RespuestaValidacion
+                {
+                    ValidacionSuperada = false,
+                    Errores = new List<ErrorValidacion>
+                    {
+                        new ErrorValidacion
+                        {
+                            Motivo = "Oferta denegada expresamente para el producto X",
+                            ProductoId = "X",
+                            AutorizadaDenegadaExpresamente = true
+                        }
+                    }
+                };
+            }
+        }
+
         private static void AnadirLineaCobrada(PedidoVentaDTO pedido, string producto, int cantidad, decimal precio)
         {
             pedido.Lineas.Add(new LineaPedidoVentaDTO

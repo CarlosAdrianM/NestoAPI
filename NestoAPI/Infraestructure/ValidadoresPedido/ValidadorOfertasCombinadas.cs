@@ -126,6 +126,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                         {
                             respuesta.Motivo = "La oferta " + ofertaConImporteMinimo.Id
                                 + " tiene que tener un importe mínimo de " + importeMinimoRequerido.ToString("C") + " para que sea válida";
+                            respuesta.MotivoEspecifico = true;
                             ofertaCumplida = null;
                         }
                     }
@@ -137,6 +138,12 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             // unidades justas: las que sobran son material promocional suelto. Rechazamos este producto
             // (NO la oferta entera) para que el pipeline pase a ValidadorMuestrasYMaterialPromocional,
             // que cuenta solo las unidades sobrantes contra el 5 % del pedido.
+            // Los rechazos de las reglas de una oferta RECONOCIDA se marcan como específicos
+            // (MotivoEspecifico): el pipeline los prefiere al genérico de denegación "No se
+            // encuentra autorización...", que no le dice al usuario qué pasa (pedidos 922350/922324).
+            // EXCEPCIÓN: los dos sobresurtidos (grupo y filtro) son transitorios por diseño — las
+            // unidades sobrantes pasan a arbitrarse como material promocional suelto en
+            // ValidadorMuestrasYMaterialPromocional, cuyo veredicto (el 5 %) es el mensaje bueno.
             if (ofertaCumplida != null && ProductoEnGrupoSobresurtido(ofertaCumplida, pedido, numeroProducto, servicio))
             {
                 return new RespuestaValidacion
@@ -178,7 +185,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     {
                         ValidacionSuperada = false,
                         Motivo = motivoRegalo,
-                        ProductoId = numeroProducto
+                        ProductoId = numeroProducto,
+                        MotivoEspecifico = true
                     };
                 }
             }
@@ -197,6 +205,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     if (lineasOfertaPedido != null && lineasOfertaPedido.Count() > 0)
                     {
                         respuesta.Motivo = "Está ofertando más cantidad de la permitida en el producto " + numeroProducto + " para que la oferta " + ofertaCumplida.Id.ToString() + " sea válida";
+                        respuesta.MotivoEspecifico = true;
                         ofertaCumplida = null;
                     }
                 }
@@ -215,7 +224,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     ValidacionSuperada = false,
                     Motivo = "La oferta combinada del producto " + numeroProducto
                         + " no cuadra: las cantidades no permiten repartir las unidades en ofertas completas",
-                    ProductoId = numeroProducto
+                    ProductoId = numeroProducto,
+                    MotivoEspecifico = true
                 };
             }
 
