@@ -309,6 +309,76 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(respuesta.Motivo, "menor importe");
         }
 
+        [TestMethod]
+        public void RegalarMenorImporte_ComprasNormalesConDescuentoEnElMismoFiltro_NoContaminanLaOferta()
+        {
+            // Caso real (pedido 922324, 15/07/26): un 3+1 limpio del producto A conviviendo con
+            // compras NORMALES de otros productos del mismo subgrupo con su descuento habitual
+            // (15 %, ajenas a la oferta). El pool del filtro no debe arrastrarlas: ni cuentan
+            // contra la cuota (sobresurtido) ni el suelo puede exigir cobrarlas a tarifa.
+            OfertaCombinada oferta = new OfertaCombinada
+            {
+                Id = 260,
+                Empresa = "1",
+                ImporteMinimo = 0,
+                RegalarMenorImporte = true,
+                UnidadesRegaladas = 1,
+                OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                {
+                    new OfertaCombinadaDetalle { OfertaId = 260, Empresa = "1", Producto = null, Precio = 0, Cantidad = 4, Grupo = "COS", Subgrupo = "025" }
+                }
+            };
+            FakeOferta(oferta);
+            A.CallTo(() => _servicio.FiltrarLineas(A<PedidoVentaDTO>._, string.Empty, null, "COS", "025"))
+                .ReturnsLazily((PedidoVentaDTO p, string filtro, string fam, string grupo, string subgrupo) =>
+                    new List<LineaPedidoVentaDTO>(p.Lineas));
+
+            // Las compras normales llevan AplicarDescuento (descuento habitual del cliente).
+            LineaPedidoVentaDTO compraNormalA = Linea(PROD_A, 1, 10m, descuento: 0.15m);
+            compraNormalA.AplicarDescuento = true;
+            LineaPedidoVentaDTO compraNormalB = Linea(PROD_B, 1, 12m, descuento: 0.15m);
+            compraNormalB.AplicarDescuento = true;
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_C, 3, 21.12m), Linea(PROD_C, 1, 0m),           // el 3+1 de la oferta
+                compraNormalA,
+                compraNormalB);
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
+
+            Assert.IsTrue(respuesta.ValidacionSuperada, respuesta.Motivo);
+        }
+
+        [TestMethod]
+        public void RegalarMenorImporte_GratisPorDescuentoCien_SigueContandoComoRegalo()
+        {
+            // Guard: una unidad "gratis" expresada como 100 % de descuento (base 0) NO es una
+            // compra normal: cuenta como regalo y el exceso de gratis se sigue rechazando.
+            OfertaCombinada oferta = new OfertaCombinada
+            {
+                Id = 260,
+                Empresa = "1",
+                ImporteMinimo = 0,
+                RegalarMenorImporte = true,
+                UnidadesRegaladas = 1,
+                OfertasCombinadasDetalles = new List<OfertaCombinadaDetalle>
+                {
+                    new OfertaCombinadaDetalle { OfertaId = 260, Empresa = "1", Producto = null, Precio = 0, Cantidad = 4, Grupo = "COS", Subgrupo = "025" }
+                }
+            };
+            FakeOferta(oferta);
+            A.CallTo(() => _servicio.FiltrarLineas(A<PedidoVentaDTO>._, string.Empty, null, "COS", "025"))
+                .ReturnsLazily((PedidoVentaDTO p, string filtro, string fam, string grupo, string subgrupo) =>
+                    new List<LineaPedidoVentaDTO>(p.Lineas));
+
+            PedidoVentaDTO pedido = CrearPedido(
+                Linea(PROD_C, 3, 21.12m), Linea(PROD_C, 1, 0m),           // el 3+1 completo
+                Linea(PROD_B, 1, 12m, descuento: 1.0m));                  // segunda "gratis" vía dto 100 %
+
+            var respuesta = _validador.EsPedidoValido(pedido, PROD_C, _servicio);
+
+            Assert.IsFalse(respuesta.ValidacionSuperada, "La segunda gratis (vía dto 100 %) excede lo que regala la oferta");
+        }
+
         // ----- Issue #292: UnidadesRegaladas por instancia (2+2, 3+2...) -----
 
         // Oferta N+M mezclable: un grupo de alternativas A/B/C con la cantidad TOTAL por

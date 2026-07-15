@@ -365,7 +365,7 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             List<LineaPedidoVentaDTO> conjunto = oferta.OfertasCombinadasDetalles
                 .SelectMany(d => LineasQueCasan(d, pedido, servicio))
                 .Distinct()
-                .Where(l => l.Producto != null && l.Cantidad > 0)
+                .Where(l => l.Producto != null && l.Cantidad > 0 && !EsCompraNormalAjenaALaOferta(l))
                 .ToList();
 
             List<LineaPedidoVentaDTO> gratis = conjunto.Where(l => l.BaseImponible == 0).ToList();
@@ -433,6 +433,22 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
             return null;
         }
 
+        /// <summary>
+        /// Issue #301 (pedido 922324): una línea PAGADA con los descuentos estándar del cliente
+        /// aplicados (AplicarDescuento) es una compra NORMAL, no una participante de la oferta:
+        /// las líneas de oferta van con AplicarDescuento=false (precio especial/regalo). Sin esta
+        /// exclusión, comprar otros productos del mismo filtro con el descuento habitual
+        /// "contaminaba" el pool: disparaba el sobresurtido del filtro y el suelo exigía
+        /// cobrarlas a tarifa sin su descuento legítimo. Las líneas a base 0 nunca se excluyen
+        /// (un regalo vía dto 100 % sigue siendo un regalo); el abuso de pagar bajo tarifa con
+        /// AplicarDescuento=false lo sigue vigilando el suelo, y los descuentos de las compras
+        /// normales los valida aparte ValidadorDescuentosPermitidos.
+        /// </summary>
+        private static bool EsCompraNormalAjenaALaOferta(LineaPedidoVentaDTO linea)
+        {
+            return linea.BaseImponible != 0 && linea.AplicarDescuento && linea.SumaDescuentos > 0;
+        }
+
         private sealed class UnidadConTarifa
         {
             public string Producto { get; set; }
@@ -479,7 +495,9 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                     instancias = InstanciasEnPedido(oferta, pedido, servicio);
                 }
                 int cuota = grupo.Sum(d => (int)d.Cantidad) * instancias;
-                int pedidas = (int)lineas.Sum(l => l.Cantidad);
+                // Issue #301: las compras normales del mismo filtro (pagadas con el descuento
+                // estándar del cliente) no son unidades de la oferta y no cuentan contra la cuota.
+                int pedidas = (int)lineas.Where(l => !EsCompraNormalAjenaALaOferta(l)).Sum(l => l.Cantidad);
                 if (pedidas > cuota)
                 {
                     return true;
