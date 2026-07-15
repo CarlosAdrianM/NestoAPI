@@ -585,6 +585,7 @@
       <DependentUpon>Global.asax</DependentUpon>
     </Compile>
     <Compile Include="Infraestructure\Agencias\GestorEnviosAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\Innovatrans\CanalizadorPoblacionDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\MapeadorDireccionDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\CredencialesDataTrans.cs" />
     <Compile Include="Infraestructure\Agencias\Innovatrans\ConfiguracionInnovatrans.cs" />

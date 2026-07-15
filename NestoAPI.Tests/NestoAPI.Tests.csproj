@@ -242,6 +242,7 @@
     <Compile Include="Infrastructure\Agencias\ClienteSoapDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\OperacionesEnviosDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\AgenciaRemotaInnovatransTests.cs" />
+    <Compile Include="Infrastructure\Agencias\CanalizadorPoblacionDataTransTests.cs" />
     <Compile Include="Infrastructure\Agencias\AgenciaRemotaGlsTests.cs" />
     <Compile Include="Infrastructure\Agencias\FabricaAgenciasRemotasTests.cs" />
     <Compile Include="Infrastructure\GestorAgenciasGlovoTests.cs" />

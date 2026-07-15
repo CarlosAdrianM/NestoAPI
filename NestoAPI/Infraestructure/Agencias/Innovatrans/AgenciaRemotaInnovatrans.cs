@@ -25,6 +25,9 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         internal const decimal ANCHO_POR_DEFECTO = 23m;
         internal const decimal ALTO_POR_DEFECTO = 29m;
 
+        // NestoAPI#300: codError de DTX cuando no puede canalizar el CP (varias poblaciones).
+        internal const int COD_ERROR_CANALIZACION_INCORRECTA = 405;
+
         private readonly OperacionesEnviosDataTrans _operaciones;
         private readonly OperacionesLecturaDataTrans _lectura;
         private readonly DireccionDataTrans _remitente;
@@ -67,6 +70,48 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
 
             EnvioDataTrans peticion = ConstruirPeticion(envio);
             ResultadoInsertarEnvio insercion = await _operaciones.InsertarEnvioAsync(peticion).ConfigureAwait(false);
+
+            // NestoAPI#300: codError 405 "Canalizacion incorrecta" = el CP tiene VARIAS poblaciones
+            // en el catálogo de DTX y no canaliza por CP a secas; exige que poblacionDes coincida con
+            // el texto EXACTO del catálogo (verificado en prod 15/07/26 con AVILÉS -> AVILES, sin
+            // canalizarPorPoblacion). Consultamos BuscarPoblacion, casamos nuestra población y
+            // reintentamos UNA vez con el texto del catálogo. Portugal ya canaliza por población.
+            if (!insercion.Exito && insercion.CodError == COD_ERROR_CANALIZACION_INCORRECTA
+                && _lectura != null && !MapeadorDireccionDataTrans.EsPortugal(peticion.Destinatario?.Pais))
+            {
+                List<string> poblacionesCatalogo;
+                try
+                {
+                    ResultadoBuscarPoblacion catalogo = await _lectura
+                        .BuscarPoblacionAsync(envio.CodigoPostal?.Trim()).ConfigureAwait(false);
+                    poblacionesCatalogo = catalogo.Poblaciones.Select(p => p.Poblacion).ToList();
+                }
+                catch (DataTransException)
+                {
+                    // Si el catálogo no responde, seguimos con el error original del insert.
+                    poblacionesCatalogo = new List<string>();
+                }
+
+                string poblacionCatalogo = CanalizadorPoblacionDataTrans
+                    .ElegirPoblacionCatalogo(envio.Poblacion, poblacionesCatalogo);
+                if (poblacionCatalogo != null)
+                {
+                    peticion.Destinatario.Poblacion = poblacionCatalogo;
+                    insercion = await _operaciones.InsertarEnvioAsync(peticion).ConfigureAwait(false);
+                }
+                else if (poblacionesCatalogo.Count > 0)
+                {
+                    // Sin match razonable NO se reintenta a ciegas: error accionable para el almacén.
+                    return new ResultadoTramitacionRemota
+                    {
+                        Exito = false,
+                        Error = $"Innovatrans no sabe canalizar el CP {envio.CodigoPostal?.Trim()} con la población " +
+                            $"'{envio.Poblacion?.Trim()}'. Poblaciones válidas para ese CP: {string.Join(", ", poblacionesCatalogo)}. " +
+                            "Corrige la población del envío o tramítalo por otra agencia."
+                    };
+                }
+            }
+
             if (!insercion.Exito)
             {
                 // El motivo puede venir en MsgError o, cuando DTX devuelve codError=200 con un fallo

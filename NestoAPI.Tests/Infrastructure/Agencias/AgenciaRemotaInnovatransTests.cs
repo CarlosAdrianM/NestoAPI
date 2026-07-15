@@ -214,6 +214,76 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             StringAssert.Contains(r.Error, "ZPL");
         }
 
+        // --- NestoAPI#300: 405 "Canalizacion incorrecta" en CPs con varias poblaciones ---
+        // Verificado en prod (15/07/26, envío 246812): DTX solo canaliza por CP si el CP tiene UNA
+        // población en su catálogo; con varias exige que poblacionDes coincida con el texto EXACTO
+        // del catálogo (sin necesidad de canalizarPorPoblacion: cambiar AVILÉS por AVILES bastó).
+
+        [TestMethod]
+        public async Task InsertarYEtiquetar_CanalizacionIncorrecta_ReintentaConLaPoblacionDelCatalogo()
+        {
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertarError("405", "Error. Canalizacion incorrecta."));
+            fake.Responder("InsertarEnvios", RespInsertar("6530724009", "1"));
+            fake.Responder("BuscarPoblacion", RespBuscarPoblacion("AVILES", "CALIERO (ENTREVIÑAS AVILES)", "ENTREVIÑAS (AVILES)"));
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
+
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.CodigoPostal = "33401";
+            envio.Poblacion = "AVILÉS"; // con tilde, como viene de la ficha del cliente
+
+            ResultadoTramitacionRemota r = await NuevaAgenciaConLectura(fake).InsertarYEtiquetarAsync(envio);
+
+            Assert.IsTrue(r.Exito, $"Debe reintentar con la población del catálogo y triunfar. Error: {r.Error}");
+            Assert.AreEqual("6530724009", r.Albaran);
+            Assert.AreEqual(4, fake.Llamadas.Count);
+            Assert.AreEqual("InsertarEnvios", fake.Llamadas[0].Operacion);
+            Assert.AreEqual("BuscarPoblacion", fake.Llamadas[1].Operacion);
+            Assert.AreEqual("InsertarEnvios", fake.Llamadas[2].Operacion);
+            Assert.AreEqual("BusquedaEtiquetas", fake.Llamadas[3].Operacion);
+            StringAssert.Contains(fake.Llamadas[2].Xml, "<com:poblacionDes>AVILES</com:poblacionDes>");
+            Assert.IsFalse(fake.Llamadas[2].Xml.Contains("canalizarPorPoblacion"),
+                "En España no hace falta el flag: basta el texto exacto del catálogo (verificado en prod).");
+        }
+
+        [TestMethod]
+        public async Task InsertarYEtiquetar_CanalizacionIncorrectaSinMatch_DevuelveErrorConLasPoblacionesValidas()
+        {
+            // Si ninguna población del catálogo casa con la nuestra, NO se reintenta a ciegas: se
+            // devuelve un error accionable con las opciones válidas para que el almacén corrija.
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertarError("405", "Error. Canalizacion incorrecta."));
+            fake.Responder("BuscarPoblacion", RespBuscarPoblacion("VILLAPERI", "LUGONES"));
+
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.CodigoPostal = "33199";
+            envio.Poblacion = "POBLACION INVENTADA";
+
+            ResultadoTramitacionRemota r = await NuevaAgenciaConLectura(fake).InsertarYEtiquetarAsync(envio);
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "VILLAPERI");
+            StringAssert.Contains(r.Error, "LUGONES");
+            Assert.AreEqual(1, fake.Llamadas.Count(l => l.Operacion == "InsertarEnvios"),
+                "Sin match no debe reinsertar a ciegas.");
+        }
+
+        [TestMethod]
+        public async Task InsertarYEtiquetar_CanalizacionIncorrectaSinOperacionesDeLectura_DevuelveElErrorOriginal()
+        {
+            // Sin OperacionesLecturaDataTrans cableadas no se puede consultar el catálogo: se
+            // devuelve el error original de DTX, como antes (defensivo, no debe lanzar).
+            var fake = new FakeClienteSoap();
+            fake.Responder("InsertarEnvios", RespInsertarError("405", "Error. Canalizacion incorrecta."));
+
+            IAgenciaRemota agencia = new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente());
+            ResultadoTramitacionRemota r = await agencia.InsertarYEtiquetarAsync(EnvioMadrid());
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "Canalizacion incorrecta");
+            Assert.AreEqual(1, fake.Llamadas.Count);
+        }
+
         [TestMethod]
         public async Task InsertarYEtiquetar_ReembolsoCentinela_ViajaComoCero()
         {
@@ -555,6 +625,22 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                   <ns5:contenido xmlns:ns5=""http://listType.dtx.sw"">JVBERi0xLjcK</ns5:contenido>
                 </ns4:return><ns4:returnError/></ns4:BusquedaEtiquetasTypeOut></soapenv:Body></soapenv:Envelope>";
 
+        // Respuesta de BuscarPoblacion con las poblaciones del catálogo de DTX para un CP (#300).
+        private static string RespBuscarPoblacion(params string[] poblaciones)
+        {
+            var sb = new System.Text.StringBuilder();
+            foreach (string poblacion in poblaciones)
+            {
+                sb.Append($@"<ns5:resultado>
+                  <ns2:poblacion xmlns:ns2=""http://complexType.dtx.sw"">{poblacion}</ns2:poblacion>
+                  <ns2:kilometros xmlns:ns2=""http://complexType.dtx.sw"">0.0</ns2:kilometros>
+                </ns5:resultado>");
+            }
+            return $@"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>
+                <ns5:BuscarPoblacionTypeOut xmlns:ns5=""http://messageout.dtx.sw"">{sb}<ns5:respuesta>{(poblaciones.Length > 0 ? 200 : 300)}</ns5:respuesta></ns5:BuscarPoblacionTypeOut>
+              </soapenv:Body></soapenv:Envelope>";
+        }
+
         // Respuesta de ConsultarEstados con N eventos (nombre/fecha/hora). Sin eventos -> respuesta 300.
         private static string RespEstados(params (string Nombre, string Fecha, string Hora)[] estados)
         {
@@ -597,11 +683,23 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         /// <summary>Fake de IClienteSoapDataTrans: responde por operación y captura las llamadas.</summary>
         private class FakeClienteSoap : IClienteSoapDataTrans
         {
-            private readonly Dictionary<string, string> _respuestas = new Dictionary<string, string>();
+            // Cola por operación: llamar varias veces a Responder para la misma operación encola
+            // respuestas secuenciales (1ª llamada → 1ª respuesta...); la última respuesta se repite
+            // si hay más llamadas que respuestas. Necesario para el retry de canalización (#300):
+            // el primer InsertarEnvios devuelve 405 y el segundo, éxito.
+            private readonly Dictionary<string, Queue<string>> _respuestas = new Dictionary<string, Queue<string>>();
             public List<(string Servicio, string Operacion, string Xml)> Llamadas { get; } =
                 new List<(string, string, string)>();
 
-            public void Responder(string operacion, string xmlRespuesta) => _respuestas[operacion] = xmlRespuesta;
+            public void Responder(string operacion, string xmlRespuesta)
+            {
+                if (!_respuestas.TryGetValue(operacion, out Queue<string> cola))
+                {
+                    cola = new Queue<string>();
+                    _respuestas[operacion] = cola;
+                }
+                cola.Enqueue(xmlRespuesta);
+            }
 
             public Task<XDocument> EjecutarAsync(string servicio, string operacion, params XElement[] parametros)
             {
@@ -614,7 +712,9 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                     new XAttribute(XNamespace.Xmlns + "com", com.NamespaceName),
                     parametros.Cast<object>().ToArray());
                 Llamadas.Add((servicio, operacion, cuerpo.ToString()));
-                return Task.FromResult(XDocument.Parse(_respuestas[operacion]));
+                Queue<string> cola = _respuestas[operacion];
+                string respuesta = cola.Count > 1 ? cola.Dequeue() : cola.Peek();
+                return Task.FromResult(XDocument.Parse(respuesta));
             }
         }
     }
