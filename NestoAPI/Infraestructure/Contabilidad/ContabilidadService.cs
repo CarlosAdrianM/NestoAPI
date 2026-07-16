@@ -52,8 +52,12 @@ namespace NestoAPI.Infraestructure.Contabilidad
             // #296: prdContabilizar llama a prdLiquidar cuando la línea trae Liquidado; sus
             // validaciones de negocio abortan con RAISERROR enterrado en ruido de transacciones.
             // Las adelantamos aquí con un mensaje claro y accionable, ANTES de tocar el SP.
+            // #311: SOLO líneas de CLIENTE. Las de PROVEEDOR liquidan contra ExtractoProveedor
+            // (otro espacio de ids): validarlas contra ExtractosCliente daba falsos positivos
+            // ("el movimiento 378612 es del cliente 7363") con los pagos a proveedor de Bancos.
             List<PreContabilidad> lineasQueLiquidan = await db.PreContabilidades
-                .Where(p => p.Empresa == empresa && p.Diario == diario && p.Liquidado != null && p.Liquidado != 0)
+                .Where(p => p.Empresa == empresa && p.Diario == diario && p.Liquidado != null && p.Liquidado != 0
+                    && p.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE)
                 .ToListAsync()
                 .ConfigureAwait(false);
             if (lineasQueLiquidan.Count > 0)
@@ -124,7 +128,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
             Func<int, ExtractoCliente> buscarExtracto)
         {
             List<string> errores = new List<string>();
-            foreach (PreContabilidad linea in lineasDiario.Where(l => (l.Liquidado ?? 0) != 0))
+            // #311: las liquidaciones de PROVEEDOR van contra ExtractoProveedor, no contra
+            // ExtractosCliente; aquí solo se validan las de cliente.
+            foreach (PreContabilidad linea in lineasDiario.Where(l => (l.Liquidado ?? 0) != 0
+                && l.TipoCuenta?.Trim() == Constantes.Contabilidad.TiposCuenta.CLIENTE))
             {
                 int destinoId = linea.Liquidado.Value;
                 string cliente = linea.Nº_Cuenta?.Trim();

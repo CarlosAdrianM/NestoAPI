@@ -25,11 +25,13 @@ namespace NestoAPI.Tests.Infrastructure.Contabilidad
         // ruido de transacciones. Replicamos sus validaciones de negocio en C# ANTES de ejecutar
         // el SP para dar un error claro y accionable (patrón #284).
 
-        private static NestoAPI.Models.PreContabilidad LineaQueLiquida(string cuenta, decimal debe, decimal haber, int liquidado)
+        private static NestoAPI.Models.PreContabilidad LineaQueLiquida(string cuenta, decimal debe, decimal haber, int liquidado,
+            string tipoCuenta = NestoAPI.Models.Constantes.Contabilidad.TiposCuenta.CLIENTE)
         {
             return new NestoAPI.Models.PreContabilidad
             {
                 Nº_Cuenta = cuenta,
+                TipoCuenta = tipoCuenta,
                 Debe = debe,
                 Haber = haber,
                 Liquidado = liquidado
@@ -108,6 +110,24 @@ namespace NestoAPI.Tests.Infrastructure.Contabilidad
             Assert.AreEqual(1, errores.Count);
             StringAssert.Contains(errores[0], "12992");
             StringAssert.Contains(errores[0], "35615");
+        }
+
+        [TestMethod]
+        public void ErroresLiquidaciones_LineaDeProveedor_SeIgnora()
+        {
+            // #311 (caso real 16/07/26, Carlos con Pilar y Reina contabilizando a la vez): los
+            // pagos a proveedor liquidan contra ExtractoProveedor, cuyo espacio de ids no tiene
+            // nada que ver con ExtractosCliente. Validarlos contra clientes daba falsos positivos
+            // ("el movimiento 378612 es del cliente 7363") y bloqueaba la conciliación de Bancos.
+            var lineas = new List<NestoAPI.Models.PreContabilidad>
+            {
+                LineaQueLiquida("433", 0, 38.62m, 378612, NestoAPI.Models.Constantes.Contabilidad.TiposCuenta.PROVEEDOR)
+            };
+            var destinoDeOtroCliente = Destino(378612, "7363", -100);
+
+            List<string> errores = ContabilidadService.ErroresLiquidacionesDiario(lineas, id => destinoDeOtroCliente);
+
+            Assert.AreEqual(0, errores.Count, string.Join(" | ", errores));
         }
 
         [TestMethod]
