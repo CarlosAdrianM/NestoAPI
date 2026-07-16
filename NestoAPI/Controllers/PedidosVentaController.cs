@@ -594,6 +594,7 @@ namespace NestoAPI.Controllers
             cabPedidoVta.Vendedor = pedido.vendedor;
             cabPedidoVta.Comentarios = pedido.comentarios;
             cabPedidoVta.ComentarioPicking = pedido.comentarioPicking;
+            cabPedidoVta.AvisarConImporteAlCogerPicking = pedido.avisarConImporteAlCogerPicking;
             cabPedidoVta.SuPedido = pedido.suPedido;
             cabPedidoVta.Ruta = pedido.ruta;
             cabPedidoVta.Serie = pedido.serie;
@@ -1399,6 +1400,7 @@ namespace NestoAPI.Controllers
                 MantenerJunto = pedido.mantenerJunto,
                 ServirJunto = pedido.servirJunto,
                 ComentarioPicking = pedido.comentarioPicking,
+                AvisarConImporteAlCogerPicking = pedido.avisarConImporteAlCogerPicking,
                 Comentarios = pedido.comentarios,
                 SuPedido = pedido.suPedido,
                 NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso,

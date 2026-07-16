@@ -20,6 +20,8 @@ namespace NestoAPI.Models.PedidosVenta
         public string cliente { get; set; }
         public string comentarios { get; set; }
         public string comentarioPicking { get; set; }
+        // NestoAPI#253: casilla "Avisar con importe cuando coja picking" (Nesto#389, NestoApp#140)
+        public bool avisarConImporteAlCogerPicking { get; set; }
         public string contacto { get; set; }
         public string contactoCobro { get; set; }
         public bool crearEfectosManualmente { get; set; }

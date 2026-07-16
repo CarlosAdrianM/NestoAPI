@@ -35,6 +35,7 @@ namespace NestoAPI.Models
         public string Vendedor { get; set; }
         public string Comentarios { get; set; }
         public string ComentarioPicking { get; set; }
+        public bool AvisarConImporteAlCogerPicking { get; set; }
         public string Periodo_Facturacion { get; set; }
         public string Ruta { get; set; }
         public string Serie { get; set; }

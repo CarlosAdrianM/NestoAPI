@@ -106,6 +106,10 @@ namespace NestoAPI.Models.Picking
             gestor.Rellenar(asignadorPicking.numeroPicking);
             gestor.enviarCorreo();
             GestorPrepagos.EnviarCorreo(retenidosPorPrepago);
+            // NestoAPI#253: aviso con importe a vendedor y usuario para los pedidos con la casilla
+            // marcada. Nunca lanza (un fallo de correo no debe romper el picking).
+            GestorAvisosPicking.EnviarCorreos(candidatos,
+                vendedor => db.Vendedores.FirstOrDefault(v => v.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && v.Número == vendedor)?.Mail?.Trim());
             
         }
 

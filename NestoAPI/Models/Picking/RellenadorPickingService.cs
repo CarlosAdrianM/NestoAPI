@@ -143,6 +143,9 @@ namespace NestoAPI.Models.Picking
                 PlazosPago = p.PlazosPago?.Trim(),
                 Iva = p.IVA,
                 Usuario = p.Usuario?.Trim(),
+                AvisarConImporteAlCogerPicking = p.AvisarConImporteAlCogerPicking,
+                Vendedor = p.Vendedor?.Trim(),
+                Cliente = p.Nº_Cliente?.Trim(),
                 Lineas = p.LinPedidoVtas.Where(l => l.Almacén == Constantes.Productos.ALMACEN_POR_DEFECTO && l.Empresa == p.Empresa && l.Número == p.Número && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO && (l.Picking == null || l.Picking == 0))
                 .Select(l => new LineaPedidoPicking
                 {

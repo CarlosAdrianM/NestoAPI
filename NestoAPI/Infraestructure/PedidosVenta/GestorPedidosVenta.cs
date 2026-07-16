@@ -542,6 +542,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                         vendedor = cabPedidoVta.Vendedor,
                         comentarios = cabPedidoVta.Comentarios,
                         comentarioPicking = cabPedidoVta.ComentarioPicking,
+                        avisarConImporteAlCogerPicking = cabPedidoVta.AvisarConImporteAlCogerPicking,
                         periodoFacturacion = cabPedidoVta.Periodo_Facturacion,
                         ruta = cabPedidoVta.Ruta,
                         serie = cabPedidoVta.Serie,

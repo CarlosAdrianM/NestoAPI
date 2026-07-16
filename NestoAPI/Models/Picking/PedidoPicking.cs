@@ -41,6 +41,10 @@ namespace NestoAPI.Models.Picking
         public string Iva { get; set; }
         //public bool EsContrareembolso { get; set; }
         public string Usuario { get; set; }
+        // NestoAPI#253: casilla "Avisar con importe cuando coja picking" de la cabecera
+        public bool AvisarConImporteAlCogerPicking { get; set; }
+        public string Vendedor { get; set; }
+        public string Cliente { get; set; }
         public List<PrepagoDTO> Prepagos { get; set; }
         public List<ExtractoClienteDTO> ExtractosPendientes { get; set; }
         public decimal ImporteTotalConIVA

@@ -31,6 +31,7 @@ namespace NestoAPI.Models
                 Vendedor = this.Vendedor,
                 Comentarios = this.Comentarios,
                 ComentarioPicking = this.ComentarioPicking,
+                AvisarConImporteAlCogerPicking = this.AvisarConImporteAlCogerPicking,
                 Periodo_Facturacion = this.Periodo_Facturacion,
                 Ruta = this.Ruta,
                 Serie = this.Serie,

@@ -236,6 +236,7 @@
           <Property Name="Vendedor" Type="char" MaxLength="3" />
           <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="ComentarioPicking" Type="nvarchar(max)" />
+          <Property Name="AvisarConImporteAlCogerPicking" Type="bit" Nullable="false" />
           <Property Name="Periodo Facturacion" Type="char" MaxLength="3" />
           <Property Name="Ruta" Type="char" MaxLength="3" />
           <Property Name="Serie" Type="char" MaxLength="3" />
@@ -7884,6 +7885,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="ComentarioPicking" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="AvisarConImporteAlCogerPicking" Type="Boolean" Nullable="false" />
           <Property Name="Periodo_Facturacion" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Ruta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Serie" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
@@ -13733,6 +13735,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Serie" ColumnName="Serie" />
                 <ScalarProperty Name="Ruta" ColumnName="Ruta" />
                 <ScalarProperty Name="Periodo_Facturacion" ColumnName="Periodo Facturacion" />
+                <ScalarProperty Name="AvisarConImporteAlCogerPicking" ColumnName="AvisarConImporteAlCogerPicking" />
                 <ScalarProperty Name="ComentarioPicking" ColumnName="ComentarioPicking" />
                 <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
                 <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />

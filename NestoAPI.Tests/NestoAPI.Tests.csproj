@@ -213,6 +213,7 @@
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\GestorSeEstaVendiendoTests.cs" />
     <Compile Include="Infrastructure\MessageRetryManagerTests.cs" />
+    <Compile Include="Models\Picking\GestorAvisosPickingTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
     <Compile Include="Infraestructure\CorreoClienteTests.cs" />
     <Compile Include="Infraestructure\ApplicationDbContextInitializerTests.cs" />
