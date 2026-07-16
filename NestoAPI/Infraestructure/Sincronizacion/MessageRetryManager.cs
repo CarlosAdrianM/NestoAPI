@@ -87,8 +87,9 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 .FirstOrDefaultAsync(r => r.MessageId == messageId);
 
             var now = DateTime.UtcNow;
+            bool esNuevo = retryRecord == null;
 
-            if (retryRecord == null)
+            if (esNuevo)
             {
                 // Primer intento - crear registro
                 retryRecord = new SyncMessageRetry
@@ -118,19 +119,56 @@ namespace NestoAPI.Infraestructure.Sincronizacion
             }
             else
             {
-                // Incrementar contador de intentos
-                retryRecord.AttemptCount++;
-                retryRecord.LastAttemptDate = now;
-
-                // Si alcanzó el límite, marcar como PoisonPill
-                if (retryRecord.AttemptCount >= MaxAttempts && retryRecord.StatusEnum == RetryStatus.Retrying)
-                {
-                    retryRecord.Status = RetryStatus.PoisonPill.ToString();
-                    Console.WriteLine($"☠️ Mensaje convertido en poison pill: MessageId={messageId}, Attempts={retryRecord.AttemptCount}");
-                }
+                IncrementarIntento(retryRecord, now);
             }
 
-            await _db.SaveChangesAsync();
+            try
+            {
+                await _db.SaveChangesAsync();
+            }
+            catch (System.Data.Entity.Infrastructure.DbUpdateException ex) when (esNuevo && EsClaveDuplicada(ex))
+            {
+                // NestoAPI#308: Pub/Sub entrega at-least-once y dos redeliveries concurrentes del
+                // mismo messageId pasan ambos por la rama "no existe" (read-then-insert): el segundo
+                // violaba la PK y tiraba el webhook con 500. Se pasa por la rama de "ya existe".
+                // Remove sobre una entidad en estado Added la desasocia (no genera DELETE).
+                _ = _db.SyncMessageRetries.Remove(retryRecord);
+                var existente = await _db.SyncMessageRetries
+                    .FirstOrDefaultAsync(r => r.MessageId == messageId);
+                if (existente != null)
+                {
+                    IncrementarIntento(existente, DateTime.UtcNow);
+                    _ = await _db.SaveChangesAsync();
+                }
+            }
+        }
+
+        private static void IncrementarIntento(SyncMessageRetry retryRecord, DateTime now)
+        {
+            retryRecord.AttemptCount++;
+            retryRecord.LastAttemptDate = now;
+
+            // Si alcanzó el límite, marcar como PoisonPill
+            if (retryRecord.AttemptCount >= MaxAttempts && retryRecord.StatusEnum == RetryStatus.Retrying)
+            {
+                retryRecord.Status = RetryStatus.PoisonPill.ToString();
+                Console.WriteLine($"☠️ Mensaje convertido en poison pill: MessageId={retryRecord.MessageId}, Attempts={retryRecord.AttemptCount}");
+            }
+        }
+
+        // NestoAPI#308: 2627 = violación de PK; 2601 = índice único. La SqlException real viene
+        // anidada en la cadena de inners de la DbUpdateException.
+        internal static bool EsClaveDuplicada(Exception exception)
+        {
+            for (Exception actual = exception; actual != null; actual = actual.InnerException)
+            {
+                if (actual is System.Data.SqlClient.SqlException sqlException &&
+                    (sqlException.Number == 2627 || sqlException.Number == 2601))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
