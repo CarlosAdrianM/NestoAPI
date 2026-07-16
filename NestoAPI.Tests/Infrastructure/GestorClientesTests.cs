@@ -57,6 +57,24 @@ namespace NestoAPI.Tests.Infrastructure
 
 
         [TestMethod]
+        public async Task ComprobarDatosGenerales_DireccionVerificada_NoLlamaAGoogleYNormalizaParaLaBD()
+        {
+            // NestoAPI#306: dirección y CP vienen del combo de Places (ya consistentes) → sin
+            // geocoding ni cirugía de strings; solo la normalización de BD (mayúsculas + C/, Av.)
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            _ = A.CallTo(() => servicio.CogerDatosCodigoPostal("28830"))
+                .Returns(new NestoAPI.Models.Clientes.RespuestaDatosGeneralesClientes());
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
+
+            var respuesta = await gestor.ComprobarDatosGenerales("Avenida de Castilla, 3", "28830", "916773415", direccionVerificada: true);
+
+            Assert.AreEqual("Av. CASTILLA, 3", respuesta.DireccionFormateada);
+            A.CallTo(() => servicioAgencias.LeerDireccionGoogleMaps(A<string>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
         [ExpectedException(typeof(ArgumentException))]
         public async Task GestorClientes_ComprobarNifNombre_SiElNombreEstaVacioDaError()
         {

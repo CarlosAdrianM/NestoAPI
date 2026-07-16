@@ -496,9 +496,11 @@ namespace NestoAPI.Controllers
         [Route("api/Clientes/ComprobarDatosGenerales")]
         // GET: api/Clientes/5
         [ResponseType(typeof(RespuestaDatosGeneralesClientes))]
-        public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono)
+        // NestoAPI#306: direccionVerificada=true cuando dirección y CP vienen del combo de Places
+        // (ya son consistentes) → se salta el geocoding y solo normaliza para la BD.
+        public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false)
         {
-            RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono);
+            RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono, direccionVerificada);
 
             return Ok(respuesta);
         }

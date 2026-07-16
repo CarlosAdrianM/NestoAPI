@@ -10,7 +10,7 @@ namespace NestoAPI.Infraestructure
     public interface IGestorClientes
     {
         Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre);
-        Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono);
+        Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false);
         RespuestaDatosBancoCliente ComprobarDatosBanco(string formaPago, string plazosPago, string iban);
         Task<ClienteCrear> ConstruirClienteCrear(string empresa, string cliente, string contacto);
         Task<List<PersonaContactoDTO>> LeerPersonasContacto(string empresa, string cliente, string contacto);

@@ -33,7 +33,7 @@ namespace NestoAPI.Infraestructure
             _sincronizacionEventWrapper = sincronizacionEventWrapper;
         }
 
-        public async Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono)
+        public async Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false)
         {
             if (string.IsNullOrWhiteSpace(direccion))
             {
@@ -49,10 +49,22 @@ namespace NestoAPI.Infraestructure
 
             RespuestaDatosGeneralesClientes respuesta = await servicio.CogerDatosCodigoPostal(codigoPostal);
 
-            string direccionProcesar = ProcesarDireccion(direccion, respuesta);
-            RespuestaAgencia respuestaAgencia = await servicioAgencias.LeerDireccionGoogleMaps(direccionProcesar, codigoPostal);
+            if (direccionVerificada)
+            {
+                // NestoAPI#306: la dirección viene del combo de Places (dirección y CP ya son
+                // consistentes entre sí, los dio Google juntos) → NO hay que volver a preguntar a
+                // Google ni pasar por la cirugía de strings de LimpiarDireccion (la fuente de los
+                // falsos "El código postal X es incorrecto"). Solo se aplica la normalización de
+                // nuestra BD (mayúsculas + abreviaturas C/, Av., ...).
+                respuesta.DireccionFormateada = PonerAbreviaturas(direccion.ToUpper().Trim());
+            }
+            else
+            {
+                string direccionProcesar = ProcesarDireccion(direccion, respuesta);
+                RespuestaAgencia respuestaAgencia = await servicioAgencias.LeerDireccionGoogleMaps(direccionProcesar, codigoPostal);
 
-            respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
+                respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
+            }
             respuesta.TelefonoFormateado = LimpiarTelefono(telefono);
 
             string[] listaTelefonos = respuesta.TelefonoFormateado.Split(Constantes.Clientes.SEPARADOR_TELEFONOS);
