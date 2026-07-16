@@ -985,6 +985,114 @@ namespace NestoAPI.Tests.Controllers
 
         #endregion
 
+        #region NestoAPI#310: aviso "Recoger producto" en comentarios de ruta
+
+        private CabPedidoVta _pedidoRecogida;
+        private EnviosAgencia _envioRecogida;
+
+        private CrearEtiquetaPendienteDTO PrepararEscenarioRecogida(string comentariosPedido, short retorno)
+        {
+            _pedidoRecogida = new CabPedidoVta
+            {
+                Empresa = "1  ",
+                Número = 12345,
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Comentarios = comentariosPedido,
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { _pedidoRecogida }.AsQueryable());
+
+            var direccion = new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "10000",
+                Contacto = "0  ",
+                Nombre = "Cliente Test",
+                Dirección = "Calle Mayor 1",
+                CodPostal = "28001",
+                Población = "Madrid",
+                Provincia = "Madrid",
+                Teléfono = "911234567",
+                PersonasContactoClientes = new List<PersonaContactoCliente>
+                {
+                    new PersonaContactoCliente { Cargo = 26, CorreoElectrónico = "agencia@test.com" }
+                }
+            };
+            ConfigurarFakeDbSet(fakeClientes, new List<Cliente> { direccion }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>().AsQueryable());
+
+            _envioRecogida = null;
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored))
+                .Invokes((EnviosAgencia e) => _envioRecogida = e)
+                .ReturnsLazily((EnviosAgencia e) => e);
+            A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+
+            return new CrearEtiquetaPendienteDTO
+            {
+                Empresa = "1  ",
+                Pedido = 12345,
+                Agencia = 3,
+                Retorno = retorno
+            };
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_ConRetorno_AnadeRecogerProductoALosComentariosSinPisarlos()
+        {
+            var request = PrepararEscenarioRecogida("Dejar en portería", retorno: 1);
+
+            _ = await controller.CrearEtiquetaPendiente(request);
+
+            Assert.AreEqual("Dejar en portería. Recoger producto", _pedidoRecogida.Comentarios);
+            StringAssert.Contains(_envioRecogida.Observaciones, "Recoger producto");
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_ConRetorno_NoDuplicaElAvisoSiYaEstaba()
+        {
+            var request = PrepararEscenarioRecogida("Pasarán a RECOGER PRODUCTO usado", retorno: 1);
+
+            _ = await controller.CrearEtiquetaPendiente(request);
+
+            Assert.AreEqual("Pasarán a RECOGER PRODUCTO usado", _pedidoRecogida.Comentarios);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_SinRetorno_NoTocaLosComentarios()
+        {
+            var request = PrepararEscenarioRecogida("Dejar en portería", retorno: 0);
+
+            _ = await controller.CrearEtiquetaPendiente(request);
+
+            Assert.AreEqual("Dejar en portería", _pedidoRecogida.Comentarios);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_ConRetornoYComentariosVacios_QuedaSoloElAviso()
+        {
+            var request = PrepararEscenarioRecogida(null, retorno: 1);
+
+            _ = await controller.CrearEtiquetaPendiente(request);
+
+            Assert.AreEqual("Recoger producto", _pedidoRecogida.Comentarios);
+        }
+
+        [TestMethod]
+        public async Task CrearEtiquetaPendiente_ComentariosLargos_ObservacionesSeTruncaA80()
+        {
+            // NestoAPI#309: Observaciones es varchar(80); sin truncar, SaveChanges petaba con
+            // DbEntityValidationException cuando los comentarios del pedido eran más largos.
+            string comentariosLargos = new string('X', 100);
+            var request = PrepararEscenarioRecogida(comentariosLargos, retorno: 0);
+
+            _ = await controller.CrearEtiquetaPendiente(request);
+
+            Assert.AreEqual(80, _envioRecogida.Observaciones.Length);
+        }
+
+        #endregion
+
         #region Helpers
 
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class

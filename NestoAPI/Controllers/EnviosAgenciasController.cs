@@ -608,6 +608,14 @@ namespace NestoAPI.Controllers
             var codPostal = direccion.CodPostal?.Trim() ?? "";
             var defaultsAgencia = ObtenerDefaultsAgencia(request.Agencia, codPostal);
 
+            // NestoAPI#310: red de seguridad — la casilla "Recoger producto" (Nesto/NestoApp) crea
+            // esta etiqueta con Retorno > 0, pero el repartidor se entera por los comentarios de
+            // ruta. Si el usuario no lo escribió, se añade aquí SIN pisar lo que hubiera.
+            if (request.Retorno > 0)
+            {
+                pedido.Comentarios = AnadirAvisoRecogerProducto(pedido.Comentarios);
+            }
+
             var envio = new EnviosAgencia
             {
                 Empresa = request.Empresa,
@@ -632,7 +640,9 @@ namespace NestoAPI.Controllers
                 Movil = telefono.MovilUnico(),
                 Email = correo.CorreoAgencia(),
                 Atencion = direccion.Nombre?.Trim() ?? "",
-                Observaciones = pedido.Comentarios,
+                // NestoAPI#309: Observaciones es varchar(80); copiar Comentarios sin truncar
+                // reventaba SaveChanges con DbEntityValidationException cuando eran más largos.
+                Observaciones = TruncarObservaciones(pedido.Comentarios),
                 FechaEntrega = pedido.Fecha,
                 Pais = defaultsAgencia.Pais,
                 Usuario = User?.Identity?.Name ?? "NestoAPI"
@@ -643,6 +653,38 @@ namespace NestoAPI.Controllers
 
             var dto = new EnvioAgenciaDTO(envio);
             return Created(new Uri(Request.RequestUri, envio.Numero.ToString()), dto);
+        }
+
+        // NestoAPI#310: texto que se añade a los comentarios de ruta como red de seguridad
+        internal const string AVISO_RECOGER_PRODUCTO = "Recoger producto";
+        private const int LONGITUD_MAXIMA_OBSERVACIONES = 80; // EnviosAgencia.Observaciones es varchar(80)
+
+        /// <summary>
+        /// NestoAPI#310: añade "Recoger producto" a los comentarios de ruta si no lo contienen ya
+        /// (case-insensitive). Solo añade al final, nunca pisa ni borra lo que hubiera.
+        /// </summary>
+        internal static string AnadirAvisoRecogerProducto(string comentarios)
+        {
+            if (comentarios != null && comentarios.IndexOf(AVISO_RECOGER_PRODUCTO, StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return comentarios;
+            }
+            if (string.IsNullOrWhiteSpace(comentarios))
+            {
+                return AVISO_RECOGER_PRODUCTO;
+            }
+            string existente = comentarios.TrimEnd();
+            string separador = existente.EndsWith(".") ? " " : ". ";
+            return existente + separador + AVISO_RECOGER_PRODUCTO;
+        }
+
+        internal static string TruncarObservaciones(string comentarios)
+        {
+            if (comentarios == null || comentarios.Length <= LONGITUD_MAXIMA_OBSERVACIONES)
+            {
+                return comentarios;
+            }
+            return comentarios.Substring(0, LONGITUD_MAXIMA_OBSERVACIONES);
         }
 
         /// <summary>
