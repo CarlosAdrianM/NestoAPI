@@ -101,10 +101,56 @@ namespace NestoAPI.Infraestructure.Filters
                 VolcarContextoAServerVariables(error.ServerVariables, contexto);
                 _ = Elmah.ErrorLog.GetDefault(httpContext).Log(error);
             }
+            // NestoAPI#309: "Validation failed for one or more entities" sin más era imposible de
+            // diagnosticar a posteriori (ELMAH no muestra la propiedad EntityValidationErrors).
+            // Se vuelca el detalle (entidad, propiedad, mensaje) a una ServerVariable X-Context-*
+            // de la ficha de ELMAH, igual que el contexto de NestoBusinessException.
+            else if (httpContext != null && BuscarValidationException(exception) is DbEntityValidationException validationException)
+            {
+                var error = new Elmah.Error(exception, httpContext);
+                error.ServerVariables.Add("X-Context-EntityValidationErrors", ResumenErroresValidacion(validationException));
+                _ = Elmah.ErrorLog.GetDefault(httpContext).Log(error);
+            }
             else
             {
                 ErrorSignal.FromCurrentContext().Raise(exception);
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#309: localiza una DbEntityValidationException en la propia excepción o en su
+        /// cadena de InnerException (hay controllers que la envuelven en excepciones genéricas).
+        /// </summary>
+        internal static DbEntityValidationException BuscarValidationException(Exception exception)
+        {
+            for (Exception actual = exception; actual != null; actual = actual.InnerException)
+            {
+                if (actual is DbEntityValidationException validationException)
+                {
+                    return validationException;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// NestoAPI#309: texto legible con entidad, estado, propiedad y mensaje de cada error de
+        /// validación de EF. Compartido entre la respuesta HTTP y la ficha de ELMAH.
+        /// </summary>
+        internal static string ResumenErroresValidacion(DbEntityValidationException exception)
+        {
+            var messageBuilder = new StringBuilder();
+            _ = messageBuilder.AppendLine("Error de validación de Entity Framework:");
+            foreach (var entityError in exception.EntityValidationErrors)
+            {
+                var entityName = entityError.Entry.Entity.GetType().Name;
+                _ = messageBuilder.AppendLine($"  Entidad: {entityName} ({entityError.Entry.State})");
+                foreach (var propertyError in entityError.ValidationErrors)
+                {
+                    _ = messageBuilder.AppendLine($"    - {propertyError.PropertyName}: {propertyError.ErrorMessage}");
+                }
+            }
+            return messageBuilder.ToString();
         }
 
         /// <summary>
@@ -226,25 +272,12 @@ namespace NestoAPI.Infraestructure.Filters
                 }
             }
 
-            // Construir mensaje legible
-            var messageBuilder = new StringBuilder();
-            messageBuilder.AppendLine("Error de validación de Entity Framework:");
-            foreach (var entityError in exception.EntityValidationErrors)
-            {
-                var entityName = entityError.Entry.Entity.GetType().Name;
-                messageBuilder.AppendLine($"  Entidad: {entityName} ({entityError.Entry.State})");
-                foreach (var propertyError in entityError.ValidationErrors)
-                {
-                    messageBuilder.AppendLine($"    - {propertyError.PropertyName}: {propertyError.ErrorMessage}");
-                }
-            }
-
             var errorResponse = new Dictionary<string, object>
             {
                 ["error"] = new Dictionary<string, object>
                 {
                     ["code"] = "ENTITY_VALIDATION_ERROR",
-                    ["message"] = messageBuilder.ToString(),
+                    ["message"] = ResumenErroresValidacion(exception),
                     ["timestamp"] = DateTime.Now,
                     ["validationErrors"] = validationErrors
                 }

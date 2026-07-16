@@ -60,6 +60,48 @@ namespace NestoAPI.Tests.Infrastructure.Filters
             Assert.AreEqual(HttpStatusCode.InternalServerError, _context.Response.StatusCode);
         }
 
+        // NestoAPI#309: sin el detalle de EntityValidationErrors, "Validation failed for one or
+        // more entities" era imposible de diagnosticar a posteriori.
+
+        [TestMethod]
+        public void BuscarValidationException_LaExcepcionEsDeValidacion_LaDevuelve()
+        {
+            var validacion = new System.Data.Entity.Validation.DbEntityValidationException("falló");
+
+            Assert.AreSame(validacion, GlobalExceptionFilter.BuscarValidationException(validacion));
+        }
+
+        [TestMethod]
+        public void BuscarValidationException_VieneEnvueltaComoInner_LaEncuentra()
+        {
+            var validacion = new System.Data.Entity.Validation.DbEntityValidationException("falló");
+            var envoltorio = new Exception("No se ha podido actualizar el cliente",
+                new Exception("capa intermedia", validacion));
+
+            Assert.AreSame(validacion, GlobalExceptionFilter.BuscarValidationException(envoltorio));
+        }
+
+        [TestMethod]
+        public void BuscarValidationException_SinValidacionEnLaCadena_DevuelveNull()
+        {
+            var generica = new Exception("otra cosa", new InvalidOperationException());
+
+            Assert.IsNull(GlobalExceptionFilter.BuscarValidationException(generica));
+        }
+
+        [TestMethod]
+        public void GlobalExceptionFilter_OnException_DbEntityValidation_Devuelve400ConCodigoEspecifico()
+        {
+            var validacion = new System.Data.Entity.Validation.DbEntityValidationException("falló");
+            _context = new HttpActionExecutedContext(_context.ActionContext, validacion);
+
+            _filter.OnException(_context);
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, _context.Response.StatusCode);
+            var error = LeerErrorDeLaRespuesta();
+            Assert.AreEqual("ENTITY_VALIDATION_ERROR", error["code"].ToString());
+        }
+
         [TestMethod]
         public void GlobalExceptionFilter_OnException_ExcepcionGenerica_ContieneCodigoInternalError()
         {
