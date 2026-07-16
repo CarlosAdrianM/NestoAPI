@@ -40,7 +40,9 @@ namespace NestoAPI.Infraestructure.Facturas
             this.lectorParametros = lectorParametros;
         }
 
-        public ByteArrayContent FacturaEnPDF(string empresa, string numeroFactura)
+        // virtual: costura para que los tests del envío diario (#261) puedan forzar el fallo de
+        // una factura concreta sin tocar el stack real de PDF (QuestPDF/RDLC -> SkiaSharp nativo).
+        public virtual ByteArrayContent FacturaEnPDF(string empresa, string numeroFactura)
         {
             Factura factura = LeerFactura(empresa, numeroFactura);
             List<Factura> facturas = new List<Factura>
@@ -1036,6 +1038,39 @@ namespace NestoAPI.Infraestructure.Facturas
                 throw new InvalidOperationException(mensajeError);
             }
 
+            List<MailMessage> listaCorreos = await ConstruirCorreosFacturasDia(facturasCorreo);
+
+            foreach (MailMessage correo in listaCorreos)
+            {
+                // A veces no conecta a la primera: reintento a los 2s y, si sigue fallando, el
+                // correo se redirige a administración para que la factura no se pierda. Un correo
+                // que falle no impide el envío de los demás.
+                if (servicio.EnviarCorreoSMTP(correo))
+                {
+                    continue;
+                }
+                await Task.Delay(2000);
+                if (servicio.EnviarCorreoSMTP(correo))
+                {
+                    continue;
+                }
+                correo.To.Clear();
+                correo.To.Add(Constantes.Correos.CORREO_ADMON);
+                correo.Subject = "[ERROR] " + correo.Subject;
+                await Task.Delay(2000);
+                _ = servicio.EnviarCorreoSMTP(correo);
+            }
+
+            return facturasCorreo;
+        }
+
+        /// <summary>
+        /// Issue #261: construcción de los correos del envío diario (agrupar facturas por correo
+        /// y adjuntar los PDFs), separada del envío SMTP para poder testear la resiliencia:
+        /// una factura que falla al generarse se loguea y NO impide el envío del resto.
+        /// </summary>
+        internal async Task<List<MailMessage>> ConstruirCorreosFacturasDia(IEnumerable<FacturaCorreo> facturasCorreo)
+        {
             List<MailMessage> listaCorreos = new List<MailMessage>();
             string mailAnterior = string.Empty;
             MailMessage mail = new MailMessage();
@@ -1119,53 +1154,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 mail.Subject = mail.Subject.Trim().TrimEnd(',');
                 listaCorreos.Add(mail);
             }
-            SmtpClient client = CrearClienteSMTP();
 
-            foreach (MailMessage correo in listaCorreos)
-            {
-                //A veces no conecta a la primera, por lo que reintentamos 2s después
-                try
-                {
-                    client.Send(correo);
-                }
-                catch
-                {
-                    await Task.Delay(2000);
-                    try
-                    {
-                        client.Send(correo);
-                    }
-                    catch
-                    {
-                        correo.To.Clear();
-                        correo.To.Add(Constantes.Correos.CORREO_ADMON);
-                        correo.Subject = "[ERROR] " + correo.Subject;
-                        await Task.Delay(2000);
-                        client.Send(correo);
-                    }
-                }
-            }
-
-            return facturasCorreo;
-        }
-
-        private static SmtpClient CrearClienteSMTP()
-        {
-            SmtpClient client = new SmtpClient
-            {
-                Port = 587,
-                EnableSsl = true,
-                DeliveryMethod = SmtpDeliveryMethod.Network,
-                UseDefaultCredentials = false
-            };
-            string contrasenna = ConfigurationManager.AppSettings["office365password"];
-            client.Credentials = new System.Net.NetworkCredential("nesto@nuevavision.es", contrasenna);
-            client.Host = "smtp.office365.com";
-            client.TargetName = "STARTTLS/smtp.office365.com"; // Añadir esta línea para especificar el nombre del objetivo para STARTTLS
-
-            // Configurar TLS 1.2 explícitamente
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            return client;
+            return listaCorreos;
         }
 
         public List<ClienteCorreoFactura> EnviarFacturasTrimestrePorCorreo(DateTime firstDayOfQuarter, DateTime lastDayOfQuarter)

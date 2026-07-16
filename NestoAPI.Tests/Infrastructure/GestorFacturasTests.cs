@@ -7,6 +7,9 @@ using NestoAPI.Models.Facturas;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Mail;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -1876,6 +1879,107 @@ namespace NestoAPI.Tests.Infrastructure
         {
             // Los contactos legacy vienen con padding; "0 " == "0" y no debe contar como multi.
             Assert.IsFalse(GestorFacturas.DebeMostrarDireccionesEntrega(new[] { "0 ", " 0" }, " 0 "));
+        }
+
+        #endregion
+
+        #region Envío diario de facturas resiliente (NestoAPI#261)
+
+        /// <summary>
+        /// Doble de test que sustituye el stack real de PDF (QuestPDF/RDLC → SkiaSharp nativo,
+        /// que no corre en headless) y permite forzar el fallo de facturas concretas.
+        /// </summary>
+        private class GestorFacturasPdfControlado : GestorFacturas
+        {
+            private readonly HashSet<string> facturasQueFallan;
+
+            public GestorFacturasPdfControlado(IServicioFacturas servicio, params string[] facturasQueFallan)
+                : base(servicio)
+            {
+                this.facturasQueFallan = new HashSet<string>(facturasQueFallan);
+            }
+
+            public override ByteArrayContent FacturaEnPDF(string empresa, string numeroFactura)
+            {
+                if (facturasQueFallan.Contains(numeroFactura))
+                {
+                    throw new InvalidOperationException($"Fallo simulado generando el PDF de {numeroFactura}");
+                }
+                return new ByteArrayContent(new byte[] { 1, 2, 3 });
+            }
+        }
+
+        [TestMethod]
+        public async Task ConstruirCorreosFacturasDia_UnaFacturaFalla_LasDemasSeAdjuntanYLaMalaSeOmite()
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            var gestor = new GestorFacturasPdfControlado(servicio, "NV22222");
+            var facturas = new List<FacturaCorreo>
+            {
+                new FacturaCorreo { Empresa = "1", Factura = "NV11111", Correo = "cliente@correo.es" },
+                new FacturaCorreo { Empresa = "1", Factura = "NV22222", Correo = "cliente@correo.es" },
+                new FacturaCorreo { Empresa = "1", Factura = "NV33333", Correo = "cliente@correo.es" }
+            };
+
+            List<MailMessage> correos = await gestor.ConstruirCorreosFacturasDia(facturas);
+
+            Assert.AreEqual(1, correos.Count);
+            Assert.AreEqual(2, correos[0].Attachments.Count, "La factura mala se omite pero las demás se adjuntan");
+            StringAssert.Contains(correos[0].Subject, "NV11111");
+            StringAssert.Contains(correos[0].Subject, "NV33333");
+            Assert.IsFalse(correos[0].Subject.Contains("NV22222"), "La factura que falló no debe figurar en el asunto");
+        }
+
+        [TestMethod]
+        public async Task ConstruirCorreosFacturasDia_UnicaFacturaDelClienteFalla_NoSeMandaCorreoVacio()
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            var gestor = new GestorFacturasPdfControlado(servicio, "NV11111");
+            var facturas = new List<FacturaCorreo>
+            {
+                new FacturaCorreo { Empresa = "1", Factura = "NV11111", Correo = "malasuerte@correo.es" },
+                new FacturaCorreo { Empresa = "1", Factura = "NV22222", Correo = "otrocliente@correo.es" }
+            };
+
+            List<MailMessage> correos = await gestor.ConstruirCorreosFacturasDia(facturas);
+
+            Assert.AreEqual(1, correos.Count, "El cliente cuya única factura falló no debe recibir un correo vacío");
+            Assert.AreEqual("otrocliente@correo.es", correos[0].To.Single().Address);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasPorCorreo_ElEnvioVaPorLaCosturaSMTPDelServicio()
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            _ = A.CallTo(() => servicio.LeerFacturasDia(new DateTime(2026, 7, 16)))
+                .Returns(new List<FacturaCorreo> { new FacturaCorreo { Empresa = "1", Factura = "NV11111", Correo = "cliente@correo.es" } });
+            _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).Returns(true);
+            var gestor = new GestorFacturasPdfControlado(servicio);
+
+            _ = await gestor.EnviarFacturasPorCorreo(new DateTime(2026, 7, 16));
+
+            A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturasPorCorreo_SiFallaElEnvioReintentaYRedirigeAAdministracion()
+        {
+            IServicioFacturas servicio = A.Fake<IServicioFacturas>();
+            _ = A.CallTo(() => servicio.LeerFacturasDia(new DateTime(2026, 7, 16)))
+                .Returns(new List<FacturaCorreo> { new FacturaCorreo { Empresa = "1", Factura = "NV11111", Correo = "cliente@correo.es" } });
+            var envios = new List<(string Destinatarios, string Asunto)>();
+            _ = A.CallTo(() => servicio.EnviarCorreoSMTP(A<MailMessage>._))
+                .Invokes((MailMessage m) => envios.Add((string.Join(",", m.To.Select(t => t.Address)), m.Subject)))
+                .Returns(false);
+            var gestor = new GestorFacturasPdfControlado(servicio);
+
+            _ = await gestor.EnviarFacturasPorCorreo(new DateTime(2026, 7, 16));
+
+            Assert.AreEqual(3, envios.Count, "Reintento a los 2s y último intento redirigido");
+            Assert.AreEqual("cliente@correo.es", envios[0].Destinatarios);
+            Assert.AreEqual("cliente@correo.es", envios[1].Destinatarios);
+            Assert.AreEqual(Constantes.Correos.CORREO_ADMON, envios[2].Destinatarios, "El último intento va a administración para que la factura no se pierda");
+            StringAssert.StartsWith(envios[2].Asunto, "[ERROR]");
         }
 
         #endregion
