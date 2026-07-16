@@ -1,10 +1,8 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
-using NestoAPI.Infraestructure.AlbaranesVenta;
-using NestoAPI.Infraestructure.Facturas;
+using NestoAPI.Infraestructure.Facturas.Agrupacion;
 using NestoAPI.Infraestructure.Pedidos;
-using NestoAPI.Infraestructure.Traspasos;
 using NestoAPI.Models;
 using NestoAPI.Models.Facturas;
 using System;
@@ -12,16 +10,22 @@ using System.Collections.Generic;
 using System.Net;
 using System.Security.Claims;
 using System.Threading.Tasks;
-using System.Web.Http;
 using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Controllers
 {
+    /// <summary>
+    /// NestoAPI#242: este fichero estuvo huérfano del csproj (nunca se compiló) y quedó obsoleto
+    /// respecto a dos refactorizaciones: TipoRuta pasó de enum a string (Id de TipoRutaFactory) y
+    /// el controller incorporó la agrupación por PO (#195). Resucitado contra la API actual; la
+    /// semántica de los contadores del preview se cubre en GestorFacturacionRutasTests.
+    /// </summary>
     [TestClass]
     public class FacturacionRutasControllerTests
     {
         private NVEntities db;
         private IServicioPedidosParaFacturacion servicioPedidos;
+        private IServicioAgruparPorPO servicioAgruparPorPO;
         private FacturacionRutasController controller;
 
         [TestInitialize]
@@ -29,15 +33,33 @@ namespace NestoAPI.Tests.Controllers
         {
             db = A.Fake<NVEntities>();
             servicioPedidos = A.Fake<IServicioPedidosParaFacturacion>();
-            controller = new FacturacionRutasController(db, servicioPedidos);
+            servicioAgruparPorPO = A.Fake<IServicioAgruparPorPO>();
+            _ = A.CallTo(() => servicioAgruparPorPO.EvaluarYProcesar(A<string>._, A<string>._))
+                .Returns(Task.FromResult(new ResultadoAgrupacionPO()));
+            controller = new FacturacionRutasController(db, servicioPedidos, servicioAgruparPorPO);
         }
 
-        #region Constructor Tests
+        private void ConfigurarUsuario(string rol, string nombre = "NUEVAVISION\\Test")
+        {
+            // "TestAuth" hace la identidad autenticada (sin authenticationType, IsAuthenticated
+            // es false y FacturarRutas devolvería Unauthorized aunque tenga rol).
+            var identity = new ClaimsIdentity("TestAuth");
+            identity.AddClaim(new Claim(ClaimTypes.Role, rol));
+            identity.AddClaim(new Claim(ClaimTypes.Name, nombre));
+            controller.User = new ClaimsPrincipal(identity);
+        }
+
+        private void ConfigurarSinPedidos()
+        {
+            _ = A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(A<string>._, A<DateTime>._))
+                .Returns(Task.FromResult(new List<CabPedidoVta>()));
+        }
+
+        #region Constructor
 
         [TestMethod]
         public void Constructor_ConDependenciasValidas_CreaInstancia()
         {
-            // Arrange, Act & Assert
             Assert.IsNotNull(controller);
         }
 
@@ -45,61 +67,37 @@ namespace NestoAPI.Tests.Controllers
         [ExpectedException(typeof(ArgumentNullException))]
         public void Constructor_ConDbNull_LanzaArgumentNullException()
         {
-            // Arrange, Act & Assert
-            var _ = new FacturacionRutasController(null, servicioPedidos);
+            _ = new FacturacionRutasController(null, servicioPedidos);
         }
 
         [TestMethod]
         [ExpectedException(typeof(ArgumentNullException))]
         public void Constructor_ConServicioPedidosNull_LanzaArgumentNullException()
         {
-            // Arrange, Act & Assert
-            var _ = new FacturacionRutasController(db, null);
+            _ = new FacturacionRutasController(db, null);
         }
 
         #endregion
 
-        #region FacturarRutas Tests
+        #region FacturarRutas
 
         [TestMethod]
         public async Task FacturarRutas_RequestNull_RetornaBadRequest()
         {
-            // Arrange
-            FacturarRutasRequestDTO request = null;
+            var resultado = await controller.FacturarRutas(null);
 
-            // Act
-            var resultado = await controller.FacturarRutas(request);
-
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }
 
         [TestMethod]
         public async Task FacturarRutas_SinPedidos_RetornaOkConResponseVacio()
         {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            ConfigurarSinPedidos();
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = DateTime.Today };
 
-            // Configurar mock para retornar lista vacía
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake (Almacén)
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
             var resultado = await controller.FacturarRutas(request);
 
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<FacturarRutasResponseDTO>));
             var okResult = (OkNegotiatedContentResult<FacturarRutasResponseDTO>)resultado;
             Assert.AreEqual(0, okResult.Content.PedidosProcesados);
@@ -110,242 +108,106 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task FacturarRutas_UsuarioSinPermisos_Retorna403Forbidden()
         {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            ConfigurarUsuario(Constantes.GruposSeguridad.TIENDAS); // rol sin permisos
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = DateTime.Today };
 
-            // Configurar usuario fake SIN permisos (no Almacén ni Dirección)
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.TIENDAS)); // Rol sin permisos
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
             var resultado = await controller.FacturarRutas(request);
 
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
-            var statusResult = (StatusCodeResult)resultado;
-            Assert.AreEqual(HttpStatusCode.Forbidden, statusResult.StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode);
         }
 
         [TestMethod]
         public async Task FacturarRutas_UsuarioDireccion_PermiteAcceso()
         {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            ConfigurarSinPedidos();
+            ConfigurarUsuario(Constantes.GruposSeguridad.DIRECCION);
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = DateTime.Today };
 
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake con rol Dirección
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.DIRECCION));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
             var resultado = await controller.FacturarRutas(request);
 
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<FacturarRutasResponseDTO>));
-        }
-
-        [TestMethod]
-        public async Task FacturarRutas_UsuarioAlmacen_PermiteAcceso()
-        {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
-
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake con rol Almacén
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
-            var resultado = await controller.FacturarRutas(request);
-
-            // Assert
-            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<FacturarRutasResponseDTO>));
-        }
-
-        [TestMethod]
-        public async Task FacturarRutas_FechaEntregaDesdeNull_UsaFechaHoy()
-        {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = null // Sin fecha
-            };
-
-            DateTime? fechaCapturada = null;
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Invokes((TipoRutaFacturacion tipo, DateTime fecha) => fechaCapturada = fecha)
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
-            await controller.FacturarRutas(request);
-
-            // Assert
-            Assert.IsNotNull(fechaCapturada);
-            Assert.AreEqual(DateTime.Today, fechaCapturada.Value.Date);
         }
 
         [TestMethod]
         public async Task FacturarRutas_UsuarioConDominioAlmacen_PermiteAcceso()
         {
-            // Arrange - Usuario con dominio: NUEVAVISION\Almacén
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            // IsInRoleSinDominio: el rol puede venir como "NUEVAVISION\Almacén" (Windows)
+            ConfigurarSinPedidos();
+            ConfigurarUsuario("NUEVAVISION\\Almacén");
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = DateTime.Today };
 
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake con rol incluyendo dominio
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, "NUEVAVISION\\Almacén"));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
             var resultado = await controller.FacturarRutas(request);
 
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<FacturarRutasResponseDTO>),
                 "Debe permitir acceso con rol 'NUEVAVISION\\Almacén'");
         }
 
         [TestMethod]
-        public async Task FacturarRutas_UsuarioConDominioDireccion_PermiteAcceso()
+        public async Task FacturarRutas_UsuarioConDominioSinPermisos_Retorna403()
         {
-            // Arrange - Usuario con dominio: NUEVAVISION\Dirección
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            ConfigurarUsuario("NUEVAVISION\\Tiendas");
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = DateTime.Today };
 
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake con rol incluyendo dominio
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, "NUEVAVISION\\Dirección"));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
             var resultado = await controller.FacturarRutas(request);
 
-            // Assert
-            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<FacturarRutasResponseDTO>),
-                "Debe permitir acceso con rol 'NUEVAVISION\\Dirección'");
+            Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode,
+                "Debe denegar acceso con rol 'NUEVAVISION\\Tiendas'");
         }
 
         [TestMethod]
-        public async Task FacturarRutas_UsuarioConDominioSinPermisos_Retorna403()
+        public async Task FacturarRutas_FechaEntregaDesdeNull_UsaFechaHoy()
         {
-            // Arrange - Usuario con dominio pero sin permisos: NUEVAVISION\Tiendas
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            DateTime? fechaCapturada = null;
+            _ = A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(A<string>._, A<DateTime>._))
+                .Invokes((string tipo, DateTime fecha) => fechaCapturada = fecha)
+                .Returns(Task.FromResult(new List<CabPedidoVta>()));
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = null };
 
-            // Configurar usuario fake con rol sin permisos pero con dominio
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, "NUEVAVISION\\Tiendas"));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
+            _ = await controller.FacturarRutas(request);
 
-            // Act
-            var resultado = await controller.FacturarRutas(request);
+            Assert.IsNotNull(fechaCapturada);
+            Assert.AreEqual(DateTime.Today, fechaCapturada.Value.Date);
+        }
 
-            // Assert
-            Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
-            var statusResult = (StatusCodeResult)resultado;
-            Assert.AreEqual(HttpStatusCode.Forbidden, statusResult.StatusCode,
-                "Debe denegar acceso con rol 'NUEVAVISION\\Tiendas'");
+        [TestMethod]
+        public async Task FacturarRutas_PasaElTipoDeRutaDelRequestAlServicio()
+        {
+            string tipoCapturado = null;
+            _ = A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(A<string>._, A<DateTime>._))
+                .Invokes((string tipo, DateTime fecha) => tipoCapturado = tipo)
+                .Returns(Task.FromResult(new List<CabPedidoVta>()));
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+            var request = new FacturarRutasRequestDTO { TipoRuta = "AGENCIA", FechaEntregaDesde = DateTime.Today };
+
+            _ = await controller.FacturarRutas(request);
+
+            Assert.AreEqual("AGENCIA", tipoCapturado, "El TipoRuta (Id de TipoRutaFactory) viaja como string al servicio");
         }
 
         #endregion
 
-        #region PreviewFacturarRutas Tests
+        #region PreviewFacturarRutas
 
         [TestMethod]
         public async Task PreviewFacturarRutas_RequestNull_RetornaBadRequest()
         {
-            // Arrange
-            FacturarRutasRequestDTO request = null;
+            var resultado = await controller.PreviewFacturarRutas(null);
 
-            // Act
-            var resultado = await controller.PreviewFacturarRutas(request);
-
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }
 
         [TestMethod]
         public async Task PreviewFacturarRutas_SinPedidos_RetornaOkConPreviewVacio()
         {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            ConfigurarSinPedidos();
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = DateTime.Today };
 
-            // Configurar mock para retornar lista vacía
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake (Almacén)
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
             var resultado = await controller.PreviewFacturarRutas(request);
 
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<PreviewFacturacionRutasResponseDTO>));
             var okResult = (OkNegotiatedContentResult<PreviewFacturacionRutasResponseDTO>)resultado;
             Assert.AreEqual(0, okResult.Content.NumeroPedidos);
@@ -357,219 +219,41 @@ namespace NestoAPI.Tests.Controllers
         [TestMethod]
         public async Task PreviewFacturarRutas_UsuarioSinPermisos_Retorna403Forbidden()
         {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            ConfigurarUsuario(Constantes.GruposSeguridad.TIENDAS);
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = DateTime.Today };
 
-            // Configurar usuario fake SIN permisos (no Almacén ni Dirección)
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.TIENDAS)); // Rol sin permisos
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
             var resultado = await controller.PreviewFacturarRutas(request);
 
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(StatusCodeResult));
-            var statusResult = (StatusCodeResult)resultado;
-            Assert.AreEqual(HttpStatusCode.Forbidden, statusResult.StatusCode);
+            Assert.AreEqual(HttpStatusCode.Forbidden, ((StatusCodeResult)resultado).StatusCode);
         }
 
         [TestMethod]
         public async Task PreviewFacturarRutas_UsuarioDireccion_PermiteAcceso()
         {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
+            ConfigurarSinPedidos();
+            ConfigurarUsuario(Constantes.GruposSeguridad.DIRECCION);
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = DateTime.Today };
 
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake con rol Dirección
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.DIRECCION));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
             var resultado = await controller.PreviewFacturarRutas(request);
 
-            // Assert
-            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<PreviewFacturacionRutasResponseDTO>));
-        }
-
-        [TestMethod]
-        public async Task PreviewFacturarRutas_UsuarioAlmacen_PermiteAcceso()
-        {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
-
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(new List<CabPedidoVta>()));
-
-            // Configurar usuario fake con rol Almacén
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
-            var resultado = await controller.PreviewFacturarRutas(request);
-
-            // Assert
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<PreviewFacturacionRutasResponseDTO>));
         }
 
         [TestMethod]
         public async Task PreviewFacturarRutas_FechaEntregaDesdeNull_UsaFechaHoy()
         {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = null // Sin fecha
-            };
-
             DateTime? fechaCapturada = null;
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Invokes((TipoRutaFacturacion tipo, DateTime fecha) => fechaCapturada = fecha)
+            _ = A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(A<string>._, A<DateTime>._))
+                .Invokes((string tipo, DateTime fecha) => fechaCapturada = fecha)
                 .Returns(Task.FromResult(new List<CabPedidoVta>()));
+            ConfigurarUsuario(Constantes.GruposSeguridad.ALMACEN);
+            var request = new FacturarRutasRequestDTO { TipoRuta = "PROPIA", FechaEntregaDesde = null };
 
-            // Configurar usuario fake
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
+            _ = await controller.PreviewFacturarRutas(request);
 
-            // Act
-            await controller.PreviewFacturarRutas(request);
-
-            // Assert
             Assert.IsNotNull(fechaCapturada);
             Assert.AreEqual(DateTime.Today, fechaCapturada.Value.Date);
-        }
-
-        [TestMethod]
-        public async Task PreviewFacturarRutas_ConPedidosNRM_RetornaPreviewConAlbaranesYFacturas()
-        {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutaPropia,
-                FechaEntregaDesde = DateTime.Today
-            };
-
-            var pedidos = new List<CabPedidoVta>
-            {
-                new CabPedidoVta
-                {
-                    Empresa = "1",
-                    Número = 12345,
-                    Cliente = "1001",
-                    Contacto = "0",
-                    NombreCliente = "Cliente Test",
-                    Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
-                    NotaEntrega = false,
-                    MantenerJunto = false,
-                    LinPedidoVtas = new List<LinPedidoVta>
-                    {
-                        new LinPedidoVta { Base_Imponible = 100m, Estado = Constantes.EstadosLineaVenta.EN_CURSO }
-                    }
-                }
-            };
-
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(pedidos));
-
-            // Configurar usuario fake
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
-            var resultado = await controller.PreviewFacturarRutas(request);
-
-            // Assert
-            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<PreviewFacturacionRutasResponseDTO>));
-            var okResult = (OkNegotiatedContentResult<PreviewFacturacionRutasResponseDTO>)resultado;
-            Assert.AreEqual(1, okResult.Content.NumeroPedidos);
-            Assert.AreEqual(1, okResult.Content.NumeroAlbaranes, "Debe contar 1 albarán para pedido NRM");
-            Assert.AreEqual(1, okResult.Content.NumeroFacturas, "Debe contar 1 factura para pedido NRM");
-            Assert.AreEqual(100m, okResult.Content.BaseImponibleAlbaranes);
-            Assert.AreEqual(100m, okResult.Content.BaseImponibleFacturas);
-        }
-
-        [TestMethod]
-        public async Task PreviewFacturarRutas_ConPedidosFDM_RetornaSoloAlbaranes()
-        {
-            // Arrange
-            var request = new FacturarRutasRequestDTO
-            {
-                TipoRuta = TipoRutaFacturacion.RutasAgencias,
-                FechaEntregaDesde = DateTime.Today
-            };
-
-            var pedidos = new List<CabPedidoVta>
-            {
-                new CabPedidoVta
-                {
-                    Empresa = "1",
-                    Número = 12346,
-                    Cliente = "1002",
-                    Contacto = "0",
-                    NombreCliente = "Cliente FDM",
-                    Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_FIN_DE_MES,
-                    NotaEntrega = false,
-                    MantenerJunto = false,
-                    LinPedidoVtas = new List<LinPedidoVta>
-                    {
-                        new LinPedidoVta { Base_Imponible = 200m, Estado = Constantes.EstadosLineaVenta.EN_CURSO }
-                    }
-                }
-            };
-
-            A.CallTo(() => servicioPedidos.ObtenerPedidosParaFacturar(
-                A<TipoRutaFacturacion>._,
-                A<DateTime>._))
-                .Returns(Task.FromResult(pedidos));
-
-            // Configurar usuario fake
-            var identity = new ClaimsIdentity();
-            identity.AddClaim(new Claim(ClaimTypes.Role, Constantes.GruposSeguridad.ALMACEN));
-            var principal = new ClaimsPrincipal(identity);
-            controller.User = principal;
-
-            // Act
-            var resultado = await controller.PreviewFacturarRutas(request);
-
-            // Assert
-            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<PreviewFacturacionRutasResponseDTO>));
-            var okResult = (OkNegotiatedContentResult<PreviewFacturacionRutasResponseDTO>)resultado;
-            Assert.AreEqual(1, okResult.Content.NumeroPedidos);
-            Assert.AreEqual(1, okResult.Content.NumeroAlbaranes, "Debe contar 1 albarán para pedido FDM");
-            Assert.AreEqual(0, okResult.Content.NumeroFacturas, "NO debe contar facturas para pedido FDM");
-            Assert.AreEqual(200m, okResult.Content.BaseImponibleAlbaranes);
-            Assert.AreEqual(0m, okResult.Content.BaseImponibleFacturas);
         }
 
         #endregion
