@@ -1503,12 +1503,14 @@ namespace NestoAPI.Infraestructure
                         contador.Clientes,
                         numero => db.Clientes.Any(c => c.Nº_Cliente == numero));
                 }
-                else
-                {
-                    // Issue #223: un contacto adicional debe compartir el NIF del cliente; si no,
-                    // tendríamos dos identidades fiscales bajo el mismo nº de cliente (muy grave).
-                    ValidarNifContactoCoincideConCliente(db, clienteCrear);
-                }
+
+                // Issue #263: la coherencia de NIF es UNIVERSAL (antes solo se validaba en la
+                // rama EsContacto=true). La carrera de dos altas casi simultáneas metía la
+                // segunda por la rama de cliente nuevo con el MISMO número recién asignado,
+                // saltándose la validación: acababa como contacto 1 de OTRA entidad fiscal
+                // (casos reales 41094/41639). Con número nuevo de verdad no hay NIF previo y
+                // la validación pasa sin coste.
+                ValidarNifContactoCoincideConCliente(db, clienteCrear);
 
                 if (clienteCrear.Empresa == null)
                 {
@@ -1516,6 +1518,17 @@ namespace NestoAPI.Infraestructure
                 }
 
                 cliente = await PrepararClienteCrear(clienteCrear, db);
+
+                // Issue #263: guarda dura — nunca dos ClientePrincipal bajo el mismo número.
+                // Cubre el doble-submit con el MISMO NIF (que la coherencia de NIF no caza):
+                // el segundo alta se crea como contacto normal en vez de romper los
+                // SingleOrDefault(ClientePrincipal) de media aplicación.
+                if (cliente.ClientePrincipal &&
+                    db.Clientes.Any(c => c.Empresa == cliente.Empresa && c.Nº_Cliente == cliente.Nº_Cliente && c.ClientePrincipal))
+                {
+                    cliente.ClientePrincipal = false;
+                }
+
                 _ = db.Clientes.Add(cliente);
 
                 _ = await db.SaveChangesAsync();
@@ -1655,7 +1668,7 @@ namespace NestoAPI.Infraestructure
         /// cliente existente. Si se especifica un NIF distinto, se rechaza para no crear dos
         /// identidades fiscales bajo el mismo nº de cliente.
         /// </summary>
-        private void ValidarNifContactoCoincideConCliente(NVEntities db, ClienteCrear clienteCrear)
+        internal void ValidarNifContactoCoincideConCliente(NVEntities db, ClienteCrear clienteCrear)
         {
             string nifContacto = clienteCrear.Nif?.Trim();
             if (string.IsNullOrEmpty(nifContacto))

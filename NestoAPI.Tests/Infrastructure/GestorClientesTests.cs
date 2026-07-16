@@ -2075,6 +2075,54 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region Issue #263: coherencia de NIF universal (también en la rama de cliente nuevo)
+
+        private static NVEntities CrearDbConClientes(params Cliente[] clientes)
+        {
+            NVEntities dbFake = A.Fake<NVEntities>();
+            A.CallTo(() => dbFake.Clientes).Returns(CrearFakeDbSet(clientes.ToList()));
+            return dbFake;
+        }
+
+        [TestMethod]
+        public void ValidarNifContactoCoincideConCliente_NumeroOcupadoPorOtroNif_Rechaza()
+        {
+            // #263 (casos reales 41094/41639): dos altas casi simultáneas asignaban el mismo
+            // número; la segunda entraba por la rama de cliente nuevo SIN validar el NIF y
+            // acababa como contacto de otra entidad fiscal. Ahora la validación es universal
+            // y el alta sobre un número ya ocupado con otro NIF se rechaza limpiamente.
+            NVEntities dbFake = CrearDbConClientes(new Cliente { Nº_Cliente = "41094", CIF_NIF = "11111111H" });
+            GestorClientes gestor = CrearGestorClientes();
+            ClienteCrear clienteCrear = new ClienteCrear { Cliente = "41094", Nif = "22222222J" };
+
+            _ = Assert.ThrowsException<System.ComponentModel.DataAnnotations.ValidationException>(
+                () => gestor.ValidarNifContactoCoincideConCliente(dbFake, clienteCrear));
+        }
+
+        [TestMethod]
+        public void ValidarNifContactoCoincideConCliente_MismoNif_NoLanza()
+        {
+            NVEntities dbFake = CrearDbConClientes(new Cliente { Nº_Cliente = "41094", CIF_NIF = "11111111H" });
+            GestorClientes gestor = CrearGestorClientes();
+            ClienteCrear clienteCrear = new ClienteCrear { Cliente = "41094", Nif = "11111111h" };
+
+            gestor.ValidarNifContactoCoincideConCliente(dbFake, clienteCrear); // no debe lanzar
+        }
+
+        [TestMethod]
+        public void ValidarNifContactoCoincideConCliente_NumeroNuevoSinOcupantes_NoLanza()
+        {
+            // El caso normal de cliente nuevo: el número recién asignado no tiene ningún
+            // cliente -> no hay NIF con el que chocar y el alta sigue sin coste.
+            NVEntities dbFake = CrearDbConClientes();
+            GestorClientes gestor = CrearGestorClientes();
+            ClienteCrear clienteCrear = new ClienteCrear { Cliente = "50000", Nif = "22222222J" };
+
+            gestor.ValidarNifContactoCoincideConCliente(dbFake, clienteCrear); // no debe lanzar
+        }
+
+        #endregion
+
         #region 1C.8 slice 5: CRUD de CCCs de la ficha de clientes
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
