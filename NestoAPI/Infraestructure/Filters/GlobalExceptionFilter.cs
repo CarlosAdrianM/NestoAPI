@@ -42,10 +42,17 @@ namespace NestoAPI.Infraestructure.Filters
         {
             var exception = context.Exception;
 
+            // NestoAPI#312: si el error es un timeout por bloqueo SQL, averiguar QUIÉN bloquea
+            // para que el usuario pueda llamarle directamente. Solo se consulta en este tipo de
+            // error (raro) y DescribirBloqueadores nunca lanza (devuelve null si falla).
+            string bloqueos = DiagnosticoBloqueos.EsErrorDeBloqueo(exception)
+                ? DiagnosticoBloqueos.DescribirBloqueadores()
+                : null;
+
             // Logging con Elmah (persiste en base de datos)
             try
             {
-                RegistrarEnElmah(exception);
+                RegistrarEnElmah(exception, bloqueos);
             }
             catch
             {
@@ -78,7 +85,25 @@ namespace NestoAPI.Infraestructure.Filters
                 responseContent = CreateGenericErrorResponse(exception);
             }
 
+            // NestoAPI#312: añadir el diagnóstico de bloqueos al mensaje que ve el usuario
+            AnadirBloqueosAlMensaje(responseContent, bloqueos);
+
             context.Response = context.Request.CreateResponse(statusCode, responseContent);
+        }
+
+        internal static void AnadirBloqueosAlMensaje(object responseContent, string bloqueos)
+        {
+            if (string.IsNullOrWhiteSpace(bloqueos))
+            {
+                return;
+            }
+            if (responseContent is Dictionary<string, object> respuesta &&
+                respuesta.TryGetValue("error", out object errorObj) &&
+                errorObj is Dictionary<string, object> error &&
+                error.TryGetValue("message", out object mensaje))
+            {
+                error["message"] = $"{mensaje} {bloqueos}";
+            }
         }
 
         /// <summary>
@@ -90,7 +115,7 @@ namespace NestoAPI.Infraestructure.Filters
         /// se usa <c>ErrorLog.Log</c> directamente en ese caso; el resto sigue por ErrorSignal (que
         /// aplica el errorFilter de Web.config, p. ej. el de OperationCanceledException).
         /// </summary>
-        private void RegistrarEnElmah(Exception exception)
+        private void RegistrarEnElmah(Exception exception, string bloqueos = null)
         {
             var contexto = (exception as NestoBusinessException)?.Context;
             var httpContext = System.Web.HttpContext.Current;
@@ -99,6 +124,7 @@ namespace NestoAPI.Infraestructure.Filters
             {
                 var error = new Elmah.Error(exception, httpContext);
                 VolcarContextoAServerVariables(error.ServerVariables, contexto);
+                AnadirBloqueosAServerVariables(error, bloqueos);
                 _ = Elmah.ErrorLog.GetDefault(httpContext).Log(error);
             }
             // NestoAPI#309: "Validation failed for one or more entities" sin más era imposible de
@@ -109,11 +135,27 @@ namespace NestoAPI.Infraestructure.Filters
             {
                 var error = new Elmah.Error(exception, httpContext);
                 error.ServerVariables.Add("X-Context-EntityValidationErrors", ResumenErroresValidacion(validationException));
+                AnadirBloqueosAServerVariables(error, bloqueos);
+                _ = Elmah.ErrorLog.GetDefault(httpContext).Log(error);
+            }
+            // NestoAPI#312: timeout por bloqueo con diagnóstico de quién bloquea
+            else if (httpContext != null && !string.IsNullOrWhiteSpace(bloqueos))
+            {
+                var error = new Elmah.Error(exception, httpContext);
+                AnadirBloqueosAServerVariables(error, bloqueos);
                 _ = Elmah.ErrorLog.GetDefault(httpContext).Log(error);
             }
             else
             {
                 ErrorSignal.FromCurrentContext().Raise(exception);
+            }
+        }
+
+        private static void AnadirBloqueosAServerVariables(Elmah.Error error, string bloqueos)
+        {
+            if (!string.IsNullOrWhiteSpace(bloqueos))
+            {
+                error.ServerVariables.Add("X-Context-Bloqueos", bloqueos);
             }
         }
 

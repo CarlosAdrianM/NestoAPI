@@ -800,6 +800,7 @@
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\UsuarioContextInfoInterceptor.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConvertidorPedidoAPlantilla.cs" />
+    <Compile Include="Infraestructure\DiagnosticoBloqueos.cs" />
     <Compile Include="Infraestructure\UsuarioAuditoriaHelper.cs" />
     <Compile Include="Infraestructure\ElmahHelper.cs" />
     <Compile Include="Infraestructure\ServirJunto\IServicioValidarServirJunto.cs" />
@@ -1895,3 +1896,4 @@
   <Import Project="..\packages\SkiaSharp.NativeAssets.macOS.2.88.3\build\net462\SkiaSharp.NativeAssets.macOS.targets" Condition="Exists('..\packages\SkiaSharp.NativeAssets.macOS.2.88.3\build\net462\SkiaSharp.NativeAssets.macOS.targets')" />
   <Import Project="..\packages\SkiaSharp.NativeAssets.Win32.2.88.3\build\net462\SkiaSharp.NativeAssets.Win32.targets" Condition="Exists('..\packages\SkiaSharp.NativeAssets.Win32.2.88.3\build\net462\SkiaSharp.NativeAssets.Win32.targets')" />
 </Project>
+

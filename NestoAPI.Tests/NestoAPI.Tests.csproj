@@ -211,6 +211,7 @@
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
+    <Compile Include="Infraestructure\DiagnosticoBloqueosTests.cs" />
     <Compile Include="Infraestructure\GestorSeEstaVendiendoTests.cs" />
     <Compile Include="Infrastructure\MessageRetryManagerTests.cs" />
     <Compile Include="Models\Picking\GestorAvisosPickingTests.cs" />
