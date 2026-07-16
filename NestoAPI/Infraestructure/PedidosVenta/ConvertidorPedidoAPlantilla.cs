@@ -46,9 +46,17 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 MantenerJunto = pedido.mantenerJunto
             };
 
-            List<LineaPedidoVentaDTO> lineasReales = (pedido.Lineas ?? Enumerable.Empty<LineaPedidoVentaDTO>())
+            List<LineaPedidoVentaDTO> lineasProducto = (pedido.Lineas ?? Enumerable.Empty<LineaPedidoVentaDTO>())
                 .Where(l => (l.tipoLinea ?? Constantes.TiposLineaVenta.PRODUCTO) == Constantes.TiposLineaVenta.PRODUCTO
                     && !l.EsFicticio)
+                .ToList();
+
+            // NestoAPI#303: las líneas ya en albarán/factura (estado >= 2) NO se cargan (no son
+            // modificables); se cuenta cuántas quedan fuera para que el cliente avise. El PUT las
+            // conserva sin tocar aunque no vengan en el payload.
+            resultado.LineasEnAlbaranOFactura = lineasProducto.Count(l => l.estado >= Constantes.EstadosLineaVenta.ALBARAN);
+            List<LineaPedidoVentaDTO> lineasReales = lineasProducto
+                .Where(l => l.estado < Constantes.EstadosLineaVenta.ALBARAN)
                 .ToList();
 
             if (lineasReales.Any())

@@ -16,8 +16,53 @@ using System.Web.Http;
 
 namespace NestoAPI.Infraestructure.PedidosVenta
 {
+    /// <summary>
+    /// NestoAPI#303: qué hacer en el PUT con una línea existente que está protegida
+    /// (picking, albarán, factura...).
+    /// </summary>
+    public enum TratamientoLineaProtegida
+    {
+        // La línea es editable con normalidad (pendiente/en curso/presupuesto y sin picking)
+        NoEsProtegida,
+        // Conservarla tal cual, sin tocarla ni borrarla
+        ConservarTalCual,
+        // El cliente intenta modificarla o borrarla: rechazar el PUT con error claro
+        Rechazar
+    }
+
     public class GestorPedidosVenta
     {
+        /// <summary>
+        /// NestoAPI#303: decide el tratamiento de una línea existente protegida en el PUT.
+        /// - Editable (sin picking y en estado pendiente/en curso/presupuesto): no es protegida.
+        /// - Protegida que viene en el payload con la MISMA cantidad: se conserva tal cual
+        ///   (comportamiento de siempre: los clientes que mandan el pedido completo no la tocan).
+        /// - Protegida en albarán/factura (estado >= 2) que NO viene en el payload: se conserva
+        ///   tal cual. La plantilla (Nesto#397) no carga esas líneas, y su ausencia no puede
+        ///   interpretarse como borrado.
+        /// - Cualquier otro intento (borrarla, cambiarle la cantidad): rechazar con error claro.
+        /// </summary>
+        public static TratamientoLineaProtegida EvaluarLineaProtegida(bool tienePicking, short estado, bool vieneEnPayload, bool mismaCantidad)
+        {
+            bool esEditable = !tienePicking &&
+                (estado == Constantes.EstadosLineaVenta.PENDIENTE ||
+                 estado == Constantes.EstadosLineaVenta.EN_CURSO ||
+                 estado == Constantes.EstadosLineaVenta.PRESUPUESTO);
+            if (esEditable)
+            {
+                return TratamientoLineaProtegida.NoEsProtegida;
+            }
+            if (vieneEnPayload && mismaCantidad)
+            {
+                return TratamientoLineaProtegida.ConservarTalCual;
+            }
+            if (!vieneEnPayload && estado >= Constantes.EstadosLineaVenta.ALBARAN)
+            {
+                return TratamientoLineaProtegida.ConservarTalCual;
+            }
+            return TratamientoLineaProtegida.Rechazar;
+        }
+
         private readonly IServicioPedidosVenta servicio;
         public GestorPedidosVenta(IServicioPedidosVenta servicio)
         {

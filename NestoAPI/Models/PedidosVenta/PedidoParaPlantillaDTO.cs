@@ -29,6 +29,10 @@ namespace NestoAPI.Models.PedidosVenta
         public string Almacen { get; set; }
         public List<LineaParaPlantillaDTO> Lineas { get; set; } = new List<LineaParaPlantillaDTO>();
         public List<RegaloParaPlantillaDTO> Regalos { get; set; } = new List<RegaloParaPlantillaDTO>();
+        // NestoAPI#303: nº de líneas ya en albarán/factura (estado >= 2) que NO se cargan en la
+        // plantilla (no son modificables). El cliente lo usa para avisar al usuario; el PUT las
+        // conserva sin tocar aunque no vengan en el payload.
+        public int LineasEnAlbaranOFactura { get; set; }
     }
 
     /// <summary>

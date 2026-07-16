@@ -642,25 +642,22 @@ namespace NestoAPI.Controllers
             {
                 LineaPedidoVentaDTO lineaEncontrada = pedido.Lineas.SingleOrDefault(l => l.id == linea.Nº_Orden);
 
-                if (linea.Picking != 0 ||
-                  !(
-                    linea.Estado == Constantes.EstadosLineaVenta.PENDIENTE ||
-                    linea.Estado == Constantes.EstadosLineaVenta.EN_CURSO ||
-                    linea.Estado == Constantes.EstadosLineaVenta.PRESUPUESTO
-                    )
-                )
+                // NestoAPI#303: la decisión sobre líneas protegidas (picking/albarán/factura) vive
+                // en GestorPedidosVenta.EvaluarLineaProtegida. Novedad: una línea en albarán o
+                // factura que NO viene en el payload se conserva tal cual (la plantilla de
+                // Nesto#397 no las carga; su ausencia no es un borrado).
+                TratamientoLineaProtegida tratamiento = GestorPedidosVenta.EvaluarLineaProtegida(
+                    linea.Picking != 0,
+                    linea.Estado,
+                    lineaEncontrada != null,
+                    lineaEncontrada != null && lineaEncontrada.Cantidad == linea.Cantidad);
+                if (tratamiento == TratamientoLineaProtegida.ConservarTalCual)
                 {
-                    if (lineaEncontrada != null && lineaEncontrada.Cantidad == linea.Cantidad)
-                    {
-                        //lineaEncontrada.BaseImponible = linea.Base_Imponible;
-                        //lineaEncontrada.Total = linea.Total;
-                        continue;
-                    }
-                    else
-                    {
-                        errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking o albarán");
-                    }
-
+                    continue;
+                }
+                if (tratamiento == TratamientoLineaProtegida.Rechazar)
+                {
+                    errorPersonalizado("No se puede borrar la línea " + linea.Nº_Orden + " porque ya tiene picking o albarán");
                 }
 
                 if (lineaEncontrada == null || (lineaEncontrada.Cantidad == 0 && linea.Cantidad != 0))

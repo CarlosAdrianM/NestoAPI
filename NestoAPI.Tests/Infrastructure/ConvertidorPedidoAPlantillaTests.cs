@@ -52,6 +52,50 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
+        // NestoAPI#303: las líneas ya en albarán/factura (estado >= 2) no son modificables y no
+        // se cargan en la plantilla; se cuentan para que el cliente avise al usuario.
+
+        [TestMethod]
+        public void Convertir_PedidoMixto_LasLineasEnAlbaranNoSeCarganYSeCuentan()
+        {
+            LineaPedidoVentaDTO pendiente = Linea(101, "38697", 2, 10m);
+            pendiente.estado = Constantes.EstadosLineaVenta.PENDIENTE;
+            LineaPedidoVentaDTO enAlbaran = Linea(102, "44444", 1, 5m);
+            enAlbaran.estado = Constantes.EstadosLineaVenta.ALBARAN;
+            LineaPedidoVentaDTO facturada = Linea(103, "55555", 3, 7m);
+            facturada.estado = Constantes.EstadosLineaVenta.FACTURA;
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(pendiente, enAlbaran, facturada));
+
+            Assert.AreEqual(1, resultado.Lineas.Count);
+            Assert.AreEqual("38697", resultado.Lineas.Single().Producto);
+            Assert.AreEqual(2, resultado.LineasEnAlbaranOFactura);
+        }
+
+        [TestMethod]
+        public void Convertir_SinLineasEnAlbaran_ElContadorQuedaACero()
+        {
+            LineaPedidoVentaDTO pendiente = Linea(101, "38697", 2, 10m);
+            pendiente.estado = Constantes.EstadosLineaVenta.PENDIENTE;
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(pendiente));
+
+            Assert.AreEqual(1, resultado.Lineas.Count);
+            Assert.AreEqual(0, resultado.LineasEnAlbaranOFactura);
+        }
+
+        [TestMethod]
+        public void Convertir_RegaloGanavisionesEnAlbaran_TampocoSeCarga()
+        {
+            LineaPedidoVentaDTO regaloAlbaran = Linea(102, "44444", 1, 0m, ganavisiones: true);
+            regaloAlbaran.estado = Constantes.EstadosLineaVenta.ALBARAN;
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(Pedido(regaloAlbaran));
+
+            Assert.AreEqual(0, resultado.Regalos.Count);
+            Assert.AreEqual(1, resultado.LineasEnAlbaranOFactura);
+        }
+
         [TestMethod]
         public void Convertir_Oferta6Mas1_ColapsaEnUnaLineaConCantidadOferta()
         {

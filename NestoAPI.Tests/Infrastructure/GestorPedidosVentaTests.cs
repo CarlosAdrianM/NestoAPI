@@ -653,5 +653,57 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         #endregion
+
+        #region NestoAPI#303: líneas protegidas (picking/albarán/factura) en el PUT
+
+        [TestMethod]
+        public void EvaluarLineaProtegida_PendienteSinPicking_NoEsProtegida()
+        {
+            Assert.AreEqual(TratamientoLineaProtegida.NoEsProtegida,
+                GestorPedidosVenta.EvaluarLineaProtegida(false, Constantes.EstadosLineaVenta.PENDIENTE, vieneEnPayload: true, mismaCantidad: false));
+        }
+
+        [TestMethod]
+        public void EvaluarLineaProtegida_ConPickingYMismaCantidad_SeConserva()
+        {
+            // Comportamiento de siempre: los clientes que mandan el pedido completo no la tocan
+            Assert.AreEqual(TratamientoLineaProtegida.ConservarTalCual,
+                GestorPedidosVenta.EvaluarLineaProtegida(true, Constantes.EstadosLineaVenta.PENDIENTE, vieneEnPayload: true, mismaCantidad: true));
+        }
+
+        [TestMethod]
+        public void EvaluarLineaProtegida_ConPickingAusenteDelPayload_SigueRechazando()
+        {
+            // Una línea con picking (aún no en albarán) que desaparece del payload sigue siendo
+            // un intento de borrado: la plantilla SÍ carga las líneas con picking (con sus flags)
+            Assert.AreEqual(TratamientoLineaProtegida.Rechazar,
+                GestorPedidosVenta.EvaluarLineaProtegida(true, Constantes.EstadosLineaVenta.PENDIENTE, vieneEnPayload: false, mismaCantidad: false));
+        }
+
+        [TestMethod]
+        public void EvaluarLineaProtegida_EnAlbaranAusenteDelPayload_SeConserva()
+        {
+            // El fix de #303: la plantilla no carga las líneas en albarán/factura y su ausencia
+            // no puede interpretarse como borrado (antes el PUT entero fallaba)
+            Assert.AreEqual(TratamientoLineaProtegida.ConservarTalCual,
+                GestorPedidosVenta.EvaluarLineaProtegida(false, Constantes.EstadosLineaVenta.ALBARAN, vieneEnPayload: false, mismaCantidad: false));
+        }
+
+        [TestMethod]
+        public void EvaluarLineaProtegida_FacturadaAusenteDelPayload_SeConserva()
+        {
+            Assert.AreEqual(TratamientoLineaProtegida.ConservarTalCual,
+                GestorPedidosVenta.EvaluarLineaProtegida(true, Constantes.EstadosLineaVenta.FACTURA, vieneEnPayload: false, mismaCantidad: false));
+        }
+
+        [TestMethod]
+        public void EvaluarLineaProtegida_EnAlbaranConCantidadDistinta_SeRechaza()
+        {
+            // Intento explícito de modificar una línea albaranada → error claro
+            Assert.AreEqual(TratamientoLineaProtegida.Rechazar,
+                GestorPedidosVenta.EvaluarLineaProtegida(false, Constantes.EstadosLineaVenta.ALBARAN, vieneEnPayload: true, mismaCantidad: false));
+        }
+
+        #endregion
     }
 }
