@@ -150,6 +150,11 @@ namespace NestoAPI.Models
             public const string ENTREGA_FACTURADA = "_EntregFac";
         }
 
+        public static class Dominios
+        {
+            public const string PRINCIPAL = "NUEVAVISION";
+        }
+
         public static class Empresas
         {
             public const string DELEGACION_POR_DEFECTO = "ALG";

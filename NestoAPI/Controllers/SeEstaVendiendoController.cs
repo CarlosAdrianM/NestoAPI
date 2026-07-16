@@ -10,14 +10,18 @@ using System.Web.Http.Description;
 
 namespace NestoAPI.Controllers
 {
+    [Authorize]
     public class SeEstaVendiendoController : ApiController
     {
         // GET: api/SeEstaVendiendo
+        // El usuario se lee del JWT (NestoAPI#307); ?usuario= se mantiene solo como
+        // fallback transitorio para clientes antiguos.
         [HttpGet]
         [ResponseType(typeof(List<SeEstaVendiendoModel>))]
-        public async Task<IHttpActionResult> GetSeEstaVendiendo(string usuario)
+        public async Task<IHttpActionResult> GetSeEstaVendiendo(string usuario = null)
         {
-            List<SeEstaVendiendoModel> seEstaVendiendo = await GestorSeEstaVendiendo.ArticulosVendidos(DateTime.Now.AddDays(-1), usuario).ConfigureAwait(false);
+            string usuarioExcluido = GestorSeEstaVendiendo.ResolverUsuarioExcluido(User, usuario);
+            List<SeEstaVendiendoModel> seEstaVendiendo = await GestorSeEstaVendiendo.ArticulosVendidos(DateTime.Now.AddDays(-1), usuarioExcluido).ConfigureAwait(false);
             return Ok(seEstaVendiendo);
         }
     }
