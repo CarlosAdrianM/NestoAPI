@@ -5,8 +5,11 @@ using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Sincronizacion;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Numerics;
 using System.Text;
@@ -2050,6 +2053,231 @@ namespace NestoAPI.Tests.Infrastructure
         {
             // Si el cliente existente no tiene NIF registrado, no se puede comparar -> no incompatible
             Assert.IsFalse(GestorClientes.NifContactoEsIncompatible("22222222J", null));
+        }
+
+        #endregion
+
+        #region 1C.8 slice 5: CRUD de CCCs de la ficha de clientes
+
+        private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
+        {
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+                .Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
+        }
+
+        private static DbSet<T> CrearFakeDbSet<T>(List<T> datos) where T : class
+        {
+            DbSet<T> fakeDbSet = A.Fake<DbSet<T>>(o => o.Implements<IQueryable<T>>().Implements<IDbAsyncEnumerable<T>>());
+            ConfigurarFakeDbSet(fakeDbSet, datos.AsQueryable());
+            return fakeDbSet;
+        }
+
+        private static NVEntities CrearDbParaCCCs(List<CCC> cccs, List<ExtractoCliente> extractos = null,
+            List<CabPedidoVta> cabeceras = null, List<LinPedidoVta> lineas = null)
+        {
+            NVEntities dbFake = A.Fake<NVEntities>();
+            A.CallTo(() => dbFake.CCCs).Returns(CrearFakeDbSet(cccs));
+            A.CallTo(() => dbFake.ExtractosCliente).Returns(CrearFakeDbSet(extractos ?? new List<ExtractoCliente>()));
+            A.CallTo(() => dbFake.CabPedidoVtas).Returns(CrearFakeDbSet(cabeceras ?? new List<CabPedidoVta>()));
+            A.CallTo(() => dbFake.LinPedidoVtas).Returns(CrearFakeDbSet(lineas ?? new List<LinPedidoVta>()));
+            return dbFake;
+        }
+
+        private static GuardarCCCsRequest CrearRequestCCC(string cccActivo = null, params CCCDTO[] cccs)
+        {
+            return new GuardarCCCsRequest
+            {
+                empresa = "1",
+                cliente = "1000",
+                contacto = "0",
+                cccActivo = cccActivo,
+                cccs = cccs.ToList()
+            };
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_CCCNuevo_LoAnadeConLosDatosYElUsuario()
+        {
+            NVEntities dbFake = CrearDbParaCCCs(new List<CCC>());
+            CCC anadido = null;
+            _ = A.CallTo(() => dbFake.CCCs.Add(A<CCC>.Ignored)).Invokes((CCC c) => anadido = c);
+            GestorClientes gestor = CrearGestorClientes();
+            GuardarCCCsRequest peticion = CrearRequestCCC("1", new CCCDTO
+            {
+                numero = "1",
+                pais = "ES",
+                dcIban = "21",
+                entidad = "2100",
+                oficina = "1234",
+                dc = "56",
+                numeroCuenta = "1234567890",
+                bic = "CAIXESBBXXX",
+                estado = 0,
+                secuencia = "FRST"
+            });
+
+            _ = gestor.GuardarCCCs(dbFake, peticion, @"NUEVAVISION\Carlos").Result;
+
+            Assert.IsNotNull(anadido);
+            Assert.AreEqual("1", anadido.Empresa);
+            Assert.AreEqual("1000", anadido.Cliente);
+            Assert.AreEqual("0", anadido.Contacto);
+            Assert.AreEqual("1", anadido.Número);
+            Assert.AreEqual("2100", anadido.Entidad);
+            Assert.AreEqual("1234567890", anadido.Nº_Cuenta);
+            Assert.AreEqual("FRST", anadido.Secuencia);
+            Assert.AreEqual((short)0, anadido.Estado);
+            Assert.AreEqual(@"NUEVAVISION\Carlos", anadido.Usuario);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_CCCExistente_ActualizaLosCamposEditablesSinAnadir()
+        {
+            CCC existente = new CCC
+            {
+                Empresa = "1",
+                Cliente = "1000",
+                Contacto = "0",
+                Número = "1",
+                Estado = 0,
+                Secuencia = "FRST",
+                Usuario = "otro"
+            };
+            NVEntities dbFake = CrearDbParaCCCs(new List<CCC> { existente });
+            GestorClientes gestor = CrearGestorClientes();
+            GuardarCCCsRequest peticion = CrearRequestCCC("1", new CCCDTO
+            {
+                numero = "1",
+                estado = 1,
+                tipoMandato = 2,
+                fechaMandato = new DateTime(2026, 7, 16),
+                secuencia = "RCUR"
+            });
+
+            _ = gestor.GuardarCCCs(dbFake, peticion, @"NUEVAVISION\Carlos").Result;
+
+            A.CallTo(() => dbFake.CCCs.Add(A<CCC>.Ignored)).MustNotHaveHappened();
+            Assert.AreEqual((short)1, existente.Estado);
+            Assert.AreEqual((short)2, existente.TipoMandato);
+            Assert.AreEqual(new DateTime(2026, 7, 16), existente.FechaMandato);
+            Assert.AreEqual("RCUR", existente.Secuencia);
+            Assert.AreEqual(@"NUEVAVISION\Carlos", existente.Usuario);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_DevuelveLosEfectosPendientesQueApuntanAOtroCCC()
+        {
+            List<ExtractoCliente> extractos = new List<ExtractoCliente>
+            {
+                // Pendiente y de otro CCC -> aparece en el aviso
+                new ExtractoCliente { Empresa = "1", Número = "1000", Contacto = "0", ImportePdte = 100, CCC = "2", Concepto = "Efecto viejo", FechaVto = new DateTime(2026, 8, 1) },
+                // Del CCC activo -> no aparece
+                new ExtractoCliente { Empresa = "1", Número = "1000", Contacto = "0", ImportePdte = 50, CCC = "1", Concepto = "Efecto activo" },
+                // Ya pagado -> no aparece
+                new ExtractoCliente { Empresa = "1", Número = "1000", Contacto = "0", ImportePdte = 0, CCC = "2", Concepto = "Pagado" },
+                // Otro cliente -> no aparece
+                new ExtractoCliente { Empresa = "1", Número = "2000", Contacto = "0", ImportePdte = 75, CCC = "2", Concepto = "De otro" }
+            };
+            NVEntities dbFake = CrearDbParaCCCs(new List<CCC>(), extractos);
+            GestorClientes gestor = CrearGestorClientes();
+            GuardarCCCsRequest peticion = CrearRequestCCC("1", new CCCDTO { numero = "1" });
+
+            GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, peticion, "usuario").Result;
+
+            Assert.AreEqual(1, respuesta.extractoOtroCCC.Count);
+            Assert.AreEqual("Efecto viejo", respuesta.extractoOtroCCC.Single().concepto);
+            Assert.AreEqual("2", respuesta.extractoOtroCCC.Single().ccc);
+            Assert.AreEqual(100, respuesta.extractoOtroCCC.Single().importePendiente);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_DevuelveLosPedidosAbiertosConOtroCCCONulo()
+        {
+            List<CabPedidoVta> cabeceras = new List<CabPedidoVta>
+            {
+                // CCC nulo y línea pendiente -> aparece
+                new CabPedidoVta { Empresa = "1", Número = 900001, Nº_Cliente = "1000", CCC = null, Fecha = new DateTime(2026, 7, 1) },
+                // CCC activo -> no aparece
+                new CabPedidoVta { Empresa = "1", Número = 900002, Nº_Cliente = "1000", CCC = "1", Fecha = new DateTime(2026, 7, 2) },
+                // Otro CCC pero la línea ya está en albarán -> no aparece
+                new CabPedidoVta { Empresa = "1", Número = 900003, Nº_Cliente = "1000", CCC = "2", Fecha = new DateTime(2026, 7, 3) }
+            };
+            List<LinPedidoVta> lineas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 900001, Estado = Constantes.EstadosLineaVenta.PENDIENTE },
+                new LinPedidoVta { Empresa = "1", Número = 900002, Estado = Constantes.EstadosLineaVenta.PENDIENTE },
+                new LinPedidoVta { Empresa = "1", Número = 900003, Estado = Constantes.EstadosLineaVenta.ALBARAN }
+            };
+            NVEntities dbFake = CrearDbParaCCCs(new List<CCC>(), null, cabeceras, lineas);
+            GestorClientes gestor = CrearGestorClientes();
+            GuardarCCCsRequest peticion = CrearRequestCCC("1", new CCCDTO { numero = "1" });
+
+            GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, peticion, "usuario").Result;
+
+            Assert.AreEqual(1, respuesta.pedidosOtroCCC.Count);
+            Assert.AreEqual(900001, respuesta.pedidosOtroCCC.Single().numero);
+            Assert.IsNull(respuesta.pedidosOtroCCC.Single().ccc);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_SinCCCActivo_NoCalculaAvisos()
+        {
+            List<ExtractoCliente> extractos = new List<ExtractoCliente>
+            {
+                new ExtractoCliente { Empresa = "1", Número = "1000", Contacto = "0", ImportePdte = 100, CCC = "2" }
+            };
+            NVEntities dbFake = CrearDbParaCCCs(new List<CCC>(), extractos);
+            GestorClientes gestor = CrearGestorClientes();
+            GuardarCCCsRequest peticion = CrearRequestCCC(null, new CCCDTO { numero = "1" });
+
+            GuardarCCCsRespuesta respuesta = gestor.GuardarCCCs(dbFake, peticion, "usuario").Result;
+
+            Assert.AreEqual(0, respuesta.extractoOtroCCC.Count);
+            Assert.AreEqual(0, respuesta.pedidosOtroCCC.Count);
+        }
+
+        [TestMethod]
+        public void GuardarCCCs_SinCCCs_LanzaArgumentException()
+        {
+            NVEntities dbFake = CrearDbParaCCCs(new List<CCC>());
+            GestorClientes gestor = CrearGestorClientes();
+            GuardarCCCsRequest peticion = CrearRequestCCC("1");
+
+            AggregateException ex = Assert.ThrowsException<AggregateException>(
+                () => gestor.GuardarCCCs(dbFake, peticion, "usuario").Result);
+            Assert.IsInstanceOfType(ex.InnerException, typeof(ArgumentException));
+        }
+
+        [TestMethod]
+        public void LeerEstadosCCC_SinEmpresa_LanzaArgumentException()
+        {
+            GestorClientes gestor = CrearGestorClientes();
+
+            AggregateException ex = Assert.ThrowsException<AggregateException>(
+                () => gestor.LeerEstadosCCC("").Result);
+            Assert.IsInstanceOfType(ex.InnerException, typeof(ArgumentException));
+        }
+
+        [TestMethod]
+        public void LeerEstadosCCC_DelegaEnElServicio()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            List<EstadoCCCDTO> estados = new List<EstadoCCCDTO>
+            {
+                new EstadoCCCDTO { numero = 0, descripcion = "Sin mandato" }
+            };
+            _ = A.CallTo(() => servicio.LeerEstadosCCC("1")).Returns(estados);
+            GestorClientes gestor = CrearGestorClientes(servicio);
+
+            List<EstadoCCCDTO> resultado = gestor.LeerEstadosCCC("1").Result;
+
+            Assert.AreEqual(1, resultado.Count);
+            Assert.AreEqual("Sin mandato", resultado.Single().descripcion);
         }
 
         #endregion

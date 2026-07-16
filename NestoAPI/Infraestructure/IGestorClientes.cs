@@ -14,6 +14,8 @@ namespace NestoAPI.Infraestructure
         RespuestaDatosBancoCliente ComprobarDatosBanco(string formaPago, string plazosPago, string iban);
         Task<ClienteCrear> ConstruirClienteCrear(string empresa, string cliente, string contacto);
         Task<List<PersonaContactoDTO>> LeerPersonasContacto(string empresa, string cliente, string contacto);
+        Task<List<EstadoCCCDTO>> LeerEstadosCCC(string empresa);
+        Task<GuardarCCCsRespuesta> GuardarCCCs(NVEntities db, GuardarCCCsRequest peticion, string usuario);
         Task<Cliente> PrepararClienteCrear(ClienteCrear clienteCrear, NVEntities db);
         Task<Cliente> PrepararClienteModificar(ClienteCrear clienteModificar, NVEntities db);
         Task<List<Cliente>> DejarDeVisitar(NVEntities db, ClienteCrear cliente);

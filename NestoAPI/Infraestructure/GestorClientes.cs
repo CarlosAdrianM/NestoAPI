@@ -509,6 +509,101 @@ namespace NestoAPI.Infraestructure
             return personasContacto;
         }
 
+        public async Task<List<EstadoCCCDTO>> LeerEstadosCCC(string empresa)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+            {
+                throw new ArgumentException("La empresa no puede estar en blanco");
+            }
+            return await servicio.LeerEstadosCCC(empresa).ConfigureAwait(false);
+        }
+
+        // 1C.8 slice 5: guardado del CRUD de CCCs de la ficha de clientes (antes lo hacía
+        // ClientesViewModel con el ChangeTracker de EF). Upsert por clave completa y avisos
+        // de efectos/pedidos que apuntan a un CCC distinto del activo (los grids de la ficha).
+        // No hace SaveChanges: eso es del controller, como en PutCliente.
+        public async Task<GuardarCCCsRespuesta> GuardarCCCs(NVEntities db, GuardarCCCsRequest peticion, string usuario)
+        {
+            if (peticion == null || string.IsNullOrWhiteSpace(peticion.empresa)
+                || string.IsNullOrWhiteSpace(peticion.cliente) || peticion.contacto == null)
+            {
+                throw new ArgumentException("Empresa, cliente y contacto son obligatorios para guardar los CCCs");
+            }
+            if (peticion.cccs == null || !peticion.cccs.Any())
+            {
+                throw new ArgumentException("No se ha recibido ningún CCC para guardar");
+            }
+
+            foreach (CCCDTO dto in peticion.cccs)
+            {
+                CCC cccDB = await db.CCCs.SingleOrDefaultAsync(c =>
+                    c.Empresa == peticion.empresa && c.Cliente == peticion.cliente &&
+                    c.Contacto == peticion.contacto && c.Número == dto.numero).ConfigureAwait(false);
+
+                if (cccDB == null)
+                {
+                    cccDB = new CCC
+                    {
+                        Empresa = peticion.empresa,
+                        Cliente = peticion.cliente,
+                        Contacto = peticion.contacto,
+                        Número = dto.numero
+                    };
+                    _ = db.CCCs.Add(cccDB);
+                }
+
+                cccDB.Pais = dto.pais;
+                cccDB.DC_IBAN = dto.dcIban;
+                cccDB.Entidad = dto.entidad;
+                cccDB.Oficina = dto.oficina;
+                cccDB.DC = dto.dc;
+                cccDB.Nº_Cuenta = dto.numeroCuenta;
+                cccDB.BIC = dto.bic;
+                cccDB.Estado = dto.estado;
+                cccDB.TipoMandato = dto.tipoMandato;
+                cccDB.FechaMandato = dto.fechaMandato;
+                cccDB.Secuencia = dto.secuencia;
+                cccDB.Usuario = usuario;
+                cccDB.Fecha_Modificación = DateTime.Now;
+            }
+
+            GuardarCCCsRespuesta respuesta = new GuardarCCCsRespuesta();
+            if (!string.IsNullOrWhiteSpace(peticion.cccActivo))
+            {
+                respuesta.extractoOtroCCC = await db.ExtractosCliente
+                    .Where(e => e.Empresa == peticion.empresa && e.Número == peticion.cliente &&
+                                e.Contacto == peticion.contacto && e.ImportePdte != 0 &&
+                                e.CCC != peticion.cccActivo)
+                    .Select(e => new ExtractoCCCDTO
+                    {
+                        fechaVencimiento = e.FechaVto,
+                        concepto = e.Concepto,
+                        importePendiente = e.ImportePdte,
+                        ccc = e.CCC
+                    })
+                    .ToListAsync().ConfigureAwait(false);
+
+                var pedidos = await (
+                    from p in db.CabPedidoVtas
+                    join l in db.LinPedidoVtas on new { p.Empresa, Numero = p.Número } equals new { l.Empresa, Numero = l.Número }
+                    where p.Empresa == peticion.empresa && p.Nº_Cliente == peticion.cliente &&
+                          (p.CCC != peticion.cccActivo || p.CCC == null) &&
+                          l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
+                          l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO
+                    select new { p.Fecha, Numero = p.Número, p.CCC })
+                    .Distinct()
+                    .ToListAsync().ConfigureAwait(false);
+                respuesta.pedidosOtroCCC = pedidos.Select(p => new PedidoCCCDTO
+                {
+                    fecha = p.Fecha,
+                    numero = p.Numero,
+                    ccc = p.CCC
+                }).ToList();
+            }
+
+            return respuesta;
+        }
+
         public async Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email)
         {
             return await servicio.BuscarClientePorEmail(email);

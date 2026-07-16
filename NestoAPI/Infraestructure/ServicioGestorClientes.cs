@@ -315,6 +315,32 @@ namespace NestoAPI.Infraestructure
             public string Descripcion { get; set; }
         }
 
+        // 1C.8 slice 5: la tabla EstadosCCC no está mapeada en el EDMX de NestoAPI,
+        // así que se lee con SQL crudo aliasando los acentos (mismo patrón que Cargos)
+        public async Task<List<EstadoCCCDTO>> LeerEstadosCCC(string empresa)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                List<FilaEstadoCCC> estados = await db.Database
+                    .SqlQuery<FilaEstadoCCC>(
+                        "SELECT [Número] AS Numero, [Descripción] AS Descripcion FROM EstadosCCC WHERE Empresa = @empresa ORDER BY [Número]",
+                        new System.Data.SqlClient.SqlParameter("@empresa", empresa))
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+                return estados.Select(e => new EstadoCCCDTO
+                {
+                    numero = e.Numero,
+                    descripcion = e.Descripcion?.Trim()
+                }).ToList();
+            }
+        }
+
+        private class FilaEstadoCCC
+        {
+            public short Numero { get; set; }
+            public string Descripcion { get; set; }
+        }
+
         public async Task<List<ClienteTelefonoLookup>> ClientesMismoTelefono(string telefono)
         {
             if (telefono.Length < 7)

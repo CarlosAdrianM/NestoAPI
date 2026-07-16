@@ -424,11 +424,61 @@ namespace NestoAPI.Controllers
                     tipoMandato = c.TipoMandato,
                     fechaMandato = c.FechaMandato,
                     ibanFormateado = ibanFormateado,
-                    nombreEntidad = nombreEntidad
+                    nombreEntidad = nombreEntidad,
+                    dcIban = c.DC_IBAN?.Trim(),
+                    dc = c.DC?.Trim(),
+                    numeroCuenta = c.Nº_Cuenta?.Trim(),
+                    secuencia = c.Secuencia?.Trim()
                 };
             }).ToList();
 
             return Ok(cccs);
+        }
+
+        [HttpGet]
+        [Route("api/Clientes/EstadosCCC")]
+        // GET: api/Clientes/EstadosCCC?empresa=1
+        // 1C.8 slice 5: catálogo de estados de CCC para el combo de la ficha de clientes
+        [ResponseType(typeof(List<EstadoCCCDTO>))]
+        public async Task<IHttpActionResult> GetEstadosCCC(string empresa)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+            {
+                return BadRequest("El parámetro 'empresa' es obligatorio");
+            }
+
+            List<EstadoCCCDTO> estados = await _gestorClientes.LeerEstadosCCC(empresa);
+            return Ok(estados);
+        }
+
+        [HttpPut]
+        [Route("api/Clientes/CCCs")]
+        // PUT: api/Clientes/CCCs
+        // 1C.8 slice 5: guardado del CRUD de CCCs de la ficha de clientes (upsert). Devuelve
+        // los efectos pendientes y pedidos abiertos que apuntan a un CCC distinto del activo,
+        // para que el cliente muestre los avisos que antes calculaba con EF.
+        [ResponseType(typeof(GuardarCCCsRespuesta))]
+        public async Task<IHttpActionResult> PutCCCs(GuardarCCCsRequest peticion)
+        {
+            if (!ModelState.IsValid)
+            {
+                return BadRequest(ModelState);
+            }
+
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            GuardarCCCsRespuesta respuesta;
+            try
+            {
+                respuesta = await _gestorClientes.GuardarCCCs(db, peticion, usuario);
+            }
+            catch (ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+
+            _ = await db.SaveChangesAsync();
+
+            return Ok(respuesta);
         }
 
         [HttpGet]

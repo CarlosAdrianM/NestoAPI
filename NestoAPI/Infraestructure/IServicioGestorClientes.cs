@@ -22,6 +22,7 @@ namespace NestoAPI.Infraestructure
         Task<CCC> BuscarCCC(string empresa, string cliente, string contacto, string ccc);
         Task<List<PersonaContactoCliente>> BuscarPersonasContacto(string empresa, string cliente, string contacto);
         Task<Dictionary<short, string>> LeerDescripcionesCargos();
+        Task<List<EstadoCCCDTO>> LeerEstadosCCC(string empresa);
         Task<string> CalcularSiguienteContacto(string empresa, string cliente);
         Task<List<ClienteTelefonoLookup>> ClientesMismoTelefono(string telefono);
         Task<List<string>> VendedoresQueRecibenClientes();

@@ -70,6 +70,49 @@ namespace NestoAPI.Models
         public DateTime? fechaMandato { get; set; }
         public string ibanFormateado { get; set; }
         public string nombreEntidad { get; set; }
+        // 1C.8 slice 5: campos editables que faltaban para el CRUD desde ClientesViewModel
+        public string dcIban { get; set; }
+        public string dc { get; set; }
+        public string numeroCuenta { get; set; }
+        public string secuencia { get; set; }
+    }
+
+    public class EstadoCCCDTO
+    {
+        public short numero { get; set; }
+        public string descripcion { get; set; }
+    }
+
+    public class GuardarCCCsRequest
+    {
+        public string empresa { get; set; }
+        public string cliente { get; set; }
+        public string contacto { get; set; }
+        // Número del CCC seleccionado en la ficha: los avisos de la respuesta se
+        // calculan respecto a él (efectos/pedidos que apuntan a OTRO CCC)
+        public string cccActivo { get; set; }
+        public List<CCCDTO> cccs { get; set; }
+    }
+
+    public class ExtractoCCCDTO
+    {
+        public DateTime? fechaVencimiento { get; set; }
+        public string concepto { get; set; }
+        public decimal importePendiente { get; set; }
+        public string ccc { get; set; }
+    }
+
+    public class PedidoCCCDTO
+    {
+        public DateTime? fecha { get; set; }
+        public int numero { get; set; }
+        public string ccc { get; set; }
+    }
+
+    public class GuardarCCCsRespuesta
+    {
+        public List<ExtractoCCCDTO> extractoOtroCCC { get; set; } = new List<ExtractoCCCDTO>();
+        public List<PedidoCCCDTO> pedidosOtroCCC { get; set; } = new List<PedidoCCCDTO>();
     }
     public class DireccionesEntregaClienteDTO
     {
