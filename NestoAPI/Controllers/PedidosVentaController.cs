@@ -344,6 +344,21 @@ namespace NestoAPI.Controllers
                 : (IHttpActionResult)Ok(ConvertidorPedidoAPlantilla.Convertir(pedido));
         }
 
+        // Nesto#397 (Parte 1, portapapeles): convierte un PedidoVentaDTO SUELTO (p. ej. el dump
+        // JSON de un pedido que NO llegó a crearse, sacado de ELMAH) a la forma de plantilla,
+        // con la MISMA inversión que el GET. Sin este POST, un pedido no creado no se puede
+        // recuperar por el GET (no existe en BD). Los regalos Ganavisiones del dump llegan sin
+        // confirmar contra la tabla (línea a 0 € sin flag) y se cargan como líneas normales.
+        [HttpPost]
+        [Route("api/PedidosVenta/ParaPlantilla")]
+        [ResponseType(typeof(PedidoParaPlantillaDTO))]
+        public IHttpActionResult PostPedidoParaPlantilla([FromBody] PedidoVentaDTO pedido)
+        {
+            return pedido == null
+                ? (IHttpActionResult)BadRequest("El cuerpo debe ser un PedidoVentaDTO válido")
+                : Ok(ConvertidorPedidoAPlantilla.Convertir(pedido));
+        }
+
         // PUT: api/PedidosVenta/5
         [ResponseType(typeof(RespuestaModificacionPedidoDTO))]
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
