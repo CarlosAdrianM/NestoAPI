@@ -120,7 +120,11 @@ namespace NestoAPI.Infraestructure.Filters
             var contexto = (exception as NestoBusinessException)?.Context;
             var httpContext = System.Web.HttpContext.Current;
 
-            if (httpContext != null && contexto?.AdditionalData != null && contexto.AdditionalData.Count > 0)
+            // NestoAPI#304 (punto 2): basta con que el contexto traiga ALGO (empresa/pedido o
+            // datos adicionales) para volcarlo a la ficha de ELMAH; antes solo se volcaba si
+            // había AdditionalData y los errores "simples" no decían ni qué pedido fallaba.
+            if (httpContext != null && contexto != null &&
+                (contexto.AdditionalData?.Count > 0 || contexto.Pedido.HasValue || !string.IsNullOrEmpty(contexto.Empresa)))
             {
                 var error = new Elmah.Error(exception, httpContext);
                 VolcarContextoAServerVariables(error.ServerVariables, contexto);
@@ -202,7 +206,36 @@ namespace NestoAPI.Infraestructure.Filters
         /// </summary>
         internal static void VolcarContextoAServerVariables(System.Collections.Specialized.NameValueCollection serverVariables, ErrorContext contexto)
         {
-            if (serverVariables == null || contexto?.AdditionalData == null)
+            if (serverVariables == null || contexto == null)
+            {
+                return;
+            }
+
+            // NestoAPI#304 (punto 2): los campos escalares del contexto (empresa, pedido...)
+            // también van a la ficha de ELMAH; antes solo iba AdditionalData y no se sabía qué
+            // pedido había fallado sin preguntar al usuario.
+            if (!string.IsNullOrEmpty(contexto.Empresa))
+            {
+                serverVariables.Add("X-Context-Empresa", contexto.Empresa);
+            }
+            if (contexto.Pedido.HasValue)
+            {
+                serverVariables.Add("X-Context-Pedido", contexto.Pedido.Value.ToString());
+            }
+            if (!string.IsNullOrEmpty(contexto.Cliente))
+            {
+                serverVariables.Add("X-Context-Cliente", contexto.Cliente);
+            }
+            if (!string.IsNullOrEmpty(contexto.Factura))
+            {
+                serverVariables.Add("X-Context-Factura", contexto.Factura);
+            }
+            if (!string.IsNullOrEmpty(contexto.Usuario))
+            {
+                serverVariables.Add("X-Context-Usuario", contexto.Usuario);
+            }
+
+            if (contexto.AdditionalData == null)
             {
                 return;
             }

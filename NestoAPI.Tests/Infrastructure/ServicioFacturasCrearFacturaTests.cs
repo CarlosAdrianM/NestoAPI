@@ -91,6 +91,104 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(ex.Message.Contains("IVA"));
         }
 
+        // NestoAPI#304: el CCC de la cabecera debe existir en la tabla CCC para
+        // (empresa, cliente, contacto); si no, el SP revienta con FK_CabFacturaVta_CCC.
+
+        [TestMethod]
+        public async Task CrearFactura_CCCInexistente_LanzaAntesDeLlamarAlSPConMensajeClaro()
+        {
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 922300,
+                Nº_Cliente = "15191",
+                Contacto = "0",
+                CCC = "3",
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            ConfigurarFakeCCCs(new List<CCC>()); // la cuenta 3 ya no existe
+
+            var servicio = new ServicioFacturas(db);
+
+            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => servicio.CrearFactura("1", 922300, "test"));
+            StringAssert.Contains(ex.Message, "cuenta bancaria");
+            StringAssert.Contains(ex.Message, "922300");
+            StringAssert.Contains(ex.Message, "'3'");
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_CCCExistente_NoLanzaLaValidacionDeCCC()
+        {
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 922301,
+                Nº_Cliente = "15191",
+                Contacto = "0",
+                CCC = "3",
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            ConfigurarFakeCCCs(new List<CCC>
+            {
+                new CCC { Empresa = "1", Cliente = "15191", Contacto = "0", Número = "3" }
+            });
+
+            var servicio = new ServicioFacturas(db);
+
+            // Con el CCC válido, el flujo pasa la validación y falla más adelante (fakes sin SP);
+            // lo que importa es que NO sea el error de cuenta bancaria.
+            try
+            {
+                _ = await servicio.CrearFactura("1", 922301, "test");
+            }
+            catch (System.Exception ex)
+            {
+                Assert.IsFalse(ex.Message.Contains("cuenta bancaria"),
+                    $"No debía lanzar la validación de CCC: {ex.Message}");
+            }
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_SinCCC_NoValidaCuentaBancaria()
+        {
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 922302,
+                Nº_Cliente = "15191",
+                Contacto = "0",
+                CCC = null, // pedido sin cuenta (p. ej. transferencia)
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            ConfigurarFakeCCCs(new List<CCC>());
+
+            var servicio = new ServicioFacturas(db);
+
+            try
+            {
+                _ = await servicio.CrearFactura("1", 922302, "test");
+            }
+            catch (System.Exception ex)
+            {
+                Assert.IsFalse(ex.Message.Contains("cuenta bancaria"),
+                    $"Sin CCC no hay nada que validar: {ex.Message}");
+            }
+        }
+
+        private void ConfigurarFakeCCCs(List<CCC> cccs)
+        {
+            var fakeCCCs = A.Fake<DbSet<CCC>>(o => o.Implements<IQueryable<CCC>>().Implements<IDbAsyncEnumerable<CCC>>());
+            A.CallTo(() => db.CCCs).Returns(fakeCCCs);
+            ConfigurarFakeDbSet(fakeCCCs, cccs.AsQueryable());
+        }
+
         [TestMethod]
         public async Task CrearFactura_RutaInexistente_LanzaAntesDeLlamarAlSP()
         {

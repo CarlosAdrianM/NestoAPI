@@ -416,6 +416,25 @@ namespace NestoAPI.Infraestructure.Facturas
                     usuario: usuario);
             }
 
+            // PREVENTIVO (NestoAPI#304): si la cabecera lleva CCC, debe existir en la tabla CCC
+            // para (empresa, cliente, contacto) — el SP copia esos campos tal cual a CabFacturaVta
+            // y si la cuenta se borró/renumeró después de crear el pedido revienta con
+            // FK_CabFacturaVta_CCC ("No se ha podido crear la cabecera de factura" + ruido de
+            // transacciones, familia #291/#296). Cortamos antes con un mensaje accionable.
+            if (!string.IsNullOrWhiteSpace(cabPedido.CCC)
+                && !await db.CCCs.AnyAsync(c => c.Empresa == empresa && c.Cliente == cabPedido.Nº_Cliente
+                    && c.Contacto == cabPedido.Contacto && c.Número == cabPedido.CCC))
+            {
+                throw new FacturacionException(
+                    $"El pedido {pedido} no se puede facturar porque su cuenta bancaria (CCC '{cabPedido.CCC.Trim()}') " +
+                    $"ya no existe para el cliente {cabPedido.Nº_Cliente?.Trim()}/{cabPedido.Contacto?.Trim()}. " +
+                    "Corrija la cuenta de cobro del pedido antes de facturar.",
+                    "FACTURACION_CCC_INEXISTENTE",
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario);
+            }
+
             // PREVENTIVO: Recalcular líneas ANTES de llamar al stored procedure
             // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
             // El recálculo se hace antes porque después del SP (incluso con rollback),
