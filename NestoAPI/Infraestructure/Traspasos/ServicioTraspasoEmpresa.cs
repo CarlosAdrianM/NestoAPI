@@ -447,6 +447,65 @@ namespace NestoAPI.Infraestructure.Traspasos
 
                         System.Diagnostics.Debug.WriteLine($"  ✓ {lineasMovidas} líneas movidas a empresa destino");
 
+                        // 9-bis (NestoAPI#318): mover TAMBIÉN las cabeceras de albarán de las líneas
+                        // traspasadas. El UPDATE de arriba mueve las líneas albaranadas (Estado >= 2)
+                        // con su [Nº Albarán], pero CabAlbaránVta se quedaba en la empresa origen:
+                        // albarán "partido" entre empresas (caso real: albarán 725848 del pedido
+                        // 922531, 17/07/26; 763 huérfanos históricos, 543 solo en 2026 desde que la
+                        // facturación de rutas albaranea antes de traspasar). El contador de albaranes
+                        // es GLOBAL (ContadoresGlobales.Albaranes), así que el número no puede chocar
+                        // con futuros albaranes del destino; la guarda cubre los duplicados legacy
+                        // (302 números repetidos entre empresas, anteriores a esta corrección).
+                        var albaranesEnConflicto = await ExecuteSqlQueryScalarAsync<int>(
+                            connection,
+                            transaction.UnderlyingTransaction,
+                            @"SELECT COUNT(*)
+                              FROM CabAlbaránVta c
+                              WHERE c.Empresa = @EmpresaDestino
+                                AND c.Número IN (SELECT DISTINCT l.[Nº Albarán]
+                                                 FROM LinPedidoVta l
+                                                 WHERE l.Empresa = @EmpresaDestino
+                                                   AND l.Número = @NumeroPedido
+                                                   AND l.[Nº Albarán] IS NOT NULL)
+                                AND EXISTS (SELECT 1 FROM CabAlbaránVta o
+                                            WHERE o.Empresa = @EmpresaOrigen AND o.Número = c.Número)",
+                            new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
+                            new SqlParameter("@EmpresaDestino", SqlDbType.NVarChar, 10) { Value = empresaDestino.Trim() },
+                            new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
+                        );
+
+                        if (albaranesEnConflicto > 0)
+                        {
+                            throw new InvalidOperationException(
+                                $"El pedido {numeroPedido} tiene un albarán cuyo número ya existe en la empresa " +
+                                $"{empresaDestino.Trim()}: no se puede traspasar sin partir el albarán entre empresas. " +
+                                "Revisar los números de albarán duplicados entre empresas (NestoAPI#318).");
+                        }
+
+                        // Solo se mueve la cabecera si ninguna OTRA línea de la empresa origen sigue
+                        // referenciando ese albarán (un albarán compartido con otro pedido no se puede
+                        // partir; con el flujo actual —un albarán por pedido— no debería ocurrir).
+                        int albaranesMovidos = await ExecuteSqlCommandAsync(
+                            connection,
+                            transaction.UnderlyingTransaction,
+                            @"UPDATE CabAlbaránVta
+                              SET Empresa = @EmpresaDestino
+                              WHERE Empresa = @EmpresaOrigen
+                                AND Número IN (SELECT DISTINCT l.[Nº Albarán]
+                                               FROM LinPedidoVta l
+                                               WHERE l.Empresa = @EmpresaDestino
+                                                 AND l.Número = @NumeroPedido
+                                                 AND l.[Nº Albarán] IS NOT NULL)
+                                AND NOT EXISTS (SELECT 1 FROM LinPedidoVta lo
+                                                WHERE lo.Empresa = @EmpresaOrigen
+                                                  AND lo.[Nº Albarán] = CabAlbaránVta.Número)",
+                            new SqlParameter("@EmpresaOrigen", SqlDbType.NVarChar, 10) { Value = empresaOrigen.Trim() },
+                            new SqlParameter("@EmpresaDestino", SqlDbType.NVarChar, 10) { Value = empresaDestino.Trim() },
+                            new SqlParameter("@NumeroPedido", SqlDbType.Int) { Value = numeroPedido }
+                        );
+
+                        System.Diagnostics.Debug.WriteLine($"  ✓ {albaranesMovidos} cabecera(s) de albarán movida(s) a empresa destino");
+
                         // 10. Verificar si quedan líneas en empresa origen y eliminar cabecera huérfana si no quedan
                         if (lineasMovidas > 0)
                         {
