@@ -744,6 +744,7 @@
     <Compile Include="Infraestructure\SincronizacionJobsService.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
     <Compile Include="Infraestructure\Verifactu\IServicioVerifactu.cs" />
+    <Compile Include="Infraestructure\Verifactu\MapeadorFacturaVerifactu.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuFacturaRequest.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuResponse.cs" />
     <Compile Include="Infraestructure\Verifactu\Verifacti\ServicioVerifacti.cs" />

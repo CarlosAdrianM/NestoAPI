@@ -22,6 +22,12 @@ namespace NestoAPI.Infraestructure.Facturas
     {
         private readonly NVEntities db;
         private readonly bool dbEsExterno;
+        private readonly Verifactu.IServicioVerifactu servicioVerifactu;
+        private readonly ILogService logService;
+
+        // Compartido para no crear un HttpClient por cada instancia de ServicioFacturas
+        private static readonly Lazy<Verifactu.IServicioVerifactu> servicioVerifactuPorDefecto =
+            new Lazy<Verifactu.IServicioVerifactu>(() => new Verifactu.Verifacti.ServicioVerifacti());
 
         /// <summary>
         /// Constructor por defecto. Crea su propio NVEntities interno.
@@ -36,7 +42,14 @@ namespace NestoAPI.Infraestructure.Facturas
         /// desde GestorFacturacionRutas, que ya tiene su propio contexto.
         /// </summary>
         /// <param name="dbExterno">NVEntities externo. Si es null, se crea uno interno.</param>
-        public ServicioFacturas(NVEntities dbExterno)
+        public ServicioFacturas(NVEntities dbExterno) : this(dbExterno, null)
+        {
+        }
+
+        /// <summary>
+        /// Constructor que además permite inyectar el servicio de Verifactu y el log (para tests).
+        /// </summary>
+        public ServicioFacturas(NVEntities dbExterno, Verifactu.IServicioVerifactu servicioVerifactu, ILogService logService = null)
         {
             if (dbExterno != null)
             {
@@ -48,6 +61,8 @@ namespace NestoAPI.Infraestructure.Facturas
                 db = new NVEntities();
                 dbEsExterno = false;
             }
+            this.servicioVerifactu = servicioVerifactu ?? servicioVerifactuPorDefecto.Value;
+            this.logService = logService ?? new ElmahLogService();
         }
 
         public CabFacturaVta CargarCabFactura(string empresa, string numeroFactura)
@@ -472,6 +487,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 // Persistir datos fiscales del cliente principal en la factura (Verifactu)
                 await PersistirDatosFiscalesFactura(empresa, resultadoProcedimiento, cabPedido);
 
+                // Verifactu (#34): enviar la factura recién creada a la AEAT vía Verifacti.
+                // Best-effort: si Verifacti falla, la factura sigue creada y el error queda en ELMAH.
+                await EnviarFacturaAVerifactu(empresa, resultadoProcedimiento);
+
                 return new CrearFacturaResponseDTO
                 {
                     NumeroFactura = resultadoProcedimiento,
@@ -602,6 +621,68 @@ namespace NestoAPI.Infraestructure.Facturas
             factura.SuPedido = cabPedido.SuPedido;
 
             await db.SaveChangesAsync();
+        }
+
+        /// <summary>
+        /// Envía la factura recién creada a Verifactu si su serie tramita (issue #34).
+        /// Best-effort: NUNCA lanza. Si el envío falla, la factura queda creada con los campos
+        /// Verifactu a null (así un proceso posterior puede reintentar buscando VerifactuUUID null)
+        /// y el error se loguea a ELMAH.
+        /// Las rectificativas (series RV/RC) no se envían todavía: necesitan las facturas
+        /// rectificadas y eso es la issue #36.
+        /// </summary>
+        /// <param name="empresa">Empresa de la factura (puede ser la espejo por traspaso)</param>
+        /// <param name="numeroFactura">Número de la factura recién creada</param>
+        internal async Task EnviarFacturaAVerifactu(string empresa, string numeroFactura)
+        {
+            try
+            {
+                if (!servicioVerifactu.EstaHabilitado)
+                {
+                    return;
+                }
+
+                CabFacturaVta factura = await db.CabsFacturasVtas
+                    .Include(f => f.LinPedidoVtas)
+                    .FirstOrDefaultAsync(f => f.Empresa == empresa && f.Número == numeroFactura);
+                if (factura == null)
+                {
+                    return;
+                }
+
+                ISerieFacturaVerifactu serie = RegistroSeriesVerifactu.ObtenerSerie(factura.Serie);
+                if (serie == null || !serie.TramitaVerifactu || serie.EsRectificativa)
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(factura.VerifactuUUID))
+                {
+                    return; // ya se envió (idempotencia)
+                }
+
+                Verifactu.VerifactuFacturaRequest request = Verifactu.MapeadorFacturaVerifactu.Mapear(factura);
+                Verifactu.VerifactuResponse respuesta = await servicioVerifactu.EnviarFacturaAsync(request);
+
+                if (respuesta != null && respuesta.Exitoso)
+                {
+                    factura.VerifactuUUID = respuesta.Uuid;
+                    factura.VerifactuHuella = respuesta.Huella;
+                    factura.VerifactuQR = respuesta.QrBase64;
+                    factura.VerifactuURL = respuesta.Url;
+                    factura.VerifactuEstado = respuesta.Estado;
+                    _ = await db.SaveChangesAsync();
+                }
+                else
+                {
+                    logService.LogError($"Verifactu: error al enviar la factura {numeroFactura} " +
+                        $"({respuesta?.CodigoError}): {respuesta?.MensajeError}");
+                }
+            }
+            catch (Exception ex)
+            {
+                logService.LogError($"Verifactu: error inesperado al enviar la factura {numeroFactura}", ex);
+            }
         }
 
         /// <summary>

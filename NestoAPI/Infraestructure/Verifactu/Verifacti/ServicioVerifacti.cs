@@ -37,10 +37,22 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
         /// </summary>
         /// <param name="httpClient">HttpClient a usar, o null para crear uno nuevo</param>
         public ServicioVerifacti(HttpClient httpClient)
+            : this(
+                  httpClient,
+                  ConfigurationManager.AppSettings["Verifacti:ApiKey"] ?? "",
+                  ConfigurationManager.AppSettings["Verifacti:BaseUrl"] ?? "https://api.verifacti.com/",
+                  bool.TryParse(ConfigurationManager.AppSettings["Verifacti:Habilitado"], out var hab) && hab)
         {
-            _apiKey = ConfigurationManager.AppSettings["Verifacti:ApiKey"] ?? "";
-            _baseUrl = ConfigurationManager.AppSettings["Verifacti:BaseUrl"] ?? "https://api.verifacti.com/";
-            _habilitado = bool.TryParse(ConfigurationManager.AppSettings["Verifacti:Habilitado"], out var hab) && hab;
+        }
+
+        /// <summary>
+        /// Constructor con configuración explícita (para tests, sin depender del Web.config)
+        /// </summary>
+        internal ServicioVerifacti(HttpClient httpClient, string apiKey, string baseUrl, bool habilitado)
+        {
+            _apiKey = apiKey ?? "";
+            _baseUrl = baseUrl;
+            _habilitado = habilitado;
             _esSandbox = _apiKey.StartsWith("vf_test_", StringComparison.OrdinalIgnoreCase);
 
             _httpClient = httpClient ?? new HttpClient();
@@ -79,7 +91,7 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 if (response.IsSuccessStatusCode)
                 {
                     var apiResponse = JsonConvert.DeserializeObject<VerifactiApiResponse>(responseBody);
-                    return MapearDesdeVerifactiResponse(apiResponse);
+                    return MapearDesdeVerifactiResponse(apiResponse, httpExitoso: true);
                 }
                 else
                 {
@@ -151,13 +163,15 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
 
             try
             {
-                var response = await _httpClient.GetAsync($"verifactu/status/{uuid}");
+                // La API real es query string (verifactu/status/{uuid} devuelve 404 de ruta;
+                // verificado contra el sandbox el 17/07/26)
+                var response = await _httpClient.GetAsync($"verifactu/status?uuid={Uri.EscapeDataString(uuid)}");
                 var responseBody = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
                 {
                     var apiResponse = JsonConvert.DeserializeObject<VerifactiApiResponse>(responseBody);
-                    return MapearDesdeVerifactiResponse(apiResponse);
+                    return MapearDesdeVerifactiResponse(apiResponse, httpExitoso: true);
                 }
                 else
                 {
@@ -215,7 +229,7 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 if (response.IsSuccessStatusCode)
                 {
                     var apiResponse = JsonConvert.DeserializeObject<VerifactiApiResponse>(responseBody);
-                    return MapearDesdeVerifactiResponse(apiResponse);
+                    return MapearDesdeVerifactiResponse(apiResponse, httpExitoso: true);
                 }
                 else
                 {
@@ -288,13 +302,15 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
         }
 
         /// <summary>
-        /// Mapea de la respuesta de Verifacti al DTO genérico
+        /// Mapea de la respuesta de Verifacti al DTO genérico.
+        /// La respuesta real de éxito NO trae campo "success" (verificado contra el sandbox
+        /// el 17/07/26): el éxito lo marca el HTTP 200 + ausencia de "error".
         /// </summary>
-        private VerifactuResponse MapearDesdeVerifactiResponse(VerifactiApiResponse apiResponse)
+        private VerifactuResponse MapearDesdeVerifactiResponse(VerifactiApiResponse apiResponse, bool httpExitoso)
         {
             return new VerifactuResponse
             {
-                Exitoso = apiResponse.Success,
+                Exitoso = httpExitoso && string.IsNullOrEmpty(apiResponse.Error),
                 Uuid = apiResponse.Uuid,
                 Estado = apiResponse.Estado,
                 Url = apiResponse.Url,

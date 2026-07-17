@@ -49,24 +49,27 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
     }
 
     /// <summary>
-    /// Línea de desglose de IVA para Verifacti
+    /// Línea de desglose de IVA para Verifacti.
+    /// Nomenclatura SII verificada contra el sandbox real el 17/07/26 (humo Fase A):
+    /// la API rechaza los nombres cortos (base/tipo/cuota) con
+    /// "El campo base_imponible es requerido para cada linea."
     /// </summary>
     internal class VerifactiLineaRequest
     {
-        [JsonProperty("base")]
+        [JsonProperty("base_imponible")]
         public decimal Base { get; set; }
 
-        [JsonProperty("tipo")]
+        [JsonProperty("tipo_impositivo")]
         public decimal Tipo { get; set; } // 21, 10, 4, 0
 
-        [JsonProperty("cuota")]
+        [JsonProperty("cuota_repercutida")]
         public decimal Cuota { get; set; }
 
         // Recargo de equivalencia (opcional)
-        [JsonProperty("tipo_re", NullValueHandling = NullValueHandling.Ignore)]
+        [JsonProperty("tipo_recargo_equivalencia", NullValueHandling = NullValueHandling.Ignore)]
         public decimal? TipoRe { get; set; }
 
-        [JsonProperty("cuota_re", NullValueHandling = NullValueHandling.Ignore)]
+        [JsonProperty("cuota_recargo_equivalencia", NullValueHandling = NullValueHandling.Ignore)]
         public decimal? CuotaRe { get; set; }
     }
 
