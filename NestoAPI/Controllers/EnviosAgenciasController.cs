@@ -40,6 +40,23 @@ namespace NestoAPI.Controllers
         public string EtiquetaContenido { get; set; }
     }
 
+    /// <summary>
+    /// Datos corregidos para modificar un envío YA registrado en la agencia (#317). Solo se pisan
+    /// los campos informados (null/vacío = conservar el valor actual del envío). La provincia solo
+    /// se persiste en BD (las agencias la derivan del CP).
+    /// </summary>
+    public class ModificarEnvioAgenciaDTO
+    {
+        public string Nombre { get; set; }
+        public string Direccion { get; set; }
+        public string CodigoPostal { get; set; }
+        public string Poblacion { get; set; }
+        public string Provincia { get; set; }
+        public string Telefono { get; set; }
+        public string Movil { get; set; }
+        public string Observaciones { get; set; }
+    }
+
     // Issue #189: [Authorize] de clase. Llamantes auditados 13/07/26: Nesto (JWT vía
     // IClienteApiFactory desde 1.10.9.0), NestoApp (interceptor Bearer + refresh desde v2.17.2)
     // y TiendasNuevaVision (MyHttpClient con AuthHeaderHandler). Lo anónimo, explícito abajo.
@@ -260,6 +277,188 @@ namespace NestoAPI.Controllers
             return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
         }
 
+        // POST: api/EnviosAgencias/5/Anular
+        // Anula en la agencia un envío YA registrado (con albarán, Estado En curso) y lo devuelve a
+        // etiqueta PENDIENTE en nuestra BD (#316): Estado=-1 y sin albarán. Así el usuario puede
+        // corregir la dirección con los flujos de pendientes, re-tramitar o borrarlo con el DELETE
+        // normal (que exige Estado < 0). API primero, BD después: si la agencia rechaza (p. ej.
+        // ventana de edición del día cerrada), la BD queda intacta y se devuelve SU motivo tal cual.
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/Anular")]
+        [ResponseType(typeof(EnvioAgenciaDTO))]
+        public async Task<IHttpActionResult> AnularEnvio(int id)
+        {
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+
+            IAgenciaRemota agencia = fabricaAgenciasRemotas.Crear(envio.Agencia);
+            if (agencia == null)
+            {
+                return BadRequest($"La agencia {envio.Agencia} no tiene gestión remota en el servidor.");
+            }
+
+            if (string.IsNullOrWhiteSpace(envio.CodigoBarras) || envio.Estado != Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                return BadRequest("Solo se puede anular un envío En curso ya registrado en la agencia. " +
+                    "Las etiquetas pendientes se borran directamente, sin anular.");
+            }
+
+            // El reembolso ya cobrado/pagado implica que el envío llegó a destino: anularlo en la
+            // agencia dejaría la contabilidad descuadrada. Regla heredada del procedimiento manual.
+            if (envio.FechaPagoReembolso != null)
+            {
+                return BadRequest("El reembolso de este envío ya está pagado: no se puede anular. " +
+                    "Cualquier problema se gestiona como incidencia con la agencia.");
+            }
+
+            ResultadoOperacionRemota resultado;
+            try
+            {
+                resultado = await agencia.AnularAsync(envio.CodigoBarras.Trim());
+            }
+            catch (DataTransException ex)
+            {
+                await AuditarOperacion(envio, agencia, false, ex.Message, "Anular");
+                return Content(HttpStatusCode.BadGateway, ex.Message);
+            }
+
+            if (!resultado.Exito)
+            {
+                await AuditarOperacion(envio, agencia, false, resultado.Error, "Anular");
+                return Content(HttpStatusCode.BadGateway, resultado.Error);
+            }
+
+            // Anulado en la agencia: devolver el envío a etiqueta pendiente en nuestra BD.
+            string albaranAnulado = envio.CodigoBarras.Trim();
+            envio.CodigoBarras = string.Empty;
+            envio.Estado = (short)Constantes.Agencias.ESTADO_PENDIENTE;
+            envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            try
+            {
+                await db.SaveChangesAsync();
+            }
+            catch (DbEntityValidationException ex)
+            {
+                string detalle = DescribirErroresValidacion(ex);
+                Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                    $"Innovatrans anuló el envío {envio.Numero} (albarán {albaranAnulado}) pero falló al actualizar la BD: {detalle}", ex)));
+                return Content(HttpStatusCode.InternalServerError,
+                    $"Se anuló en la agencia (albarán {albaranAnulado}) pero no se pudo actualizar nuestra BD: {detalle}");
+            }
+
+            await AuditarOperacion(envio, agencia, true, null, "Anular");
+            return Ok(new EnvioAgenciaDTO(envio));
+        }
+
+        // POST: api/EnviosAgencias/5/Modificar
+        // Modifica en la agencia un envío YA registrado (con albarán, Estado En curso) con la
+        // dirección corregida y devuelve la etiqueta REIMPRESA (#317): la etiqueta lleva CP/población
+        // impresos, así que modificar obliga a re-etiquetar. Para etiquetas pendientes (sin albarán)
+        // ya existe ActualizarDireccionEtiqueta. API primero, BD después: los datos nuevos solo se
+        // persisten si la agencia acepta la modificación.
+        [HttpPost]
+        [Authorize]
+        [Route("api/EnviosAgencias/{id:int}/Modificar")]
+        [ResponseType(typeof(TramitarEnvioResultadoDTO))]
+        public async Task<IHttpActionResult> ModificarEnvio(int id, ModificarEnvioAgenciaDTO datos)
+        {
+            if (datos == null)
+            {
+                return BadRequest("Faltan los datos a modificar.");
+            }
+
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+
+            IAgenciaRemota agencia = fabricaAgenciasRemotas.Crear(envio.Agencia);
+            if (agencia == null)
+            {
+                return BadRequest($"La agencia {envio.Agencia} no tiene gestión remota en el servidor.");
+            }
+
+            if (string.IsNullOrWhiteSpace(envio.CodigoBarras) || envio.Estado != Constantes.Agencias.ESTADO_EN_CURSO)
+            {
+                return BadRequest("Solo se puede modificar en la agencia un envío En curso ya registrado. " +
+                    "Las etiquetas pendientes se corrigen con ActualizarDireccionEtiqueta.");
+            }
+
+            DatosEnvioRemoto datosRemotos = MapearEnvioRemoto(envio);
+            AplicarCorrecciones(datosRemotos, datos);
+
+            ResultadoTramitacionRemota resultado;
+            try
+            {
+                resultado = await agencia.ModificarYEtiquetarAsync(datosRemotos, envio.CodigoBarras.Trim());
+            }
+            catch (DataTransException ex)
+            {
+                await AuditarOperacion(envio, agencia, false, ex.Message, "Modificar");
+                return Content(HttpStatusCode.BadGateway, ex.Message);
+            }
+
+            // Si hay albarán en el resultado, la agencia SÍ aplicó la modificación (aunque la etiqueta
+            // fallara): hay que persistir los datos nuevos SIEMPRE, para que la BD no se quede con la
+            // dirección vieja de un envío que ya viaja con la corregida.
+            if (!string.IsNullOrWhiteSpace(resultado.Albaran))
+            {
+                envio.Nombre = datosRemotos.Nombre;
+                envio.Direccion = datosRemotos.Direccion;
+                envio.CodPostal = datosRemotos.CodigoPostal;
+                envio.Poblacion = datosRemotos.Poblacion;
+                envio.Telefono = datosRemotos.Telefono;
+                envio.Movil = datosRemotos.Movil;
+                envio.Observaciones = datosRemotos.Observaciones;
+                if (!string.IsNullOrWhiteSpace(datos.Provincia))
+                {
+                    envio.Provincia = datos.Provincia.Trim();
+                }
+                envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+                try
+                {
+                    await db.SaveChangesAsync();
+                }
+                catch (DbEntityValidationException ex)
+                {
+                    string detalle = DescribirErroresValidacion(ex);
+                    Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
+                        $"Innovatrans modificó el envío {envio.Numero} (albarán {resultado.Albaran}) pero falló al guardar en BD: {detalle}", ex)));
+                    return Content(HttpStatusCode.InternalServerError,
+                        $"Se modificó en la agencia (albarán {resultado.Albaran}) pero no se pudo guardar en nuestra BD: {detalle}");
+                }
+            }
+
+            if (!resultado.Exito)
+            {
+                // Dos casos: (a) modificación rechazada (sin albarán, BD intacta) o (b) modificada
+                // pero sin etiqueta ZPL (los datos ya quedaron guardados arriba; el usuario puede
+                // reimprimir con Tramitar, que es idempotente). En ambos: BadGateway con el motivo.
+                await AuditarOperacion(envio, agencia, false, resultado.Error, "Modificar");
+                return Content(HttpStatusCode.BadGateway, resultado.Error);
+            }
+
+            await AuditarOperacion(envio, agencia, true, null, "Modificar");
+            return Ok(AResultado(envio, resultado.Albaran, (short)resultado.Bultos, resultado.Etiqueta, reimpresion: false));
+        }
+
+        // Pisa en los datos remotos SOLO los campos informados del DTO (null/vacío = conservar).
+        private static void AplicarCorrecciones(DatosEnvioRemoto datosRemotos, ModificarEnvioAgenciaDTO datos)
+        {
+            if (!string.IsNullOrWhiteSpace(datos.Nombre)) datosRemotos.Nombre = datos.Nombre.Trim();
+            if (!string.IsNullOrWhiteSpace(datos.Direccion)) datosRemotos.Direccion = datos.Direccion.Trim();
+            if (!string.IsNullOrWhiteSpace(datos.CodigoPostal)) datosRemotos.CodigoPostal = datos.CodigoPostal.Trim();
+            if (!string.IsNullOrWhiteSpace(datos.Poblacion)) datosRemotos.Poblacion = datos.Poblacion.Trim();
+            if (!string.IsNullOrWhiteSpace(datos.Telefono)) datosRemotos.Telefono = datos.Telefono.Trim();
+            if (!string.IsNullOrWhiteSpace(datos.Movil)) datosRemotos.Movil = datos.Movil.Trim();
+            if (!string.IsNullOrWhiteSpace(datos.Observaciones)) datosRemotos.Observaciones = datos.Observaciones.Trim();
+        }
+
         // POST: api/EnviosAgencias/5/ActualizarSeguimiento
         // Actualiza el estado de UN envío a demanda (sin esperar al job de Hangfire que corre cada 2h):
         // consulta el seguimiento de su agencia por el albarán y persiste Estado/FechaEntrega. Reutiliza
@@ -346,9 +545,13 @@ namespace NestoAPI.Controllers
             Observaciones = envio.Observaciones?.Trim()
         };
 
-        private async Task AuditarTramitacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
+        private Task AuditarTramitacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error)
+            => AuditarOperacion(envio, agencia, exito, error, "Tramitar");
+
+        // Auditoría común de las operaciones remotas del controller (Tramitar/Anular/Modificar, #316/#317).
+        private async Task AuditarOperacion(EnviosAgencia envio, IAgenciaRemota agencia, bool exito, string error, string operacion)
         {
-            // NestoAPI#259: una tramitación fallida queda en AgenciasLlamadasWeb (Exito=false), pero
+            // NestoAPI#259: una operación fallida queda en AgenciasLlamadasWeb (Exito=false), pero
             // además la logueamos en ELMAH con contexto para detectarla desde el primer momento (antes
             // solo se veía revisando la tabla de llamadas o cuando se quejaba el almacén). Cubre todas
             // las rutas de fallo que pasan por aquí: DataTransException, BadGateway, sin ZPL, reimpresión.
@@ -358,27 +561,27 @@ namespace NestoAPI.Controllers
                 try
                 {
                     Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                        $"Tramitación de agencia fallida: envío {envio.Numero} (pedido {envio.Pedido}, " +
+                        $"{operacion} en agencia fallido: envío {envio.Numero} (pedido {envio.Pedido}, " +
                         $"cliente {envio.Cliente?.Trim()}, albarán {envio.CodigoBarras?.Trim()}): {error}")));
                 }
                 catch
                 {
-                    // El logueo nunca debe enmascarar ni romper la tramitación.
+                    // El logueo nunca debe enmascarar ni romper la operación.
                 }
             }
 
             // La auditoría es best-effort: si falla (validación, etc.) NUNCA debe enmascarar el error
-            // real de la tramitación ni revertir el registro ya guardado del envío.
+            // real de la operación ni revertir el registro ya guardado del envío.
             try
             {
                 db.AgenciasLlamadasWeb.Add(ConstruirAuditoria(agencia.Intercambios,
-                    $"Tramitar envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})", exito, error));
+                    $"{operacion} envío {envio.Numero} (pedido {envio.Pedido}, CP {envio.CodPostal?.Trim()})", exito, error));
                 await db.SaveChangesAsync();
             }
             catch (Exception ex)
             {
                 Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                    $"Fallo auditando la tramitación del envío {envio.Numero}: {DescribirErroresValidacion(ex)}", ex)));
+                    $"Fallo auditando {operacion} del envío {envio.Numero}: {DescribirErroresValidacion(ex)}", ex)));
             }
         }
 

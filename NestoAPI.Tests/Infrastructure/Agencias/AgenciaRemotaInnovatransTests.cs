@@ -379,6 +379,98 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             StringAssert.Contains(fake.Llamadas[0].Xml, "<mes:formato>1</mes:formato>");
         }
 
+        // --- #316/#317: anular y modificar envíos ya registrados en DTX ---
+
+        [TestMethod]
+        public async Task Anular_Exito_LlamaBorrarEnviosConElAlbaran()
+        {
+            var fake = new FakeClienteSoap();
+            fake.Responder("BorrarEnvios", RespOperacion("BorrarEnvios", "200", ""));
+
+            ResultadoOperacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .AnularAsync("6522393001");
+
+            Assert.IsTrue(r.Exito);
+            Assert.AreEqual("BorrarEnvios", fake.Llamadas.Single().Operacion);
+            StringAssert.Contains(fake.Llamadas[0].Xml, "<mes:albaran>6522393001</mes:albaran>");
+        }
+
+        [TestMethod]
+        public async Task Anular_FueraDePlazo_DevuelveElMotivoDeDtxTalCual()
+        {
+            // La ventana de edición del día (~15:00-17:00) ya cerró: el usuario debe ver el motivo
+            // real de DTX para saber que toca abrir incidencia con la agencia.
+            var fake = new FakeClienteSoap();
+            fake.Responder("BorrarEnvios", RespOperacion("BorrarEnvios", "413", "Excedido el tiempo de borrado"));
+
+            ResultadoOperacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .AnularAsync("6522393001");
+
+            Assert.IsFalse(r.Exito);
+            StringAssert.Contains(r.Error, "Excedido el tiempo de borrado");
+            StringAssert.Contains(r.Error, "6522393001");
+        }
+
+        [TestMethod]
+        public async Task ModificarYEtiquetar_Exito_ModificaYReimprimeLaEtiqueta()
+        {
+            var fake = new FakeClienteSoap();
+            fake.Responder("ModificarEnvios", RespOperacion("ModificarEnvios", "200", ""));
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
+
+            ResultadoTramitacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .ModificarYEtiquetarAsync(EnvioMadrid(), "6522393001");
+
+            Assert.IsTrue(r.Exito, $"Error: {r.Error}");
+            Assert.AreEqual("6522393001", r.Albaran);
+            Assert.AreEqual("XlhBfkNJMTUw", r.Etiqueta.Contenido);
+            Assert.AreEqual("ModificarEnvios", fake.Llamadas[0].Operacion);
+            Assert.AreEqual("BusquedaEtiquetas", fake.Llamadas[1].Operacion);
+            // El DatosEnvio viaja completo con el albarán del envío a editar.
+            StringAssert.Contains(fake.Llamadas[0].Xml, "<com:albaran>6522393001</com:albaran>");
+            StringAssert.Contains(fake.Llamadas[0].Xml, "<com:codPostalDes>28001</com:codPostalDes>");
+        }
+
+        [TestMethod]
+        public async Task ModificarYEtiquetar_CanalizacionIncorrecta_ReintentaConLaPoblacionDelCatalogo()
+        {
+            // El CP corregido puede caer en el mismo 405 que el insert (NestoAPI#300): mismo
+            // reintento con el texto exacto del catálogo de DTX.
+            var fake = new FakeClienteSoap();
+            fake.Responder("ModificarEnvios", RespOperacion("ModificarEnvios", "405", "Error. Canalizacion incorrecta."));
+            fake.Responder("ModificarEnvios", RespOperacion("ModificarEnvios", "200", ""));
+            fake.Responder("BuscarPoblacion", RespBuscarPoblacion("AVILES", "ENTREVIÑAS (AVILES)"));
+            fake.Responder("BusquedaEtiquetas", RespEtiquetaZpl());
+
+            DatosEnvioRemoto envio = EnvioMadrid();
+            envio.CodigoPostal = "33401";
+            envio.Poblacion = "AVILÉS";
+
+            ResultadoTramitacionRemota r = await NuevaAgenciaConLectura(fake)
+                .ModificarYEtiquetarAsync(envio, "6522393001");
+
+            Assert.IsTrue(r.Exito, $"Debe reintentar con la población del catálogo. Error: {r.Error}");
+            Assert.AreEqual("ModificarEnvios", fake.Llamadas[0].Operacion);
+            Assert.AreEqual("BuscarPoblacion", fake.Llamadas[1].Operacion);
+            Assert.AreEqual("ModificarEnvios", fake.Llamadas[2].Operacion);
+            StringAssert.Contains(fake.Llamadas[2].Xml, "<com:poblacionDes>AVILES</com:poblacionDes>");
+        }
+
+        [TestMethod]
+        public async Task ModificarYEtiquetar_Rechazado_DevuelveErrorSinPedirEtiqueta()
+        {
+            var fake = new FakeClienteSoap();
+            fake.Responder("ModificarEnvios", RespOperacion("ModificarEnvios", "413", "Excedido el tiempo"));
+
+            ResultadoTramitacionRemota r = await new AgenciaRemotaInnovatrans(new OperacionesEnviosDataTrans(fake), Remitente())
+                .ModificarYEtiquetarAsync(EnvioMadrid(), "6522393001");
+
+            Assert.IsFalse(r.Exito);
+            Assert.IsNull(r.Albaran, "Sin modificación aplicada no hay albarán que persistir.");
+            StringAssert.Contains(r.Error, "Excedido el tiempo");
+            Assert.AreEqual(1, fake.Llamadas.Count, "No debe pedir etiqueta si la modificación fue rechazada.");
+        }
+
         [TestMethod]
         public async Task ConsultarSeguimiento_EstadoEntregado_DevuelveEntregadoConFechaReal()
         {
@@ -591,6 +683,16 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
                    <ns2:codError xmlns:ns2=""http://complexType.dtx.sw"">{codError}</ns2:codError>
                    <ns2:msgError xmlns:ns2=""http://complexType.dtx.sw"">{msg}</ns2:msgError>
                  </ns4:resultado></ns4:InsertarEnviosTypeOut></soapenv:Body></soapenv:Envelope>";
+
+        // Respuesta de BorrarEnvios/ModificarEnvios (#316/#317): mismo DatosRespuesta que el insert;
+        // éxito = codError 200 (el albarán se ecoa siempre, también en error).
+        private static string RespOperacion(string operacion, string codError, string msg) =>
+            $@"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>
+                 <ns4:{operacion}TypeOut xmlns:ns4=""http://messageout.dtx.sw""><ns4:resultado>
+                   <ns2:albaran xmlns:ns2=""http://complexType.dtx.sw"">6522393001</ns2:albaran>
+                   <ns2:codError xmlns:ns2=""http://complexType.dtx.sw"">{codError}</ns2:codError>
+                   <ns2:msgError xmlns:ns2=""http://complexType.dtx.sw"">{msg}</ns2:msgError>
+                 </ns4:resultado></ns4:{operacion}TypeOut></soapenv:Body></soapenv:Envelope>";
 
         private static string RespEtiquetaZpl() =>
             @"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/""><soapenv:Body>

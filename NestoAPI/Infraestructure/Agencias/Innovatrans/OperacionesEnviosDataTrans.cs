@@ -86,6 +86,21 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
     }
 
     /// <summary>
+    /// Resultado de BorrarEnvios/ModificarEnvios (issues #316/#317). DTX responde con el mismo
+    /// DatosRespuesta que el insert (albaran, bultos, codError, msgError); aquí el éxito es
+    /// codError 200 a secas (no hay albarán nuevo que validar: la operación es sobre uno existente).
+    /// codError 413 = "excedido el tiempo" (la ventana de edición cierra con el día, ~15:00-17:00).
+    /// </summary>
+    public class ResultadoOperacionEnvio
+    {
+        public string Albaran { get; set; }
+        public int? CodError { get; set; }
+        public string MsgError { get; set; }
+
+        public bool Exito => CodError == 200;
+    }
+
+    /// <summary>
     /// Etiqueta devuelta por BusquedaEtiquetas. <see cref="Contenido"/> es el documento (en la
     /// <see cref="Codificacion"/> indicada, normalmente base64); para ZPL hay que decodificarlo antes
     /// de mandarlo a la Zebra. <see cref="Error"/> no vacío indica que no se pudo obtener.
@@ -141,6 +156,67 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
         /// </summary>
         public async Task<ResultadoInsertarEnvio> InsertarEnvioAsync(EnvioDataTrans envio)
         {
+            XElement envios = ConstruirElementoEnvios(envio, albaran: string.Empty); // en blanco: lo asigna DTX
+
+            XDocument doc = await _cliente.EjecutarAsync("Envios", "InsertarEnvios", envios).ConfigureAwait(false);
+
+            XElement resultado = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "resultado");
+            return new ResultadoInsertarEnvio
+            {
+                Albaran = ValorHijo(resultado, "albaran"),
+                CodError = ParsearEntero(ValorHijo(resultado, "codError")),
+                MsgError = ValorHijo(resultado, "msgError"),
+                Bultos = ValorHijo(resultado, "bultos"),
+                AgenciaDestino = ValorHijo(resultado, "ageDestino")
+            };
+        }
+
+        /// <summary>
+        /// Modifica un envío YA registrado en DTX, identificado por su albarán (#317). El XSD de
+        /// ModificarEnvios usa el MISMO tipo DatosEnvio que el insert, así que se manda el envío
+        /// completo con los datos corregidos (no un parche de campos). Solo funciona dentro de la
+        /// ventana de edición del día (~15:00-17:00); después DTX devuelve error (p. ej. 413).
+        /// </summary>
+        public async Task<ResultadoOperacionEnvio> ModificarEnvioAsync(EnvioDataTrans envio, string albaran)
+        {
+            if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));
+            XElement envios = ConstruirElementoEnvios(envio, albaran.Trim());
+
+            XDocument doc = await _cliente.EjecutarAsync("Envios", "ModificarEnvios", envios).ConfigureAwait(false);
+            return ParsearResultadoOperacion(doc);
+        }
+
+        /// <summary>
+        /// Anula (borra) en DTX un envío YA registrado, por su albarán (#316). Tras la anulación el
+        /// albarán deja de existir en la agencia (no se factura). Misma ventana de edición que
+        /// Modificar; pasada la recogida, DTX rechaza (codError 413 "excedido el tiempo de borrado").
+        /// </summary>
+        public async Task<ResultadoOperacionEnvio> BorrarEnvioAsync(string albaran)
+        {
+            if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));
+
+            XDocument doc = await _cliente.EjecutarAsync(
+                "Envios", "BorrarEnvios", new XElement(Mes + "albaran", albaran.Trim())).ConfigureAwait(false);
+            return ParsearResultadoOperacion(doc);
+        }
+
+        private static ResultadoOperacionEnvio ParsearResultadoOperacion(XDocument doc)
+        {
+            XElement resultado = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "resultado");
+            return new ResultadoOperacionEnvio
+            {
+                Albaran = ValorHijo(resultado, "albaran"),
+                CodError = ParsearEntero(ValorHijo(resultado, "codError")),
+                MsgError = ValorHijo(resultado, "msgError")
+            };
+        }
+
+        /// <summary>
+        /// Construye el elemento &lt;mes:envios&gt; (tipo DatosEnvio del XSD) compartido por
+        /// InsertarEnvios (albarán en blanco) y ModificarEnvios (albarán del envío a editar).
+        /// </summary>
+        private XElement ConstruirElementoEnvios(EnvioDataTrans envio, string albaran)
+        {
             if (envio == null) throw new ArgumentNullException(nameof(envio));
             if (envio.Remitente == null) throw new ArgumentException("El envío necesita remitente.", nameof(envio));
             if (envio.Destinatario == null) throw new ArgumentException("El envío necesita destinatario.", nameof(envio));
@@ -149,7 +225,7 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // imprescindible: sin él DTX puede no devolver el albarán recién creado (lo confirmó
             // el integrador). "00001" es nuestro departamento por defecto.
             XElement envios = new XElement(Mes + "envios",
-                new XElement(Com + "albaran"), // en blanco: lo asigna DTX
+                new XElement(Com + "albaran", albaran ?? string.Empty),
                 Campo("departamento", envio.Departamento),
                 Campo("referencia", envio.Referencia));
             AnadirDireccion(envios, "Rem", envio.Remitente);
@@ -179,17 +255,7 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 envios.Add(Campo("canalizarPorPoblacion", "true"));
             }
 
-            XDocument doc = await _cliente.EjecutarAsync("Envios", "InsertarEnvios", envios).ConfigureAwait(false);
-
-            XElement resultado = doc.Descendants().FirstOrDefault(e => e.Name.LocalName == "resultado");
-            return new ResultadoInsertarEnvio
-            {
-                Albaran = ValorHijo(resultado, "albaran"),
-                CodError = ParsearEntero(ValorHijo(resultado, "codError")),
-                MsgError = ValorHijo(resultado, "msgError"),
-                Bultos = ValorHijo(resultado, "bultos"),
-                AgenciaDestino = ValorHijo(resultado, "ageDestino")
-            };
+            return envios;
         }
 
         /// <summary>

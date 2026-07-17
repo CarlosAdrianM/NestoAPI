@@ -354,6 +354,7 @@
     <Compile Include="Infrastructure\Pagos\ServicioReclamacionDeudaTests.cs" />
     <Compile Include="Infrastructure\Pagos\ServicioPagosTests.cs" />
     <Compile Include="Infrastructure\ServicioFacturasCrearFacturaTests.cs" />
+    <Compile Include="Controllers\AnularModificarEnvioTests.cs" />
     <Compile Include="Infrastructure\Verifactu\MapeadorFacturaVerifactuTests.cs" />
     <Compile Include="Models\EnvioAgenciaDTOCanalesExternosTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioVerifactiHttpTests.cs" />

@@ -59,6 +59,17 @@ namespace NestoAPI.Infraestructure.Agencias
         public Task<ResultadoTramitacionRemota> InsertarYEtiquetarAsync(DatosEnvioRemoto envio)
             => _interior.InsertarYEtiquetarAsync(envio);
 
+        // Sin reintentos (#316): tras un timeout no sabemos si la agencia llegó a anular; el segundo
+        // intento devolvería "albarán no existe" y lo tomaríamos por un fallo cuando la anulación
+        // en realidad se hizo. Mejor que el usuario reintente a mano con el error de conexión claro.
+        public Task<ResultadoOperacionRemota> AnularAsync(string albaran)
+            => _interior.AnularAsync(albaran);
+
+        // Idempotente (#317): modificar dos veces con los mismos datos deja el envío igual, así que
+        // los transitorios sí se reintentan.
+        public Task<ResultadoTramitacionRemota> ModificarYEtiquetarAsync(DatosEnvioRemoto envio, string albaran)
+            => _politica.ExecuteAsync(() => _interior.ModificarYEtiquetarAsync(envio, albaran));
+
         public Task<EtiquetaDataTrans> ReimprimirAsync(string albaran, int? desdeBulto = null, int? hastaBulto = null)
             => _politica.ExecuteAsync(() => _interior.ReimprimirAsync(albaran, desdeBulto, hastaBulto));
 

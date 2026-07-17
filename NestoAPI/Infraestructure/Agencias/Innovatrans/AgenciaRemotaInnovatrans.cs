@@ -76,39 +76,17 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // el texto EXACTO del catálogo (verificado en prod 15/07/26 con AVILÉS -> AVILES, sin
             // canalizarPorPoblacion). Consultamos BuscarPoblacion, casamos nuestra población y
             // reintentamos UNA vez con el texto del catálogo. Portugal ya canaliza por población.
-            if (!insercion.Exito && insercion.CodError == COD_ERROR_CANALIZACION_INCORRECTA
-                && _lectura != null && !MapeadorDireccionDataTrans.EsPortugal(peticion.Destinatario?.Pais))
+            if (RequiereReintentoCanalizacion(insercion.CodError, insercion.Exito, peticion))
             {
-                List<string> poblacionesCatalogo;
-                try
+                PoblacionCatalogoResultado catalogo = await ResolverPoblacionCatalogoAsync(envio).ConfigureAwait(false);
+                if (catalogo.ErrorAccionable != null)
                 {
-                    ResultadoBuscarPoblacion catalogo = await _lectura
-                        .BuscarPoblacionAsync(envio.CodigoPostal?.Trim()).ConfigureAwait(false);
-                    poblacionesCatalogo = catalogo.Poblaciones.Select(p => p.Poblacion).ToList();
+                    return new ResultadoTramitacionRemota { Exito = false, Error = catalogo.ErrorAccionable };
                 }
-                catch (DataTransException)
+                if (catalogo.Poblacion != null)
                 {
-                    // Si el catálogo no responde, seguimos con el error original del insert.
-                    poblacionesCatalogo = new List<string>();
-                }
-
-                string poblacionCatalogo = CanalizadorPoblacionDataTrans
-                    .ElegirPoblacionCatalogo(envio.Poblacion, poblacionesCatalogo);
-                if (poblacionCatalogo != null)
-                {
-                    peticion.Destinatario.Poblacion = poblacionCatalogo;
+                    peticion.Destinatario.Poblacion = catalogo.Poblacion;
                     insercion = await _operaciones.InsertarEnvioAsync(peticion).ConfigureAwait(false);
-                }
-                else if (poblacionesCatalogo.Count > 0)
-                {
-                    // Sin match razonable NO se reintenta a ciegas: error accionable para el almacén.
-                    return new ResultadoTramitacionRemota
-                    {
-                        Exito = false,
-                        Error = $"Innovatrans no sabe canalizar el CP {envio.CodigoPostal?.Trim()} con la población " +
-                            $"'{envio.Poblacion?.Trim()}'. Poblaciones válidas para ese CP: {string.Join(", ", poblacionesCatalogo)}. " +
-                            "Corrige la población del envío o tramítalo por otra agencia."
-                    };
                 }
             }
 
@@ -193,6 +171,176 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
 
         public Task<EtiquetaDataTrans> ReimprimirAsync(string albaran, int? desdeBulto = null, int? hastaBulto = null)
             => _operaciones.BuscarEtiquetaAsync(albaran, FormatoEtiquetaDataTrans.Zpl, desdeBulto, hastaBulto);
+
+        /// <summary>
+        /// Anula el envío en DTX por su albarán (#316). El error de la agencia se devuelve tal cual:
+        /// codError 413 "excedido el tiempo de borrado" significa que la ventana de edición del día
+        /// (~15:00-17:00) ya cerró y solo queda abrir incidencia con la agencia.
+        /// </summary>
+        public async Task<ResultadoOperacionRemota> AnularAsync(string albaran)
+        {
+            if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));
+
+            ResultadoOperacionEnvio resultado = await _operaciones.BorrarEnvioAsync(albaran).ConfigureAwait(false);
+            if (!resultado.Exito)
+            {
+                string motivo = !string.IsNullOrWhiteSpace(resultado.MsgError)
+                    ? resultado.MsgError
+                    : $"codError {resultado.CodError}";
+                return new ResultadoOperacionRemota
+                {
+                    Exito = false,
+                    Error = $"Innovatrans no ha podido anular el envío (albarán {albaran.Trim()}): {motivo}"
+                };
+            }
+            return new ResultadoOperacionRemota { Exito = true };
+        }
+
+        /// <summary>
+        /// Modifica el envío en DTX (mismo DatosEnvio que el insert, con el albarán informado) y
+        /// devuelve la etiqueta reimpresa (#317): la etiqueta lleva CP/población impresos. El CP nuevo
+        /// pasa por la MISMA canalización que el insert (mapeador + reintento por catálogo en 405).
+        /// </summary>
+        public async Task<ResultadoTramitacionRemota> ModificarYEtiquetarAsync(DatosEnvioRemoto envio, string albaran)
+        {
+            if (envio == null) throw new ArgumentNullException(nameof(envio));
+            if (string.IsNullOrWhiteSpace(albaran)) throw new ArgumentNullException(nameof(albaran));
+
+            // Mismo requisito que el insert: DataTrans exige pesoReal > 0 en el DatosEnvio completo.
+            if (envio.Peso <= 0)
+            {
+                return new ResultadoTramitacionRemota
+                {
+                    Exito = false,
+                    Error = "Innovatrans necesita el peso del envío (mayor que 0 kg) para modificarlo."
+                };
+            }
+
+            EnvioDataTrans peticion = ConstruirPeticion(envio);
+            ResultadoOperacionEnvio modificacion = await _operaciones
+                .ModificarEnvioAsync(peticion, albaran).ConfigureAwait(false);
+
+            // El CP corregido puede caer en el mismo 405 de canalización que el insert (NestoAPI#300).
+            if (RequiereReintentoCanalizacion(modificacion.CodError, modificacion.Exito, peticion))
+            {
+                PoblacionCatalogoResultado catalogo = await ResolverPoblacionCatalogoAsync(envio).ConfigureAwait(false);
+                if (catalogo.ErrorAccionable != null)
+                {
+                    return new ResultadoTramitacionRemota { Exito = false, Error = catalogo.ErrorAccionable };
+                }
+                if (catalogo.Poblacion != null)
+                {
+                    peticion.Destinatario.Poblacion = catalogo.Poblacion;
+                    modificacion = await _operaciones.ModificarEnvioAsync(peticion, albaran).ConfigureAwait(false);
+                }
+            }
+
+            if (!modificacion.Exito)
+            {
+                string motivo = !string.IsNullOrWhiteSpace(modificacion.MsgError)
+                    ? modificacion.MsgError
+                    : $"codError {modificacion.CodError}";
+                return new ResultadoTramitacionRemota
+                {
+                    Exito = false,
+                    Error = $"Innovatrans rechazó la modificación del envío (albarán {albaran.Trim()}): {motivo}"
+                };
+            }
+
+            // Modificado en la agencia: devolver SIEMPRE el albarán para que el llamante persista los
+            // datos nuevos aunque la etiqueta falle (el envío ya viaja con ellos en DTX).
+            int bultos = envio.Bultos > 0 ? envio.Bultos : 1;
+            EtiquetaDataTrans etiqueta;
+            try
+            {
+                etiqueta = await _operaciones
+                    .BuscarEtiquetaAsync(albaran, FormatoEtiquetaDataTrans.Zpl).ConfigureAwait(false);
+            }
+            catch (DataTransException ex)
+            {
+                return new ResultadoTramitacionRemota
+                {
+                    Exito = false,
+                    Albaran = albaran.Trim(),
+                    Bultos = bultos,
+                    Error = $"El envío se modificó en Innovatrans (albarán {albaran.Trim()}) pero no se pudo reimprimir la etiqueta: {ex.Message}"
+                };
+            }
+
+            if (etiqueta == null || !etiqueta.Exito || !etiqueta.EsZpl)
+            {
+                return new ResultadoTramitacionRemota
+                {
+                    Exito = false,
+                    Albaran = albaran.Trim(),
+                    Bultos = bultos,
+                    Etiqueta = etiqueta,
+                    Error = $"El envío se modificó en Innovatrans (albarán {albaran.Trim()}) pero no devolvió una etiqueta ZPL válida"
+                        + (string.IsNullOrWhiteSpace(etiqueta?.Error) ? "." : $": {etiqueta.Error}")
+                };
+            }
+
+            int etiquetasReales = ContarEtiquetasZpl(etiqueta.Contenido);
+            if (etiquetasReales > 0)
+            {
+                bultos = etiquetasReales;
+            }
+
+            return new ResultadoTramitacionRemota
+            {
+                Exito = true,
+                Albaran = albaran.Trim(),
+                Bultos = bultos,
+                Etiqueta = etiqueta
+            };
+        }
+
+        // ¿Toca reintentar por canalización (NestoAPI#300)? Solo con codError 405, con catálogo
+        // disponible y fuera de Portugal (que ya canaliza por población).
+        private bool RequiereReintentoCanalizacion(int? codError, bool exito, EnvioDataTrans peticion)
+            => !exito && codError == COD_ERROR_CANALIZACION_INCORRECTA
+                && _lectura != null && !MapeadorDireccionDataTrans.EsPortugal(peticion.Destinatario?.Pais);
+
+        private class PoblacionCatalogoResultado
+        {
+            public string Poblacion { get; set; }
+            public string ErrorAccionable { get; set; }
+        }
+
+        // Busca en el catálogo de DTX las poblaciones del CP y elige la que casa con la nuestra.
+        // Con catálogo y sin match razonable NO se reintenta a ciegas: error accionable para el almacén.
+        private async Task<PoblacionCatalogoResultado> ResolverPoblacionCatalogoAsync(DatosEnvioRemoto envio)
+        {
+            List<string> poblacionesCatalogo;
+            try
+            {
+                ResultadoBuscarPoblacion catalogo = await _lectura
+                    .BuscarPoblacionAsync(envio.CodigoPostal?.Trim()).ConfigureAwait(false);
+                poblacionesCatalogo = catalogo.Poblaciones.Select(p => p.Poblacion).ToList();
+            }
+            catch (DataTransException)
+            {
+                // Si el catálogo no responde, seguimos con el error original de la operación.
+                poblacionesCatalogo = new List<string>();
+            }
+
+            string poblacionCatalogo = CanalizadorPoblacionDataTrans
+                .ElegirPoblacionCatalogo(envio.Poblacion, poblacionesCatalogo);
+            if (poblacionCatalogo != null)
+            {
+                return new PoblacionCatalogoResultado { Poblacion = poblacionCatalogo };
+            }
+            if (poblacionesCatalogo.Count > 0)
+            {
+                return new PoblacionCatalogoResultado
+                {
+                    ErrorAccionable = $"Innovatrans no sabe canalizar el CP {envio.CodigoPostal?.Trim()} con la población " +
+                        $"'{envio.Poblacion?.Trim()}'. Poblaciones válidas para ese CP: {string.Join(", ", poblacionesCatalogo)}. " +
+                        "Corrige la población del envío o tramítalo por otra agencia."
+                };
+            }
+            return new PoblacionCatalogoResultado();
+        }
 
         /// <summary>
         /// Seguimiento normalizado de Innovatrans: combina ConsultarEstados (entrega) y

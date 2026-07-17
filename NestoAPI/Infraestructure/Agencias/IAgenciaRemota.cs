@@ -42,6 +42,18 @@ namespace NestoAPI.Infraestructure.Agencias
     }
 
     /// <summary>
+    /// Resultado de una operación remota sin etiqueta (hoy: anular un envío, #316). Si
+    /// <see cref="Exito"/> es false, <see cref="Error"/> trae el motivo DE LA AGENCIA tal cual
+    /// (p. ej. "excedido el tiempo de borrado" cuando la ventana de edición del día ya cerró):
+    /// el usuario necesita saber que llegó tarde y que toca abrir incidencia con la agencia.
+    /// </summary>
+    public class ResultadoOperacionRemota
+    {
+        public bool Exito { get; set; }
+        public string Error { get; set; }
+    }
+
+    /// <summary>
     /// Estado de seguimiento de un envío, NORMALIZADO e independiente de la agencia. Los valores
     /// coinciden con <c>EnviosAgencia.Estado</c> (#247), de modo que persistir es un cast directo
     /// (sin mapas ni switches): <c>envio.Estado = (short)seguimiento.Estado</c>.
@@ -109,6 +121,21 @@ namespace NestoAPI.Infraestructure.Agencias
 
         /// <summary>Reimprime la etiqueta de un albarán ya insertado (no reinserta). Idempotente.</summary>
         Task<EtiquetaDataTrans> ReimprimirAsync(string albaran, int? desdeBulto = null, int? hastaBulto = null);
+
+        /// <summary>
+        /// Anula en la agencia un envío YA registrado, por su albarán (#316). Tras el éxito, el
+        /// albarán deja de existir en la agencia (no se recoge ni se factura). La regla del llamante
+        /// es API primero, BD después: solo si la agencia confirma se toca nuestra BD. Las agencias
+        /// suelen limitar la ventana de anulación (Innovatrans: hasta el cierre del día).
+        /// </summary>
+        Task<ResultadoOperacionRemota> AnularAsync(string albaran);
+
+        /// <summary>
+        /// Modifica en la agencia un envío YA registrado (por su albarán) con los datos corregidos
+        /// y devuelve la etiqueta REIMPRESA (#317): la etiqueta lleva CP/población impresos, así que
+        /// modificar obliga a re-etiquetar. API primero, BD después, como en AnularAsync.
+        /// </summary>
+        Task<ResultadoTramitacionRemota> ModificarYEtiquetarAsync(DatosEnvioRemoto envio, string albaran);
 
         /// <summary>
         /// Intercambios crudos (petición + respuesta) hechos contra la API de la agencia durante las

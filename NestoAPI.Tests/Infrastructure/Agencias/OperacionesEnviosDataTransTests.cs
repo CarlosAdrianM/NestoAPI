@@ -255,6 +255,97 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.AreEqual("XlhBfkNJMTUw", etiqueta.Contenido);
         }
 
+        // #316/#317: BorrarEnvios y ModificarEnvios comparten el DatosRespuesta del insert
+        // (albaran/codError/msgError); éxito = codError 200. Verificado contra el WSDL real:
+        // BorrarEnviosTypeIn = autenticacion + albaran*; ModificarEnviosTypeIn = autenticacion + envios (DatosEnvio).
+
+        private const string RESP_OPERACION_OK =
+            @"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/"">
+                <soapenv:Body>
+                  <ns4:BorrarEnviosTypeOut xmlns:ns4=""http://messageout.dtx.sw"">
+                    <ns4:resultado>
+                      <ns2:albaran xmlns:ns2=""http://complexType.dtx.sw"">6522393001</ns2:albaran>
+                      <ns2:codError xmlns:ns2=""http://complexType.dtx.sw"">200</ns2:codError>
+                      <ns2:msgError xmlns:ns2=""http://complexType.dtx.sw""/>
+                    </ns4:resultado>
+                  </ns4:BorrarEnviosTypeOut>
+                </soapenv:Body>
+              </soapenv:Envelope>";
+
+        private const string RESP_OPERACION_FUERA_DE_PLAZO =
+            @"<soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/"">
+                <soapenv:Body>
+                  <ns4:BorrarEnviosTypeOut xmlns:ns4=""http://messageout.dtx.sw"">
+                    <ns4:resultado>
+                      <ns2:albaran xmlns:ns2=""http://complexType.dtx.sw"">6522393001</ns2:albaran>
+                      <ns2:codError xmlns:ns2=""http://complexType.dtx.sw"">413</ns2:codError>
+                      <ns2:msgError xmlns:ns2=""http://complexType.dtx.sw"">Excedido el tiempo de borrado</ns2:msgError>
+                    </ns4:resultado>
+                  </ns4:BorrarEnviosTypeOut>
+                </soapenv:Body>
+              </soapenv:Envelope>";
+
+        [TestMethod]
+        public async Task BorrarEnvio_ConstruyePeticionConSoapActionYAlbaran()
+        {
+            var handler = new HandlerFalso(HttpStatusCode.OK, RESP_OPERACION_OK);
+
+            ResultadoOperacionEnvio resultado = await CrearOperaciones(handler).BorrarEnvioAsync(" 6522393001 ");
+
+            Assert.AreEqual("http://h001.iatsl.es:8081/dtxSW/services/Envios",
+                handler.UltimaPeticion.RequestUri.ToString());
+            Assert.AreEqual("urn:BorrarEnvios",
+                string.Join("", handler.UltimaPeticion.Headers.GetValues("SOAPAction")));
+            StringAssert.Contains(handler.UltimoCuerpo, "BorrarEnviosTypeIn");
+            // El albarán va en el namespace mes (hermano de la autenticación) y sin el padding.
+            StringAssert.Contains(handler.UltimoCuerpo, "<mes:albaran>6522393001</mes:albaran>");
+            Assert.IsTrue(resultado.Exito);
+        }
+
+        [TestMethod]
+        public async Task BorrarEnvio_FueraDePlazo_DevuelveElErrorDeDtx()
+        {
+            // codError 413 = la ventana de edición del día (~15:00-17:00) ya cerró: el usuario tiene
+            // que ver el motivo real para saber que toca incidencia con la agencia.
+            var handler = new HandlerFalso(HttpStatusCode.OK, RESP_OPERACION_FUERA_DE_PLAZO);
+
+            ResultadoOperacionEnvio resultado = await CrearOperaciones(handler).BorrarEnvioAsync("6522393001");
+
+            Assert.IsFalse(resultado.Exito);
+            Assert.AreEqual(413, resultado.CodError);
+            Assert.AreEqual("Excedido el tiempo de borrado", resultado.MsgError);
+        }
+
+        [TestMethod]
+        public async Task ModificarEnvio_MandaElDatosEnvioCompletoConElAlbaran()
+        {
+            var handler = new HandlerFalso(HttpStatusCode.OK, RESP_OPERACION_OK);
+
+            ResultadoOperacionEnvio resultado = await CrearOperaciones(handler)
+                .ModificarEnvioAsync(EnvioDePrueba(), "6522393001");
+
+            Assert.AreEqual("urn:ModificarEnvios",
+                string.Join("", handler.UltimaPeticion.Headers.GetValues("SOAPAction")));
+            string cuerpo = handler.UltimoCuerpo;
+            StringAssert.Contains(cuerpo, "ModificarEnviosTypeIn");
+            // Mismo tipo DatosEnvio que el insert, pero con el albarán del envío a editar.
+            StringAssert.Contains(cuerpo, "<com:albaran>6522393001</com:albaran>");
+            // El resto del envío viaja completo y por la misma canalización que el insert
+            // (provincia derivada del CP, orden del XSD).
+            StringAssert.Contains(cuerpo, "<com:provinciaDes>028</com:provinciaDes>");
+            StringAssert.Contains(cuerpo, "<com:tipoServ>0048</com:tipoServ>");
+            Assert.IsTrue(resultado.Exito);
+        }
+
+        [TestMethod]
+        public async Task ModificarEnvio_SinAlbaran_Lanza()
+        {
+            var handler = new HandlerFalso(HttpStatusCode.OK, RESP_OPERACION_OK);
+
+            await Assert.ThrowsExceptionAsync<System.ArgumentNullException>(
+                () => CrearOperaciones(handler).ModificarEnvioAsync(EnvioDePrueba(), " "));
+        }
+
         /// <summary>HttpMessageHandler de prueba: captura la petición y devuelve una respuesta fija.</summary>
         private class HandlerFalso : HttpMessageHandler
         {
