@@ -212,7 +212,13 @@ namespace NestoAPI.Controllers
                 await AuditarTramitacion(envio, agencia, reimpresionOk, reimpresionOk ? null : "No se pudo reimprimir la etiqueta.");
                 if (!reimpresionOk)
                 {
-                    return Content(HttpStatusCode.BadGateway, "No se pudo reimprimir la etiqueta del envío ya tramitado.");
+                    // Nesto#412: si el código de barras no es un albarán real de esta agencia (p. ej.
+                    // un envío que heredó el código local de OTRA agencia), la reimpresión falla
+                    // SIEMPRE y el mensaje genérico no daba pista de cómo salir del bucle.
+                    return Content(HttpStatusCode.BadGateway,
+                        $"No se pudo reimprimir la etiqueta del albarán {envio.CodigoBarras.Trim()}. " +
+                        "Si ese código no es un albarán de esta agencia (p. ej. viene de una etiqueta de otra agencia), " +
+                        "borra el código de barras del envío para que se registre de nuevo con albarán propio.");
                 }
                 return Ok(AResultado(envio, envio.CodigoBarras.Trim(), envio.Bultos, reimpresion, reimpresion: true));
             }
