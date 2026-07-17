@@ -16,14 +16,17 @@ namespace NestoAPI.Infraestructure
     {
         /// <summary>
         /// -2 = timeout de comando (lo que ven los usuarios como "No se pudo contabilizar");
-        /// 1222 = lock request time out. La SqlException viene anidada en la cadena de inners.
+        /// 1222 = lock request time out; 1205 = interbloqueo (deadlock, caso real 17/07/26: en un
+        /// interbloqueo SQL Server mata a la víctima pero el GANADOR sigue vivo con su transacción
+        /// abierta, así que las DMVs aún pueden identificarlo — sobre todo con el fallback de
+        /// sesión sleeping con transacción antigua). La SqlException viene anidada en los inners.
         /// </summary>
         public static bool EsErrorDeBloqueo(Exception exception)
         {
             for (Exception actual = exception; actual != null; actual = actual.InnerException)
             {
                 if (actual is SqlException sqlException &&
-                    (sqlException.Number == -2 || sqlException.Number == 1222))
+                    (sqlException.Number == -2 || sqlException.Number == 1222 || sqlException.Number == 1205))
                 {
                     return true;
                 }

@@ -32,6 +32,19 @@ namespace NestoAPI.Tests.Infraestructure
         }
 
         [TestMethod]
+        public void EsErrorDeBloqueo_Interbloqueo1205_True()
+        {
+            // Caso real 17/07/26 (PostPreContabilidad de Aida): interbloqueo 1205. SQL Server mata
+            // a la víctima pero el GANADOR sigue vivo con su transacción abierta, así que las DMVs
+            // aún pueden decir quién es (sobre todo con el fallback de sleeping con tran antigua).
+            // Antes solo se reconocían -2 y 1222 y el nombre del compañero no salía.
+            var ex = new Exception("No se pudo contabilizar",
+                new Exception("intermedia", CrearSqlException(1205)));
+
+            Assert.IsTrue(DiagnosticoBloqueos.EsErrorDeBloqueo(ex));
+        }
+
+        [TestMethod]
         public void EsErrorDeBloqueo_OtroErrorSql_False()
         {
             Assert.IsFalse(DiagnosticoBloqueos.EsErrorDeBloqueo(CrearSqlException(2627)));
