@@ -59,5 +59,21 @@ namespace NestoAPI.Models
             }
         }
 
+        // NestoAPI#258 slice (a): identificadores por canal externo declarados por la agencia.
+        // Los canales de Nesto (Prestashop/Amazon) confirman envíos con estos datos en vez de
+        // re-parsear el enlace de seguimiento (LeerDatosEnvio gemelos). Null = agencia no
+        // registrada o sin presencia en ese canal.
+
+        /// <summary>Nº de seguimiento del envío (el CodigoBarras sin el padding de BD).</summary>
+        public string NumeroSeguimiento => CodigoBarras?.Trim();
+
+        /// <summary>Id del transportista en Prestashop (105 CEX, 103 Sending, 160 GLS/Innovatrans).</summary>
+        public string TransportistaPrestashop => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.TransportistaPrestashop;
+
+        /// <summary>CarrierName para confirmar el envío en Amazon MFN.</summary>
+        public string CarrierNameAmazon => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.CarrierNameAmazon;
+
+        /// <summary>ShippingMethod para confirmar el envío en Amazon MFN.</summary>
+        public string ShippingMethodAmazon => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.ShippingMethodAmazon;
     }
 }

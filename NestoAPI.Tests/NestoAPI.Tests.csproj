@@ -355,6 +355,7 @@
     <Compile Include="Infrastructure\Pagos\ServicioPagosTests.cs" />
     <Compile Include="Infrastructure\ServicioFacturasCrearFacturaTests.cs" />
     <Compile Include="Infrastructure\Verifactu\MapeadorFacturaVerifactuTests.cs" />
+    <Compile Include="Models\EnvioAgenciaDTOCanalesExternosTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioVerifactiHttpTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioFacturasVerifactuTests.cs" />
     <Compile Include="Models\Comisiones\CalculadorProyecciones2019Test.cs" />

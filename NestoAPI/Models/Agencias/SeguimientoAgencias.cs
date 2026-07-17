@@ -27,11 +27,23 @@ namespace NestoAPI.Models.Agencias
         string Nombre { get; }
         /// <summary>URL de seguimiento, o null si no hay datos suficientes para construirla.</summary>
         string ConstruirUrl(DatosSeguimientoEnvio datos);
+        // NestoAPI#258 slice (a): cada agencia declara UNA vez sus identificadores por canal
+        // externo; los canales de Nesto los consumen del DTO en vez de re-parsear el enlace.
+        /// <summary>Id del transportista en Prestashop, o null si no vende por ese canal.</summary>
+        string TransportistaPrestashop { get; }
+        /// <summary>CarrierName para confirmar envíos en Amazon MFN, o null.</summary>
+        string CarrierNameAmazon { get; }
+        /// <summary>ShippingMethod para confirmar envíos en Amazon MFN, o null.</summary>
+        string ShippingMethodAmazon { get; }
     }
 
     internal class SeguimientoGls : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "ASM";
+        // GLS e Innovatrans comparten el transportista genérico 160 de Prestashop
+        public string TransportistaPrestashop => "160";
+        public string CarrierNameAmazon => "GLS";
+        public string ShippingMethodAmazon => "Business Parcel";
         public string ConstruirUrl(DatosSeguimientoEnvio d)
             => !string.IsNullOrEmpty(d.CodigoSeguimiento) && !string.IsNullOrEmpty(d.CodigoPostal)
                 ? $"https://mygls.gls-spain.es/e/{d.CodigoSeguimiento}/{d.CodigoPostal}"
@@ -41,6 +53,10 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoOnTime : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "OnTime";
+        // OnTime no se usa en tienda online ni marketplaces
+        public string TransportistaPrestashop => null;
+        public string CarrierNameAmazon => null;
+        public string ShippingMethodAmazon => null;
         public string ConstruirUrl(DatosSeguimientoEnvio d)
         {
             // OnTime no usa el código de seguimiento, sino cliente+pedido. Guarda estricta
@@ -57,6 +73,9 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoCorreosExpress : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "Correos Express";
+        public string TransportistaPrestashop => "105";
+        public string CarrierNameAmazon => "Correos Express";
+        public string ShippingMethodAmazon => "ePaq";
         public string ConstruirUrl(DatosSeguimientoEnvio d)
             => !string.IsNullOrEmpty(d.CodigoSeguimiento)
                 ? $"https://s.correosexpress.com/c?n={d.CodigoSeguimiento}"
@@ -66,6 +85,9 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoSending : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "Sending";
+        public string TransportistaPrestashop => "103";
+        public string CarrierNameAmazon => "Sending";
+        public string ShippingMethodAmazon => "Send Exprés";
         public string ConstruirUrl(DatosSeguimientoEnvio d)
             => !string.IsNullOrEmpty(d.Identificador) && !string.IsNullOrEmpty(d.CodigoSeguimiento)
                 ? $"https://info.sending.es/fgts/pub/locNumServ.seam?cliente={d.Identificador}&localizador={d.CodigoSeguimiento}"
@@ -75,6 +97,9 @@ namespace NestoAPI.Models.Agencias
     internal class SeguimientoInnovatrans : IEstrategiaSeguimientoAgencia
     {
         public string Nombre => "Innovatrans";
+        public string TransportistaPrestashop => "160";
+        public string CarrierNameAmazon => "Innovatrans";
+        public string ShippingMethodAmazon => "Estándar";
         // Portal TIP-SA: id fijo de cliente (028040028040) + albarán (CodigoSeguimiento) de DataTrans.
         public string ConstruirUrl(DatosSeguimientoEnvio d)
             => !string.IsNullOrEmpty(d.CodigoSeguimiento)
@@ -105,6 +130,12 @@ namespace NestoAPI.Models.Agencias
         public static string ConstruirUrl(DatosSeguimientoEnvio datos)
             => datos?.AgenciaNombre != null && PorNombre.TryGetValue(datos.AgenciaNombre, out IEstrategiaSeguimientoAgencia estrategia)
                 ? estrategia.ConstruirUrl(datos)
+                : null;
+
+        /// <summary>Estrategia de la agencia, o null si no está registrada (NestoAPI#258).</summary>
+        public static IEstrategiaSeguimientoAgencia Obtener(string agenciaNombre)
+            => agenciaNombre != null && PorNombre.TryGetValue(agenciaNombre, out IEstrategiaSeguimientoAgencia estrategia)
+                ? estrategia
                 : null;
     }
 }
