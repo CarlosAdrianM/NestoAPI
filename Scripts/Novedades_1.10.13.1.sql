@@ -1,7 +1,7 @@
--- Novedades para la ventana "Qué hay nuevo" de la versión 1.10.14.0
+-- Novedades para la ventana "Qué hay nuevo" de la versión 1.10.13.1
 -- Lenguaje de usuario, solo lo que el usuario percibe. La Version debe ser <= a la
--- ClickOnce publicada (1.10.14.0). Ambito: Nesto / NestoAPI. Publicada = 1 (default).
--- Ejecutar contra la BD NV al publicar Nesto 1.10.14.0.
+-- ClickOnce publicada (1.10.13.1). Ambito: Nesto / NestoAPI. Publicada = 1 (default).
+-- Ejecutar contra la BD NV al publicar Nesto 1.10.13.1.
 -- Se omiten a propósito (el usuario no las percibe o son internas):
 --  - Verifactu Fase A (#34): envío de facturas a la AEAT, desactivado por configuración
 --    hasta la fase de producción (dic/26).
@@ -11,7 +11,7 @@
 --    en una versión próxima; de momento el flujo es anular + corregir + reimprimir.
 --  - Traspaso de albaranes entre empresas (#318): corrección de integridad interna.
 
-DECLARE @version VARCHAR(23) = '1.10.14.0';
+DECLARE @version VARCHAR(23) = '1.10.13.1';
 
 INSERT INTO dbo.Novedades ([Version], Categoria, Titulo, Descripcion, Ambito, Usuario) VALUES
 -- ============================ NUEVO ============================
