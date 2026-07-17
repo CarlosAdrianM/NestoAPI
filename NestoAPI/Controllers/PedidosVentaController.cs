@@ -696,9 +696,11 @@ namespace NestoAPI.Controllers
                         linea.Producto = producto.Número;
                         // NestoAPI#249: al cambiar el producto, el grupo se resuelve igual que al
                         // crear la línea (productos marcados pueden comisionar por otro grupo según
-                        // quién modifica el pedido).
-                        linea.Grupo = this.gestor.ResolverGrupoProducto(producto, pedido.empresa, pedido.cliente, pedido.contacto, pedido.vendedor, pedido.Usuario);
-                        linea.SubGrupo = producto.SubGrupo;
+                        // quién modifica el pedido). NestoAPI#319: y el subgrupo con él (si el grupo
+                        // convierte, la línea lleva el subgrupo por defecto del grupo convertido).
+                        GestorPedidosVenta.GrupoSubgrupoLinea grupoLinea = this.gestor.ResolverGrupoProducto(producto, pedido.empresa, pedido.cliente, pedido.contacto, pedido.vendedor, pedido.Usuario);
+                        linea.Grupo = grupoLinea.Grupo;
+                        linea.SubGrupo = grupoLinea.SubGrupo;
                         linea.Familia = producto.Familia;
                         linea.TipoExclusiva = producto.Familia1.TipoExclusiva;
                         linea.PrecioTarifa = producto.PVP;

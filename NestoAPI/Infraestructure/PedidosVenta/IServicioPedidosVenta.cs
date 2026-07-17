@@ -32,6 +32,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         // (ParametrosUsuario, clave "Vendedor"; null si no tiene).
         List<string> LeerGruposComisionablesAlternativos(string empresa, string producto);
         string LeerVendedorDeUsuario(string empresa, string usuario);
+        // NestoAPI#319: subgrupo EXISTENTE para una línea cuyo grupo se ha convertido (#249). Nunca
+        // inventa: devuelve el subgrupo por defecto del grupo (convención código = grupo: PEL/PEL,
+        // ACC/ACC...) o, si no existe, el primero del grupo por orden; null si el grupo no tiene
+        // ninguno. Así la conversión jamás rompe FK_LinPedidoVta_SubGruposProducto.
+        string LeerSubGrupoParaGrupo(string empresa, string grupo);
         string LeerTipoExclusiva(string empresa, string producto);
         List<LinPedidoVta> CargarLineasPedidoPendientes(int pedido);
         List<LinPedidoVta> CargarLineasPedidoSinPicking(int pedido);

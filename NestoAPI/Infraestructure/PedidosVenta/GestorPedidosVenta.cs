@@ -386,8 +386,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     coste = (decimal)producto.PrecioMedio;
                     // NestoAPI#249: los productos marcados pueden comisionar por otro grupo según
                     // quién mete el pedido (guantes COS/PEL). Para el resto, el de la ficha.
-                    grupo = ResolverGrupoProducto(producto, empresa, cliente, contacto, vendedor, usuarioPedido);
-                    subGrupo = producto.SubGrupo;
+                    // NestoAPI#319: al convertir el grupo, el subgrupo también se resuelve (el de la
+                    // ficha puede no existir bajo el grupo convertido y rompería la FK al guardar).
+                    GrupoSubgrupoLinea grupoLinea = ResolverGrupoProducto(producto, empresa, cliente, contacto, vendedor, usuarioPedido);
+                    grupo = grupoLinea.Grupo;
+                    subGrupo = grupoLinea.SubGrupo;
                     familia = producto.Familia;
                     _ = producto.IVA_Repercutido; // ¿Se usa? Ojo, que puede venir el IVA nulo y estar bien
                     estadoProducto = (short)producto.Estado;
@@ -495,28 +498,48 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return servicio.EsSobrePedido(producto, cantidad);
         }
 
+        // NestoAPI#319: grupo y subgrupo de una línea, resueltos JUNTOS (la FK de LinPedidoVta exige
+        // que la combinación exista en SubGruposProducto).
+        internal class GrupoSubgrupoLinea
+        {
+            public string Grupo { get; set; }
+            public string SubGrupo { get; set; }
+        }
+
         // NestoAPI#249: grupo de la línea de un producto. Para los NO marcados (lo normal) devuelve el
         // de la ficha con una sola consulta extra (los grupos alternativos). Para los marcados resuelve
         // con la regla de GestorComisiones.ResolverGrupoComisionable a partir de los vendedores por
         // grupo de la ficha del cliente (mismo origen que usa prdActualizarComisionesPorGrupoProducto).
-        internal string ResolverGrupoProducto(Producto producto, string empresa, string cliente, string contacto, string vendedorCabecera, string usuarioPedido)
+        // NestoAPI#319 (caso real pedido 922572, producto 25720 PEL/DES -> ACC): al convertir el grupo,
+        // el subgrupo de la ficha NO viaja con él — los subgrupos son independientes por grupo (que
+        // COS/107 y PEL/107 compartan código no significa nada), y arrastrarlo rompía
+        // FK_LinPedidoVta_SubGruposProducto (el pedido no se podía guardar). Decisión de Carlos
+        // (17/07/26): la línea convertida lleva SIEMPRE un subgrupo YA EXISTENTE del grupo convertido
+        // (jamás se crean subgrupos): el por defecto por convención (código = grupo: PEL/PEL,
+        // ACC/ACC...) o, si no existe, el primero del grupo. Solo si el grupo no tiene NINGÚN
+        // subgrupo (no debería pasar): ERROR claro y bloqueante — la comisión toca el bolsillo de un
+        // compañero y NUNCA debe salir por el grupo equivocado en silencio (regla de Carlos: mejor
+        // que falle y arreglarlo que comisionar mal).
+        internal GrupoSubgrupoLinea ResolverGrupoProducto(Producto producto, string empresa, string cliente, string contacto, string vendedorCabecera, string usuarioPedido)
         {
             string grupoFicha = producto.Grupo;
+            string subGrupoFicha = producto.SubGrupo;
+            GrupoSubgrupoLinea ficha = new GrupoSubgrupoLinea { Grupo = grupoFicha, SubGrupo = subGrupoFicha };
             if (string.IsNullOrWhiteSpace(usuarioPedido))
             {
-                return grupoFicha;
+                return ficha;
             }
 
             List<string> gruposAlternativos = servicio.LeerGruposComisionablesAlternativos(empresa, producto.Número);
             if (gruposAlternativos == null || gruposAlternativos.Count == 0)
             {
-                return grupoFicha;
+                return ficha;
             }
 
             string vendedorUsuario = servicio.LeerVendedorDeUsuario(empresa, usuarioPedido);
             if (string.IsNullOrWhiteSpace(vendedorUsuario))
             {
-                return grupoFicha;
+                return ficha;
             }
 
             Dictionary<string, string> vendedoresPorGrupo = (servicio.LeerVendedoresClienteGrupo(empresa, cliente, contacto) ?? new List<VendedorGrupoProductoDTO>())
@@ -524,7 +547,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .GroupBy(v => v.grupoProducto.Trim())
                 .ToDictionary(g => g.Key, g => g.First().vendedor);
 
-            return GestorComisiones.ResolverGrupoComisionable(grupoFicha, gruposAlternativos, vendedoresPorGrupo, vendedorCabecera, vendedorUsuario);
+            string grupoResuelto = GestorComisiones.ResolverGrupoComisionable(grupoFicha, gruposAlternativos, vendedoresPorGrupo, vendedorCabecera, vendedorUsuario);
+
+            if (string.IsNullOrWhiteSpace(grupoResuelto) || grupoResuelto.Trim() == grupoFicha?.Trim())
+            {
+                return ficha; // sin conversión: grupo y subgrupo de la ficha, como siempre
+            }
+
+            string subGrupoConvertido = servicio.LeerSubGrupoParaGrupo(empresa, grupoResuelto);
+            if (string.IsNullOrWhiteSpace(subGrupoConvertido))
+            {
+                // La comisión NUNCA debe salir por el grupo equivocado en silencio: error claro
+                // (accionable) en vez de comisionar por la ficha o romper con la FK críptica.
+                throw new Exception(
+                    $"El producto {producto.Número?.Trim()} comisiona por el grupo {grupoResuelto.Trim()} " +
+                    $"pero ese grupo no tiene ningún subgrupo en SubGruposProducto: no se puede crear la línea. " +
+                    "Crea un subgrupo para ese grupo o corrige el marcado del producto en ProductosGruposComisionablesAlternativos.");
+            }
+
+            return new GrupoSubgrupoLinea { Grupo = grupoResuelto, SubGrupo = subGrupoConvertido };
         }
 
         // A las 11h de la mañana se cierra la ruta y los pedidos que se metan son ya para el día siguiente

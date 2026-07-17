@@ -228,6 +228,25 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return string.IsNullOrWhiteSpace(vendedor) ? null : vendedor.Trim();
         }
 
+        // NestoAPI#319: subgrupo existente para el grupo convertido (#249). Preferencia por la
+        // convención código = grupo (PEL/PEL, ACC/ACC...); si no, el primero por orden (determinista).
+        // SQL Server ignora el padding de los char en la comparación del Where; el Trim de la
+        // preferencia se hace en memoria sobre la lista ya cargada.
+        public string LeerSubGrupoParaGrupo(string empresa, string grupo)
+        {
+            List<string> subgrupos = db.SubGruposProductoes
+                .Where(sg => sg.Empresa == empresa && sg.Grupo == grupo)
+                .OrderBy(sg => sg.Número)
+                .Select(sg => sg.Número)
+                .ToList();
+            if (subgrupos.Count == 0)
+            {
+                return null;
+            }
+            string porDefecto = subgrupos.FirstOrDefault(s => s?.Trim() == grupo?.Trim());
+            return (porDefecto ?? subgrupos.First())?.Trim();
+        }
+
         public string LeerTipoExclusiva(string empresa, string numeroProducto)
         {
             // la cláusula include es case sensitive, por lo que la familia "pure" es distinta a "Pure" y no la encuentra (es lo que da error)
