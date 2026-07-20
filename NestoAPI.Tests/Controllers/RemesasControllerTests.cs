@@ -36,6 +36,40 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetMovimientos_DevuelveLosEfectosDeLaRemesa()
+        {
+            // Slice 3: el grid de la derecha muestra los efectos incluidos en la remesa
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            List<MovimientoRemesaDTO> movimientos = new List<MovimientoRemesaDTO>
+            {
+                new MovimientoRemesaDTO { Id = 1, Cliente = "15191", Contacto = "0", Importe = 250.50M, Ccc = "1" }
+            };
+            _ = A.CallTo(() => servicio.LeerMovimientosAsync("1", 10897)).Returns(movimientos);
+            RemesasController controller = new RemesasController(servicio);
+
+            var resultado = await controller.GetMovimientos("1", 10897) as OkNegotiatedContentResult<List<MovimientoRemesaDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count);
+            Assert.AreEqual("15191", resultado.Content[0].Cliente);
+            Assert.AreEqual(250.50M, resultado.Content[0].Importe);
+        }
+
+        [TestMethod]
+        public async Task GetMovimientos_RemesaSinEfectos_DevuelveListaVacia()
+        {
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            _ = A.CallTo(() => servicio.LeerMovimientosAsync(A<string>.Ignored, A<int>.Ignored))
+                .Returns(new List<MovimientoRemesaDTO>());
+            RemesasController controller = new RemesasController(servicio);
+
+            var resultado = await controller.GetMovimientos("1", 99999) as OkNegotiatedContentResult<List<MovimientoRemesaDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
+
+        [TestMethod]
         public async Task GetRemesas_SinTop_PideTodasAlServicio()
         {
             // El botón "Ver Todas" llama sin top: el servicio debe recibir null (sin límite).

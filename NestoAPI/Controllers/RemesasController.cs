@@ -32,5 +32,16 @@ namespace NestoAPI.Controllers
             List<RemesaDTO> remesas = await _remesas.LeerRemesasAsync(empresa, top).ConfigureAwait(false);
             return Ok(remesas);
         }
+
+        // GET: api/Remesas/Movimientos?empresa=1&remesa=10897
+        // Nesto#340 Fase 1C.14 slice 3: efectos incluidos en una remesa (grid de la derecha).
+        [HttpGet]
+        [Route("api/Remesas/Movimientos")]
+        [ResponseType(typeof(List<MovimientoRemesaDTO>))]
+        public async Task<IHttpActionResult> GetMovimientos(string empresa, int remesa)
+        {
+            List<MovimientoRemesaDTO> movimientos = await _remesas.LeerMovimientosAsync(empresa, remesa).ConfigureAwait(false);
+            return Ok(movimientos);
+        }
     }
 }

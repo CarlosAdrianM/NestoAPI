@@ -12,5 +12,8 @@ namespace NestoAPI.Infraestructure.Remesas
     {
         /// <param name="top">Número máximo de remesas (null = todas, botón "Ver Todas").</param>
         Task<List<RemesaDTO>> LeerRemesasAsync(string empresa, int? top);
+
+        /// <summary>Slice 3: efectos incluidos en una remesa (apuntes de pago del extracto).</summary>
+        Task<List<MovimientoRemesaDTO>> LeerMovimientosAsync(string empresa, int remesa);
     }
 }
