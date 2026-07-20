@@ -30,6 +30,20 @@ namespace NestoAPI.Infraestructure.Facturas
         internal static bool MostrarQrVerifactuEnPdf =>
             bool.TryParse(ConfigurationManager.AppSettings["Verifacti:MostrarQrEnPdf"], out bool mostrar) && mostrar;
 
+        /// <summary>
+        /// Verifactu #35 (petición expresa de Carlos, 20/07/26): un QR registrado en el SANDBOX
+        /// apunta a la AEAT de preproducción (prewww*.aeat.es) y no debe llegar al papel del
+        /// cliente JAMÁS, ni siquiera con MostrarQrEnPdf activado. Es un invariante por factura,
+        /// no solo de configuración: una factura registrada durante la fase en sombra conserva su
+        /// QR de pruebas para siempre, y al reimprimirla en la era de producción tampoco debe
+        /// imprimirlo. Sin URL persistida no se puede garantizar que sea de producción → no se imprime.
+        /// </summary>
+        internal static bool EsQrDeProduccion(string verifactuUrl)
+        {
+            return !string.IsNullOrWhiteSpace(verifactuUrl)
+                && verifactuUrl.IndexOf("prewww", StringComparison.OrdinalIgnoreCase) < 0;
+        }
+
         public GestorFacturas()
         {
             servicio = new ServicioFacturas();
@@ -421,10 +435,12 @@ namespace NestoAPI.Infraestructure.Facturas
                 Totales = totales,
                 UrlLogo = serieFactura.UrlLogo,
                 UsaFormatoTicket = serieFactura.UsaFormatoTicket,
-                // Verifactu #35: el QR persistido solo se imprime si está activado explícitamente.
-                // Durante la fase en sombra (#41) los QR apuntan a la AEAT de PREPRODUCCIÓN y no
-                // deben llegar al papel del cliente: el flag se activará al pasar a producción.
-                VerifactuQrBase64 = MostrarQrVerifactuEnPdf ? cabFactura.VerifactuQR : null,
+                // Verifactu #35: el QR persistido solo se imprime si está activado explícitamente
+                // Y además la URL registrada es de la AEAT de producción (los QR del sandbox no se
+                // imprimen nunca, ver EsQrDeProduccion).
+                VerifactuQrBase64 = MostrarQrVerifactuEnPdf && EsQrDeProduccion(cabFactura.VerifactuURL)
+                    ? cabFactura.VerifactuQR
+                    : null,
                 Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
                 Vendedores = vendedores
             };

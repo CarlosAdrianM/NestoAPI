@@ -81,6 +81,30 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void EsQrDeProduccion_UrlDePreproduccion_False()
+        {
+            // Petición expresa de Carlos (20/07/26): el QR del sandbox no se imprime NUNCA,
+            // ni siquiera con Verifacti:MostrarQrEnPdf activado. Las URLs del sandbox apuntan
+            // a la AEAT de preproducción (prewww*.aeat.es).
+            Assert.IsFalse(GestorFacturas.EsQrDeProduccion("https://prewww2.aeat.es/wlpl/TIKE-CONT/ValidarQR?nif=A78368255"));
+            Assert.IsFalse(GestorFacturas.EsQrDeProduccion("https://PREWWW1.aeat.es/loquesea"));
+        }
+
+        [TestMethod]
+        public void EsQrDeProduccion_SinUrlPersistida_False()
+        {
+            // Sin URL no se puede garantizar que el QR sea de producción: no se imprime
+            Assert.IsFalse(GestorFacturas.EsQrDeProduccion(null));
+            Assert.IsFalse(GestorFacturas.EsQrDeProduccion("   "));
+        }
+
+        [TestMethod]
+        public void EsQrDeProduccion_UrlDeProduccion_True()
+        {
+            Assert.IsTrue(GestorFacturas.EsQrDeProduccion("https://www2.agenciatributaria.gob.es/wlpl/TIKE-CONT/ValidarQR?nif=A78368255"));
+        }
+
+        [TestMethod]
         public void GenerarPdf_ConQrVerifactu_GeneraSinErrores()
         {
             var factura = CrearFacturaBasica();
