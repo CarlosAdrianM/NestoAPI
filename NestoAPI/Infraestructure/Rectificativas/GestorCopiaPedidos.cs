@@ -21,17 +21,21 @@ namespace NestoAPI.Infraestructure.Rectificativas
         private readonly IServicioPedidosVenta _servicioPedidos;
         private readonly IServicioAlbaranesVenta _servicioAlbaranes;
         private readonly IServicioFacturas _servicioFacturas;
+        private readonly IAlmacenRectificativasPendientes _almacenRectificativasPendientes;
 
         public GestorCopiaPedidos(
             NVEntities db,
             IServicioPedidosVenta servicioPedidos,
             IServicioAlbaranesVenta servicioAlbaranes,
-            IServicioFacturas servicioFacturas)
+            IServicioFacturas servicioFacturas,
+            IAlmacenRectificativasPendientes almacenRectificativasPendientes = null)
         {
             _db = db ?? throw new ArgumentNullException(nameof(db));
             _servicioPedidos = servicioPedidos ?? throw new ArgumentNullException(nameof(servicioPedidos));
             _servicioAlbaranes = servicioAlbaranes ?? throw new ArgumentNullException(nameof(servicioAlbaranes));
             _servicioFacturas = servicioFacturas ?? throw new ArgumentNullException(nameof(servicioFacturas));
+            // Issue #87: metadata de rectificación cuando la copia no factura automáticamente
+            _almacenRectificativasPendientes = almacenRectificativasPendientes ?? new AlmacenRectificativasPendientes(_db);
         }
 
         public async Task<CopiarFacturaResponse> CopiarFactura(CopiarFacturaRequest request, string usuario)
@@ -154,6 +158,9 @@ namespace NestoAPI.Infraestructure.Rectificativas
             {
                 await CrearAlbaranYFactura(request, response, pedidoDestino.Número, usuario, lineasCopiadas);
             }
+
+            // Issues #36/#87: enviar a Verifactu (si se facturó) o guardar pendientes (si no)
+            await RematarRectificativa(request, response, pedidoDestino.Número, lineasCopiadas);
 
             response.Exitoso = true;
             response.Mensaje = $"{(request.InvertirCantidades ? "Rectificativa" : "Copia")} creada: Pedido {response.NumeroPedido}" +
@@ -698,11 +705,45 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     request.Empresa,
                     response.NumeroFactura,
                     lineasCopiadas);
+                // Issue #36: el envío a Verifactu NO va aquí sino en RematarRectificativa, DESPUÉS
+                // de CopiarDatosFiscalesDesdeFacturaOriginal: hay que declarar los datos fiscales
+                // históricos de la factura original, no los de la ficha actual.
+            }
+        }
 
-                // Issue #36: la rectificativa se envía a Verifactu AQUÍ (no en CrearFactura) porque
-                // necesita las vinculaciones recién guardadas para identificar las facturas
-                // rectificadas. Best-effort: nunca lanza.
+        /// <summary>
+        /// Issues #36/#87: cierre común de una rectificativa tras la copia. Si se llegó a facturar,
+        /// se envía a Verifactu (con las vinculaciones ya guardadas y los datos fiscales
+        /// definitivos). Si NO se facturó (el usuario facturará a mano, o una rama de advertencia
+        /// dejó el pedido sin facturar), la metadata de rectificación se guarda en
+        /// RectificativaPendiente para que ServicioFacturas.CrearFactura la vincule al facturar.
+        /// </summary>
+        private async Task RematarRectificativa(CopiarFacturaRequest request, CopiarFacturaResponse response, int numeroPedido, List<LineaCopiadaDTO> lineasCopiadas)
+        {
+            if (!request.InvertirCantidades)
+            {
+                return;
+            }
+
+            if (!string.IsNullOrEmpty(response.NumeroFactura))
+            {
                 await _servicioFacturas.EnviarRectificativaAVerifactu(request.Empresa, response.NumeroFactura);
+                return;
+            }
+
+            List<RectificativaPendienteDTO> pendientes = lineasCopiadas
+                .Where(l => l.CantidadCopiada < 0)
+                .Select(l => new RectificativaPendienteDTO
+                {
+                    NumeroLinea = l.NumeroLineaNueva,
+                    FacturaOriginalNumero = l.FacturaOrigen,
+                    FacturaOriginalLinea = l.LineaOrigen,
+                    CantidadRectificada = Math.Abs(l.CantidadCopiada)
+                })
+                .ToList();
+            if (pendientes.Any())
+            {
+                await _almacenRectificativasPendientes.GuardarPendientes(request.Empresa, numeroPedido, pendientes);
             }
         }
 
@@ -1008,6 +1049,10 @@ namespace NestoAPI.Infraestructure.Rectificativas
                         request.Empresa, request.NumeroFactura, response.NumeroFactura);
                 }
             }
+
+            // Issues #36/#87: enviar a Verifactu (si se facturó, con los datos fiscales ya
+            // definitivos) o guardar pendientes para la facturación manual (si no)
+            await RematarRectificativa(request, response, numeroPedido, lineasCopiadas);
 
             response.Exitoso = true;
             response.Mensaje = GenerarMensajeExito(response, request);

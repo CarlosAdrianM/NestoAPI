@@ -49,7 +49,8 @@ namespace NestoAPI.Infraestructure.Facturas
         /// <summary>
         /// Constructor que además permite inyectar el servicio de Verifactu y el log (para tests).
         /// </summary>
-        public ServicioFacturas(NVEntities dbExterno, Verifactu.IServicioVerifactu servicioVerifactu, ILogService logService = null)
+        public ServicioFacturas(NVEntities dbExterno, Verifactu.IServicioVerifactu servicioVerifactu, ILogService logService = null,
+            Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes = null)
         {
             if (dbExterno != null)
             {
@@ -63,7 +64,12 @@ namespace NestoAPI.Infraestructure.Facturas
             }
             this.servicioVerifactu = servicioVerifactu ?? servicioVerifactuPorDefecto.Value;
             this.logService = logService ?? new ElmahLogService();
+            // Issue #87: vinculaciones de rectificativas facturadas a mano (tabla RectificativaPendiente)
+            this.almacenRectificativasPendientes = almacenRectificativasPendientes
+                ?? new Rectificativas.AlmacenRectificativasPendientes(db);
         }
+
+        private readonly Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes;
 
         public CabFacturaVta CargarCabFactura(string empresa, string numeroFactura)
         {
@@ -487,6 +493,11 @@ namespace NestoAPI.Infraestructure.Facturas
                 // Persistir datos fiscales del cliente principal en la factura (Verifactu)
                 await PersistirDatosFiscalesFactura(empresa, resultadoProcedimiento, cabPedido);
 
+                // Issue #87: si el pedido era una rectificativa copiada SIN facturar automáticamente,
+                // sus vinculaciones esperan en RectificativaPendiente: poblarlas ahora y enviar a
+                // Verifactu. Best-effort: nunca rompe la facturación.
+                await VincularRectificativaPendiente(empresa, resultadoProcedimiento, pedido);
+
                 // Verifactu (#34): enviar la factura recién creada a la AEAT vía Verifacti.
                 // Best-effort: si Verifacti falla, la factura sigue creada y el error queda en ELMAH.
                 await EnviarFacturaAVerifactu(empresa, resultadoProcedimiento);
@@ -719,6 +730,60 @@ namespace NestoAPI.Infraestructure.Facturas
             catch (Exception ex)
             {
                 logService.LogError($"Verifactu: error inesperado al enviar la factura {numeroFactura}", ex);
+            }
+        }
+
+        /// <summary>
+        /// Issue #87: convierte la metadata de RectificativaPendiente (copia hecha sin facturar
+        /// automáticamente) en filas de LinFacturaVtaRectificacion al facturar el pedido, y envía la
+        /// rectificativa a Verifactu. Solo vincula las líneas que realmente entraron en ESTA factura
+        /// (una facturación parcial dejaría el resto pendiente). Best-effort: nunca lanza.
+        /// </summary>
+        internal async Task VincularRectificativaPendiente(string empresa, string numeroFactura, int numeroPedido)
+        {
+            try
+            {
+                List<Models.Rectificativas.RectificativaPendienteDTO> pendientes =
+                    await almacenRectificativasPendientes.LeerPendientes(empresa, numeroPedido);
+                if (!pendientes.Any())
+                {
+                    return;
+                }
+
+                string numeroFacturaLimpio = numeroFactura?.Trim();
+                List<int> numerosLinea = pendientes.Select(p => p.NumeroLinea).ToList();
+                List<int> lineasFacturadas = await db.LinPedidoVtas
+                    .Where(l => l.Empresa == empresa && l.Número == numeroPedido &&
+                        numerosLinea.Contains(l.Nº_Orden) && l.Nº_Factura.Trim() == numeroFacturaLimpio)
+                    .Select(l => l.Nº_Orden)
+                    .ToListAsync();
+                if (!lineasFacturadas.Any())
+                {
+                    return;
+                }
+
+                foreach (Models.Rectificativas.RectificativaPendienteDTO pendiente in
+                    pendientes.Where(p => lineasFacturadas.Contains(p.NumeroLinea)))
+                {
+                    _ = db.LinFacturaVtaRectificaciones.Add(new LinFacturaVtaRectificacion
+                    {
+                        Empresa = empresa,
+                        NumeroFactura = numeroFactura,
+                        NumeroLinea = pendiente.NumeroLinea,
+                        FacturaOriginalNumero = pendiente.FacturaOriginalNumero,
+                        FacturaOriginalLinea = pendiente.FacturaOriginalLinea,
+                        CantidadRectificada = pendiente.CantidadRectificada
+                    });
+                }
+                _ = await db.SaveChangesAsync();
+                await almacenRectificativasPendientes.BorrarPendientes(empresa, numeroPedido, lineasFacturadas);
+
+                // Con las vinculaciones ya en su sitio, la rectificativa puede declararse (#36)
+                await EnviarRectificativaAVerifactu(empresa, numeroFactura);
+            }
+            catch (Exception ex)
+            {
+                logService.LogError($"Verifactu: error al vincular la rectificativa pendiente del pedido {numeroPedido} (factura {numeroFactura})", ex);
             }
         }
 

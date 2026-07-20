@@ -192,6 +192,94 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task VincularRectificativaPendiente_ConPendientes_VinculaBorraYEnvia()
+        {
+            // Issue #87: rectificativa copiada SIN facturar automáticamente; al facturar a mano,
+            // las pendientes se convierten en LinFacturaVtaRectificacion, se borran y se envía.
+            var rectificativa = new CabFacturaVta
+            {
+                Empresa = "1",
+                Serie = "RV",
+                Número = "RV2600001",
+                Fecha = new DateTime(2026, 7, 20),
+                CifNif = "12345678Z",
+                NombreFiscal = "CLIENTE DE PRUEBA SL",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = -100.00M, ImporteIVA = -21.00M }
+                }
+            };
+            var original = new CabFacturaVta { Empresa = "1", Serie = "NV", Número = "NV2600123", Fecha = new DateTime(2026, 6, 1), LinPedidoVtas = new List<LinPedidoVta>() };
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta> { rectificativa, original }.AsQueryable());
+            // Las vinculaciones "ya guardadas" que verá EnviarRectificativaAVerifactu tras el SaveChanges
+            ConfigurarFakeDbSet(fakeRectificaciones, new List<LinFacturaVtaRectificacion>
+            {
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV2600001", NumeroLinea = 10, FacturaOriginalNumero = "NV2600123", FacturaOriginalLinea = 5, CantidadRectificada = 2 }
+            }.AsQueryable());
+            var fakeLineas = A.Fake<DbSet<LinPedidoVta>>(o => o.Implements<IQueryable<LinPedidoVta>>().Implements<IDbAsyncEnumerable<LinPedidoVta>>());
+            A.CallTo(() => db.LinPedidoVtas).Returns(fakeLineas);
+            ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Orden = 10, Nº_Factura = "RV2600001 " }
+            }.AsQueryable());
+            var almacen = A.Fake<NestoAPI.Infraestructure.Rectificativas.IAlmacenRectificativasPendientes>();
+            _ = A.CallTo(() => almacen.LeerPendientes("1", 900001)).Returns(new List<NestoAPI.Models.Rectificativas.RectificativaPendienteDTO>
+            {
+                new NestoAPI.Models.Rectificativas.RectificativaPendienteDTO { NumeroLinea = 10, FacturaOriginalNumero = "NV2600123", FacturaOriginalLinea = 5, CantidadRectificada = 2 }
+            });
+            var vinculadas = new List<LinFacturaVtaRectificacion>();
+            _ = A.CallTo(() => fakeRectificaciones.Add(A<LinFacturaVtaRectificacion>.Ignored))
+                .Invokes((LinFacturaVtaRectificacion fila) => vinculadas.Add(fila));
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-manual" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService, almacen);
+
+            await servicio.VincularRectificativaPendiente("1", "RV2600001", 900001);
+
+            Assert.AreEqual(1, vinculadas.Count, "Debe crear la vinculación en LinFacturaVtaRectificacion");
+            Assert.AreEqual("NV2600123", vinculadas[0].FacturaOriginalNumero);
+            Assert.AreEqual(10, vinculadas[0].NumeroLinea);
+            A.CallTo(() => almacen.BorrarPendientes("1", 900001, A<List<int>>.That.Matches(l => l.Count == 1 && l[0] == 10)))
+                .MustHaveHappenedOnceExactly();
+            Assert.IsNotNull(enviado, "Con las vinculaciones en su sitio, la rectificativa debe enviarse a Verifactu");
+            Assert.AreEqual("R1", enviado.TipoFactura);
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaPendiente_SinPendientes_NoTocaNada()
+        {
+            // El caso masivo (facturas normales, rectificativas del flujo automático): ni consulta
+            // líneas ni envía nada.
+            _ = ConfigurarFactura();
+            var almacen = A.Fake<NestoAPI.Infraestructure.Rectificativas.IAlmacenRectificativasPendientes>();
+            _ = A.CallTo(() => almacen.LeerPendientes(A<string>.Ignored, A<int>.Ignored))
+                .Returns(new List<NestoAPI.Models.Rectificativas.RectificativaPendienteDTO>());
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService, almacen);
+
+            await servicio.VincularRectificativaPendiente("1", "NV2600123", 900001);
+
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaPendiente_SiElAlmacenFalla_NoRompeLaFacturacion()
+        {
+            // Best-effort: un fallo aquí (tabla sin desplegar, BD...) jamás puede tumbar CrearFactura
+            _ = ConfigurarFactura();
+            var almacen = A.Fake<NestoAPI.Infraestructure.Rectificativas.IAlmacenRectificativasPendientes>();
+            _ = A.CallTo(() => almacen.LeerPendientes(A<string>.Ignored, A<int>.Ignored)).Throws(new Exception("tabla no existe"));
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService, almacen);
+
+            await servicio.VincularRectificativaPendiente("1", "NV2600123", 900001); // no debe lanzar
+
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("900001"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task EnviarRectificativaAVerifactu_SinVinculaciones_NoEnviaYLoguea()
         {
             // Rectificativa creada fuera de CopiarFactura (alta manual, #38/#87): sin vinculaciones
