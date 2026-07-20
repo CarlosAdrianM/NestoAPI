@@ -855,10 +855,14 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             return importeFinal;
         }
 
-        internal async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, int numeroPedidoAmpliacion)
+        internal async Task<PedidoVentaDTO> UnirPedidos(string empresa, int numeroPedidoOriginal, int numeroPedidoAmpliacion, bool sinPasarValidacion = false)
         {
             PedidoVentaDTO pedidoOriginal = await LeerPedido(empresa, numeroPedidoOriginal).ConfigureAwait(false);
             PedidoVentaDTO pedidoAmpliacion = await LeerPedido(empresa, numeroPedidoAmpliacion).ConfigureAwait(false);
+
+            // NestoAPI#324: al unir dos pedidos existentes no hay DTO donde viaje el flag, así que
+            // el cliente lo manda aparte cuando el usuario responde "unir de todas formas".
+            pedidoAmpliacion.CreadoSinPasarValidacion = pedidoAmpliacion.CreadoSinPasarValidacion || sinPasarValidacion;
 
             try
             {
@@ -894,6 +898,12 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         internal async Task<PedidoVentaDTO> UnirPedidos(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
         {
             MoverLineasAmpliacionAPedidoOriginal(pedidoOriginal, pedidoAmpliacion);
+
+            // NestoAPI#324: el pedido que se valida al persistir la unión es el ORIGINAL (con las
+            // líneas ya movidas), pero el "unir de todas formas" que confirma el usuario viaja en la
+            // AMPLIACIÓN. Sin propagar el flag, el reintento volvía a fallar con el mismo error de
+            // validación y la pregunta no servía de nada.
+            pedidoOriginal.CreadoSinPasarValidacion = pedidoOriginal.CreadoSinPasarValidacion || pedidoAmpliacion.CreadoSinPasarValidacion;
 
             // NestoAPI#323: el timeout por defecto del TransactionScope es 60 segundos, y dentro van
             // los DOS PutPedidoVenta completos con su pipeline de validación (una consulta por

@@ -502,6 +502,53 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void UnirPedidos_AmpliacionSinPasarValidacion_PropagaElFlagAlPedidoOriginal()
+        {
+            // Regresión NestoAPI#324: el pedido que se valida al persistir la unión es el ORIGINAL
+            // (con las líneas ya movidas), pero el "unir de todas formas" que confirma el usuario
+            // viaja en la AMPLIACIÓN. Sin propagarlo, el reintento volvía a fallar igual y la
+            // pregunta del cliente no servía de nada.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var gestor = new GestorUnirPedidosCapturandoOriginal(servicio);
+            PedidoVentaDTO original = NuevoPedidoDto();
+            PedidoVentaDTO ampliacion = NuevoPedidoDto();
+            ampliacion.CreadoSinPasarValidacion = true;
+
+            _ = gestor.UnirPedidos(original, ampliacion).GetAwaiter().GetResult();
+
+            Assert.IsTrue(gestor.OriginalPersistido.CreadoSinPasarValidacion,
+                "El flag debe llegar al pedido original, que es el que se valida al persistir");
+        }
+
+        [TestMethod]
+        public void UnirPedidos_AmpliacionNormal_NoActivaElBypassEnElOriginal()
+        {
+            // El caso masivo: sin confirmación del usuario, la validación sigue bloqueando
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var gestor = new GestorUnirPedidosCapturandoOriginal(servicio);
+
+            _ = gestor.UnirPedidos(NuevoPedidoDto(), NuevoPedidoDto()).GetAwaiter().GetResult();
+
+            Assert.IsFalse(gestor.OriginalPersistido.CreadoSinPasarValidacion);
+        }
+
+        /// <summary>
+        /// Captura el pedido original que se habría persistido, sin tocar la BD (NestoAPI#324).
+        /// </summary>
+        private class GestorUnirPedidosCapturandoOriginal : GestorPedidosVenta
+        {
+            public PedidoVentaDTO OriginalPersistido { get; private set; }
+
+            public GestorUnirPedidosCapturandoOriginal(IServicioPedidosVenta servicio) : base(servicio) { }
+
+            protected override Task PersistirUnion(PedidoVentaDTO pedidoOriginal, PedidoVentaDTO pedidoAmpliacion)
+            {
+                OriginalPersistido = pedidoOriginal;
+                return Task.CompletedTask;
+            }
+        }
+
+        [TestMethod]
         public void UnirPedidos_TransaccionZombi_MensajeAccionableYConservaLaCadena()
         {
             // Regresión NestoAPI#323 (incidente 19/07/26, Jesus): con la BD lenta el scope caducaba a

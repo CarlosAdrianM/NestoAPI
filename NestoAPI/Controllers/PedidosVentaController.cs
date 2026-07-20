@@ -28,6 +28,7 @@ using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Security.Principal;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
@@ -410,15 +411,17 @@ namespace NestoAPI.Controllers
             // Carlos 28/11/25: Verificar si pertenece al grupo "Dirección", "Almacén" o "Tiendas" (igual que en POST)
             bool grupoPermitidoSinValidacion;
             bool grupoTiendasConAlmacenCorrecto = false;
+            // NestoAPI#324: con el controller instanciado a mano (UnirPedidos) User es null
+            IPrincipal usuarioValidacion = PrincipalParaValidacion();
             try
             {
                 // Dirección y Almacén pueden modificar sin validación sin importar el almacén
-                grupoPermitidoSinValidacion = User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
-                                             User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
+                grupoPermitidoSinValidacion = usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
+                                             usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
                                              TieneParametroPermitirOmitirValidacion(Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido.Usuario);
 
                 // Tiendas puede modificar sin validación solo si todas las líneas están en su almacén
-                if (!grupoPermitidoSinValidacion && User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
+                if (!grupoPermitidoSinValidacion && usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
                 {
                     string usuarioParam = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
                     string almacenUsuario = ParametrosUsuarioController.LeerParametro(pedido.empresa, usuarioParam, "AlmacénPedidoVta");
@@ -1326,15 +1329,17 @@ namespace NestoAPI.Controllers
             // Carlos 12/01/25: Verificar si pertenece al grupo "Dirección", "Almacén" o "Tiendas"
             bool grupoPermitidoSinValidacion;
             bool grupoTiendasConAlmacenCorrecto = false;
+            // NestoAPI#324: mismo principal efectivo que en el PUT (User puede ser null en llamadas internas)
+            IPrincipal usuarioValidacion = PrincipalParaValidacion();
             try
             {
                 // Dirección y Almacén pueden crear sin validación sin importar el almacén
-                grupoPermitidoSinValidacion = User.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
-                                             User.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
+                grupoPermitidoSinValidacion = usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.DIRECCION) ||
+                                             usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.ALMACEN) ||
                                              TieneParametroPermitirOmitirValidacion(pedido.empresa, pedido.Usuario);
 
                 // Tiendas puede crear sin validación solo si todas las líneas están en su almacén
-                if (!grupoPermitidoSinValidacion && User.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
+                if (!grupoPermitidoSinValidacion && usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
                 {
                     string usuarioParam = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
                     string almacenUsuario = ParametrosUsuarioController.LeerParametro(pedido.empresa, usuarioParam, "AlmacénPedidoVta");
@@ -1810,7 +1815,7 @@ namespace NestoAPI.Controllers
             }
 
             PedidoVentaDTO pedidoUnido = parametroStringIntPedido == null || parametroStringIntPedido.PedidoAmpliacion == null
-                ? await gestor.UnirPedidos(parametroStringIntInt.Empresa, parametroStringIntInt.NumeroPedidoOriginal, parametroStringIntInt.NumeroPedidoAmpliacion).ConfigureAwait(false)
+                ? await gestor.UnirPedidos(parametroStringIntInt.Empresa, parametroStringIntInt.NumeroPedidoOriginal, parametroStringIntInt.NumeroPedidoAmpliacion, parametroStringIntInt.SinPasarValidacion).ConfigureAwait(false)
                 : await gestor.UnirPedidos(parametroStringIntPedido.Empresa, parametroStringIntPedido.NumeroPedidoOriginal, parametroStringIntPedido.PedidoAmpliacion).ConfigureAwait(false);
             return pedidoUnido;
         }
@@ -2260,6 +2265,21 @@ namespace NestoAPI.Controllers
 
             var resultado = await servicioValidarServirJunto.Validar(request).ConfigureAwait(false);
             return resultado.PuedeDesmarcar ? null : resultado;
+        }
+
+        /// <summary>
+        /// NestoAPI#324: principal con el que evaluar los roles que permiten omitir la validación.
+        /// UnirPedidos llama a PutPedidoVenta con un controller instanciado a mano (PersistirUnion),
+        /// y ahí <c>User</c> (RequestContext.Principal) es null: los roles Dirección/Almacén/Tiendas
+        /// se perdían y el usuario autorizado no podía "unir de todas formas". HttpContext.Current.User
+        /// sí lleva el usuario real (lo sincroniza UserSyncHandler, ver #286), así que sirve de
+        /// respaldo; Thread.CurrentPrincipal cubre el resto de casos fuera de IIS.
+        /// </summary>
+        private IPrincipal PrincipalParaValidacion()
+        {
+            return User
+                ?? System.Web.HttpContext.Current?.User
+                ?? System.Threading.Thread.CurrentPrincipal;
         }
 
         private bool TieneParametroPermitirOmitirValidacion(string empresa, string usuario)
