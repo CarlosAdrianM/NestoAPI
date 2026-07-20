@@ -109,6 +109,51 @@ namespace NestoAPI.Tests.Infraestructure
         }
 
         [TestMethod]
+        public void InterpretarSinBloqueadores_SoloSeVeLaSesionPropia_AvisaDeQueFaltaViewServerState()
+        {
+            // NestoAPI#321: sin VIEW SERVER STATE las DMVs no fallan, solo devuelven la sesión
+            // propia. Así estuvo el diagnóstico semanas: 21 timeouts en ELMAH y ni un solo
+            // X-Context-Bloqueos, sin ninguna pista de por qué.
+            string motivo = DiagnosticoBloqueos.InterpretarSinBloqueadores(1);
+
+            StringAssert.Contains(motivo, "VIEW SERVER STATE");
+        }
+
+        [TestMethod]
+        public void InterpretarSinBloqueadores_HayMasSesionesVisibles_ElBloqueoSeLibero()
+        {
+            string motivo = DiagnosticoBloqueos.InterpretarSinBloqueadores(25);
+
+            StringAssert.Contains(motivo, "25 sesiones");
+            Assert.IsFalse(motivo.Contains("VIEW SERVER STATE"));
+        }
+
+        [TestMethod]
+        public void AnadirBloqueosAServerVariables_ConBloqueador_GrabaXContextBloqueos()
+        {
+            var variables = new System.Collections.Specialized.NameValueCollection();
+            var resultado = new DiagnosticoBloqueos.ResultadoDiagnostico { Bloqueadores = "Puede estar bloqueado por: X" };
+
+            GlobalExceptionFilter.AnadirBloqueosAServerVariables(variables, resultado);
+
+            Assert.AreEqual("Puede estar bloqueado por: X", variables["X-Context-Bloqueos"]);
+            Assert.IsNull(variables["X-Context-Bloqueos-Diagnostico"]);
+        }
+
+        [TestMethod]
+        public void AnadirBloqueosAServerVariables_SinIdentificarBloqueador_GrabaElMotivo()
+        {
+            // NestoAPI#321: el caso que antes se perdía en silencio ahora deja rastro en ELMAH
+            var variables = new System.Collections.Specialized.NameValueCollection();
+            var resultado = new DiagnosticoBloqueos.ResultadoDiagnostico { MotivoSinBloqueadores = "falta GRANT VIEW SERVER STATE" };
+
+            GlobalExceptionFilter.AnadirBloqueosAServerVariables(variables, resultado);
+
+            Assert.AreEqual("falta GRANT VIEW SERVER STATE", variables["X-Context-Bloqueos-Diagnostico"]);
+            Assert.IsNull(variables["X-Context-Bloqueos"]);
+        }
+
+        [TestMethod]
         public void AnadirBloqueosAlMensaje_ConDiagnostico_LoAnadeAlMensajeDelError()
         {
             var respuesta = new Dictionary<string, object>

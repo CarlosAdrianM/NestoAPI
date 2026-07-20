@@ -57,10 +57,27 @@ WHERE s.is_user_process = 1
 ORDER BY bloqueados.N DESC, at.transaction_begin_time ASC";
 
         /// <summary>
-        /// Devuelve una descripción de los bloqueadores actuales, o null si no hay o si el
-        /// diagnóstico falla: NUNCA debe empeorar el error original.
+        /// Resultado del diagnóstico: o bien identifica bloqueadores (mensaje para el usuario),
+        /// o bien explica POR QUÉ no los identificó (solo para la ficha de ELMAH). NestoAPI#321:
+        /// el diagnóstico estuvo semanas devolviendo null en silencio (faltaba VIEW SERVER STATE)
+        /// y nadie lo supo; nunca más puede quedarse mudo.
         /// </summary>
-        public static string DescribirBloqueadores()
+        public class ResultadoDiagnostico
+        {
+            /// <summary>Mensaje para el usuario ("Puede estar bloqueado por..."), o null.</summary>
+            public string Bloqueadores { get; set; }
+            /// <summary>Si no hay bloqueadores, el motivo (permisos, 0 candidatos, fallo). Solo ELMAH.</summary>
+            public string MotivoSinBloqueadores { get; set; }
+        }
+
+        private const string CONSULTA_SESIONES_VISIBLES =
+            "SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE is_user_process = 1";
+
+        /// <summary>
+        /// Devuelve una descripción de los bloqueadores actuales o, si no los identifica, el motivo
+        /// para la ficha de ELMAH. NUNCA lanza: no debe empeorar el error original.
+        /// </summary>
+        public static ResultadoDiagnostico DescribirBloqueadores()
         {
             try
             {
@@ -68,13 +85,33 @@ ORDER BY bloqueados.N DESC, at.transaction_begin_time ASC";
                 {
                     db.Database.CommandTimeout = 3;
                     List<FilaBloqueador> filas = db.Database.SqlQuery<FilaBloqueador>(CONSULTA).ToList();
-                    return FormatearBloqueadores(filas);
+                    string bloqueadores = FormatearBloqueadores(filas);
+                    if (bloqueadores != null)
+                    {
+                        return new ResultadoDiagnostico { Bloqueadores = bloqueadores };
+                    }
+                    int sesionesVisibles = db.Database.SqlQuery<int>(CONSULTA_SESIONES_VISIBLES).First();
+                    return new ResultadoDiagnostico { MotivoSinBloqueadores = InterpretarSinBloqueadores(sesionesVisibles) };
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                return null;
+                return new ResultadoDiagnostico
+                {
+                    MotivoSinBloqueadores = $"La consulta de diagnóstico de bloqueos falló: {ex.Message}"
+                };
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#321: sin VIEW SERVER STATE las DMVs no dan error, simplemente solo devuelven la
+        /// sesión propia, y el diagnóstico parecía "sin bloqueadores" cuando en realidad estaba ciego.
+        /// </summary>
+        internal static string InterpretarSinBloqueadores(int sesionesVisibles)
+        {
+            return sesionesVisibles <= 1
+                ? "El login del API solo ve su propia sesión en sys.dm_exec_sessions: falta GRANT VIEW SERVER STATE (permiso de servidor) para poder identificar al bloqueador."
+                : $"Sin bloqueadores activos entre las {sesionesVisibles} sesiones visibles: el bloqueo pudo liberarse antes de ejecutar el diagnóstico.";
         }
 
         internal static string FormatearBloqueadores(IList<FilaBloqueador> bloqueadores)

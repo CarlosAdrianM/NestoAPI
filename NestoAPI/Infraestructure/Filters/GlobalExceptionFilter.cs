@@ -44,15 +44,17 @@ namespace NestoAPI.Infraestructure.Filters
 
             // NestoAPI#312: si el error es un timeout por bloqueo SQL, averiguar QUIÉN bloquea
             // para que el usuario pueda llamarle directamente. Solo se consulta en este tipo de
-            // error (raro) y DescribirBloqueadores nunca lanza (devuelve null si falla).
-            string bloqueos = DiagnosticoBloqueos.EsErrorDeBloqueo(exception)
+            // error (raro) y DescribirBloqueadores nunca lanza. NestoAPI#321: si no identifica
+            // al bloqueador, el motivo va a la ficha de ELMAH; nunca más un null silencioso.
+            DiagnosticoBloqueos.ResultadoDiagnostico diagnosticoBloqueos = DiagnosticoBloqueos.EsErrorDeBloqueo(exception)
                 ? DiagnosticoBloqueos.DescribirBloqueadores()
                 : null;
+            string bloqueos = diagnosticoBloqueos?.Bloqueadores;
 
             // Logging con Elmah (persiste en base de datos)
             try
             {
-                RegistrarEnElmah(exception, bloqueos);
+                RegistrarEnElmah(exception, diagnosticoBloqueos);
             }
             catch
             {
@@ -115,7 +117,7 @@ namespace NestoAPI.Infraestructure.Filters
         /// se usa <c>ErrorLog.Log</c> directamente en ese caso; el resto sigue por ErrorSignal (que
         /// aplica el errorFilter de Web.config, p. ej. el de OperationCanceledException).
         /// </summary>
-        private void RegistrarEnElmah(Exception exception, string bloqueos = null)
+        private void RegistrarEnElmah(Exception exception, DiagnosticoBloqueos.ResultadoDiagnostico bloqueos = null)
         {
             var contexto = (exception as NestoBusinessException)?.Context;
             var httpContext = System.Web.HttpContext.Current;
@@ -142,8 +144,9 @@ namespace NestoAPI.Infraestructure.Filters
                 AnadirBloqueosAServerVariables(error, bloqueos);
                 _ = Elmah.ErrorLog.GetDefault(httpContext).Log(error);
             }
-            // NestoAPI#312: timeout por bloqueo con diagnóstico de quién bloquea
-            else if (httpContext != null && !string.IsNullOrWhiteSpace(bloqueos))
+            // NestoAPI#312/#321: timeout por bloqueo; se graba quién bloquea o, si no se pudo
+            // identificar, el motivo (así un diagnóstico ciego se ve en ELMAH, no se pierde).
+            else if (httpContext != null && bloqueos != null)
             {
                 var error = new Elmah.Error(exception, httpContext);
                 AnadirBloqueosAServerVariables(error, bloqueos);
@@ -155,11 +158,29 @@ namespace NestoAPI.Infraestructure.Filters
             }
         }
 
-        private static void AnadirBloqueosAServerVariables(Elmah.Error error, string bloqueos)
+        private static void AnadirBloqueosAServerVariables(Elmah.Error error, DiagnosticoBloqueos.ResultadoDiagnostico bloqueos)
         {
-            if (!string.IsNullOrWhiteSpace(bloqueos))
+            if (bloqueos == null)
             {
-                error.ServerVariables.Add("X-Context-Bloqueos", bloqueos);
+                return;
+            }
+            AnadirBloqueosAServerVariables(error.ServerVariables, bloqueos);
+        }
+
+        /// <summary>
+        /// NestoAPI#321: si se identificó al bloqueador va en X-Context-Bloqueos; si no, el motivo
+        /// va en X-Context-Bloqueos-Diagnostico. Una de las dos aparece SIEMPRE en la ficha de
+        /// ELMAH de un error de bloqueo.
+        /// </summary>
+        internal static void AnadirBloqueosAServerVariables(System.Collections.Specialized.NameValueCollection serverVariables, DiagnosticoBloqueos.ResultadoDiagnostico bloqueos)
+        {
+            if (!string.IsNullOrWhiteSpace(bloqueos?.Bloqueadores))
+            {
+                serverVariables.Add("X-Context-Bloqueos", bloqueos.Bloqueadores);
+            }
+            else if (!string.IsNullOrWhiteSpace(bloqueos?.MotivoSinBloqueadores))
+            {
+                serverVariables.Add("X-Context-Bloqueos-Diagnostico", bloqueos.MotivoSinBloqueadores);
             }
         }
 
