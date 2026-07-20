@@ -502,6 +502,80 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void UnirPedidos_TransaccionZombi_MensajeAccionableYConservaLaCadena()
+        {
+            // Regresión NestoAPI#323 (incidente 19/07/26, Jesus): con la BD lenta el scope caducaba a
+            // mitad y el usuario veía "La transacción asociada con la conexión actual se ha
+            // completado, pero no se ha desechado", reintentaba y volvía a fallar igual. El mensaje
+            // debe decirle qué hacer, y conservar la causa técnica para ELMAH.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var zombi = new InvalidOperationException(
+                "La transacción asociada con la conexión actual se ha completado, pero no se ha desechado.");
+            var gestor = new GestorUnirPedidosConFallo(servicio, zombi);
+
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                gestor.UnirPedidos(NuevoPedidoDto(), NuevoPedidoDto()).GetAwaiter().GetResult());
+
+            StringAssert.Contains(ex.Message, "Vuelva a intentarlo");
+            StringAssert.Contains(ex.Message, "no se ha desechado");
+            Assert.AreSame(zombi, ex.GetBaseException());
+        }
+
+        [TestMethod]
+        public void UnirPedidos_SqlNoPudoReanudarLaTransaccion_MensajeAccionable()
+        {
+            // El otro síntoma del mismo incidente: SqlException 3971 ("El servidor no pudo reanudar
+            // la transacción"), enterrado en la cadena de inners como llega en la realidad.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var conSql3971 = new Exception("envoltorio", CrearSqlException(3971));
+            var gestor = new GestorUnirPedidosConFallo(servicio, conSql3971);
+
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                gestor.UnirPedidos(NuevoPedidoDto(), NuevoPedidoDto()).GetAwaiter().GetResult());
+
+            StringAssert.Contains(ex.Message, "Vuelva a intentarlo");
+        }
+
+        [TestMethod]
+        public void EsErrorDeTransaccionZombi_ErroresNormales_False()
+        {
+            // Un error cualquiera (o un SqlException que no es de transacción zombi) debe seguir
+            // por el catch genérico con su mensaje original.
+            Assert.IsFalse(GestorPedidosVenta.EsErrorDeTransaccionZombi(new InvalidOperationException("boom")));
+            Assert.IsFalse(GestorPedidosVenta.EsErrorDeTransaccionZombi(CrearSqlException(2627)));
+            Assert.IsFalse(GestorPedidosVenta.EsErrorDeTransaccionZombi(new Exception("otra cosa")));
+        }
+
+        // Mismo helper de reflexión que DiagnosticoBloqueosTests/ContabilidadServiceDeadlockTests:
+        // SqlException no tiene constructor público.
+        private static System.Data.SqlClient.SqlException CrearSqlException(int number)
+        {
+            var ctorError = typeof(System.Data.SqlClient.SqlError).GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                .OrderBy(c => c.GetParameters().Length)
+                .First(c => c.GetParameters().Length >= 7 && c.GetParameters()[0].ParameterType == typeof(int));
+            object[] argsError = ctorError.GetParameters().Select((p, i) =>
+            {
+                if (i == 0) return (object)number;
+                if (p.ParameterType == typeof(string)) return "test";
+                if (p.ParameterType == typeof(byte)) return (byte)0;
+                if (p.ParameterType == typeof(int)) return 0;
+                if (p.ParameterType == typeof(uint)) return 0u;
+                return null;
+            }).ToArray();
+            var error = (System.Data.SqlClient.SqlError)ctorError.Invoke(argsError);
+
+            var collection = (System.Data.SqlClient.SqlErrorCollection)Activator.CreateInstance(typeof(System.Data.SqlClient.SqlErrorCollection), nonPublic: true);
+            _ = typeof(System.Data.SqlClient.SqlErrorCollection)
+                .GetMethod("Add", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                .Invoke(collection, new object[] { error });
+
+            var crear = typeof(System.Data.SqlClient.SqlException)
+                .GetMethod("CreateException", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static, null,
+                    new[] { typeof(System.Data.SqlClient.SqlErrorCollection), typeof(string) }, null);
+            return (System.Data.SqlClient.SqlException)crear.Invoke(null, new object[] { collection, "11.0.0" });
+        }
+
+        [TestMethod]
         public void UnirPedidos_ExcepcionGenerica_ConservaLaCadenaParaElmah()
         {
             // NestoAPI#274: también el catch genérico conserva ahora el InnerException.

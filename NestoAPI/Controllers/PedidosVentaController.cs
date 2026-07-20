@@ -1235,6 +1235,14 @@ namespace NestoAPI.Controllers
                     message = recorremosExcepcion.Message + ". " + recorremosExcepcion.InnerException.Message;
                     recorremosExcepcion = recorremosExcepcion.InnerException;
                 }
+                // NestoAPI#323: PutPedidoVenta también se invoca INTERNAMENTE (UnirPedidos →
+                // PersistirUnion instancia el controller a mano, sin Request). Aquí Request es null
+                // y el CreateErrorResponse explotaba con "ArgumentNullException: request",
+                // ENTERRANDO el mensaje real del fallo de SaveChanges (incidente 19/07/26).
+                if (Request == null)
+                {
+                    throw new Exception(message, e);
+                }
                 throw new HttpResponseException(Request.CreateErrorResponse(HttpStatusCode.NotAcceptable, message));
             }
 

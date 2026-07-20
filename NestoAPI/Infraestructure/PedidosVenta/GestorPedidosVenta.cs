@@ -895,7 +895,16 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         {
             MoverLineasAmpliacionAPedidoOriginal(pedidoOriginal, pedidoAmpliacion);
 
-            using (TransactionScope transaction = new TransactionScope(TransactionScopeAsyncFlowOption.Enabled))
+            // NestoAPI#323: el timeout por defecto del TransactionScope es 60 segundos, y dentro van
+            // los DOS PutPedidoVenta completos con su pipeline de validación (una consulta por
+            // producto). Con la BD lenta (incidente 19/07/26, Jesus) el scope caducaba a mitad y
+            // cada conexión posterior daba errores crípticos de transacción zombi, en cada reintento.
+            // El nivel de aislamiento no se especifica para conservar el que ya había (Serializable).
+            TransactionOptions opcionesTransaccion = new TransactionOptions
+            {
+                Timeout = TimeSpan.FromMinutes(5)
+            };
+            using (TransactionScope transaction = new TransactionScope(TransactionScopeOption.Required, opcionesTransaccion, TransactionScopeAsyncFlowOption.Enabled))
             {
                 try
                 {
@@ -910,7 +919,15 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     // (la ve también el usuario) y se conserva la cadena para el log.
                     Exception causaRaiz = ex.GetBaseException();
                     string causa = causaRaiz != ex ? " Causa: " + causaRaiz.Message : string.Empty;
-                    throw new Exception(ex.Message + causa, ex);
+                    throw new Exception(ex.Message + causa + MENSAJE_REINTENTAR_UNION, ex);
+                }
+                catch (Exception ex) when (EsErrorDeTransaccionZombi(ex))
+                {
+                    // NestoAPI#323: el scope caducó a mitad de la operación ("no se pudo reanudar la
+                    // transacción", "completada pero no desechada"). El mensaje técnico no le dice
+                    // nada al usuario: se le da uno accionable, conservando la causa para ELMAH.
+                    throw new Exception("La operación ha tardado demasiado y se ha cancelado sin llegar a " +
+                        $"guardar nada.{MENSAJE_REINTENTAR_UNION} Detalle técnico: {ex.Message}", ex);
                 }
                 catch (HttpResponseException ex)
                 {
@@ -926,6 +943,38 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             }
 
             return pedidoOriginal;
+        }
+
+        private const string MENSAJE_REINTENTAR_UNION = " Vuelva a intentarlo en unos minutos; si el problema persiste, avise a informática.";
+
+        /// <summary>
+        /// NestoAPI#323: ¿la excepción viene de un TransactionScope caducado a mitad de operación?
+        /// Cuando el scope aborta con trabajo en vuelo, las conexiones que intentan seguir alistándose
+        /// fallan con SqlException 3971 ("El servidor no pudo reanudar la transacción"), 3961, o la
+        /// InvalidOperationException de SqlClient "la transacción... se ha completado, pero no se ha
+        /// desechado" (se reconoce por texto es/en: no expone código). TransactionException cubre las
+        /// variantes de System.Transactions que no son TransactionAbortedException (tratada aparte, #274).
+        /// </summary>
+        internal static bool EsErrorDeTransaccionZombi(Exception exception)
+        {
+            for (Exception actual = exception; actual != null; actual = actual.InnerException)
+            {
+                if (actual is TransactionException)
+                {
+                    return true;
+                }
+                if (actual is System.Data.SqlClient.SqlException sqlException &&
+                    (sqlException.Number == 3971 || sqlException.Number == 3961))
+                {
+                    return true;
+                }
+                if (actual is InvalidOperationException &&
+                    (actual.Message.Contains("no se ha desechado") || actual.Message.Contains("has not been disposed")))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
 
         /// <summary>
