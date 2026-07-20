@@ -157,6 +157,38 @@ namespace NestoAPI.Infraestructure.Facturas
             }
         }
 
+        /// <summary>
+        /// Verifactu #35: decodifica el QR (base64 de Verifacti, admite data URI) y VALIDA que sean
+        /// bytes de imagen antes de dárselos a QuestPDF: un dato corrupto en BD nunca puede tumbar
+        /// la impresión de la factura (si no es válido, simplemente no se pinta el QR).
+        /// </summary>
+        internal static byte[] DecodificarQrVerifactu(string qrBase64)
+        {
+            if (string.IsNullOrWhiteSpace(qrBase64))
+            {
+                return null;
+            }
+            try
+            {
+                string datos = qrBase64.Trim();
+                int posicionBase64 = datos.IndexOf("base64,", StringComparison.OrdinalIgnoreCase);
+                if (posicionBase64 >= 0)
+                {
+                    datos = datos.Substring(posicionBase64 + "base64,".Length);
+                }
+                byte[] bytes = Convert.FromBase64String(datos);
+                using (var stream = new System.IO.MemoryStream(bytes))
+                using (var imagen = System.Drawing.Image.FromStream(stream))
+                {
+                    return bytes;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private void ComponerCabecera(IContainer container, Factura factura)
         {
             var direccionEmpresa = factura.Direcciones?.FirstOrDefault(d => d.Tipo == "Empresa");
@@ -197,6 +229,22 @@ namespace NestoAPI.Infraestructure.Facturas
                     {
                         // Espacio vacío alineado con Razón Social (columna izquierda de FILA 2)
                         row.RelativeItem();
+                    }
+
+                    // Verifactu #35: QR tributario. Va en la FILA 1 (la norma pide el QR en la parte
+                    // superior de la factura); 3 cm cumple el rango 30-40 mm de la Orden HAC/1177/2024
+                    // y con las dos leyendas no supera la altura del logo (no roba espacio a las líneas).
+                    // Solo se pinta si el modelo trae el QR (persistido + Verifacti:MostrarQrEnPdf).
+                    byte[] qrVerifactu = DecodificarQrVerifactu(factura.VerifactuQrBase64);
+                    if (qrVerifactu != null)
+                    {
+                        row.ConstantItem(3.2f, Unit.Centimetre).AlignMiddle().Column(qrCol =>
+                        {
+                            qrCol.Item().AlignCenter().Text("QR tributario").FontSize(6);
+                            qrCol.Item().AlignCenter().Width(3f, Unit.Centimetre).Height(3f, Unit.Centimetre)
+                                .Image(qrVerifactu, ImageScaling.FitArea);
+                            qrCol.Item().AlignCenter().Text("VERI*FACTU").FontSize(6).SemiBold();
+                        });
                     }
                     row.ConstantItem(10); // Espacio entre columnas (igual que FILA 2)
 

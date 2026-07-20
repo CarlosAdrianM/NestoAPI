@@ -24,6 +24,12 @@ namespace NestoAPI.Infraestructure.Facturas
         private readonly IServicioFacturas servicio;
         private readonly ILectorParametrosUsuario lectorParametros;
 
+        // Verifactu #35: interruptor de impresión del QR tributario en las facturas PDF.
+        // Independiente de Verifacti:Habilitado a propósito: en la fase en sombra se envía al
+        // sandbox (Habilitado=true) pero el QR de preproducción NO debe imprimirse todavía.
+        internal static bool MostrarQrVerifactuEnPdf =>
+            bool.TryParse(ConfigurationManager.AppSettings["Verifacti:MostrarQrEnPdf"], out bool mostrar) && mostrar;
+
         public GestorFacturas()
         {
             servicio = new ServicioFacturas();
@@ -415,6 +421,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 Totales = totales,
                 UrlLogo = serieFactura.UrlLogo,
                 UsaFormatoTicket = serieFactura.UsaFormatoTicket,
+                // Verifactu #35: el QR persistido solo se imprime si está activado explícitamente.
+                // Durante la fase en sombra (#41) los QR apuntan a la AEAT de PREPRODUCCIÓN y no
+                // deben llegar al papel del cliente: el flag se activará al pasar a producción.
+                VerifactuQrBase64 = MostrarQrVerifactuEnPdf ? cabFactura.VerifactuQR : null,
                 Vencimientos = vencimientos.OrderBy(v => v.Vencimiento).ToList(),
                 Vendedores = vendedores
             };

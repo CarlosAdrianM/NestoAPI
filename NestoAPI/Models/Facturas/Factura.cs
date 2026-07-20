@@ -19,6 +19,12 @@ namespace NestoAPI.Models.Facturas
         public string RutaInforme { get; set; }
         public string Serie { get; set; }
         public string UrlLogo { get; set; }
+        /// <summary>
+        /// Verifactu #35: QR tributario en base64 (PNG que devuelve Verifacti al registrar la
+        /// factura). Solo viene relleno si la factura tiene QR persistido Y la impresión está
+        /// activada (Verifacti:MostrarQrEnPdf); si es null el PDF no cambia.
+        /// </summary>
+        public string VerifactuQrBase64 { get; set; }
         public bool UsaFormatoTicket { get; set; }
         public bool MostrarImagenes { get; set; }
         public string SuPedido { get; set; }

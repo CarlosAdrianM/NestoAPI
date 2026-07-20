@@ -46,6 +46,66 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region QR Verifactu (#35)
+
+        // PNG válido de 1x1 px (para probar el QR sin depender de Verifacti)
+        private const string PNG_1X1_BASE64 =
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+        [TestMethod]
+        public void DecodificarQrVerifactu_Base64Valido_DevuelveLosBytes()
+        {
+            byte[] bytes = GeneradorPdfFacturasQuestPdf.DecodificarQrVerifactu(PNG_1X1_BASE64);
+
+            Assert.IsNotNull(bytes);
+            Assert.AreEqual(0x89, bytes[0]); // firma PNG
+        }
+
+        [TestMethod]
+        public void DecodificarQrVerifactu_DataUri_DevuelveLosBytes()
+        {
+            byte[] bytes = GeneradorPdfFacturasQuestPdf.DecodificarQrVerifactu("data:image/png;base64," + PNG_1X1_BASE64);
+
+            Assert.IsNotNull(bytes);
+        }
+
+        [TestMethod]
+        public void DecodificarQrVerifactu_DatoCorrupto_DevuelveNullSinLanzar()
+        {
+            // Un dato corrupto en BD nunca puede tumbar la impresión de la factura
+            Assert.IsNull(GeneradorPdfFacturasQuestPdf.DecodificarQrVerifactu(null));
+            Assert.IsNull(GeneradorPdfFacturasQuestPdf.DecodificarQrVerifactu("   "));
+            Assert.IsNull(GeneradorPdfFacturasQuestPdf.DecodificarQrVerifactu("esto-no-es-base64!!"));
+            // Base64 válido pero que NO es una imagen
+            Assert.IsNull(GeneradorPdfFacturasQuestPdf.DecodificarQrVerifactu(Convert.ToBase64String(new byte[] { 1, 2, 3, 4 })));
+        }
+
+        [TestMethod]
+        public void GenerarPdf_ConQrVerifactu_GeneraSinErrores()
+        {
+            var factura = CrearFacturaBasica();
+            factura.UrlLogo = "http://localhost/logo-inexistente.png"; // la descarga falla en silencio
+            factura.VerifactuQrBase64 = PNG_1X1_BASE64;
+
+            var resultado = _generador.GenerarPdf(new List<Factura> { factura });
+
+            Assert.IsNotNull(resultado, "La factura con QR Verifactu debe generarse sin errores");
+        }
+
+        [TestMethod]
+        public void GenerarPdf_ConQrVerifactuCorrupto_GeneraSinQrYSinErrores()
+        {
+            var factura = CrearFacturaBasica();
+            factura.UrlLogo = "http://localhost/logo-inexistente.png"; // la descarga falla en silencio
+            factura.VerifactuQrBase64 = "dato-corrupto-en-bd";
+
+            var resultado = _generador.GenerarPdf(new List<Factura> { factura });
+
+            Assert.IsNotNull(resultado, "Un QR corrupto no puede tumbar la impresión: se omite el QR");
+        }
+
+        #endregion
+
         #region Tests de validación de configuración
 
         [TestMethod]
