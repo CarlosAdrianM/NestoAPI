@@ -73,6 +73,64 @@ namespace NestoAPI.Tests.Infrastructure
             ComprobarCabeceraPdf(bytes);
         }
 
+        #region Número de pedido repetido en la línea de Ruta/Usuario (#315)
+
+        [TestMethod]
+        public void DebeRepetirNumeroPedido_ClienteConUnSoloPedido_False()
+        {
+            // #315 (feedback del almacén): el nº de pedido ya sale arriba a 14pt; repetirlo en la
+            // línea de Ruta/Usuario sobra y se confunde con el nº de picking.
+            var bloque = new BloqueClientePacking
+            {
+                Pedidos = new List<GrupoPedidoPacking> { new GrupoPedidoPacking { Numero = 900001 } }
+            };
+
+            Assert.IsFalse(GeneradorPdfPacking.DebeRepetirNumeroPedido(bloque));
+        }
+
+        [TestMethod]
+        public void DebeRepetirNumeroPedido_ClienteConVariosPedidos_True()
+        {
+            // Con varios pedidos del mismo cliente en el picking, el número es lo ÚNICO que dice a
+            // qué pedido corresponde cada tabla de líneas: ahí sí hay que mantenerlo.
+            var bloque = new BloqueClientePacking
+            {
+                Pedidos = new List<GrupoPedidoPacking>
+                {
+                    new GrupoPedidoPacking { Numero = 900001 },
+                    new GrupoPedidoPacking { Numero = 900002 }
+                }
+            };
+
+            Assert.IsTrue(GeneradorPdfPacking.DebeRepetirNumeroPedido(bloque));
+        }
+
+        [TestMethod]
+        public void DebeRepetirNumeroPedido_SinPedidos_NoLanza()
+        {
+            Assert.IsFalse(GeneradorPdfPacking.DebeRepetirNumeroPedido(new BloqueClientePacking()));
+            Assert.IsFalse(GeneradorPdfPacking.DebeRepetirNumeroPedido(null));
+        }
+
+        [TestMethod]
+        public void GenerarPdf_ClienteConVariosPedidos_SigueGenerandoPdfValido()
+        {
+            // Las dos ramas (con y sin número repetido) deben componer sin romper el layout
+            var lineas = new List<PackingDTO>
+            {
+                Linea(900001, "38697"),
+                Linea(900002, "45473")
+            };
+
+            var resultado = _generador.GenerarPdf(123456, lineas);
+
+            byte[] bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+            ComprobarCabeceraPdf(bytes);
+        }
+
+        #endregion
+
         [TestMethod]
         public void GenerarPdf_ConLineasPendientes_DevuelvePdfValido()
         {

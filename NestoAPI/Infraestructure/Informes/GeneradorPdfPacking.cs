@@ -156,9 +156,25 @@ namespace NestoAPI.Infraestructure.Informes
         {
             container.PaddingBottom(5).Row(row =>
             {
-                row.RelativeItem().Text($"Packing List ({picking})").Bold().FontSize(14);
+                // #315 (feedback del almacén): el título va CENTRADO. Antes salía a la izquierda,
+                // justo encima del número de pedido, y se confundía el nº de picking con el de
+                // pedido. Se reserva a la izquierda el mismo ancho que ocupa la fecha para que el
+                // centrado sea real respecto a la página.
+                row.ConstantItem(150);
+                row.RelativeItem().AlignCenter().Text($"Packing List ({picking})").Bold().FontSize(14);
                 row.ConstantItem(150).AlignRight().Text($"{DateTime.Now:dd/MM/yyyy HH:mm}").FontSize(8);
             });
+        }
+
+        /// <summary>
+        /// #315: el número de pedido ya sale arriba (14pt) en la cabecera del cliente, así que
+        /// repetirlo en la línea de Ruta/Usuario sobra y confunde... salvo cuando el cliente trae
+        /// VARIOS pedidos en el mismo picking: ahí es lo único que identifica a qué pedido
+        /// corresponde cada tabla de líneas.
+        /// </summary>
+        internal static bool DebeRepetirNumeroPedido(BloqueClientePacking bloque)
+        {
+            return bloque?.Pedidos != null && bloque.Pedidos.Count > 1;
         }
 
         private void ComponerBloqueCliente(IContainer container, BloqueClientePacking bloque)
@@ -184,13 +200,19 @@ namespace NestoAPI.Infraestructure.Informes
                     cab.Item().Text($"{bloque.Direccion} - {bloque.CodPostal} {bloque.Poblacion} - Tel. {bloque.Telefono}");
                 });
 
+                bool repetirNumeroPedido = DebeRepetirNumeroPedido(bloque);
+
                 foreach (GrupoPedidoPacking pedido in bloque.Pedidos)
                 {
                     column.Item().PaddingTop(6).Text(text =>
                     {
-                        text.Span("Pedido: ").Bold().FontSize(12);
-                        text.Span(pedido.Numero.ToString()).Bold().FontSize(12);
-                        text.Span("      Ruta: ").Bold();
+                        if (repetirNumeroPedido)
+                        {
+                            text.Span("Pedido: ").Bold().FontSize(12);
+                            text.Span(pedido.Numero.ToString()).Bold().FontSize(12);
+                            text.Span("      ");
+                        }
+                        text.Span("Ruta: ").Bold();
                         text.Span(pedido.Ruta ?? "");
                         text.Span("      Usuario: ").Bold();
                         text.Span(QuitarDominio(pedido.Usuario));
