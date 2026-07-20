@@ -93,6 +93,61 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.AreEqual(-21.00M, request.DesgloseIva.Single().CuotaIva);
         }
 
+        #region Facturas simplificadas F2 (#325)
+
+        [TestMethod]
+        public void Mapear_FacturaDeVentasAmazon_EsF2SinDestinatario()
+        {
+            // #325: primer hallazgo de la fase en sombra. Las ventas a consumidor final se agrupan
+            // en clientes ficticios con NIF que no existe en el censo ("NV"), y la AEAT rechazaba
+            // las 22 facturas de Amazon del día. Son simplificadas: F2 y SIN destinatario.
+            var factura = CrearFacturaNV();
+            factura.Nº_Cliente = "32624"; // ClientesEspeciales.AMAZON
+            factura.CifNif = "NV";
+            factura.NombreFiscal = "FACT. SIMP. VENTAS AMAZON";
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            Assert.AreEqual("F2", request.TipoFactura);
+            Assert.IsNull(request.NifDestinatario, "Una simplificada no lleva NIF de destinatario");
+            Assert.IsNull(request.NombreDestinatario, "Una simplificada no lleva nombre de destinatario");
+        }
+
+        [TestMethod]
+        public void Mapear_FacturaDeTiendaOnlineYPublicoFinal_TambienSonF2()
+        {
+            var tiendaOnline = CrearFacturaNV();
+            tiendaOnline.Nº_Cliente = "31517 "; // con relleno, como viene de BD
+            var publicoFinal = CrearFacturaNV();
+            publicoFinal.Nº_Cliente = "10458";
+
+            Assert.AreEqual("F2", MapeadorFacturaVerifactu.Mapear(tiendaOnline).TipoFactura);
+            Assert.AreEqual("F2", MapeadorFacturaVerifactu.Mapear(publicoFinal).TipoFactura);
+        }
+
+        [TestMethod]
+        public void Mapear_FacturaDeClienteNormal_SigueSiendoF1ConDestinatario()
+        {
+            // El caso masivo no cambia: las 33 facturas de clientes reales que ya aceptaba la AEAT
+            var factura = CrearFacturaNV();
+            factura.Nº_Cliente = "26985";
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            Assert.AreEqual("F1", request.TipoFactura);
+            Assert.AreEqual("12345678Z", request.NifDestinatario);
+            Assert.AreEqual("CLIENTE DE PRUEBA SL", request.NombreDestinatario);
+        }
+
+        [TestMethod]
+        public void EsFacturaSimplificada_SinClienteONull_NoLanza()
+        {
+            Assert.IsFalse(MapeadorFacturaVerifactu.EsFacturaSimplificada(null));
+            Assert.IsFalse(MapeadorFacturaVerifactu.EsFacturaSimplificada(new CabFacturaVta()));
+        }
+
+        #endregion
+
         [TestMethod]
         public void Mapear_FacturaSerieNV_MapeaDatosGeneralesYTipoF1()
         {

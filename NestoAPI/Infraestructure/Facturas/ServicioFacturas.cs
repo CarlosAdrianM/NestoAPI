@@ -710,6 +710,18 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
 
                 Verifactu.VerifactuFacturaRequest request = Verifactu.MapeadorFacturaVerifactu.Mapear(factura, facturasRectificadas);
+
+                // Issue #325: una factura simplificada (F2) por encima del límite legal no puede
+                // documentarse como tal. No se bloquea la facturación (el importe ya está emitido),
+                // pero tiene que saltar el aviso para revisarla.
+                if (request.TipoFactura == Verifactu.MapeadorFacturaVerifactu.TIPO_FACTURA_SIMPLIFICADA &&
+                    Math.Abs(request.ImporteTotal) > Verifactu.MapeadorFacturaVerifactu.LIMITE_FACTURA_SIMPLIFICADA)
+                {
+                    logService.LogError($"Verifactu: la factura {numeroFactura} se declara como SIMPLIFICADA (F2) " +
+                        $"pero su importe ({request.ImporteTotal:C}) supera el límite legal de " +
+                        $"{Verifactu.MapeadorFacturaVerifactu.LIMITE_FACTURA_SIMPLIFICADA:C}: hay que revisarla.");
+                }
+
                 Verifactu.VerifactuResponse respuesta = await servicioVerifactu.EnviarFacturaAsync(request);
 
                 if (respuesta != null && respuesta.Exitoso)

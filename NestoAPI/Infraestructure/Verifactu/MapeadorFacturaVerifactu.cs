@@ -27,15 +27,22 @@ namespace NestoAPI.Infraestructure.Verifactu
                 throw new InvalidOperationException($"La serie '{factura.Serie?.Trim()}' no tramita Verifactu");
             }
 
+            // Issue #325: las ventas a consumidor final se agrupan en clientes ficticios
+            // ("FACT. SIMP. VENTAS AMAZON", NIF "NV"...). Son facturas SIMPLIFICADAS: en Verifactu
+            // van como F2 y SIN destinatario (art. 6.1.d RD 1619/2012). Enviarlas como F1 con ese
+            // NIF ficticio hacía que la AEAT las rechazara (26 rechazos en las primeras horas de
+            // la fase en sombra).
+            bool esSimplificada = EsFacturaSimplificada(factura);
+
             var request = new VerifactuFacturaRequest
             {
                 Serie = factura.Serie?.Trim(),
                 Numero = NumeroSinSerie(factura.Número, factura.Serie),
                 FechaExpedicion = factura.Fecha,
-                TipoFactura = TipoFactura(serie, factura),
+                TipoFactura = esSimplificada ? TIPO_FACTURA_SIMPLIFICADA : TipoFactura(serie, factura),
                 Descripcion = serie.DescripcionVerifactu,
-                NifDestinatario = factura.CifNif?.Trim(),
-                NombreDestinatario = factura.NombreFiscal?.Trim()
+                NifDestinatario = esSimplificada ? null : factura.CifNif?.Trim(),
+                NombreDestinatario = esSimplificada ? null : factura.NombreFiscal?.Trim()
             };
 
             // Issue #36: nuestras rectificativas son abonos con los importes en negativo, que en
@@ -71,6 +78,28 @@ namespace NestoAPI.Infraestructure.Verifactu
             request.ImporteTotal = Math.Round(importeTotal, 2, MidpointRounding.AwayFromZero);
 
             return request;
+        }
+
+        /// <summary>Tipo AEAT de la factura simplificada / sin identificación del destinatario.</summary>
+        internal const string TIPO_FACTURA_SIMPLIFICADA = "F2";
+
+        /// <summary>
+        /// Límite legal de importe de una factura simplificada (art. 4 RD 1619/2012). Por encima,
+        /// la operación NO puede documentarse con factura simplificada.
+        /// </summary>
+        internal const decimal LIMITE_FACTURA_SIMPLIFICADA = 400M;
+
+        /// <summary>
+        /// Issue #325: ¿es una factura simplificada (venta a consumidor final sin destinatario
+        /// identificado)? Se reconoce por el cliente: las ventas de Amazon, tienda online y tienda
+        /// física se agrupan en clientes ficticios con NIF que no existe en el censo de la AEAT.
+        /// </summary>
+        internal static bool EsFacturaSimplificada(CabFacturaVta factura)
+        {
+            string cliente = factura?.Nº_Cliente?.Trim();
+            return cliente == Constantes.ClientesEspeciales.AMAZON
+                || cliente == Constantes.ClientesEspeciales.TIENDA_ONLINE
+                || cliente == Constantes.ClientesEspeciales.PUBLICO_FINAL;
         }
 
         /// <summary>

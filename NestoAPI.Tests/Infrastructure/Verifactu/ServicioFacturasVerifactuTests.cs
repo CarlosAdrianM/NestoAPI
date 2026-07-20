@@ -192,6 +192,46 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task EnviarFacturaAVerifactu_SimplificadaPorEncimaDelLimiteLegal_AvisaPeroEnvia()
+        {
+            // #325: una simplificada (F2) de más de 400€ no puede documentarse como tal. No se
+            // bloquea la facturación (la factura ya está emitida), pero tiene que saltar el aviso.
+            var factura = ConfigurarFactura();
+            factura.Nº_Cliente = "32624"; // Amazon -> F2
+            factura.LinPedidoVtas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = 500.00M, ImporteIVA = 105.00M }
+            };
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-f2" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("supera el límite legal"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual("uuid-f2", factura.VerifactuUUID, "El aviso no impide registrar la factura");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_SimplificadaDentroDelLimite_NoAvisa()
+        {
+            // El caso normal: los importes reales de estos clientes rondan los 33€ de media
+            var factura = ConfigurarFactura();
+            factura.Nº_Cliente = "32624";
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-f2" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("límite legal"), A<Exception>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public async Task VincularRectificativaPendiente_ConPendientes_VinculaBorraYEnvia()
         {
             // Issue #87: rectificativa copiada SIN facturar automáticamente; al facturar a mano,
