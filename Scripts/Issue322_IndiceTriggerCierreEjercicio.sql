@@ -11,8 +11,20 @@
 -- IMPORTANTE: índice NORMAL, no filtrado. Un índice filtrado en Contabilidad rompería los
 -- INSERT de cualquier sesión con QUOTED_IDENTIFIER OFF (lección de la Issue #294).
 --
--- Contabilidad tiene 6,3M de filas: ejecutar fuera de horario de oficina (tarda unos segundos
--- pero bloquea escrituras mientras se crea; edición Standard, sin ONLINE=ON).
+-- COSTE MEDIDO EN PRODUCCIÓN (20/07/26), porque el "tarda unos segundos" que decía antes este
+-- comentario era falso y puede llevar a ejecutarlo en mal momento:
+--   * Contabilidad: 6.292.752 filas, 1,2 GB (78% ya en buffer pool).
+--   * Clave del índice = char(3)+char(10)+char(50)+datetime = 71 bytes ⇒ índice resultante ~540 MB.
+--   * La ordenación equivalente, medida con ROW_NUMBER sobre esas 4 columnas: **60 segundos**.
+--   * Servidor: 2 CPUs y 8 GB de RAM ⇒ poca paralelización y grant de memoria justo (el sort
+--     probablemente vuelca a tempdb). Recovery model FULL, pero el log tiene 33 GB con 1,8 GB
+--     usados, así que NO habrá autogrowth durante la creación.
+--   * Estimación total: **2-4 minutos**; planificar una ventana de 5.
+--
+-- QUÉ BLOQUEA: es un CREATE INDEX offline (edición Standard, sin ONLINE=ON), así que toma un
+-- lock compartido sobre la tabla: las LECTURAS siguen funcionando y las ESCRITURAS en Contabilidad
+-- (o sea, cualquier contabilización) se quedan esperando durante esos 2-4 minutos.
+-- Ejecutar fuera de horario y con nadie contabilizando.
 
 USE NV;
 GO
