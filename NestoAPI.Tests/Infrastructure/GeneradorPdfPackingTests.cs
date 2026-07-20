@@ -132,6 +132,48 @@ namespace NestoAPI.Tests.Infrastructure
         #endregion
 
         [TestMethod]
+        public void GenerarPdf_PendientesJustoEnElCorteDePagina_NoDejaElRotuloHuerfano()
+        {
+            // #315 (2ª tanda): el rótulo "Productos pendientes de servir..." se quedaba SOLO al
+            // final de la página y los pendientes salían en la siguiente sin nada que los
+            // identificara ("esto no me ha venido"). Al ir dentro de la CABECERA de la tabla,
+            // QuestPDF lo mantiene con sus filas y lo repite si ocupan varias páginas.
+            // Se generan líneas suficientes para que el corte caiga cerca de los pendientes.
+            var lineas = new List<PackingDTO>();
+            for (int i = 0; i < 45; i++)
+            {
+                lineas.Add(Linea(900001, (20000 + i).ToString()));
+            }
+            for (int i = 0; i < 12; i++)
+            {
+                lineas.Add(Linea(900001, (30000 + i).ToString(), tipo: "Pendientes"));
+            }
+
+            var resultado = _generador.GenerarPdf(123456, lineas);
+
+            byte[] bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+            ComprobarCabeceraPdf(bytes);
+        }
+
+        [TestMethod]
+        public void GenerarPdf_MuchosPendientesQueOcupanVariasPaginas_NoLanza()
+        {
+            // El rótulo en la cabecera se repite en cada página: el layout debe aguantarlo
+            var lineas = new List<PackingDTO> { Linea(900001, "38697") };
+            for (int i = 0; i < 150; i++)
+            {
+                lineas.Add(Linea(900001, (40000 + i).ToString(), tipo: "Pendientes"));
+            }
+
+            var resultado = _generador.GenerarPdf(123456, lineas);
+
+            byte[] bytes = resultado.ReadAsByteArrayAsync().Result;
+            Assert.IsTrue(bytes.Length > 0);
+            ComprobarCabeceraPdf(bytes);
+        }
+
+        [TestMethod]
         public void GenerarPdf_ConLineasPendientes_DevuelvePdfValido()
         {
             // Las filas con Tipo = "Pendientes" van en su propia sección dentro del pedido.

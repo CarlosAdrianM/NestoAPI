@@ -239,13 +239,27 @@ namespace NestoAPI.Infraestructure.Informes
 
                 if (bloque.Pendientes.Any())
                 {
-                    column.Item().PaddingTop(8).Text("Productos pendientes de servir en próximos pedidos... ").Bold().Italic();
-                    column.Item().PaddingTop(2).Element(c => ComponerTablaLineas(c, bloque.Pendientes));
+                    // #315 (2ª tanda de feedback del almacén): el rótulo iba en un Item aparte y se
+                    // quedaba SOLO al final de la página, con la tabla de pendientes empezando en la
+                    // siguiente sin nada que la identificase ("esto no me ha venido"). Metiéndolo en
+                    // la CABECERA de la tabla, QuestPDF lo mantiene pegado a sus filas y además lo
+                    // repite en cada página si los pendientes ocupan varias.
+                    column.Item().PaddingTop(8).Element(c => ComponerTablaLineas(c, bloque.Pendientes, ROTULO_PENDIENTES));
                 }
             });
         }
 
-        private void ComponerTablaLineas(IContainer container, List<PackingDTO> lineas)
+        internal const string ROTULO_PENDIENTES = "Productos pendientes de servir en próximos pedidos... ";
+
+        // Nº de columnas de la tabla de líneas (para el ColumnSpan del rótulo de cabecera)
+        private const int COLUMNAS_TABLA = 12;
+
+        /// <param name="rotuloCabecera">
+        /// Si viene informado, se pinta como primera fila de la CABECERA de la tabla (ocupando todo
+        /// el ancho). Va en la cabecera y no como elemento suelto para que nunca se quede huérfano
+        /// al final de una página y para que se repita si la tabla ocupa varias páginas.
+        /// </param>
+        private void ComponerTablaLineas(IContainer container, List<PackingDTO> lineas, string rotuloCabecera = null)
         {
             container.Table(table =>
             {
@@ -270,6 +284,11 @@ namespace NestoAPI.Infraestructure.Informes
 
                 table.Header(header =>
                 {
+                    if (!string.IsNullOrWhiteSpace(rotuloCabecera))
+                    {
+                        header.Cell().ColumnSpan(COLUMNAS_TABLA).PaddingBottom(2)
+                            .Text(rotuloCabecera).Bold().Italic();
+                    }
                     CeldaCabecera(header.Cell(), "Prov.", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Producto", alinearDerecha: false);
                     CeldaCabecera(header.Cell(), "Cód. Barras", alinearDerecha: false);
