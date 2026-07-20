@@ -337,6 +337,9 @@ namespace NestoAPI.Infraestructure
 
             // Carlos 27/01/26: Issue #79 - Detectar si hay descuentos para mostrar/ocultar la columna
             bool hayDescuentos = pedido.Lineas.Any(l => l.SumaDescuentosSinPP > 0);
+            // Issue #110: si todas las líneas se entregan el mismo día la fecha va una sola vez al
+            // pie; solo cuando difieren se saca la columna por línea, para no alargar el correo.
+            bool hayFechasEntregaDistintas = !TieneFechaEntregaUnica(pedido.Lineas);
 
             _ = s.AppendLine("<table border=\"1\" style=\"width:100%\">");
             _ = s.AppendLine("<thead align = \"right\">");
@@ -353,6 +356,10 @@ namespace NestoAPI.Infraestructure
             if (hayLineasConReservas)
             {
                 _ = s.Append("<th>Reservar</th>");
+            }
+            if (hayFechasEntregaDistintas)
+            {
+                _ = s.Append("<th>F. Entrega</th>");
             }
             _ = s.AppendLine("</tr>");
             _ = s.AppendLine("</thead>");
@@ -450,6 +457,10 @@ namespace NestoAPI.Infraestructure
                 {
                     _ = s.Append("<td style=\"text-align:left\">" + textoReserva + "</td>");
                 }
+                if (hayFechasEntregaDistintas)
+                {
+                    _ = s.Append("<td>" + linea.fechaEntrega.ToShortDateString() + "</td>");
+                }
                 _ = s.AppendLine("</tr>");
             }
             if (!pedido.servirJunto || pedido.mantenerJunto)
@@ -474,12 +485,17 @@ namespace NestoAPI.Infraestructure
                     textoServirMantener += " Marcado mantener junto ";
                 }
                 _ = s.AppendLine("<tr style=\"color: " + colorServirJunto + ";\">");
-                int colspanNotas = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0);
+                int colspanNotas = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
                 _ = s.AppendLine($"<td colspan='{colspanNotas}'>{textoServirMantener.Trim()}</td>");
                 _ = s.AppendLine("</tr>");
             }
+            // Issue #110: fecha de entrega común a todo el pedido, al pie y discreta (cuando las
+            // líneas difieren no sale nada aquí: cada una lleva la suya en la columna F. Entrega).
+            int colspanFechaEntrega = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
+            _ = s.Append(GenerarHtmlFechaEntregaComun(pedido.Lineas, colspanFechaEntrega));
+
             // Carlos 01/12/25: Refactorizado para usar método testeable (Issue #48)
-            int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0);
+            int colspanValidacion = 6 + (hayDescuentos ? 1 : 0) + (hayLineasConReservas ? 1 : 0) + (hayFechasEntregaDistintas ? 1 : 0);
             string htmlValidacion = GenerarHtmlSeccionValidacion(pedido.CreadoSinPasarValidacion, respuestaValidacion, colspanValidacion);
             if (!string.IsNullOrEmpty(htmlValidacion))
             {
@@ -932,6 +948,46 @@ namespace NestoAPI.Infraestructure
                 default:
                     return null;
             }
+        }
+
+        /// <summary>
+        /// Issue #110: ¿todas las líneas se entregan el mismo día? Si es así el correo muestra la
+        /// fecha una sola vez al pie; si no, cada línea lleva la suya en una columna condicional
+        /// (mismo criterio que "Descuento" o "Reservar": la columna solo aparece si aporta algo).
+        /// Se compara solo la parte de fecha: la hora no es significativa en la entrega.
+        /// Un pedido sin líneas se considera de fecha única, para no sacar una columna vacía.
+        /// </summary>
+        internal static bool TieneFechaEntregaUnica(IEnumerable<LineaPedidoVentaDTO> lineas)
+        {
+            if (lineas == null)
+            {
+                return true;
+            }
+            List<DateTime> fechas = lineas.Select(l => l.fechaEntrega.Date).Distinct().ToList();
+            return fechas.Count <= 1;
+        }
+
+        /// <summary>
+        /// Issue #110: fila de pie con la fecha de entrega común a todo el pedido. Devuelve cadena
+        /// vacía si las líneas tienen fechas distintas (ese caso se resuelve con la columna por
+        /// línea) o si no hay líneas.
+        /// </summary>
+        /// <param name="lineas">Líneas del pedido</param>
+        /// <param name="colspan">Número de columnas de la tabla, para el colspan</param>
+        internal static string GenerarHtmlFechaEntregaComun(IEnumerable<LineaPedidoVentaDTO> lineas, int colspan)
+        {
+            List<LineaPedidoVentaDTO> listaLineas = lineas?.ToList() ?? new List<LineaPedidoVentaDTO>();
+            if (!listaLineas.Any() || !TieneFechaEntregaUnica(listaLineas))
+            {
+                return string.Empty;
+            }
+
+            DateTime fecha = listaLineas.First().fechaEntrega.Date;
+            StringBuilder s = new StringBuilder();
+            _ = s.AppendLine("<tr>");
+            _ = s.AppendLine($"<td colspan='{colspan}' style=\"text-align:right\">Fecha de entrega: {fecha.ToShortDateString()}</td>");
+            _ = s.AppendLine("</tr>");
+            return s.ToString();
         }
 
         /// <summary>

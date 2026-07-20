@@ -737,5 +737,96 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("ana@nuevavision.es", GestorPresupuestos.CorreoVendedorOInformatica(new Vendedor { Mail = "  ana@nuevavision.es  " }));
         }
 
+        // Issue #110: fecha de entrega en el correo de presupuestos. Si todas las líneas se
+        // entregan el mismo día se muestra una sola vez al pie; si difieren, cada línea lleva la
+        // suya en una columna condicional (mismo criterio que "Descuento" o "Reservar").
+
+        private static LineaPedidoVentaDTO LineaConFechaEntrega(DateTime fecha)
+        {
+            return new LineaPedidoVentaDTO { fechaEntrega = fecha };
+        }
+
+        [TestMethod]
+        public void TieneFechaEntregaUnica_TodasLasLineasElMismoDia_DevuelveTrue()
+        {
+            List<LineaPedidoVentaDTO> lineas = new List<LineaPedidoVentaDTO>
+            {
+                LineaConFechaEntrega(new DateTime(2026, 2, 25)),
+                LineaConFechaEntrega(new DateTime(2026, 2, 25))
+            };
+
+            Assert.IsTrue(GestorPresupuestos.TieneFechaEntregaUnica(lineas));
+        }
+
+        [TestMethod]
+        public void TieneFechaEntregaUnica_MismoDiaDistintaHora_DevuelveTrue()
+        {
+            // La hora no es significativa en la entrega: dos líneas del mismo día no deben
+            // provocar una columna por línea solo porque se grabaran a horas distintas.
+            List<LineaPedidoVentaDTO> lineas = new List<LineaPedidoVentaDTO>
+            {
+                LineaConFechaEntrega(new DateTime(2026, 2, 25, 9, 30, 0)),
+                LineaConFechaEntrega(new DateTime(2026, 2, 25, 18, 45, 0))
+            };
+
+            Assert.IsTrue(GestorPresupuestos.TieneFechaEntregaUnica(lineas));
+        }
+
+        [TestMethod]
+        public void TieneFechaEntregaUnica_FechasDistintas_DevuelveFalse()
+        {
+            List<LineaPedidoVentaDTO> lineas = new List<LineaPedidoVentaDTO>
+            {
+                LineaConFechaEntrega(new DateTime(2026, 2, 25)),
+                LineaConFechaEntrega(new DateTime(2026, 3, 2))
+            };
+
+            Assert.IsFalse(GestorPresupuestos.TieneFechaEntregaUnica(lineas));
+        }
+
+        [TestMethod]
+        public void TieneFechaEntregaUnica_SinLineas_DevuelveTrue()
+        {
+            // Un pedido sin líneas no debe sacar la columna vacía.
+            Assert.IsTrue(GestorPresupuestos.TieneFechaEntregaUnica(new List<LineaPedidoVentaDTO>()));
+            Assert.IsTrue(GestorPresupuestos.TieneFechaEntregaUnica(null));
+        }
+
+        [TestMethod]
+        public void GenerarHtmlFechaEntregaComun_FechaUnica_MuestraLaFechaAlPie()
+        {
+            List<LineaPedidoVentaDTO> lineas = new List<LineaPedidoVentaDTO>
+            {
+                LineaConFechaEntrega(new DateTime(2026, 2, 25)),
+                LineaConFechaEntrega(new DateTime(2026, 2, 25))
+            };
+
+            string html = GestorPresupuestos.GenerarHtmlFechaEntregaComun(lineas, 6);
+
+            StringAssert.Contains(html, "Fecha de entrega:");
+            StringAssert.Contains(html, new DateTime(2026, 2, 25).ToShortDateString());
+            StringAssert.Contains(html, "colspan='6'");
+        }
+
+        [TestMethod]
+        public void GenerarHtmlFechaEntregaComun_FechasDistintas_NoMuestraNada()
+        {
+            // Ese caso lo cubre la columna por línea; sacar además una fecha al pie sería mentir.
+            List<LineaPedidoVentaDTO> lineas = new List<LineaPedidoVentaDTO>
+            {
+                LineaConFechaEntrega(new DateTime(2026, 2, 25)),
+                LineaConFechaEntrega(new DateTime(2026, 3, 2))
+            };
+
+            Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarHtmlFechaEntregaComun(lineas, 6));
+        }
+
+        [TestMethod]
+        public void GenerarHtmlFechaEntregaComun_SinLineas_NoMuestraNada()
+        {
+            Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarHtmlFechaEntregaComun(new List<LineaPedidoVentaDTO>(), 6));
+            Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarHtmlFechaEntregaComun(null, 6));
+        }
+
     }
 }
