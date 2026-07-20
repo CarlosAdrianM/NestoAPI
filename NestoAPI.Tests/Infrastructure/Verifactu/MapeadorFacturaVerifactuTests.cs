@@ -32,6 +32,67 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             };
         }
 
+        private CabFacturaVta CrearRectificativaRV()
+        {
+            // Nuestras rectificativas son abonos: los importes van en NEGATIVO (rectificativa
+            // "por diferencias" en Verifactu, issue #36).
+            return new CabFacturaVta
+            {
+                Empresa = "1",
+                Serie = "RV",
+                Número = "RV2600001 ",
+                Fecha = new DateTime(2026, 7, 20),
+                CifNif = "12345678Z",
+                NombreFiscal = "CLIENTE DE PRUEBA SL",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = -100.00M, ImporteIVA = -21.00M }
+                }
+            };
+        }
+
+        [TestMethod]
+        public void Mapear_RectificativaSinTipoPersistido_UsaR1PorDiferenciasConLasFacturasRectificadas()
+        {
+            var factura = CrearRectificativaRV();
+            var rectificadas = new List<VerifactuFacturaRectificada>
+            {
+                new VerifactuFacturaRectificada { Serie = "NV", Numero = "2600123", FechaExpedicion = new DateTime(2026, 6, 1) }
+            };
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura, rectificadas);
+
+            Assert.AreEqual("R1", request.TipoFactura); // defecto de la serie RV
+            Assert.AreEqual("I", request.TipoRectificacion); // por diferencias: importes en negativo
+            Assert.AreEqual(1, request.FacturasRectificadas.Count);
+            Assert.AreEqual("NV", request.FacturasRectificadas[0].Serie);
+            Assert.AreEqual("2600123", request.FacturasRectificadas[0].Numero);
+        }
+
+        [TestMethod]
+        public void Mapear_RectificativaConTipoPersistido_RespetaElTipo()
+        {
+            // Cuando Nesto#244 permita elegir la causa, el tipo viaja en CabFacturaVta.TipoRectificativa
+            var factura = CrearRectificativaRV();
+            factura.TipoRectificativa = "r4 ";
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura, new List<VerifactuFacturaRectificada>());
+
+            Assert.AreEqual("R4", request.TipoFactura);
+        }
+
+        [TestMethod]
+        public void Mapear_RectificativaConImportesNegativos_ImporteTotalNegativo()
+        {
+            var factura = CrearRectificativaRV();
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura, new List<VerifactuFacturaRectificada>());
+
+            Assert.AreEqual(-121.00M, request.ImporteTotal);
+            Assert.AreEqual(-100.00M, request.DesgloseIva.Single().BaseImponible);
+            Assert.AreEqual(-21.00M, request.DesgloseIva.Single().CuotaIva);
+        }
+
         [TestMethod]
         public void Mapear_FacturaSerieNV_MapeaDatosGeneralesYTipoF1()
         {

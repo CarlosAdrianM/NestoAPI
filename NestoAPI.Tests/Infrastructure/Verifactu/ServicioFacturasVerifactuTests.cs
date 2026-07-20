@@ -24,6 +24,7 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
     {
         private NVEntities db;
         private DbSet<CabFacturaVta> fakeFacturas;
+        private DbSet<LinFacturaVtaRectificacion> fakeRectificaciones;
         private IServicioVerifactu servicioVerifactu;
         private ILogService logService;
 
@@ -34,6 +35,10 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             fakeFacturas = A.Fake<DbSet<CabFacturaVta>>(o => o.Implements<IQueryable<CabFacturaVta>>().Implements<IDbAsyncEnumerable<CabFacturaVta>>());
             A.CallTo(() => db.CabsFacturasVtas).Returns(fakeFacturas);
             A.CallTo(() => fakeFacturas.Include(A<string>.Ignored)).Returns(fakeFacturas);
+            // Issue #36: vinculaciones de rectificativas (vacías salvo que el test las configure)
+            fakeRectificaciones = A.Fake<DbSet<LinFacturaVtaRectificacion>>(o => o.Implements<IQueryable<LinFacturaVtaRectificacion>>().Implements<IDbAsyncEnumerable<LinFacturaVtaRectificacion>>());
+            A.CallTo(() => db.LinFacturaVtaRectificaciones).Returns(fakeRectificaciones);
+            ConfigurarFakeDbSet(fakeRectificaciones, new List<LinFacturaVtaRectificacion>().AsQueryable());
             servicioVerifactu = A.Fake<IServicioVerifactu>();
             A.CallTo(() => servicioVerifactu.EstaHabilitado).Returns(true);
             logService = A.Fake<ILogService>();
@@ -121,15 +126,84 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
-        public async Task EnviarFacturaAVerifactu_SerieRectificativa_NoEnviaTodavia()
+        public async Task EnviarFacturaAVerifactu_SerieRectificativa_NoEnviaDesdeCrearFactura()
         {
-            // Las rectificativas (R1/R3/R4) necesitan las facturas rectificadas: issue #36
+            // Issue #36: en CrearFactura las vinculaciones aún no están guardadas (GestorCopiaPedidos
+            // las guarda después y llama a EnviarRectificativaAVerifactu): desde aquí NO se envía.
             _ = ConfigurarFactura(serie: "RV", numero: "RV2600001");
             var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
 
             await servicio.EnviarFacturaAVerifactu("1", "RV2600001");
 
             A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarRectificativaAVerifactu_ConVinculaciones_EnviaConLasFacturasOriginales()
+        {
+            // Issue #36: rectificativa por diferencias (importes en negativo) con las facturas
+            // originales identificadas desde LinFacturaVtaRectificacion.
+            var rectificativa = new CabFacturaVta
+            {
+                Empresa = "1",
+                Serie = "RV",
+                Número = "RV2600001",
+                Fecha = new DateTime(2026, 7, 20),
+                CifNif = "12345678Z",
+                NombreFiscal = "CLIENTE DE PRUEBA SL",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = -100.00M, ImporteIVA = -21.00M }
+                }
+            };
+            var original = new CabFacturaVta
+            {
+                Empresa = "1",
+                Serie = "NV",
+                Número = "NV2600123 ",
+                Fecha = new DateTime(2026, 6, 1),
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta> { rectificativa, original }.AsQueryable());
+            // Dos líneas vinculadas a la MISMA factura original → una sola factura rectificada (Distinct)
+            ConfigurarFakeDbSet(fakeRectificaciones, new List<LinFacturaVtaRectificacion>
+            {
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV2600001", NumeroLinea = 1, FacturaOriginalNumero = "NV2600123", FacturaOriginalLinea = 5, CantidadRectificada = 1 },
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV2600001", NumeroLinea = 2, FacturaOriginalNumero = "NV2600123", FacturaOriginalLinea = 6, CantidadRectificada = 2 }
+            }.AsQueryable());
+            VerifactuFacturaRequest enviado = null;
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-rect", Estado = "Correcto" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarRectificativaAVerifactu("1", "RV2600001");
+
+            Assert.IsNotNull(enviado, "Debe enviar la rectificativa a Verifactu");
+            Assert.AreEqual("R1", enviado.TipoFactura);
+            Assert.AreEqual("I", enviado.TipoRectificacion);
+            Assert.AreEqual(-121.00M, enviado.ImporteTotal);
+            Assert.AreEqual(1, enviado.FacturasRectificadas.Count);
+            Assert.AreEqual("NV", enviado.FacturasRectificadas[0].Serie);
+            Assert.AreEqual("2600123", enviado.FacturasRectificadas[0].Numero);
+            Assert.AreEqual(new DateTime(2026, 6, 1), enviado.FacturasRectificadas[0].FechaExpedicion);
+            Assert.AreEqual("uuid-rect", rectificativa.VerifactuUUID);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task EnviarRectificativaAVerifactu_SinVinculaciones_NoEnviaYLoguea()
+        {
+            // Rectificativa creada fuera de CopiarFactura (alta manual, #38/#87): sin vinculaciones
+            // no se puede identificar qué rectifica → no se envía (queda reintentable) y se loguea.
+            _ = ConfigurarFactura(serie: "RV", numero: "RV2600001");
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarRectificativaAVerifactu("1", "RV2600001");
+
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("RV2600001"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]

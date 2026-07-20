@@ -628,12 +628,29 @@ namespace NestoAPI.Infraestructure.Facturas
         /// Best-effort: NUNCA lanza. Si el envío falla, la factura queda creada con los campos
         /// Verifactu a null (así un proceso posterior puede reintentar buscando VerifactuUUID null)
         /// y el error se loguea a ELMAH.
-        /// Las rectificativas (series RV/RC) no se envían todavía: necesitan las facturas
-        /// rectificadas y eso es la issue #36.
+        /// Las rectificativas (series RV/RC) NO se envían desde aquí: en el momento de CrearFactura
+        /// las vinculaciones de LinFacturaVtaRectificacion aún no están guardadas (GestorCopiaPedidos
+        /// las guarda después) y se enviarían sin facturas rectificadas. Se envían con
+        /// <see cref="EnviarRectificativaAVerifactu"/> tras guardar las vinculaciones (issue #36).
         /// </summary>
         /// <param name="empresa">Empresa de la factura (puede ser la espejo por traspaso)</param>
         /// <param name="numeroFactura">Número de la factura recién creada</param>
         internal async Task EnviarFacturaAVerifactu(string empresa, string numeroFactura)
+        {
+            await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: false);
+        }
+
+        /// <summary>
+        /// Issue #36: envía una factura RECTIFICATIVA a Verifactu, con las facturas originales
+        /// identificadas desde LinFacturaVtaRectificacion. Debe llamarse DESPUÉS de guardar las
+        /// vinculaciones (GestorCopiaPedidos). Mismo best-effort e idempotencia que el envío normal.
+        /// </summary>
+        public async Task EnviarRectificativaAVerifactu(string empresa, string numeroFactura)
+        {
+            await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: true);
+        }
+
+        private async Task EnviarAVerifactu(string empresa, string numeroFactura, bool permitirRectificativas)
         {
             try
             {
@@ -651,9 +668,14 @@ namespace NestoAPI.Infraestructure.Facturas
                 }
 
                 ISerieFacturaVerifactu serie = RegistroSeriesVerifactu.ObtenerSerie(factura.Serie);
-                if (serie == null || !serie.TramitaVerifactu || serie.EsRectificativa)
+                if (serie == null || !serie.TramitaVerifactu)
                 {
                     return;
+                }
+
+                if (serie.EsRectificativa && !permitirRectificativas)
+                {
+                    return; // desde CrearFactura las vinculaciones aún no existen (#36)
                 }
 
                 if (!string.IsNullOrWhiteSpace(factura.VerifactuUUID))
@@ -661,7 +683,22 @@ namespace NestoAPI.Infraestructure.Facturas
                     return; // ya se envió (idempotencia)
                 }
 
-                Verifactu.VerifactuFacturaRequest request = Verifactu.MapeadorFacturaVerifactu.Mapear(factura);
+                List<Verifactu.VerifactuFacturaRectificada> facturasRectificadas = null;
+                if (serie.EsRectificativa)
+                {
+                    facturasRectificadas = await CargarFacturasRectificadas(empresa, numeroFactura);
+                    if (!facturasRectificadas.Any())
+                    {
+                        // Sin vinculaciones no se puede identificar qué se rectifica: no se envía
+                        // (queda con VerifactuUUID null, reintentable). El alta manual de
+                        // vinculaciones para rectificativas creadas fuera de CopiarFactura es #38/#87.
+                        logService.LogError($"Verifactu: la rectificativa {numeroFactura} no tiene " +
+                            "vinculaciones en LinFacturaVtaRectificacion; no se envía (pendiente #38/#87)");
+                        return;
+                    }
+                }
+
+                Verifactu.VerifactuFacturaRequest request = Verifactu.MapeadorFacturaVerifactu.Mapear(factura, facturasRectificadas);
                 Verifactu.VerifactuResponse respuesta = await servicioVerifactu.EnviarFacturaAsync(request);
 
                 if (respuesta != null && respuesta.Exitoso)
@@ -683,6 +720,42 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 logService.LogError($"Verifactu: error inesperado al enviar la factura {numeroFactura}", ex);
             }
+        }
+
+        /// <summary>
+        /// Issue #36: facturas originales que rectifica una rectificativa, leídas de las
+        /// vinculaciones por línea de LinFacturaVtaRectificacion (una entrada por factura original
+        /// distinta, con su serie/número/fecha reales de CabFacturaVta).
+        /// </summary>
+        private async Task<List<Verifactu.VerifactuFacturaRectificada>> CargarFacturasRectificadas(string empresa, string numeroFacturaRectificativa)
+        {
+            string numeroRectificativa = numeroFacturaRectificativa?.Trim();
+            List<string> numerosOriginales = await db.LinFacturaVtaRectificaciones
+                .Where(r => r.Empresa == empresa && r.NumeroFactura.Trim() == numeroRectificativa)
+                .Select(r => r.FacturaOriginalNumero)
+                .Distinct()
+                .ToListAsync();
+
+            var facturasRectificadas = new List<Verifactu.VerifactuFacturaRectificada>();
+            foreach (string numeroOriginal in numerosOriginales)
+            {
+                string numero = numeroOriginal?.Trim();
+                CabFacturaVta original = await db.CabsFacturasVtas
+                    .FirstOrDefaultAsync(f => f.Empresa == empresa && f.Número.Trim() == numero);
+                if (original == null)
+                {
+                    logService.LogError($"Verifactu: no se encuentra la factura original {numero} " +
+                        $"vinculada a la rectificativa {numeroFacturaRectificativa}");
+                    continue;
+                }
+                facturasRectificadas.Add(new Verifactu.VerifactuFacturaRectificada
+                {
+                    Serie = original.Serie?.Trim(),
+                    Numero = Verifactu.MapeadorFacturaVerifactu.NumeroSinSerie(original.Número, original.Serie),
+                    FechaExpedicion = original.Fecha
+                });
+            }
+            return facturasRectificadas;
         }
 
         /// <summary>

@@ -698,6 +698,11 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     request.Empresa,
                     response.NumeroFactura,
                     lineasCopiadas);
+
+                // Issue #36: la rectificativa se envía a Verifactu AQUÍ (no en CrearFactura) porque
+                // necesita las vinculaciones recién guardadas para identificar las facturas
+                // rectificadas. Best-effort: nunca lanza.
+                await _servicioFacturas.EnviarRectificativaAVerifactu(request.Empresa, response.NumeroFactura);
             }
         }
 

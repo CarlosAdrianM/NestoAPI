@@ -13,7 +13,8 @@ namespace NestoAPI.Infraestructure.Verifactu
     /// </summary>
     internal static class MapeadorFacturaVerifactu
     {
-        internal static VerifactuFacturaRequest Mapear(CabFacturaVta factura)
+        internal static VerifactuFacturaRequest Mapear(CabFacturaVta factura,
+            System.Collections.Generic.List<VerifactuFacturaRectificada> facturasRectificadas = null)
         {
             if (factura == null)
             {
@@ -31,11 +32,23 @@ namespace NestoAPI.Infraestructure.Verifactu
                 Serie = factura.Serie?.Trim(),
                 Numero = NumeroSinSerie(factura.Número, factura.Serie),
                 FechaExpedicion = factura.Fecha,
-                TipoFactura = serie.TipoFacturaVerifactuPorDefecto,
+                TipoFactura = TipoFactura(serie, factura),
                 Descripcion = serie.DescripcionVerifactu,
                 NifDestinatario = factura.CifNif?.Trim(),
                 NombreDestinatario = factura.NombreFiscal?.Trim()
             };
+
+            // Issue #36: nuestras rectificativas son abonos con los importes en negativo, que en
+            // Verifactu es la rectificativa "por diferencias" (I). Contrato verificado contra los
+            // ejemplos oficiales de Verifacti el 20/07/26: líneas e importe_total en negativo, SIN
+            // importe_rectificativa (eso es solo para las de sustitución) y con las facturas
+            // rectificadas identificadas.
+            if (serie.EsRectificativa)
+            {
+                request.TipoRectificacion = "I";
+                request.FacturasRectificadas = facturasRectificadas
+                    ?? new System.Collections.Generic.List<VerifactuFacturaRectificada>();
+            }
 
             decimal importeTotal = 0;
             var gruposIva = factura.LinPedidoVtas
@@ -60,7 +73,22 @@ namespace NestoAPI.Infraestructure.Verifactu
             return request;
         }
 
-        private static string NumeroSinSerie(string numeroFactura, string serie)
+        /// <summary>
+        /// Issue #36: el tipo AEAT de una rectificativa (R1-R5) sale del TipoRectificativa
+        /// persistido en la factura si existe; si no, del defecto de la serie (R1). Hoy Nesto
+        /// aún no rellena el campo (la UI por causa es Nesto#244), así que aplica el defecto.
+        /// </summary>
+        internal static string TipoFactura(ISerieFacturaVerifactu serie, CabFacturaVta factura)
+        {
+            if (!serie.EsRectificativa)
+            {
+                return serie.TipoFacturaVerifactuPorDefecto;
+            }
+            string tipo = factura.TipoRectificativa?.Trim().ToUpperInvariant();
+            return string.IsNullOrEmpty(tipo) ? serie.TipoFacturaVerifactuPorDefecto : tipo;
+        }
+
+        internal static string NumeroSinSerie(string numeroFactura, string serie)
         {
             string numero = numeroFactura?.Trim() ?? string.Empty;
             string prefijo = serie?.Trim();

@@ -30,5 +30,7 @@ namespace NestoAPI.Infraestructure.Facturas
         bool EnviarCorreoSMTP(MailMessage mail);
         List<EfectoPedidoVenta> CargarEfectosPedido(string empresa, int pedido);
         Task<CrearFacturaResponseDTO> CrearFactura(string empresa, int pedido, string usuario, string usuarioAutenticado = null);
+        // Issue #36: envío a Verifactu de una rectificativa, tras guardar sus vinculaciones.
+        Task EnviarRectificativaAVerifactu(string empresa, string numeroFactura);
     }
 }
