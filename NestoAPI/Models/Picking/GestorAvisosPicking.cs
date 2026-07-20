@@ -79,17 +79,27 @@ namespace NestoAPI.Models.Picking
 
             MailMessage mail = new MailMessage
             {
-                From = new MailAddress("nesto@nuevavision.es"),
-                Subject = $"Pedido {pedido.Id} del cliente {pedido.Cliente?.Trim()}: va a salir por {importe:C}",
+                From = new MailAddress(CORREO_REMITENTE),
+                // #314: asunto "Pedido {n} - c/ {cliente}". Outlook agrupa por asunto, así que el
+                // aviso queda en la misma conversación que el resto de correos de ese pedido. El
+                // importe se ha movido al cuerpo.
+                Subject = $"Pedido {pedido.Id} - c/ {pedido.Cliente?.Trim()}",
                 IsBodyHtml = true,
-                Body = GenerarCuerpo(pedido, importe)
+                Body = GenerarCuerpo(pedido, importe, TotalConIvaCogido(pedido))
             };
             foreach (string destinatario in destinatarios)
             {
                 mail.To.Add(new MailAddress(destinatario));
             }
+            // #314: al responder, la respuesta va a almacén (no al buzón técnico nesto@), que es
+            // quien puede hacer algo con ella. Enviar DESDE almacen@ requeriría permiso Send As en
+            // Office 365 sobre ese buzón; mientras no se conceda, esta es la alternativa acordada.
+            mail.ReplyToList.Add(new MailAddress(CORREO_ALMACEN));
             return mail;
         }
+
+        private const string CORREO_REMITENTE = "nesto@nuevavision.es";
+        private const string CORREO_ALMACEN = "almacen@nuevavision.es";
 
         /// <summary>
         /// Importe de lo que ha cogido picking en ESTA tanda (solo las líneas que salen).
@@ -103,15 +113,31 @@ namespace NestoAPI.Models.Picking
             return pedido.Lineas.Sum(l => l.BaseImponibleEntrega);
         }
 
-        private static string GenerarCuerpo(PedidoPicking pedido, decimal importe)
+        /// <summary>
+        /// NestoAPI#314: total CON IVA (y recargo de equivalencia) de lo que sale en esta tanda.
+        /// Es el dinero que el cliente tiene que tener preparado, que es para lo que se usa el aviso.
+        /// </summary>
+        internal static decimal TotalConIvaCogido(PedidoPicking pedido)
+        {
+            if (pedido?.Lineas == null)
+            {
+                return 0;
+            }
+            return pedido.Lineas.Sum(l => l.TotalEntrega);
+        }
+
+        internal static string GenerarCuerpo(PedidoPicking pedido, decimal importe, decimal totalConIva)
         {
             System.Text.StringBuilder s = new System.Text.StringBuilder();
             _ = s.AppendLine($"<p>El pedido <b>{pedido.Id}</b> del cliente <b>{pedido.Cliente?.Trim()}</b> ha cogido picking.</p>");
-            _ = s.AppendLine($"<p>Importe (base imponible) de las líneas que salen: <b>{importe:C}</b></p>");
-            _ = s.AppendLine("<table border=\"1\"><thead><tr><th>Producto</th><th>Cantidad</th><th>Importe</th></tr></thead><tbody>");
+            // #314: el TOTAL con IVA va primero y destacado (es el dinero que el cliente tiene que
+            // tener preparado); la base imponible se mantiene desglosada debajo.
+            _ = s.AppendLine($"<p style=\"font-size:14px\">Total a cobrar (IVA incluido): <b>{totalConIva:C}</b></p>");
+            _ = s.AppendLine($"<p>Base imponible de las líneas que salen: <b>{importe:C}</b></p>");
+            _ = s.AppendLine("<table border=\"1\"><thead><tr><th>Producto</th><th>Cantidad</th><th>Base imponible</th><th>Total con IVA</th></tr></thead><tbody>");
             foreach (LineaPedidoPicking linea in pedido.Lineas.Where(l => l.BaseImponibleEntrega != 0))
             {
-                _ = s.AppendLine($"<tr><td>{linea.Producto?.Trim()}</td><td style=\"text-align:right\">{linea.CantidadReservada}</td><td style=\"text-align:right\">{linea.BaseImponibleEntrega:C}</td></tr>");
+                _ = s.AppendLine($"<tr><td>{linea.Producto?.Trim()}</td><td style=\"text-align:right\">{linea.CantidadReservada}</td><td style=\"text-align:right\">{linea.BaseImponibleEntrega:C}</td><td style=\"text-align:right\">{linea.TotalEntrega:C}</td></tr>");
             }
             _ = s.AppendLine("</tbody></table>");
             _ = s.AppendLine("<p>Este aviso se genera automáticamente porque el pedido tiene marcada la casilla \"Avisar con importe cuando coja picking\".</p>");

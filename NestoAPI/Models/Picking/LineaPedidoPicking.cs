@@ -22,7 +22,7 @@ namespace NestoAPI.Models.Picking
         public bool Borrar { get; set; } = false;
         public DateTime FechaModificacion { get; set; }
         public bool EsPedidoEspecial { get; set; }
-        public decimal BaseImponibleEntrega { 
+        public decimal BaseImponibleEntrega {
             get
             {
                 if (Cantidad != 0)
@@ -33,6 +33,19 @@ namespace NestoAPI.Models.Picking
                 {
                     return 0;
                 }
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#314: total CON IVA (y recargo de equivalencia, que Total ya incluye) de lo que
+        /// sale en esta tanda, prorrateado por la cantidad reservada igual que BaseImponibleEntrega.
+        /// El aviso de picking lo usa para decir cuánto dinero tiene que preparar el cliente.
+        /// </summary>
+        public decimal TotalEntrega
+        {
+            get
+            {
+                return Cantidad != 0 ? Total / Cantidad * CantidadReservada : 0;
             }
         }
     }
