@@ -216,6 +216,7 @@
     <Compile Include="Infraestructure\ServicioDireccionesGoogleTests.cs" />
     <Compile Include="Infraestructure\GestorSeEstaVendiendoTests.cs" />
     <Compile Include="Infrastructure\MessageRetryManagerTests.cs" />
+    <Compile Include="Infrastructure\ServicioExtractoRutaTests.cs" />
     <Compile Include="Models\Picking\GestorAvisosPickingTests.cs" />
     <Compile Include="Infraestructure\TelefonoTests.cs" />
     <Compile Include="Infraestructure\CorreoClienteTests.cs" />

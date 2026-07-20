@@ -1,10 +1,12 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Models;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -52,11 +54,11 @@ namespace NestoAPI.Tests.Infrastructure
                 FormaPago = "EFC"
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
@@ -100,11 +102,11 @@ namespace NestoAPI.Tests.Infrastructure
                 Importe = 50m
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
@@ -124,7 +126,7 @@ namespace NestoAPI.Tests.Infrastructure
             string numeroFactura = "FV123";
             string usuario = "testuser";
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente>()); // Sin datos
 
@@ -158,7 +160,7 @@ namespace NestoAPI.Tests.Infrastructure
                 ImportePdte = 0m
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoFactura });
 
@@ -210,11 +212,11 @@ namespace NestoAPI.Tests.Infrastructure
                 }
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, extractos);
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
@@ -253,11 +255,11 @@ namespace NestoAPI.Tests.Infrastructure
                 FechaVto = new DateTime(2025, 11, 25)
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
@@ -295,11 +297,11 @@ namespace NestoAPI.Tests.Infrastructure
                 FechaVto = DateTime.Now.AddDays(30)
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
@@ -334,11 +336,11 @@ namespace NestoAPI.Tests.Infrastructure
                 Importe = 100m
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
@@ -375,11 +377,11 @@ namespace NestoAPI.Tests.Infrastructure
                 FechaVto = fechaVtoCorrecta // Esta es la fecha correcta de vencimiento
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act
@@ -420,14 +422,19 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.Clientes.FindAsync(pedido.Empresa, pedido.Nº_Cliente, pedido.Contacto))
                 .Returns(Task.FromResult(cliente));
 
-            // ExtractoRuta existente con Nº_Orden mínimo = -100
+            // ExtractoRuta existente con Nº_Orden mínimo = -100.
+            // Issue #313: la Empresa va SIN espacios porque el servicio filtra por
+            // `e.Empresa == pedido.Empresa.Trim()`. En SQL Server la comparación de char() ignora
+            // los espacios finales y "1  " casaría igual, pero el doble de DbSet resuelve el LINQ
+            // en memoria, donde la comparación es ordinal y "1  " != "1": con el valor rellenado
+            // el Where no devolvía nada, MinAsync daba null y el orden salía -1 en vez de -101.
             var extractosRutaExistentes = new List<ExtractoRuta>
             {
-                new ExtractoRuta { Empresa = pedido.Empresa, Nº_Orden = -100 },
-                new ExtractoRuta { Empresa = pedido.Empresa, Nº_Orden = -50 }
+                new ExtractoRuta { Empresa = pedido.Empresa.Trim(), Nº_Orden = -100 },
+                new ExtractoRuta { Empresa = pedido.Empresa.Trim(), Nº_Orden = -50 }
             };
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
             ConfigurarDbSetFalso(mockExtractoRutas, extractosRutaExistentes);
 
@@ -472,7 +479,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.Clientes.FindAsync(pedido.Empresa, pedido.Nº_Cliente, pedido.Contacto))
                 .Returns(Task.FromResult(cliente));
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
             ConfigurarDbSetFalso(mockExtractoRutas, new List<ExtractoRuta>()); // Sin datos
 
@@ -500,7 +507,7 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => _db.Clientes.FindAsync(pedido.Empresa, pedido.Nº_Cliente, pedido.Contacto))
                 .Returns(Task.FromResult(cliente));
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
             ConfigurarDbSetFalso(mockExtractoRutas, new List<ExtractoRuta>());
 
@@ -525,10 +532,18 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
+        // Issue #313: el servicio consulta con operadores ASÍNCRONOS de EF (FirstOrDefaultAsync…),
+        // y para eso el doble de DbSet tiene que exponer un provider que implemente
+        // IDbAsyncQueryProvider; con solo el provider de LINQ to Objects, EF lanza
+        // "The provider for the source IQueryable doesn't implement IDbAsyncQueryProvider".
+        // Se reutilizan los helpers de NestoAPI.Tests\Helpers (mismo patrón que ConfigurarFakeDbSet
+        // en AgenciasTarifasControllerTests).
         private void ConfigurarDbSetFalso<T>(DbSet<T> mockSet, List<T> data) where T : class
         {
             var queryable = data.AsQueryable();
-            A.CallTo(() => ((IQueryable<T>)mockSet).Provider).Returns(queryable.Provider);
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)mockSet).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<T>(queryable.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)mockSet).Provider).Returns(new TestDbAsyncQueryProvider<T>(queryable.Provider));
             A.CallTo(() => ((IQueryable<T>)mockSet).Expression).Returns(queryable.Expression);
             A.CallTo(() => ((IQueryable<T>)mockSet).ElementType).Returns(queryable.ElementType);
             A.CallTo(() => ((IQueryable<T>)mockSet).GetEnumerator()).Returns(queryable.GetEnumerator());
@@ -575,11 +590,11 @@ namespace NestoAPI.Tests.Infrastructure
                 FechaVto = DateTime.Now
             };
 
-            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>());
+            var mockExtractosCliente = A.Fake<DbSet<ExtractoCliente>>(opt => opt.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             A.CallTo(() => _db.ExtractosCliente).Returns(mockExtractosCliente);
             ConfigurarDbSetFalso(mockExtractosCliente, new List<ExtractoCliente> { extractoEfecto });
 
-            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>());
+            var mockExtractoRutas = A.Fake<DbSet<ExtractoRuta>>(opt => opt.Implements<IQueryable<ExtractoRuta>>().Implements<IDbAsyncEnumerable<ExtractoRuta>>());
             A.CallTo(() => _db.ExtractoRutas).Returns(mockExtractoRutas);
 
             // Act - Con el parámetro empresaFactura, debe buscar en empresa '3' y encontrar el efecto
