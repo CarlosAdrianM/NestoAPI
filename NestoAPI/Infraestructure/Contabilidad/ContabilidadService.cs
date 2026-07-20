@@ -262,6 +262,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
         {
             using (NVEntities db = new NVEntities())
             {
+                // #322: los diarios grandes (pago Amazon de CanalesExternos, ~640 líneas) pueden
+                // superar los 30 segundos por defecto si hay contención; margen sin llegar a los
+                // 360 s que colgaban al cliente con el flujo antiguo.
+                db.Database.CommandTimeout = 120;
                 using (DbContextTransaction transaction = db.Database.BeginTransaction())
                 {
                     try
