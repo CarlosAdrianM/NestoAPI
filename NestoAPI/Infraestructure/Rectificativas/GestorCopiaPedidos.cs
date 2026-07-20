@@ -63,7 +63,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
             catch (Exception ex)
             {
                 // Registrar en ELMAH para diagnóstico
-                Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+                // NestoAPI#182: puede ejecutarse dentro de la transacción de la copia/facturación
+                ElmahHelper.Señalar(ex);
 
                 return new CopiarFacturaResponse
                 {
@@ -927,7 +928,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
             {
                 response.Exitoso = false;
                 response.Mensaje = $"Error en operación Abono+Cargo: {ex.Message}";
-                Elmah.ErrorSignal.FromCurrentContext().Raise(ex);
+                // NestoAPI#182: puede ejecutarse dentro de la transacción de la copia/facturación
+                ElmahHelper.Señalar(ex);
             }
 
             return response;

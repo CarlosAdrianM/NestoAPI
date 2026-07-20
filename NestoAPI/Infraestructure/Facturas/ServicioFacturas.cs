@@ -1158,7 +1158,10 @@ namespace NestoAPI.Infraestructure.Facturas
                 {
                     error.User = usuarioAutenticado;
                 }
-                ErrorLog.GetDefault(httpContext)?.Log(error);
+                // NestoAPI#182: el auto-fix se registra en plena facturación, dentro de la
+                // transacción: sin Suppress, la conexión de ELMAH se alista en ella y el log se
+                // pierde (o revienta) justo en el diagnóstico que más falta hace.
+                ElmahHelper.SinTransaccion(() => ErrorLog.GetDefault(httpContext)?.Log(error));
 
                 System.Diagnostics.Debug.WriteLine($"[ELMAH] Registrado auto-fix para pedido {pedido.Número}");
             }

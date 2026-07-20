@@ -7,27 +7,14 @@ namespace NestoAPI.Infraestructure
     {
         public void LogError(string mensaje, Exception excepcionOriginal = null)
         {
-            try
-            {
-                var excepcion = excepcionOriginal != null
-                    ? new Exception(mensaje, excepcionOriginal)
-                    : new Exception(mensaje);
-                ErrorSignal.FromCurrentContext().Raise(excepcion);
-            }
-            catch
-            {
-                try
-                {
-                    var excepcion = excepcionOriginal != null
-                        ? new Exception(mensaje, excepcionOriginal)
-                        : new Exception(mensaje);
-                    ErrorLog.GetDefault(null).Log(new Error(excepcion));
-                }
-                catch
-                {
-                    // No bloquear si falla el logging
-                }
-            }
+            // NestoAPI#182: se delega en ElmahHelper, que envuelve la escritura en un
+            // TransactionScope(Suppress). Antes, un LogError disparado dentro de una transacción
+            // (facturación, unión de pedidos...) fallaba al abrir la conexión de ELMAH y el error
+            // se perdía. El helper conserva el doble camino señal/log-directo y nunca lanza.
+            var excepcion = excepcionOriginal != null
+                ? new Exception(mensaje, excepcionOriginal)
+                : new Exception(mensaje);
+            ElmahHelper.Señalar(excepcion);
         }
     }
 }

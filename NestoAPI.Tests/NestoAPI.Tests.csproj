@@ -282,6 +282,7 @@
     <Compile Include="Infrastructure\SeguimientoEnviosJobsServiceTests.cs" />
     <Compile Include="Infrastructure\ConvertidorPedidoAPlantillaTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPackingTests.cs" />
+    <Compile Include="Infrastructure\ElmahHelperTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfFacturasQuestPdfTests.cs" />
     <Compile Include="Infrastructure\GeneradorExcelPedidoCompraTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPedidoCompraTests.cs" />

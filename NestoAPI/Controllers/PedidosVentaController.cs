@@ -2502,15 +2502,11 @@ Error original: {excepcionOriginal.Message}";
                 excepcionConPedido.Data["Usuario"] = pedido?.Usuario;
                 excepcionConPedido.Data["PedidoJSON"] = pedidoJson;
 
-                var httpContext = HttpContext.Current;
-                if (httpContext != null)
-                {
-                    ErrorSignal.FromContext(httpContext).Raise(excepcionConPedido, httpContext);
-                }
-                else
-                {
-                    ErrorLog.GetDefault(null)?.Log(new Error(excepcionConPedido));
-                }
+                // NestoAPI#182: este método se ejecuta DENTRO del TransactionScope cuando el PUT
+                // viene de UnirPedidos (PersistirUnion), y ahí la conexión de ELMAH se alistaba en
+                // la transacción ambiente y petaba con "The underlying provider failed on Open",
+                // perdiendo el JSON del pedido que es justo lo que sirve para reproducir el fallo.
+                ElmahHelper.Señalar(excepcionConPedido);
             }
             catch
             {
