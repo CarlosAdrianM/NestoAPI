@@ -140,8 +140,8 @@ namespace NestoAPI.Tests.Infrastructure
             }.AsQueryable());
             ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>
             {
-                new EnviosAgencia { Numero = 1, Pedido = 922001, Estado = (short)Constantes.Agencias.ESTADO_TRAMITADO },
-                new EnviosAgencia { Numero = 2, Pedido = 922002, Estado = Constantes.Agencias.ESTADO_ENTREGADO }
+                new EnviosAgencia { Numero = 1, Pedido = 922001, Estado = (short)Constantes.Agencias.ESTADO_TRAMITADO, Fecha = HOY.AddDays(-3) },
+                new EnviosAgencia { Numero = 2, Pedido = 922002, Estado = Constantes.Agencias.ESTADO_ENTREGADO, Fecha = HOY.AddDays(-3) }
             }.AsQueryable());
 
             List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
@@ -151,6 +151,31 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(retenido.Preseleccionado);
             StringAssert.Contains(retenido.Motivo, "sin confirmar la entrega");
             Assert.IsTrue(liberado.Preseleccionado, "Con el envío ENTREGADO el efecto se libera");
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_EnvioAntiguoSinConfirmar_SeLiberaPorTimeout()
+        {
+            // Timeout fallback de #172 (caso real 21/07: factura de sept/2025 con envíos en
+            // 'tramitado' eterno, anteriores al poll): un envío sin confirmar desde hace más
+            // de DIAS_TIMEOUT_GATING días ya no es señal fiable — no retiene la tesorería.
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, documento: "NV2515520")
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Factura = "NV2515520" }
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>
+            {
+                new EnviosAgencia { Numero = 1, Pedido = 900001, Estado = (short)Constantes.Agencias.ESTADO_TRAMITADO,
+                    Fecha = HOY.AddDays(-(SelectorEfectosCobrables.DIAS_TIMEOUT_GATING + 1)) }
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            Assert.IsTrue(candidatos.Single().Preseleccionado, "El envío antiguo sin confirmar no retiene");
         }
 
         [TestMethod]

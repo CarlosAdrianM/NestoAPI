@@ -19,6 +19,13 @@ namespace NestoAPI.Infraestructure.Remesas
     /// </summary>
     public class SelectorEfectosCobrables
     {
+        // Timeout fallback del gating (#172, diseño del 20/07: "si no llega confirmación tras
+        // N días, liberar igualmente — sin esto un fallo de seguimiento bloquea tesorería
+        // para siempre"). Caso real que lo exige (21/07): efecto de una factura de sept/2025
+        // con envíos en 'tramitado' eterno por ser anteriores al poll de seguimiento. Un
+        // envío de hace más de N días sin confirmar ya no es señal fiable de "no entregado".
+        public const int DIAS_TIMEOUT_GATING = 30;
+
         private readonly NVEntities db;
 
         public SelectorEfectosCobrables(NVEntities db)
@@ -67,9 +74,11 @@ namespace NestoAPI.Infraestructure.Remesas
                 .Distinct()
                 .ToListAsync().ConfigureAwait(false);
             List<int> pedidos = facturaPedidos.Select(fp => fp.Pedido).Distinct().ToList();
+            DateTime limiteTimeoutGating = fechaHoy.AddDays(-DIAS_TIMEOUT_GATING);
             var enviosNoEntregados = await db.EnviosAgencias
                 .Where(ea => ea.Pedido != null && pedidos.Contains(ea.Pedido.Value)
-                    && ea.Estado != Constantes.Agencias.ESTADO_ENTREGADO)
+                    && ea.Estado != Constantes.Agencias.ESTADO_ENTREGADO
+                    && ea.Fecha >= limiteTimeoutGating)
                 .Select(ea => new { Pedido = ea.Pedido.Value, ea.Estado })
                 .ToListAsync().ConfigureAwait(false);
             Dictionary<string, List<int>> pedidosPorFactura = facturaPedidos
