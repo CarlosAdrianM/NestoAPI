@@ -273,6 +273,34 @@ namespace NestoAPI.Infraestructure.Clientes
                 .ToListAsync().ConfigureAwait(false);
         }
 
+        public async Task MarcarIncorrecto(string cliente, string motivo, string usuario)
+        {
+            if (ClientesSimplificadas.Contains(cliente?.Trim()))
+            {
+                return;
+            }
+            Cliente principal = await db.Clientes.FirstOrDefaultAsync(c =>
+                c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                && c.Nº_Cliente == cliente && c.ClientePrincipal)
+                .ConfigureAwait(false);
+            if (principal == null || string.IsNullOrWhiteSpace(principal.CIF_NIF))
+            {
+                return;
+            }
+            await almacen.Guardar(new ValidacionNifRegistro
+            {
+                Empresa = principal.Empresa?.Trim(),
+                Cliente = principal.Nº_Cliente?.Trim(),
+                Contacto = principal.Contacto?.Trim(),
+                Nif = principal.CIF_NIF?.Trim(),
+                Nombre = principal.Nombre?.Trim(),
+                Estado = ESTADO_INCORRECTO,
+                ResultadoAeat = motivo?.Length > 100 ? motivo.Substring(0, 100) : motivo,
+                FechaValidacion = DateTime.Now,
+                Usuario = usuario
+            }).ConfigureAwait(false);
+        }
+
         private async Task<Cliente> LeerFicha(string empresa, string cliente, string contacto)
         {
             return await db.Clientes.FirstOrDefaultAsync(c =>

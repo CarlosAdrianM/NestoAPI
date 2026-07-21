@@ -390,6 +390,21 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'seguimiento-envios' configurado (cada 2 horas)");
 
+            // NestoAPI#329: cada 2 horas (a y cuarto, para no coincidir con seguimiento-envios),
+            // consulta estados Verifactu pendientes, reintenta las facturas sin declarar (series
+            // que tramitan, desde la fecha de arranque de la sombra) y marca fichas con NIF
+            // rechazado. No-op si Verifacti:Habilitado está apagado.
+            RecurringJob.AddOrUpdate(
+                "verifactu-estados",
+                () => Infraestructure.Verifactu.VerifactuJobsService.Procesar(),
+                "15 */2 * * *", // Cron: cada 2 horas, a y cuarto
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'verifactu-estados' configurado (cada 2 horas)");
+
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
 #if false

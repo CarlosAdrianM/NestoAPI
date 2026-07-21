@@ -316,8 +316,10 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 Url = apiResponse.Url,
                 QrBase64 = apiResponse.Qr,
                 Huella = apiResponse.Huella,
-                MensajeError = apiResponse.Error ?? apiResponse.Message,
-                CodigoError = apiResponse.ErrorCode
+                // NestoAPI#329: el status trae el veredicto AEAT en codigo_error/mensaje_error;
+                // se prefieren sobre los errores genéricos de la API de Verifacti.
+                MensajeError = apiResponse.MensajeErrorAeat ?? apiResponse.Error ?? apiResponse.Message,
+                CodigoError = apiResponse.CodigoErrorAeat ?? apiResponse.ErrorCode
             };
         }
 

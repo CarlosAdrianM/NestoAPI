@@ -277,6 +277,7 @@
     <Compile Include="Infrastructure\SeriesFacturaQuestPdfTests.cs" />
     <Compile Include="Infrastructure\StartupJwtConfigurationTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioVerifactiTests.cs" />
+    <Compile Include="Infrastructure\Verifactu\VerifactuJobsServiceTests.cs" />
     <Compile Include="Models\Facturas\RegistroSeriesVerifactuTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfResumenVentasTests.cs" />
     <Compile Include="Infrastructure\ValidadorDescuentoPPTests.cs" />

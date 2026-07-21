@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using NestoAPI.Models.Facturas.SeriesFactura;
 
 namespace NestoAPI.Models.Facturas
@@ -18,6 +19,13 @@ namespace NestoAPI.Models.Facturas
                 { "RV", new SerieRV() },
                 { "RC", new SerieRC() },
             };
+
+        /// <summary>
+        /// NestoAPI#329: códigos de las series que tramitan, para las consultas del job de
+        /// reintentos (facturas de estas series con UUID null son candidatas a redeclarar).
+        /// </summary>
+        public static List<string> CodigosQueTramitan =>
+            _series.Where(s => s.Value.TramitaVerifactu).Select(s => s.Key).ToList();
 
         /// <summary>
         /// Obtiene la configuración de una serie si está registrada para Verifactu.

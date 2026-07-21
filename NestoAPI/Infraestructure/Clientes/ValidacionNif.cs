@@ -98,6 +98,13 @@ namespace NestoAPI.Infraestructure.Clientes
         /// facturar. Filtro opcional por vendedor (permisos por rol en el cliente).
         /// </summary>
         Task<System.Collections.Generic.List<ClienteNifIncorrectoDTO>> ListarNifIncorrectos(string vendedor = null);
+
+        /// <summary>
+        /// NestoAPI#329: cuando Verifactu/AEAT rechaza una factura por el NIF del destinatario,
+        /// marca la ficha del cliente principal como INCORRECTA (con el motivo del rechazo)
+        /// para que los avisos al meter pedido y el bloqueo al facturar se activen solos.
+        /// </summary>
+        Task MarcarIncorrecto(string cliente, string motivo, string usuario);
     }
 
     /// <summary>Fila del listado de NIF incorrectos (#327, para Nesto#417/NestoApp#157).</summary>

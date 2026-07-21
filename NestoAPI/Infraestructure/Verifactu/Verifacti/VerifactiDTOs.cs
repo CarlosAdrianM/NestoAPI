@@ -119,5 +119,13 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
 
         [JsonProperty("message")]
         public string Message { get; set; }
+
+        // NestoAPI#329: el endpoint de STATUS devuelve el veredicto de la AEAT con estos
+        // nombres (distintos de error/error_code, que son de la propia API de Verifacti).
+        [JsonProperty("codigo_error")]
+        public string CodigoErrorAeat { get; set; }
+
+        [JsonProperty("mensaje_error")]
+        public string MensajeErrorAeat { get; set; }
     }
 }

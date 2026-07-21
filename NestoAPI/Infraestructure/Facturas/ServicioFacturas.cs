@@ -737,9 +737,11 @@ namespace NestoAPI.Infraestructure.Facturas
         /// </summary>
         /// <param name="empresa">Empresa de la factura (puede ser la espejo por traspaso)</param>
         /// <param name="numeroFactura">Número de la factura recién creada</param>
-        internal async Task EnviarFacturaAVerifactu(string empresa, string numeroFactura)
+        // NestoAPI#329: devuelve la respuesta del proveedor (null si no procedía enviar), para
+        // que el job de reintentos pueda reaccionar al motivo (p. ej. rechazo por NIF).
+        internal async Task<Verifactu.VerifactuResponse> EnviarFacturaAVerifactu(string empresa, string numeroFactura)
         {
-            await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: false);
+            return await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: false);
         }
 
         /// <summary>
@@ -747,18 +749,18 @@ namespace NestoAPI.Infraestructure.Facturas
         /// identificadas desde LinFacturaVtaRectificacion. Debe llamarse DESPUÉS de guardar las
         /// vinculaciones (GestorCopiaPedidos). Mismo best-effort e idempotencia que el envío normal.
         /// </summary>
-        public async Task EnviarRectificativaAVerifactu(string empresa, string numeroFactura)
+        public async Task<Verifactu.VerifactuResponse> EnviarRectificativaAVerifactu(string empresa, string numeroFactura)
         {
-            await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: true);
+            return await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: true);
         }
 
-        private async Task EnviarAVerifactu(string empresa, string numeroFactura, bool permitirRectificativas)
+        private async Task<Verifactu.VerifactuResponse> EnviarAVerifactu(string empresa, string numeroFactura, bool permitirRectificativas)
         {
             try
             {
                 if (!servicioVerifactu.EstaHabilitado)
                 {
-                    return;
+                    return null;
                 }
 
                 CabFacturaVta factura = await db.CabsFacturasVtas
@@ -766,23 +768,23 @@ namespace NestoAPI.Infraestructure.Facturas
                     .FirstOrDefaultAsync(f => f.Empresa == empresa && f.Número == numeroFactura);
                 if (factura == null)
                 {
-                    return;
+                    return null;
                 }
 
                 ISerieFacturaVerifactu serie = RegistroSeriesVerifactu.ObtenerSerie(factura.Serie);
                 if (serie == null || !serie.TramitaVerifactu)
                 {
-                    return;
+                    return null;
                 }
 
                 if (serie.EsRectificativa && !permitirRectificativas)
                 {
-                    return; // desde CrearFactura las vinculaciones aún no existen (#36)
+                    return null; // desde CrearFactura las vinculaciones aún no existen (#36)
                 }
 
                 if (!string.IsNullOrWhiteSpace(factura.VerifactuUUID))
                 {
-                    return; // ya se envió (idempotencia)
+                    return null; // ya se envió (idempotencia)
                 }
 
                 List<Verifactu.VerifactuFacturaRectificada> facturasRectificadas = null;
@@ -796,7 +798,7 @@ namespace NestoAPI.Infraestructure.Facturas
                         // vinculaciones para rectificativas creadas fuera de CopiarFactura es #38/#87.
                         logService.LogError($"Verifactu: la rectificativa {numeroFactura} no tiene " +
                             "vinculaciones en LinFacturaVtaRectificacion; no se envía (pendiente #38/#87)");
-                        return;
+                        return null;
                     }
                 }
 
@@ -829,10 +831,12 @@ namespace NestoAPI.Infraestructure.Facturas
                     logService.LogError($"Verifactu: error al enviar la factura {numeroFactura} " +
                         $"({respuesta?.CodigoError}): {respuesta?.MensajeError}");
                 }
+                return respuesta;
             }
             catch (Exception ex)
             {
                 logService.LogError($"Verifactu: error inesperado al enviar la factura {numeroFactura}", ex);
+                return null;
             }
         }
 
