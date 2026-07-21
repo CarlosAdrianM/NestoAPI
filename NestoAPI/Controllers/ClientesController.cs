@@ -39,6 +39,38 @@ namespace NestoAPI.Controllers
         //{
         //}
 
+        // POST: api/Clientes/CorregirNif
+        // NestoAPI#327 / Nesto#417: "ponerlo en un sitio y se arregla todo". Valida el NIF
+        // nuevo contra el censo de la AEAT y, solo si es correcto, lo escribe en TODOS los
+        // contactos del cliente, registra la validación (facturar deja de avisar/bloquear) y
+        // audita el cambio. Si la AEAT lo rechaza, no se toca nada y se devuelve el motivo.
+        [System.Web.Http.Authorize]
+        [System.Web.Http.HttpPost]
+        [System.Web.Http.Route("api/Clientes/CorregirNif")]
+        public async Task<IHttpActionResult> CorregirNif([FromBody] CorregirNifRequest peticion)
+        {
+            if (peticion == null || string.IsNullOrWhiteSpace(peticion.Cliente) || string.IsNullOrWhiteSpace(peticion.Nif))
+            {
+                return BadRequest("Hay que indicar el cliente y el NIF nuevo.");
+            }
+
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            var servicio = new Infraestructure.Clientes.ServicioValidacionNif(db);
+            Infraestructure.Clientes.ResultadoCorreccionNif resultado =
+                await servicio.CorregirNif(peticion.Cliente, peticion.Nif, usuario);
+
+            if (!resultado.Corregido)
+            {
+                return BadRequest(resultado.Motivo);
+            }
+            return Ok(resultado);
+        }
+
+        public class CorregirNifRequest
+        {
+            public string Cliente { get; set; }
+            public string Nif { get; set; }
+        }
 
         // GET: api/Clientes
         public async Task<IQueryable<ClienteDTO>> GetClientes(string empresa, string vendedor, string filtro)

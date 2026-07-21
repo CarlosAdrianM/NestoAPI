@@ -138,6 +138,7 @@ namespace NestoAPI.Infraestructure
             {
                 NifFormateado = nifDevuelto?.Trim(),
                 NombreFormateado = nombreDevuelto?.Trim(),
+                ResultadoAeat = resultadoDevuelto?.Trim(),
                 NifValidado = resultadoUpper == "IDENTIFICADO" ||
                               resultadoUpper == "NO IDENTIFICADO-SIMILAR" ||
                               resultadoUpper == "IDENTIFICADO-BAJA" ||

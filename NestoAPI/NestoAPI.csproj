@@ -654,6 +654,9 @@
     <Compile Include="Infraestructure\Domiciliaciones\ServicioDomiciliaciones.cs" />
     <Compile Include="Infraestructure\GestorAgenciasGlovo.cs" />
     <Compile Include="Infraestructure\GeneradorPdfModelo347.cs" />
+    <Compile Include="Infraestructure\Clientes\NotificadorNifIncorrecto.cs" />
+    <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
+    <Compile Include="Infraestructure\Clientes\ValidacionNif.cs" />
     <Compile Include="Infraestructure\GestorClientes.cs" />
     <Compile Include="Infraestructure\GestorProductos.cs" />
     <Compile Include="Infraestructure\GestorSincronizacion.cs" />

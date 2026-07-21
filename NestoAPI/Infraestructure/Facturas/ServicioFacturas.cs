@@ -50,7 +50,9 @@ namespace NestoAPI.Infraestructure.Facturas
         /// Constructor que además permite inyectar el servicio de Verifactu y el log (para tests).
         /// </summary>
         public ServicioFacturas(NVEntities dbExterno, Verifactu.IServicioVerifactu servicioVerifactu, ILogService logService = null,
-            Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes = null)
+            Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes = null,
+            Clientes.IServicioValidacionNif servicioValidacionNif = null,
+            Clientes.NotificadorNifIncorrecto notificadorNif = null)
         {
             if (dbExterno != null)
             {
@@ -67,9 +69,21 @@ namespace NestoAPI.Infraestructure.Facturas
             // Issue #87: vinculaciones de rectificativas facturadas a mano (tabla RectificativaPendiente)
             this.almacenRectificativasPendientes = almacenRectificativasPendientes
                 ?? new Rectificativas.AlmacenRectificativasPendientes(db);
+            // NestoAPI#327: validación del NIF contra la AEAT al facturar
+            this.servicioValidacionNif = servicioValidacionNif ?? new Clientes.ServicioValidacionNif(db);
+            this.notificadorNif = notificadorNif ?? new Clientes.NotificadorNifIncorrecto(db);
         }
 
         private readonly Rectificativas.IAlmacenRectificativasPendientes almacenRectificativasPendientes;
+        private readonly Clientes.IServicioValidacionNif servicioValidacionNif;
+        private readonly Clientes.NotificadorNifIncorrecto notificadorNif;
+
+        // NestoAPI#328: bloqueo de facturación con NIF incorrecto. APAGADO de inicio (periodo
+        // de gracia): se enciende en el Web.config cuando llegue la obligatoriedad (01/12/2026)
+        // y las fichas estén limpias. Internal set para tests.
+        internal static bool BloquearNifIncorrecto { get; set; } =
+            string.Equals(System.Configuration.ConfigurationManager.AppSettings["Verifactu:BloquearNifIncorrecto"],
+                "true", StringComparison.OrdinalIgnoreCase);
 
         public CabFacturaVta CargarCabFactura(string empresa, string numeroFactura)
         {
@@ -477,6 +491,34 @@ namespace NestoAPI.Infraestructure.Facturas
                 _ = await db.SaveChangesAsync();
             }
 
+            // NestoAPI#327/#328: validar el NIF que se declarará en la factura (el del cliente
+            // PRINCIPAL) contra el censo de la AEAT. Best-effort: un fallo aquí nunca impide
+            // facturar durante el periodo de gracia. Con el flag de #328 encendido (a partir
+            // del 01/12/2026), un NIF incorrecto BLOQUEA la factura antes de crearla.
+            Clientes.ResultadoValidacionNif validacionNif = null;
+            try
+            {
+                validacionNif = await servicioValidacionNif.ValidarPrincipal(cabPedido.Nº_Cliente, usuario);
+            }
+            catch (Exception exValidacionNif)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"ValidacionNif: fallo al validar el NIF del cliente {cabPedido.Nº_Cliente?.Trim()} " +
+                    $"al facturar el pedido {pedido}: {exValidacionNif.Message}", exValidacionNif));
+            }
+            if (validacionNif?.Estado == Clientes.EstadoValidacionNif.Incorrecto && BloquearNifIncorrecto)
+            {
+                throw new FacturacionException(
+                    $"El pedido {pedido} no se puede facturar: el NIF '{validacionNif.Nif}' del cliente " +
+                    $"{cabPedido.Nº_Cliente?.Trim()} no está registrado en el censo de la AEAT " +
+                    $"({validacionNif.ResultadoAeat ?? "NO IDENTIFICADO"}). Corrija el NIF en la ficha " +
+                    "del cliente (se revalida automáticamente) y vuelva a facturar.",
+                    "FACTURACION_NIF_INCORRECTO",
+                    empresa: empresa,
+                    pedido: pedido,
+                    usuario: usuario);
+            }
+
             // PREVENTIVO: Recalcular líneas ANTES de llamar al stored procedure
             // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
             // El recálculo se hace antes porque después del SP (incluso con rollback),
@@ -523,12 +565,40 @@ namespace NestoAPI.Infraestructure.Facturas
                 // Best-effort: si Verifacti falla, la factura sigue creada y el error queda en ELMAH.
                 await EnviarFacturaAVerifactu(empresa, resultadoProcedimiento);
 
-                return new CrearFacturaResponseDTO
+                var respuestaFactura = new CrearFacturaResponseDTO
                 {
                     NumeroFactura = resultadoProcedimiento,
                     Empresa = empresa,
                     NumeroPedido = pedido
                 };
+
+                // NestoAPI#327 (periodo de gracia hasta 01/12/2026): la factura SE HA creado,
+                // pero el que factura tiene que enterarse de que con Verifactu obligatorio no
+                // podría, y el vendedor (CC administración) recibe el correo pidiendo el NIF.
+                if (validacionNif?.Estado == Clientes.EstadoValidacionNif.Incorrecto)
+                {
+                    respuestaFactura.Avisos.Add(
+                        $"La factura {resultadoProcedimiento} se ha creado, PERO el NIF '{validacionNif.Nif}' " +
+                        $"del cliente {cabPedido.Nº_Cliente?.Trim()} no está registrado en la AEAT " +
+                        $"({validacionNif.ResultadoAeat ?? "NO IDENTIFICADO"}). A partir del 01/12/2026 esta " +
+                        "factura NO podría emitirse y el pedido quedaría retenido. Se ha enviado un correo al " +
+                        "vendedor (con copia a administración) para solicitar el NIF correcto.");
+                    try
+                    {
+                        await notificadorNif.Enviar(Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                            cabPedido.Nº_Cliente, $"la factura {resultadoProcedimiento}", esFactura: true,
+                            nif: validacionNif.Nif, nombre: validacionNif.Nombre,
+                            resultadoAeat: validacionNif.ResultadoAeat);
+                    }
+                    catch (Exception exCorreoNif)
+                    {
+                        ElmahHelper.Log(new Exception(
+                            $"ValidacionNif: no se pudo enviar el correo de NIF incorrecto del cliente " +
+                            $"{cabPedido.Nº_Cliente?.Trim()} (factura {resultadoProcedimiento}): {exCorreoNif.Message}", exCorreoNif));
+                    }
+                }
+
+                return respuestaFactura;
             }
             catch (SqlException sqlEx)
             {

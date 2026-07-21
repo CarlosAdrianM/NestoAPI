@@ -282,5 +282,87 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(lineaPendiente.VtoBueno, "La línea pendiente debe recibir el visto bueno al facturar");
             Assert.IsFalse(lineaYaFacturada.VtoBueno, "Las líneas ya facturadas no se tocan");
         }
+
+        [TestMethod]
+        public async Task CrearFactura_NifIncorrectoConBloqueoEncendido_NoFactura()
+        {
+            // NestoAPI#328: con el flag encendido (a partir del 01/12/2026), un NIF incorrecto
+            // bloquea la factura ANTES de crearla, con mensaje accionable. Con el flag apagado
+            // (periodo de gracia, valor por defecto) se factura con avisos.
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 922700,
+                Nº_Cliente = "30676",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            var validacionNif = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacionNif.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Incorrecto,
+                    Nif = "90021192",
+                    ResultadoAeat = "NO IDENTIFICADO"
+                });
+            var servicio = new ServicioFacturas(db, null, servicioValidacionNif: validacionNif);
+
+            bool flagOriginal = ServicioFacturas.BloquearNifIncorrecto;
+            try
+            {
+                ServicioFacturas.BloquearNifIncorrecto = true;
+
+                var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                    () => servicio.CrearFactura("1", 922700, "test"));
+
+                StringAssert.Contains(ex.Message, "90021192");
+                StringAssert.Contains(ex.Message, "censo de la AEAT");
+                StringAssert.Contains(ex.Message, "Corrija el NIF");
+            }
+            finally
+            {
+                ServicioFacturas.BloquearNifIncorrecto = flagOriginal;
+            }
+        }
+
+        [TestMethod]
+        public async Task CrearFactura_NifIncorrectoConFlagApagado_NoBloquea()
+        {
+            // Periodo de gracia (hasta 01/12/2026): se factura igualmente, solo con avisos.
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 922701,
+                Nº_Cliente = "30676",
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            var validacionNif = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacionNif.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Incorrecto,
+                    Nif = "90021192"
+                });
+            var servicio = new ServicioFacturas(db, null, servicioValidacionNif: validacionNif);
+
+            // El flujo sigue (y acaba fallando más adelante por los fakes sin SP); lo que
+            // importa es que NO sea el bloqueo del NIF.
+            try
+            {
+                _ = await servicio.CrearFactura("1", 922701, "test");
+            }
+            catch (System.Exception ex)
+            {
+                Assert.IsFalse(ex.Message.Contains("censo de la AEAT"),
+                    $"Con el flag apagado el NIF incorrecto no debe bloquear: {ex.Message}");
+            }
+        }
     }
 }

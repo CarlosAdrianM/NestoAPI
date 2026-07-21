@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace NestoAPI.Models.Facturas
 {
     /// <summary>
@@ -22,5 +24,12 @@ namespace NestoAPI.Models.Facturas
         /// Número del pedido facturado
         /// </summary>
         public int NumeroPedido { get; set; }
+
+        /// <summary>
+        /// NestoAPI#327: avisos operativos de la facturación (p. ej. NIF no registrado en la
+        /// AEAT durante el periodo de gracia hasta el 01/12/2026). La factura SE HA creado;
+        /// el cliente debe mostrarlos a quien factura.
+        /// </summary>
+        public List<string> Avisos { get; set; } = new List<string>();
     }
 }

@@ -1734,6 +1734,35 @@ namespace NestoAPI.Controllers
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion);
             await gestor.EnviarCorreo();
 
+            // NestoAPI#327: al meter un pedido de un cliente sin validar, se valida su NIF
+            // contra el censo de la AEAT (una sola vez; queda cacheado en ValidacionesNif).
+            // Si acaba de resultar INCORRECTO: correo al vendedor (CC administración) pidiendo
+            // el NIF correcto — hay margen hasta facturar; a partir del 01/12/2026 la factura
+            // se bloquearía (#328). Best-effort: nunca rompe la creación del pedido.
+            try
+            {
+                var servicioNif = new Infraestructure.Clientes.ServicioValidacionNif(db);
+                var validacionNif = await servicioNif.ValidarPrincipal(pedido.cliente, pedido.Usuario);
+                if (validacionNif.AcabaDeResultarIncorrecto)
+                {
+                    await new Infraestructure.Clientes.NotificadorNifIncorrecto(db).Enviar(
+                        Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido.cliente,
+                        $"el pedido {pedido.numero}", esFactura: false,
+                        nif: validacionNif.Nif, nombre: validacionNif.Nombre,
+                        resultadoAeat: validacionNif.ResultadoAeat);
+                    ElmahHelper.Log(new Exception(
+                        $"[NIF incorrecto] Cliente {pedido.cliente?.Trim()} en el pedido {pedido.numero}: " +
+                        $"NIF '{validacionNif.Nif}' no registrado en la AEAT ({validacionNif.ResultadoAeat}). " +
+                        "Correo enviado al vendedor con copia a administración (#327)."));
+                }
+            }
+            catch (Exception exNif)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"ValidacionNif: fallo best-effort al validar el NIF del cliente {pedido.cliente?.Trim()} " +
+                    $"tras crear el pedido {pedido.numero}: {exNif.Message}", exNif));
+            }
+
             // esto no sé si está muy bien, porque ponía empresa y lo he cambiado a número. Deberían ir los dos
             return CreatedAtRoute("DefaultApi", new { id = pedido.numero }, pedido);
         }

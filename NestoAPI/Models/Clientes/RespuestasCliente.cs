@@ -10,6 +10,9 @@ namespace NestoAPI.Models.Clientes
         public bool NifValidado { get; set; }
         public string NifFormateado { get; set; }
         public string NombreFormateado { get; set; }
+        // NestoAPI#327: literal devuelto por VNifV2 (IDENTIFICADO, NO IDENTIFICADO,
+        // IDENTIFICADO-BAJA...), para persistirlo en ValidacionesNif.
+        public string ResultadoAeat { get; set; }
         public bool ExisteElCliente { get; set; }
         public string NumeroCliente { get; set; }
         public short EstadoCliente { get; set; }
