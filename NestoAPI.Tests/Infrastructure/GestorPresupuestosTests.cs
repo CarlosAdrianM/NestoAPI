@@ -828,5 +828,28 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarHtmlFechaEntregaComun(null, 6));
         }
 
+        // NestoAPI#335: los avisos operativos del guardado (p. ej. reembolso del envío sin
+        // ajustar tras quitar la comisión) van destacados al principio del correo.
+
+        [TestMethod]
+        public void GenerarHtmlAvisos_ConAvisos_LosDestacaYEscapaElHtml()
+        {
+            var html = GestorPresupuestos.GenerarHtmlAvisos(new List<string>
+            {
+                "Se ha quitado la comisión contra reembolso (3,15 €) & el envío 245812 sigue con 73,86 €"
+            });
+
+            StringAssert.Contains(html, "245812");
+            StringAssert.Contains(html, "&amp;"); // el texto se escapa: nada de HTML inyectado
+            StringAssert.Contains(html, "background-color:#fff3cd"); // destacado en amarillo
+        }
+
+        [TestMethod]
+        public void GenerarHtmlAvisos_SinAvisos_NoMuestraNada()
+        {
+            Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarHtmlAvisos(new List<string>()));
+            Assert.AreEqual(string.Empty, GestorPresupuestos.GenerarHtmlAvisos(null));
+        }
+
     }
 }

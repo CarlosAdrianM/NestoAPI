@@ -32,6 +32,32 @@ namespace NestoAPI.Infraestructure
         {
         }
 
+        /// <summary>
+        /// NestoAPI#335: avisos operativos acumulados durante el guardado (p. ej. "se quitó la
+        /// comisión de reembolso pero el envío de agencia sigue con su importe"). Se pintan
+        /// destacados al principio del correo para que el usuario pueda controlar el cambio.
+        /// </summary>
+        public List<string> Avisos { get; } = new List<string>();
+
+        /// <summary>
+        /// Genera el bloque HTML de avisos destacados (amarillo). Estático y puro para poder
+        /// testearlo sin montar el correo entero (mismo patrón que GenerarHtmlFechaEntregaComun).
+        /// </summary>
+        internal static string GenerarHtmlAvisos(IReadOnlyCollection<string> avisos)
+        {
+            if (avisos == null || avisos.Count == 0)
+            {
+                return string.Empty;
+            }
+            StringBuilder s = new StringBuilder();
+            foreach (string aviso in avisos)
+            {
+                _ = s.AppendLine("<p style=\"background-color:#fff3cd; border:2px solid #ffc107; padding:10px\"><b>&#9888; " +
+                    System.Net.WebUtility.HtmlEncode(aviso) + "</b></p>");
+            }
+            return s.ToString();
+        }
+
         public GestorPresupuestos(PedidoVentaDTO pedido, RespuestaValidacion respuestaValidacion)
         {
             this.pedido = pedido;
@@ -262,6 +288,9 @@ namespace NestoAPI.Infraestructure
                 textoAlmacen = $" (para recoger en {almacenPedido})";
             }
             _ = s.AppendLine(string.Format("<H1>{0} {1} {2}{3}</H1>", tipoCorreo, TEXTO_PEDIDO, pedido.numero, textoAlmacen));
+
+            // NestoAPI#335: avisos operativos destacados, justo debajo del título.
+            _ = s.Append(GenerarHtmlAvisos(Avisos));
 
             _ = s.AppendLine("<table border=\"0\" style=\"width:100%\">");
             _ = s.AppendLine("<tr>");

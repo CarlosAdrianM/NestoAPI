@@ -365,6 +365,9 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PutPedidoVenta(PedidoVentaDTO pedido)
         {
             var avisos = new List<AvisoPedidoDTO>();
+            // NestoAPI#335: avisos que además del canal de respuesta deben llegar por correo
+            // (el correo de modificación es el único canal que los clientes muestran seguro hoy).
+            var avisosCorreoModificacion = new List<string>();
 
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
@@ -1158,6 +1161,42 @@ namespace NestoAPI.Controllers
                                 $"(Picking={pickingLiberado}): se desreserva y se borra en este guardado (#335)."));
                         }
                         _ = db.LinPedidoVtas.Remove(lineaReembBD);
+
+                        // NestoAPI#335 (feedback Carlos 21/07): si el pedido ya tiene envío de
+                        // agencia con reembolso, quitar la comisión cambia el importe que la
+                        // agencia debe cobrar. NO se modifica automáticamente (el usuario puede
+                        // haberlo fijado a mano, p. ej. descontando un pago a cuenta o un abono):
+                        // se avisa destacado en el correo de modificación y en ELMAH para que lo
+                        // ajusten con criterio (si procede, restando la comisión, no recalculando).
+                        decimal importeComisionQuitada = lineaReembBD.Total;
+                        var enviosVivosConReembolso = db.EnviosAgencias.Where(e =>
+                            e.Empresa == pedido.empresa && e.Pedido == pedido.numero &&
+                            e.Estado >= Constantes.Agencias.ESTADO_PENDIENTE &&
+                            e.Estado < Constantes.Agencias.ESTADO_ENTREGADO &&
+                            e.Reembolso > 0).ToList();
+                        foreach (var envioReembolso in enviosVivosConReembolso)
+                        {
+                            string aviso = $"Se ha quitado la comisión contra reembolso " +
+                                $"({importeComisionQuitada:N2} €) del pedido, pero el envío {envioReembolso.Numero} " +
+                                $"de la agencia {envioReembolso.Agencia} sigue con un reembolso de " +
+                                $"{envioReembolso.Reembolso:N2} €. NO se ha modificado automáticamente: " +
+                                $"revisa si hay que restarle la comisión o ajustar el reembolso.";
+                            avisosCorreoModificacion.Add(aviso);
+                            avisos.Add(new AvisoPedidoDTO
+                            {
+                                Tipo = "ReembolsoEnvioSinAjustar",
+                                Mensaje = aviso,
+                                Datos = new
+                                {
+                                    Envio = envioReembolso.Numero,
+                                    Reembolso = envioReembolso.Reembolso,
+                                    ComisionQuitada = importeComisionQuitada
+                                }
+                            });
+                            ElmahHelper.Log(new Exception(
+                                $"[Comisión reembolso quitada con envío vivo] Pedido {pedido.empresa}/{pedido.numero}: {aviso}"));
+                        }
+
                         // Espejo del DTO (mismo patrón que la línea de portes arriba): el correo
                         // de modificación lee de pedido.Lineas, así que si la línea ya no debe
                         // estar en BD también hay que quitarla del DTO para que el correo no la
@@ -1252,6 +1291,7 @@ namespace NestoAPI.Controllers
 
             // Carlos 01/12/25: Pasar respuestaValidacion al GestorPresupuestos para incluirla en el correo (Issue #48)
             GestorPresupuestos gestor = new GestorPresupuestos(pedido, respuestaValidacion);
+            gestor.Avisos.AddRange(avisosCorreoModificacion);
             await gestor.EnviarCorreo("Modificación");
 
             if (avisos.Count > 0)
