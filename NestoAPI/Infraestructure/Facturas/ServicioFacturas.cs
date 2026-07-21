@@ -979,10 +979,11 @@ namespace NestoAPI.Infraestructure.Facturas
                 foreach (var d in diferenciasPorLinea)
                 {
                     var partes = new List<string>();
-                    AppendDriftLog(partes, "BI",  d.BaseImponibleActual, d.BaseImponibleNueva);
-                    AppendDriftLog(partes, "Dto", d.ImporteDtoActual,    d.ImporteDtoNuevo);
-                    AppendDriftLog(partes, "IVA", d.ImporteIVAActual,    d.ImporteIVANuevo);
-                    AppendDriftLog(partes, "Tot", d.TotalActual,         d.TotalNuevo);
+                    AppendDriftLog(partes, "BI",   d.BaseImponibleActual, d.BaseImponibleNueva);
+                    AppendDriftLog(partes, "Dto",  d.ImporteDtoActual,    d.ImporteDtoNuevo);
+                    AppendDriftLog(partes, "%IVA", d.PorcentajeIVAActual, d.PorcentajeIVANuevo);
+                    AppendDriftLog(partes, "IVA",  d.ImporteIVAActual,    d.ImporteIVANuevo);
+                    AppendDriftLog(partes, "Tot",  d.TotalActual,         d.TotalNuevo);
                     infoRecalculo.AppendLine($"    Nº Orden {d.NumeroOrden} [{d.Producto?.Trim()}]: " + string.Join(" | ", partes));
                 }
                 infoRecalculo.AppendLine();
@@ -1022,6 +1023,15 @@ namespace NestoAPI.Infraestructure.Facturas
             //   total = baseImponible + importeIVA + importeRE
             // Estados de línea: -1=Pendiente, 1=En curso, 2=Albarán (las que se facturan)
             // No incluimos estado 4 (Facturado) porque el trigger no permite modificarlas
+            //
+            // NestoAPI#342 (pedido 921468): una línea puede llegar con PorcentajeIVA/PorcentajeRE
+            // incoherentes con su código de IVA (ej: IVA='G21' pero PorcentajeIVA=0). La línea es
+            // internamente coherente (Total = BI + BI*0), así que el auto-fix original no la tocaba,
+            // pero el SP recalcula el IVA desde ParametrosIVA (código producto x código cliente) y
+            // descuadra. Por eso el porcentaje canónico se toma de ParametrosIVA cuando existe la
+            // combinación; si no existe (línea sin IVA, cliente exento...), se respeta el de la línea.
+            // OJO unidades: [% IVA] va en porcentaje en ambos sitios, pero [% RE] va en porcentaje en
+            // ParametrosIVA (5.20) y en fracción en LinPedidoVta.PorcentajeRE (0.0520) → dividir /100.
             string sql = @"
                 ;WITH BaseCalculada AS (
                     SELECT
@@ -1040,8 +1050,14 @@ namespace NestoAPI.Infraestructure.Facturas
                                 THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
                                 ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
                             END
-                        , 2) AS NuevaBI
+                        , 2) AS NuevaBI,
+                        COALESCE(pi.[% IVA], l.PorcentajeIVA) AS NuevoPorcentajeIVA,
+                        COALESCE(pi.[% RE] / 100.0, l.PorcentajeRE) AS NuevoPorcentajeRE
                     FROM LinPedidoVta l
+                    INNER JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.Número = l.Número
+                    LEFT JOIN ParametrosIVA pi ON pi.Empresa = l.Empresa
+                        AND pi.[IVA Producto] = l.IVA
+                        AND pi.[IVA Cliente/Prov] = c.IVA
                     WHERE l.Empresa = @empresa
                       AND l.Número = @numero
                       AND l.Estado BETWEEN -1 AND 2
@@ -1050,9 +1066,11 @@ namespace NestoAPI.Infraestructure.Facturas
                 SET
                     [Base Imponible] = bc.NuevaBI,
                     ImporteDto = bc.NuevoImporteDto,
-                    ImporteIVA = bc.NuevaBI * l.PorcentajeIVA / 100.0,
-                    ImporteRE = bc.NuevaBI * l.PorcentajeRE,
-                    Total = bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE)
+                    PorcentajeIVA = bc.NuevoPorcentajeIVA,
+                    PorcentajeRE = bc.NuevoPorcentajeRE,
+                    ImporteIVA = bc.NuevaBI * bc.NuevoPorcentajeIVA / 100.0,
+                    ImporteRE = bc.NuevaBI * bc.NuevoPorcentajeRE,
+                    Total = bc.NuevaBI + (bc.NuevaBI * bc.NuevoPorcentajeIVA / 100.0) + (bc.NuevaBI * bc.NuevoPorcentajeRE)
                 FROM LinPedidoVta l
                 INNER JOIN BaseCalculada bc ON l.[Nº Orden] = bc.[Nº Orden]
                 WHERE l.Empresa = @empresa
@@ -1065,11 +1083,16 @@ namespace NestoAPI.Infraestructure.Facturas
                       OR
                       ABS(l.ImporteDto - bc.NuevoImporteDto) > 0.0001
                       OR
+                      -- NestoAPI#342: porcentajes incoherentes con ParametrosIVA
+                      ABS(l.PorcentajeIVA - bc.NuevoPorcentajeIVA) > 0.0001
+                      OR
+                      ABS(l.PorcentajeRE - bc.NuevoPorcentajeRE) > 0.0001
+                      OR
                       -- Detectar diferencia en ImporteIVA
-                      ABS(l.ImporteIVA - (bc.NuevaBI * l.PorcentajeIVA / 100.0)) > 0.0001
+                      ABS(l.ImporteIVA - (bc.NuevaBI * bc.NuevoPorcentajeIVA / 100.0)) > 0.0001
                       OR
                       -- Detectar diferencia en Total
-                      ABS(l.Total - (bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE))) > 0.0001
+                      ABS(l.Total - (bc.NuevaBI + (bc.NuevaBI * bc.NuevoPorcentajeIVA / 100.0) + (bc.NuevaBI * bc.NuevoPorcentajeRE))) > 0.0001
                   )";
 
             var empresaParam = new SqlParameter("@empresa", pedido.Empresa);
@@ -1148,6 +1171,8 @@ namespace NestoAPI.Infraestructure.Facturas
             public decimal ImporteIVANuevo { get; set; }
             public decimal TotalActual { get; set; }
             public decimal TotalNuevo { get; set; }
+            public decimal PorcentajeIVAActual { get; set; }
+            public decimal PorcentajeIVANuevo { get; set; }
         }
 
         private async Task<List<LineaDiagnosticoAutoFix>> LeerDiferenciasLineasAsync(NVEntities db, string empresa, int numero)
@@ -1170,8 +1195,14 @@ namespace NestoAPI.Infraestructure.Facturas
                                 THEN 1 - (1-l.DescuentoCliente)*(1-l.DescuentoProducto)*(1-l.Descuento)*(1-l.DescuentoPP)
                                 ELSE 1 - (1-l.Descuento)*(1-l.DescuentoPP)
                             END
-                        , 2) AS NuevaBI
+                        , 2) AS NuevaBI,
+                        COALESCE(pi.[% IVA], l.PorcentajeIVA) AS NuevoPorcentajeIVA,
+                        COALESCE(pi.[% RE] / 100.0, l.PorcentajeRE) AS NuevoPorcentajeRE
                     FROM LinPedidoVta l
+                    INNER JOIN CabPedidoVta c ON c.Empresa = l.Empresa AND c.Número = l.Número
+                    LEFT JOIN ParametrosIVA pi ON pi.Empresa = l.Empresa
+                        AND pi.[IVA Producto] = l.IVA
+                        AND pi.[IVA Cliente/Prov] = c.IVA
                     WHERE l.Empresa = @empresa
                       AND l.Número = @numero
                       AND l.Estado BETWEEN -1 AND 2
@@ -1184,9 +1215,11 @@ namespace NestoAPI.Infraestructure.Facturas
                     CAST(l.ImporteDto AS decimal(18,4)) AS ImporteDtoActual,
                     CAST(bc.NuevoImporteDto AS decimal(18,4)) AS ImporteDtoNuevo,
                     CAST(l.ImporteIVA AS decimal(18,4)) AS ImporteIVAActual,
-                    CAST(bc.NuevaBI * l.PorcentajeIVA / 100.0 AS decimal(18,4)) AS ImporteIVANuevo,
+                    CAST(bc.NuevaBI * bc.NuevoPorcentajeIVA / 100.0 AS decimal(18,4)) AS ImporteIVANuevo,
                     CAST(l.Total AS decimal(18,4)) AS TotalActual,
-                    CAST(bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE) AS decimal(18,4)) AS TotalNuevo
+                    CAST(bc.NuevaBI + (bc.NuevaBI * bc.NuevoPorcentajeIVA / 100.0) + (bc.NuevaBI * bc.NuevoPorcentajeRE) AS decimal(18,4)) AS TotalNuevo,
+                    CAST(l.PorcentajeIVA AS decimal(18,4)) AS PorcentajeIVAActual,
+                    CAST(bc.NuevoPorcentajeIVA AS decimal(18,4)) AS PorcentajeIVANuevo
                 FROM LinPedidoVta l
                 INNER JOIN BaseCalculada bc ON l.[Nº Orden] = bc.[Nº Orden]
                 WHERE l.Empresa = @empresa
@@ -1195,8 +1228,10 @@ namespace NestoAPI.Infraestructure.Facturas
                   AND (
                       ABS(l.[Base Imponible] - bc.NuevaBI) > 0.0001
                       OR ABS(l.ImporteDto - bc.NuevoImporteDto) > 0.0001
-                      OR ABS(l.ImporteIVA - (bc.NuevaBI * l.PorcentajeIVA / 100.0)) > 0.0001
-                      OR ABS(l.Total - (bc.NuevaBI + (bc.NuevaBI * l.PorcentajeIVA / 100.0) + (bc.NuevaBI * l.PorcentajeRE))) > 0.0001
+                      OR ABS(l.PorcentajeIVA - bc.NuevoPorcentajeIVA) > 0.0001
+                      OR ABS(l.PorcentajeRE - bc.NuevoPorcentajeRE) > 0.0001
+                      OR ABS(l.ImporteIVA - (bc.NuevaBI * bc.NuevoPorcentajeIVA / 100.0)) > 0.0001
+                      OR ABS(l.Total - (bc.NuevaBI + (bc.NuevaBI * bc.NuevoPorcentajeIVA / 100.0) + (bc.NuevaBI * bc.NuevoPorcentajeRE))) > 0.0001
                   )
                 ORDER BY l.[Nº Orden]";
 
