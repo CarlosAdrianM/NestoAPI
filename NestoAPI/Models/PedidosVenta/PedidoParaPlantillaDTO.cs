@@ -20,6 +20,8 @@ namespace NestoAPI.Models.PedidosVenta
         public string FormaPago { get; set; }
         public string PlazosPago { get; set; }
         public string ComentarioPicking { get; set; }
+        // NestoAPI#337: sin esto, editar por plantilla perdía el flag (se guardaba en false).
+        public bool AvisarConImporteAlCogerPicking { get; set; }
         public string Comentarios { get; set; }
         public string Ruta { get; set; }
         public bool ServirJunto { get; set; }

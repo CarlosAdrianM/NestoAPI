@@ -40,6 +40,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 FormaPago = pedido.formaPago?.Trim(),
                 PlazosPago = pedido.plazosPago?.Trim(),
                 ComentarioPicking = pedido.comentarioPicking?.Trim(),
+                AvisarConImporteAlCogerPicking = pedido.avisarConImporteAlCogerPicking,
                 Comentarios = pedido.comentarios?.Trim(),
                 Ruta = pedido.ruta?.Trim(),
                 ServirJunto = pedido.servirJunto,

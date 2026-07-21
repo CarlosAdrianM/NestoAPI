@@ -220,5 +220,17 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(new System.DateTime(2026, 7, 14), resultado.FechaEntrega);
             Assert.AreEqual("ALG", resultado.Almacen);
         }
+
+        [TestMethod]
+        public void Convertir_AvisarConImporteAlCogerPicking_ViajaEnElDto()
+        {
+            // NestoAPI#337: sin esto, editar por plantilla perdía el flag (se guardaba en false).
+            var pedido = Pedido(Linea(701, "38697", 1, 10m));
+            pedido.avisarConImporteAlCogerPicking = true;
+
+            var resultado = ConvertidorPedidoAPlantilla.Convertir(pedido);
+
+            Assert.IsTrue(resultado.AvisarConImporteAlCogerPicking);
+        }
     }
 }
