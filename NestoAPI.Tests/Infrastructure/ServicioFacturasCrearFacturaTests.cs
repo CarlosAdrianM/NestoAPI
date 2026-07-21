@@ -244,5 +244,43 @@ namespace NestoAPI.Tests.Infrastructure
                 () => servicio.CrearFactura("1", 300, "test"));
             Assert.IsTrue(ex.Message.Contains("IVA"));
         }
+
+        [TestMethod]
+        public async Task CrearFactura_LineaVivaSinVistoBueno_LoPoneATrueAntesDelSP()
+        {
+            // NestoAPI#338 (caso 922687): el SP rechaza el pedido entero si alguna línea viva no
+            // tiene el visto bueno, bloqueando ventas de mostrador (el POST fuerza vistoBueno=true
+            // desde #45, pero el PUT no y una ampliación puede grabar líneas a false). Al facturar
+            // se pone a true ANTES de llamar al SP. Las líneas ya facturadas no se tocan.
+            var lineaViva = new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.EN_CURSO, VtoBueno = false };
+            var lineaPendiente = new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.PENDIENTE, VtoBueno = false };
+            var lineaYaFacturada = new LinPedidoVta { Estado = Constantes.EstadosLineaVenta.FACTURA, VtoBueno = false };
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 922687,
+                Periodo_Facturacion = Constantes.Pedidos.PERIODO_FACTURACION_NORMAL,
+                Agrupada = false,
+                IVA = "G21",
+                CCC = null,  // sin CCC ni ruta para pasar las validaciones previas
+                Ruta = null,
+                LinPedidoVtas = new List<LinPedidoVta> { lineaViva, lineaPendiente, lineaYaFacturada }
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+
+            var servicio = new ServicioFacturas(db);
+
+            // El flujo acaba fallando más adelante (fakes sin SP); lo que importa es el estado
+            // en que quedaron las líneas ANTES de la llamada al SP.
+            try
+            {
+                _ = await servicio.CrearFactura("1", 922687, "test");
+            }
+            catch (System.Exception) { }
+
+            Assert.IsTrue(lineaViva.VtoBueno, "La línea en curso debe recibir el visto bueno al facturar");
+            Assert.IsTrue(lineaPendiente.VtoBueno, "La línea pendiente debe recibir el visto bueno al facturar");
+            Assert.IsFalse(lineaYaFacturada.VtoBueno, "Las líneas ya facturadas no se tocan");
+        }
     }
 }

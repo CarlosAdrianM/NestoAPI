@@ -456,6 +456,27 @@ namespace NestoAPI.Infraestructure.Facturas
                     usuario: usuario);
             }
 
+            // PREVENTIVO (NestoAPI#338): el SP rechaza el pedido entero si alguna línea viva no
+            // tiene el visto bueno ("Hay lineas que no tienen el visto bueno dado"), lo que
+            // bloqueaba ventas de mostrador (caso 922687: el POST fuerza vistoBueno=true desde
+            // #45 pero el PUT no, y una ampliación grabó líneas a false). Criterio de Carlos:
+            // al facturar, todas las líneas llevan visto bueno. Solo se tocan líneas aún sin
+            // albarán (las posteriores no se pueden modificar y además ya facturaron).
+            // La facturación de rutas no cambia: su selección ya exige VistoBueno=true.
+            List<LinPedidoVta> lineasSinVistoBueno = cabPedido.LinPedidoVtas
+                .Where(l => !l.VtoBueno
+                    && l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                    && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO)
+                .ToList();
+            if (lineasSinVistoBueno.Count > 0)
+            {
+                foreach (LinPedidoVta lineaSinVistoBueno in lineasSinVistoBueno)
+                {
+                    lineaSinVistoBueno.VtoBueno = true;
+                }
+                _ = await db.SaveChangesAsync();
+            }
+
             // PREVENTIVO: Recalcular líneas ANTES de llamar al stored procedure
             // Esto evita errores de descuadre por diferencias de redondeo entre C# y SQL.
             // El recálculo se hace antes porque después del SP (incluso con rollback),
