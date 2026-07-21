@@ -1685,5 +1685,70 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         }
 
         #endregion
+
+        #region EsComisionReembolsoViva (NestoAPI#335)
+
+        private static LinPedidoVta LineaEntidad(byte? tipoLinea = Constantes.TiposLineaVenta.CUENTA_CONTABLE,
+            string producto = Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL,
+            string texto = "Comisión contra reembolso", short estado = Constantes.EstadosLineaVenta.EN_CURSO,
+            int picking = 0)
+        {
+            return new LinPedidoVta
+            {
+                TipoLinea = tipoLinea,
+                Producto = producto,
+                Texto = texto,
+                Estado = estado,
+                Picking = picking
+            };
+        }
+
+        [TestMethod]
+        public void EsComisionReembolsoViva_ComisionPendienteSinPicking_LaDetecta()
+        {
+            Assert.IsTrue(GestorPortes.EsComisionReembolsoViva(
+                LineaEntidad(estado: Constantes.EstadosLineaVenta.PENDIENTE)));
+        }
+
+        [TestMethod]
+        public void EsComisionReembolsoViva_ComisionReservadaPorPicking_TambienLaDetecta()
+        {
+            // NestoAPI#335: el caso de los pedidos 920278 y 922604. La versión anterior exigía
+            // Picking == 0 al borrar, así que la comisión reservada quedaba viva (y el cliente
+            // habría pagado una comisión que ya no procede si nadie la quitaba a mano).
+            Assert.IsTrue(GestorPortes.EsComisionReembolsoViva(
+                LineaEntidad(picking: 98982)));
+        }
+
+        [TestMethod]
+        public void EsComisionReembolsoViva_TextoEnMayusculas_LaDetecta()
+        {
+            Assert.IsTrue(GestorPortes.EsComisionReembolsoViva(
+                LineaEntidad(texto: "COMISIÓN CONTRA REEMBOLSO")));
+        }
+
+        [TestMethod]
+        public void EsComisionReembolsoViva_LineaDePortesSinReembolso_NoEsComision()
+        {
+            // Los portes también van a cuenta 624xxx: solo el texto los distingue (issue #159)
+            Assert.IsFalse(GestorPortes.EsComisionReembolsoViva(
+                LineaEntidad(texto: "Portes")));
+        }
+
+        [TestMethod]
+        public void EsComisionReembolsoViva_ComisionYaFacturada_NoEstaViva()
+        {
+            Assert.IsFalse(GestorPortes.EsComisionReembolsoViva(
+                LineaEntidad(estado: Constantes.EstadosLineaVenta.FACTURA)));
+        }
+
+        [TestMethod]
+        public void EsComisionReembolsoViva_LineaDeProducto_NoEsComision()
+        {
+            Assert.IsFalse(GestorPortes.EsComisionReembolsoViva(
+                LineaEntidad(tipoLinea: Constantes.TiposLineaVenta.PRODUCTO, producto: "23130")));
+        }
+
+        #endregion
     }
 }

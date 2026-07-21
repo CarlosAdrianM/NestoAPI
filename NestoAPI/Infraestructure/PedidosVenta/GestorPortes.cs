@@ -339,6 +339,24 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
+        /// NestoAPI#335: identifica una línea de comisión contra reembolso VIVA (pendiente o
+        /// en curso) sobre la entidad LinPedidoVta. Un único predicado compartido por la
+        /// detección y el borrado del PUT de PedidosVentaController: la versión anterior
+        /// duplicaba la condición tres veces y el borrado exigía además Picking == 0, que es
+        /// justo lo que dejaba la comisión viva cuando el almacén ya la había reservado.
+        /// </summary>
+        public static bool EsComisionReembolsoViva(LinPedidoVta linea)
+        {
+            return linea.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                linea.Producto != null &&
+                linea.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
+                linea.Texto != null &&
+                linea.Texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                linea.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
+                linea.Estado <= Constantes.EstadosLineaVenta.EN_CURSO;
+        }
+
+        /// <summary>
         /// Gestiona las líneas de portes y comisión reembolso en un pedido DTO.
         /// Añade o quita líneas según corresponda.
         /// Devuelve true si se modificaron las líneas.

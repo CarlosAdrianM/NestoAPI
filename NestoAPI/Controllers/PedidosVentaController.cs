@@ -1105,14 +1105,7 @@ namespace NestoAPI.Controllers
                 // Gestionar comisión reembolso (solo si INCREMENTO_REEMBOLSO > 0)
                 if (Constantes.Portes.INCREMENTO_REEMBOLSO > 0)
                 {
-                    bool yaLlevaReembolsoBD = cabPedidoVta.LinPedidoVtas.Any(l =>
-                        l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
-                        l.Producto != null &&
-                        l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
-                        l.Texto != null &&
-                        l.Texto.Contains("reembolso") &&
-                        l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
-                        l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
+                    bool yaLlevaReembolsoBD = cabPedidoVta.LinPedidoVtas.Any(GestorPortes.EsComisionReembolsoViva);
 
                     if (resultadoPortesPut.EsContraReembolso && resultadoPortesPut.ComisionReembolso > 0 && !yaLlevaReembolsoBD)
                     {
@@ -1142,59 +1135,42 @@ namespace NestoAPI.Controllers
                     }
                     else if ((!resultadoPortesPut.EsContraReembolso || resultadoPortesPut.ComisionReembolso == 0) && yaLlevaReembolsoBD)
                     {
-                        var lineaReembBD = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l =>
-                            l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
+                        var lineaReembBD = cabPedidoVta.LinPedidoVtas.First(GestorPortes.EsComisionReembolsoViva);
+
+                        // NestoAPI#335 (evolución del canario de #194): si la línea está reservada
+                        // por picking se desreserva y se borra igualmente. Es una CUENTA CONTABLE:
+                        // no hay nada físico preparado en el almacén, así que quitarla no afecta a
+                        // su trabajo. El canario saltó 2 veces (920278, 922604) y en ambas la línea
+                        // acabó borrada A MANO tras liberar el picking; el día que nadie se fijara,
+                        // el cliente pagaba una comisión que ya no procede. Se deja traza
+                        // informativa para vigilar la frecuencia (vía ElmahHelper: este PUT corre
+                        // dentro del TransactionScope de UnirPedidos y un log directo se alistaría
+                        // en la transacción, lección de #182).
+                        int pickingLiberado = lineaReembBD.Picking ?? 0;
+                        if (pickingLiberado != 0)
+                        {
+                            lineaReembBD.Picking = 0;
+                            ElmahHelper.Log(new Exception(
+                                $"[Comisión reembolso con picking] Pedido {pedido.empresa}/{pedido.numero}: " +
+                                $"la cabecera deja de ser contra reembolso (FormaPago={pedido.formaPago?.Trim()}, " +
+                                $"Plazos={pedido.plazosPago?.Trim()}, NoCobrarComisionReembolso={pedido.NoCobrarComisionReembolso}) " +
+                                $"y la línea de comisión Nº_Orden={lineaReembBD.Nº_Orden} estaba reservada " +
+                                $"(Picking={pickingLiberado}): se desreserva y se borra en este guardado (#335)."));
+                        }
+                        _ = db.LinPedidoVtas.Remove(lineaReembBD);
+                        // Espejo del DTO (mismo patrón que la línea de portes arriba): el correo
+                        // de modificación lee de pedido.Lineas, así que si la línea ya no debe
+                        // estar en BD también hay que quitarla del DTO para que el correo no la
+                        // siga mostrando.
+                        var lineaReembDTO = pedido.Lineas.FirstOrDefault(l =>
+                            l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
                             l.Producto != null &&
                             l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
-                            l.Texto != null &&
-                            l.Texto.Contains("reembolso") &&
-                            l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
-                            l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
-                            l.Picking == 0);
-                        if (lineaReembBD != null)
+                            l.texto != null &&
+                            l.texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0);
+                        if (lineaReembDTO != null)
                         {
-                            _ = db.LinPedidoVtas.Remove(lineaReembBD);
-                            // Espejo del DTO (mismo patrón que la línea de portes arriba): el correo
-                            // de modificación lee de pedido.Lineas, así que si la línea ya no debe
-                            // estar en BD también hay que quitarla del DTO para que el correo no la
-                            // siga mostrando.
-                            var lineaReembDTO = pedido.Lineas.FirstOrDefault(l =>
-                                l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
-                                l.Producto != null &&
-                                l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
-                                l.texto != null &&
-                                l.texto.IndexOf("reembolso", StringComparison.OrdinalIgnoreCase) >= 0);
-                            if (lineaReembDTO != null)
-                            {
-                                pedido.Lineas.Remove(lineaReembDTO);
-                            }
-                        }
-                        else
-                        {
-                            // NestoAPI#194 (fix defensivo): yaLlevaReembolsoBD=true confirma que hay
-                            // una línea de comisión por reembolso en estado PENDIENTE/EN_CURSO, pero
-                            // la lookup con Picking==0 no la ha encontrado. La línea está reservada
-                            // por picking y no podemos quitarla sin desreservarla. Hoy esto se
-                            // resolvía silenciosamente y el pedido salía con comisión indebida.
-                            // Loguear a ELMAH para detectarlo: en los últimos 12 meses no se ha dado
-                            // ningún caso en producción, así que no bloqueamos el guardado, solo
-                            // dejamos traza para reaccionar si aparece.
-                            var lineaReembConPicking = cabPedidoVta.LinPedidoVtas.FirstOrDefault(l =>
-                                l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE &&
-                                l.Producto != null &&
-                                l.Producto.Trim() == Constantes.Cuentas.CUENTA_PORTES_VENTA_GENERAL &&
-                                l.Texto != null &&
-                                l.Texto.Contains("reembolso") &&
-                                l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE &&
-                                l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO);
-                            Elmah.ErrorLog.GetDefault(null)?.Log(new Elmah.Error(new Exception(
-                                $"[Comisión reembolso indeleble] Pedido {pedido.empresa}/{pedido.numero}: " +
-                                $"la cabecera deja de ser contra reembolso (FormaPago={pedido.formaPago?.Trim()}, " +
-                                $"CCC={pedido.ccc}, Plazos={pedido.plazosPago?.Trim()}, " +
-                                $"NoCobrarComisionReembolso={pedido.NoCobrarComisionReembolso}) " +
-                                $"pero la línea de comisión Nº_Orden={lineaReembConPicking?.Nº_Orden} no se puede borrar " +
-                                $"(Picking={lineaReembConPicking?.Picking}, Estado={lineaReembConPicking?.Estado}). " +
-                                $"El pedido se está guardando con comisión que ya no procede.")));
+                            pedido.Lineas.Remove(lineaReembDTO);
                         }
                     }
                 }
