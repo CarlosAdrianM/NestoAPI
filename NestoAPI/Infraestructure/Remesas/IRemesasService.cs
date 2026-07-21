@@ -26,5 +26,9 @@ namespace NestoAPI.Infraestructure.Remesas
         /// <summary>NestoAPI#332 (modo simulación): efectos candidatos a remesa SEPA, con
         /// preselección, motivo de retención (gating #172) y puerta de neteo.</summary>
         Task<List<EfectoCandidatoDTO>> LeerEfectosCandidatosSepaAsync(string empresa);
+
+        /// <summary>NestoAPI#332 (slices 2-3): crea la remesa (numeración + alta + líneas de
+        /// PreContabilidad + contabilización por el único call site). Revalida server-side.</summary>
+        Task<CrearRemesaResponse> CrearRemesaAsync(CrearRemesaRequest peticion, string usuario);
     }
 }

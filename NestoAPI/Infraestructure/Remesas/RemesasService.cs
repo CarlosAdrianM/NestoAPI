@@ -103,6 +103,14 @@ namespace NestoAPI.Infraestructure.Remesas
             }
         }
 
+        public async Task<CrearRemesaResponse> CrearRemesaAsync(CrearRemesaRequest peticion, string usuario)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return await new CrearRemesaService(db).CrearRemesa(peticion, usuario).ConfigureAwait(false);
+            }
+        }
+
         private static MovimientoRemesaDTO MapearMovimiento(ExtractoCliente e)
         {
             return new MovimientoRemesaDTO

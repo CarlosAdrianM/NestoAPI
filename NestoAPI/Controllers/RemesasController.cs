@@ -70,6 +70,33 @@ namespace NestoAPI.Controllers
             return Ok(candidatos);
         }
 
+        // POST: api/Remesas
+        // NestoAPI#332 (slices 2-3): crea la remesa de cobros SEPA. Revalida la selección
+        // server-side (candidatos frescos, gating #172, puerta de neteo), numera con el
+        // contador, da de alta en Remesas y contabiliza el diario _REMESA por el único call
+        // site de prdContabilizar. NUNCA escribe en Contabilidad/ExtractoCliente directamente.
+        [System.Web.Http.Authorize]
+        [HttpPost]
+        [Route("api/Remesas")]
+        [ResponseType(typeof(CrearRemesaResponse))]
+        public async Task<IHttpActionResult> CrearRemesa([FromBody] CrearRemesaRequest peticion)
+        {
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null);
+            try
+            {
+                CrearRemesaResponse respuesta = await _remesas.CrearRemesaAsync(peticion, usuario).ConfigureAwait(false);
+                return Ok(respuesta);
+            }
+            catch (System.ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+            catch (System.InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
+
         // GET: api/Remesas/Impagados/Movimientos?empresa=1&asiento=1195101
         // Nesto#340 Fase 1C.14 slice 5: movimientos de un asiento de impagados (grid derecho).
         [HttpGet]
