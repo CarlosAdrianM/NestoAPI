@@ -50,6 +50,9 @@
     <Reference Include="EntityFramework, Version=6.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089, processorArchitecture=MSIL">
       <HintPath>..\packages\EntityFramework.6.5.1\lib\net45\EntityFramework.dll</HintPath>
     </Reference>
+    <Reference Include="Elmah, Version=1.2.13605.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\elmah.corelibrary.1.2\lib\Elmah.dll</HintPath>
+    </Reference>
     <Reference Include="FakeItEasy, Version=8.0.0.0, Culture=neutral, PublicKeyToken=eff28e2146d5fd2c, processorArchitecture=MSIL">
       <HintPath>..\packages\FakeItEasy.8.3.0\lib\net462\FakeItEasy.dll</HintPath>
     </Reference>
@@ -283,6 +286,7 @@
     <Compile Include="Infrastructure\SeguimientoEnviosJobsServiceTests.cs" />
     <Compile Include="Infrastructure\ConvertidorPedidoAPlantillaTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPackingTests.cs" />
+    <Compile Include="Infrastructure\ElmahErrorFilterConfigTests.cs" />
     <Compile Include="Infrastructure\ElmahHelperTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfFacturasQuestPdfTests.cs" />
     <Compile Include="Infrastructure\GeneradorExcelPedidoCompraTests.cs" />
