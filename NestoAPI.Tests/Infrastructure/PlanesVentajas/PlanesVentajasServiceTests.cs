@@ -16,6 +16,28 @@ namespace NestoAPI.Tests.Infrastructure.PlanesVentajas
     [TestClass]
     public class PlanesVentajasServiceTests
     {
+        private NVEntities db;
+
+        [TestInitialize]
+        public void Initialize()
+        {
+            db = A.Fake<NVEntities>();
+            ConfigurarSet(db, new List<Empresa>
+            {
+                new Empresa { Número = "1  ", Nombre = "Nueva Visión" }
+            }.AsQueryable(), s => A.CallTo(() => db.Empresas).Returns(s));
+            ConfigurarSet(db, new List<EstadoPlanVentajas>
+            {
+                new EstadoPlanVentajas { Numero = 1, Descripcion = "Activo" }
+            }.AsQueryable(), s => A.CallTo(() => db.EstadosPlanesVentajas).Returns(s));
+            ConfigurarSet(db, new List<PlanVentajasCliente>
+            {
+                new PlanVentajasCliente { NumeroContrato = 1, Cliente = "15191" },
+                new PlanVentajasCliente { NumeroContrato = 1, Cliente = "38404" },
+                new PlanVentajasCliente { NumeroContrato = 2, Cliente = "12345" }
+            }.AsQueryable(), s => A.CallTo(() => db.PlanesVentajasClientes).Returns(s));
+        }
+
         [TestMethod]
         public async Task ListarPlanesAsync_DevuelveLosPlanesOrdenadosPorFechaFin()
         {
@@ -23,19 +45,10 @@ namespace NestoAPI.Tests.Infrastructure.PlanesVentajas
             // joins de navegación y las subconsultas del filtro, EF6 duplicaba 'Número' en el ORDER BY y
             // rompía con 500. Un fake (LINQ to Objects) no reproduce ese fallo de traducción SQL, pero
             // este test protege que el método sigue devolviendo la lista ordenada por FechaFin.
-            IQueryable<PlanVentajas> planes = new List<PlanVentajas>
-            {
+            ConfigurarPlanes(
                 CrearPlan(2, new DateTime(2026, 12, 31)),
                 CrearPlan(1, new DateTime(2026, 6, 30)),
-                CrearPlan(3, new DateTime(2026, 9, 15))
-            }.AsQueryable();
-
-            NVEntities db = A.Fake<NVEntities>();
-            DbSet<PlanVentajas> fakeSet = A.Fake<DbSet<PlanVentajas>>(o => o
-                .Implements<IQueryable<PlanVentajas>>()
-                .Implements<IDbAsyncEnumerable<PlanVentajas>>());
-            ConfigurarFakeDbSet(fakeSet, planes);
-            A.CallTo(() => db.PlanesVentajas).Returns(fakeSet);
+                CrearPlan(3, new DateTime(2026, 9, 15)));
 
             PlanesVentajasService servicio = new PlanesVentajasService(db);
 
@@ -46,8 +59,52 @@ namespace NestoAPI.Tests.Infrastructure.PlanesVentajas
                 resultado.Select(r => r.FechaFin).ToArray());
         }
 
+        [TestMethod]
+        public async Task ListarPlanesAsync_ComponeEmpresaEstadoYClientesSinUsarLasNavegaciones()
+        {
+            // NestoAPI#341 (resto de #219): quitar el ORDER BY no bastó — la proyección con navegaciones
+            // (p.Empresa1.Nombre, p.EstadosPlanVentaja.Descripcion, p.PlanVentajasClientes) seguía
+            // generando el SQL con 'Número' duplicado y el listado base devolvía 500 ("La columna 'Número'
+            // se ha especificado varias veces para 'Project1'"). Ahora el listado materializa los planes
+            // planos y compone empresa/estado/clientes desde sus propios DbSets. Los planes de este test
+            // NO llevan las navegaciones cargadas (como en la realidad, con LazyLoading desactivado): con
+            // la implementación antigua esto revienta; con la nueva, los datos salen igual de completos.
+            ConfigurarPlanes(CrearPlan(1, new DateTime(2026, 6, 30)));
+
+            PlanesVentajasService servicio = new PlanesVentajasService(db);
+
+            List<PlanVentajasDTO> resultado = await servicio.ListarPlanesAsync(null, null, incluirCancelados: true);
+
+            Assert.AreEqual(1, resultado.Count);
+            Assert.AreEqual("Nueva Visión", resultado[0].EmpresaNombre, "El nombre sale de db.Empresas, con Trim del padding");
+            Assert.AreEqual("Activo", resultado[0].EstadoDescripcion, "La descripción sale de db.EstadosPlanesVentajas");
+            CollectionAssert.AreEquivalent(new[] { "15191", "38404" }, resultado[0].Clientes.ToArray(),
+                "Los clientes salen de db.PlanesVentajasClientes filtrando por el número de plan");
+        }
+
+        [TestMethod]
+        public async Task ListarPlanesAsync_SinCancelados_FiltraElEstadoCancelado()
+        {
+            PlanVentajas cancelado = CrearPlan(2, new DateTime(2026, 12, 31));
+            cancelado.Estado = 6;
+            ConfigurarPlanes(CrearPlan(1, new DateTime(2026, 6, 30)), cancelado);
+
+            PlanesVentajasService servicio = new PlanesVentajasService(db);
+
+            List<PlanVentajasDTO> resultado = await servicio.ListarPlanesAsync(null, null, incluirCancelados: false);
+
+            Assert.AreEqual(1, resultado.Count);
+            Assert.AreEqual(1, resultado[0].Numero);
+        }
+
+        private void ConfigurarPlanes(params PlanVentajas[] planes)
+        {
+            ConfigurarSet(db, planes.AsQueryable(), s => A.CallTo(() => db.PlanesVentajas).Returns(s));
+        }
+
         private static PlanVentajas CrearPlan(int numero, DateTime fechaFin)
         {
+            // Sin Empresa1/EstadosPlanVentaja/PlanVentajasClientes a propósito: el listado no debe tocarlas
             return new PlanVentajas
             {
                 Numero = numero,
@@ -57,22 +114,23 @@ namespace NestoAPI.Tests.Infrastructure.PlanesVentajas
                 Importe = 100,
                 Familia = "F",
                 Estado = 1,
-                Comentarios = "",
-                Empresa1 = new Empresa { Nombre = "Nueva Visión" },
-                EstadosPlanVentaja = new EstadoPlanVentajas { Descripcion = "Activo" },
-                PlanVentajasClientes = new List<PlanVentajasCliente>()
+                Comentarios = ""
             };
         }
 
-        private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
+        private static void ConfigurarSet<T>(NVEntities db, IQueryable<T> data, Action<DbSet<T>> asignar) where T : class
         {
-            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+            DbSet<T> fakeSet = A.Fake<DbSet<T>>(o => o
+                .Implements<IQueryable<T>>()
+                .Implements<IDbAsyncEnumerable<T>>());
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeSet).GetAsyncEnumerator())
                 .Returns(new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
-            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+            A.CallTo(() => ((IQueryable<T>)fakeSet).Provider)
                 .Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
-            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).Returns(data.Expression);
-            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
-            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
+            A.CallTo(() => ((IQueryable<T>)fakeSet).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeSet).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)fakeSet).GetEnumerator()).Returns(data.GetEnumerator());
+            asignar(fakeSet);
         }
     }
 }

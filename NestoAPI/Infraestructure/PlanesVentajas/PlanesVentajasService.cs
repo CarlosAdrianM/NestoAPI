@@ -85,28 +85,63 @@ namespace NestoAPI.Infraestructure.PlanesVentajas
                                     && c.Vendedor.Trim() == vendedor.Trim())));
             }
 
-            // NestoAPI#219: NO ordenar en la consulta SQL. Con los joins de navegación (Empresa1,
-            // EstadosPlanVentaja) y las subconsultas Any() del filtro, EF6 añade columnas de clave al
-            // ORDER BY y duplica 'Número' (clave de PlanVentajas y columna de Empresa), lo que SQL Server
-            // rechaza ("La columna 'Número' se ha especificado varias veces"). Ordenamos en memoria tras
-            // materializar (el conjunto de planes es pequeño).
+            // NestoAPI#219/#341: nada de navegaciones (Empresa1, EstadosPlanVentaja, PlanVentajasClientes)
+            // en la consulta del listado. EF6 duplica la columna 'Número' en el SQL que genera para esos
+            // joins ("La columna 'Número' se ha especificado varias veces para 'Project1'") y SQL Server
+            // rechaza la consulta con 500. Se materializan los planes planos y se componen empresa, estado
+            // y clientes con consultas separadas (tablas minúsculas) en memoria.
             var lista = await query
                 .Select(p => new PlanVentajasDTO
                 {
                     Numero = p.Numero,
                     Empresa = p.Empresa,
-                    EmpresaNombre = p.Empresa1.Nombre,
                     FechaInicio = p.FechaInicio,
                     FechaFin = p.FechaFin,
                     Importe = p.Importe,
                     Familia = p.Familia,
                     Estado = p.Estado,
-                    EstadoDescripcion = p.EstadosPlanVentaja.Descripcion,
-                    Comentarios = p.Comentarios,
-                    Clientes = p.PlanVentajasClientes.Select(pvc => pvc.Cliente).ToList()
+                    Comentarios = p.Comentarios
                 })
                 .ToListAsync()
                 .ConfigureAwait(false);
+
+            if (lista.Count == 0)
+            {
+                return lista;
+            }
+
+            var empresas = await db.Empresas
+                .Select(e => new { e.Número, e.Nombre })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            var estados = await db.EstadosPlanesVentajas
+                .Select(e => new { e.Numero, e.Descripcion })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            List<int> numerosPlan = lista.Select(p => p.Numero).ToList();
+            var clientesPorPlan = await db.PlanesVentajasClientes
+                .Where(pvc => numerosPlan.Contains(pvc.NumeroContrato))
+                .Select(pvc => new { pvc.NumeroContrato, pvc.Cliente })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            Dictionary<string, string> nombrePorEmpresa = empresas
+                .ToDictionary(e => (e.Número ?? string.Empty).Trim(), e => e.Nombre);
+            Dictionary<int, string> descripcionPorEstado = estados
+                .ToDictionary(e => e.Numero, e => e.Descripcion);
+            foreach (PlanVentajasDTO plan in lista)
+            {
+                plan.EmpresaNombre = nombrePorEmpresa.TryGetValue((plan.Empresa ?? string.Empty).Trim(), out string nombreEmpresa)
+                    ? nombreEmpresa
+                    : null;
+                plan.EstadoDescripcion = descripcionPorEstado.TryGetValue(plan.Estado, out string descripcionEstado)
+                    ? descripcionEstado
+                    : null;
+                plan.Clientes = clientesPorPlan
+                    .Where(c => c.NumeroContrato == plan.Numero)
+                    .Select(c => c.Cliente)
+                    .ToList();
+            }
 
             return lista.OrderBy(d => d.FechaFin).ToList();
         }
