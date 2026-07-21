@@ -53,72 +53,104 @@ namespace NestoAPI.Infraestructure.Remesas
             await CandadoCrearRemesa.WaitAsync().ConfigureAwait(false);
             try
             {
-                // Revalidación FRESCA server-side (lección Nesto#397): el selector aplica el
-                // núcleo completo (cartera, pendiente, vencida, CCC, gating #172 y neteo).
-                List<EfectoCandidatoDTO> candidatos = await new SelectorEfectosCobrables(db)
-                    .CandidatosSepa(peticion.Empresa).ConfigureAwait(false);
-                List<string> errores = ValidarSeleccion(idsPedidos, candidatos);
-                if (errores.Any())
-                {
-                    throw new InvalidOperationException(string.Join(" ", errores));
-                }
-
-                Banco banco = await db.Bancos.FirstOrDefaultAsync(b =>
-                    b.Empresa == peticion.Empresa && b.Número == peticion.Banco).ConfigureAwait(false);
-                if (banco == null || string.IsNullOrWhiteSpace(banco.Cuenta_Contable))
-                {
-                    throw new InvalidOperationException(
-                        $"El banco '{peticion.Banco?.Trim()}' no existe o no tiene cuenta contable.");
-                }
-
-                List<ExtractoCliente> efectos = await db.ExtractosCliente
-                    .Where(e => e.Empresa == peticion.Empresa && idsPedidos.Contains(e.Nº_Orden))
-                    .ToListAsync().ConfigureAwait(false);
-                decimal importeTotal = efectos.Sum(e => e.ImportePdte);
-
-                // Numeración atómica (la fila de ContadoresGlobales es única) y alta de la
-                // remesa. La tabla Remesas no está en el EDMX (SQL crudo, patrón slice 2).
-                int numeroRemesa = (await db.Database.SqlQuery<int>(
-                    "UPDATE ContadoresGlobales SET Remesas = Remesas + 1 OUTPUT inserted.Remesas")
-                    .ToListAsync().ConfigureAwait(false)).Single();
-                _ = await db.Database.ExecuteSqlCommandAsync(
-                    "INSERT INTO Remesas (Empresa, [Número], Fecha, Importe, Banco) VALUES (@p0, @p1, GETDATE(), @p2, @p3)",
-                    new SqlParameter("@p0", peticion.Empresa),
-                    new SqlParameter("@p1", numeroRemesa),
-                    new SqlParameter("@p2", importeTotal),
-                    new SqlParameter("@p3", peticion.Banco)).ConfigureAwait(false);
-
-                List<PreContabilidad> lineas = ConstruirLineasRemesa(numeroRemesa, peticion.Empresa, banco, efectos, usuario);
-                int resultado;
-                try
-                {
-                    resultado = await contabilidad.CrearLineasYContabilizarDiario(lineas).ConfigureAwait(false);
-                }
-                catch (Exception exContabilizar)
-                {
-                    // Compensación: la contabilización falló ENTERA (transacción única con
-                    // rollback), así que el extracto está intacto; solo hay que quitar la
-                    // cabecera de la remesa. El hueco del contador es aceptable.
-                    _ = await db.Database.ExecuteSqlCommandAsync(
-                        "DELETE FROM Remesas WHERE Empresa = @p0 AND [Número] = @p1",
-                        new SqlParameter("@p0", peticion.Empresa),
-                        new SqlParameter("@p1", numeroRemesa)).ConfigureAwait(false);
-                    throw new InvalidOperationException(
-                        $"No se pudo contabilizar la remesa {numeroRemesa} (se ha deshecho el alta): {exContabilizar.Message}",
-                        exContabilizar);
-                }
-
-                return new CrearRemesaResponse
-                {
-                    NumeroRemesa = numeroRemesa,
-                    Importe = importeTotal,
-                    NumeroEfectos = efectos.Count,
-                    ResultadoContabilizacion = resultado
-                };
+                // Reintento por deadlock de la operación COMPLETA (mismo criterio que #273):
+                // cada intento revalida y abre transacción NUEVA — por eso el retry va POR
+                // FUERA de la transacción y nunca al revés.
+                return await ContabilidadService.ReintentarSiDeadlock(
+                    () => CrearRemesaUnaVez(peticion, idsPedidos, usuario)).ConfigureAwait(false);
             }
             finally
             {
                 _ = CandadoCrearRemesa.Release();
+            }
+        }
+
+        // PATRÓN REUTILIZABLE "alta + contabilización atómicas" (petición de Carlos 21/07,
+        // lo necesitaremos en más sitios): TODO sobre el MISMO NVEntities y UNA transacción
+        // local — el alta propia por SQL crudo y la contabilización por la sobrecarga
+        // CrearLineasYContabilizarDiario(lineas, db), que NO abre conexión ni transacción
+        // propias (está documentada para entrar ya en transacción). Nada de TransactionScope
+        // ambiente: con dos conexiones escala a MSDTC y rompe el retry por deadlock.
+        private async Task<CrearRemesaResponse> CrearRemesaUnaVez(CrearRemesaRequest peticion,
+            List<int> idsPedidos, string usuario)
+        {
+            // Revalidación FRESCA server-side (lección Nesto#397), también en cada reintento:
+            // el selector aplica el núcleo completo (cartera, vencida, CCC, gating #172, neteo).
+            List<EfectoCandidatoDTO> candidatos = await new SelectorEfectosCobrables(db)
+                .CandidatosSepa(peticion.Empresa).ConfigureAwait(false);
+            List<string> errores = ValidarSeleccion(idsPedidos, candidatos);
+            if (errores.Any())
+            {
+                throw new InvalidOperationException(string.Join(" ", errores));
+            }
+
+            Banco banco = await db.Bancos.FirstOrDefaultAsync(b =>
+                b.Empresa == peticion.Empresa && b.Número == peticion.Banco).ConfigureAwait(false);
+            if (banco == null || string.IsNullOrWhiteSpace(banco.Cuenta_Contable))
+            {
+                throw new InvalidOperationException(
+                    $"El banco '{peticion.Banco?.Trim()}' no existe o no tiene cuenta contable.");
+            }
+
+            List<ExtractoCliente> efectos = await db.ExtractosCliente
+                .Where(e => e.Empresa == peticion.Empresa && idsPedidos.Contains(e.Nº_Orden))
+                .ToListAsync().ConfigureAwait(false);
+            decimal importeTotal = efectos.Sum(e => e.ImportePdte);
+
+            db.Database.CommandTimeout = 120; // margen para diarios con contención (#322)
+            using (System.Data.Entity.DbContextTransaction transaccion = db.Database.BeginTransaction())
+            {
+                try
+                {
+                    // Contador DENTRO de la transacción: sin huecos si algo falla (rollback lo
+                    // devuelve). Coste asumido: el lock de la fila de ContadoresGlobales se
+                    // retiene hasta el commit (~1-2 s una vez al día; vigilar si molestara a
+                    // la creación de pedidos, que usa la misma fila).
+                    int numeroRemesa = (await db.Database.SqlQuery<int>(
+                        "UPDATE ContadoresGlobales SET Remesas = Remesas + 1 OUTPUT inserted.Remesas")
+                        .ToListAsync().ConfigureAwait(false)).Single();
+                    _ = await db.Database.ExecuteSqlCommandAsync(
+                        "INSERT INTO Remesas (Empresa, [Número], Fecha, Importe, Banco) VALUES (@p0, @p1, GETDATE(), @p2, @p3)",
+                        new SqlParameter("@p0", peticion.Empresa),
+                        new SqlParameter("@p1", numeroRemesa),
+                        new SqlParameter("@p2", importeTotal),
+                        new SqlParameter("@p3", peticion.Banco)).ConfigureAwait(false);
+
+                    List<PreContabilidad> lineas = ConstruirLineasRemesa(numeroRemesa, peticion.Empresa, banco, efectos, usuario);
+                    int resultado = await contabilidad.CrearLineasYContabilizarDiario(lineas, db).ConfigureAwait(false);
+                    if (resultado <= 0)
+                    {
+                        transaccion.Rollback();
+                        throw new InvalidOperationException(
+                            $"La contabilización de la remesa {numeroRemesa} no devolvió éxito: se ha deshecho todo.");
+                    }
+
+                    transaccion.Commit();
+                    return new CrearRemesaResponse
+                    {
+                        NumeroRemesa = numeroRemesa,
+                        Importe = importeTotal,
+                        NumeroEfectos = efectos.Count,
+                        ResultadoContabilizacion = resultado
+                    };
+                }
+                catch (InvalidOperationException)
+                {
+                    throw; // ya se hizo rollback (o lo hará el using al no haber commit)
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        transaccion.Rollback();
+                    }
+                    catch
+                    {
+                        // La transacción pudo morir con el propio error (deadlock): el using la limpia.
+                    }
+                    throw new InvalidOperationException(
+                        $"No se pudo crear la remesa (no se ha guardado nada): {ex.Message}", ex);
+                }
             }
         }
 
