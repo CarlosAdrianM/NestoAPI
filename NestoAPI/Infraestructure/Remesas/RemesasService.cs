@@ -93,6 +93,16 @@ namespace NestoAPI.Infraestructure.Remesas
             }
         }
 
+        // NestoAPI#332: el selector núcleo+estrategias vive en SelectorEfectosCobrables
+        // (compartido a futuro con la remesa de tarjetas #181).
+        public async Task<List<EfectoCandidatoDTO>> LeerEfectosCandidatosSepaAsync(string empresa)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                return await new SelectorEfectosCobrables(db).CandidatosSepa(empresa).ConfigureAwait(false);
+            }
+        }
+
         private static MovimientoRemesaDTO MapearMovimiento(ExtractoCliente e)
         {
             return new MovimientoRemesaDTO

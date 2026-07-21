@@ -56,6 +56,20 @@ namespace NestoAPI.Controllers
             return Ok(impagados);
         }
 
+        // GET: api/Remesas/EfectosCandidatos?empresa=1
+        // NestoAPI#332 (modo simulación): qué efectos entrarían en la remesa SEPA, con
+        // preselección, motivo de retención (gating de entrega #172) y flag de clientes con
+        // negativos pendientes (puerta de revisión/neteo). NO toca nada.
+        [System.Web.Http.Authorize]
+        [HttpGet]
+        [Route("api/Remesas/EfectosCandidatos")]
+        [ResponseType(typeof(List<EfectoCandidatoDTO>))]
+        public async Task<IHttpActionResult> GetEfectosCandidatos(string empresa)
+        {
+            List<EfectoCandidatoDTO> candidatos = await _remesas.LeerEfectosCandidatosSepaAsync(empresa).ConfigureAwait(false);
+            return Ok(candidatos);
+        }
+
         // GET: api/Remesas/Impagados/Movimientos?empresa=1&asiento=1195101
         // Nesto#340 Fase 1C.14 slice 5: movimientos de un asiento de impagados (grid derecho).
         [HttpGet]

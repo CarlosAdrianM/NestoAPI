@@ -22,5 +22,9 @@ namespace NestoAPI.Infraestructure.Remesas
 
         /// <summary>Slice 5: movimientos de un asiento de impagados (grid derecho).</summary>
         Task<List<MovimientoRemesaDTO>> LeerMovimientosImpagadoAsync(string empresa, int asiento);
+
+        /// <summary>NestoAPI#332 (modo simulación): efectos candidatos a remesa SEPA, con
+        /// preselección, motivo de retención (gating #172) y puerta de neteo.</summary>
+        Task<List<EfectoCandidatoDTO>> LeerEfectosCandidatosSepaAsync(string empresa);
     }
 }

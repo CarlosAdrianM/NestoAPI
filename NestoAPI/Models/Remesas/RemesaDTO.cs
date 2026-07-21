@@ -43,4 +43,26 @@ namespace NestoAPI.Models.Remesas
         public DateTime Fecha { get; set; }
         public int Cuenta { get; set; }
     }
+
+    /// <summary>
+    /// NestoAPI#332: efecto candidato a entrar en la remesa (modo simulación / preselección).
+    /// Preseleccionado = cumple todas las reglas; si no, Motivo explica por qué queda fuera
+    /// o retenido. ClienteConNegativos = la puerta de revisión de neteo (#332: el usuario
+    /// decide liquidar antes de remesar).
+    /// </summary>
+    public class EfectoCandidatoDTO
+    {
+        public int Id { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public string Documento { get; set; }
+        public string Efecto { get; set; }
+        public DateTime Fecha { get; set; }
+        public DateTime? Vencimiento { get; set; }
+        public decimal ImportePendiente { get; set; }
+        public string Ccc { get; set; }
+        public bool Preseleccionado { get; set; }
+        public string Motivo { get; set; }
+        public bool ClienteConNegativos { get; set; }
+    }
 }

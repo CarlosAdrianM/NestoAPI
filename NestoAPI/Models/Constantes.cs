@@ -186,6 +186,9 @@ namespace NestoAPI.Models
             public static class TiposApunte
             {
                 public const string FACTURA = "1";
+                // NestoAPI#332: la CARTERA es el tipo que entra en las remesas de cobro
+                // (criterio de Carlos 20/07/26: el 2, NO el 1).
+                public const string CARTERA = "2";
                 public const string PAGO = "3";
                 public const string IMPAGADO = "4";
             }
