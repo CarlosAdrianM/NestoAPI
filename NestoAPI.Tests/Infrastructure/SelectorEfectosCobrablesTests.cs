@@ -1,5 +1,6 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Remesas;
 using NestoAPI.Models;
 using NestoAPI.Models.Remesas;
@@ -27,6 +28,7 @@ namespace NestoAPI.Tests.Infrastructure
         private DbSet<ExtractoCliente> fakeExtractos;
         private DbSet<LinPedidoVta> fakeLineas;
         private DbSet<EnviosAgencia> fakeEnvios;
+        private List<string> estadosQueBloquean;
         private SelectorEfectosCobrables selector;
 
         [TestInitialize]
@@ -41,7 +43,8 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.EnviosAgencias).Returns(fakeEnvios);
             ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>().AsQueryable());
             ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>().AsQueryable());
-            selector = new SelectorEfectosCobrables(db);
+            estadosQueBloquean = new List<string>();
+            selector = new SelectorEfectosCobrables(db, e => Task.FromResult(estadosQueBloquean));
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
@@ -59,7 +62,7 @@ namespace NestoAPI.Tests.Infrastructure
         // así que aquí los datos van SIN espacios de relleno.
         private static ExtractoCliente Efecto(int id = 1, string cliente = "15191", decimal pendiente = 250.50m,
             string ccc = "1", DateTime? fecha = null, DateTime? vencimiento = null, string documento = "NV2612000",
-            string tipoApunte = "2")
+            string tipoApunte = "2", string estado = null)
         {
             return new ExtractoCliente
             {
@@ -72,7 +75,8 @@ namespace NestoAPI.Tests.Infrastructure
                 CCC = ccc,
                 Fecha = fecha ?? HOY.AddDays(-5),
                 FechaVto = vencimiento ?? HOY.AddDays(-1),
-                Nº_Documento = documento
+                Nº_Documento = documento,
+                Estado = estado
             };
         }
 
@@ -154,28 +158,85 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task CandidatosSepa_EnvioAntiguoSinConfirmar_SeLiberaPorTimeout()
+        public async Task CandidatosSepa_EnvioAnteriorAlCorteDelPoll_SeLibera()
         {
-            // Timeout fallback de #172 (caso real 21/07: factura de sept/2025 con envíos en
-            // 'tramitado' eterno, anteriores al poll): un envío sin confirmar desde hace más
-            // de DIAS_TIMEOUT_GATING días ya no es señal fiable — no retiene la tesorería.
+            // Matiz de Carlos 21/07: la señal correcta es la FECHA DE CORTE del poll de
+            // seguimiento, no un timeout de N días. Un envío anterior al corte (caso real
+            // NV2515520 de sept/2025, 'tramitado' eterno) no tiene seguimiento posible → no
+            // retiene. Uno POSTERIOR al corte sin entregar retiene SIN timeout (el poll lo
+            // sigue; puede estar perdido o en reparto).
             ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
             {
-                Efecto(id: 1, documento: "NV2515520")
+                Efecto(id: 1, documento: "NV2515520"),
+                Efecto(id: 2, documento: "NV2612002")
             }.AsQueryable());
             ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>
             {
-                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Factura = "NV2515520" }
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Factura = "NV2515520" },
+                new LinPedidoVta { Empresa = "1", Número = 922002, Nº_Factura = "NV2612002" }
             }.AsQueryable());
             ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>
             {
                 new EnviosAgencia { Numero = 1, Pedido = 900001, Estado = (short)Constantes.Agencias.ESTADO_TRAMITADO,
-                    Fecha = HOY.AddDays(-(SelectorEfectosCobrables.DIAS_TIMEOUT_GATING + 1)) }
+                    Fecha = SeguimientoEnviosJobsService.FECHA_CORTE.AddDays(-30) },  // pre-corte
+                new EnviosAgencia { Numero = 2, Pedido = 922002, Estado = (short)Constantes.Agencias.ESTADO_TRAMITADO,
+                    Fecha = SeguimientoEnviosJobsService.FECHA_CORTE.AddDays(5) }     // post-corte, 45+ días sin entregar
             }.AsQueryable());
 
             List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
 
-            Assert.IsTrue(candidatos.Single().Preseleccionado, "El envío antiguo sin confirmar no retiene");
+            Assert.IsTrue(candidatos.Single(c => c.Id == 1).Preseleccionado, "Pre-corte: sin seguimiento posible, no retiene");
+            Assert.IsFalse(candidatos.Single(c => c.Id == 2).Preseleccionado, "Post-corte sin entregar: retiene sin timeout");
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_EnvioIncidentadoODevuelto_RetienenConSuMotivo()
+        {
+            // Carlos 21/07: incidentado no se mete mientras dure; devuelto = el cobro no
+            // procede por remesa (abono o gestión manual).
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, documento: "NV2612001"),
+                Efecto(id: 2, documento: "NV2612002")
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 922001, Nº_Factura = "NV2612001" },
+                new LinPedidoVta { Empresa = "1", Número = 922002, Nº_Factura = "NV2612002" }
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>
+            {
+                new EnviosAgencia { Numero = 1, Pedido = 922001, Estado = Constantes.Agencias.ESTADO_INCIDENTADO, Fecha = HOY.AddDays(-3) },
+                new EnviosAgencia { Numero = 2, Pedido = 922002, Estado = Constantes.Agencias.ESTADO_DEVUELTO, Fecha = HOY.AddDays(-3) }
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            StringAssert.Contains(candidatos.Single(c => c.Id == 1).Motivo, "INCIDENTADO");
+            StringAssert.Contains(candidatos.Single(c => c.Id == 2).Motivo, "DEVUELTO");
+            Assert.IsTrue(candidatos.All(c => !c.Preseleccionado));
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_EstadoDelEfectoQueBloquea_RetenidoConMotivo()
+        {
+            // Matiz de Carlos 21/07: Estado NULL entra; con estado, solo si EstadosExtracto
+            // no lo bloquea (BloquearLiquidación=0); bloqueado → no se puede remesar.
+            estadosQueBloquean.Add("7");
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, estado: null),
+                Efecto(id: 2, estado: "5"),
+                Efecto(id: 3, estado: "7")
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            Assert.IsTrue(candidatos.Single(c => c.Id == 1).Preseleccionado, "Estado NULL entra");
+            Assert.IsTrue(candidatos.Single(c => c.Id == 2).Preseleccionado, "Estado sin bloqueo entra");
+            EfectoCandidatoDTO bloqueado = candidatos.Single(c => c.Id == 3);
+            Assert.IsFalse(bloqueado.Preseleccionado);
+            StringAssert.Contains(bloqueado.Motivo, "bloquea la liquidación");
         }
 
         [TestMethod]

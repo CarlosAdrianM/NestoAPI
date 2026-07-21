@@ -19,18 +19,21 @@ namespace NestoAPI.Infraestructure.Remesas
     /// </summary>
     public class SelectorEfectosCobrables
     {
-        // Timeout fallback del gating (#172, diseño del 20/07: "si no llega confirmación tras
-        // N días, liberar igualmente — sin esto un fallo de seguimiento bloquea tesorería
-        // para siempre"). Caso real que lo exige (21/07): efecto de una factura de sept/2025
-        // con envíos en 'tramitado' eterno por ser anteriores al poll de seguimiento. Un
-        // envío de hace más de N días sin confirmar ya no es señal fiable de "no entregado".
-        public const int DIAS_TIMEOUT_GATING = 30;
-
         private readonly NVEntities db;
+        private readonly Func<string, Task<List<string>>> leerEstadosQueBloquean;
 
-        public SelectorEfectosCobrables(NVEntities db)
+        public SelectorEfectosCobrables(NVEntities db, Func<string, Task<List<string>>> leerEstadosQueBloquean = null)
         {
             this.db = db;
+            this.leerEstadosQueBloquean = leerEstadosQueBloquean ?? LeerEstadosQueBloqueanBd;
+        }
+
+        // EstadosExtracto no está en el EDMX (SQL crudo, patrón Cargos). Inyectable para tests.
+        private async Task<List<string>> LeerEstadosQueBloqueanBd(string empresa)
+        {
+            return await db.Database.SqlQuery<string>(
+                "SELECT LTRIM(RTRIM([Número])) FROM EstadosExtracto WHERE Empresa = @p0 AND [BloquearLiquidación] = 1",
+                empresa).ToListAsync().ConfigureAwait(false);
         }
 
         /// <summary>
@@ -61,11 +64,25 @@ namespace NestoAPI.Infraestructure.Remesas
                 return new List<EfectoCandidatoDTO>();
             }
 
-            // Gating de entrega (#172): un efecto se retiene si ALGÚN envío de agencia de los
-            // pedidos de su factura no está entregado (pedidos parciales: se exigen TODOS
-            // entregados). Cadena verificada 20/07: factura → LinPedidoVta.[Nº Factura] →
-            // Número (pedido) → EnviosAgencia.Pedido → Estado. Sin envíos (mostrador,
-            // servicios) = se libera, preservando la política actual.
+            // Estados del extracto que bloquean (matiz de Carlos 21/07): efecto con Estado
+            // NULL entra; con Estado informado solo entra si EstadosExtracto no lo bloquea
+            // (BloquearLiquidación = 0). Bloqueado = retenido con motivo.
+            HashSet<string> estadosBloqueados = new HashSet<string>(
+                await leerEstadosQueBloquean(empresa).ConfigureAwait(false),
+                StringComparer.OrdinalIgnoreCase);
+
+            // Gating de entrega (#172, refinado por Carlos 21/07): un efecto se retiene si
+            // ALGÚN envío de los pedidos de su factura no está entregado (pedidos parciales:
+            // TODOS entregados). Cadena: factura → LinPedidoVta.[Nº Factura] → Número
+            // (pedido) → EnviosAgencia.Pedido → Estado. Sin envíos = se libera. Matices:
+            // - Envíos ANTERIORES a la fecha de corte del poll de seguimiento: sin
+            //   seguimiento posible ('tramitado' eterno, caso NV2515520 de sept/2025) → NO
+            //   retienen. La señal correcta es la fecha de corte, no un timeout de N días.
+            // - Envíos posteriores al corte sin entregar: retienen SIN timeout (el poll los
+            //   sigue; si no confirma, puede estar perdido o en reparto — no liberar).
+            // - INCIDENTADO: retiene siempre, con su motivo.
+            // - DEVUELTO: retiene siempre — la mercancía volvió, ese cobro no procede por
+            //   remesa; salida manual (abono / corregir el envío).
             List<string> documentos = efectos.Select(e => e.Nº_Documento?.Trim())
                 .Where(d => !string.IsNullOrEmpty(d)).Distinct().ToList();
             var facturaPedidos = await db.LinPedidoVtas
@@ -74,17 +91,20 @@ namespace NestoAPI.Infraestructure.Remesas
                 .Distinct()
                 .ToListAsync().ConfigureAwait(false);
             List<int> pedidos = facturaPedidos.Select(fp => fp.Pedido).Distinct().ToList();
-            DateTime limiteTimeoutGating = fechaHoy.AddDays(-DIAS_TIMEOUT_GATING);
+            DateTime corteSeguimiento = SeguimientoEnviosJobsService.FECHA_CORTE;
             var enviosNoEntregados = await db.EnviosAgencias
                 .Where(ea => ea.Pedido != null && pedidos.Contains(ea.Pedido.Value)
                     && ea.Estado != Constantes.Agencias.ESTADO_ENTREGADO
-                    && ea.Fecha >= limiteTimeoutGating)
+                    && ea.Fecha >= corteSeguimiento)
                 .Select(ea => new { Pedido = ea.Pedido.Value, ea.Estado })
                 .ToListAsync().ConfigureAwait(false);
             Dictionary<string, List<int>> pedidosPorFactura = facturaPedidos
                 .GroupBy(fp => fp.Nº_Factura?.Trim())
                 .ToDictionary(g => g.Key, g => g.Select(x => x.Pedido).Distinct().ToList());
-            HashSet<int> pedidosRetenidos = new HashSet<int>(enviosNoEntregados.Select(e => e.Pedido));
+            Dictionary<int, short> peorEstadoPorPedido = enviosNoEntregados
+                .GroupBy(e => e.Pedido)
+                .ToDictionary(g => g.Key, g => g.Max(x => (short)x.Estado));
+            HashSet<int> pedidosRetenidos = new HashSet<int>(peorEstadoPorPedido.Keys);
 
             // Puerta de neteo (#332): clientes de la selección con movimientos NEGATIVOS
             // pendientes (abonos, pagos a cuenta) de cualquier tipo → revisar/liquidar antes.
@@ -100,10 +120,32 @@ namespace NestoAPI.Infraestructure.Remesas
             return efectos.Select(e =>
             {
                 string documento = e.Nº_Documento?.Trim();
-                bool retenidoPorEntrega = documento != null
-                    && pedidosPorFactura.TryGetValue(documento, out List<int> pedidosFactura)
-                    && pedidosFactura.Any(p => pedidosRetenidos.Contains(p));
                 string cliente = e.Número?.Trim();
+                string motivo = null;
+
+                string estadoEfecto = e.Estado?.Trim();
+                if (!string.IsNullOrEmpty(estadoEfecto) && estadosBloqueados.Contains(estadoEfecto))
+                {
+                    motivo = $"El estado '{estadoEfecto}' del movimiento bloquea la liquidación: no se puede remesar.";
+                }
+                else if (documento != null
+                    && pedidosPorFactura.TryGetValue(documento, out List<int> pedidosFactura))
+                {
+                    List<short> estadosEnvios = pedidosFactura
+                        .Where(p => peorEstadoPorPedido.ContainsKey(p))
+                        .Select(p => peorEstadoPorPedido[p])
+                        .ToList();
+                    if (estadosEnvios.Any())
+                    {
+                        short peorEstado = estadosEnvios.Max();
+                        motivo = peorEstado >= Constantes.Agencias.ESTADO_DEVUELTO
+                            ? "Retenido: envío DEVUELTO — el cobro no procede por remesa; requiere abono o gestión manual."
+                            : peorEstado >= Constantes.Agencias.ESTADO_INCIDENTADO
+                                ? "Retenido: envío INCIDENTADO — esperar a que se resuelva la incidencia (#172)."
+                                : "Retenido: el pedido tiene envíos de agencia sin confirmar la entrega (#172).";
+                    }
+                }
+
                 return new EfectoCandidatoDTO
                 {
                     Id = e.Nº_Orden,
@@ -116,10 +158,8 @@ namespace NestoAPI.Infraestructure.Remesas
                     ImportePendiente = e.ImportePdte,
                     Ccc = e.CCC?.Trim(),
                     ClienteConNegativos = conNegativos.Contains(cliente ?? string.Empty),
-                    Preseleccionado = !retenidoPorEntrega,
-                    Motivo = retenidoPorEntrega
-                        ? "Retenido: el pedido tiene envíos de agencia sin confirmar la entrega (#172)."
-                        : null
+                    Preseleccionado = motivo == null,
+                    Motivo = motivo
                 };
             }).ToList();
         }
