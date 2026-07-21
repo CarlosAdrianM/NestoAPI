@@ -90,6 +90,28 @@ namespace NestoAPI.Infraestructure.Clientes
         /// Devuelve cuántos contactos se han corregido.
         /// </summary>
         Task<int> UnificarNifContactos(string cliente, string usuario);
+
+        /// <summary>
+        /// Listado para las pantallas de corrección (Nesto#417 / NestoApp#157): fichas cuya
+        /// validación VIGENTE es incorrecta (si la ficha cambió de NIF después, ya no sale:
+        /// está "sin validar"), priorizando las que tienen pedido pendiente de servir o
+        /// facturar. Filtro opcional por vendedor (permisos por rol en el cliente).
+        /// </summary>
+        Task<System.Collections.Generic.List<ClienteNifIncorrectoDTO>> ListarNifIncorrectos(string vendedor = null);
+    }
+
+    /// <summary>Fila del listado de NIF incorrectos (#327, para Nesto#417/NestoApp#157).</summary>
+    public class ClienteNifIncorrectoDTO
+    {
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public string Nombre { get; set; }
+        public string Nif { get; set; }
+        public string ResultadoAeat { get; set; }
+        public DateTime FechaValidacion { get; set; }
+        public string Vendedor { get; set; }
+        /// <summary>Prioritario: su factura se va a encontrar el problema.</summary>
+        public bool TienePedidoPendiente { get; set; }
     }
 
     /// <summary>Resultado de la corrección centralizada del NIF (#327/Nesto#417).</summary>

@@ -250,6 +250,29 @@ namespace NestoAPI.Infraestructure.Clientes
             return corregidos;
         }
 
+        public async Task<List<ClienteNifIncorrectoDTO>> ListarNifIncorrectos(string vendedor = null)
+        {
+            // Solo validaciones VIGENTES: si la ficha cambió de NIF/nombre después de validar,
+            // el join no casa y la ficha no sale (está "sin validar", no "incorrecta").
+            // Pedido pendiente de servir o facturar = líneas en estado PENDIENTE..ALBARAN.
+            string sql =
+                "SELECT LTRIM(RTRIM(v.Cliente)) AS Cliente, LTRIM(RTRIM(v.Contacto)) AS Contacto, " +
+                "       v.Nombre, v.Nif, v.ResultadoAeat, v.FechaValidacion, LTRIM(RTRIM(c.Vendedor)) AS Vendedor, " +
+                "       CAST(CASE WHEN EXISTS (SELECT 1 FROM LinPedidoVta l " +
+                "               WHERE l.Empresa = c.Empresa AND l.[Nº Cliente] = c.[Nº Cliente] " +
+                "               AND l.Estado >= -1 AND l.Estado <= 2) THEN 1 ELSE 0 END AS bit) AS TienePedidoPendiente " +
+                "FROM ValidacionesNif v " +
+                "INNER JOIN Clientes c ON c.Empresa = v.Empresa AND c.[Nº Cliente] = v.Cliente AND c.Contacto = v.Contacto " +
+                "WHERE v.Estado = @p0 AND c.[CIF/NIF] = v.Nif AND c.Nombre = v.Nombre " +
+                "AND (@p1 IS NULL OR c.Vendedor = @p1) " +
+                "ORDER BY TienePedidoPendiente DESC, v.FechaValidacion DESC";
+
+            return await db.Database.SqlQuery<ClienteNifIncorrectoDTO>(sql,
+                new SqlParameter("@p0", ESTADO_INCORRECTO),
+                new SqlParameter("@p1", (object)vendedor?.Trim() ?? DBNull.Value))
+                .ToListAsync().ConfigureAwait(false);
+        }
+
         private async Task<Cliente> LeerFicha(string empresa, string cliente, string contacto)
         {
             return await db.Clientes.FirstOrDefaultAsync(c =>

@@ -27,13 +27,18 @@ namespace NestoAPI.Controllers
         private readonly IGestorClientes _gestorClientes;
         private readonly IGestorSincronizacion _gestorSincronizacion;
         // Carlos 06/07/15: lo pongo para desactivar el Lazy Loading
-        public ClientesController(IGestorClientes gestorClientes, IServicioVendedores servicioVendedores, IGestorSincronizacion gestorSincronizacion = null)
+        public ClientesController(IGestorClientes gestorClientes, IServicioVendedores servicioVendedores, IGestorSincronizacion gestorSincronizacion = null,
+            Infraestructure.Clientes.IServicioValidacionNif servicioValidacionNif = null)
         {
             db.Configuration.LazyLoadingEnabled = false;
             this.servicioVendedores = servicioVendedores;
             _gestorClientes = gestorClientes;
             _gestorSincronizacion = gestorSincronizacion ?? new GestorSincronizacion(db);
+            // NestoAPI#327: inyectable para tests; por defecto usa el db del controller
+            _servicioValidacionNif = servicioValidacionNif ?? new Infraestructure.Clientes.ServicioValidacionNif(db);
         }
+
+        private readonly Infraestructure.Clientes.IServicioValidacionNif _servicioValidacionNif;
 
         //public ClientesController() : this(null, null)
         //{
@@ -55,9 +60,8 @@ namespace NestoAPI.Controllers
             }
 
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
-            var servicio = new Infraestructure.Clientes.ServicioValidacionNif(db);
             Infraestructure.Clientes.ResultadoCorreccionNif resultado =
-                await servicio.CorregirNif(peticion.Cliente, peticion.Nif, usuario);
+                await _servicioValidacionNif.CorregirNif(peticion.Cliente, peticion.Nif, usuario);
 
             if (!resultado.Corregido)
             {
@@ -70,6 +74,20 @@ namespace NestoAPI.Controllers
         {
             public string Cliente { get; set; }
             public string Nif { get; set; }
+        }
+
+        // GET: api/Clientes/NifIncorrectos?vendedor=
+        // NestoAPI#327: listado para las pantallas de corrección (Nesto#417 / NestoApp#157).
+        // Fichas cuya validación vigente es INCORRECTA, priorizando las que tienen pedido
+        // pendiente de servir o facturar. El filtro por vendedor lo aplican los clientes
+        // según el rol (administración/dirección sin filtro; vendedor con el suyo).
+        [System.Web.Http.Authorize]
+        [System.Web.Http.HttpGet]
+        [System.Web.Http.Route("api/Clientes/NifIncorrectos")]
+        public async Task<IHttpActionResult> GetNifIncorrectos(string vendedor = null)
+        {
+            var lista = await _servicioValidacionNif.ListarNifIncorrectos(vendedor);
+            return Ok(lista);
         }
 
         // GET: api/Clientes
