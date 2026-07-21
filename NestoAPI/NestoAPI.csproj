@@ -637,6 +637,7 @@
     <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\Contabilidad\ContabilidadService.cs" />
+    <Compile Include="Infraestructure\ExtractosCliente\ServicioLiquidarEfectos.cs" />
     <Compile Include="Infraestructure\Contabilidad\RepositorioTerminalesTPV.cs" />
     <Compile Include="Infraestructure\Contabilidad\GestorContabilidad.cs" />
     <Compile Include="Infraestructure\Contabilidad\GestorCuaderno43.cs" />

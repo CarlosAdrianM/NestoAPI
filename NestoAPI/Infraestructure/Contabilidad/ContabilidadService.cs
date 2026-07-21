@@ -147,7 +147,7 @@ namespace NestoAPI.Infraestructure.Contabilidad
                     errores.Add($"La línea del cliente {cliente} liquida contra el movimiento {destinoId}, que es del cliente {destino.Número?.Trim()}: deben ser del mismo cliente.");
                     continue;
                 }
-                if (importeLinea == 0 || destino.ImportePdte == 0 || Math.Sign(importeLinea) == Math.Sign(destino.ImportePdte))
+                if (!EsParLiquidable(importeLinea, destino.ImportePdte))
                 {
                     errores.Add($"No se puede liquidar el movimiento {destinoId} del cliente {cliente}: los importes deben tener signo contrario y ser distintos de 0 (línea {importeLinea:C}, pendiente del movimiento {destino.ImportePdte:C}).");
                 }
@@ -157,6 +157,14 @@ namespace NestoAPI.Infraestructure.Contabilidad
 
         // 266 = recuento de BEGIN/COMMIT no coincidente; 3902/3903 = COMMIT/ROLLBACK sin BEGIN.
         // Son síntomas del aborto interno del SP, no la causa; la causa son los RAISERROR.
+        // NestoAPI#333: núcleo compartido de la regla de liquidación de prdLiquidar (signos
+        // opuestos e importes distintos de 0), usado por la validación del diario (#296) y por
+        // ServicioLiquidarEfectos (endpoint de liquidar del extracto).
+        internal static bool EsParLiquidable(decimal importeA, decimal importeB)
+        {
+            return importeA != 0 && importeB != 0 && Math.Sign(importeA) != Math.Sign(importeB);
+        }
+
         internal static string ComponerMensajeSinRuidoDeTransacciones(IEnumerable<KeyValuePair<int, string>> errores)
         {
             List<string> negocio = errores

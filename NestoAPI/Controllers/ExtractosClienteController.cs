@@ -35,10 +35,50 @@ namespace NestoAPI.Controllers
         // Internal para tests (InternalsVisibleTo("NestoAPI.Tests")). El caller decide
         // si hay que desactivar LazyLoading: en tests con NVEntities mockeado no tiene
         // sentido tocar Configuration (FakeItEasy no lo puede construir).
-        internal ExtractosClienteController(IServicioCorreoElectronico servicioCorreo, NVEntities db)
+        internal ExtractosClienteController(IServicioCorreoElectronico servicioCorreo, NVEntities db,
+            Infraestructure.ExtractosCliente.IServicioLiquidarEfectos servicioLiquidar = null)
         {
             this.db = db;
             _servicioCorreo = servicioCorreo;
+            _servicioLiquidar = servicioLiquidar;
+        }
+
+        private Infraestructure.ExtractosCliente.IServicioLiquidarEfectos _servicioLiquidar;
+
+        // NestoAPI#333 (v1 de Nesto#419, prerrequisito de #332): liquidar dos movimientos del
+        // extracto. Validaciones del SP adelantadas en C# (varios raiserror van con severidad 1
+        // = silenciosos desde EF); liquidación parcial nativa (el mayor absorbe, el menor a 0);
+        // usuario de auditoría del JWT server-side.
+        [Authorize]
+        [HttpPost]
+        [Route("api/ExtractosCliente/Liquidar")]
+        [ResponseType(typeof(Infraestructure.ExtractosCliente.ResultadoLiquidacionEfectos))]
+        public async Task<IHttpActionResult> Liquidar([FromBody] LiquidarEfectosRequest peticion)
+        {
+            if (peticion == null || string.IsNullOrWhiteSpace(peticion.Empresa)
+                || peticion.Origen == 0 || peticion.Destino == 0)
+            {
+                return BadRequest("Hay que indicar empresa, origen y destino.");
+            }
+
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null);
+            var servicio = _servicioLiquidar
+                ?? new Infraestructure.ExtractosCliente.ServicioLiquidarEfectos(db);
+            Infraestructure.ExtractosCliente.ResultadoLiquidacionEfectos resultado =
+                await servicio.Liquidar(peticion.Empresa, peticion.Origen, peticion.Destino, usuario);
+
+            if (!resultado.Exito)
+            {
+                return BadRequest(string.Join(" ", resultado.Errores));
+            }
+            return Ok(resultado);
+        }
+
+        public class LiquidarEfectosRequest
+        {
+            public string Empresa { get; set; }
+            public int Origen { get; set; }
+            public int Destino { get; set; }
         }
 
 

@@ -288,6 +288,7 @@
     <Compile Include="Infrastructure\ConvertidorPedidoAPlantillaTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfPackingTests.cs" />
     <Compile Include="Infrastructure\ElmahErrorFilterConfigTests.cs" />
+    <Compile Include="Infrastructure\ServicioLiquidarEfectosTests.cs" />
     <Compile Include="Infrastructure\ServicioValidacionNifTests.cs" />
     <Compile Include="Infrastructure\ElmahHelperTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfFacturasQuestPdfTests.cs" />
