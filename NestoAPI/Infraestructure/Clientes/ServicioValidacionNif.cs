@@ -83,7 +83,7 @@ namespace NestoAPI.Infraestructure.Clientes
             RespuestaNifNombreCliente respuesta;
             try
             {
-                respuesta = await servicioAeat.ComprobarNifNombre(nif, nombre).ConfigureAwait(false);
+                respuesta = await servicioAeat.ComprobarNifNombre(NifParaCenso(nif), nombre).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
@@ -218,11 +218,23 @@ namespace NestoAPI.Infraestructure.Clientes
         /// NestoAPI#339: los NIF-IVA intracomunitarios empiezan por el código de país (dos
         /// letras: IT, FR, PT...). Ningún formato español empieza por dos letras (DNI: dígito;
         /// NIE: X/Y/Z + dígitos; CIF: UNA letra + dígitos), así que dos letras iniciales =
-        /// identificador extranjero. Pasaportes y otros documentos quedan para #339.
+        /// identificador extranjero — SALVO "ES", que es el prefijo del NIF-IVA ESPAÑOL
+        /// (matiz de Carlos 21/07): ese sí se valida contra el censo (sin el prefijo).
+        /// Pasaportes y otros documentos quedan para #339.
         /// </summary>
         internal static bool EsIdentificadorExtranjero(string nif)
         {
-            return nif != null && nif.Length >= 2 && char.IsLetter(nif[0]) && char.IsLetter(nif[1]);
+            return nif != null && nif.Length >= 2 && char.IsLetter(nif[0]) && char.IsLetter(nif[1])
+                && !nif.StartsWith("ES", StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>El censo de la AEAT valida el NIF pelado: a un NIF-IVA español ("ES" +
+        /// NIF) hay que quitarle el prefijo antes de preguntar (la ficha se queda tal cual).</summary>
+        internal static string NifParaCenso(string nif)
+        {
+            return nif != null && nif.Length > 2 && nif.StartsWith("ES", StringComparison.OrdinalIgnoreCase)
+                ? nif.Substring(2)
+                : nif;
         }
 
         public async Task<int> UnificarNifContactos(string cliente, string usuario)

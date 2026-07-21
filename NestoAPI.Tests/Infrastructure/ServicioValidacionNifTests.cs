@@ -271,6 +271,24 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("X1234567L"), "NIE: una letra + dígitos");
             Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("B83455154"), "CIF: una letra + dígitos");
             Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("90021192"), "El caso real sin letra sigue validándose (y fallando)");
+            // Matiz de Carlos 21/07: ES + NIF es el NIF-IVA ESPAÑOL, no un extranjero
+            Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("ESB83455154"));
+            Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("es05231909H"), "Insensible a mayúsculas");
+        }
+
+        [TestMethod]
+        public async Task ValidarSiHaceFalta_NifIvaEspanol_ValidaContraElCensoSinElPrefijo()
+        {
+            // "ES" + NIF: al censo se pregunta con el NIF pelado; la ficha se queda tal cual
+            ConFicha(Ficha(nif: "ESB83455154"));
+            AeatResponde(valido: true, resultado: "IDENTIFICADO");
+
+            var resultado = await servicio.ValidarSiHaceFalta("1", "30676", "0", "carlos");
+
+            Assert.AreEqual(EstadoValidacionNif.Correcto, resultado.Estado);
+            A.CallTo(() => aeat.ComprobarNifNombre("B83455154", A<string>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.That.Matches(r => r.Nif == "ESB83455154")))
+                .MustHaveHappenedOnceExactly();
         }
 
         // NestoAPI#330: unificación automática — el NIF del principal VALIDADO se propaga a
