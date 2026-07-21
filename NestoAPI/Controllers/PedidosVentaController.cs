@@ -1743,6 +1743,19 @@ namespace NestoAPI.Controllers
             {
                 var servicioNif = new Infraestructure.Clientes.ServicioValidacionNif(db);
                 var validacionNif = await servicioNif.ValidarPrincipal(pedido.cliente, pedido.Usuario);
+                if (validacionNif.Estado == Infraestructure.Clientes.EstadoValidacionNif.Correcto)
+                {
+                    // NestoAPI#330: con el principal validado, unificar los contactos que tengan
+                    // otro NIF (erratas de tecleo). A Verifactu siempre viaja el del principal,
+                    // pero la ficha debe quedar coherente.
+                    int contactosUnificados = await servicioNif.UnificarNifContactos(pedido.cliente, pedido.Usuario);
+                    if (contactosUnificados > 0)
+                    {
+                        ElmahHelper.Log(new Exception(
+                            $"[NIF unificado] Cliente {pedido.cliente?.Trim()}: {contactosUnificados} contacto(s) " +
+                            $"tenían un NIF distinto al del principal (validado AEAT) y se han corregido (#330)."));
+                    }
+                }
                 if (validacionNif.AcabaDeResultarIncorrecto)
                 {
                     await new Infraestructure.Clientes.NotificadorNifIncorrecto(db).Enviar(

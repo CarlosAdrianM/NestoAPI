@@ -248,5 +248,48 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsFalse(resultado.Corregido);
             A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
+
+        // NestoAPI#330: unificación automática — el NIF del principal VALIDADO se propaga a
+        // los contactos con NIF distinto (a Verifactu siempre viaja el del principal, pero la
+        // ficha debe quedar coherente).
+
+        [TestMethod]
+        public async Task UnificarNifContactos_PrincipalValidado_CorrigeLosContactosDesalineados()
+        {
+            var principal = Ficha(contacto: "0", nif: "05231909H", nombre: "PEPA", principal: true);
+            var desalineado = Ficha(contacto: "1", nif: "05231909J", principal: false); // errata
+            var alineado = Ficha(contacto: "2", nif: "05231909H", principal: false);
+            ConFicha(principal, desalineado, alineado);
+            ConMasFakes();
+            A.CallTo(() => almacen.Leer("1", "30676", "0")).Returns(new ValidacionNifRegistro
+            {
+                Nif = "05231909H",
+                Nombre = "PEPA",
+                Estado = ServicioValidacionNif.ESTADO_CORRECTO
+            });
+
+            int corregidos = await servicio.UnificarNifContactos("30676", "carlos");
+
+            Assert.AreEqual(1, corregidos);
+            Assert.AreEqual("05231909H", desalineado.CIF_NIF);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task UnificarNifContactos_PrincipalSinValidar_NoTocaNada()
+        {
+            // Regla de #330: nunca se extiende un dato posiblemente malo.
+            var principal = Ficha(contacto: "0", nif: "05231909H", principal: true);
+            var desalineado = Ficha(contacto: "1", nif: "05231909J", principal: false);
+            ConFicha(principal, desalineado);
+            ConMasFakes();
+            // Sin registro en el almacén → el principal está sin validar
+
+            int corregidos = await servicio.UnificarNifContactos("30676", "carlos");
+
+            Assert.AreEqual(0, corregidos);
+            Assert.AreEqual("05231909J", desalineado.CIF_NIF, "Sin veredicto de la AEAT no se propaga nada");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
     }
 }

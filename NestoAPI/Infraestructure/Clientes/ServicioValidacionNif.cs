@@ -205,6 +205,51 @@ namespace NestoAPI.Infraestructure.Clientes
             };
         }
 
+        public async Task<int> UnificarNifContactos(string cliente, string usuario)
+        {
+            if (ClientesSimplificadas.Contains(cliente?.Trim()))
+            {
+                return 0;
+            }
+
+            List<Cliente> fichas = await db.Clientes
+                .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Nº_Cliente == cliente)
+                .ToListAsync().ConfigureAwait(false);
+            Cliente principal = fichas.FirstOrDefault(c => c.ClientePrincipal);
+            string nifPrincipal = principal?.CIF_NIF?.Trim();
+            if (principal == null || string.IsNullOrWhiteSpace(nifPrincipal))
+            {
+                return 0; // sin principal (integridad #331) o sin NIF: nada que propagar
+            }
+
+            // Regla de #330: SOLO se propaga un NIF con veredicto CORRECTO de la AEAT.
+            ResultadoValidacionNif estadoPrincipal = await CalcularEstado(principal).ConfigureAwait(false);
+            if (estadoPrincipal.Estado != EstadoValidacionNif.Correcto)
+            {
+                return 0;
+            }
+
+            int corregidos = 0;
+            foreach (Cliente ficha in fichas.Where(f => !f.ClientePrincipal && f.CIF_NIF?.Trim() != nifPrincipal))
+            {
+                // Auditar: se modifica un dato fiscal sin intervención humana (#330).
+                _ = db.Modificaciones.Add(new Modificacion
+                {
+                    Tabla = "Clientes",
+                    Anterior = $"Cliente {ficha.Nº_Cliente?.Trim()}/{ficha.Contacto?.Trim()} CIF_NIF={ficha.CIF_NIF?.Trim()}",
+                    Nuevo = $"CIF_NIF={nifPrincipal} (propagado del principal validado contra la AEAT, #330)",
+                    Usuario = usuario
+                });
+                ficha.CIF_NIF = nifPrincipal;
+                corregidos++;
+            }
+            if (corregidos > 0)
+            {
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
+            }
+            return corregidos;
+        }
+
         private async Task<Cliente> LeerFicha(string empresa, string cliente, string contacto)
         {
             return await db.Clientes.FirstOrDefaultAsync(c =>

@@ -82,6 +82,14 @@ namespace NestoAPI.Infraestructure.Clientes
         /// fiscales se copian de la ficha al facturar.
         /// </summary>
         Task<ResultadoCorreccionNif> CorregirNif(string cliente, string nifNuevo, string usuario);
+
+        /// <summary>
+        /// NestoAPI#330: propaga el NIF del cliente principal a los contactos que tengan otro
+        /// distinto (erratas de tecleo), SOLO si el del principal está validado como correcto
+        /// contra la AEAT — nunca se extiende un dato posiblemente malo. Audita cada cambio.
+        /// Devuelve cuántos contactos se han corregido.
+        /// </summary>
+        Task<int> UnificarNifContactos(string cliente, string usuario);
     }
 
     /// <summary>Resultado de la corrección centralizada del NIF (#327/Nesto#417).</summary>
