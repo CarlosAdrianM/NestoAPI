@@ -308,5 +308,111 @@ namespace NestoAPI.Tests.Controllers
         }
 
         #endregion
+
+        #region RestarReembolso (NestoAPI#335 / Nesto#420)
+
+        // Al quitar la comisión contra reembolso del pedido, el usuario puede restar su importe
+        // del reembolso del envío. Regla: RESTAR, nunca recalcular (respeta importes a mano).
+
+        private EnviosAgencia EnvioConReembolso(short estado, decimal reembolso)
+        {
+            var envio = EnvioEnCurso();
+            envio.Estado = estado;
+            envio.Reembolso = reembolso;
+            ConEnvio(envio);
+            return envio;
+        }
+
+        [TestMethod]
+        public async Task RestarReembolso_EnvioVivo_RestaYDevuelveElNuevoImporte()
+        {
+            // El caso real 920278: reembolso 73,86 con una comisión de 3,15 recién quitada
+            var envio = EnvioConReembolso((short)Constantes.Agencias.ESTADO_EN_CURSO, 73.86m);
+
+            var resultado = await controller.RestarReembolso(1, new RestarReembolsoDTO { Importe = 3.15m })
+                as OkNegotiatedContentResult<RestarReembolsoResponseDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(70.71m, resultado.Content.Reembolso);
+            Assert.AreEqual(70.71m, envio.Reembolso, "Debe restar, no recalcular");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RestarReembolso_EnvioTramitado_BadRequestSinTocarNada()
+        {
+            // Carlos 21/07/26: un envío ya TRAMITADO no se toca — la agencia ya tiene el importe
+            // y es lo que va a cobrar. En ese caso lo que procede es abonar la comisión después.
+            var envio = EnvioConReembolso(Constantes.Agencias.ESTADO_TRAMITADO, 73.86m);
+
+            var resultado = await controller.RestarReembolso(1, new RestarReembolsoDTO { Importe = 3.15m })
+                as BadRequestErrorMessageResult;
+
+            Assert.IsNotNull(resultado);
+            StringAssert.Contains(resultado.Message, "tramitado");
+            StringAssert.Contains(resultado.Message, "abone la comisión");
+            Assert.AreEqual(73.86m, envio.Reembolso);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RestarReembolso_EnvioEntregado_BadRequestSinTocarNada()
+        {
+            var envio = EnvioConReembolso(Constantes.Agencias.ESTADO_ENTREGADO, 73.86m);
+
+            var resultado = await controller.RestarReembolso(1, new RestarReembolsoDTO { Importe = 3.15m });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            Assert.AreEqual(73.86m, envio.Reembolso);
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task RestarReembolso_EnvioPendiente_SePuedeAjustar()
+        {
+            // Pendiente (etiqueta aún no tramitada): la agencia todavía no tiene el importe.
+            var envio = EnvioConReembolso((short)Constantes.Agencias.ESTADO_PENDIENTE, 50m);
+
+            var resultado = await controller.RestarReembolso(1, new RestarReembolsoDTO { Importe = 10m })
+                as OkNegotiatedContentResult<RestarReembolsoResponseDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(40m, envio.Reembolso);
+        }
+
+        [TestMethod]
+        public async Task RestarReembolso_ImporteMayorQueElReembolso_BadRequest()
+        {
+            var envio = EnvioConReembolso((short)Constantes.Agencias.ESTADO_EN_CURSO, 2.00m);
+
+            var resultado = await controller.RestarReembolso(1, new RestarReembolsoDTO { Importe = 3.15m });
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            Assert.AreEqual(2.00m, envio.Reembolso);
+        }
+
+        [TestMethod]
+        public async Task RestarReembolso_SinReembolsoOImporteInvalido_BadRequest()
+        {
+            var envio = EnvioConReembolso((short)Constantes.Agencias.ESTADO_EN_CURSO, 0m);
+
+            var sinReembolso = await controller.RestarReembolso(1, new RestarReembolsoDTO { Importe = 3.15m });
+            var importeCero = await controller.RestarReembolso(1, new RestarReembolsoDTO { Importe = 0m });
+
+            Assert.IsInstanceOfType(sinReembolso, typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(importeCero, typeof(BadRequestErrorMessageResult));
+        }
+
+        [TestMethod]
+        public async Task RestarReembolso_EnvioInexistente_NotFound()
+        {
+            A.CallTo(() => fakeEnvios.FindAsync(99)).Returns(Task.FromResult<EnviosAgencia>(null));
+
+            var resultado = await controller.RestarReembolso(99, new RestarReembolsoDTO { Importe = 3.15m });
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        #endregion
     }
 }

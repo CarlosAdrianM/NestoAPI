@@ -57,6 +57,22 @@ namespace NestoAPI.Controllers
         public string Observaciones { get; set; }
     }
 
+    /// <summary>
+    /// NestoAPI#335 / Nesto#420: importe a RESTAR del reembolso de un envío (típicamente la
+    /// comisión contra reembolso que se acaba de quitar del pedido). Restar, nunca recalcular:
+    /// así se respetan los reembolsos fijados a mano (pago a cuenta, abono...).
+    /// </summary>
+    public class RestarReembolsoDTO
+    {
+        public decimal Importe { get; set; }
+    }
+
+    public class RestarReembolsoResponseDTO
+    {
+        public int Numero { get; set; }
+        public decimal Reembolso { get; set; }
+    }
+
     // Issue #189: [Authorize] de clase. Llamantes auditados 13/07/26: Nesto (JWT vía
     // IClienteApiFactory desde 1.10.9.0), NestoApp (interceptor Bearer + refresh desde v2.17.2)
     // y TiendasNuevaVision (MyHttpClient con AuthHeaderHandler). Lo anónimo, explícito abajo.
@@ -463,6 +479,53 @@ namespace NestoAPI.Controllers
             if (!string.IsNullOrWhiteSpace(datos.Telefono)) datosRemotos.Telefono = datos.Telefono.Trim();
             if (!string.IsNullOrWhiteSpace(datos.Movil)) datosRemotos.Movil = datos.Movil.Trim();
             if (!string.IsNullOrWhiteSpace(datos.Observaciones)) datosRemotos.Observaciones = datos.Observaciones.Trim();
+        }
+
+        // POST: api/EnviosAgencias/5/RestarReembolso
+        // NestoAPI#335 / Nesto#420: al quitar la comisión contra reembolso de un pedido, el
+        // importe del envío queda desfasado. La regla acordada es RESTAR el importe indicado
+        // (nunca recalcular, para respetar reembolsos fijados a mano) y siempre por acción
+        // explícita del usuario: el servidor nunca lo hace solo. Solo envíos PENDIENTES o EN
+        // CURSO: un envío ya TRAMITADO no se toca — la agencia ya tiene el importe y es lo que
+        // va a cobrar; en ese caso lo que procede es abonar la comisión después (Carlos 21/07/26).
+        [HttpPost]
+        [Route("api/EnviosAgencias/{id:int}/RestarReembolso")]
+        [ResponseType(typeof(RestarReembolsoResponseDTO))]
+        public async Task<IHttpActionResult> RestarReembolso(int id, RestarReembolsoDTO datos)
+        {
+            if (datos == null || datos.Importe <= 0)
+            {
+                return BadRequest("El importe a restar debe ser mayor que cero.");
+            }
+
+            EnviosAgencia envio = await db.EnviosAgencias.FindAsync(id);
+            if (envio == null)
+            {
+                return NotFound();
+            }
+
+            if (envio.Estado >= Constantes.Agencias.ESTADO_TRAMITADO)
+            {
+                return BadRequest($"El envío {id} ya está tramitado con la agencia: el reembolso no se puede " +
+                    "ajustar porque la agencia ya tiene el importe y es lo que va a cobrar. " +
+                    "En todo caso, abone la comisión posteriormente.");
+            }
+
+            if (envio.Reembolso <= 0)
+            {
+                return BadRequest($"El envío {id} no tiene reembolso que ajustar.");
+            }
+
+            if (datos.Importe > envio.Reembolso)
+            {
+                return BadRequest($"No se puede restar {datos.Importe:N2} € de un reembolso de {envio.Reembolso:N2} €.");
+            }
+
+            envio.Reembolso -= datos.Importe;
+            envio.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            _ = await db.SaveChangesAsync();
+
+            return Ok(new RestarReembolsoResponseDTO { Numero = envio.Numero, Reembolso = envio.Reembolso });
         }
 
         // POST: api/EnviosAgencias/5/ActualizarSeguimiento

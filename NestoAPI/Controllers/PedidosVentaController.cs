@@ -1176,11 +1176,18 @@ namespace NestoAPI.Controllers
                             e.Reembolso > 0).ToList();
                         foreach (var envioReembolso in enviosVivosConReembolso)
                         {
+                            // Un envío ya TRAMITADO no se puede ajustar: la agencia ya tiene el
+                            // importe y es lo que va a cobrar (Carlos 21/07/26). Ahí lo que
+                            // procede es abonar la comisión después.
+                            bool ajustable = envioReembolso.Estado < Constantes.Agencias.ESTADO_TRAMITADO;
                             string aviso = $"Se ha quitado la comisión contra reembolso " +
                                 $"({importeComisionQuitada:N2} €) del pedido, pero el envío {envioReembolso.Numero} " +
                                 $"de la agencia {envioReembolso.Agencia} sigue con un reembolso de " +
-                                $"{envioReembolso.Reembolso:N2} €. NO se ha modificado automáticamente: " +
-                                $"revisa si hay que restarle la comisión o ajustar el reembolso.";
+                                $"{envioReembolso.Reembolso:N2} €. " +
+                                (ajustable
+                                    ? "NO se ha modificado automáticamente: revisa si hay que restarle la comisión."
+                                    : "El envío ya está TRAMITADO: la agencia cobrará ese importe y no se puede " +
+                                      "ajustar; en todo caso, abona la comisión posteriormente.");
                             avisosCorreoModificacion.Add(aviso);
                             avisos.Add(new AvisoPedidoDTO
                             {
@@ -1190,7 +1197,8 @@ namespace NestoAPI.Controllers
                                 {
                                     Envio = envioReembolso.Numero,
                                     Reembolso = envioReembolso.Reembolso,
-                                    ComisionQuitada = importeComisionQuitada
+                                    ComisionQuitada = importeComisionQuitada,
+                                    Ajustable = ajustable
                                 }
                             });
                             ElmahHelper.Log(new Exception(
