@@ -47,18 +47,66 @@ namespace NestoAPI.Infraestructure.Remesas
 
                 // Se materializa y se proyecta en memoria para poder usar ?.Trim() (no traducible
                 // por EF), igual que en Alquileres.
-                return movimientos.Select(e => new MovimientoRemesaDTO
-                {
-                    Id = e.Nº_Orden,
-                    Cliente = e.Número?.Trim(),
-                    Contacto = e.Contacto?.Trim(),
-                    Documento = e.Nº_Documento?.Trim(),
-                    Efecto = e.Efecto?.Trim(),
-                    Concepto = e.Concepto?.Trim(),
-                    Importe = e.Importe,
-                    Ccc = e.CCC?.Trim()
-                }).ToList();
+                return movimientos.Select(MapearMovimiento).ToList();
             }
+        }
+
+        // Nesto#340 Fase 1C.14 slice 4: asientos de impagados agrupados (TipoApunte 4), que el
+        // RemesasViewModel calculaba con un GROUP BY de EF sobre ExtractoCliente.
+        public async Task<List<ImpagadoRemesaDTO>> LeerImpagadosAsync(string empresa, int? top)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                IQueryable<ImpagadoRemesaDTO> consulta = db.ExtractosCliente
+                    .Where(e => e.Empresa == empresa && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
+                    .GroupBy(e => new { e.Asiento, e.Fecha })
+                    .OrderByDescending(g => g.Key.Asiento)
+                    .Select(g => new ImpagadoRemesaDTO
+                    {
+                        Asiento = g.Key.Asiento,
+                        Fecha = g.Key.Fecha,
+                        Cuenta = g.Count()
+                    });
+
+                if (top.HasValue)
+                {
+                    consulta = consulta.Take(top.Value);
+                }
+
+                return await consulta.ToListAsync().ConfigureAwait(false);
+            }
+        }
+
+        // Nesto#340 Fase 1C.14 slice 5: movimientos de un asiento de impagados (grid derecho).
+        public async Task<List<MovimientoRemesaDTO>> LeerMovimientosImpagadoAsync(string empresa, int asiento)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                List<ExtractoCliente> movimientos = await db.ExtractosCliente
+                    .Where(e => e.Empresa == empresa && e.Asiento == asiento
+                        && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.IMPAGADO)
+                    .OrderBy(e => e.Nº_Orden)
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                return movimientos.Select(MapearMovimiento).ToList();
+            }
+        }
+
+        private static MovimientoRemesaDTO MapearMovimiento(ExtractoCliente e)
+        {
+            return new MovimientoRemesaDTO
+            {
+                Id = e.Nº_Orden,
+                Cliente = e.Número?.Trim(),
+                Contacto = e.Contacto?.Trim(),
+                Documento = e.Nº_Documento?.Trim(),
+                Efecto = e.Efecto?.Trim(),
+                Concepto = e.Concepto?.Trim(),
+                Importe = e.Importe,
+                Ccc = e.CCC?.Trim(),
+                Fecha = e.Fecha
+            };
         }
     }
 }

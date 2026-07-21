@@ -15,5 +15,12 @@ namespace NestoAPI.Infraestructure.Remesas
 
         /// <summary>Slice 3: efectos incluidos en una remesa (apuntes de pago del extracto).</summary>
         Task<List<MovimientoRemesaDTO>> LeerMovimientosAsync(string empresa, int remesa);
+
+        /// <summary>Slice 4: asientos de impagados agrupados (grid izquierdo de la pestaña Impagados).</summary>
+        /// <param name="top">Número máximo de asientos (mismo criterio que las remesas).</param>
+        Task<List<ImpagadoRemesaDTO>> LeerImpagadosAsync(string empresa, int? top);
+
+        /// <summary>Slice 5: movimientos de un asiento de impagados (grid derecho).</summary>
+        Task<List<MovimientoRemesaDTO>> LeerMovimientosImpagadoAsync(string empresa, int asiento);
     }
 }

@@ -82,5 +82,61 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNotNull(resultado);
             A.CallTo(() => servicio.LeerRemesasAsync("1", null)).MustHaveHappenedOnceExactly();
         }
+
+        [TestMethod]
+        public async Task GetImpagados_ConTop_DevuelveLosAsientosAgrupados()
+        {
+            // Slice 4: grid izquierdo de la pestaña Impagados (asiento, fecha, nº movimientos)
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            List<ImpagadoRemesaDTO> impagados = new List<ImpagadoRemesaDTO>
+            {
+                new ImpagadoRemesaDTO { Asiento = 1195101, Fecha = new DateTime(2026, 7, 20), Cuenta = 3 },
+                new ImpagadoRemesaDTO { Asiento = 1194800, Fecha = new DateTime(2026, 7, 15), Cuenta = 1 }
+            };
+            _ = A.CallTo(() => servicio.LeerImpagadosAsync("1", 100)).Returns(impagados);
+            RemesasController controller = new RemesasController(servicio);
+
+            var resultado = await controller.GetImpagados("1", 100) as OkNegotiatedContentResult<List<ImpagadoRemesaDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(2, resultado.Content.Count);
+            Assert.AreEqual(1195101, resultado.Content[0].Asiento);
+            Assert.AreEqual(3, resultado.Content[0].Cuenta);
+        }
+
+        [TestMethod]
+        public async Task GetMovimientosImpagado_DevuelveLosMovimientosDelAsiento()
+        {
+            // Slice 5: grid derecho con los movimientos del asiento de impagados seleccionado
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            List<MovimientoRemesaDTO> movimientos = new List<MovimientoRemesaDTO>
+            {
+                new MovimientoRemesaDTO { Id = 7, Cliente = "15191", Contacto = "0", Importe = 250.50M,
+                    Fecha = new DateTime(2026, 7, 20) }
+            };
+            _ = A.CallTo(() => servicio.LeerMovimientosImpagadoAsync("1", 1195101)).Returns(movimientos);
+            RemesasController controller = new RemesasController(servicio);
+
+            var resultado = await controller.GetMovimientosImpagado("1", 1195101) as OkNegotiatedContentResult<List<MovimientoRemesaDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count);
+            Assert.AreEqual("15191", resultado.Content[0].Cliente);
+            Assert.AreEqual(new DateTime(2026, 7, 20), resultado.Content[0].Fecha);
+        }
+
+        [TestMethod]
+        public async Task GetMovimientosImpagado_AsientoSinMovimientos_DevuelveListaVacia()
+        {
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            _ = A.CallTo(() => servicio.LeerMovimientosImpagadoAsync(A<string>.Ignored, A<int>.Ignored))
+                .Returns(new List<MovimientoRemesaDTO>());
+            RemesasController controller = new RemesasController(servicio);
+
+            var resultado = await controller.GetMovimientosImpagado("1", 99999) as OkNegotiatedContentResult<List<MovimientoRemesaDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(0, resultado.Content.Count);
+        }
     }
 }

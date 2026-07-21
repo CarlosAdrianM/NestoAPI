@@ -29,5 +29,18 @@ namespace NestoAPI.Models.Remesas
         public string Concepto { get; set; }
         public decimal Importe { get; set; }
         public string Ccc { get; set; }
+        // Slice 5: el grid de detalle de impagados pinta también la fecha del efecto.
+        public DateTime Fecha { get; set; }
+    }
+
+    /// <summary>
+    /// Asiento de impagados agrupado para el grid izquierdo de la pestaña Impagados
+    /// (Nesto#340, Fase 1C.14 slice 4). Cuenta = nº de movimientos del asiento.
+    /// </summary>
+    public class ImpagadoRemesaDTO
+    {
+        public int Asiento { get; set; }
+        public DateTime Fecha { get; set; }
+        public int Cuenta { get; set; }
     }
 }
