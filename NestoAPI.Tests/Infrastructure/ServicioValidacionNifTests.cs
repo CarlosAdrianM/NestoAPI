@@ -249,6 +249,30 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
+        [TestMethod]
+        public async Task ValidarSiHaceFalta_IdentificadorExtranjero_QuedaSinValidarSinLlamarALaAeat()
+        {
+            // NestoAPI#339: un NIF-IVA italiano jamás validará contra el censo español; sin
+            // esta guarda daría falso INCORRECTO con correo al vendedor.
+            ConFicha(Ficha(nif: "IT01234567890"));
+
+            var resultado = await servicio.ValidarSiHaceFalta("1", "30676", "0", "carlos");
+
+            Assert.AreEqual(EstadoValidacionNif.SinValidar, resultado.Estado);
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void EsIdentificadorExtranjero_DosLetrasInicialesSi_FormatosEspanolesNo()
+        {
+            Assert.IsTrue(ServicioValidacionNif.EsIdentificadorExtranjero("IT01234567890"));
+            Assert.IsTrue(ServicioValidacionNif.EsIdentificadorExtranjero("FR12345678901"));
+            Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("05231909H"), "DNI empieza por dígito");
+            Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("X1234567L"), "NIE: una letra + dígitos");
+            Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("B83455154"), "CIF: una letra + dígitos");
+            Assert.IsFalse(ServicioValidacionNif.EsIdentificadorExtranjero("90021192"), "El caso real sin letra sigue validándose (y fallando)");
+        }
+
         // NestoAPI#330: unificación automática — el NIF del principal VALIDADO se propaga a
         // los contactos con NIF distinto (a Verifactu siempre viaja el del principal, pero la
         // ficha debe quedar coherente).

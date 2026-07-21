@@ -71,6 +71,15 @@ namespace NestoAPI.Infraestructure.Clientes
                 return estadoActual;
             }
 
+            // NestoAPI#339: un identificador extranjero (NIF-IVA intracomunitario "IT012...",
+            // etc.) NUNCA validará contra el censo español — sin esta guarda daría falso
+            // INCORRECTO con correo al vendedor. Se queda sin validar hasta que #339 defina
+            // el tratamiento (IDOtro de Verifactu). Los pasaportes no se distinguen aún.
+            if (EsIdentificadorExtranjero(nif))
+            {
+                return estadoActual;
+            }
+
             RespuestaNifNombreCliente respuesta;
             try
             {
@@ -203,6 +212,17 @@ namespace NestoAPI.Infraestructure.Clientes
                 NombreAeat = respuesta.NombreFormateado,
                 ContactosActualizados = actualizados
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#339: los NIF-IVA intracomunitarios empiezan por el código de país (dos
+        /// letras: IT, FR, PT...). Ningún formato español empieza por dos letras (DNI: dígito;
+        /// NIE: X/Y/Z + dígitos; CIF: UNA letra + dígitos), así que dos letras iniciales =
+        /// identificador extranjero. Pasaportes y otros documentos quedan para #339.
+        /// </summary>
+        internal static bool EsIdentificadorExtranjero(string nif)
+        {
+            return nif != null && nif.Length >= 2 && char.IsLetter(nif[0]) && char.IsLetter(nif[1]);
         }
 
         public async Task<int> UnificarNifContactos(string cliente, string usuario)
