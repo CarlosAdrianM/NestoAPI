@@ -58,11 +58,35 @@ namespace NestoAPI.Infraestructure.Verifactu
             }
 
             decimal importeTotal = 0;
+            // NestoAPI#347: la señal principal de venta OSS es el CÓDIGO de IVA de la cabecera
+            // (I22 Italia, B21 Bélgica... los asigna CanalesExternos por país de destino). El
+            // porcentaje solo NO basta: Bélgica, Países Bajos o Chequia también tienen el 21%.
+            // El tipo extranjero (22, 23...) queda como respaldo por si el código no se reconoce.
+            bool facturaConCodigoOss = EsCodigoIvaExtranjero(factura.IVA);
             var gruposIva = factura.LinPedidoVtas
                 .GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE })
                 .OrderByDescending(g => g.Key.PorcentajeIVA);
             foreach (var grupo in gruposIva)
             {
+                // NestoAPI#347: una venta OSS tributa el IVA del país de destino y la AEAT la
+                // exige declarada como NO SUJETA por localización (N2, clave régimen 17),
+                // PROHIBIENDO informar tipo y cuota (validaciones §15.4): el IVA extranjero se
+                // liquida por el modelo 369, no viaja a Verifactu. Contrato del ejemplo OSS
+                // oficial de Verifacti: la línea lleva solo base + clave_regimen +
+                // calificacion_operacion, y el importe_total va SIN la cuota extranjera.
+                if (facturaConCodigoOss || EsTipoIvaExtranjero(grupo.Key.PorcentajeIVA))
+                {
+                    var desgloseOss = new VerifactuDesgloseIva
+                    {
+                        BaseImponible = grupo.Sum(l => l.Base_Imponible),
+                        ClaveRegimen = CLAVE_REGIMEN_OSS,
+                        CalificacionOperacion = CALIFICACION_NO_SUJETA_LOCALIZACION
+                    };
+                    request.DesgloseIva.Add(desgloseOss);
+                    importeTotal += desgloseOss.BaseImponible;
+                    continue;
+                }
+
                 var desglose = new VerifactuDesgloseIva
                 {
                     BaseImponible = grupo.Sum(l => l.Base_Imponible),
@@ -78,6 +102,47 @@ namespace NestoAPI.Infraestructure.Verifactu
             request.ImporteTotal = Math.Round(importeTotal, 2, MidpointRounding.AwayFromZero);
 
             return request;
+        }
+
+        /// <summary>NestoAPI#347: clave de régimen AEAT (L8) para operaciones OSS/IOSS.</summary>
+        internal const string CLAVE_REGIMEN_OSS = "17";
+
+        /// <summary>NestoAPI#347: calificación AEAT (L9) "no sujeta por reglas de localización".</summary>
+        internal const string CALIFICACION_NO_SUJETA_LOCALIZACION = "N2";
+
+        /// <summary>
+        /// Tipos de IVA españoles que la AEAT admite con impuesto=01 (mensaje literal del rechazo:
+        /// "el campo tipo_impositivo debe ser 0, 2, 4, 5, 7.5, 10 o 21"). Cualquier otro tipo en
+        /// las líneas es IVA extranjero de una venta OSS.
+        /// </summary>
+        private static readonly decimal[] TIPOS_IVA_ESPANOLES = { 0M, 2M, 4M, 5M, 7.5M, 10M, 21M };
+
+        internal static bool EsTipoIvaExtranjero(decimal porcentajeIva)
+        {
+            return !TIPOS_IVA_ESPANOLES.Contains(porcentajeIva);
+        }
+
+        /// <summary>
+        /// Códigos de IVA cliente NACIONALES de ParametrosIVA (régimen español: general, reducido,
+        /// recargo de equivalencia, exento, exportación, importación, intracomunitario B2B e
+        /// históricos). Cualquier otro código de la cabecera es un país OSS (I22 Italia, B21
+        /// Bélgica, P23 Portugal...): la parrilla de países crece con los marketplaces, la
+        /// nacional no, por eso la lista blanca es la nacional.
+        /// </summary>
+        private static readonly System.Collections.Generic.HashSet<string> CODIGOS_IVA_NACIONALES =
+            new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "G21", "R10", "SR", "RE", "E52", "E14", "EX", "EXP", "IM", "IN", "GN", "G18", "RD8"
+            };
+
+        /// <summary>
+        /// NestoAPI#347: ¿el código de IVA de la cabecera es de un país OSS? Sin código (null o
+        /// vacío) se asume nacional: el respaldo por tipo extranjero sigue cazando el desglose.
+        /// </summary>
+        internal static bool EsCodigoIvaExtranjero(string codigoIvaCabecera)
+        {
+            string codigo = codigoIvaCabecera?.Trim();
+            return !string.IsNullOrEmpty(codigo) && !CODIGOS_IVA_NACIONALES.Contains(codigo);
         }
 
         /// <summary>Tipo AEAT de la factura simplificada / sin identificación del destinatario.</summary>

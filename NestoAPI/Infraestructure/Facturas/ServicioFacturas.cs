@@ -754,6 +754,10 @@ namespace NestoAPI.Infraestructure.Facturas
             return await EnviarAVerifactu(empresa, numeroFactura, permitirRectificativas: true);
         }
 
+        /// <summary>NestoAPI#346: rechazo_previo=X — el alta inicial fue rechazada (cuadro
+        /// operativo AEAT para reenviar como subsanación un registro que nunca se aceptó).</summary>
+        private const string RECHAZO_PREVIO_ALTA_RECHAZADA = "X";
+
         private async Task<Verifactu.VerifactuResponse> EnviarAVerifactu(string empresa, string numeroFactura, bool permitirRectificativas)
         {
             try
@@ -815,8 +819,19 @@ namespace NestoAPI.Infraestructure.Facturas
                         $"{Verifactu.MapeadorFacturaVerifactu.LIMITE_FACTURA_SIMPLIFICADA:C}: hay que revisarla.");
                 }
 
-                Verifactu.VerifactuResponse respuesta = await servicioVerifactu.EnviarFacturaAsync(request);
+                // NestoAPI#346: el create de Verifacti solo admite fecha_expedicion de hoy (con
+                // tolerancia observada de ayer). Una factura más antigua sin declarar (NIF
+                // corregido días después, caída del proveedor...) va por el camino legal de la
+                // SUBSANACIÓN (PUT modify, admite fechas pasadas): rechazo_previo=X porque el alta
+                // nunca llegó a aceptarse. Pendiente confirmar con soporte de Verifacti que el
+                // modify vale cuando el create ni siquiera pasó su filtro previo; si no, el error
+                // quedará en ELMAH (una sola vez, deduplicado) y lo veremos en la sombra.
+                bool fueraDeVentanaCreate = factura.Fecha.Date < DateTime.Today.AddDays(-1);
+                Verifactu.VerifactuResponse respuesta = fueraDeVentanaCreate
+                    ? await servicioVerifactu.ModificarFacturaAsync(request, RECHAZO_PREVIO_ALTA_RECHAZADA)
+                    : await servicioVerifactu.EnviarFacturaAsync(request);
 
+                string claveRuido = $"{empresa}|{numeroFactura?.Trim()}";
                 if (respuesta != null && respuesta.Exitoso)
                 {
                     factura.VerifactuUUID = respuesta.Uuid;
@@ -825,11 +840,18 @@ namespace NestoAPI.Infraestructure.Facturas
                     factura.VerifactuURL = respuesta.Url;
                     factura.VerifactuEstado = respuesta.Estado;
                     _ = await db.SaveChangesAsync();
+                    Verifactu.DeduplicadorErroresVerifactu.Limpiar(claveRuido);
                 }
                 else
                 {
-                    logService.LogError($"Verifactu: error al enviar la factura {numeroFactura} " +
-                        $"({respuesta?.CodigoError}): {respuesta?.MensajeError}");
+                    // NestoAPI#346: el mismo error de la misma factura solo se loguea la primera
+                    // vez (el job reintenta cada pasada y repetirlo inundaba ELMAH).
+                    string mensaje = $"Verifactu: error al enviar la factura {numeroFactura} " +
+                        $"({respuesta?.CodigoError}): {respuesta?.MensajeError}";
+                    if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad(claveRuido, mensaje))
+                    {
+                        logService.LogError(mensaje);
+                    }
                 }
                 return respuesta;
             }

@@ -229,5 +229,109 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
 
             _ = Assert.ThrowsException<InvalidOperationException>(() => MapeadorFacturaVerifactu.Mapear(factura));
         }
+
+        #region Ventas OSS con IVA extranjero (#347)
+
+        [TestMethod]
+        public void Mapear_LineasConIvaExtranjero_VanComoOssNoSujetasSinTipoNiCuota()
+        {
+            // #347: caso real NV2612439 (simplificada de Amazon, cliente 32624) con IVA 22%
+            // (tipo extranjero OSS de ParametrosIVA). La AEAT rechaza tipos no españoles con
+            // impuesto=01: la venta OSS va como no sujeta por localización (N2, clave 17) y el
+            // IVA extranjero NO se declara (se liquida por el modelo 369).
+            var factura = CrearFacturaNV();
+            factura.Nº_Cliente = "32624";
+            factura.LinPedidoVtas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { PorcentajeIVA = 22, PorcentajeRE = 0, Base_Imponible = 151.60M, ImporteIVA = 33.35M }
+            };
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            var desglose = request.DesgloseIva.Single();
+            Assert.AreEqual("17", desglose.ClaveRegimen);
+            Assert.AreEqual("N2", desglose.CalificacionOperacion);
+            Assert.AreEqual(151.60M, desglose.BaseImponible);
+            Assert.AreEqual(0M, desglose.TipoIva, "Con N2 está prohibido informar tipo impositivo");
+            Assert.AreEqual(0M, desglose.CuotaIva, "Con N2 está prohibido informar cuota");
+            // Ejemplo oficial OSS de Verifacti: el importe_total va SIN la cuota extranjera
+            Assert.AreEqual(151.60M, request.ImporteTotal);
+        }
+
+        [TestMethod]
+        public void Mapear_FacturaMixta_SoloLasLineasConIvaExtranjeroVanComoOss()
+        {
+            var factura = CrearFacturaNV();
+            factura.LinPedidoVtas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = 100.00M, ImporteIVA = 21.00M },
+                new LinPedidoVta { PorcentajeIVA = 23, PorcentajeRE = 0, Base_Imponible = 50.00M, ImporteIVA = 11.50M }
+            };
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            var espanola = request.DesgloseIva.Single(d => d.TipoIva == 21);
+            Assert.IsNull(espanola.ClaveRegimen);
+            Assert.IsNull(espanola.CalificacionOperacion);
+            Assert.AreEqual(21.00M, espanola.CuotaIva);
+            var oss = request.DesgloseIva.Single(d => d.CalificacionOperacion == "N2");
+            Assert.AreEqual(50.00M, oss.BaseImponible);
+            Assert.AreEqual("17", oss.ClaveRegimen);
+            // Total = línea española con IVA (121) + base OSS sin cuota extranjera (50)
+            Assert.AreEqual(171.00M, request.ImporteTotal);
+        }
+
+        [TestMethod]
+        public void Mapear_CodigoIvaDePaisConTipoCoincidenteConElEspanol_TambienEsOss()
+        {
+            // Países Bajos, Bélgica o Chequia también tienen el 21%: el porcentaje NO distingue
+            // una venta OSS. La señal es el código de IVA de la cabecera (B21 = Bélgica), que
+            // CanalesExternos asigna por país de destino.
+            var factura = CrearFacturaNV();
+            factura.IVA = "B21";
+            factura.LinPedidoVtas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = 100.00M, ImporteIVA = 21.00M }
+            };
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            var desglose = request.DesgloseIva.Single();
+            Assert.AreEqual("17", desglose.ClaveRegimen);
+            Assert.AreEqual("N2", desglose.CalificacionOperacion);
+            Assert.AreEqual(0M, desglose.CuotaIva);
+            Assert.AreEqual(100.00M, request.ImporteTotal, "El IVA belga no viaja a la AEAT");
+        }
+
+        [TestMethod]
+        public void Mapear_CodigoIvaNacional_NoEsOssAunqueLoParezcan()
+        {
+            // Los códigos nacionales (G21 general, R10 reducido, E52 recargo...) nunca son OSS
+            var factura = CrearFacturaNV();
+            factura.IVA = "G21";
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            Assert.IsNull(request.DesgloseIva.Single().CalificacionOperacion);
+            Assert.AreEqual(21M, request.DesgloseIva.Single().TipoIva);
+        }
+
+        [TestMethod]
+        public void Mapear_TiposEspanolesVigentes_NingunoSeMarcaComoOss()
+        {
+            // La lista blanca de tipos españoles es la que valida la propia AEAT: 0, 2, 4, 5, 7.5, 10 y 21
+            // (PorcentajeIVA es byte en LinPedidoVta, así que el 7.5 no puede darse ahí)
+            var factura = CrearFacturaNV();
+            factura.LinPedidoVtas = new byte[] { 0, 2, 4, 5, 10, 21 }
+                .Select(tipo => new LinPedidoVta { PorcentajeIVA = tipo, PorcentajeRE = 0, Base_Imponible = 10M, ImporteIVA = tipo / 10M })
+                .ToList();
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            Assert.IsFalse(request.DesgloseIva.Any(d => d.CalificacionOperacion != null),
+                "Ningún tipo español puede acabar marcado como OSS");
+        }
+
+        #endregion
     }
 }

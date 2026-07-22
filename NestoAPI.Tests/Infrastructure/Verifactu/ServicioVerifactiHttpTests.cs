@@ -108,6 +108,58 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task ModificarFacturaAsync_HacePutAModifyConRechazoPrevio()
+        {
+            // NestoAPI#346: la subsanación es el camino legal para declarar fuera de plazo.
+            // Contrato del ejemplo oficial de Verifacti: PUT verifactu/modify con rechazo_previo
+            // en la raíz y el resto del body igual que el create.
+            VerifactuResponse respuesta = await servicio.ModificarFacturaAsync(CrearRequest(), "X");
+
+            Assert.AreEqual(HttpMethod.Put, handler.UltimaPeticion.Method);
+            Assert.AreEqual("verifactu/modify", handler.UltimaPeticion.RequestUri.PathAndQuery.TrimStart('/'));
+            StringAssert.Contains(handler.UltimoBody, "\"rechazo_previo\":\"X\"");
+            StringAssert.Contains(handler.UltimoBody, "\"base_imponible\":100.0");
+            Assert.IsTrue(respuesta.Exitoso, $"Debe ser exitosa. Error: {respuesta.MensajeError}");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_ElCreateNoLlevaRechazoPrevio()
+        {
+            _ = await servicio.EnviarFacturaAsync(CrearRequest());
+
+            Assert.AreEqual(HttpMethod.Post, handler.UltimaPeticion.Method);
+            Assert.IsFalse(handler.UltimoBody.Contains("rechazo_previo"),
+                "El alta normal no debe llevar rechazo_previo");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAsync_LineaOss_SerializaClaveRegimenYCalificacionSinTipoNiCuota()
+        {
+            // NestoAPI#347: contrato del ejemplo OSS oficial de Verifacti — la línea lleva solo
+            // base_imponible + clave_regimen + calificacion_operacion (tipo o cuota = rechazo AEAT)
+            var request = CrearRequest();
+            request.DesgloseIva = new List<VerifactuDesgloseIva>
+            {
+                new VerifactuDesgloseIva
+                {
+                    BaseImponible = 151.60m,
+                    ClaveRegimen = "17",
+                    CalificacionOperacion = "N2"
+                }
+            };
+            request.ImporteTotal = 151.60m;
+
+            _ = await servicio.EnviarFacturaAsync(request);
+
+            StringAssert.Contains(handler.UltimoBody, "\"clave_regimen\":\"17\"");
+            StringAssert.Contains(handler.UltimoBody, "\"calificacion_operacion\":\"N2\"");
+            Assert.IsFalse(handler.UltimoBody.Contains("tipo_impositivo"),
+                "Una línea N2 no puede llevar tipo_impositivo");
+            Assert.IsFalse(handler.UltimoBody.Contains("cuota_repercutida"),
+                "Una línea N2 no puede llevar cuota_repercutida");
+        }
+
+        [TestMethod]
         public async Task ConsultarEstadoAsync_UsaQueryStringConElUuid()
         {
             handler.Respuesta = new HttpResponseMessage(HttpStatusCode.OK)

@@ -49,6 +49,8 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
                 f => { reenviadas.Add(f); return Task.FromResult(respuestaReenvio); });
             fechaInicioOriginal = VerifactuJobsService.FechaInicioDeclaracion;
             VerifactuJobsService.FechaInicioDeclaracion = new DateTime(2026, 7, 20);
+            // NestoAPI#346: estado estático del deduplicador limpio entre tests
+            DeduplicadorErroresVerifactu.Reset();
         }
 
         [TestCleanup]
@@ -82,6 +84,47 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
                 VerifactuUUID = uuid,
                 VerifactuEstado = estado
             };
+        }
+
+        [TestMethod]
+        public async Task Reintentar_MismoErrorEnDosPasadas_SoloLaPrimeraVaAlResumen()
+        {
+            // NestoAPI#346: una factura atascada falla idéntico en cada pasada horaria; el correo
+            // a administración solo debe salir con NOVEDADES, no 24 veces al día con lo mismo
+            var factura = Factura("NV2612439", uuid: null, fecha: new DateTime(2026, 7, 20));
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse
+            {
+                Exitoso = false,
+                CodigoError = "400",
+                MensajeError = "Si impuesto es 01, el campo tipo_impositivo debe ser 0, 2, 4, 5, 7.5, 10 o 21"
+            };
+
+            var resumen1 = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen1);
+            var resumen2 = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen2);
+
+            Assert.AreEqual(1, resumen1.SinDeclarar.Count);
+            Assert.AreEqual(0, resumen2.SinDeclarar.Count,
+                "El mismo error repetido no debe volver al resumen (correo) de cada pasada");
+        }
+
+        [TestMethod]
+        public async Task Reintentar_ErrorDistintoEnLaSiguientePasada_VuelveAlResumen()
+        {
+            var factura = Factura("NV2612439", uuid: null, fecha: new DateTime(2026, 7, 20));
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse { Exitoso = false, CodigoError = "400", MensajeError = "error A" };
+            var resumen1 = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen1);
+
+            respuestaReenvio = new VerifactuResponse { Exitoso = false, CodigoError = "400", MensajeError = "error B" };
+            var resumen2 = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen2);
+
+            Assert.AreEqual(1, resumen1.SinDeclarar.Count);
+            Assert.AreEqual(1, resumen2.SinDeclarar.Count, "Un motivo NUEVO sí es novedad para el correo");
         }
 
         [TestMethod]

@@ -42,6 +42,8 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             servicioVerifactu = A.Fake<IServicioVerifactu>();
             A.CallTo(() => servicioVerifactu.EstaHabilitado).Returns(true);
             logService = A.Fake<ILogService>();
+            // NestoAPI#346: estado estático del deduplicador limpio entre tests
+            DeduplicadorErroresVerifactu.Reset();
         }
 
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
@@ -62,7 +64,9 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
                 Empresa = "1",
                 Serie = serie,
                 Número = numero,
-                Fecha = new DateTime(2026, 7, 17),
+                // El flujo real de CrearFactura envía la factura recién emitida (fecha de hoy);
+                // el enrutado create/modify por antigüedad (#346) se testea aparte
+                Fecha = DateTime.Today,
                 CifNif = "12345678Z",
                 NombreFiscal = "CLIENTE DE PRUEBA SL",
                 VerifactuUUID = uuidYaEnviado,
@@ -148,7 +152,7 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
                 Empresa = "1",
                 Serie = "RV",
                 Número = "RV2600001",
-                Fecha = new DateTime(2026, 7, 20),
+                Fecha = DateTime.Today, // recién creada: va por create (#346)
                 CifNif = "12345678Z",
                 NombreFiscal = "CLIENTE DE PRUEBA SL",
                 LinPedidoVtas = new List<LinPedidoVta>
@@ -241,7 +245,7 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
                 Empresa = "1",
                 Serie = "RV",
                 Número = "RV2600001",
-                Fecha = new DateTime(2026, 7, 20),
+                Fecha = DateTime.Today, // recién facturada: va por create (#346)
                 CifNif = "12345678Z",
                 NombreFiscal = "CLIENTE DE PRUEBA SL",
                 LinPedidoVtas = new List<LinPedidoVta>
@@ -384,5 +388,81 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         {
             public HttpRequestExceptionParaTest(string mensaje) : base(mensaje) { }
         }
+
+        #region Enrutado create/modify por antigüedad y deduplicación de ruido (#346)
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_FacturaDeHaceDosDias_VaPorSubsanacionConRechazoPrevioX()
+        {
+            // #346: el create de Verifacti exige fecha actual (tolera ayer). Una factura más
+            // antigua sin declarar (NIF corregido tarde, caída del proveedor) va por el camino
+            // legal de la subsanación: PUT modify con rechazo_previo=X.
+            var factura = ConfigurarFactura();
+            factura.Fecha = DateTime.Today.AddDays(-2);
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, "X"))
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-subsanada" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, "X"))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual("uuid-subsanada", factura.VerifactuUUID);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_FacturaDeAyer_SigueYendoPorCreate()
+        {
+            // Tolerancia observada del create de Verifacti: acepta la fecha de ayer
+            var factura = ConfigurarFactura();
+            factura.Fecha = DateTime.Today.AddDays(-1);
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, A<string>.Ignored))
+                .MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_MismoErrorRepetido_SoloLogueaLaPrimeraVez()
+        {
+            // #346: el job reintenta cada hora; sin dedup, una factura atascada metía ~24 errores
+            // idénticos al día en ELMAH y enmascaraba el resto
+            _ = ConfigurarFactura();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = false, MensajeError = "NIF incorrecto", CodigoError = "400" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("NIF incorrecto"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_ErrorDistinto_VuelveALoguear()
+        {
+            _ = ConfigurarFactura();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = false, MensajeError = "NIF incorrecto", CodigoError = "400" }).Once()
+                .Then.Returns(new VerifactuResponse { Exitoso = false, MensajeError = "Verifacti caido", CodigoError = "500" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("NIF incorrecto"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("Verifacti caido"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        #endregion
     }
 }

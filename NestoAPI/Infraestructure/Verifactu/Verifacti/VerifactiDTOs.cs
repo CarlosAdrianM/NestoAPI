@@ -46,6 +46,12 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
 
         [JsonProperty("facturas_rectificadas", NullValueHandling = NullValueHandling.Ignore)]
         public List<VerifactiFacturaRectificadaRequest> FacturasRectificadas { get; set; }
+
+        // NestoAPI#346: solo para subsanaciones (PUT verifactu/modify). N = subsanar un registro
+        // aceptado; X = el alta inicial fue RECHAZADA por la AEAT; S = una subsanación anterior
+        // fue rechazada. (Cuadro operativo oficial AEAT, FAQs-Desarrolladores pág. 36.)
+        [JsonProperty("rechazo_previo", NullValueHandling = NullValueHandling.Ignore)]
+        public string RechazoPrevio { get; set; }
     }
 
     /// <summary>
@@ -59,11 +65,13 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
         [JsonProperty("base_imponible")]
         public decimal Base { get; set; }
 
-        [JsonProperty("tipo_impositivo")]
-        public decimal Tipo { get; set; } // 21, 10, 4, 0
+        // NestoAPI#347: nullables porque en líneas OSS (calificacion_operacion=N2) está PROHIBIDO
+        // informar tipo y cuota. En líneas españolas siguen viajando siempre (0 incluido).
+        [JsonProperty("tipo_impositivo", NullValueHandling = NullValueHandling.Ignore)]
+        public decimal? Tipo { get; set; } // 21, 10, 4, 0
 
-        [JsonProperty("cuota_repercutida")]
-        public decimal Cuota { get; set; }
+        [JsonProperty("cuota_repercutida", NullValueHandling = NullValueHandling.Ignore)]
+        public decimal? Cuota { get; set; }
 
         // Recargo de equivalencia (opcional)
         [JsonProperty("tipo_recargo_equivalencia", NullValueHandling = NullValueHandling.Ignore)]
@@ -71,6 +79,13 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
 
         [JsonProperty("cuota_recargo_equivalencia", NullValueHandling = NullValueHandling.Ignore)]
         public decimal? CuotaRe { get; set; }
+
+        // NestoAPI#347: ventas OSS — van dentro de cada línea (ejemplo oficial de Verifacti)
+        [JsonProperty("clave_regimen", NullValueHandling = NullValueHandling.Ignore)]
+        public string ClaveRegimen { get; set; } // "17" = OSS/IOSS
+
+        [JsonProperty("calificacion_operacion", NullValueHandling = NullValueHandling.Ignore)]
+        public string CalificacionOperacion { get; set; } // "N2" = no sujeta por localización
     }
 
     /// <summary>

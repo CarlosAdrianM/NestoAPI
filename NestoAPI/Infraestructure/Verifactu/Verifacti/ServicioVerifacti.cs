@@ -66,6 +66,23 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
         /// </summary>
         public async Task<VerifactuResponse> EnviarFacturaAsync(VerifactuFacturaRequest factura)
         {
+            return await EnviarRegistroAsync(factura, rechazoPrevio: null);
+        }
+
+        /// <summary>
+        /// NestoAPI#346: subsana una factura vía PUT verifactu/modify. Es el camino legal para
+        /// declarar fuera de plazo: el create de Verifacti exige fecha_expedicion actual, pero el
+        /// modify admite fechas pasadas (subsanación, sin plazo máximo según la AEAT).
+        /// </summary>
+        /// <param name="rechazoPrevio">"N" = subsanar un registro aceptado; "X" = el alta inicial
+        /// fue rechazada por la AEAT; "S" = una subsanación anterior fue rechazada.</param>
+        public async Task<VerifactuResponse> ModificarFacturaAsync(VerifactuFacturaRequest factura, string rechazoPrevio)
+        {
+            return await EnviarRegistroAsync(factura, rechazoPrevio ?? "N");
+        }
+
+        private async Task<VerifactuResponse> EnviarRegistroAsync(VerifactuFacturaRequest factura, string rechazoPrevio)
+        {
             if (!EstaHabilitado)
             {
                 return new VerifactuResponse
@@ -76,16 +93,20 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 };
             }
 
+            bool esSubsanacion = rechazoPrevio != null;
             try
             {
                 var request = MapearAVerifactiRequest(factura);
+                request.RechazoPrevio = rechazoPrevio;
                 var json = JsonConvert.SerializeObject(request, new JsonSerializerSettings
                 {
                     NullValueHandling = NullValueHandling.Ignore
                 });
 
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
-                var response = await _httpClient.PostAsync("verifactu/create", content);
+                var response = esSubsanacion
+                    ? await _httpClient.PutAsync("verifactu/modify", content)
+                    : await _httpClient.PostAsync("verifactu/create", content);
                 var responseBody = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
@@ -271,14 +292,23 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 Nif = factura.NifDestinatario,
                 Nombre = factura.NombreDestinatario,
                 ImporteTotal = factura.ImporteTotal,
-                Lineas = factura.DesgloseIva.Select(d => new VerifactiLineaRequest
-                {
-                    Base = d.BaseImponible,
-                    Tipo = d.TipoIva,
-                    Cuota = d.CuotaIva,
-                    TipoRe = d.TipoRecargoEquivalencia > 0 ? d.TipoRecargoEquivalencia : (decimal?)null,
-                    CuotaRe = d.CuotaRecargoEquivalencia != 0 ? d.CuotaRecargoEquivalencia : (decimal?)null
-                }).ToList()
+                // NestoAPI#347: una línea OSS (CalificacionOperacion=N2) lleva solo base +
+                // clave_regimen + calificacion_operacion — informar tipo o cuota es rechazo AEAT
+                Lineas = factura.DesgloseIva.Select(d => d.CalificacionOperacion != null
+                    ? new VerifactiLineaRequest
+                    {
+                        Base = d.BaseImponible,
+                        ClaveRegimen = d.ClaveRegimen,
+                        CalificacionOperacion = d.CalificacionOperacion
+                    }
+                    : new VerifactiLineaRequest
+                    {
+                        Base = d.BaseImponible,
+                        Tipo = d.TipoIva,
+                        Cuota = d.CuotaIva,
+                        TipoRe = d.TipoRecargoEquivalencia > 0 ? d.TipoRecargoEquivalencia : (decimal?)null,
+                        CuotaRe = d.CuotaRecargoEquivalencia != 0 ? d.CuotaRecargoEquivalencia : (decimal?)null
+                    }).ToList()
             };
 
             // Si es rectificativa, añadir datos específicos

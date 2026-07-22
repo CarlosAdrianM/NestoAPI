@@ -141,21 +141,32 @@ namespace NestoAPI.Infraestructure.Verifactu
             foreach (CabFacturaVta factura in sinDeclarar)
             {
                 VerifactuResponse respuesta = await reenviar(factura).ConfigureAwait(false);
+                // NestoAPI#346: una factura atascada fallaría idéntico en cada pasada; al resumen
+                // (y por tanto al correo a administración) solo van las NOVEDADES — primer fallo
+                // o cambio de motivo — para no mandar el mismo correo 24 veces al día.
+                string claveRuido = $"job|{factura.Empresa?.Trim()}|{factura.Número?.Trim()}";
                 if (respuesta == null)
                 {
                     // No procedía (p. ej. rectificativa sin vinculaciones) o error inesperado:
                     // el motivo ya queda en ELMAH dentro de EnviarAVerifactu.
-                    resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): " +
-                        "no se pudo procesar (ver ELMAH)");
+                    if (DeduplicadorErroresVerifactu.EsNovedad(claveRuido, "no procesable"))
+                    {
+                        resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): " +
+                            "no se pudo procesar (ver ELMAH)");
+                    }
                     continue;
                 }
                 if (respuesta.Exitoso)
                 {
                     resumen.Declaradas++;
+                    DeduplicadorErroresVerifactu.Limpiar(claveRuido);
                     continue;
                 }
-                resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): " +
-                    $"{respuesta.CodigoError} {respuesta.MensajeError}".Trim());
+                string textoError = $"{respuesta.CodigoError} {respuesta.MensajeError}".Trim();
+                if (DeduplicadorErroresVerifactu.EsNovedad(claveRuido, textoError))
+                {
+                    resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): {textoError}");
+                }
                 if (EsRechazoPorNif(respuesta.MensajeError))
                 {
                     await servicioValidacionNif.MarcarIncorrecto(factura.Nº_Cliente,

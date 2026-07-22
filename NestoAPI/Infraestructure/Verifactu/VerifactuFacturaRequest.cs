@@ -95,6 +95,20 @@ namespace NestoAPI.Infraestructure.Verifactu
         /// Cuota de recargo de equivalencia
         /// </summary>
         public decimal CuotaRecargoEquivalencia { get; set; }
+
+        /// <summary>
+        /// NestoAPI#347: clave de régimen AEAT del desglose (L8). "17" = operación acogida a
+        /// OSS/IOSS (Cap. XI Tít. IX LIVA). Null = régimen general (no se envía).
+        /// </summary>
+        public string ClaveRegimen { get; set; }
+
+        /// <summary>
+        /// NestoAPI#347: calificación de la operación AEAT (L9). "N2" = no sujeta por reglas de
+        /// localización (ventas OSS: el IVA extranjero no se declara a la AEAT española).
+        /// Null = sujeta y no exenta (S1, el defecto). Con N1/N2 está PROHIBIDO informar
+        /// tipo impositivo y cuota (validaciones AEAT §15.4).
+        /// </summary>
+        public string CalificacionOperacion { get; set; }
     }
 
     /// <summary>

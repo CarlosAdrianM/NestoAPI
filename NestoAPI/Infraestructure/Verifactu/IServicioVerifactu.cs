@@ -32,6 +32,16 @@ namespace NestoAPI.Infraestructure.Verifactu
         Task<VerifactuResponse> EnviarFacturaAsync(VerifactuFacturaRequest factura);
 
         /// <summary>
+        /// NestoAPI#346: subsana una factura (registro de alta de subsanación). Es el camino legal
+        /// para declarar FUERA DE PLAZO: el alta normal exige fecha_expedicion actual, la
+        /// subsanación admite fechas pasadas y no tiene plazo máximo (FAQs AEAT).
+        /// </summary>
+        /// <param name="factura">Datos de la factura (mismo contenido que el alta)</param>
+        /// <param name="rechazoPrevio">"N" = subsanar un registro aceptado; "X" = el alta inicial
+        /// fue rechazada por la AEAT; "S" = una subsanación anterior fue rechazada</param>
+        Task<VerifactuResponse> ModificarFacturaAsync(VerifactuFacturaRequest factura, string rechazoPrevio);
+
+        /// <summary>
         /// Consulta el estado de una factura enviada previamente.
         /// </summary>
         /// <param name="uuid">UUID de la factura</param>
