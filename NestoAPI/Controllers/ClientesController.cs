@@ -80,13 +80,27 @@ namespace NestoAPI.Controllers
         // NestoAPI#327: listado para las pantallas de corrección (Nesto#417 / NestoApp#157).
         // Fichas cuya validación vigente es INCORRECTA, priorizando las que tienen pedido
         // pendiente de servir o facturar. El filtro por vendedor lo aplican los clientes
-        // según el rol (administración/dirección sin filtro; vendedor con el suyo).
+        // según el rol (administración/dirección sin filtro; vendedor con el suyo). Si el
+        // vendedor es JEFE DE EQUIPO, el servidor lo expande a él + su equipo (EquiposVenta),
+        // sin que el cliente tenga que saberlo.
         [System.Web.Http.Authorize]
         [System.Web.Http.HttpGet]
         [System.Web.Http.Route("api/Clientes/NifIncorrectos")]
         public async Task<IHttpActionResult> GetNifIncorrectos(string vendedor = null)
         {
-            var lista = await _servicioValidacionNif.ListarNifIncorrectos(vendedor);
+            List<string> vendedores = null;
+            if (!string.IsNullOrWhiteSpace(vendedor))
+            {
+                List<string> equipo = await servicioVendedores.VendedoresEquipoString(
+                    Constantes.Empresas.EMPRESA_POR_DEFECTO, vendedor);
+                vendedores = (equipo ?? new List<string>())
+                    .Concat(new[] { vendedor })
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Select(v => v.Trim())
+                    .Distinct()
+                    .ToList();
+            }
+            var lista = await _servicioValidacionNif.ListarNifIncorrectos(vendedores);
             return Ok(lista);
         }
 

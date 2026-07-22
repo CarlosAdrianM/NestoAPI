@@ -67,7 +67,18 @@ namespace NestoAPI.Infraestructure.Traspasos
             }
 
             // Si IVA es null o vacío → traspasar
-            return string.IsNullOrWhiteSpace(pedido.IVA);
+            return VaAEmpresaEspejo(pedido.IVA);
+        }
+
+        /// <summary>
+        /// ¿El pedido acabará facturando en la empresa espejo? (IVA vacío = traspaso al
+        /// facturar). Regla ÚNICA compartida: la validación de NIF de Verifactu (#327) no
+        /// aplica a esos pedidos — la espejo factura en serie GB, que no tramita Verifactu
+        /// (caso cliente 9093, 22/07/26).
+        /// </summary>
+        public static bool VaAEmpresaEspejo(string iva)
+        {
+            return string.IsNullOrWhiteSpace(iva);
         }
 
         /// <summary>

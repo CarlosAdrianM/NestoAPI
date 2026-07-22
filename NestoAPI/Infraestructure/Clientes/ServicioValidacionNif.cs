@@ -309,11 +309,27 @@ namespace NestoAPI.Infraestructure.Clientes
             return corregidos;
         }
 
-        public async Task<List<ClienteNifIncorrectoDTO>> ListarNifIncorrectos(string vendedor = null)
+        public async Task<List<ClienteNifIncorrectoDTO>> ListarNifIncorrectos(List<string> vendedores = null)
         {
             // Solo validaciones VIGENTES: si la ficha cambió de NIF/nombre después de validar,
             // el join no casa y la ficha no sale (está "sin validar", no "incorrecta").
             // Pedido pendiente de servir o facturar = líneas en estado PENDIENTE..ALBARAN.
+            // Nesto#417: el filtro admite VARIOS vendedores (jefe de equipo = él + su equipo).
+            List<string> filtro = vendedores?.Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v.Trim()).Distinct().ToList() ?? new List<string>();
+            var parametros = new List<object> { new SqlParameter("@p0", ESTADO_INCORRECTO) };
+            string condicionVendedor = string.Empty;
+            if (filtro.Any())
+            {
+                var marcadores = new List<string>();
+                for (int i = 0; i < filtro.Count; i++)
+                {
+                    marcadores.Add($"@v{i}");
+                    parametros.Add(new SqlParameter($"@v{i}", filtro[i]));
+                }
+                condicionVendedor = $"AND c.Vendedor IN ({string.Join(", ", marcadores)}) ";
+            }
+
             string sql =
                 "SELECT LTRIM(RTRIM(v.Cliente)) AS Cliente, LTRIM(RTRIM(v.Contacto)) AS Contacto, " +
                 "       v.Nombre, v.Nif, v.ResultadoAeat, v.FechaValidacion, LTRIM(RTRIM(c.Vendedor)) AS Vendedor, " +
@@ -323,12 +339,10 @@ namespace NestoAPI.Infraestructure.Clientes
                 "FROM ValidacionesNif v " +
                 "INNER JOIN Clientes c ON c.Empresa = v.Empresa AND c.[Nº Cliente] = v.Cliente AND c.Contacto = v.Contacto " +
                 "WHERE v.Estado = @p0 AND c.[CIF/NIF] = v.Nif AND c.Nombre = v.Nombre " +
-                "AND (@p1 IS NULL OR c.Vendedor = @p1) " +
+                condicionVendedor +
                 "ORDER BY TienePedidoPendiente DESC, v.FechaValidacion DESC";
 
-            return await db.Database.SqlQuery<ClienteNifIncorrectoDTO>(sql,
-                new SqlParameter("@p0", ESTADO_INCORRECTO),
-                new SqlParameter("@p1", (object)vendedor?.Trim() ?? DBNull.Value))
+            return await db.Database.SqlQuery<ClienteNifIncorrectoDTO>(sql, parametros.ToArray())
                 .ToListAsync().ConfigureAwait(false);
         }
 

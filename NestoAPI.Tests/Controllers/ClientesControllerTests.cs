@@ -94,21 +94,58 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task GetNifIncorrectos_DevuelveElListadoDelServicio()
+        public async Task GetNifIncorrectos_VendedorNormal_FiltraPorElMismo()
         {
             var servicio = A.Fake<IServicioValidacionNif>();
-            _ = A.CallTo(() => servicio.ListarNifIncorrectos("JE"))
+            var vendedores = A.Fake<IServicioVendedores>();
+            _ = A.CallTo(() => vendedores.VendedoresEquipoString("1", "JE")).Returns(new List<string>());
+            _ = A.CallTo(() => servicio.ListarNifIncorrectos(A<List<string>>.That.Matches(
+                    l => l != null && l.Count == 1 && l[0] == "JE")))
                 .Returns(new List<ClienteNifIncorrectoDTO>
                 {
                     new ClienteNifIncorrectoDTO { Cliente = "30676", Nif = "90021192", TienePedidoPendiente = true }
                 });
-            var controller = ControllerConValidacion(servicio);
+            var controller = new ClientesController(A.Fake<IGestorClientes>(), vendedores,
+                A.Fake<IGestorSincronizacion>(), servicio);
 
             var resultado = await controller.GetNifIncorrectos("JE") as OkNegotiatedContentResult<List<ClienteNifIncorrectoDTO>>;
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(1, resultado.Content.Count);
             Assert.IsTrue(resultado.Content[0].TienePedidoPendiente);
+        }
+
+        [TestMethod]
+        public async Task GetNifIncorrectos_JefeDeEquipo_VeLosDeSuEquipoTambien()
+        {
+            // Nesto#417 (Carlos 22/07): el servidor expande el vendedor a su equipo de
+            // EquiposVenta, sin que el cliente tenga que saber quién es jefe.
+            var servicio = A.Fake<IServicioValidacionNif>();
+            var vendedores = A.Fake<IServicioVendedores>();
+            _ = A.CallTo(() => vendedores.VendedoresEquipoString("1", "ASH"))
+                .Returns(new List<string> { "ASH", "DV ", "PP" });
+            List<string> filtroRecibido = null;
+            _ = A.CallTo(() => servicio.ListarNifIncorrectos(A<List<string>>.Ignored))
+                .Invokes((List<string> l) => filtroRecibido = l)
+                .Returns(new List<ClienteNifIncorrectoDTO>());
+            var controller = new ClientesController(A.Fake<IGestorClientes>(), vendedores,
+                A.Fake<IGestorSincronizacion>(), servicio);
+
+            _ = await controller.GetNifIncorrectos("ASH");
+
+            CollectionAssert.AreEquivalent(new List<string> { "ASH", "DV", "PP" }, filtroRecibido,
+                "El filtro debe llevar al jefe + su equipo, sin duplicados y sin padding");
+        }
+
+        [TestMethod]
+        public async Task GetNifIncorrectos_SinVendedor_NoFiltra()
+        {
+            var servicio = A.Fake<IServicioValidacionNif>();
+            var controller = ControllerConValidacion(servicio);
+
+            _ = await controller.GetNifIncorrectos(null);
+
+            A.CallTo(() => servicio.ListarNifIncorrectos(null)).MustHaveHappenedOnceExactly();
         }
     }
 }

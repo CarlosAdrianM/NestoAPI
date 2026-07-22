@@ -495,16 +495,21 @@ namespace NestoAPI.Infraestructure.Facturas
             // PRINCIPAL) contra el censo de la AEAT. Best-effort: un fallo aquí nunca impide
             // facturar durante el periodo de gracia. Con el flag de #328 encendido (a partir
             // del 01/12/2026), un NIF incorrecto BLOQUEA la factura antes de crearla.
+            // Solo aplica en la empresa por defecto (caso cliente 9093, 22/07/26): la espejo
+            // factura en serie GB, que no tramita Verifactu — ni aviso ni gate.
             Clientes.ResultadoValidacionNif validacionNif = null;
-            try
+            if (empresa?.Trim() == Constantes.Empresas.EMPRESA_POR_DEFECTO)
             {
-                validacionNif = await servicioValidacionNif.ValidarPrincipal(cabPedido.Nº_Cliente, usuario);
-            }
-            catch (Exception exValidacionNif)
-            {
-                ElmahHelper.Log(new Exception(
-                    $"ValidacionNif: fallo al validar el NIF del cliente {cabPedido.Nº_Cliente?.Trim()} " +
-                    $"al facturar el pedido {pedido}: {exValidacionNif.Message}", exValidacionNif));
+                try
+                {
+                    validacionNif = await servicioValidacionNif.ValidarPrincipal(cabPedido.Nº_Cliente, usuario);
+                }
+                catch (Exception exValidacionNif)
+                {
+                    ElmahHelper.Log(new Exception(
+                        $"ValidacionNif: fallo al validar el NIF del cliente {cabPedido.Nº_Cliente?.Trim()} " +
+                        $"al facturar el pedido {pedido}: {exValidacionNif.Message}", exValidacionNif));
+                }
             }
             if (validacionNif?.Estado == Clientes.EstadoValidacionNif.Incorrecto && BloquearNifIncorrecto)
             {

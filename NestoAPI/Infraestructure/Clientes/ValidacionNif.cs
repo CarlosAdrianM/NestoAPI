@@ -97,7 +97,10 @@ namespace NestoAPI.Infraestructure.Clientes
         /// está "sin validar"), priorizando las que tienen pedido pendiente de servir o
         /// facturar. Filtro opcional por vendedor (permisos por rol en el cliente).
         /// </summary>
-        Task<System.Collections.Generic.List<ClienteNifIncorrectoDTO>> ListarNifIncorrectos(string vendedor = null);
+        /// <param name="vendedores">Null o vacía = sin filtro (administración/dirección);
+        /// si no, los clientes de CUALQUIERA de esos vendedores (jefe de equipo = él + los
+        /// suyos vía EquiposVenta, expandido en el controller).</param>
+        Task<System.Collections.Generic.List<ClienteNifIncorrectoDTO>> ListarNifIncorrectos(System.Collections.Generic.List<string> vendedores = null);
 
         /// <summary>
         /// NestoAPI#329: cuando Verifactu/AEAT rechaza una factura por el NIF del destinatario,

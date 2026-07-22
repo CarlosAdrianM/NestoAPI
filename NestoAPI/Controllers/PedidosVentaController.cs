@@ -1739,6 +1739,10 @@ namespace NestoAPI.Controllers
             // Si acaba de resultar INCORRECTO: correo al vendedor (CC administración) pidiendo
             // el NIF correcto — hay margen hasta facturar; a partir del 01/12/2026 la factura
             // se bloquearía (#328). Best-effort: nunca rompe la creación del pedido.
+            // EXCEPCIÓN (caso cliente 9093, 22/07/26): los pedidos SIN IVA acaban traspasados a
+            // la empresa espejo, que factura en serie GB y NO tramita Verifactu — no hay que
+            // validar el NIF ni marcar la ficha por ellos.
+            if (!Infraestructure.Traspasos.ServicioTraspasoEmpresa.VaAEmpresaEspejo(pedido.iva))
             try
             {
                 var servicioNif = new Infraestructure.Clientes.ServicioValidacionNif(db);

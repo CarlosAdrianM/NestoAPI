@@ -82,6 +82,27 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region VaAEmpresaEspejo (regla compartida con la validación de NIF #327)
+
+        [TestMethod]
+        public void VaAEmpresaEspejo_IvaVacioNullOEspacios_EsTrue()
+        {
+            // Caso cliente 9093 (22/07/26): un pedido sin IVA acabará en la espejo (serie GB,
+            // sin Verifactu) y NO debe validar el NIF ni marcar la ficha.
+            Assert.IsTrue(NestoAPI.Infraestructure.Traspasos.ServicioTraspasoEmpresa.VaAEmpresaEspejo(null));
+            Assert.IsTrue(NestoAPI.Infraestructure.Traspasos.ServicioTraspasoEmpresa.VaAEmpresaEspejo(""));
+            Assert.IsTrue(NestoAPI.Infraestructure.Traspasos.ServicioTraspasoEmpresa.VaAEmpresaEspejo("   "));
+        }
+
+        [TestMethod]
+        public void VaAEmpresaEspejo_ConIva_EsFalse()
+        {
+            Assert.IsFalse(NestoAPI.Infraestructure.Traspasos.ServicioTraspasoEmpresa.VaAEmpresaEspejo("G21"));
+            Assert.IsFalse(NestoAPI.Infraestructure.Traspasos.ServicioTraspasoEmpresa.VaAEmpresaEspejo("I22"));
+        }
+
+        #endregion
+
         #region HayQueTraspasar Tests
 
         [TestMethod]
