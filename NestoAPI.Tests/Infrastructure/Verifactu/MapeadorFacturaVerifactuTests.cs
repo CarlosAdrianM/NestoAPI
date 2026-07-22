@@ -317,6 +317,22 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public void Mapear_ConVeredictoDePaisPersistido_ElParametroManda()
+        {
+            // NestoAPI#347: si ParámetrosIVA.Pais dice extranjero, ni el código G21 ni el 21%
+            // nacional impiden que la factura sea OSS (y viceversa: false desactiva la heurística)
+            var facturaOss = CrearFacturaNV();
+            facturaOss.IVA = "G21"; // aparenta nacional
+            var requestOss = MapeadorFacturaVerifactu.Mapear(facturaOss, null, esOssPorPais: true);
+            Assert.AreEqual("N2", requestOss.DesgloseIva.Single().CalificacionOperacion);
+
+            var facturaNacional = CrearFacturaNV();
+            facturaNacional.IVA = "ZZ9"; // código raro que la lista blanca no reconoce
+            var requestNacional = MapeadorFacturaVerifactu.Mapear(facturaNacional, null, esOssPorPais: false);
+            Assert.IsNull(requestNacional.DesgloseIva.Single().CalificacionOperacion);
+        }
+
+        [TestMethod]
         public void Mapear_TiposEspanolesVigentes_NingunoSeMarcaComoOss()
         {
             // La lista blanca de tipos españoles es la que valida la propia AEAT: 0, 2, 4, 5, 7.5, 10 y 21

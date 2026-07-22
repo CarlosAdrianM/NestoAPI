@@ -25,6 +25,9 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         private NVEntities db;
         private DbSet<CabFacturaVta> fakeFacturas;
         private DbSet<LinFacturaVtaRectificacion> fakeRectificaciones;
+        private DbSet<ParametroIVA> fakeParametrosIva;
+        private DbSet<VerifactuRegistro> fakeRegistros;
+        private List<VerifactuRegistro> registrosInsertados;
         private IServicioVerifactu servicioVerifactu;
         private ILogService logService;
 
@@ -39,6 +42,16 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             fakeRectificaciones = A.Fake<DbSet<LinFacturaVtaRectificacion>>(o => o.Implements<IQueryable<LinFacturaVtaRectificacion>>().Implements<IDbAsyncEnumerable<LinFacturaVtaRectificacion>>());
             A.CallTo(() => db.LinFacturaVtaRectificaciones).Returns(fakeRectificaciones);
             ConfigurarFakeDbSet(fakeRectificaciones, new List<LinFacturaVtaRectificacion>().AsQueryable());
+            // NestoAPI#347: país por código de IVA (vacío salvo que el test lo configure)
+            fakeParametrosIva = A.Fake<DbSet<ParametroIVA>>(o => o.Implements<IQueryable<ParametroIVA>>().Implements<IDbAsyncEnumerable<ParametroIVA>>());
+            A.CallTo(() => db.ParametrosIVA).Returns(fakeParametrosIva);
+            ConfigurarFakeDbSet(fakeParametrosIva, new List<ParametroIVA>().AsQueryable());
+            // NestoAPI#347: auditoría de registros declarados
+            registrosInsertados = new List<VerifactuRegistro>();
+            fakeRegistros = A.Fake<DbSet<VerifactuRegistro>>();
+            A.CallTo(() => db.VerifactuRegistros).Returns(fakeRegistros);
+            _ = A.CallTo(() => fakeRegistros.Add(A<VerifactuRegistro>.Ignored))
+                .Invokes((VerifactuRegistro r) => registrosInsertados.Add(r));
             servicioVerifactu = A.Fake<IServicioVerifactu>();
             A.CallTo(() => servicioVerifactu.EstaHabilitado).Returns(true);
             logService = A.Fake<ILogService>();
@@ -365,7 +378,10 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
 
             Assert.IsNull(factura.VerifactuUUID);
-            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+            // NestoAPI#346: el fallo ya SÍ persiste (último error + registro de auditoría)
+            StringAssert.Contains(factura.VerifactuUltimoError, "NIF incorrecto");
+            Assert.IsNotNull(factura.VerifactuUltimoIntento);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
             A.CallTo(() => logService.LogError(A<string>.That.Contains("NV2600123"), A<Exception>.Ignored))
                 .MustHaveHappenedOnceExactly();
         }
@@ -443,6 +459,89 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
 
             A.CallTo(() => logService.LogError(A<string>.That.Contains("NIF incorrecto"), A<Exception>.Ignored))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_PaisPersistidoExtranjero_MandaSobreLaHeuristica()
+        {
+            // NestoAPI#347: G21 con 21% parece nacional, pero si ParámetrosIVA dice que el código
+            // de la factura es de Bélgica, la factura entera es OSS (N2/17)
+            var factura = ConfigurarFactura();
+            factura.IVA = "B21";
+            ConfigurarFakeDbSet(fakeParametrosIva, new List<ParametroIVA>
+            {
+                new ParametroIVA { Empresa = "1", IVA_Producto = "G21", IVA_Cliente_Prov = "B21", Pais = "BE" }
+            }.AsQueryable());
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-oss" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.AreEqual("N2", enviado.DesgloseIva.Single().CalificacionOperacion);
+            Assert.AreEqual("17", enviado.DesgloseIva.Single().ClaveRegimen);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_PaisPersistidoEspanol_DesactivaLaHeuristicaDeCodigo()
+        {
+            // Un código raro que la lista blanca no reconoce, pero con Pais='ES' en BD → nacional
+            var factura = ConfigurarFactura();
+            factura.IVA = "ZZ9";
+            ConfigurarFakeDbSet(fakeParametrosIva, new List<ParametroIVA>
+            {
+                new ParametroIVA { Empresa = "1", IVA_Producto = "G21", IVA_Cliente_Prov = "ZZ9", Pais = "ES" }
+            }.AsQueryable());
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-nac" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsNull(enviado.DesgloseIva.Single().CalificacionOperacion);
+            Assert.AreEqual(21M, enviado.DesgloseIva.Single().TipoIva);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_CadaIntentoDejaRegistroDeAuditoria()
+        {
+            var factura = ConfigurarFactura();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-1", Estado = "Pendiente" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.AreEqual(1, registrosInsertados.Count);
+            var registro = registrosInsertados.Single();
+            Assert.AreEqual("Alta", registro.TipoRegistro);
+            Assert.IsNull(registro.RechazoPrevio);
+            Assert.IsTrue(registro.Exitoso);
+            Assert.AreEqual("uuid-1", registro.RespuestaUuid);
+            StringAssert.Contains(registro.Payload, "2600123", "El payload serializado identifica la factura");
+            Assert.IsNull(factura.VerifactuUltimoError, "El éxito limpia el último error");
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_SubsanacionFueraDePlazo_SeAuditaComoTal()
+        {
+            var factura = ConfigurarFactura();
+            factura.Fecha = DateTime.Today.AddDays(-3);
+            A.CallTo(() => servicioVerifactu.ModificarFacturaAsync(A<VerifactuFacturaRequest>.Ignored, "X"))
+                .Returns(new VerifactuResponse { Exitoso = false, CodigoError = "400", MensajeError = "nombre obligatorio" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            var registro = registrosInsertados.Single();
+            Assert.AreEqual("Subsanacion", registro.TipoRegistro);
+            Assert.AreEqual("X", registro.RechazoPrevio);
+            Assert.IsFalse(registro.Exitoso);
+            StringAssert.Contains(registro.RespuestaError, "nombre obligatorio");
         }
 
         [TestMethod]

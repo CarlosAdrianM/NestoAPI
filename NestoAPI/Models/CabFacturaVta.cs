@@ -53,7 +53,9 @@ namespace NestoAPI.Models
         public string VerifactuEstado { get; set; }
         public string TipoRectificativa { get; set; }
         public string SuPedido { get; set; }
-    
+        public string VerifactuUltimoError { get; set; }
+        public Nullable<System.DateTime> VerifactuUltimoIntento { get; set; }
+
         public virtual CCC CCC1 { get; set; }
         public virtual Cliente Cliente { get; set; }
         public virtual Empresa Empresa1 { get; set; }

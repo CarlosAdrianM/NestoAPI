@@ -13,8 +13,12 @@ namespace NestoAPI.Infraestructure.Verifactu
     /// </summary>
     internal static class MapeadorFacturaVerifactu
     {
+        /// <param name="esOssPorPais">NestoAPI#347: veredicto OSS según ParámetrosIVA.Pais
+        /// (true = país extranjero, false = ES). Null = sin país persistido: se infiere con la
+        /// lista blanca de códigos nacionales.</param>
         internal static VerifactuFacturaRequest Mapear(CabFacturaVta factura,
-            System.Collections.Generic.List<VerifactuFacturaRectificada> facturasRectificadas = null)
+            System.Collections.Generic.List<VerifactuFacturaRectificada> facturasRectificadas = null,
+            bool? esOssPorPais = null)
         {
             if (factura == null)
             {
@@ -58,11 +62,12 @@ namespace NestoAPI.Infraestructure.Verifactu
             }
 
             decimal importeTotal = 0;
-            // NestoAPI#347: la señal principal de venta OSS es el CÓDIGO de IVA de la cabecera
-            // (I22 Italia, B21 Bélgica... los asigna CanalesExternos por país de destino). El
-            // porcentaje solo NO basta: Bélgica, Países Bajos o Chequia también tienen el 21%.
-            // El tipo extranjero (22, 23...) queda como respaldo por si el código no se reconoce.
-            bool facturaConCodigoOss = EsCodigoIvaExtranjero(factura.IVA);
+            // NestoAPI#347: la señal principal de venta OSS es el país persistido en
+            // ParámetrosIVA para el código de IVA de la cabecera (si viene informado, manda).
+            // Fallback: código fuera de la lista blanca nacional (I22, B21...). El porcentaje
+            // solo NO basta: Bélgica, Países Bajos o Chequia también tienen el 21%. El tipo
+            // extranjero (22, 23...) queda como último respaldo por si el código no se reconoce.
+            bool facturaConCodigoOss = esOssPorPais ?? EsCodigoIvaExtranjero(factura.IVA);
             var gruposIva = factura.LinPedidoVtas
                 .GroupBy(l => new { l.PorcentajeIVA, l.PorcentajeRE })
                 .OrderByDescending(g => g.Key.PorcentajeIVA);

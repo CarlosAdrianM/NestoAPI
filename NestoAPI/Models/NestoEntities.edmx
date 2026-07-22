@@ -192,6 +192,25 @@
           <Property Name="VerifactuEstado" Type="varchar" MaxLength="50" />
           <Property Name="TipoRectificativa" Type="char" MaxLength="2" />
           <Property Name="SuPedido" Type="nvarchar" MaxLength="50" />
+          <Property Name="VerifactuUltimoError" Type="nvarchar" MaxLength="500" />
+          <Property Name="VerifactuUltimoIntento" Type="datetime" />
+        </EntityType>
+        <EntityType Name="VerifactuRegistros">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NumeroFactura" Type="varchar" MaxLength="10" Nullable="false" />
+          <Property Name="TipoRegistro" Type="varchar" MaxLength="12" Nullable="false" />
+          <Property Name="RechazoPrevio" Type="char" MaxLength="1" />
+          <Property Name="Payload" Type="nvarchar(max)" />
+          <Property Name="RespuestaUuid" Type="varchar" MaxLength="50" />
+          <Property Name="RespuestaEstado" Type="varchar" MaxLength="50" />
+          <Property Name="RespuestaError" Type="nvarchar" MaxLength="500" />
+          <Property Name="Exitoso" Type="bit" Nullable="false" />
+          <Property Name="FechaEnvio" Type="datetime" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" />
         </EntityType>
         <EntityType Name="CabPedidoCmp">
           <Key>
@@ -1514,6 +1533,7 @@
           <Property Name="CtaRecargoSoportado" Type="char" MaxLength="10" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+          <Property Name="Pais" Type="char" MaxLength="2" />
         </EntityType>
         <EntityType Name="ParámetrosUsuario">
           <Key>
@@ -5471,6 +5491,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="CabAlquileres" EntityType="Self.CabAlquileres" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaVta" EntityType="Self.CabFacturaVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="VerifactuRegistros" EntityType="Self.VerifactuRegistros" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoCmp" EntityType="Self.CabPedidoCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoVta" EntityType="Self.CabPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabRemesaPagos" EntityType="Self.CabRemesaPagos" Schema="dbo" store:Type="Tables" />
@@ -6784,6 +6805,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="PlazosPago" EntitySet="PlazosPago" />
           </AssociationSet>
           <EntitySet Name="ParametrosIVA" EntityType="NVModel.ParametroIVA" />
+          <EntitySet Name="VerifactuRegistros" EntityType="NVModel.VerifactuRegistro" />
           <AssociationSet Name="FK_ParámetrosIVA_Empresas" Association="NVModel.FK_ParámetrosIVA_Empresas">
             <End Role="Empresa" EntitySet="Empresas" />
             <End Role="ParámetrosIVA" EntitySet="ParametrosIVA" />
@@ -8792,6 +8814,23 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="VerifactuRegistro">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="NumeroFactura" Type="String" Nullable="false" MaxLength="10" FixedLength="false" Unicode="false" />
+          <Property Name="TipoRegistro" Type="String" Nullable="false" MaxLength="12" FixedLength="false" Unicode="false" />
+          <Property Name="RechazoPrevio" Type="String" MaxLength="1" FixedLength="true" Unicode="false" />
+          <Property Name="Payload" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="RespuestaUuid" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="RespuestaEstado" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="RespuestaError" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
+          <Property Name="Exitoso" Type="Boolean" Nullable="false" />
+          <Property Name="FechaEnvio" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Usuario" Type="String" MaxLength="30" FixedLength="false" Unicode="false" />
+        </EntityType>
         <EntityType Name="ParametroIVA">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -8809,6 +8848,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="CtaRecargoSoportado" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="Pais" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_ParámetrosIVA_Empresas" FromRole="ParámetrosIVA" ToRole="Empresa" />
           <NavigationProperty Name="PlanCuenta" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas" FromRole="ParametroIVA" ToRole="PlanCuenta" />
           <NavigationProperty Name="PlanCuenta1" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas1" FromRole="ParametroIVA" ToRole="PlanCuenta" />
@@ -11539,6 +11579,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="VerifactuEstado" Type="String" MaxLength="50" FixedLength="false" Unicode="false" />
           <Property Name="TipoRectificativa" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
           <Property Name="SuPedido" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="VerifactuUltimoError" Type="String" MaxLength="500" FixedLength="false" Unicode="true" />
+          <Property Name="VerifactuUltimoIntento" Type="DateTime" Precision="3" />
         </EntityType>
         <Association Name="FK_CabFacturaVta_CCC">
           <End Type="NVModel.CCC" Role="CCC" Multiplicity="0..1" />
@@ -14040,6 +14082,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="ParametrosIVA">
             <EntityTypeMapping TypeName="NVModel.ParametroIVA">
               <MappingFragment StoreEntitySet="ParámetrosIVA">
+                <ScalarProperty Name="Pais" ColumnName="Pais" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="CtaRecargoSoportado" ColumnName="CtaRecargoSoportado" />
@@ -14930,9 +14973,29 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
               </MappingFragment>
             </EntityTypeMapping>
           </EntitySetMapping>
+          <EntitySetMapping Name="VerifactuRegistros">
+            <EntityTypeMapping TypeName="NVModel.VerifactuRegistro">
+              <MappingFragment StoreEntitySet="VerifactuRegistros">
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaEnvio" ColumnName="FechaEnvio" />
+                <ScalarProperty Name="Exitoso" ColumnName="Exitoso" />
+                <ScalarProperty Name="RespuestaError" ColumnName="RespuestaError" />
+                <ScalarProperty Name="RespuestaEstado" ColumnName="RespuestaEstado" />
+                <ScalarProperty Name="RespuestaUuid" ColumnName="RespuestaUuid" />
+                <ScalarProperty Name="Payload" ColumnName="Payload" />
+                <ScalarProperty Name="RechazoPrevio" ColumnName="RechazoPrevio" />
+                <ScalarProperty Name="TipoRegistro" ColumnName="TipoRegistro" />
+                <ScalarProperty Name="NumeroFactura" ColumnName="NumeroFactura" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
           <EntitySetMapping Name="CabsFacturasVtas">
             <EntityTypeMapping TypeName="NVModel.CabFacturaVta">
               <MappingFragment StoreEntitySet="CabFacturaVta">
+                <ScalarProperty Name="VerifactuUltimoIntento" ColumnName="VerifactuUltimoIntento" />
+                <ScalarProperty Name="VerifactuUltimoError" ColumnName="VerifactuUltimoError" />
                 <ScalarProperty Name="SuPedido" ColumnName="SuPedido" />
                 <ScalarProperty Name="TipoRectificativa" ColumnName="TipoRectificativa" />
                 <ScalarProperty Name="VerifactuEstado" ColumnName="VerifactuEstado" />

@@ -758,6 +758,14 @@ namespace NestoAPI.Infraestructure.Facturas
         /// operativo AEAT para reenviar como subsanación un registro que nunca se aceptó).</summary>
         private const string RECHAZO_PREVIO_ALTA_RECHAZADA = "X";
 
+        /// <summary>NestoAPI#347: valor de ParámetrosIVA.Pais que marca un código nacional.</summary>
+        private const string PAIS_NACIONAL = "ES";
+
+        private static string Truncar(string texto, int maximo)
+        {
+            return texto != null && texto.Length > maximo ? texto.Substring(0, maximo) : texto;
+        }
+
         private async Task<Verifactu.VerifactuResponse> EnviarAVerifactu(string empresa, string numeroFactura, bool permitirRectificativas)
         {
             try
@@ -806,7 +814,25 @@ namespace NestoAPI.Infraestructure.Facturas
                     }
                 }
 
-                Verifactu.VerifactuFacturaRequest request = Verifactu.MapeadorFacturaVerifactu.Mapear(factura, facturasRectificadas);
+                // NestoAPI#347: si ParámetrosIVA tiene país para el código de IVA de la factura,
+                // ese dato MANDA sobre la heurística (B21 Bélgica y G21 España comparten el 21%:
+                // solo el país persistido los distingue con certeza). Sin país (NULL, pendiente de
+                // confirmar en BD) el mapeador cae a la lista blanca de códigos nacionales + tipo.
+                bool? esOssPorPais = null;
+                string codigoIvaFactura = factura.IVA?.Trim();
+                if (!string.IsNullOrEmpty(codigoIvaFactura))
+                {
+                    string paisIva = await db.ParametrosIVA
+                        .Where(p => p.Empresa == empresa && p.IVA_Cliente_Prov == codigoIvaFactura && p.Pais != null)
+                        .Select(p => p.Pais)
+                        .FirstOrDefaultAsync();
+                    if (!string.IsNullOrWhiteSpace(paisIva))
+                    {
+                        esOssPorPais = paisIva.Trim() != PAIS_NACIONAL;
+                    }
+                }
+
+                Verifactu.VerifactuFacturaRequest request = Verifactu.MapeadorFacturaVerifactu.Mapear(factura, facturasRectificadas, esOssPorPais);
 
                 // Issue #325: una factura simplificada (F2) por encima del límite legal no puede
                 // documentarse como tal. No se bloquea la facturación (el importe ya está emitido),
@@ -831,15 +857,38 @@ namespace NestoAPI.Infraestructure.Facturas
                     ? await servicioVerifactu.ModificarFacturaAsync(request, RECHAZO_PREVIO_ALTA_RECHAZADA)
                     : await servicioVerifactu.EnviarFacturaAsync(request);
 
+                // NestoAPI#346/#347: rastro persistente de cada intento — el motivo del atasco
+                // queda consultable en la factura (VerifactuUltimoError/UltimoIntento) y cada
+                // registro declarado queda auditado en VerifactuRegistros con su payload.
+                bool exitoso = respuesta != null && respuesta.Exitoso;
+                factura.VerifactuUltimoIntento = DateTime.Now;
+                factura.VerifactuUltimoError = exitoso
+                    ? null
+                    : Truncar($"({respuesta?.CodigoError}) {respuesta?.MensajeError}", 500);
+                db.VerifactuRegistros.Add(new VerifactuRegistro
+                {
+                    Empresa = empresa?.Trim(),
+                    NumeroFactura = numeroFactura?.Trim(),
+                    TipoRegistro = fueraDeVentanaCreate ? "Subsanacion" : "Alta",
+                    RechazoPrevio = fueraDeVentanaCreate ? RECHAZO_PREVIO_ALTA_RECHAZADA : null,
+                    Payload = Newtonsoft.Json.JsonConvert.SerializeObject(request),
+                    RespuestaUuid = respuesta?.Uuid,
+                    RespuestaEstado = Truncar(respuesta?.Estado, 50),
+                    RespuestaError = exitoso ? null : Truncar(respuesta?.MensajeError, 500),
+                    Exitoso = exitoso,
+                    FechaEnvio = DateTime.Now,
+                    Usuario = Truncar(UsuarioAuditoriaHelper.Resolver(
+                        System.Web.HttpContext.Current?.User, "NestoAPI"), 30)
+                });
+
                 string claveRuido = $"{empresa}|{numeroFactura?.Trim()}";
-                if (respuesta != null && respuesta.Exitoso)
+                if (exitoso)
                 {
                     factura.VerifactuUUID = respuesta.Uuid;
                     factura.VerifactuHuella = respuesta.Huella;
                     factura.VerifactuQR = respuesta.QrBase64;
                     factura.VerifactuURL = respuesta.Url;
                     factura.VerifactuEstado = respuesta.Estado;
-                    _ = await db.SaveChangesAsync();
                     Verifactu.DeduplicadorErroresVerifactu.Limpiar(claveRuido);
                 }
                 else
@@ -853,6 +902,7 @@ namespace NestoAPI.Infraestructure.Facturas
                         logService.LogError(mensaje);
                     }
                 }
+                _ = await db.SaveChangesAsync();
                 return respuesta;
             }
             catch (Exception ex)
