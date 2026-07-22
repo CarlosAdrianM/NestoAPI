@@ -285,6 +285,16 @@ namespace NestoAPI.Infraestructure.Informes
                 .ConfigureAwait(false);
         }
 
+        public async Task<string> LeerNombreAgenciaAsync(int agencia)
+        {
+            string nombre = await db.AgenciasTransportes
+                .Where(a => a.Numero == agencia)
+                .Select(a => a.Nombre)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+            return nombre?.Trim() ?? string.Empty;
+        }
+
         public async Task<PedidoCompraInformeDTO> LeerPedidoCompraAsync(string empresa, int pedido)
         {
             const string sqlCabecera = @"

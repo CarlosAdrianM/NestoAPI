@@ -368,6 +368,26 @@ namespace NestoAPI.Controllers
             return Ok(lista);
         }
 
+        // Nesto#340 (RDLC→QuestPDF): el manifiesto de agencia se renderiza en el backend;
+        // Nesto solo descarga el PDF (sustituye al ManifiestoAgencia.rdlc local).
+        [HttpGet]
+        [Route("api/Informes/ManifiestoAgencia/Pdf")]
+        public async Task<HttpResponseMessage> GetManifiestoAgenciaPdf(string empresa, int agencia, DateTime fecha)
+        {
+            List<ManifiestoAgenciaDTO> lista = await _servicio
+                .LeerManifiestoAgenciaAsync(empresa, agencia, fecha)
+                .ConfigureAwait(false);
+            string nombreAgencia = await _servicio.LeerNombreAgenciaAsync(agencia).ConfigureAwait(false);
+
+            GeneradorPdfManifiestoAgencia generador = new GeneradorPdfManifiestoAgencia();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(lista, nombreAgencia, fecha)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
         [HttpGet]
         [Route("api/Informes/PedidoCompra")]
         [ResponseType(typeof(PedidoCompraInformeDTO))]

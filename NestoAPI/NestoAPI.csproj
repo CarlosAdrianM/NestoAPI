@@ -780,6 +780,7 @@
     <Compile Include="Infraestructure\Informes\GeneradorPdfPicking.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfPacking.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfUbicacionesInventario.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorPdfManifiestoAgencia.cs" />
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\Informes\InformesService.cs" />
