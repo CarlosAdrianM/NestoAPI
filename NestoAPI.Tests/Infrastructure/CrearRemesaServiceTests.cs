@@ -4,6 +4,7 @@ using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Remesas;
 using NestoAPI.Models;
 using NestoAPI.Models.Remesas;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -86,7 +87,7 @@ namespace NestoAPI.Tests.Infrastructure
         // Composición de líneas: calcada del asiento real 1195101 (remesa 10898, 20/07/26)
 
         private static ExtractoCliente Efecto(int orden, string cliente, decimal pendiente,
-            string documento, string efecto = "1")
+            string documento, string efecto = "1", DateTime? vencimiento = null)
         {
             return new ExtractoCliente
             {
@@ -101,7 +102,8 @@ namespace NestoAPI.Tests.Infrastructure
                 FormaVenta = "VAR",
                 Delegación = "ALG",
                 Vendedor = "NV",
-                CCC = "1"
+                CCC = "1",
+                FechaVto = vencimiento
             };
         }
 
@@ -152,6 +154,83 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(lineas.All(l => l.Diario == CrearRemesaService.DIARIO_REMESA));
             Assert.IsTrue(lineas.All(l => l.Usuario == "carlos"));
             Assert.IsTrue(lineas.All(l => l.Asiento_Automático));
+        }
+
+        // NestoAPI#345: remesa multi-fecha (viernes cubre sábado y domingo; vísperas de festivo)
+
+        [TestMethod]
+        public void ConstruirLineasRemesa_RespetandoVencimientos_UnaLineaDeBancoPorFecha()
+        {
+            DateTime hoy = DateTime.Today;
+            var efectos = new List<ExtractoCliente>
+            {
+                Efecto(1, "15191", 100m, "NV1", vencimiento: hoy.AddDays(1)),
+                Efecto(2, "26985", 50m, "NV2", vencimiento: hoy.AddDays(1)),
+                Efecto(3, "40227", 25m, "NV3", vencimiento: hoy.AddDays(2))
+            };
+
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10900, "1", BancoSabadell(), efectos, "carlos", respetarVencimientos: true);
+
+            List<PreContabilidad> bancos = lineas
+                .Where(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE)
+                .OrderBy(l => l.Fecha).ToList();
+            Assert.AreEqual(2, bancos.Count, "Un apunte de banco POR FECHA de cargo");
+            Assert.AreEqual(hoy.AddDays(1), bancos[0].Fecha);
+            Assert.AreEqual(150m, bancos[0].Debe);
+            Assert.AreEqual(hoy.AddDays(2), bancos[1].Fecha);
+            Assert.AreEqual(25m, bancos[1].Debe);
+            Assert.AreEqual(lineas.Sum(l => l.Debe), lineas.Sum(l => l.Haber), "El asiento debe cuadrar");
+
+            PreContabilidad pagoLunes = lineas.Single(l => l.Liquidado == 3);
+            Assert.AreEqual(hoy.AddDays(2), pagoLunes.Fecha, "El pago lleva la fecha de SU vencimiento");
+            Assert.AreEqual(hoy.AddDays(2), pagoLunes.FechaVto);
+        }
+
+        [TestMethod]
+        public void ConstruirLineasRemesa_VencimientoPasadoONulo_SeCobraEnLaFechaDeCargo()
+        {
+            // "Hay que controlar que las fechas nunca sean anteriores a hoy" (Carlos 22/07)
+            DateTime hoy = DateTime.Today;
+            var efectos = new List<ExtractoCliente>
+            {
+                Efecto(1, "15191", 100m, "NV1", vencimiento: hoy.AddDays(-10)),
+                Efecto(2, "26985", 50m, "NV2", vencimiento: null)
+            };
+
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10900, "1", BancoSabadell(), efectos, "carlos", respetarVencimientos: true);
+
+            Assert.IsTrue(lineas.All(l => l.Fecha == hoy), "Nada puede ir con fecha anterior a hoy");
+            Assert.AreEqual(1, lineas.Count(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE),
+                "Todos caen en la misma fecha: un solo apunte de banco");
+        }
+
+        [TestMethod]
+        public void ConstruirLineasRemesa_ForzandoFechaDeCargo_TodoVaAEsaFecha()
+        {
+            // Modo forzado (default): vísperas de festivo — remesa de hoy con fecha de mañana
+            DateTime manana = DateTime.Today.AddDays(1);
+            var efectos = new List<ExtractoCliente>
+            {
+                Efecto(1, "15191", 100m, "NV1", vencimiento: DateTime.Today.AddDays(5)),
+                Efecto(2, "26985", 50m, "NV2", vencimiento: DateTime.Today)
+            };
+
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10900, "1", BancoSabadell(), efectos, "carlos", respetarVencimientos: false, fechaCargo: manana);
+
+            Assert.IsTrue(lineas.All(l => l.Fecha == manana && l.FechaVto == manana),
+                "En modo forzado TODOS los efectos van a la fecha de cargo, ignorando su vencimiento");
+            Assert.AreEqual(1, lineas.Count(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE));
+        }
+
+        [TestMethod]
+        public void FechaCargoEfectiva_NuncaAnteriorAHoy()
+        {
+            Assert.AreEqual(DateTime.Today, CrearRemesaService.FechaCargoEfectiva(null));
+            Assert.AreEqual(DateTime.Today, CrearRemesaService.FechaCargoEfectiva(DateTime.Today.AddDays(-3)));
+            Assert.AreEqual(DateTime.Today.AddDays(2), CrearRemesaService.FechaCargoEfectiva(DateTime.Today.AddDays(2)));
         }
 
         [TestMethod]

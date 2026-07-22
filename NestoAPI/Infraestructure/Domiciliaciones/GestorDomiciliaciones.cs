@@ -52,7 +52,7 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                 correo.Bcc.Add("carlosadrian@nuevavision.es");
                 correo.Bcc.Add("lauramagan@nuevavision.es");
                 correo.IsBodyHtml = true;
-                correo.Body = GenerarCorreoDomiciliacionHTML(cliente);
+                correo.Body = GenerarCorreoDomiciliacionHTML(cliente, dia);
                 AdjuntarFacturas(correo, cliente);
                 listaCorreos.Add(correo);
             }
@@ -63,7 +63,7 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
             return efectosDomiciliados;
         }
 
-        private string GenerarCorreoDomiciliacionHTML(DomiciliacionesCliente cliente)
+        internal string GenerarCorreoDomiciliacionHTML(DomiciliacionesCliente cliente, DateTime dia)
         {
             StringBuilder s = new StringBuilder();
 
@@ -96,7 +96,10 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
             {
                 _ = s.AppendLine("<p>Estimado cliente:</p>");
             }
-            _ = s.AppendLine("<p>Le informamos que, al haber llegado ya la fecha de vencimiento, hemos enviado a su banco los siguientes efectos para que lleven a cabo la gestión de cobro:</p>");
+            // NestoAPI#345: la remesa puede llevar efectos con cargo en fechas futuras (se
+            // envían hoy al banco pero se cobran en su vencimiento) — el texto no puede
+            // asumir que el vencimiento "ya ha llegado".
+            _ = s.AppendLine("<p>Le informamos de que hemos enviado a su banco los siguientes efectos para que lleven a cabo la gestión de cobro:</p>");
             _ = s.AppendLine("<table role='presentation' border='0' cellspacing='0' width='100%'>");
             _ = s.AppendLine("<tr>");
             _ = s.AppendLine("<td align='left' style='border: 1px solid black;color:#333;padding:3px'>Datos de los efectos</td>");
@@ -109,6 +112,13 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                 _ = s.AppendLine("<li>Concepto: " + efecto.Concepto + "</li>");
                 _ = s.AppendLine("<li>Importe: " + efecto.Importe.ToString("c") + "</li>");
                 _ = s.AppendLine("<li>IBAN: " + efecto.Iban.Enmascarado + "</li>");
+                // NestoAPI#345: si el cargo es de una fecha futura (remesa que respeta los
+                // vencimientos), el cliente tiene que saber CUÁNDO se le cargará.
+                if (efecto.FechaVencimiento.HasValue && efecto.FechaVencimiento.Value.Date > dia.Date)
+                {
+                    _ = s.AppendLine("<li><strong>Fecha prevista de cargo: " +
+                        efecto.FechaVencimiento.Value.ToString("dd/MM/yyyy") + "</strong></li>");
+                }
                 _ = s.AppendLine("</ul>");
                 _ = s.AppendLine("</td>");
                 _ = s.AppendLine("</tr>");

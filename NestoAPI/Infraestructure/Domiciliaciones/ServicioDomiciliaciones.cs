@@ -15,7 +15,15 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
         {
             using (NVEntities db = new NVEntities())
             {
-                var efectos = db.ExtractosCliente.Where(e => e.Fecha == dia && e.TipoApunte == Constantes.TiposExtractoCliente.PAGO && e.Remesa != null && e.CCC != null);
+                // NestoAPI#345: con las remesas multi-vencimiento, los pagos llevan la FECHA DE
+                // CARGO (que puede ser futura), así que "los efectos enviados hoy al banco" ya
+                // no son "los pagos con fecha de hoy": son los pagos de las remesas CREADAS hoy.
+                // (La tabla Remesas no está mapeada en el EDMX: se lee por SQL, patrón slice 2.)
+                List<int> remesasDelDia = db.Database.SqlQuery<int>(
+                    "SELECT [Número] FROM Remesas WHERE CAST(Fecha AS DATE) = CAST(@p0 AS DATE)", dia).ToList();
+
+                var efectos = db.ExtractosCliente.Where(e => e.Remesa != null && remesasDelDia.Contains(e.Remesa.Value)
+                    && e.TipoApunte == Constantes.TiposExtractoCliente.PAGO && e.CCC != null);
 
                 List<EfectoDomiciliado> listaEfectos = efectos.Select(e => new EfectoDomiciliado
                 {
@@ -26,6 +34,7 @@ namespace NestoAPI.Infraestructure.Domiciliaciones
                     Concepto = e.Concepto.Trim(),
                     Importe = -e.Importe,
                     Fecha = e.Fecha,
+                    FechaVencimiento = e.FechaVto,
                     NOrden = e.Nº_Orden,
                     NumeroDocumento = e.Nº_Documento != null ? e.Nº_Documento.Trim() : null,
                     Efecto = e.Efecto != null ? e.Efecto.Trim() : null

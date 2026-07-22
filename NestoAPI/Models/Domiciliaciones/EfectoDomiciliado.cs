@@ -16,6 +16,9 @@ namespace NestoAPI.Models.Domiciliaciones
         public string Concepto { get; set; }
         public decimal Importe { get; set; }
         public DateTime Fecha { get; set; }
+        /// <summary>NestoAPI#345: fecha en la que el banco cargará el efecto (puede ser
+        /// posterior al día del envío si la remesa respeta los vencimientos originales).</summary>
+        public DateTime? FechaVencimiento { get; set; }
         public string NombrePersona { get; set; }
         public Iban Iban { get; set; }
         public int NOrden { get; set; }
