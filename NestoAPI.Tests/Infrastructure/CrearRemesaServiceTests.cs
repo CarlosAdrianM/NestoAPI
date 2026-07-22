@@ -234,6 +234,27 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void ProximaFechaCargo_SaltaFinesDeSemanaYFestivos()
+        {
+            // Solo fines de semana como no laborables para el test
+            Func<DateTime, bool> finde = f => f.DayOfWeek == DayOfWeek.Saturday || f.DayOfWeek == DayOfWeek.Sunday;
+            var jueves = new DateTime(2026, 7, 23);
+            var viernes = new DateTime(2026, 7, 24);
+
+            Assert.AreEqual(viernes, CrearRemesaService.ProximaFechaCargo(jueves, 1, finde), "Jueves + 1 = viernes");
+            Assert.AreEqual(new DateTime(2026, 7, 27), CrearRemesaService.ProximaFechaCargo(viernes, 1, finde),
+                "Viernes + 1 cae en sábado → salta al LUNES (mejor que el domingo)");
+
+            // Festivo: el viernes 24 es festivo → jueves + 1 salta al lunes
+            Func<DateTime, bool> findeYViernesFestivo = f => finde(f) || f == viernes;
+            Assert.AreEqual(new DateTime(2026, 7, 27), CrearRemesaService.ProximaFechaCargo(jueves, 1, findeYViernesFestivo));
+
+            // Antelación configurable (parámetro DiasAntelacionRemesa): estilo eléctricas, 5 días
+            Assert.AreEqual(new DateTime(2026, 7, 28), CrearRemesaService.ProximaFechaCargo(jueves, 5, finde),
+                "Jueves + 5 = martes siguiente (el 28); si cayera en finde saltaría");
+        }
+
+        [TestMethod]
         public void ConstruirLineasRemesa_LaLineaDelBancoLlevaTipoApunte()
         {
             // Bug 22/07/26 (2º intento en vivo): PreContabilidad.TipoApunte es NOT NULL y la

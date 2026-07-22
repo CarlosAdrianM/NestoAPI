@@ -95,12 +95,37 @@ namespace NestoAPI.Infraestructure.Remesas
 
         // NestoAPI#332: el selector núcleo+estrategias vive en SelectorEfectosCobrables
         // (compartido a futuro con la remesa de tarjetas #181).
-        public async Task<List<EfectoCandidatoDTO>> LeerEfectosCandidatosSepaAsync(string empresa)
+        public async Task<List<EfectoCandidatoDTO>> LeerEfectosCandidatosSepaAsync(string empresa, System.DateTime? hasta = null)
         {
             using (NVEntities db = new NVEntities())
             {
-                return await new SelectorEfectosCobrables(db).CandidatosSepa(empresa).ConfigureAwait(false);
+                return await new SelectorEfectosCobrables(db).CandidatosSepa(empresa, hasta: hasta).ConfigureAwait(false);
             }
+        }
+
+        // NestoAPI#345: hoy + DiasAntelacionRemesa del usuario (default 1), saltando al
+        // siguiente laborable (GestorFestivos: fines de semana + festivos nacionales/empresa).
+        public async Task<System.DateTime> FechaCargoPropuestaAsync(string usuario)
+        {
+            int dias = 1;
+            if (!string.IsNullOrWhiteSpace(usuario))
+            {
+                using (NVEntities db = new NVEntities())
+                {
+                    string usuarioSinDominio = usuario.Substring(usuario.IndexOf("\\") + 1).Trim();
+                    ParametroUsuario parametro = await db.ParametrosUsuario.FirstOrDefaultAsync(p =>
+                        p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                        && p.Usuario == usuarioSinDominio
+                        && p.Clave == Parametros.Claves.DiasAntelacionRemesa)
+                        .ConfigureAwait(false);
+                    if (int.TryParse(parametro?.Valor?.Trim(), out int configurado))
+                    {
+                        dias = configurado;
+                    }
+                }
+            }
+            return CrearRemesaService.ProximaFechaCargo(System.DateTime.Today, dias,
+                f => Models.RecursosHumanos.GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE));
         }
 
         public async Task<CrearRemesaResponse> CrearRemesaAsync(CrearRemesaRequest peticion, string usuario)

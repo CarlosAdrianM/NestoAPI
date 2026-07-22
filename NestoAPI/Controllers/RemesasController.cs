@@ -64,10 +64,26 @@ namespace NestoAPI.Controllers
         [HttpGet]
         [Route("api/Remesas/EfectosCandidatos")]
         [ResponseType(typeof(List<EfectoCandidatoDTO>))]
-        public async Task<IHttpActionResult> GetEfectosCandidatos(string empresa)
+        public async Task<IHttpActionResult> GetEfectosCandidatos(string empresa, System.DateTime? hasta = null)
         {
-            List<EfectoCandidatoDTO> candidatos = await _remesas.LeerEfectosCandidatosSepaAsync(empresa).ConfigureAwait(false);
+            // NestoAPI#345: hasta = vencimientos incluidos hasta esa fecha (null = solo
+            // vencidos a hoy); permite girar con antelación el fin de semana y los festivos.
+            List<EfectoCandidatoDTO> candidatos = await _remesas.LeerEfectosCandidatosSepaAsync(empresa, hasta).ConfigureAwait(false);
             return Ok(candidatos);
+        }
+
+        // GET: api/Remesas/FechaCargoPropuesta
+        // NestoAPI#345: hoy + DiasAntelacionRemesa del usuario (default 1), saltando al
+        // siguiente laborable (fines de semana y festivos del gestor de RRHH).
+        [System.Web.Http.Authorize]
+        [HttpGet]
+        [Route("api/Remesas/FechaCargoPropuesta")]
+        [ResponseType(typeof(System.DateTime))]
+        public async Task<IHttpActionResult> GetFechaCargoPropuesta()
+        {
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null);
+            System.DateTime fecha = await _remesas.FechaCargoPropuestaAsync(usuario).ConfigureAwait(false);
+            return Ok(fecha);
         }
 
         // POST: api/Remesas

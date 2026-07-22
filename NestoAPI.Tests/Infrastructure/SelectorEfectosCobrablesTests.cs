@@ -94,6 +94,41 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task CandidatosSepa_ConHasta_IncluyeVencimientosFuturosHastaEsaFecha()
+        {
+            // NestoAPI#345: un viernes se giran también los efectos del fin de semana (o los de
+            // mañana si es festivo): hasta = límite de VENCIMIENTO incluido.
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, vencimiento: HOY.AddDays(-1)),
+                Efecto(id: 2, vencimiento: HOY.AddDays(2)),
+                Efecto(id: 3, vencimiento: HOY.AddDays(3))
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> sinHasta = await selector.CandidatosSepa("1", HOY);
+            List<EfectoCandidatoDTO> conHasta = await selector.CandidatosSepa("1", HOY, hasta: HOY.AddDays(2));
+
+            Assert.AreEqual(1, sinHasta.Count, "Sin hasta: solo los vencidos a hoy (clásico)");
+            Assert.AreEqual(2, conHasta.Count, "Con hasta: entran también los que vencen dentro del límite");
+            Assert.IsTrue(conHasta.Any(c => c.Id == 2));
+            Assert.IsFalse(conHasta.Any(c => c.Id == 3), "Más allá del límite sigue fuera");
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_ConHasta_LosNacidosHoySiguenExcluidos()
+        {
+            // El margen de "lo facturado hoy queda fuera" se ancla a HOY, no a la fecha hasta
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, fecha: HOY, vencimiento: HOY)
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY, hasta: HOY.AddDays(3));
+
+            Assert.AreEqual(0, candidatos.Count, "Un efecto con Fecha de hoy no entra aunque el hasta sea futuro");
+        }
+
+        [TestMethod]
         public async Task CandidatosSepa_ElNucleoExcluyeLoQueNoEsCarteraVencidaPendiente()
         {
             ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>

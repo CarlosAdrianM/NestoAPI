@@ -41,20 +41,29 @@ namespace NestoAPI.Infraestructure.Remesas
         /// Preseleccionado = entra; con Motivo = retenido/queda fuera; ClienteConNegativos =
         /// requiere pasar por la puerta de revisión (liquidar antes de remesar, #333).
         /// </summary>
-        public async Task<List<EfectoCandidatoDTO>> CandidatosSepa(string empresa, DateTime? hoy = null)
+        /// <param name="hoy">Ancla temporal (solo para tests; default el día real).</param>
+        /// <param name="hasta">NestoAPI#345: límite de VENCIMIENTO incluido (default = hoy).
+        /// Permite girar con antelación los efectos del fin de semana/festivos. El filtro de
+        /// Fecha del movimiento sigue anclado a hoy: lo facturado hoy queda fuera siempre.</param>
+        public async Task<List<EfectoCandidatoDTO>> CandidatosSepa(string empresa, DateTime? hoy = null, DateTime? hasta = null)
         {
             DateTime fechaHoy = (hoy ?? DateTime.Today).Date;
+            DateTime fechaHasta = (hasta ?? fechaHoy).Date;
+            if (fechaHasta < fechaHoy)
+            {
+                fechaHasta = fechaHoy;
+            }
 
             // NÚCLEO COMÚN: cartera (TipoApunte 2), algo pendiente, fecha anterior a hoy
-            // (margen para lo facturado hoy, criterio Carlos 20/07) y vencimiento cumplido.
-            // ESTRATEGIA SEPA: con CCC (el char relleno de espacios equivale a '' en SQL).
+            // (margen para lo facturado hoy, criterio Carlos 20/07) y vencimiento dentro del
+            // límite. ESTRATEGIA SEPA: con CCC (el char relleno equivale a '' en SQL).
             List<ExtractoCliente> efectos = await db.ExtractosCliente
                 .Where(e => e.Empresa == empresa
                     && e.TipoApunte == Constantes.ExtractosCliente.TiposApunte.CARTERA
                     && e.ImportePdte != 0
                     && e.CCC != null && e.CCC != ""
                     && e.Fecha < fechaHoy
-                    && e.FechaVto != null && e.FechaVto <= fechaHoy
+                    && e.FechaVto != null && e.FechaVto <= fechaHasta
                     && e.ImportePdte > 0)
                 .OrderBy(e => e.Número).ThenBy(e => e.FechaVto)
                 .ToListAsync().ConfigureAwait(false);

@@ -81,8 +81,11 @@ namespace NestoAPI.Infraestructure.Remesas
         {
             // Revalidación FRESCA server-side (lección Nesto#397), también en cada reintento:
             // el selector aplica el núcleo completo (cartera, vencida, CCC, gating #172, neteo).
+            // NestoAPI#345: con la MISMA fecha "hasta" con la que el usuario cargó la pantalla —
+            // si no, los efectos del fin de semana pasarían la selección pero el POST los
+            // rechazaría con "ya no es candidato".
             List<EfectoCandidatoDTO> candidatos = await new SelectorEfectosCobrables(db)
-                .CandidatosSepa(peticion.Empresa).ConfigureAwait(false);
+                .CandidatosSepa(peticion.Empresa, hasta: peticion.SeleccionHasta).ConfigureAwait(false);
             List<string> errores = ValidarSeleccion(idsPedidos, candidatos);
             if (errores.Any())
             {
@@ -101,8 +104,12 @@ namespace NestoAPI.Infraestructure.Remesas
                 .Where(e => e.Empresa == peticion.Empresa && idsPedidos.Contains(e.Nº_Orden))
                 .ToListAsync().ConfigureAwait(false);
             decimal importeTotal = efectos.Sum(e => e.ImportePdte);
-            // NestoAPI#345: la fecha de cargo nunca puede ser anterior a hoy
-            DateTime fechaCargo = FechaCargoEfectiva(peticion.FechaCargo);
+            // NestoAPI#345: en modo RESPETAR el suelo es SIEMPRE HOY (los vencidos se cobran ya
+            // y los futuros conservan su fecha; la FechaCargo del request no pinta nada ahí).
+            // En modo forzado, la fecha única elegida — nunca anterior a hoy.
+            DateTime fechaCargo = peticion.RespetarVencimientos
+                ? DateTime.Today
+                : FechaCargoEfectiva(peticion.FechaCargo);
 
             db.Database.CommandTimeout = 120; // margen para diarios con contención (#322)
             using (System.Data.Entity.DbContextTransaction transaccion = db.Database.BeginTransaction())
@@ -204,6 +211,22 @@ namespace NestoAPI.Infraestructure.Remesas
                     $"o sacar de la remesa): {string.Join(", ", clientesConNegativos)}.");
             }
             return errores;
+        }
+
+        /// <summary>
+        /// NestoAPI#345: fecha "hasta" propuesta para cargar candidatos = hoy + N días de
+        /// antelación (parámetro de usuario DiasAntelacionRemesa, default 1), saltando al
+        /// siguiente día laborable si cae en fin de semana o festivo. Ejemplos con antelación 1:
+        /// jueves→viernes, viernes→lunes, víspera de festivo→siguiente laborable. Pura.
+        /// </summary>
+        internal static DateTime ProximaFechaCargo(DateTime hoy, int diasAntelacion, Func<DateTime, bool> esNoLaborable)
+        {
+            DateTime fecha = hoy.Date.AddDays(diasAntelacion < 0 ? 0 : diasAntelacion);
+            while (esNoLaborable(fecha))
+            {
+                fecha = fecha.AddDays(1);
+            }
+            return fecha;
         }
 
         /// <summary>NestoAPI#345: la fecha de cargo nunca puede ser anterior a hoy.</summary>
@@ -329,11 +352,17 @@ namespace NestoAPI.Infraestructure.Remesas
         public bool RespetarVencimientos { get; set; }
 
         /// <summary>
-        /// NestoAPI#345: fecha de cargo (default hoy). En modo forzado es LA fecha de todos
-        /// los efectos; en modo respetar es el SUELO (ningún vencimiento puede ser anterior).
-        /// Nunca puede ser anterior a hoy: si lo es, se usa hoy.
+        /// NestoAPI#345: fecha de cargo ÚNICA del modo forzado (default hoy; nunca anterior a
+        /// hoy). En modo respetar se ignora: el suelo de los vencimientos es siempre hoy.
         /// </summary>
         public DateTime? FechaCargo { get; set; }
+
+        /// <summary>
+        /// NestoAPI#345: la fecha "hasta" con la que el usuario cargó los candidatos
+        /// (vencimientos incluidos hasta esa fecha). El servidor revalida con la MISMA fecha.
+        /// Null = solo vencidos a hoy (comportamiento clásico).
+        /// </summary>
+        public DateTime? SeleccionHasta { get; set; }
     }
 
     public class CrearRemesaResponse
