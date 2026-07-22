@@ -154,6 +154,21 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(lineas.All(l => l.Asiento_Automático));
         }
 
+        [TestMethod]
+        public void ConstruirLineasRemesa_LaLineaDelBancoLlevaTipoApunte()
+        {
+            // Bug 22/07/26 (2º intento en vivo): PreContabilidad.TipoApunte es NOT NULL y la
+            // línea del banco no lo rellenaba → DbEntityValidationException al guardar y remesa
+            // abortada. El asiento real de la remesa 10898 lleva TipoApunte "1" en el banco.
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10900, "1", BancoSabadell(), new List<ExtractoCliente> { Efecto(1, "15191", 100m, "NV1") }, "carlos");
+
+            PreContabilidad banco = lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE);
+            Assert.AreEqual(Constantes.TiposExtractoCliente.FACTURA, banco.TipoApunte);
+            Assert.IsTrue(lineas.All(l => !string.IsNullOrEmpty(l.TipoApunte)),
+                "Ninguna línea puede ir sin TipoApunte (columna NOT NULL)");
+        }
+
         // Controller (regla de la casa)
 
         [TestMethod]

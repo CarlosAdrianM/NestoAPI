@@ -258,6 +258,9 @@ namespace NestoAPI.Infraestructure.Remesas
                 Empresa = empresa,
                 Nº_Cuenta = cuentaBanco,
                 TipoCuenta = Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE,
+                // TipoApunte es NOT NULL: sin él, DbEntityValidationException al guardar
+                // (bug 22/07). "1" = lo que lleva la línea de banco del asiento real 10898.
+                TipoApunte = Constantes.TiposExtractoCliente.FACTURA,
                 Debe = efectos.Sum(e => e.ImportePdte),
                 Concepto = conceptoBanco.Length > 50 ? conceptoBanco.Substring(0, 50) : conceptoBanco,
                 Nº_Documento = numeroRemesa.ToString(),
