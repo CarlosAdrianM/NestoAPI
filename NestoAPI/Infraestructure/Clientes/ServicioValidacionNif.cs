@@ -188,6 +188,32 @@ namespace NestoAPI.Infraestructure.Clientes
                     actualizados++;
                 }
             }
+
+            // Carlos 22/07: las facturas ya EMITIDAS y aún sin declarar a Verifactu llevan el
+            // NIF viejo PERSISTIDO (a la AEAT viaja factura.CifNif, no la ficha): sin esto, el
+            // reintento del job las mandaría mal para siempre. Solo dentro de la ventana de
+            // declaración de la sombra (el histórico pre-Verifactu tiene UUID null legítimo).
+            System.DateTime fechaInicioDeclaracion = Verifactu.VerifactuJobsService.FechaInicioDeclaracion;
+            List<CabFacturaVta> facturasSinDeclarar = await db.CabsFacturasVtas
+                .Where(f => f.Nº_Cliente == cliente && f.Fecha >= fechaInicioDeclaracion
+                    && (f.VerifactuUUID == null || f.VerifactuUUID == ""))
+                .ToListAsync().ConfigureAwait(false);
+            int facturasActualizadas = 0;
+            foreach (CabFacturaVta factura in facturasSinDeclarar)
+            {
+                if (factura.CifNif?.Trim() != nifNuevo)
+                {
+                    _ = db.Modificaciones.Add(new Modificacion
+                    {
+                        Tabla = "CabFacturaVta",
+                        Anterior = $"Factura {factura.Número?.Trim()} CifNif={factura.CifNif?.Trim()}",
+                        Nuevo = $"CifNif={nifNuevo} (corrección centralizada #327, factura sin declarar)",
+                        Usuario = usuario
+                    });
+                    factura.CifNif = nifNuevo;
+                    facturasActualizadas++;
+                }
+            }
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
 
             // Registrar la validación del principal (es el NIF que se declara al facturar).
@@ -210,7 +236,8 @@ namespace NestoAPI.Infraestructure.Clientes
                 Nif = nifNuevo,
                 ResultadoAeat = respuesta.ResultadoAeat,
                 NombreAeat = respuesta.NombreFormateado,
-                ContactosActualizados = actualizados
+                ContactosActualizados = actualizados,
+                FacturasActualizadas = facturasActualizadas
             };
         }
 

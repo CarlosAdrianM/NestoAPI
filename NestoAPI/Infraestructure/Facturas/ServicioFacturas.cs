@@ -588,7 +588,8 @@ namespace NestoAPI.Infraestructure.Facturas
                         await notificadorNif.Enviar(Constantes.Empresas.EMPRESA_POR_DEFECTO,
                             cabPedido.Nº_Cliente, $"la factura {resultadoProcedimiento}", esFactura: true,
                             nif: validacionNif.Nif, nombre: validacionNif.Nombre,
-                            resultadoAeat: validacionNif.ResultadoAeat);
+                            resultadoAeat: validacionNif.ResultadoAeat,
+                            usuario: usuarioAutenticado ?? usuario);
                     }
                     catch (Exception exCorreoNif)
                     {

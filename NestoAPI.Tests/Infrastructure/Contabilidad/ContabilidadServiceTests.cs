@@ -20,6 +20,27 @@ namespace NestoAPI.Tests.Infrastructure.Contabilidad
             return new ContabilidadService(repositorio);
         }
 
+        // ----- Bug 22/07/26 (crear remesa #332): prdCopiarCliente con empresa con padding -----
+        // El RemesasViewModel manda la empresa como char(3) con relleno ("1  "); la comparación
+        // exacta con "1" la daba por DISTINTA y ejecutaba prdCopiarCliente copiando el cliente
+        // de la empresa 1 sobre sí mismo → PK duplicada en dbo.CCC y remesa abortada.
+
+        [TestMethod]
+        public void EsEmpresaDistintaDeLaPorDefecto_EmpresaPorDefectoConYSinPadding_EsFalse()
+        {
+            Assert.IsFalse(ContabilidadService.EsEmpresaDistintaDeLaPorDefecto("1"));
+            Assert.IsFalse(ContabilidadService.EsEmpresaDistintaDeLaPorDefecto("1  "), "El char(3) llega con padding");
+            Assert.IsFalse(ContabilidadService.EsEmpresaDistintaDeLaPorDefecto(null));
+            Assert.IsFalse(ContabilidadService.EsEmpresaDistintaDeLaPorDefecto("  "));
+        }
+
+        [TestMethod]
+        public void EsEmpresaDistintaDeLaPorDefecto_OtraEmpresaConYSinPadding_EsTrue()
+        {
+            Assert.IsTrue(ContabilidadService.EsEmpresaDistintaDeLaPorDefecto("3"));
+            Assert.IsTrue(ContabilidadService.EsEmpresaDistintaDeLaPorDefecto("3  "));
+        }
+
         // ----- #296: validación previa a prdLiquidar (vía prdContabilizar) -----
         // El SP rechaza con RAISERROR ("Importes con mismo signo o importe 0...") enterrado en
         // ruido de transacciones. Replicamos sus validaciones de negocio en C# ANTES de ejecutar

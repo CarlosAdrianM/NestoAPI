@@ -24,6 +24,7 @@ namespace NestoAPI.Tests.Infrastructure
     {
         private NVEntities db;
         private DbSet<Cliente> fakeClientes;
+        private DbSet<CabFacturaVta> fakeFacturas;
         private IAlmacenValidacionesNif almacen;
         private IServicioGestorClientes aeat;
         private ServicioValidacionNif servicio;
@@ -34,6 +35,10 @@ namespace NestoAPI.Tests.Infrastructure
             db = A.Fake<NVEntities>();
             fakeClientes = A.Fake<DbSet<Cliente>>(o => o.Implements<IQueryable<Cliente>>().Implements<IDbAsyncEnumerable<Cliente>>());
             A.CallTo(() => db.Clientes).Returns(fakeClientes);
+            // CorregirNif corrige también el NIF persistido de las facturas sin declarar
+            fakeFacturas = A.Fake<DbSet<CabFacturaVta>>(o => o.Implements<IQueryable<CabFacturaVta>>().Implements<IDbAsyncEnumerable<CabFacturaVta>>());
+            A.CallTo(() => db.CabsFacturasVtas).Returns(fakeFacturas);
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta>().AsQueryable());
             almacen = A.Fake<IAlmacenValidacionesNif>();
             aeat = A.Fake<IServicioGestorClientes>();
             servicio = new ServicioValidacionNif(db, almacen, aeat);
@@ -41,14 +46,23 @@ namespace NestoAPI.Tests.Infrastructure
 
         private void ConFicha(params Cliente[] fichas)
         {
-            var data = fichas.AsQueryable();
-            A.CallTo(() => ((IDbAsyncEnumerable<Cliente>)fakeClientes).GetAsyncEnumerator())
-                .Returns(new TestDbAsyncEnumerator<Cliente>(data.GetEnumerator()));
-            A.CallTo(() => ((IQueryable<Cliente>)fakeClientes).Provider)
-                .Returns(new TestDbAsyncQueryProvider<Cliente>(data.Provider));
-            A.CallTo(() => ((IQueryable<Cliente>)fakeClientes).Expression).Returns(data.Expression);
-            A.CallTo(() => ((IQueryable<Cliente>)fakeClientes).ElementType).Returns(data.ElementType);
-            A.CallTo(() => ((IQueryable<Cliente>)fakeClientes).GetEnumerator()).Returns(data.GetEnumerator());
+            ConfigurarFakeDbSet(fakeClientes, fichas.AsQueryable());
+        }
+
+        private void ConFacturas(params CabFacturaVta[] facturas)
+        {
+            ConfigurarFakeDbSet(fakeFacturas, facturas.AsQueryable());
+        }
+
+        private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
+        {
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+                .Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
         }
 
         private static Cliente Ficha(string cliente = "30676", string contacto = "0", string nif = "90021192",
@@ -235,6 +249,31 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("90021192", principal.CIF_NIF, "La ficha no debe cambiar si la AEAT rechaza el NIF nuevo");
             A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.Ignored)).MustNotHaveHappened();
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CorregirNif_FacturasSinDeclarar_CorrigeSuNifPersistido()
+        {
+            // Carlos 22/07: la factura emitida lleva el NIF viejo PERSISTIDO (a Verifactu viaja
+            // factura.CifNif, no la ficha): al corregir, las facturas sin declarar dentro de la
+            // ventana de la sombra se corrigen también para que el job las declare bien. Las ya
+            // declaradas y el histórico pre-Verifactu no se tocan.
+            ConFicha(Ficha(nif: "90021192"));
+            ConMasFakes();
+            AeatResponde(valido: true, resultado: "IDENTIFICADO");
+            System.DateTime inicio = NestoAPI.Infraestructure.Verifactu.VerifactuJobsService.FechaInicioDeclaracion;
+            var sinDeclarar = new CabFacturaVta { Empresa = "1", Número = "NV2612489", Nº_Cliente = "30676", Fecha = inicio.AddDays(1), CifNif = "90021192", VerifactuUUID = null };
+            var yaDeclarada = new CabFacturaVta { Empresa = "1", Número = "NV2612490", Nº_Cliente = "30676", Fecha = inicio.AddDays(1), CifNif = "90021192", VerifactuUUID = "uuid-ok" };
+            var historica = new CabFacturaVta { Empresa = "1", Número = "NV2500001", Nº_Cliente = "30676", Fecha = inicio.AddDays(-30), CifNif = "90021192", VerifactuUUID = null };
+            ConFacturas(sinDeclarar, yaDeclarada, historica);
+
+            var resultado = await servicio.CorregirNif("30676", "90021192c", "carlos");
+
+            Assert.IsTrue(resultado.Corregido);
+            Assert.AreEqual(1, resultado.FacturasActualizadas);
+            Assert.AreEqual("90021192C", sinDeclarar.CifNif, "La factura sin declarar debe quedar con el NIF bueno");
+            Assert.AreEqual("90021192", yaDeclarada.CifNif, "Una factura ya declarada no se toca");
+            Assert.AreEqual("90021192", historica.CifNif, "El histórico pre-Verifactu no se toca");
         }
 
         [TestMethod]

@@ -1762,7 +1762,8 @@ namespace NestoAPI.Controllers
                         Constantes.Empresas.EMPRESA_POR_DEFECTO, pedido.cliente,
                         $"el pedido {pedido.numero}", esFactura: false,
                         nif: validacionNif.Nif, nombre: validacionNif.Nombre,
-                        resultadoAeat: validacionNif.ResultadoAeat);
+                        resultadoAeat: validacionNif.ResultadoAeat,
+                        usuario: pedido.Usuario);
                     ElmahHelper.Log(new Exception(
                         $"[NIF incorrecto] Cliente {pedido.cliente?.Trim()} en el pedido {pedido.numero}: " +
                         $"NIF '{validacionNif.Nif}' no registrado en la AEAT ({validacionNif.ResultadoAeat}). " +

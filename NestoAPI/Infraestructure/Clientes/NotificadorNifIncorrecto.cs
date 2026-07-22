@@ -27,13 +27,23 @@ namespace NestoAPI.Infraestructure.Clientes
         /// <param name="contexto">De dónde viene el aviso: "el pedido 922123" o "la factura NV2612489".</param>
         /// <param name="esFactura">True si el aviso salta al facturar (el texto cambia: ya no
         /// queda margen hasta facturar, el documento acaba de emitirse).</param>
+        /// <param name="usuario">Quien procesó el documento (con o sin dominio). Si el vendedor
+        /// es el general o no tiene correo, el aviso va a su CorreoDefecto de ParametrosUsuario.</param>
         public async Task Enviar(string empresa, string cliente, string contexto, bool esFactura,
-            string nif, string nombre, string resultadoAeat)
+            string nif, string nombre, string resultadoAeat, string usuario = null)
         {
             Cliente ficha = await LeerFichaPrincipalOContacto(empresa, cliente).ConfigureAwait(false);
             Vendedor vendedor = ficha == null ? null : db.Vendedores
                 .FirstOrDefault(v => v.Empresa == empresa && v.Número == ficha.Vendedor);
-            string correoVendedor = GestorPresupuestos.CorreoVendedorOInformatica(vendedor);
+
+            // Destinatario (Carlos 22/07): al vendedor si es uno REAL con correo; con el vendedor
+            // general (NV) o sin correo, al USUARIO que metió el documento (su CorreoDefecto);
+            // y si tampoco tiene correo, solo a administración (sin duplicarla en CC).
+            bool vendedorGeneral = ficha?.Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL;
+            string correoVendedor = vendedor?.Mail?.Trim();
+            string destinatario = !vendedorGeneral && !string.IsNullOrWhiteSpace(correoVendedor)
+                ? correoVendedor
+                : LeerCorreoUsuario(empresa, usuario);
 
             var mail = new MailMessage
             {
@@ -54,10 +64,33 @@ namespace NestoAPI.Infraestructure.Clientes
                     "<p><b>Por favor, solicitad al cliente el NIF correcto</b> (tal como figura en su DNI/CIF) " +
                     "y corregidlo en la ficha. Al corregirlo se revalida automáticamente y desaparecen los avisos.</p>"
             };
-            mail.To.Add(new MailAddress(correoVendedor.ToLower()));
-            mail.CC.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+            if (!string.IsNullOrWhiteSpace(destinatario))
+            {
+                mail.To.Add(new MailAddress(destinatario.ToLower()));
+                mail.CC.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+            }
+            else
+            {
+                mail.To.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+            }
 
             _ = servicioCorreo.EnviarCorreoSMTP(mail);
+        }
+
+        // El correo del usuario que procesó el documento: parámetro CorreoDefecto de
+        // ParametrosUsuario (mismo mecanismo que GestorPresupuestos), quitando el dominio
+        // ("NUEVAVISION\Laura" → "Laura"). Null si no lo tiene.
+        private string LeerCorreoUsuario(string empresa, string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            string usuarioSinDominio = usuario.Substring(usuario.IndexOf("\\") + 1).Trim();
+            ParametroUsuario parametro = db.ParametrosUsuario.FirstOrDefault(p =>
+                p.Empresa == empresa && p.Usuario == usuarioSinDominio
+                && p.Clave == Parametros.Claves.CorreoDefecto);
+            return string.IsNullOrWhiteSpace(parametro?.Valor) ? null : parametro.Valor.Trim();
         }
 
         // El vendedor sale del contacto principal (o del primero que haya): el aviso es por

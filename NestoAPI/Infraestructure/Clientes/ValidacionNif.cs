@@ -129,6 +129,9 @@ namespace NestoAPI.Infraestructure.Clientes
         public string ResultadoAeat { get; set; }
         public string NombreAeat { get; set; }
         public int ContactosActualizados { get; set; }
+        /// <summary>Facturas emitidas SIN declarar a Verifactu cuyo NIF persistido se ha
+        /// corregido también (el job las declarará con el NIF bueno).</summary>
+        public int FacturasActualizadas { get; set; }
         public string Motivo { get; set; }
     }
 }

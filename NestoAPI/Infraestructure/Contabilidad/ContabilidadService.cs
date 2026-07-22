@@ -193,8 +193,13 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 }
                 _ = db.PreContabilidades.Add(linea);
 
-                // Ejecutar prdCopiarCliente si corresponde
-                if (linea.Empresa != Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                // Ejecutar prdCopiarCliente si corresponde.
+                // Bug 22/07/26 (crear remesa #332): la empresa puede llegar con el padding del
+                // char(3) ("1  " del RemesasViewModel). La comparación exacta daba distinta de
+                // "1" y ejecutaba prdCopiarCliente copiando el cliente de la empresa 1 SOBRE SÍ
+                // MISMO (SQL sí compara char con padding) → PK duplicada en dbo.CCC y remesa
+                // abortada. Comparar SIEMPRE con Trim.
+                if (EsEmpresaDistintaDeLaPorDefecto(linea.Empresa) &&
                     linea.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CLIENTE)
                 {
                     SqlParameter empresaOrigenParam = new SqlParameter("@EmpresaOrigen", SqlDbType.Char, 3)
@@ -227,6 +232,17 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 throw new Exception("No se ha podido contabilizar el diario", ex);
             }
 
+        }
+
+        /// <summary>
+        /// ¿La línea es de una empresa DISTINTA de la por defecto (y por tanto hay que copiar
+        /// el cliente con prdCopiarCliente)? Compara con Trim: los strings de empresa circulan
+        /// con y sin el padding del char(3) ("1" y "1  " son la MISMA empresa).
+        /// </summary>
+        internal static bool EsEmpresaDistintaDeLaPorDefecto(string empresa)
+        {
+            return !string.IsNullOrWhiteSpace(empresa)
+                && empresa.Trim() != Constantes.Empresas.EMPRESA_POR_DEFECTO;
         }
 
         public async Task<int> CrearLineas(List<PreContabilidad> lineas)

@@ -48,6 +48,11 @@ namespace NestoAPI.Infraestructure.Remesas
             {
                 throw new ArgumentException("Hay que indicar empresa, banco y al menos un efecto.");
             }
+            // Bug 22/07/26: el cliente manda la empresa con el padding del char(3) ("1  ") y las
+            // comparaciones C# exactas aguas abajo (prdCopiarCliente en CrearLineas) se rompían.
+            // Normalizar aquí: en SQL el char(3) rellena solo.
+            peticion.Empresa = peticion.Empresa.Trim();
+            peticion.Banco = peticion.Banco.Trim();
             List<int> idsPedidos = peticion.Efectos.Distinct().ToList();
 
             await CandadoCrearRemesa.WaitAsync().ConfigureAwait(false);
@@ -148,6 +153,13 @@ namespace NestoAPI.Infraestructure.Remesas
                     {
                         // La transacción pudo morir con el propio error (deadlock): el using la limpia.
                     }
+                    // Bug 22/07/26: este wrap convierte CUALQUIER error en InvalidOperationException
+                    // y el controller lo devuelve como BadRequest — los errores de negocio no deben
+                    // ensuciar ELMAH, pero un error INESPERADO (SQL, EF...) quedaba invisible.
+                    // Loguearlo aquí antes de envolverlo.
+                    ElmahHelper.Log(new Exception(
+                        $"CrearRemesa: error inesperado creando la remesa (empresa {peticion.Empresa}, " +
+                        $"banco {peticion.Banco}, {idsPedidos.Count} efectos): {ex.Message}", ex));
                     throw new InvalidOperationException(
                         $"No se pudo crear la remesa (no se ha guardado nada): {ex.Message}", ex);
                 }
