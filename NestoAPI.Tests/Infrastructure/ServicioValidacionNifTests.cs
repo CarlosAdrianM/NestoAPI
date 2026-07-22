@@ -277,6 +277,60 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_GuardaElRegistroConTipoYPais()
+        {
+            // NestoAPI#339: un pasaporte jamás validará contra el censo — se marca a mano y
+            // las facturas pasan a declararse con IDOtro (tipo L7 + país).
+            ConFicha(Ficha(nif: "AB123456"));
+            ConMasFakes();
+
+            var resultado = await servicio.MarcarIdentificacionExtranjera("30676", "03", "ma", "carlos");
+
+            Assert.IsTrue(resultado.Corregido);
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.That.Matches(r =>
+                r.Estado == ServicioValidacionNif.ESTADO_EXTRANJERO
+                && r.TipoIdentificacion == "03" && r.Pais == "MA" && r.Nif == "AB123456")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_TipoOPaisInvalidos_NoGuardaNada()
+        {
+            ConFicha(Ficha());
+            ConMasFakes();
+
+            var tipoMalo = await servicio.MarcarIdentificacionExtranjera("30676", "99", "MA", "carlos");
+            var paisMalo = await servicio.MarcarIdentificacionExtranjera("30676", "03", "MARRUECOS", "carlos");
+
+            Assert.IsFalse(tipoMalo.Corregido);
+            Assert.IsFalse(paisMalo.Corregido);
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ObtenerEstado_MarcaExtranjeraVigente_DevuelveExtranjeroConTipoYPais()
+        {
+            // Vigente = la ficha no ha cambiado de NIF/nombre desde que se marcó. Ni valida
+            // contra el censo, ni sale en la lista de incorrectos, ni bloquea al facturar.
+            ConFicha(Ficha(nif: "AB123456", nombre: "PIERRE DUPONT"));
+            A.CallTo(() => almacen.Leer("1", "30676", "0")).Returns(new ValidacionNifRegistro
+            {
+                Nif = "AB123456",
+                Nombre = "PIERRE DUPONT",
+                Estado = ServicioValidacionNif.ESTADO_EXTRANJERO,
+                TipoIdentificacion = "03",
+                Pais = "FR"
+            });
+
+            var resultado = await servicio.ObtenerEstado("1", "30676", "0");
+
+            Assert.AreEqual(EstadoValidacionNif.Extranjero, resultado.Estado);
+            Assert.AreEqual("03", resultado.TipoIdentificacion);
+            Assert.AreEqual("FR", resultado.Pais);
+        }
+
+        [TestMethod]
         public async Task CorregirNif_ClienteDeSimplificadas_NoSePuedeCorregir()
         {
             ConFicha(Ficha(cliente: Constantes.ClientesEspeciales.TIENDA_ONLINE));

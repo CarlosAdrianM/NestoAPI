@@ -76,6 +76,38 @@ namespace NestoAPI.Controllers
             public string Nif { get; set; }
         }
 
+        // POST: api/Clientes/MarcarIdentificacionExtranjera
+        // NestoAPI#339: pasaportes y demás identificaciones extranjeras — dejan de validarse
+        // contra el censo (no aplica) y las facturas se declaran a Verifactu con IDOtro.
+        [System.Web.Http.Authorize]
+        [System.Web.Http.HttpPost]
+        [System.Web.Http.Route("api/Clientes/MarcarIdentificacionExtranjera")]
+        public async Task<IHttpActionResult> MarcarIdentificacionExtranjera([FromBody] MarcarIdentificacionExtranjeraRequest peticion)
+        {
+            if (peticion == null || string.IsNullOrWhiteSpace(peticion.Cliente))
+            {
+                return BadRequest("Hay que indicar el cliente, el tipo de identificación y el país.");
+            }
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            Infraestructure.Clientes.ResultadoCorreccionNif resultado = await _servicioValidacionNif
+                .MarcarIdentificacionExtranjera(peticion.Cliente, peticion.TipoIdentificacion, peticion.Pais, usuario);
+            if (!resultado.Corregido)
+            {
+                return BadRequest(resultado.Motivo);
+            }
+            return Ok(resultado);
+        }
+
+        public class MarcarIdentificacionExtranjeraRequest
+        {
+            public string Cliente { get; set; }
+            /// <summary>Catálogo L7 AEAT: 02 NIF-IVA, 03 pasaporte, 04 doc. del país,
+            /// 05 cert. residencia, 06 otro, 07 no censado.</summary>
+            public string TipoIdentificacion { get; set; }
+            /// <summary>ISO 3166-1 alfa-2 (FR, MA, GB...).</summary>
+            public string Pais { get; set; }
+        }
+
         // GET: api/Clientes/NifIncorrectos?vendedor=
         // NestoAPI#327: listado para las pantallas de corrección (Nesto#417 / NestoApp#157).
         // Fichas cuya validación vigente es INCORRECTA, priorizando las que tienen pedido

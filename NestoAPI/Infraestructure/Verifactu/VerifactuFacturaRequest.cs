@@ -45,6 +45,12 @@ namespace NestoAPI.Infraestructure.Verifactu
         public string NombreDestinatario { get; set; }
 
         /// <summary>
+        /// NestoAPI#339: identificación EXTRANJERA del destinatario (pasaporte, etc.). Si va
+        /// informada, sustituye al NIF (la AEAT no valida IDOtro contra el censo).
+        /// </summary>
+        public VerifactuIdOtro IdOtro { get; set; }
+
+        /// <summary>
         /// Desglose por tipos de IVA
         /// </summary>
         public List<VerifactuDesgloseIva> DesgloseIva { get; set; } = new List<VerifactuDesgloseIva>();
@@ -109,6 +115,21 @@ namespace NestoAPI.Infraestructure.Verifactu
         /// tipo impositivo y cuota (validaciones AEAT §15.4).
         /// </summary>
         public string CalificacionOperacion { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#339: identificación del destinatario SIN NIF español (catálogo L7 de la AEAT):
+    /// 02 NIF-IVA, 03 pasaporte, 04 documento oficial del país, 05 certificado de residencia,
+    /// 06 otro documento probatorio, 07 no censado. Con IDOtro no hay validación de censo.
+    /// </summary>
+    public class VerifactuIdOtro
+    {
+        /// <summary>País ISO 3166-1 alfa-2 (FR, MA, GB...).</summary>
+        public string CodigoPais { get; set; }
+        /// <summary>Tipo del catálogo L7 ("03" = pasaporte).</summary>
+        public string IdType { get; set; }
+        /// <summary>El identificador en sí (el nº de pasaporte, etc.).</summary>
+        public string Id { get; set; }
     }
 
     /// <summary>

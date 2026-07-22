@@ -160,6 +160,24 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task EnviarFacturaAsync_ConIdOtro_SerializaIdOtroYNoNif()
+        {
+            // NestoAPI#339: pasaporte → id_otro {codigo_pais, id_type, id} en la raíz y SIN nif
+            // (contrato del ejemplo B2C intracomunitario de Verifacti)
+            var request = CrearRequest();
+            request.IdOtro = new VerifactuIdOtro { CodigoPais = "MA", IdType = "03", Id = "AB123456" };
+            request.NifDestinatario = null;
+
+            _ = await servicio.EnviarFacturaAsync(request);
+
+            StringAssert.Contains(handler.UltimoBody, "\"id_otro\"");
+            StringAssert.Contains(handler.UltimoBody, "\"codigo_pais\":\"MA\"");
+            StringAssert.Contains(handler.UltimoBody, "\"id_type\":\"03\"");
+            StringAssert.Contains(handler.UltimoBody, "\"id\":\"AB123456\"");
+            Assert.IsFalse(handler.UltimoBody.Contains("\"nif\""), "Con id_otro no puede viajar nif");
+        }
+
+        [TestMethod]
         public async Task ConsultarEstadoAsync_UsaQueryStringConElUuid()
         {
             handler.Respuesta = new HttpResponseMessage(HttpStatusCode.OK)

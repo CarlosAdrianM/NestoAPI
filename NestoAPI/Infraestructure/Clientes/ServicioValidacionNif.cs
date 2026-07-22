@@ -18,6 +18,16 @@ namespace NestoAPI.Infraestructure.Clientes
     {
         public const string ESTADO_CORRECTO = "CORRECTO";
         public const string ESTADO_INCORRECTO = "INCORRECTO";
+        /// <summary>NestoAPI#339: identificación extranjera marcada a mano (pasaporte...).</summary>
+        public const string ESTADO_EXTRANJERO = "EXTRANJERO";
+
+        /// <summary>Catálogo L7 de la AEAT para IDOtro: 02 NIF-IVA, 03 pasaporte, 04 documento
+        /// oficial del país de residencia, 05 certificado de residencia, 06 otro documento
+        /// probatorio, 07 no censado.</summary>
+        internal static readonly HashSet<string> TiposIdentificacionValidos = new HashSet<string>
+        {
+            "02", "03", "04", "05", "06", "07"
+        };
 
         private static readonly HashSet<string> ClientesSimplificadas = new HashSet<string>
         {
@@ -404,11 +414,90 @@ namespace NestoAPI.Infraestructure.Clientes
                 return resultado;
             }
 
+            // NestoAPI#339: identificación extranjera vigente (mientras la ficha no cambie de
+            // NIF/nombre): no valida contra el censo y a Verifactu va como IDOtro.
+            if (registro.Estado == ESTADO_EXTRANJERO)
+            {
+                resultado.Estado = EstadoValidacionNif.Extranjero;
+                resultado.TipoIdentificacion = registro.TipoIdentificacion?.Trim();
+                resultado.Pais = registro.Pais?.Trim();
+                resultado.ResultadoAeat = registro.ResultadoAeat;
+                return resultado;
+            }
+
             resultado.Estado = registro.Estado == ESTADO_CORRECTO
                 ? EstadoValidacionNif.Correcto
                 : EstadoValidacionNif.Incorrecto;
             resultado.ResultadoAeat = registro.ResultadoAeat;
             return resultado;
+        }
+
+        // NestoAPI#339: pasaportes y demás identificaciones extranjeras. La marca vive en
+        // ValidacionesNif (misma caducidad natural: si la ficha cambia de NIF/nombre, vuelve
+        // a "sin validar" y habría que marcarla de nuevo).
+        public async Task<ResultadoCorreccionNif> MarcarIdentificacionExtranjera(string cliente,
+            string tipoIdentificacion, string pais, string usuario)
+        {
+            tipoIdentificacion = tipoIdentificacion?.Trim();
+            pais = pais?.Trim().ToUpper();
+            if (!TiposIdentificacionValidos.Contains(tipoIdentificacion))
+            {
+                return new ResultadoCorreccionNif
+                {
+                    Corregido = false,
+                    Motivo = "Tipo de identificación no válido. Use 02 (NIF-IVA), 03 (pasaporte), " +
+                        "04 (documento del país), 05 (certificado de residencia), 06 (otro) o 07 (no censado)."
+                };
+            }
+            if (string.IsNullOrWhiteSpace(pais) || pais.Length != 2 || !pais.All(char.IsLetter))
+            {
+                return new ResultadoCorreccionNif { Corregido = false, Motivo = "Hay que indicar el país en formato ISO de 2 letras (FR, MA, GB...)." };
+            }
+            if (ClientesSimplificadas.Contains(cliente?.Trim()))
+            {
+                return new ResultadoCorreccionNif { Corregido = false, Motivo = "Los clientes de facturas simplificadas no llevan identificación real." };
+            }
+
+            Cliente principal = await db.Clientes.FirstOrDefaultAsync(c =>
+                c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                && c.Nº_Cliente == cliente && c.ClientePrincipal)
+                .ConfigureAwait(false);
+            if (principal == null || string.IsNullOrWhiteSpace(principal.CIF_NIF))
+            {
+                return new ResultadoCorreccionNif { Corregido = false, Motivo = $"No existe el cliente {cliente?.Trim()} o su ficha no tiene identificación." };
+            }
+
+            await almacen.Guardar(new ValidacionNifRegistro
+            {
+                Empresa = principal.Empresa?.Trim(),
+                Cliente = principal.Nº_Cliente?.Trim(),
+                Contacto = principal.Contacto?.Trim(),
+                Nif = principal.CIF_NIF?.Trim(),
+                Nombre = principal.Nombre?.Trim(),
+                Estado = ESTADO_EXTRANJERO,
+                ResultadoAeat = $"IDOtro tipo {tipoIdentificacion} ({pais})",
+                FechaValidacion = DateTime.Now,
+                Usuario = usuario,
+                TipoIdentificacion = tipoIdentificacion,
+                Pais = pais
+            }).ConfigureAwait(false);
+
+            _ = db.Modificaciones.Add(new Modificacion
+            {
+                Tabla = "Clientes",
+                Anterior = $"Cliente {principal.Nº_Cliente?.Trim()} identificación {principal.CIF_NIF?.Trim()}",
+                Nuevo = $"Marcada como EXTRANJERA tipo {tipoIdentificacion} país {pais} (#339)",
+                Usuario = usuario
+            });
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+
+            return new ResultadoCorreccionNif
+            {
+                Corregido = true,
+                Nif = principal.CIF_NIF?.Trim(),
+                Motivo = $"Identificación marcada como extranjera (tipo {tipoIdentificacion}, país {pais}): " +
+                    "deja de validarse contra el censo y las facturas se declararán con IDOtro."
+            };
         }
     }
 
@@ -427,7 +516,8 @@ namespace NestoAPI.Infraestructure.Clientes
         public async Task<ValidacionNifRegistro> Leer(string empresa, string cliente, string contacto)
         {
             List<ValidacionNifRegistro> filas = await db.Database.SqlQuery<ValidacionNifRegistro>(
-                "SELECT Empresa, Cliente, Contacto, Nif, Nombre, Estado, ResultadoAeat, FechaValidacion, Usuario " +
+                "SELECT Empresa, Cliente, Contacto, Nif, Nombre, Estado, ResultadoAeat, FechaValidacion, Usuario, " +
+                "TipoIdentificacion, Pais " +
                 "FROM ValidacionesNif WHERE Empresa = @p0 AND Cliente = @p1 AND Contacto = @p2",
                 empresa, cliente, contacto).ToListAsync().ConfigureAwait(false);
             ValidacionNifRegistro registro = filas.FirstOrDefault();
@@ -439,6 +529,8 @@ namespace NestoAPI.Infraestructure.Clientes
                 registro.Nif = registro.Nif?.Trim();
                 registro.Nombre = registro.Nombre?.Trim();
                 registro.Estado = registro.Estado?.Trim();
+                registro.TipoIdentificacion = registro.TipoIdentificacion?.Trim();
+                registro.Pais = registro.Pais?.Trim();
             }
             return registro;
         }
@@ -447,11 +539,11 @@ namespace NestoAPI.Infraestructure.Clientes
         {
             _ = await db.Database.ExecuteSqlCommandAsync(
                 "UPDATE ValidacionesNif SET Nif = @p3, Nombre = @p4, Estado = @p5, ResultadoAeat = @p6, " +
-                "FechaValidacion = GETDATE(), Usuario = @p7 " +
+                "FechaValidacion = GETDATE(), Usuario = @p7, TipoIdentificacion = @p8, Pais = @p9 " +
                 "WHERE Empresa = @p0 AND Cliente = @p1 AND Contacto = @p2; " +
                 "IF @@ROWCOUNT = 0 " +
-                "INSERT INTO ValidacionesNif (Empresa, Cliente, Contacto, Nif, Nombre, Estado, ResultadoAeat, Usuario) " +
-                "VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7)",
+                "INSERT INTO ValidacionesNif (Empresa, Cliente, Contacto, Nif, Nombre, Estado, ResultadoAeat, Usuario, TipoIdentificacion, Pais) " +
+                "VALUES (@p0, @p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9)",
                 new SqlParameter("@p0", registro.Empresa),
                 new SqlParameter("@p1", registro.Cliente),
                 new SqlParameter("@p2", registro.Contacto),
@@ -459,7 +551,9 @@ namespace NestoAPI.Infraestructure.Clientes
                 new SqlParameter("@p4", registro.Nombre),
                 new SqlParameter("@p5", registro.Estado),
                 new SqlParameter("@p6", (object)registro.ResultadoAeat ?? DBNull.Value),
-                new SqlParameter("@p7", (object)registro.Usuario ?? DBNull.Value))
+                new SqlParameter("@p7", (object)registro.Usuario ?? DBNull.Value),
+                new SqlParameter("@p8", (object)registro.TipoIdentificacion ?? DBNull.Value),
+                new SqlParameter("@p9", (object)registro.Pais ?? DBNull.Value))
                 .ConfigureAwait(false);
         }
     }

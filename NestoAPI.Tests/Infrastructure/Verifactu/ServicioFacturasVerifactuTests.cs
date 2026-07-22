@@ -462,6 +462,37 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task EnviarFacturaAVerifactu_ClienteConPasaporteMarcado_DeclaraConIdOtroSinNif()
+        {
+            // NestoAPI#339: identificación extranjera marcada → IDOtro (tipo L7 + país) y sin
+            // nif: la AEAT no valida IDOtro contra el censo y el rechazo desaparece.
+            var factura = ConfigurarFactura();
+            factura.CifNif = "AB123456"; // el pasaporte vive en el campo NIF de la ficha
+            var validacion = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacion.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Extranjero,
+                    TipoIdentificacion = "03",
+                    Pais = "MA"
+                });
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-pasaporte" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService,
+                almacenRectificativasPendientes: null, servicioValidacionNif: validacion);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsNull(enviado.NifDestinatario, "Con IDOtro no puede viajar nif");
+            Assert.IsNotNull(enviado.IdOtro);
+            Assert.AreEqual("03", enviado.IdOtro.IdType);
+            Assert.AreEqual("MA", enviado.IdOtro.CodigoPais);
+            Assert.AreEqual("AB123456", enviado.IdOtro.Id);
+        }
+
+        [TestMethod]
         public async Task EnviarFacturaAVerifactu_PaisPersistidoExtranjero_MandaSobreLaHeuristica()
         {
             // NestoAPI#347: G21 con 21% parece nacional, pero si ParámetrosIVA dice que el código

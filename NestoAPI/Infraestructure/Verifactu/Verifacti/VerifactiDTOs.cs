@@ -28,8 +28,13 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
         [JsonProperty("descripcion")]
         public string Descripcion { get; set; }
 
-        [JsonProperty("nif")]
+        [JsonProperty("nif", NullValueHandling = NullValueHandling.Ignore)]
         public string Nif { get; set; }
+
+        // NestoAPI#339: identificación extranjera (pasaporte...) — sustituye al nif
+        // (contrato del ejemplo B2C intracomunitario de Verifacti: id_otro en la raíz)
+        [JsonProperty("id_otro", NullValueHandling = NullValueHandling.Ignore)]
+        public VerifactiIdOtroRequest IdOtro { get; set; }
 
         [JsonProperty("nombre")]
         public string Nombre { get; set; }
@@ -86,6 +91,21 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
 
         [JsonProperty("calificacion_operacion", NullValueHandling = NullValueHandling.Ignore)]
         public string CalificacionOperacion { get; set; } // "N2" = no sujeta por localización
+    }
+
+    /// <summary>
+    /// NestoAPI#339: identificación extranjera del destinatario para Verifacti (catálogo L7).
+    /// </summary>
+    internal class VerifactiIdOtroRequest
+    {
+        [JsonProperty("codigo_pais")]
+        public string CodigoPais { get; set; }
+
+        [JsonProperty("id_type")]
+        public string IdType { get; set; }
+
+        [JsonProperty("id")]
+        public string Id { get; set; }
     }
 
     /// <summary>

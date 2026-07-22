@@ -15,7 +15,10 @@ namespace NestoAPI.Infraestructure.Clientes
         SinValidar,
         Correcto,
         Incorrecto,
-        Excluido
+        Excluido,
+        /// <summary>NestoAPI#339: identificación extranjera marcada a mano (pasaporte, doc.
+        /// del país...). No valida contra el censo (no aplica) y a Verifactu va como IDOtro.</summary>
+        Extranjero
     }
 
     /// <summary>Fila de la tabla ValidacionesNif (satélite de Clientes, ver script #327).</summary>
@@ -26,10 +29,15 @@ namespace NestoAPI.Infraestructure.Clientes
         public string Contacto { get; set; }
         public string Nif { get; set; }
         public string Nombre { get; set; }
-        public string Estado { get; set; }          // "CORRECTO" / "INCORRECTO"
+        public string Estado { get; set; }          // "CORRECTO" / "INCORRECTO" / "EXTRANJERO"
         public string ResultadoAeat { get; set; }
         public DateTime FechaValidacion { get; set; }
         public string Usuario { get; set; }
+        /// <summary>NestoAPI#339: tipo del catálogo L7 de la AEAT (02 NIF-IVA, 03 pasaporte,
+        /// 04 doc. oficial del país, 05 cert. residencia, 06 otro, 07 no censado).</summary>
+        public string TipoIdentificacion { get; set; }
+        /// <summary>NestoAPI#339: país de la identificación (ISO 3166-1 alfa-2).</summary>
+        public string Pais { get; set; }
     }
 
     /// <summary>Resultado de consultar/validar el NIF de una ficha.</summary>
@@ -43,6 +51,10 @@ namespace NestoAPI.Infraestructure.Clientes
         /// (transición SinValidar → Incorrecto): es el momento de avisar por correo,
         /// una sola vez, no en cada pedido del mismo cliente.</summary>
         public bool AcabaDeResultarIncorrecto { get; set; }
+        /// <summary>NestoAPI#339: solo con Estado=Extranjero (catálogo L7 AEAT).</summary>
+        public string TipoIdentificacion { get; set; }
+        /// <summary>NestoAPI#339: solo con Estado=Extranjero (ISO alfa-2).</summary>
+        public string Pais { get; set; }
     }
 
     /// <summary>
@@ -108,6 +120,14 @@ namespace NestoAPI.Infraestructure.Clientes
         /// para que los avisos al meter pedido y el bloqueo al facturar se activen solos.
         /// </summary>
         Task MarcarIncorrecto(string cliente, string motivo, string usuario);
+
+        /// <summary>
+        /// NestoAPI#339: marca que la identificación del cliente es EXTRANJERA (pasaporte,
+        /// documento del país...). Deja de validarse contra el censo (no aplica), sale de la
+        /// lista de NIF incorrectos y las facturas se declaran a Verifactu con IDOtro
+        /// (tipo del catálogo L7 + país) en vez de NIF.
+        /// </summary>
+        Task<ResultadoCorreccionNif> MarcarIdentificacionExtranjera(string cliente, string tipoIdentificacion, string pais, string usuario);
     }
 
     /// <summary>Fila del listado de NIF incorrectos (#327, para Nesto#417/NestoApp#157).</summary>

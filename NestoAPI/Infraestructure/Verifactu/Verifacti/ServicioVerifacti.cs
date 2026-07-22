@@ -289,7 +289,14 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
                 Descripcion = factura.Descripcion?.Length > 500
                     ? factura.Descripcion.Substring(0, 500)
                     : factura.Descripcion,
-                Nif = factura.NifDestinatario,
+                // NestoAPI#339: con identificación extranjera va id_otro y NUNCA nif
+                Nif = factura.IdOtro == null ? factura.NifDestinatario : null,
+                IdOtro = factura.IdOtro == null ? null : new VerifactiIdOtroRequest
+                {
+                    CodigoPais = factura.IdOtro.CodigoPais,
+                    IdType = factura.IdOtro.IdType,
+                    Id = factura.IdOtro.Id
+                },
                 Nombre = factura.NombreDestinatario,
                 ImporteTotal = factura.ImporteTotal,
                 // NestoAPI#347: una línea OSS (CalificacionOperacion=N2) lleva solo base +

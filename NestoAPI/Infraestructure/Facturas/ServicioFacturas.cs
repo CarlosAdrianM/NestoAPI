@@ -840,6 +840,35 @@ namespace NestoAPI.Infraestructure.Facturas
 
                 Verifactu.VerifactuFacturaRequest request = Verifactu.MapeadorFacturaVerifactu.Mapear(factura, facturasRectificadas, esOssPorPais);
 
+                // NestoAPI#339: destinatario con identificación EXTRANJERA marcada (pasaporte,
+                // doc. del país...) → se declara con IDOtro (tipo L7 + país) en vez de NIF: la
+                // AEAT no valida IDOtro contra el censo, así que deja de rechazarse. Best-effort:
+                // sin marca (o si la consulta falla) va como NIF normal, comportamiento de siempre.
+                if (request.NifDestinatario != null)
+                {
+                    try
+                    {
+                        Clientes.ResultadoValidacionNif marca = await servicioValidacionNif
+                            .ValidarPrincipal(factura.Nº_Cliente, "Verifactu");
+                        if (marca.Estado == Clientes.EstadoValidacionNif.Extranjero
+                            && !string.IsNullOrWhiteSpace(marca.TipoIdentificacion)
+                            && !string.IsNullOrWhiteSpace(marca.Pais))
+                        {
+                            request.IdOtro = new Verifactu.VerifactuIdOtro
+                            {
+                                CodigoPais = marca.Pais,
+                                IdType = marca.TipoIdentificacion,
+                                Id = request.NifDestinatario
+                            };
+                            request.NifDestinatario = null;
+                        }
+                    }
+                    catch
+                    {
+                        // Sin veredicto de la marca: se declara con NIF, como siempre
+                    }
+                }
+
                 // Issue #325: una factura simplificada (F2) por encima del límite legal no puede
                 // documentarse como tal. No se bloquea la facturación (el importe ya está emitido),
                 // pero tiene que saltar el aviso para revisarla.
