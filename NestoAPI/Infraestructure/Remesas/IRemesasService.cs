@@ -30,5 +30,17 @@ namespace NestoAPI.Infraestructure.Remesas
         /// <summary>NestoAPI#332 (slices 2-3): crea la remesa (numeración + alta + líneas de
         /// PreContabilidad + contabilización por el único call site). Revalida server-side.</summary>
         Task<CrearRemesaResponse> CrearRemesaAsync(CrearRemesaRequest peticion, string usuario);
+
+        /// <summary>Slice 6: genera el fichero SEPA ISO 20022 de una remesa (único call site del
+        /// SP prdCrearRemesaIso20022). Devuelve el XML completo como texto.</summary>
+        Task<string> CrearFicheroRemesaAsync(int remesa, string codigo, System.DateTime fechaCobro);
+
+        /// <summary>Slice 7: contabiliza las devoluciones de un fichero SEPA de impagados (único
+        /// call site del SP prdContabilizarImpagadosSepa).</summary>
+        Task ContabilizarImpagadosAsync(string fichero);
+
+        /// <summary>Slice 8: datos para crear las tareas de Planner de un asiento de impagados
+        /// (efectos con los datos del cliente, sin los apuntes de gastos).</summary>
+        Task<List<TareaImpagadoDTO>> LeerTareasImpagadoAsync(string empresa, int asiento);
     }
 }

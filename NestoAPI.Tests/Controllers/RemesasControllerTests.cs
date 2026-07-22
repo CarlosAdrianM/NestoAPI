@@ -138,5 +138,79 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNotNull(resultado);
             Assert.AreEqual(0, resultado.Content.Count);
         }
+
+        [TestMethod]
+        public async Task GetFicheroRemesa_DevuelveElXmlDelServicio()
+        {
+            // Slice 6: el fichero SEPA se genera en el servidor (único call site del SP)
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            var fechaCobro = new DateTime(2026, 8, 1);
+            _ = A.CallTo(() => servicio.CrearFicheroRemesaAsync(10897, "COR1", fechaCobro))
+                .Returns("<Document>sepa</Document>");
+            RemesasController controller = new RemesasController(servicio);
+
+            var resultado = await controller.GetFicheroRemesa(10897, "COR1", fechaCobro) as OkNegotiatedContentResult<string>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual("<Document>sepa</Document>", resultado.Content);
+        }
+
+        [TestMethod]
+        public async Task ContabilizarImpagados_ConFichero_LlamaAlServicio()
+        {
+            // Slice 7: contabilizar devoluciones pasa por el único call site del SP
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            RemesasController controller = new RemesasController(servicio);
+
+            var resultado = await controller.ContabilizarImpagados(
+                new ContabilizarImpagadosRequest { Fichero = "<Document>pain</Document>" });
+
+            Assert.IsInstanceOfType(resultado, typeof(OkResult));
+            A.CallTo(() => servicio.ContabilizarImpagadosAsync("<Document>pain</Document>"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ContabilizarImpagados_SinFichero_DevuelveBadRequestSinLlamarAlServicio()
+        {
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            RemesasController controller = new RemesasController(servicio);
+
+            var vacio = await controller.ContabilizarImpagados(new ContabilizarImpagadosRequest { Fichero = " " });
+            var nulo = await controller.ContabilizarImpagados(null);
+
+            Assert.IsInstanceOfType(vacio, typeof(BadRequestErrorMessageResult));
+            Assert.IsInstanceOfType(nulo, typeof(BadRequestErrorMessageResult));
+            A.CallTo(() => servicio.ContabilizarImpagadosAsync(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GetTareasImpagado_DevuelveLosEfectosConDatosDelCliente()
+        {
+            // Slice 8: datos para crear las tareas de Planner de gestión de cobro
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            _ = A.CallTo(() => servicio.LeerTareasImpagadoAsync("1", 1195101))
+                .Returns(new List<TareaImpagadoDTO>
+                {
+                    new TareaImpagadoDTO
+                    {
+                        Cliente = "15191",
+                        Contacto = "0",
+                        Importe = 250.50M,
+                        Concepto = "Impagado recibo",
+                        Vendedor = "NV",
+                        NombreCliente = "CLIENTE PRUEBA",
+                        NombreEmpresa = "NUEVA VISION"
+                    }
+                });
+            RemesasController controller = new RemesasController(servicio);
+
+            var resultado = await controller.GetTareasImpagado("1", 1195101) as OkNegotiatedContentResult<List<TareaImpagadoDTO>>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(1, resultado.Content.Count);
+            Assert.AreEqual("CLIENTE PRUEBA", resultado.Content[0].NombreCliente);
+            Assert.AreEqual("NUEVA VISION", resultado.Content[0].NombreEmpresa);
+        }
     }
 }

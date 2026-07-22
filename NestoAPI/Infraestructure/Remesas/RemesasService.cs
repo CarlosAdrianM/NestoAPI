@@ -111,6 +111,77 @@ namespace NestoAPI.Infraestructure.Remesas
             }
         }
 
+        // Nesto#340 Fase 1C.14 slice 6: único call site del SP que genera el XML SEPA. El SP
+        // devuelve el fichero troceado en filas de texto (así lo consumía el VB con EF):
+        // se concatena y se devuelve entero. Timeout largo: remesas grandes tardan.
+        public async Task<string> CrearFicheroRemesaAsync(int remesa, string codigo, System.DateTime fechaCobro)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                db.Database.CommandTimeout = 600;
+                List<string> lineas = await db.Database.SqlQuery<string>(
+                    "EXEC prdCrearRemesaIso20022 @remesa, @codigo, @fechaCobro",
+                    new System.Data.SqlClient.SqlParameter("@remesa", remesa),
+                    new System.Data.SqlClient.SqlParameter("@codigo", codigo ?? string.Empty),
+                    new System.Data.SqlClient.SqlParameter("@fechaCobro", fechaCobro))
+                    .ToListAsync().ConfigureAwait(false);
+                return string.Concat(lineas);
+            }
+        }
+
+        // Nesto#340 Fase 1C.14 slice 7: único call site del SP que contabiliza las devoluciones
+        // del fichero SEPA de impagados del banco.
+        public async Task ContabilizarImpagadosAsync(string fichero)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                db.Database.CommandTimeout = 600;
+                _ = await db.Database.ExecuteSqlCommandAsync(
+                    "EXEC prdContabilizarImpagadosSepa @fichero",
+                    new System.Data.SqlClient.SqlParameter("@fichero", System.Data.SqlDbType.Xml) { Value = fichero })
+                    .ConfigureAwait(false);
+            }
+        }
+
+        // Nesto#340 Fase 1C.14 slice 8: datos para las tareas de Planner de un asiento de
+        // impagados. Replica el join EF del VM (ExtractoCliente × Clientes, sin los apuntes
+        // "Gastos Impagado "); el nombre de la empresa se resuelve una sola vez.
+        public async Task<List<TareaImpagadoDTO>> LeerTareasImpagadoAsync(string empresa, int asiento)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                var filas = await db.ExtractosCliente
+                    .Where(e => e.Empresa == empresa && e.Asiento == asiento
+                        && !e.Concepto.StartsWith("Gastos Impagado "))
+                    .Join(db.Clientes,
+                        e => new { e.Empresa, Cliente = e.Número, e.Contacto },
+                        c => new { c.Empresa, Cliente = c.Nº_Cliente, c.Contacto },
+                        (e, c) => new { e.Número, e.Contacto, e.Fecha, e.Importe, e.Concepto, c.Vendedor, c.Nombre, c.Dirección, c.Ruta })
+                    .ToListAsync()
+                    .ConfigureAwait(false);
+
+                string nombreEmpresa = await db.Empresas
+                    .Where(emp => emp.Número == empresa)
+                    .Select(emp => emp.Nombre)
+                    .FirstOrDefaultAsync()
+                    .ConfigureAwait(false);
+
+                return filas.Select(f => new TareaImpagadoDTO
+                {
+                    Cliente = f.Número?.Trim(),
+                    Contacto = f.Contacto?.Trim(),
+                    Fecha = f.Fecha,
+                    Importe = f.Importe,
+                    Concepto = f.Concepto?.Trim(),
+                    Vendedor = f.Vendedor?.Trim(),
+                    NombreCliente = f.Nombre?.Trim(),
+                    Direccion = f.Dirección?.Trim(),
+                    Ruta = f.Ruta?.Trim(),
+                    NombreEmpresa = nombreEmpresa?.Trim()
+                }).ToList();
+            }
+        }
+
         private static MovimientoRemesaDTO MapearMovimiento(ExtractoCliente e)
         {
             return new MovimientoRemesaDTO

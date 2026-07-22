@@ -107,5 +107,46 @@ namespace NestoAPI.Controllers
             List<MovimientoRemesaDTO> movimientos = await _remesas.LeerMovimientosImpagadoAsync(empresa, asiento).ConfigureAwait(false);
             return Ok(movimientos);
         }
+
+        // GET: api/Remesas/10897/Fichero?codigo=COR1&fechaCobro=2026-08-01
+        // Nesto#340 Fase 1C.14 slice 6: genera el fichero SEPA ISO 20022 (único call site del
+        // SP prdCrearRemesaIso20022) y lo devuelve como texto XML completo.
+        [System.Web.Http.Authorize]
+        [HttpGet]
+        [Route("api/Remesas/{remesa:int}/Fichero")]
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> GetFicheroRemesa(int remesa, string codigo, System.DateTime fechaCobro)
+        {
+            string contenido = await _remesas.CrearFicheroRemesaAsync(remesa, codigo, fechaCobro).ConfigureAwait(false);
+            return Ok(contenido);
+        }
+
+        // POST: api/Remesas/ContabilizarImpagados
+        // Nesto#340 Fase 1C.14 slice 7: contabiliza las devoluciones del fichero SEPA de
+        // impagados del banco (único call site del SP prdContabilizarImpagadosSepa).
+        [System.Web.Http.Authorize]
+        [HttpPost]
+        [Route("api/Remesas/ContabilizarImpagados")]
+        public async Task<IHttpActionResult> ContabilizarImpagados([FromBody] ContabilizarImpagadosRequest peticion)
+        {
+            if (string.IsNullOrWhiteSpace(peticion?.Fichero))
+            {
+                return BadRequest("El fichero de impagados no puede estar vacío");
+            }
+            await _remesas.ContabilizarImpagadosAsync(peticion.Fichero).ConfigureAwait(false);
+            return Ok();
+        }
+
+        // GET: api/Remesas/Impagados/Tareas?empresa=1&asiento=1195101
+        // Nesto#340 Fase 1C.14 slice 8: efectos del asiento con los datos del cliente para
+        // crear las tareas de Planner de gestión de cobro.
+        [HttpGet]
+        [Route("api/Remesas/Impagados/Tareas")]
+        [ResponseType(typeof(List<TareaImpagadoDTO>))]
+        public async Task<IHttpActionResult> GetTareasImpagado(string empresa, int asiento)
+        {
+            List<TareaImpagadoDTO> tareas = await _remesas.LeerTareasImpagadoAsync(empresa, asiento).ConfigureAwait(false);
+            return Ok(tareas);
+        }
     }
 }
