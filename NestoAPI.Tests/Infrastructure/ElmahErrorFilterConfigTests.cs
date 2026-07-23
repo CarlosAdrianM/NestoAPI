@@ -71,6 +71,24 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(SeFiltra(Error404DeRuta("/v1/graphql")), "graphql");
             Assert.IsTrue(SeFiltra(Error404DeRuta("/xmlrpc.php")), "ruta acabada en .php");
             Assert.IsTrue(SeFiltra(Error404DeRuta("/index.php/_ignition/execute-solution")), "index.php");
+            // NestoAPI#336 (barrido 23/07): patrones nuevos que ANTES se colaban al log
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/aws-credentials")), "/aws-credentials (sin punto, no lo pillaba .aws)");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/debugbar/")), "/debugbar/ (sin guion, no lo pillaba _debugbar)");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/\"/bundles/jquery")), "/bundles/ (MVC, con comilla)");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/\"/bundles/modernizr")), "/bundles/ (MVC, con comilla)");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/pma/")), "/pma/ (alias phpmyadmin)");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/mysqladmin/")), "/mysql (mysqladmin)");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/pulse")), "/pulse (Laravel)");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/horizon/api/jobs")), "/horizon (Laravel)");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/log-viewer")), "/log-viewer");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/redoc")), "/redoc");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/rails/info/routes")), "/rails/");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/jolokia/list")), "jolokia");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/Jenkinsfile")), "Jenkinsfile");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/stub_status")), "stub_status");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/httpd-status")), "httpd-status");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/server-info")), "server-info");
+            Assert.IsTrue(SeFiltra(Error404DeRuta("/_cluster/health")), "_cluster");
         }
 
         [TestMethod]
