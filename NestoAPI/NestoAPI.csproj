@@ -781,6 +781,7 @@
     <Compile Include="Infraestructure\Informes\GeneradorPdfPacking.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfUbicacionesInventario.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfManifiestoAgencia.cs" />
+    <Compile Include="Infraestructure\Informes\GeneradorPdfRemesa.cs" />
     <Compile Include="Infraestructure\Informes\IInformesService.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosJobsService.cs" />
     <Compile Include="Infraestructure\Informes\InformesService.cs" />
@@ -1391,6 +1392,7 @@
     <Compile Include="Models\Informes\ExtractoProveedorDTO.cs" />
     <Compile Include="Models\Informes\KitsQueSePuedenMontarDTO.cs" />
     <Compile Include="Models\Informes\ManifiestoAgenciaDTO.cs" />
+    <Compile Include="Models\Informes\RemesaInformeDTO.cs" />
     <Compile Include="Models\Informes\MontarKitProductosDTO.cs" />
     <Compile Include="Models\Informes\PackingDTO.cs" />
     <Compile Include="Models\Informes\PedidoCompraInformeDTO.cs" />

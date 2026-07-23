@@ -389,6 +389,46 @@ namespace NestoAPI.Controllers
         }
 
         [HttpGet]
+        [Route("api/Informes/Remesa")]
+        [ResponseType(typeof(RemesaInformeDTO))]
+        public async Task<IHttpActionResult> GetRemesa(string empresa, int numero)
+        {
+            RemesaInformeDTO remesa = await _servicio
+                .LeerRemesaAsync(empresa, numero)
+                .ConfigureAwait(false);
+
+            if (remesa == null)
+            {
+                return NotFound();
+            }
+            return Ok(remesa);
+        }
+
+        // NestoAPI#353: informe de remesa renderizado en el backend (sustituye al informe
+        // antiguo de VB6); Nesto lo descarga al crear la remesa o desde el listado.
+        [HttpGet]
+        [Route("api/Informes/Remesa/Pdf")]
+        public async Task<HttpResponseMessage> GetRemesaPdf(string empresa, int numero)
+        {
+            RemesaInformeDTO remesa = await _servicio
+                .LeerRemesaAsync(empresa, numero)
+                .ConfigureAwait(false);
+
+            if (remesa == null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
+            GeneradorPdfRemesa generador = new GeneradorPdfRemesa();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(remesa)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
+        [HttpGet]
         [Route("api/Informes/PedidoCompra")]
         [ResponseType(typeof(PedidoCompraInformeDTO))]
         public async Task<IHttpActionResult> GetPedidoCompra(string empresa, int pedido)

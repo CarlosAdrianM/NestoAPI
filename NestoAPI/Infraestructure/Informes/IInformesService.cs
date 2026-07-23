@@ -22,6 +22,10 @@ namespace NestoAPI.Infraestructure.Informes
 
         /// <summary>Nombre de la agencia de transporte (para la cabecera del PDF del manifiesto).</summary>
         Task<string> LeerNombreAgenciaAsync(int agencia);
+
+        /// <summary>NestoAPI#353: informe de remesa (relación de efectos remitidos al banco).
+        /// Null si la remesa no existe.</summary>
+        Task<RemesaInformeDTO> LeerRemesaAsync(string empresa, int remesa);
         Task<PedidoCompraInformeDTO> LeerPedidoCompraAsync(string empresa, int pedido);
         Task<List<ExtractoProveedorDTO>> LeerExtractoProveedorAsync(string empresa, string proveedor, DateTime fechaDesde, DateTime fechaHasta);
         Task<SaldoCuenta555ResultadoDto> LeerSaldoCuenta555Async(string empresa, string cuenta, DateTime fechaCorte);

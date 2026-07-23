@@ -885,5 +885,76 @@ namespace NestoAPI.Tests.Controllers
 
             await _controller.GetEtiquetasTienda("AAA001");
         }
+
+        // ----- Informe de remesa (NestoAPI#353) -----
+
+        private static RemesaInformeDTO RemesaDePrueba() => new RemesaInformeDTO
+        {
+            Numero = 10901,
+            Fecha = new DateTime(2026, 7, 23),
+            Empresa = "Nueva Visión, S.A.",
+            Banco = "La Caixa",
+            IbanAbono = "ES0621006273900200063554",
+            Efectos = new List<RemesaInformeEfectoDTO>
+            {
+                new RemesaInformeEfectoDTO
+                {
+                    Cliente = "10714", Nombre = "SUSANA DE CASTRO GARCIA", Documento = "NV2612516",
+                    Iban = "ES3700495297402795209561", Importe = 35.44m,
+                    FechaCargo = new DateTime(2026, 7, 23)
+                }
+            }
+        };
+
+        [TestMethod]
+        public async Task GetRemesa_PasaLosParametrosYDevuelveOkConLaRemesa()
+        {
+            A.CallTo(() => _servicio.LeerRemesaAsync("1", 10901)).Returns(RemesaDePrueba());
+
+            var resultado = await _controller.GetRemesa("1", 10901);
+
+            A.CallTo(() => _servicio.LeerRemesaAsync("1", 10901)).MustHaveHappenedOnceExactly();
+            var ok = resultado as OkNegotiatedContentResult<RemesaInformeDTO>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(10901, ok.Content.Numero);
+            Assert.AreEqual("ES0621006273900200063554", ok.Content.IbanAbono);
+            Assert.AreEqual(1, ok.Content.Efectos.Count);
+        }
+
+        [TestMethod]
+        public async Task GetRemesa_RemesaInexistente_DevuelveNotFound()
+        {
+            A.CallTo(() => _servicio.LeerRemesaAsync(A<string>.Ignored, A<int>.Ignored))
+                .Returns((RemesaInformeDTO)null);
+
+            var resultado = await _controller.GetRemesa("1", 99999);
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        [TestMethod]
+        public async Task GetRemesaPdf_DevuelvePdfConContentTypeCorrecto()
+        {
+            A.CallTo(() => _servicio.LeerRemesaAsync("1", 10901)).Returns(RemesaDePrueba());
+
+            var respuesta = await _controller.GetRemesaPdf("1", 10901);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.OK, respuesta.StatusCode);
+            Assert.AreEqual("application/pdf", respuesta.Content.Headers.ContentType.MediaType);
+            byte[] bytes = await respuesta.Content.ReadAsByteArrayAsync();
+            Assert.IsTrue(bytes.Length > 0, "El PDF debe tener contenido");
+            Assert.AreEqual(0x25, bytes[0]); // firma %PDF
+        }
+
+        [TestMethod]
+        public async Task GetRemesaPdf_RemesaInexistente_DevuelveNotFound()
+        {
+            A.CallTo(() => _servicio.LeerRemesaAsync(A<string>.Ignored, A<int>.Ignored))
+                .Returns((RemesaInformeDTO)null);
+
+            var respuesta = await _controller.GetRemesaPdf("1", 99999);
+
+            Assert.AreEqual(System.Net.HttpStatusCode.NotFound, respuesta.StatusCode);
+        }
     }
 }

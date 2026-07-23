@@ -295,6 +295,73 @@ namespace NestoAPI.Infraestructure.Informes
             return nombre?.Trim() ?? string.Empty;
         }
 
+        // NestoAPI#353: los efectos del informe son los PAGOS del extracto (nacen con el nº de
+        // remesa al contabilizarla, ver CrearRemesaService) — mismo criterio de selección que
+        // prdCrearRemesaIso20022. La FechaVto del pago es la fecha en que el banco lo carga.
+        public async Task<RemesaInformeDTO> LeerRemesaAsync(string empresa, int remesa)
+        {
+            const string sqlCabecera = @"
+                SELECT r.Número Numero, r.Fecha, rtrim(emp.Nombre) Empresa, rtrim(b.Descripción) Banco,
+                    UPPER(REPLACE(b.Pais + b.DC_IBAN + b.Entidad + b.Sucursal + b.DC + b.[Nº Cuenta], ' ', '')) IbanAbono
+                FROM Remesas r
+                INNER JOIN Bancos b ON b.Empresa = r.Empresa AND b.Número = r.Banco
+                INNER JOIN Empresas emp ON emp.Número = r.Empresa
+                WHERE r.Empresa = @Empresa AND r.Número = @Remesa";
+
+            List<CabeceraRemesaDTO> cabeceras = await db.Database
+                .SqlQuery<CabeceraRemesaDTO>(sqlCabecera,
+                    new SqlParameter("@Empresa", SqlDbType.NVarChar) { Value = empresa },
+                    new SqlParameter("@Remesa", SqlDbType.Int) { Value = remesa })
+                .ToListAsync()
+                .ConfigureAwait(false);
+            CabeceraRemesaDTO cabecera = cabeceras.FirstOrDefault();
+            if (cabecera == null)
+            {
+                return null;
+            }
+
+            const string sqlEfectos = @"
+                SELECT rtrim(e.Número) Cliente, rtrim(cl.Nombre) Nombre, rtrim(e.[Nº Documento]) Documento,
+                    rtrim(e.Efecto) Efecto,
+                    UPPER(REPLACE(ISNULL(cc.Pais,'') + ISNULL(cc.DC_IBAN,'') + ISNULL(cc.Entidad,'')
+                        + ISNULL(cc.Oficina,'') + ISNULL(cc.DC,'') + ISNULL(cc.[Nº Cuenta],''), ' ', '')) Iban,
+                    -e.Importe Importe, e.FechaVto FechaCargo
+                FROM ExtractoCliente e
+                INNER JOIN Clientes cl
+                    ON cl.Empresa = e.Empresa AND cl.[Nº Cliente] = e.Número AND cl.Contacto = e.Contacto
+                LEFT JOIN CCC cc
+                    ON cc.Empresa = e.Empresa AND cc.Cliente = e.Número AND cc.Contacto = e.Contacto AND cc.Número = e.CCC
+                WHERE e.Empresa = @Empresa AND e.Remesa = @Remesa AND e.TipoApunte = @TipoPago
+                ORDER BY e.FechaVto, e.Número";
+
+            List<RemesaInformeEfectoDTO> efectos = await db.Database
+                .SqlQuery<RemesaInformeEfectoDTO>(sqlEfectos,
+                    new SqlParameter("@Empresa", SqlDbType.NVarChar) { Value = empresa },
+                    new SqlParameter("@Remesa", SqlDbType.Int) { Value = remesa },
+                    new SqlParameter("@TipoPago", SqlDbType.NVarChar) { Value = Constantes.TiposExtractoCliente.PAGO })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return new RemesaInformeDTO
+            {
+                Numero = cabecera.Numero,
+                Fecha = cabecera.Fecha,
+                Empresa = cabecera.Empresa,
+                Banco = cabecera.Banco,
+                IbanAbono = cabecera.IbanAbono,
+                Efectos = efectos
+            };
+        }
+
+        private class CabeceraRemesaDTO
+        {
+            public int Numero { get; set; }
+            public DateTime Fecha { get; set; }
+            public string Empresa { get; set; }
+            public string Banco { get; set; }
+            public string IbanAbono { get; set; }
+        }
+
         public async Task<PedidoCompraInformeDTO> LeerPedidoCompraAsync(string empresa, int pedido)
         {
             const string sqlCabecera = @"
