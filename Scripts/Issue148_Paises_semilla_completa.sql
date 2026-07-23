@@ -58,6 +58,9 @@ FROM nuevos n
 WHERE NOT EXISTS (SELECT 1 FROM dbo.Paises p WHERE p.Codigo = n.Codigo)
   AND NOT EXISTS (SELECT 1 FROM dbo.Paises p WHERE p.Id = n.Id);   -- por si algun Id ya existiera
 
-PRINT CONCAT('Paises insertados: ', @@ROWCOUNT, '. Total en la tabla: ',
-             (SELECT COUNT(*) FROM dbo.Paises), '.');
+-- @@ROWCOUNT se captura JUSTO despues del INSERT (cualquier otra sentencia lo resetea);
+-- el COUNT total va aparte porque una subconsulta dentro de CONCAT/PRINT no esta permitida.
+DECLARE @insertados int = @@ROWCOUNT;
+DECLARE @total int = (SELECT COUNT(*) FROM dbo.Paises);
+PRINT CONCAT('Paises insertados: ', @insertados, '. Total en la tabla: ', @total, '.');
 GO
