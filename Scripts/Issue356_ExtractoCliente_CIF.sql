@@ -24,14 +24,13 @@ SET NOCOUNT ON;
 ALTER TABLE dbo.ExtractoCliente ALTER COLUMN [CIF/NIF] varchar(20) NULL;
 PRINT 'ExtractoCliente.[CIF/NIF] ampliado a varchar(20).';
 
--- Quitar el padding heredado del char(9). Por lotes para no inflar el log de golpe.
-DECLARE @filas INT = 1;
-WHILE @filas > 0
-BEGIN
-    UPDATE TOP (50000) dbo.ExtractoCliente
-    SET [CIF/NIF] = RTRIM([CIF/NIF])
-    WHERE [CIF/NIF] IS NOT NULL AND [CIF/NIF] <> RTRIM([CIF/NIF]);
-    SET @filas = @@ROWCOUNT;
-END
-PRINT 'ExtractoCliente.[CIF/NIF] sin padding.';
+-- NOTA: NO se hace RTRIM del padding heredado (a diferencia de Clientes). Aqui saldria
+-- MUY caro y no aporta nada:
+--   * Tras el ALTER, los ~2,7M valores conservan sus espacios finales; un UPDATE los tocaria
+--     TODOS y ademas [CIF/NIF] esta INCLUIDO en 6 indices (~4,2 GB), asi que cada fila
+--     actualizaria esos 6 indices + el clustered -> decenas de GB de log por puro cosmetico.
+--   * Los espacios finales son inocuos: TODO el codigo hace .Trim() al leer el CIF, y el char(9)
+--     ya venia con ese padding igualmente. No cambia nada funcional.
+-- Si algun dia se quiere limpiar de verdad, hacerlo en una ventana aparte y por lotes pequenos.
+PRINT 'ExtractoCliente.[CIF/NIF] ampliado (sin RTRIM: el padding es inocuo y el codigo hace Trim).';
 GO
