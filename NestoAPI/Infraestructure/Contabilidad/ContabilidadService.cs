@@ -75,6 +75,21 @@ namespace NestoAPI.Infraestructure.Contabilidad
                 }
             }
 
+            // NestoAPI#343: prdContabilizar (vía prdComprobarCamposNecesarios) aborta con
+            // RAISERROR "gasto sin centro de coste, delegación o departamento" enterrado en el
+            // ruido de transacciones (caso real 922749, factura con traspaso a espejo). Misma
+            // regla adelantada aquí con mensaje accionable, ANTES de tocar el SP.
+            List<PreContabilidad> lineasCuentaContable = await db.PreContabilidades
+                .Where(p => p.Empresa == empresa && p.Diario == diario
+                    && p.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE)
+                .ToListAsync()
+                .ConfigureAwait(false);
+            List<string> erroresCampos = ErroresCamposNecesariosDiario(lineasCuentaContable);
+            if (erroresCampos.Count > 0)
+            {
+                throw new Exception(string.Join(" ", erroresCampos));
+            }
+
             SqlParameter empresaParametro = new SqlParameter("@Empresa", SqlDbType.Char, 3)
             {
                 Value = empresa
@@ -117,6 +132,48 @@ namespace NestoAPI.Infraestructure.Contabilidad
             {
                 throw new Exception("Error al contabilizar el diario", ex);
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#343: réplica EXACTA del chequeo de prdComprobarCamposNecesarios (invocado
+        /// por prdContabilizar): una línea de cuenta contable (tipocuenta=1) cuya cuenta — o
+        /// contrapartida — sea de gasto (fórmula de CamposNecesarios: 6% sin 60x/61x y &lt; 640,
+        /// es decir 620-639) debe llevar centro de coste, delegación y departamento. El SP
+        /// comprueba IS NULL (un blanco pasa): aquí igual, cuadre exacto sin tolerancias.
+        /// Pura y estática para testear sin BD.
+        /// </summary>
+        internal static List<string> ErroresCamposNecesariosDiario(IEnumerable<PreContabilidad> lineasCuentaContable)
+        {
+            List<string> errores = new List<string>();
+            foreach (PreContabilidad linea in lineasCuentaContable)
+            {
+                bool faltanCampos = linea.CentroCoste == null || linea.Delegación == null || linea.Departamento == null;
+                if (!faltanCampos)
+                {
+                    continue;
+                }
+                if (EsCuentaDeGastoConCentroCoste(linea.Nº_Cuenta))
+                {
+                    errores.Add($"La línea {linea.Nº_Orden} (cuenta {linea.Nº_Cuenta?.Trim()}, " +
+                        $"concepto '{linea.Concepto?.Trim()}') es un gasto sin centro de coste, delegación " +
+                        "o departamento: complételos antes de contabilizar.");
+                }
+                else if (EsCuentaDeGastoConCentroCoste(linea.Contrapartida))
+                {
+                    errores.Add($"La línea {linea.Nº_Orden} (contrapartida {linea.Contrapartida?.Trim()}, " +
+                        $"concepto '{linea.Concepto?.Trim()}') lleva un gasto de contrapartida sin centro de " +
+                        "coste, delegación o departamento: complételos antes de contabilizar.");
+                }
+            }
+            return errores;
+        }
+
+        /// <summary>Fórmula de CamposNecesarios (fija desde 2003): cuentas 620-639.</summary>
+        internal static bool EsCuentaDeGastoConCentroCoste(string cuenta)
+        {
+            string limpia = cuenta?.Trim();
+            return !string.IsNullOrEmpty(limpia)
+                && (limpia.StartsWith("62") || limpia.StartsWith("63"));
         }
 
         // #296: validaciones de negocio de prdLiquidar replicadas en C# ANTES de ejecutar el SP

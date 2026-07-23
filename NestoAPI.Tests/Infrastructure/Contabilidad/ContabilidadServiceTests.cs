@@ -204,5 +204,89 @@ namespace NestoAPI.Tests.Infrastructure.Contabilidad
 
             Assert.AreEqual(string.Empty, servicio.ObtenerUsuarioTerminal("00000000000"));
         }
+
+        // ----- NestoAPI#343: validación previa de campos necesarios (centro de coste) -----
+        // Réplica exacta de prdComprobarCamposNecesarios: cuentas de gasto 620-639 (también en
+        // la contrapartida) con centro de coste/delegación/departamento a NULL abortan el SP
+        // con RAISERROR enterrado en ruido de transacciones (caso real 922749, traspaso espejo).
+
+        private static NestoAPI.Models.PreContabilidad LineaContable(string cuenta, string centroCoste = "CA",
+            string delegacion = "ALG", string departamento = "ADM", string contrapartida = null, int orden = 1)
+        {
+            return new NestoAPI.Models.PreContabilidad
+            {
+                Nº_Orden = orden,
+                Nº_Cuenta = cuenta,
+                Contrapartida = contrapartida,
+                CentroCoste = centroCoste,
+                Delegación = delegacion,
+                Departamento = departamento,
+                Concepto = "Gasto de prueba",
+                TipoCuenta = NestoAPI.Models.Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE
+            };
+        }
+
+        [TestMethod]
+        public void ErroresCamposNecesarios_GastoSinCentroCoste_Avisa()
+        {
+            var lineas = new List<NestoAPI.Models.PreContabilidad>
+            {
+                LineaContable("62400003", centroCoste: null, orden: 77)
+            };
+
+            var errores = ContabilidadService.ErroresCamposNecesariosDiario(lineas);
+
+            Assert.AreEqual(1, errores.Count);
+            StringAssert.Contains(errores[0], "77");
+            StringAssert.Contains(errores[0], "62400003");
+            StringAssert.Contains(errores[0], "centro de coste");
+        }
+
+        [TestMethod]
+        public void ErroresCamposNecesarios_ContrapartidaDeGastoSinDepartamento_Avisa()
+        {
+            var lineas = new List<NestoAPI.Models.PreContabilidad>
+            {
+                LineaContable("57200013", departamento: null, contrapartida: "63100001")
+            };
+
+            var errores = ContabilidadService.ErroresCamposNecesariosDiario(lineas);
+
+            Assert.AreEqual(1, errores.Count);
+            StringAssert.Contains(errores[0], "contrapartida");
+            StringAssert.Contains(errores[0], "63100001");
+        }
+
+        [TestMethod]
+        public void ErroresCamposNecesarios_GastoConTodo_CuentaNoGasto_YBlancoNoNulo_NoAvisan()
+        {
+            var lineas = new List<NestoAPI.Models.PreContabilidad>
+            {
+                LineaContable("62400003"),
+                // 60x/61x/64x quedan FUERA de la fórmula de CamposNecesarios (620-639)
+                LineaContable("60000001", centroCoste: null),
+                LineaContable("61000001", centroCoste: null),
+                LineaContable("64000001", centroCoste: null),
+                LineaContable("70000000", centroCoste: null),
+                // El SP comprueba IS NULL: un blanco pasa — cuadre exacto, sin tolerancias
+                LineaContable("62400003", centroCoste: "  ")
+            };
+
+            var errores = ContabilidadService.ErroresCamposNecesariosDiario(lineas);
+
+            Assert.AreEqual(0, errores.Count);
+        }
+
+        [TestMethod]
+        public void EsCuentaDeGastoConCentroCoste_SoloDel620Al639()
+        {
+            Assert.IsTrue(ContabilidadService.EsCuentaDeGastoConCentroCoste("62000000"));
+            Assert.IsTrue(ContabilidadService.EsCuentaDeGastoConCentroCoste("63999999"));
+            Assert.IsFalse(ContabilidadService.EsCuentaDeGastoConCentroCoste("60000000"));
+            Assert.IsFalse(ContabilidadService.EsCuentaDeGastoConCentroCoste("61000000"));
+            Assert.IsFalse(ContabilidadService.EsCuentaDeGastoConCentroCoste("64000000"));
+            Assert.IsFalse(ContabilidadService.EsCuentaDeGastoConCentroCoste(null));
+            Assert.IsFalse(ContabilidadService.EsCuentaDeGastoConCentroCoste("  "));
+        }
     }
 }
