@@ -16,6 +16,11 @@
 --     corre entera y atomica: cualquier fallo hace rollback COMPLETO (no deja indices caidos).
 -- ===========================================================================
 
+-- QUOTED_IDENTIFIER/ANSI_NULLS deben ir ON: Clientes tiene indice(s) filtrado(s) o sobre
+-- columna calculada, y sqlcmd conecta con QUOTED_IDENTIFIER OFF por defecto (a diferencia de
+-- SSMS). Sin esto, el UPDATE/recreacion de indices falla con msg 1934.
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
 SET XACT_ABORT ON;
 SET NOCOUNT ON;
 
@@ -56,7 +61,13 @@ BEGIN
         PRINT CONCAT('Disco libre (unidad del log): ', @discoLibreMB, ' MB.  Log estimado: ~', @LogEstimadoMB, ' MB.');
         IF @discoLibreMB < @LogEstimadoMB * 1.5
         BEGIN
-            RAISERROR('ABORTADO: disco libre (%.0f MB) insuficiente para el log estimado (~%d MB, x1,5 de margen). Libera espacio o haz backup de log y reintenta.', 16, 1, @discoLibreMB, @LogEstimadoMB);
+            -- RAISERROR no admite decimal/float como parametro de sustitucion (msg 2748);
+            -- se compone el mensaje con CONCAT y se lanza sin sustituciones.
+            DECLARE @msgAbort nvarchar(400) = CONCAT(
+                'ABORTADO: disco libre (', CAST(@discoLibreMB AS int),
+                ' MB) insuficiente para el log estimado (~', @LogEstimadoMB,
+                ' MB, x1,5 de margen). Libera espacio o haz backup de log y reintenta.');
+            RAISERROR(@msgAbort, 16, 1);
             RETURN;
         END
     END
