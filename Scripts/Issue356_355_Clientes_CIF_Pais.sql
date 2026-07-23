@@ -89,7 +89,11 @@ BEGIN
         CONSTRAINT DF_Clientes_Pais DEFAULT 'ES';
     PRINT 'Columna Pais anadida (DEFAULT ES).';
 END
-UPDATE dbo.Clientes SET Pais = 'ES' WHERE Pais IS NULL;
+-- El backfill va por SQL dinamico A PROPOSITO: SQL Server valida los nombres de columna al
+-- COMPILAR el lote (antes de ejecutar el ADD de arriba), asi que un 'UPDATE ... SET Pais'
+-- estatico en el mismo batch daria "columna no valida". El EXEC difiere esa validacion a
+-- ejecucion, cuando la columna ya existe.
+EXEC ('UPDATE dbo.Clientes SET Pais = ''ES'' WHERE Pais IS NULL;');
 PRINT 'Pais rellenado a ES en el historico.';
 
 -- 4. Recrear los 11 indices identicos (ahora keyean sobre la columna ya ampliada).
