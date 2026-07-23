@@ -16,18 +16,46 @@ namespace NestoAPI.Controllers
 {
     public class BancosController : ApiController
     {
-        private readonly NVEntities db = new NVEntities();
+        private readonly NVEntities db;
 
         public BancosController()
         {
+            db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
         }
 
+        // Nesto#425: constructor para tests (patrón habitual de inyectar NVEntities).
+        internal BancosController(NVEntities db)
+        {
+            this.db = db;
+        }
 
         // GET: api/Bancos
         public IQueryable<Banco> GetBancos()
         {
             return db.Bancos;
+        }
+
+        // Nesto#425: lista ligera por empresa para el SelectorBanco (combo con nombre);
+        // el GET sin parámetros de arriba devuelve las entidades enteras de TODAS las empresas.
+        [HttpGet]
+        [Route("api/Bancos/Selector")]
+        [ResponseType(typeof(List<BancoSelectorDTO>))]
+        public async Task<IHttpActionResult> GetBancosSelector(string empresa)
+        {
+            List<Banco> bancos = await db.Bancos
+                .Where(b => b.Empresa == empresa)
+                .OrderBy(b => b.Número)
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            return Ok(bancos.Select(b => new BancoSelectorDTO
+            {
+                Numero = b.Número?.Trim(),
+                Nombre = b.Descripción?.Trim(),
+                Entidad = b.Entidad?.Trim(),
+                Sucursal = b.Sucursal?.Trim()
+            }).ToList());
         }
         // GET: api/Bancos/5
         [ResponseType(typeof(Banco))]
