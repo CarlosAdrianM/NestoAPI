@@ -51,6 +51,29 @@ namespace NestoAPI.Tests.Infraestructure
         }
 
         [TestMethod]
+        public void EsErrorDeBloqueo_AgotamientoDelPool_True()
+        {
+            // NestoAPI#357: en una oleada de bloqueo, las peticiones que ni consiguen conexión NO
+            // dan SqlException -2, sino InvalidOperationException por pool agotado. Era el hueco por
+            // el que la mayoría de la oficina veía "tiempo de espera" pelado, sin quién bloqueaba.
+            var ex = new Exception("No se pudieron cargar los pedidos",
+                new InvalidOperationException(
+                    "Timeout expired. The timeout period elapsed prior to obtaining a connection " +
+                    "from the pool. This may have occurred because all pooled connections were in use " +
+                    "and max pool size was reached."));
+
+            Assert.IsTrue(DiagnosticoBloqueos.EsErrorDeBloqueo(ex));
+        }
+
+        [TestMethod]
+        public void EsErrorDeBloqueo_OtraInvalidOperation_False()
+        {
+            // Una InvalidOperationException cualquiera (no de pool) no debe disparar el diagnóstico.
+            Assert.IsFalse(DiagnosticoBloqueos.EsErrorDeBloqueo(
+                new InvalidOperationException("La secuencia no contiene elementos")));
+        }
+
+        [TestMethod]
         public void EsErrorDeBloqueo_SinSqlException_False()
         {
             Assert.IsFalse(DiagnosticoBloqueos.EsErrorDeBloqueo(new Exception("otra cosa")));

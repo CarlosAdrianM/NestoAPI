@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Data.SqlClient;
 using System.Linq;
 
@@ -27,6 +28,17 @@ namespace NestoAPI.Infraestructure
             {
                 if (actual is SqlException sqlException &&
                     (sqlException.Number == -2 || sqlException.Number == 1222 || sqlException.Number == 1205))
+                {
+                    return true;
+                }
+                // NestoAPI#357: agotamiento del POOL de conexiones. En una oleada de bloqueo, las
+                // peticiones que ni consiguen conexión no dan SqlException -2, sino
+                // InvalidOperationException ("...prior to obtaining a connection from the pool"):
+                // todas las conexiones del pool están retenidas por las peticiones bloqueadas. Son
+                // víctimas del mismo bloqueo y también merecen el diagnóstico (que corre por un pool
+                // aparte, ver DescribirBloqueadores, para poder conectar pese a la saturación).
+                if (actual is InvalidOperationException && actual.Message != null &&
+                    actual.Message.IndexOf("connection from the pool", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     return true;
                 }
@@ -81,17 +93,21 @@ ORDER BY bloqueados.N DESC, at.transaction_begin_time ASC";
         {
             try
             {
-                using (Models.NVEntities db = new Models.NVEntities())
+                // NestoAPI#357: NO usar el pool de EF (new NVEntities()). En una oleada de bloqueo ese
+                // pool está AGOTADO —de hecho es la causa del error que estamos diagnosticando— y el
+                // propio diagnóstico se quedaría esperando una conexión que nunca llega, devolviendo
+                // "sin bloqueadores" en falso. Se abre una conexión con Application Name propio (pool
+                // separado, inmune a la saturación del pool de la API) y Connect Timeout corto.
+                using (SqlConnection conexion = new SqlConnection(CadenaDiagnostico()))
                 {
-                    db.Database.CommandTimeout = 3;
-                    List<FilaBloqueador> filas = db.Database.SqlQuery<FilaBloqueador>(CONSULTA).ToList();
+                    conexion.Open();
+                    List<FilaBloqueador> filas = ConsultarBloqueadores(conexion);
                     string bloqueadores = FormatearBloqueadores(filas);
                     if (bloqueadores != null)
                     {
                         return new ResultadoDiagnostico { Bloqueadores = bloqueadores };
                     }
-                    int sesionesVisibles = db.Database.SqlQuery<int>(CONSULTA_SESIONES_VISIBLES).First();
-                    return new ResultadoDiagnostico { MotivoSinBloqueadores = InterpretarSinBloqueadores(sesionesVisibles) };
+                    return new ResultadoDiagnostico { MotivoSinBloqueadores = InterpretarSinBloqueadores(ContarSesionesVisibles(conexion)) };
                 }
             }
             catch (Exception ex)
@@ -100,6 +116,53 @@ ORDER BY bloqueados.N DESC, at.transaction_begin_time ASC";
                 {
                     MotivoSinBloqueadores = $"La consulta de diagnóstico de bloqueos falló: {ex.Message}"
                 };
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#357: cadena de diagnóstico basada en NestoConnection (misma BD NV) pero con
+        /// Application Name propio —así SQL Server la asigna a un POOL de cliente distinto del de EF,
+        /// que en la oleada está saturado— y Connect Timeout corto para fallar rápido en vez de
+        /// encolarse. Integrated Security igual que el resto: el GRANT VIEW SERVER STATE ya aplica.
+        /// </summary>
+        private static string CadenaDiagnostico()
+        {
+            ConnectionStringSettings origen = ConfigurationManager.ConnectionStrings["NestoConnection"];
+            SqlConnectionStringBuilder constructor = new SqlConnectionStringBuilder(origen.ConnectionString)
+            {
+                ApplicationName = "NestoAPI-Diagnostico",
+                ConnectTimeout = 3
+            };
+            return constructor.ConnectionString;
+        }
+
+        private static List<FilaBloqueador> ConsultarBloqueadores(SqlConnection conexion)
+        {
+            List<FilaBloqueador> filas = new List<FilaBloqueador>();
+            using (SqlCommand comando = new SqlCommand(CONSULTA, conexion) { CommandTimeout = 3 })
+            using (SqlDataReader lector = comando.ExecuteReader())
+            {
+                while (lector.Read())
+                {
+                    filas.Add(new FilaBloqueador
+                    {
+                        SessionId = lector.GetInt16(0),
+                        LoginName = lector.IsDBNull(1) ? null : lector.GetString(1),
+                        ProgramName = lector.IsDBNull(2) ? null : lector.GetString(2),
+                        Desde = lector.IsDBNull(3) ? (DateTime?)null : lector.GetDateTime(3),
+                        ContextInfo = lector.IsDBNull(4) ? null : lector.GetString(4),
+                        Bloqueados = lector.GetInt32(5)
+                    });
+                }
+            }
+            return filas;
+        }
+
+        private static int ContarSesionesVisibles(SqlConnection conexion)
+        {
+            using (SqlCommand comando = new SqlCommand(CONSULTA_SESIONES_VISIBLES, conexion) { CommandTimeout = 3 })
+            {
+                return (int)comando.ExecuteScalar();
             }
         }
 
