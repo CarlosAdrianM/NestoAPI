@@ -448,7 +448,7 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 Estado = linea.estado,
                 TipoLinea = linea.tipoLinea,
                 Producto = linea.Producto,
-                Texto = linea.texto.Length > 50 ? linea.texto.Substring(0, 50) : linea.texto, // porque 50 es la longitud del campo
+                Texto = TruncarTexto(linea.texto), // 50 es la longitud del campo; NestoAPI#352: null-safe
                 Cantidad = (short)linea.Cantidad,
                 Fecha_Entrega = FechaEntregaAjustada(linea.fechaEntrega.Date, ruta, linea.almacen),
                 Precio = linea.PrecioUnitario,
@@ -496,6 +496,19 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         private bool EsSobrePedido(string producto, short cantidad)
         {
             return servicio.EsSobrePedido(producto, cantidad);
+        }
+
+        // NestoAPI#352: una línea de inmovilizado (tipoLinea 3) cae en la rama default del switch y
+        // suele llegar con texto null (el cliente no lo manda); el inicializador reventaba con
+        // NullReferenceException en linea.texto.Length. El campo Texto es varchar(50) y no admite
+        // null semánticamente, así que un texto ausente se guarda como cadena vacía.
+        internal static string TruncarTexto(string texto)
+        {
+            if (string.IsNullOrEmpty(texto))
+            {
+                return string.Empty;
+            }
+            return texto.Length > 50 ? texto.Substring(0, 50) : texto;
         }
 
         // NestoAPI#319: grupo y subgrupo de una línea, resueltos JUNTOS (la FK de LinPedidoVta exige

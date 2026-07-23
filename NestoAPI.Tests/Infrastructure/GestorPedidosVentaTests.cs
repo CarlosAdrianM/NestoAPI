@@ -696,6 +696,74 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region CrearLineaVta - Issue #352 (línea de inmovilizado)
+
+        [TestMethod]
+        public void CrearLineaVta_LineaInmovilizadoConTextoNull_NoLanzaNRE()
+        {
+            // NestoAPI#352: una línea de inmovilizado (tipoLinea 3) cae en la rama default del switch
+            // y suele llegar con texto null (el cliente no lo manda). El inicializador de LinPedidoVta
+            // reventaba con NullReferenceException en linea.texto.Length (ELMAH 22/07/2026, POST
+            // /api/PedidosVenta de Carlos). No debe petar y el Texto debe quedar en cadena vacía.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerEmpresa(A<string>._)).Returns(new Empresa());
+            // Sin esto FakeItEasy devuelve un dummy ParametroIVA (no null) con C__IVA nulo y
+            // CalcularImportesLinea revienta al hacer (byte)parametroIva.C__IVA. En producción
+            // LeerParametroIVA sí trae valores; aquí no nos importa el importe, solo el texto.
+            A.CallTo(() => servicio.LeerParametroIVA(A<string>._, A<string>._, A<string>._)).Returns((ParametroIVA)null);
+            var gestor = new GestorPedidosVenta(servicio);
+
+            var linea = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.INMOVILIZADO,
+                Producto = "2160000001",
+                Cantidad = 1,
+                texto = null,                                   // <-- el disparador del crash
+                fechaEntrega = new DateTime(2026, 7, 22),
+                almacen = Constantes.Almacenes.ALGETE,
+                formaVenta = "1",
+                delegacion = Constantes.Almacenes.ALGETE
+            };
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual(string.Empty, resultado.Texto);
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_LineaInmovilizadoConTextoLargo_LoTruncaA50()
+        {
+            // El texto de la línea se guarda en un varchar(50); si viene más largo, se trunca sin petar.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            A.CallTo(() => servicio.LeerEmpresa(A<string>._)).Returns(new Empresa());
+            // Sin esto FakeItEasy devuelve un dummy ParametroIVA (no null) con C__IVA nulo y
+            // CalcularImportesLinea revienta al hacer (byte)parametroIva.C__IVA. En producción
+            // LeerParametroIVA sí trae valores; aquí no nos importa el importe, solo el texto.
+            A.CallTo(() => servicio.LeerParametroIVA(A<string>._, A<string>._, A<string>._)).Returns((ParametroIVA)null);
+            var gestor = new GestorPedidosVenta(servicio);
+
+            var linea = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.INMOVILIZADO,
+                Producto = "2160000001",
+                Cantidad = 1,
+                texto = new string('X', 80),
+                fechaEntrega = new DateTime(2026, 7, 22),
+                almacen = Constantes.Almacenes.ALGETE,
+                formaVenta = "1",
+                delegacion = Constantes.Almacenes.ALGETE
+            };
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+
+            Assert.AreEqual(50, resultado.Texto.Length);
+        }
+
+        #endregion
+
         #region Vendedor de líneas de cuenta contable (portes/reembolso) - Issue #277
 
         private static IDictionary<string, string> Grupos(params string[] grupoVendedor)
