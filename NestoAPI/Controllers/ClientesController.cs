@@ -90,7 +90,7 @@ namespace NestoAPI.Controllers
             }
             string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
             Infraestructure.Clientes.ResultadoCorreccionNif resultado = await _servicioValidacionNif
-                .MarcarIdentificacionExtranjera(peticion.Cliente, peticion.TipoIdentificacion, peticion.Pais, usuario);
+                .MarcarIdentificacionExtranjera(peticion.Cliente, peticion.TipoIdentificacion, peticion.Pais, usuario, peticion.Nif);
             if (!resultado.Corregido)
             {
                 return BadRequest(resultado.Motivo);
@@ -106,6 +106,9 @@ namespace NestoAPI.Controllers
             public string TipoIdentificacion { get; set; }
             /// <summary>ISO 3166-1 alfa-2 (FR, MA, GB...).</summary>
             public string Pais { get; set; }
+            /// <summary>NestoAPI#356/#354: NIF-IVA extranjero COMPLETO (opcional). Si se indica, se
+            /// propaga a las fichas y facturas sin declarar (el char(9) antiguo lo truncaba).</summary>
+            public string Nif { get; set; }
         }
 
         // GET: api/Clientes/NifIncorrectos?vendedor=

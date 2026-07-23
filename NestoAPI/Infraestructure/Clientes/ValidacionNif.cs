@@ -127,7 +127,10 @@ namespace NestoAPI.Infraestructure.Clientes
         /// lista de NIF incorrectos y las facturas se declaran a Verifactu con IDOtro
         /// (tipo del catálogo L7 + país) en vez de NIF.
         /// </summary>
-        Task<ResultadoCorreccionNif> MarcarIdentificacionExtranjera(string cliente, string tipoIdentificacion, string pais, string usuario);
+        /// <param name="nifNuevo">NestoAPI#356/#354: NIF-IVA extranjero COMPLETO. Si se indica,
+        /// se propaga a las fichas y a las facturas sin declarar (el VAT intracomunitario no cabía
+        /// en el char(9) antiguo y se truncaba). Null/vacío = se marca el NIF existente sin tocarlo.</param>
+        Task<ResultadoCorreccionNif> MarcarIdentificacionExtranjera(string cliente, string tipoIdentificacion, string pais, string usuario, string nifNuevo = null);
     }
 
     /// <summary>Fila del listado de NIF incorrectos (#327, para Nesto#417/NestoApp#157).</summary>

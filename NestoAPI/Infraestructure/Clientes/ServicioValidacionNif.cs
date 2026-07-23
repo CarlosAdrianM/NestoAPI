@@ -436,10 +436,11 @@ namespace NestoAPI.Infraestructure.Clientes
         // ValidacionesNif (misma caducidad natural: si la ficha cambia de NIF/nombre, vuelve
         // a "sin validar" y habría que marcarla de nuevo).
         public async Task<ResultadoCorreccionNif> MarcarIdentificacionExtranjera(string cliente,
-            string tipoIdentificacion, string pais, string usuario)
+            string tipoIdentificacion, string pais, string usuario, string nifNuevo = null)
         {
             tipoIdentificacion = tipoIdentificacion?.Trim();
             pais = pais?.Trim().ToUpper();
+            nifNuevo = nifNuevo?.Trim().ToUpper();
             if (!TiposIdentificacionValidos.Contains(tipoIdentificacion))
             {
                 return new ResultadoCorreccionNif
@@ -458,21 +459,76 @@ namespace NestoAPI.Infraestructure.Clientes
                 return new ResultadoCorreccionNif { Corregido = false, Motivo = "Los clientes de facturas simplificadas no llevan identificación real." };
             }
 
-            Cliente principal = await db.Clientes.FirstOrDefaultAsync(c =>
-                c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
-                && c.Nº_Cliente == cliente && c.ClientePrincipal)
-                .ConfigureAwait(false);
-            if (principal == null || string.IsNullOrWhiteSpace(principal.CIF_NIF))
+            List<Cliente> fichas = await db.Clientes
+                .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Nº_Cliente == cliente)
+                .ToListAsync().ConfigureAwait(false);
+            Cliente principal = fichas.FirstOrDefault(c => c.ClientePrincipal) ?? fichas.FirstOrDefault();
+            if (principal == null || (string.IsNullOrWhiteSpace(principal.CIF_NIF) && string.IsNullOrWhiteSpace(nifNuevo)))
             {
                 return new ResultadoCorreccionNif { Corregido = false, Motivo = $"No existe el cliente {cliente?.Trim()} o su ficha no tiene identificación." };
             }
+
+            // NestoAPI#356/#354: si se indica el NIF-IVA extranjero COMPLETO se propaga a las fichas
+            // y a las facturas sin declarar. El char(9) antiguo lo truncaba (IT+11 dígitos → 9), y
+            // "Marcar extranjero" solo copiaba ese valor mutilado, así que Verifacti seguía
+            // rechazándolo ("El IVA no tiene formato válido"). NO se valida contra la AEAT: un
+            // NIF-IVA intracomunitario no está en el censo español.
+            int fichasActualizadas = 0;
+            int facturasActualizadas = 0;
+            if (!string.IsNullOrWhiteSpace(nifNuevo))
+            {
+                foreach (Cliente ficha in fichas)
+                {
+                    if (ficha.CIF_NIF?.Trim() != nifNuevo)
+                    {
+                        _ = db.Modificaciones.Add(new Modificacion
+                        {
+                            Tabla = "Clientes",
+                            Anterior = $"Cliente {ficha.Nº_Cliente?.Trim()}/{ficha.Contacto?.Trim()} CIF_NIF={ficha.CIF_NIF?.Trim()}",
+                            Nuevo = $"CIF_NIF={nifNuevo} (NIF-IVA extranjero completo #356)",
+                            Usuario = usuario
+                        });
+                        ficha.CIF_NIF = nifNuevo;
+                        fichasActualizadas++;
+                    }
+                }
+
+                // Las facturas ya emitidas y sin declarar llevan el NIF truncado persistido (a la
+                // AEAT viaja factura.CifNif): sin esto, el reintento del job las mandaría mal para
+                // siempre. Solo dentro de la ventana de declaración de la sombra.
+                System.DateTime fechaInicioDeclaracion = Verifactu.VerifactuJobsService.FechaInicioDeclaracion;
+                List<CabFacturaVta> facturasSinDeclarar = await db.CabsFacturasVtas
+                    .Where(f => f.Nº_Cliente == cliente && f.Fecha >= fechaInicioDeclaracion
+                        && (f.VerifactuUUID == null || f.VerifactuUUID == ""))
+                    .ToListAsync().ConfigureAwait(false);
+                foreach (CabFacturaVta factura in facturasSinDeclarar)
+                {
+                    if (factura.CifNif?.Trim() != nifNuevo)
+                    {
+                        _ = db.Modificaciones.Add(new Modificacion
+                        {
+                            Tabla = "CabFacturaVta",
+                            Anterior = $"Factura {factura.Número?.Trim()} CifNif={factura.CifNif?.Trim()}",
+                            Nuevo = $"CifNif={nifNuevo} (NIF-IVA extranjero completo #356, factura sin declarar)",
+                            Usuario = usuario
+                        });
+                        factura.CifNif = nifNuevo;
+                        // NestoAPI#348: si la factura se había excluido por "sin datos fiscales" o
+                        // por un rechazo previo, se reabre para que el job la reintente ya corregida.
+                        factura.VerifactuEstado = null;
+                        facturasActualizadas++;
+                    }
+                }
+            }
+
+            string nifFinal = !string.IsNullOrWhiteSpace(nifNuevo) ? nifNuevo : principal.CIF_NIF?.Trim();
 
             await almacen.Guardar(new ValidacionNifRegistro
             {
                 Empresa = principal.Empresa?.Trim(),
                 Cliente = principal.Nº_Cliente?.Trim(),
                 Contacto = principal.Contacto?.Trim(),
-                Nif = principal.CIF_NIF?.Trim(),
+                Nif = nifFinal,
                 Nombre = principal.Nombre?.Trim(),
                 Estado = ESTADO_EXTRANJERO,
                 ResultadoAeat = $"IDOtro tipo {tipoIdentificacion} ({pais})",
@@ -491,12 +547,17 @@ namespace NestoAPI.Infraestructure.Clientes
             });
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
 
+            string extra = fichasActualizadas > 0 || facturasActualizadas > 0
+                ? $" NIF actualizado a {nifFinal} en {fichasActualizadas} ficha(s) y {facturasActualizadas} factura(s) sin declarar."
+                : string.Empty;
             return new ResultadoCorreccionNif
             {
                 Corregido = true,
-                Nif = principal.CIF_NIF?.Trim(),
+                Nif = nifFinal,
+                ContactosActualizados = fichasActualizadas,
+                FacturasActualizadas = facturasActualizadas,
                 Motivo = $"Identificación marcada como extranjera (tipo {tipoIdentificacion}, país {pais}): " +
-                    "deja de validarse contra el censo y las facturas se declararán con IDOtro."
+                    "deja de validarse contra el censo y las facturas se declararán con IDOtro." + extra
             };
         }
     }

@@ -294,6 +294,51 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
+        // NestoAPI#356/#354: el NIF-IVA extranjero se truncaba a 9 chars (char(9)); ahora "marcar
+        // extranjero" acepta el NIF completo y lo propaga a fichas y facturas sin declarar.
+
+        [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_ConNifNuevo_PropagaAFichaYFacturasSinValidarAeat()
+        {
+            Cliente ficha = Ficha(cliente: "41777", nif: "IT0280027", nombre: "RPF SRL"); // truncado a 9
+            ConFicha(ficha);
+            ConMasFakes();
+            System.DateTime inicio = NestoAPI.Infraestructure.Verifactu.VerifactuJobsService.FechaInicioDeclaracion;
+            var sinDeclarar = new CabFacturaVta { Empresa = "1", Número = "NV2612580", Nº_Cliente = "41777", Fecha = inicio.AddDays(1), CifNif = "IT0280027", VerifactuUUID = null, VerifactuEstado = "SinDatosFiscales" };
+            ConFacturas(sinDeclarar);
+
+            var resultado = await servicio.MarcarIdentificacionExtranjera("41777", "02", "it", "carlos", "IT01579720287");
+
+            Assert.IsTrue(resultado.Corregido);
+            Assert.AreEqual("IT01579720287", ficha.CIF_NIF, "La ficha queda con el NIF-IVA completo");
+            Assert.AreEqual("IT01579720287", sinDeclarar.CifNif, "La factura sin declarar queda con el NIF-IVA completo");
+            Assert.IsNull(sinDeclarar.VerifactuEstado, "La factura excluida se reabre para reintentarla");
+            Assert.AreEqual(1, resultado.FacturasActualizadas);
+            // La marca extranjera NUNCA valida contra el censo (un NIF-IVA no está en la AEAT española).
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.That.Matches(r =>
+                r.Estado == ServicioValidacionNif.ESTADO_EXTRANJERO
+                && r.TipoIdentificacion == "02" && r.Pais == "IT" && r.Nif == "IT01579720287")))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_SinNifNuevo_NoTocaFichaNiFacturas()
+        {
+            Cliente ficha = Ficha(cliente: "41777", nif: "IT0280027");
+            ConFicha(ficha);
+            ConMasFakes();
+            var factura = new CabFacturaVta { Empresa = "1", Número = "NV2612580", Nº_Cliente = "41777", Fecha = NestoAPI.Infraestructure.Verifactu.VerifactuJobsService.FechaInicioDeclaracion.AddDays(1), CifNif = "IT0280027", VerifactuUUID = null };
+            ConFacturas(factura);
+
+            var resultado = await servicio.MarcarIdentificacionExtranjera("41777", "02", "it", "carlos");
+
+            Assert.IsTrue(resultado.Corregido);
+            Assert.AreEqual("IT0280027", ficha.CIF_NIF, "Sin NIF nuevo la ficha no se toca");
+            Assert.AreEqual("IT0280027", factura.CifNif, "Sin NIF nuevo la factura no se toca");
+            Assert.AreEqual(0, resultado.FacturasActualizadas);
+        }
+
         [TestMethod]
         public async Task MarcarIdentificacionExtranjera_TipoOPaisInvalidos_NoGuardaNada()
         {
