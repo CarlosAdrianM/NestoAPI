@@ -95,10 +95,16 @@ namespace NestoAPI.Models.Picking
             // Finalizar Picking
             modulos.finalizador.Ejecutar(db);
 
-            // Si no se ha asignado picking a nada, damos error
+            // Si no se ha asignado picking a nada, damos error de NEGOCIO (400, no 500):
+            // es un resultado esperable (sin stock o nada que sacar), no un fallo del sistema.
             if (candidatos.Count == 0)
             {
-                throw new Exception("No hay stock suficiente para asignar picking a ninguna línea");
+                throw new Infraestructure.Exceptions.NestoBusinessException(
+                    "No hay stock suficiente para asignar picking a ninguna línea",
+                    new Infraestructure.Exceptions.ErrorContext { ErrorCode = "PICKING_SIN_STOCK" })
+                {
+                    IsWarning = true
+                };
             }
 
             // Mandamos el correo con los pedidos que van por debajo del margen
