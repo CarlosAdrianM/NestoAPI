@@ -80,11 +80,14 @@ ALTER TABLE dbo.Clientes ALTER COLUMN [CIF/NIF] varchar(20) NULL;
 UPDATE dbo.Clientes SET [CIF/NIF] = RTRIM([CIF/NIF]) WHERE [CIF/NIF] IS NOT NULL AND [CIF/NIF] <> RTRIM([CIF/NIF]);
 PRINT 'Columna [CIF/NIF] ampliada a varchar(20) y sin padding.';
 
--- 3. Columna Pais (ISO-2) con 'ES' por defecto en el historico.
+-- 3. Columna Pais (ISO-2) con 'ES' por defecto (historico y futuros INSERT que no lo indiquen,
+--    p.ej. el codigo VIEJO durante la ventana entre el script y el deploy: encaja con la regla
+--    "todos ES por defecto"). El DEFAULT se crea junto con la columna para no duplicarlo al re-ejecutar.
 IF COL_LENGTH('dbo.Clientes', 'Pais') IS NULL
 BEGIN
-    ALTER TABLE dbo.Clientes ADD Pais varchar(2) NULL;
-    PRINT 'Columna Pais anadida.';
+    ALTER TABLE dbo.Clientes ADD Pais varchar(2) NULL
+        CONSTRAINT DF_Clientes_Pais DEFAULT 'ES';
+    PRINT 'Columna Pais anadida (DEFAULT ES).';
 END
 UPDATE dbo.Clientes SET Pais = 'ES' WHERE Pais IS NULL;
 PRINT 'Pais rellenado a ES en el historico.';
