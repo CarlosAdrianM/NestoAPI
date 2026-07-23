@@ -551,6 +551,7 @@ namespace NestoAPI.Tests.Infrastructure
                 Dirección = "Rue del percebe, 13      ",
                 Estado = 54,
                 CIF_NIF = "A78368255",
+                Pais = "IT  ",
                 Nombre = "ACME, S.A.      ",
                 Población = "ALGETE    ",
                 Provincia = "MADRID    ",
@@ -560,7 +561,7 @@ namespace NestoAPI.Tests.Infrastructure
                 ClientePrincipal = false
             };
             A.CallTo(() => servicio.BuscarCliente("1", "1234", "0")).Returns(clienteDevuelto);
-            
+
             var clienteCrear = gestor.ConstruirClienteCrear("1", "1234", "0").Result;
 
             Assert.AreEqual(clienteCrear.Empresa, "1");
@@ -570,6 +571,7 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(clienteCrear.Direccion, "Rue del percebe, 13");
             Assert.AreEqual(clienteCrear.Estado, (short)54);
             Assert.AreEqual(clienteCrear.Nif, "A78368255");
+            Assert.AreEqual("IT", clienteCrear.Pais, "NestoAPI#355: el país se mapea sin padding");
             Assert.AreEqual(clienteCrear.Nombre, "ACME, S.A.");
             Assert.AreEqual(clienteCrear.Poblacion, "ALGETE");
             Assert.AreEqual(clienteCrear.Provincia, "MADRID");
@@ -937,6 +939,85 @@ namespace NestoAPI.Tests.Infrastructure
             Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
 
             Assert.AreEqual(Constantes.Clientes.Estados.VISITA_PRESENCIAL, clienteNuevo.Estado);
+        }
+
+        // NestoAPI#355: país en el alta y la modificación de cliente
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_SinPais_PorDefectoES()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nif = "A78368255",
+                Nombre = "ACME",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("ES", clienteNuevo.Pais, "Sin país indicado, el cliente nace como ES");
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_ConPais_LoGuardaEnMayusculas()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nif = "IT0280027",
+                Pais = "it",
+                Nombre = "RPF SRL",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("IT", clienteNuevo.Pais);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_SinPais_NoPisaElPaisExistente()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Pais = null; // el llamante (ficha comercial) aún no envía país
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Pais = "PT";
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual("PT", clienteNuevo.Pais, "Sin país en el DTO no se blanquea el que ya tiene el cliente");
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_ConPais_LoActualiza()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Pais = "fr";
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Pais = "ES";
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual("FR", clienteNuevo.Pais);
         }
 
         [TestMethod]

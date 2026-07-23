@@ -451,6 +451,7 @@ namespace NestoAPI.Infraestructure
                 Direccion = clienteDb.Dirección?.Trim(),
                 Estado = clienteDb.Estado,
                 Nif = clienteDb.CIF_NIF?.Trim(),
+                Pais = clienteDb.Pais?.Trim(),
                 Nombre = clienteDb.Nombre?.Trim(),
                 Poblacion = clienteDb.Población?.Trim(),
                 Provincia = clienteDb.Provincia?.Trim(),
@@ -827,6 +828,12 @@ namespace NestoAPI.Infraestructure
 
             // test se rellenan los datos y el CIF sobre todo
             clienteDB.CIF_NIF = clienteModificar.Nif;
+            // NestoAPI#355: solo se pisa el país si el DTO trae uno (la ficha comercial y otros
+            // llamantes que aún no envían país no deben blanquear el que ya tenga el cliente).
+            if (!string.IsNullOrWhiteSpace(clienteModificar.Pais))
+            {
+                clienteDB.Pais = clienteModificar.Pais.Trim().ToUpper();
+            }
             clienteDB.Nombre = clienteModificar.Nombre;
             clienteDB.Dirección = clienteModificar.Direccion;
             // Aquí hay que modificar la población y la provincia si el código postal ha cambiado
@@ -1067,6 +1074,8 @@ namespace NestoAPI.Infraestructure
 
                 AlbaranValorado = true,
                 CIF_NIF = clienteCrear.Nif,
+                // NestoAPI#355: país ISO-2; sin indicar = ES (default de la casa para el histórico).
+                Pais = string.IsNullOrWhiteSpace(clienteCrear.Pais) ? "ES" : clienteCrear.Pais.Trim().ToUpper(),
                 ClientePrincipal = !clienteCrear.EsContacto,
                 CodPostal = clienteCrear.CodigoPostal,
                 Comentarios = clienteCrear.Comentarios,

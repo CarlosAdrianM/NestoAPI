@@ -25,6 +25,10 @@ namespace NestoAPI.Models.Clientes
         public string FormaPago { get; set; }
         public string Iban { get; set; }
         public string Nif {get;set;}
+        /// <summary>NestoAPI#355: país del cliente (ISO-2). Null/vacío = ES (default de la casa).
+        /// Para país ≠ ES el NIF puede ser un NIF-IVA intracomunitario (varchar(20), #356).</summary>
+        [StringLength(2)]
+        public string Pais { get; set; }
         [StringLength(50)]
         public string Nombre { get; set; }
         public bool Peluqueria { get; set; }

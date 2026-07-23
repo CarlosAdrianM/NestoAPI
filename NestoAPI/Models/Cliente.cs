@@ -54,6 +54,7 @@ namespace NestoAPI.Models
         public string Comentarios { get; set; }
         public string CodPostal { get; set; }
         public string CIF_NIF { get; set; }
+        public string Pais { get; set; }
         public string Provincia { get; set; }
         public Nullable<short> Estado { get; set; }
         public string IVA { get; set; }

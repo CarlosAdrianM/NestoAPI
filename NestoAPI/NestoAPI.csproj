@@ -513,6 +513,7 @@
     <Compile Include="Controllers\AuthController.cs" />
     <Compile Include="Controllers\PagoRedirectController.cs" />
     <Compile Include="Controllers\BancosController.cs" />
+    <Compile Include="Controllers\PaisesController.cs" />
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\BuscadorController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
@@ -944,6 +945,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Clientes\ClienteCrear.cs" />
+    <Compile Include="Models\Clientes\PaisDTO.cs" />
     <Compile Include="Models\Clientes\ClienteInteraccion.cs" />
     <Compile Include="Models\Clientes\ClienteProbabilidadVenta.cs" />
     <Compile Include="Models\Clientes\Iban.cs" />

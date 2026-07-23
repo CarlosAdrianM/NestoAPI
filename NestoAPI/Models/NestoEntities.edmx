@@ -379,7 +379,8 @@
           <Property Name="Vendedor" Type="char" MaxLength="3" />
           <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="CodPostal" Type="char" MaxLength="15" />
-          <Property Name="CIF/NIF" Type="char" MaxLength="9" />
+          <Property Name="CIF/NIF" Type="varchar" MaxLength="20" />
+          <Property Name="Pais" Type="varchar" MaxLength="2" />
           <Property Name="Provincia" Type="char" MaxLength="30" />
           <Property Name="Estado" Type="smallint" />
           <Property Name="IVA" Type="char" MaxLength="3" />
@@ -879,7 +880,7 @@
           <Property Name="Liquidado" Type="int" />
           <Property Name="FormaPago" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Remesa" Type="int" />
-          <Property Name="CIF/NIF" Type="char" MaxLength="9" />
+          <Property Name="CIF/NIF" Type="varchar" MaxLength="20" />
           <Property Name="CCC" Type="char" MaxLength="3" />
           <Property Name="Ruta" Type="char" MaxLength="3" />
           <Property Name="Origen" Type="char" MaxLength="3" />
@@ -8053,7 +8054,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Comentarios" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
           <Property Name="CodPostal" Type="String" MaxLength="15" FixedLength="true" Unicode="false" />
-          <Property Name="CIF_NIF" Type="String" MaxLength="9" FixedLength="true" Unicode="false" />
+          <Property Name="CIF_NIF" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="Pais" Type="String" MaxLength="2" FixedLength="false" Unicode="false" />
           <Property Name="Provincia" Type="String" MaxLength="30" FixedLength="true" Unicode="false" />
           <Property Name="Estado" Type="Int16" />
           <Property Name="IVA" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
@@ -9655,7 +9657,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Liquidado" Type="Int32" />
           <Property Name="FormaPago" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Remesa" Type="Int32" />
-          <Property Name="CIF_NIF" Type="String" MaxLength="9" FixedLength="true" Unicode="false" />
+          <Property Name="CIF_NIF" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
           <Property Name="CCC" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Ruta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Origen" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
@@ -13886,6 +13888,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="IVA" ColumnName="IVA" />
                 <ScalarProperty Name="Estado" ColumnName="Estado" />
                 <ScalarProperty Name="Provincia" ColumnName="Provincia" />
+                <ScalarProperty Name="Pais" ColumnName="Pais" />
                 <ScalarProperty Name="CIF_NIF" ColumnName="CIF/NIF" />
                 <ScalarProperty Name="CodPostal" ColumnName="CodPostal" />
                 <ScalarProperty Name="Comentarios" ColumnName="Comentarios" />
