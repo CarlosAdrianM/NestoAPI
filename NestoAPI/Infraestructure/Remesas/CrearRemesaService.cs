@@ -250,9 +250,10 @@ namespace NestoAPI.Infraestructure.Remesas
         /// Liquidado (la cartera que salda) y Nº_Remesa (que prdContabilizar copia al pago y
         /// prdLiquidar propaga a la cartera), y DEBE el banco. NestoAPI#345: en modo
         /// "respetar vencimientos" cada efecto conserva su fecha (con suelo en fechaCargo) y
-        /// hay UNA línea de banco POR FECHA de cargo, con su total y su fecha — el banco hará
-        /// un apunte en cuenta por cada fecha. En modo forzado (default) todo va a fechaCargo
-        /// y el banco es una sola línea, como siempre. Pura y estática.
+        /// cada fecha de cargo forma un ASIENTO PROPIO (efectos + su línea de banco, con su
+        /// total y su fecha) — el banco hará un apunte en cuenta por cada fecha. En modo
+        /// forzado (default) todo va a fechaCargo en un único asiento, como siempre.
+        /// Pura y estática.
         /// </summary>
         internal static List<PreContabilidad> ConstruirLineasRemesa(int numeroRemesa, string empresa,
             Banco banco, List<ExtractoCliente> efectos, string usuario,
@@ -262,6 +263,9 @@ namespace NestoAPI.Infraestructure.Remesas
             string cuentaBanco = banco.Cuenta_Contable?.Trim();
             DateTime suelo = FechaCargoEfectiva(fechaCargo);
 
+            // prdContabilizar exige UNA fecha por asiento ("El Asiento 1 tiene diferentes
+            // fechas", 23/07/26): cada fecha de cargo forma su propio asiento provisional
+            // (1..N por orden de fecha) y prdContabilizar les da número definitivo distinto.
             var totalesPorFecha = new SortedDictionary<DateTime, decimal>();
             foreach (ExtractoCliente efecto in efectos)
             {
@@ -270,6 +274,16 @@ namespace NestoAPI.Infraestructure.Remesas
                     : suelo;
                 totalesPorFecha[fechaEfecto] = (totalesPorFecha.TryGetValue(fechaEfecto, out decimal acumulado)
                     ? acumulado : 0) + efecto.ImportePdte;
+            }
+            Dictionary<DateTime, int> asientoPorFecha = totalesPorFecha.Keys
+                .Select((fecha, indice) => new { fecha, indice })
+                .ToDictionary(x => x.fecha, x => x.indice + 1);
+
+            foreach (ExtractoCliente efecto in efectos)
+            {
+                DateTime fechaEfecto = respetarVencimientos
+                    ? VencimientoEfectivo(efecto.FechaVto, suelo)
+                    : suelo;
 
                 string documento = efecto.Nº_Documento?.Trim();
                 string concepto = $"Pago Factura {documento}  {efecto.Efecto?.Trim()}".TrimEnd();
@@ -291,7 +305,7 @@ namespace NestoAPI.Infraestructure.Remesas
                     Diario = DIARIO_REMESA,
                     Fecha = fechaEfecto,
                     FechaVto = fechaEfecto,
-                    Asiento = 1,
+                    Asiento = asientoPorFecha[fechaEfecto],
                     Asiento_Automático = true,
                     Delegación = efecto.Delegación?.Trim(),
                     FormaVenta = efecto.FormaVenta?.Trim(),
@@ -325,7 +339,7 @@ namespace NestoAPI.Infraestructure.Remesas
                     Diario = DIARIO_REMESA,
                     Fecha = grupo.Key,
                     FechaVto = grupo.Key,
-                    Asiento = 1,
+                    Asiento = asientoPorFecha[grupo.Key],
                     Asiento_Automático = true,
                     Nº_Remesa = numeroRemesa.ToString(),
                     Origen = empresa,

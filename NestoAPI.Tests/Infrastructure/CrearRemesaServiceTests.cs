@@ -188,6 +188,38 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void ConstruirLineasRemesa_RespetandoVencimientos_CadaFechaEsUnAsientoDistinto()
+        {
+            // Bug 23/07/26: todas las líneas iban con Asiento = 1 y prdContabilizar abortaba
+            // con "El Asiento 1 tiene diferentes fechas". Cada fecha de cargo debe formar su
+            // propio asiento provisional (efectos + banco) y cuadrar por sí mismo.
+            DateTime hoy = DateTime.Today;
+            var efectos = new List<ExtractoCliente>
+            {
+                Efecto(1, "15191", 100m, "NV1", vencimiento: hoy.AddDays(-1)),
+                Efecto(2, "26985", 50m, "NV2", vencimiento: hoy),
+                Efecto(3, "40227", 25m, "NV3", vencimiento: hoy.AddDays(1))
+            };
+
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10900, "1", BancoSabadell(), efectos, "carlos", respetarVencimientos: true);
+
+            foreach (var asiento in lineas.GroupBy(l => l.Asiento))
+            {
+                Assert.AreEqual(1, asiento.Select(l => l.Fecha).Distinct().Count(),
+                    $"El asiento {asiento.Key} tiene diferentes fechas: prdContabilizar lo rechaza");
+                Assert.AreEqual(asiento.Sum(l => l.Debe), asiento.Sum(l => l.Haber),
+                    $"El asiento {asiento.Key} debe cuadrar por sí mismo");
+            }
+            Assert.AreEqual(2, lineas.Select(l => l.Asiento).Distinct().Count(),
+                "Dos fechas de cargo (hoy y mañana) = dos asientos provisionales");
+            Assert.IsTrue(lineas.Where(l => l.Fecha == hoy).All(l => l.Asiento == 1),
+                "La primera fecha va al asiento 1");
+            Assert.IsTrue(lineas.Where(l => l.Fecha == hoy.AddDays(1)).All(l => l.Asiento == 2),
+                "La segunda fecha va al asiento 2");
+        }
+
+        [TestMethod]
         public void ConstruirLineasRemesa_VencimientoPasadoONulo_SeCobraEnLaFechaDeCargo()
         {
             // "Hay que controlar que las fechas nunca sean anteriores a hoy" (Carlos 22/07)
