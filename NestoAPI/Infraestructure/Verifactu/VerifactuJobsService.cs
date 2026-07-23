@@ -38,6 +38,10 @@ namespace NestoAPI.Infraestructure.Verifactu
         private const int MAX_CONSULTAS_POR_PASADA = 100;
         private const int MAX_REINTENTOS_POR_PASADA = 50;
         private const string ESTADO_PENDIENTE = "Pendiente";
+        // NestoAPI#348: factura nacida por un camino de facturación externo a la API (VB6),
+        // sin datos fiscales persistidos: no puede declararse jamás (el nombre del destinatario
+        // sale de NombreFiscal) y se saca del ciclo de reintentos marcándola con este estado.
+        internal const string ESTADO_SIN_DATOS_FISCALES = "SinDatosFiscales";
 
         private readonly NVEntities db;
         private readonly IServicioVerifactu servicioVerifactu;
@@ -133,13 +137,32 @@ namespace NestoAPI.Infraestructure.Verifactu
             List<CabFacturaVta> sinDeclarar = await db.CabsFacturasVtas
                 .Where(f => (f.VerifactuUUID == null || f.VerifactuUUID == "")
                     && f.Fecha >= fechaInicio
-                    && series.Contains(f.Serie))
+                    && series.Contains(f.Serie)
+                    && (f.VerifactuEstado == null || f.VerifactuEstado != ESTADO_SIN_DATOS_FISCALES))
                 .OrderBy(f => f.Fecha)
                 .Take(MAX_REINTENTOS_POR_PASADA)
                 .ToListAsync().ConfigureAwait(false);
 
+            bool hayExcluidas = false;
             foreach (CabFacturaVta factura in sinDeclarar)
             {
+                // NestoAPI#348 (caso CV2600484/485): sin datos fiscales persistidos el mapeador
+                // no tiene destinatario y Verifacti rechaza SIEMPRE ("el campo nombre es
+                // obligatorio"). Las simplificadas (F2, sin destinatario) sí pueden declararse.
+                // Se marca el estado para que la query las excluya en adelante (aviso único).
+                if (string.IsNullOrWhiteSpace(factura.NombreFiscal)
+                    && !MapeadorFacturaVerifactu.EsFacturaSimplificada(factura))
+                {
+                    factura.VerifactuEstado = ESTADO_SIN_DATOS_FISCALES;
+                    factura.VerifactuUltimoError = "Factura de camino externo a la API (#348) sin datos " +
+                        "fiscales: no puede declararse. Excluida de los reintentos del job.";
+                    factura.VerifactuUltimoIntento = DateTime.Now;
+                    hayExcluidas = true;
+                    resumen.SinDeclarar.Add($"{factura.Número?.Trim()} (cliente {factura.Nº_Cliente?.Trim()}): " +
+                        "sin datos fiscales (camino viejo #348), EXCLUIDA de los reintentos");
+                    continue;
+                }
+
                 VerifactuResponse respuesta = await reenviar(factura).ConfigureAwait(false);
                 // NestoAPI#346: una factura atascada fallaría idéntico en cada pasada; al resumen
                 // (y por tanto al correo a administración) solo van las NOVEDADES — primer fallo
@@ -172,6 +195,10 @@ namespace NestoAPI.Infraestructure.Verifactu
                     await servicioValidacionNif.MarcarIncorrecto(factura.Nº_Cliente,
                         $"RECHAZO VERIFACTU: {respuesta.MensajeError}", "VerifactuJob").ConfigureAwait(false);
                 }
+            }
+            if (hayExcluidas)
+            {
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
             }
         }
 

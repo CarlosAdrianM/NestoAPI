@@ -72,8 +72,11 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         private static CabFacturaVta Factura(string numero, string serie = "NV", string uuid = null,
-            string estado = null, DateTime? fecha = null, string cliente = "30676")
+            string estado = null, DateTime? fecha = null, string cliente = "30676",
+            string nombreFiscal = "CLIENTE DE PRUEBA SL")
         {
+            // NombreFiscal con valor por defecto: las facturas creadas por la API siempre lo
+            // persisten; solo el camino viejo (#348) las deja sin datos fiscales.
             return new CabFacturaVta
             {
                 Empresa = "1",
@@ -82,8 +85,61 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
                 Nº_Cliente = cliente,
                 Fecha = fecha ?? new DateTime(2026, 7, 21),
                 VerifactuUUID = uuid,
-                VerifactuEstado = estado
+                VerifactuEstado = estado,
+                NombreFiscal = nombreFiscal
             };
+        }
+
+        // NestoAPI#348: facturas del camino externo a la API (VB6) sin datos fiscales — caso
+        // real CV2600484/485, rechazadas SIEMPRE por Verifacti ("el campo nombre es obligatorio")
+
+        [TestMethod]
+        public async Task Reintentar_SinDatosFiscales_SeExcluyeDelControlYNoSeReintenta()
+        {
+            var factura = Factura("CV2600484", serie: "CV", cliente: "41739", nombreFiscal: null,
+                fecha: new DateTime(2026, 7, 20));
+            ConFacturas(factura);
+
+            var resumen = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen);
+
+            Assert.AreEqual(0, reenviadas.Count, "Sin datos fiscales no puede declararse: no se reintenta");
+            Assert.AreEqual(VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, factura.VerifactuEstado,
+                "Queda marcada para que la query la excluya en adelante");
+            StringAssert.Contains(factura.VerifactuUltimoError, "#348");
+            Assert.AreEqual(1, resumen.SinDeclarar.Count, "Aviso único en el correo al excluirla");
+            StringAssert.Contains(resumen.SinDeclarar.Single(), "EXCLUIDA");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Reintentar_YaMarcadaSinDatosFiscales_NiSeReintentaNiSeVuelveAAvisar()
+        {
+            var factura = Factura("CV2600484", serie: "CV", cliente: "41739", nombreFiscal: null,
+                estado: VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, fecha: new DateTime(2026, 7, 20));
+            ConFacturas(factura);
+
+            var resumen = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen);
+
+            Assert.AreEqual(0, reenviadas.Count);
+            Assert.AreEqual(0, resumen.SinDeclarar.Count,
+                "Ya excluida: fuera del control, sin ruido en pasadas posteriores");
+        }
+
+        [TestMethod]
+        public async Task Reintentar_SimplificadaSinNombreFiscal_SiSeReintenta()
+        {
+            // Las simplificadas (F2) van SIN destinatario: no necesitan datos fiscales
+            var factura = Factura("NV2612500", cliente: Constantes.ClientesEspeciales.PUBLICO_FINAL,
+                nombreFiscal: null, fecha: new DateTime(2026, 7, 21));
+            ConFacturas(factura);
+
+            var resumen = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen);
+
+            Assert.AreEqual(1, reenviadas.Count, "Una simplificada se declara sin destinatario");
+            Assert.AreNotEqual(VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES, factura.VerifactuEstado);
         }
 
         [TestMethod]
