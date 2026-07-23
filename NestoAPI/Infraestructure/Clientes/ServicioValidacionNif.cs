@@ -29,6 +29,32 @@ namespace NestoAPI.Infraestructure.Clientes
             "02", "03", "04", "05", "06", "07"
         };
 
+        /// <summary>Catálogo L7: 02 = NIF-IVA (intracomunitario). Tipo por defecto de un cliente
+        /// con país fiscal de la UE distinto de España.</summary>
+        internal const string TIPO_NIF_IVA = "02";
+        private const string PAIS_ESPANA = "ES";
+
+        /// <summary>NestoAPI#354: estados ISO-2 de la UE (mirror de Paises.UnionEuropea, que no
+        /// está en el EDMX). Un cliente con país fiscal aquí y distinto de ES se declara a
+        /// Verifactu con IDOtro tipo 02 (NIF-IVA) sin pasar por el censo español. La pertenencia
+        /// a la UE es estable; si cambia (adhesiones), actualizar aquí y en la tabla Paises.</summary>
+        internal static readonly HashSet<string> PaisesUnionEuropea = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU",
+            "IE", "IT", "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "SE"
+        };
+
+        /// <summary>NestoAPI#354: país fiscal de la UE distinto de España (destinatario B2B
+        /// intracomunitario → IDOtro tipo 02). ES y no-UE (que necesitan tipo específico marcado
+        /// a mano: pasaporte, doc. del país...) quedan fuera.</summary>
+        internal static bool EsPaisUnionEuropeaDistintoDeEspana(string pais)
+        {
+            string codigo = pais?.Trim();
+            return !string.IsNullOrEmpty(codigo)
+                && !codigo.Equals(PAIS_ESPANA, StringComparison.OrdinalIgnoreCase)
+                && PaisesUnionEuropea.Contains(codigo);
+        }
+
         private static readonly HashSet<string> ClientesSimplificadas = new HashSet<string>
         {
             Constantes.ClientesEspeciales.AMAZON,
@@ -406,22 +432,36 @@ namespace NestoAPI.Infraestructure.Clientes
             ValidacionNifRegistro registro = await almacen
                 .Leer(ficha.Empresa?.Trim(), ficha.Nº_Cliente?.Trim(), ficha.Contacto?.Trim())
                 .ConfigureAwait(false);
+            bool marcaVigente = registro != null && registro.Nif?.Trim() == nif && registro.Nombre?.Trim() == nombre;
 
-            // Sin registro, o la ficha cambió de NIF/nombre después de validar → sin validar.
-            if (registro == null || registro.Nif?.Trim() != nif || registro.Nombre?.Trim() != nombre)
-            {
-                resultado.Estado = EstadoValidacionNif.SinValidar;
-                return resultado;
-            }
-
-            // NestoAPI#339: identificación extranjera vigente (mientras la ficha no cambie de
-            // NIF/nombre): no valida contra el censo y a Verifactu va como IDOtro.
-            if (registro.Estado == ESTADO_EXTRANJERO)
+            // 1. NestoAPI#339: marca extranjera EXPLÍCITA vigente (el usuario eligió tipo y país;
+            // puede ser no-UE, pasaporte...): manda sobre todo lo demás.
+            if (marcaVigente && registro.Estado == ESTADO_EXTRANJERO)
             {
                 resultado.Estado = EstadoValidacionNif.Extranjero;
                 resultado.TipoIdentificacion = registro.TipoIdentificacion?.Trim();
                 resultado.Pais = registro.Pais?.Trim();
                 resultado.ResultadoAeat = registro.ResultadoAeat;
+                return resultado;
+            }
+
+            // 2. NestoAPI#354: país fiscal de la UE distinto de ES → NIF-IVA intracomunitario
+            // (IDOtro tipo 02) AUTOMÁTICO, sin pasar por el censo español (un VAT extranjero
+            // jamás valida ahí). Clientes.Pais es la fuente de verdad: así un cliente dado de
+            // alta con país IT/FR/DE se declara bien a Verifactu sin el rodeo por NIF incorrectos.
+            if (EsPaisUnionEuropeaDistintoDeEspana(ficha.Pais))
+            {
+                resultado.Estado = EstadoValidacionNif.Extranjero;
+                resultado.TipoIdentificacion = TIPO_NIF_IVA;
+                resultado.Pais = ficha.Pais?.Trim().ToUpperInvariant();
+                resultado.ResultadoAeat = $"IDOtro tipo {TIPO_NIF_IVA} ({resultado.Pais}) por país fiscal";
+                return resultado;
+            }
+
+            // 3. Veredicto de censo cacheado (NIF español). Sin registro vigente → sin validar.
+            if (!marcaVigente)
+            {
+                resultado.Estado = EstadoValidacionNif.SinValidar;
                 return resultado;
             }
 
@@ -473,6 +513,17 @@ namespace NestoAPI.Infraestructure.Clientes
             // "Marcar extranjero" solo copiaba ese valor mutilado, así que Verifacti seguía
             // rechazándolo ("El IVA no tiene formato válido"). NO se valida contra la AEAT: un
             // NIF-IVA intracomunitario no está en el censo español.
+            // NestoAPI#354: marcar como extranjero fija también el PAÍS FISCAL (Clientes.Pais) en
+            // todas las fichas del cliente, para que sea coherente con la marca y (si es de la UE)
+            // el país por sí solo baste para declarar con IDOtro en el futuro.
+            foreach (Cliente ficha in fichas)
+            {
+                if (ficha.Pais?.Trim().ToUpperInvariant() != pais)
+                {
+                    ficha.Pais = pais;
+                }
+            }
+
             int fichasActualizadas = 0;
             int facturasActualizadas = 0;
             if (!string.IsNullOrWhiteSpace(nifNuevo))

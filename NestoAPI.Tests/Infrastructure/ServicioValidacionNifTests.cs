@@ -66,7 +66,7 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         private static Cliente Ficha(string cliente = "30676", string contacto = "0", string nif = "90021192",
-            string nombre = "ANA ISABEL CUADRADO", bool principal = true)
+            string nombre = "ANA ISABEL CUADRADO", bool principal = true, string pais = null)
         {
             return new Cliente
             {
@@ -75,7 +75,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Contacto = contacto,
                 CIF_NIF = nif,
                 Nombre = nombre,
-                ClientePrincipal = principal
+                ClientePrincipal = principal,
+                Pais = pais
             };
         }
 
@@ -320,6 +321,78 @@ namespace NestoAPI.Tests.Infrastructure
                 r.Estado == ServicioValidacionNif.ESTADO_EXTRANJERO
                 && r.TipoIdentificacion == "02" && r.Pais == "IT" && r.Nif == "IT01579720287")))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        // NestoAPI#354: el país fiscal de la UE (≠ES) declara con IDOtro tipo 02 automáticamente,
+        // sin marca manual ni censo español (Clientes.Pais es la fuente de verdad).
+
+        [TestMethod]
+        public void EsPaisUnionEuropeaDistintoDeEspana_SoloUEDistintaDeEspana()
+        {
+            Assert.IsTrue(ServicioValidacionNif.EsPaisUnionEuropeaDistintoDeEspana("IT"));
+            Assert.IsTrue(ServicioValidacionNif.EsPaisUnionEuropeaDistintoDeEspana("fr"));
+            Assert.IsFalse(ServicioValidacionNif.EsPaisUnionEuropeaDistintoDeEspana("ES"), "España no");
+            Assert.IsFalse(ServicioValidacionNif.EsPaisUnionEuropeaDistintoDeEspana("GB"), "Reino Unido ya no es UE");
+            Assert.IsFalse(ServicioValidacionNif.EsPaisUnionEuropeaDistintoDeEspana("MA"), "Marruecos no es UE");
+            Assert.IsFalse(ServicioValidacionNif.EsPaisUnionEuropeaDistintoDeEspana(null));
+        }
+
+        [TestMethod]
+        public async Task ValidarPrincipal_PaisUEDistintoDeEspana_ExtranjeroTipo02SinAeat()
+        {
+            ConFicha(Ficha(cliente: "41777", nif: "IT01579720287", nombre: "RPF SRL", pais: "IT"));
+            ConMasFakes();
+            A.CallTo(() => almacen.Leer(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult<ValidacionNifRegistro>(null)); // sin marca previa
+
+            var resultado = await servicio.ValidarPrincipal("41777", "Verifactu");
+
+            Assert.AreEqual(EstadoValidacionNif.Extranjero, resultado.Estado);
+            Assert.AreEqual("02", resultado.TipoIdentificacion, "NIF-IVA intracomunitario");
+            Assert.AreEqual("IT", resultado.Pais);
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ValidarPrincipal_PaisES_SiValidaContraElCenso()
+        {
+            ConFicha(Ficha(cliente: "30676", nif: "90021192C", nombre: "ANA", pais: "ES"));
+            ConMasFakes();
+            A.CallTo(() => almacen.Leer(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult<ValidacionNifRegistro>(null));
+            AeatResponde(valido: true, resultado: "IDENTIFICADO");
+
+            var resultado = await servicio.ValidarPrincipal("30676", "Verifactu");
+
+            Assert.AreEqual(EstadoValidacionNif.Correcto, resultado.Estado, "Un cliente ES sí pasa por el censo");
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ValidarPrincipal_PaisNoUE_NoAutoExtranjero()
+        {
+            // Marruecos (no UE): el tipo es ambiguo (pasaporte, doc. país...), se deja a la marca manual.
+            ConFicha(Ficha(cliente: "50000", nif: "X1234567L", nombre: "CLIENTE MA", pais: "MA"));
+            ConMasFakes();
+            A.CallTo(() => almacen.Leer(A<string>.Ignored, A<string>.Ignored, A<string>.Ignored))
+                .Returns(Task.FromResult<ValidacionNifRegistro>(null));
+
+            var resultado = await servicio.ValidarPrincipal("50000", "Verifactu");
+
+            Assert.AreNotEqual(EstadoValidacionNif.Extranjero, resultado.Estado,
+                "Un país no-UE no se auto-marca (tipo ambiguo): queda para la marca manual");
+        }
+
+        [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_FijaElPaisFiscalDeLaFicha()
+        {
+            Cliente ficha = Ficha(cliente: "41777", nif: "IT01579720287", pais: "ES");
+            ConFicha(ficha);
+            ConMasFakes();
+
+            await servicio.MarcarIdentificacionExtranjera("41777", "02", "it", "carlos");
+
+            Assert.AreEqual("IT", ficha.Pais, "Marcar extranjero deja también el país fiscal en la ficha");
         }
 
         [TestMethod]
