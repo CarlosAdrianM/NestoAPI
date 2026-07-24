@@ -239,6 +239,8 @@
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
+    <Compile Include="Infrastructure\Agencias\RegistroAgenciasTests.cs" />
+    <Compile Include="Infrastructure\Agencias\GateAgenciasActivasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraCosteEnvioTests.cs" />
     <Compile Include="Infrastructure\Agencias\ComparadorAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraZonaEnvioTests.cs" />
@@ -277,6 +279,7 @@
     <Compile Include="Infrastructure\PedidosVenta\SelectorSerieTests.cs" />
     <Compile Include="Infrastructure\SeriesFacturaQuestPdfTests.cs" />
     <Compile Include="Infrastructure\StartupJwtConfigurationTests.cs" />
+    <Compile Include="Infrastructure\Verifactu\GeneradorQrVerifactuTests.cs" />
     <Compile Include="Infrastructure\Verifactu\ServicioVerifactiTests.cs" />
     <Compile Include="Infrastructure\Verifactu\VerifactuJobsServiceTests.cs" />
     <Compile Include="Models\Facturas\RegistroSeriesVerifactuTests.cs" />

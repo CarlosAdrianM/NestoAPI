@@ -324,6 +324,9 @@
     <Reference Include="Polly, Version=7.0.0.0, Culture=neutral, PublicKeyToken=c8a3ffc3f8f825cc, processorArchitecture=MSIL">
       <HintPath>..\packages\Polly.7.2.4\lib\netstandard2.0\Polly.dll</HintPath>
     </Reference>
+    <Reference Include="QRCoder, Version=1.4.3.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\QRCoder.1.4.3\lib\net40\QRCoder.dll</HintPath>
+    </Reference>
     <Reference Include="QuestPDF, Version=2022.12.7.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>..\packages\QuestPDF.2022.12.7\lib\net462\QuestPDF.dll</HintPath>
     </Reference>
@@ -602,6 +605,10 @@
     <Compile Include="Infraestructure\Agencias\IAgenciaRemota.cs" />
     <Compile Include="Infraestructure\Agencias\RegistroIntercambiosRemotos.cs" />
     <Compile Include="Infraestructure\Agencias\FabricaAgenciasRemotas.cs" />
+    <Compile Include="Infraestructure\Agencias\Perfiles\IPerfilAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\Perfiles\GateAgenciasActivas.cs" />
+    <Compile Include="Infraestructure\Agencias\Perfiles\RegistroAgencias.cs" />
+    <Compile Include="Infraestructure\Agencias\Perfiles\PerfilesAgencias.cs" />
     <Compile Include="Infraestructure\Agencias\ComparativaAgenciaSombraJobsService.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\CalculadoraCosteEnvio.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ComparadorAgencias.cs" />
@@ -754,6 +761,8 @@
     <Compile Include="Infraestructure\SincronizacionJobsService.cs" />
     <Compile Include="Infraestructure\Facturas\ServicioFacturas.cs" />
     <Compile Include="Infraestructure\Verifactu\IServicioVerifactu.cs" />
+    <Compile Include="Infraestructure\Verifactu\DatosQrLocalVerifactu.cs" />
+    <Compile Include="Infraestructure\Verifactu\GeneradorQrVerifactu.cs" />
     <Compile Include="Infraestructure\Verifactu\MapeadorFacturaVerifactu.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuFacturaRequest.cs" />
     <Compile Include="Infraestructure\Verifactu\VerifactuResponse.cs" />
