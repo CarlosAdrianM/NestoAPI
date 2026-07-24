@@ -44,8 +44,14 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
 
                     ResultadoProcesoRotacion resultado = await servicio.ProcesarColaAsync().ConfigureAwait(false);
 
-                    ErrorLog.GetDefault(null)?.Log(new Error(
-                        new Exception("[AmazonRotacion] " + resultado.Resumen())));
+                    // NestoAPI#361: no ensuciar ELMAH con el resultado cuando la pasada es un no-op
+                    // (cola vacía, nada que rotar): solo se registra si hubo mensajes o rotación real.
+                    // El "ha corrido el job" ya se ve en el panel de Hangfire.
+                    if (resultado.MensajesRecibidos > 0 || resultado.RotacionDisparada)
+                    {
+                        ErrorLog.GetDefault(null)?.Log(new Error(
+                            new Exception("[AmazonRotacion] " + resultado.Resumen())));
+                    }
 
                     if (resultado.RotacionDisparada)
                     {
