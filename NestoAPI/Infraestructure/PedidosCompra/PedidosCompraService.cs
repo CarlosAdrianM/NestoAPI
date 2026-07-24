@@ -191,12 +191,17 @@ namespace NestoAPI.Infraestructure.PedidosCompra
 
         public async Task<CabPedidoCmp> CrearPedido(PedidoCompraDTO pedido, NVEntities db)
         {
-            // El número que vamos a dar al pedido hay que leerlo de ContadoresGlobales
-            ContadorGlobal contador = db.ContadoresGlobales.SingleOrDefault();
             if (pedido.Id == 0)
             {
-                contador.PedidosCmp++;
-                pedido.Id = contador.PedidosCmp;
+                // NestoAPI#359: numeración ATÓMICA del pedido de compra. Antes se leía la entidad
+                // ContadorGlobal, se incrementaba en memoria y se guardaba con SaveChanges: dos
+                // altas concurrentes cogían el MISMO número y la segunda reventaba con
+                // PK_CabPedidoCmp duplicada. UPDATE...OUTPUT lo resuelve en una sola operación
+                // (mismo patrón que CrearRemesaService). Si el alta va en transacción, el número
+                // se revierte en el rollback; si no, un fallo posterior solo deja un hueco.
+                pedido.Id = (await db.Database.SqlQuery<int>(
+                    "UPDATE ContadoresGlobales SET PedidosCmp = PedidosCmp + 1 OUTPUT inserted.PedidosCmp")
+                    .ToListAsync().ConfigureAwait(false)).Single();
             }
 
             CabPedidoCmp cabecera = pedido.ToCabPedidoCmp();
