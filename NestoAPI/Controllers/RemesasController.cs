@@ -149,7 +149,12 @@ namespace NestoAPI.Controllers
             {
                 return BadRequest("El fichero de impagados no puede estar vacío");
             }
-            await _remesas.ContabilizarImpagadosAsync(peticion.Fichero).ConfigureAwait(false);
+            // El usuario que contabiliza sale del Identity autenticado (JWT de empleado), NUNCA
+            // de la cuenta con la que corre la API: prdContabilizar valida las fechas contables
+            // contra ese usuario y, si le llega la cuenta de máquina (NUEVAVISION\RDS2016$), aborta.
+            // Mismo criterio que crear remesa / albarán / factura.
+            string usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, null);
+            await _remesas.ContabilizarImpagadosAsync(peticion.Fichero, usuario).ConfigureAwait(false);
             return Ok();
         }
 

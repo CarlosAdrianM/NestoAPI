@@ -5,7 +5,9 @@ using NestoAPI.Infraestructure.Remesas;
 using NestoAPI.Models.Remesas;
 using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using System.Web.Http.Controllers;
 using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Controllers
@@ -156,9 +158,29 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
-        public async Task ContabilizarImpagados_ConFichero_LlamaAlServicio()
+        public async Task ContabilizarImpagados_ConIdentity_PropagaElUsuarioRealAlServicio()
         {
-            // Slice 7: contabilizar devoluciones pasa por el único call site del SP
+            // Regresión: al modernizar la ventana de Remesas (EF -> API) el usuario dejó de ser
+            // el de dominio y pasó a ser la cuenta de la API (NUEVAVISION\RDS2016$), lo que hacía
+            // que prdContabilizar abortara. El usuario debe salir del Identity autenticado.
+            IRemesasService servicio = A.Fake<IRemesasService>();
+            RemesasController controller = new RemesasController(servicio);
+            var identity = new ClaimsIdentity(new[] { new Claim(ClaimTypes.Name, "NUEVAVISION\\Carlos") }, "JWT");
+            controller.RequestContext = new HttpRequestContext { Principal = new ClaimsPrincipal(identity) };
+
+            var resultado = await controller.ContabilizarImpagados(
+                new ContabilizarImpagadosRequest { Fichero = "<Document>pain</Document>" });
+
+            Assert.IsInstanceOfType(resultado, typeof(OkResult));
+            A.CallTo(() => servicio.ContabilizarImpagadosAsync("<Document>pain</Document>", "NUEVAVISION\\Carlos"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ContabilizarImpagados_SinIdentity_PasaUsuarioNuloComoFallback()
+        {
+            // Sin Identity (tests / llamada no autenticada) el usuario va null: el SP cae al
+            // SYSTEM_USER, que es el comportamiento previo. Nunca se manda un usuario spoofeado.
             IRemesasService servicio = A.Fake<IRemesasService>();
             RemesasController controller = new RemesasController(servicio);
 
@@ -166,7 +188,7 @@ namespace NestoAPI.Tests.Controllers
                 new ContabilizarImpagadosRequest { Fichero = "<Document>pain</Document>" });
 
             Assert.IsInstanceOfType(resultado, typeof(OkResult));
-            A.CallTo(() => servicio.ContabilizarImpagadosAsync("<Document>pain</Document>"))
+            A.CallTo(() => servicio.ContabilizarImpagadosAsync("<Document>pain</Document>", null))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -181,7 +203,7 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(vacio, typeof(BadRequestErrorMessageResult));
             Assert.IsInstanceOfType(nulo, typeof(BadRequestErrorMessageResult));
-            A.CallTo(() => servicio.ContabilizarImpagadosAsync(A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => servicio.ContabilizarImpagadosAsync(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
         }
 
         [TestMethod]

@@ -42,8 +42,9 @@ namespace NestoAPI.Infraestructure.Remesas
         Task<string> CrearFicheroRemesaAsync(int remesa, string codigo, System.DateTime fechaCobro);
 
         /// <summary>Slice 7: contabiliza las devoluciones de un fichero SEPA de impagados (único
-        /// call site del SP prdContabilizarImpagadosSepa).</summary>
-        Task ContabilizarImpagadosAsync(string fichero);
+        /// call site del SP prdContabilizarImpagadosSepa). El usuario (del Identity) se propaga al
+        /// SP porque prdContabilizar valida las fechas contra él y no vale la cuenta de la API.</summary>
+        Task ContabilizarImpagadosAsync(string fichero, string usuario);
 
         /// <summary>Slice 8: datos para crear las tareas de Planner de un asiento de impagados
         /// (efectos con los datos del cliente, sin los apuntes de gastos).</summary>

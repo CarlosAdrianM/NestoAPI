@@ -156,14 +156,20 @@ namespace NestoAPI.Infraestructure.Remesas
 
         // Nesto#340 Fase 1C.14 slice 7: único call site del SP que contabiliza las devoluciones
         // del fichero SEPA de impagados del banco.
-        public async Task ContabilizarImpagadosAsync(string fichero)
+        public async Task ContabilizarImpagadosAsync(string fichero, string usuario)
         {
             using (NVEntities db = new NVEntities())
             {
                 db.Database.CommandTimeout = 600;
+                // @usuario se forwardea a prdContabilizar dentro del SP. Si va NULL (llamada sin
+                // Identity), el SP cae al SYSTEM_USER como antes; con Identity, graba el usuario real.
                 _ = await db.Database.ExecuteSqlCommandAsync(
-                    "EXEC prdContabilizarImpagadosSepa @fichero",
-                    new System.Data.SqlClient.SqlParameter("@fichero", System.Data.SqlDbType.Xml) { Value = fichero })
+                    "EXEC prdContabilizarImpagadosSepa @fichero, @usuario",
+                    new System.Data.SqlClient.SqlParameter("@fichero", System.Data.SqlDbType.Xml) { Value = fichero },
+                    new System.Data.SqlClient.SqlParameter("@usuario", System.Data.SqlDbType.VarChar, 30)
+                    {
+                        Value = string.IsNullOrWhiteSpace(usuario) ? (object)System.DBNull.Value : usuario
+                    })
                     .ConfigureAwait(false);
             }
         }
