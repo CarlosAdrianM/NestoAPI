@@ -32,6 +32,17 @@ namespace NestoAPI.Infraestructure.Verifactu
         Task<VerifactuResponse> EnviarFacturaAsync(VerifactuFacturaRequest factura);
 
         /// <summary>
+        /// NestoAPI#326: genera EN LOCAL (sin llamar al proveedor) el QR tributario de la factura,
+        /// para que NINGUNA factura salga sin QR aunque el envío falle o aún no se haya hecho. Cada
+        /// proveedor forma el numserie a su manera (p.ej. Verifacti antepone un prefijo por emisor),
+        /// por eso vive detrás de este interfaz y la capa genérica no conoce ese detalle. Devuelve
+        /// <c>null</c> si el proveedor no puede formarlo con seguridad (p.ej. le falta configurar su
+        /// NIF emisor o su prefijo): un QR con un numserie que la AEAT no tiene registrado sería peor
+        /// que no tener QR, así que en ese caso el llamante mantiene el comportamiento actual.
+        /// </summary>
+        DatosQrLocalVerifactu GenerarQrLocal(VerifactuFacturaRequest factura);
+
+        /// <summary>
         /// NestoAPI#346: subsana una factura (registro de alta de subsanación). Es el camino legal
         /// para declarar FUERA DE PLAZO: el alta normal exige fecha_expedicion actual, la
         /// subsanación admite fechas pasadas y no tiene plazo máximo (FAQs AEAT).

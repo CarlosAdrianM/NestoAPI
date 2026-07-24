@@ -70,6 +70,39 @@ namespace NestoAPI.Infraestructure.Verifactu.Verifacti
         }
 
         /// <summary>
+        /// NestoAPI#326: QR local. El numserie de Verifacti es {prefijo}{Serie}{Numero} (Verifacti
+        /// antepone un prefijo por emisor, p.ej. "8f44_"). El NIF con el que registra y el prefijo
+        /// dependen del proveedor y del entorno (sandbox/prod), así que se leen de la config de
+        /// Verifacti. Sin ellos configurados NO se genera QR local (fallback = comportamiento actual).
+        /// </summary>
+        public DatosQrLocalVerifactu GenerarQrLocal(VerifactuFacturaRequest factura)
+            => GenerarQrLocal(factura,
+                ConfigurationManager.AppSettings["Verifacti:NifEmisor"],
+                ConfigurationManager.AppSettings["Verifacti:PrefijoNumSerie"],
+                EsSandbox);
+
+        // Núcleo testeable sin depender del Web.config: forma el numserie de Verifacti y delega en
+        // el generador de QR común (URL de la AEAT + imagen).
+        internal static DatosQrLocalVerifactu GenerarQrLocal(VerifactuFacturaRequest factura, string nifEmisor,
+            string prefijoNumSerie, bool esSandbox)
+        {
+            if (factura == null || string.IsNullOrWhiteSpace(nifEmisor) || string.IsNullOrWhiteSpace(prefijoNumSerie))
+            {
+                return null;
+            }
+            string numSerie = prefijoNumSerie.Trim()
+                + (factura.Serie?.Trim() ?? string.Empty)
+                + (factura.Numero?.Trim() ?? string.Empty);
+            string url = GeneradorQrVerifactu.ConstruirUrlValidacion(
+                nifEmisor, numSerie, factura.FechaExpedicion, factura.ImporteTotal, esSandbox);
+            return new DatosQrLocalVerifactu
+            {
+                Url = url,
+                ImagenPngQr = GeneradorQrVerifactu.GenerarPngQr(url)
+            };
+        }
+
+        /// <summary>
         /// NestoAPI#346: subsana una factura vía PUT verifactu/modify. Es el camino legal para
         /// declarar fuera de plazo: el create de Verifacti exige fecha_expedicion actual, pero el
         /// modify admite fechas pasadas (subsanación, sin plazo máximo según la AEAT).
