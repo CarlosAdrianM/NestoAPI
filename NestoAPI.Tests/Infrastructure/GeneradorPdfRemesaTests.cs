@@ -3,6 +3,7 @@ using NestoAPI.Infraestructure.Informes;
 using NestoAPI.Models.Informes;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace NestoAPI.Tests.Infrastructure
 {
@@ -34,19 +35,19 @@ namespace NestoAPI.Tests.Infrastructure
                 {
                     Cliente = "10714", Nombre = "SUSANA DE CASTRO GARCIA", Documento = "NV2612516",
                     Efecto = "1", Iban = "ES3700495297402795209561", Importe = 35.44m,
-                    FechaCargo = new DateTime(2026, 7, 23)
+                    FechaCargo = new DateTime(2026, 7, 23), Asiento = 1
                 },
                 new RemesaInformeEfectoDTO
                 {
                     Cliente = "19514", Nombre = "JAZMIN AZUCENA ESPINOZA PEREA", Documento = "NV2607383",
                     Efecto = "1", Iban = "ES3921008494970200071750", Importe = 34.49m,
-                    FechaCargo = new DateTime(2026, 7, 23)
+                    FechaCargo = new DateTime(2026, 7, 23), Asiento = 1
                 },
                 new RemesaInformeEfectoDTO
                 {
                     Cliente = "39319", Nombre = "HEALTHY & FIT TWELVE, SOCIEDAD LIMITADA", Documento = "NV2612153",
                     Efecto = "1", Iban = "ES1521003584612210439194", Importe = 16.36m,
-                    FechaCargo = new DateTime(2026, 7, 24)
+                    FechaCargo = new DateTime(2026, 7, 24), Asiento = 2
                 }
             }
         };
@@ -69,6 +70,7 @@ namespace NestoAPI.Tests.Infrastructure
             foreach (RemesaInformeEfectoDTO efecto in remesa.Efectos)
             {
                 efecto.FechaCargo = new DateTime(2026, 7, 23);
+                efecto.Asiento = 1; // modo forzado: todos en el mismo asiento
             }
 
             var resultado = _generador.GenerarPdf(remesa);
@@ -109,6 +111,62 @@ namespace NestoAPI.Tests.Infrastructure
             byte[] bytes = resultado.ReadAsByteArrayAsync().Result;
             Assert.IsTrue(bytes.Length > 0);
             ComprobarCabeceraPdf(bytes);
+        }
+
+        [TestMethod]
+        public void AgruparPorAsiento_RespetarVencimientos_DosAsientosMismoDia_SonDosGrupos()
+        {
+            // NestoAPI#358: remesa 10901 — el banco hizo DOS abonos (dos asientos) AMBOS con
+            // fecha 24. El informe debe mostrarlos SEPARADOS aunque compartan día de valor.
+            DateTime fecha24 = new DateTime(2026, 7, 24);
+            var efectos = new List<RemesaInformeEfectoDTO>
+            {
+                new RemesaInformeEfectoDTO { Asiento = 101, Importe = 69.93m, FechaCargo = fecha24 },
+                new RemesaInformeEfectoDTO { Asiento = 102, Importe = 16.36m, FechaCargo = fecha24 }
+            };
+
+            List<IGrouping<int, RemesaInformeEfectoDTO>> grupos =
+                GeneradorPdfRemesa.AgruparPorAsiento(efectos, fecha24);
+
+            Assert.AreEqual(2, grupos.Count, "Dos asientos con el mismo día de valor son dos grupos");
+            CollectionAssert.AreEquivalent(new[] { 101, 102 }, grupos.Select(g => g.Key).ToList());
+            CollectionAssert.AreEquivalent(new[] { 69.93m, 16.36m }, grupos.Select(g => g.Sum(e => e.Importe)).ToList());
+        }
+
+        [TestMethod]
+        public void AgruparPorAsiento_ModoForzado_UnSoloAsiento_EsUnGrupo()
+        {
+            // Modo forzado (10902): todos los efectos van en el mismo asiento aunque tengan
+            // vencimientos distintos -> UN grupo (antes agrupaba por FechaVto y salían dos).
+            DateTime fecha = new DateTime(2026, 7, 23);
+            var efectos = new List<RemesaInformeEfectoDTO>
+            {
+                new RemesaInformeEfectoDTO { Asiento = 55, Importe = 10m, FechaCargo = fecha },
+                new RemesaInformeEfectoDTO { Asiento = 55, Importe = 20m, FechaCargo = fecha }
+            };
+
+            List<IGrouping<int, RemesaInformeEfectoDTO>> grupos =
+                GeneradorPdfRemesa.AgruparPorAsiento(efectos, fecha);
+
+            Assert.AreEqual(1, grupos.Count);
+            Assert.AreEqual(30m, grupos[0].Sum(e => e.Importe));
+        }
+
+        [TestMethod]
+        public void AgruparPorAsiento_OrdenaPorDiaDeValorYLuegoAsiento()
+        {
+            var efectos = new List<RemesaInformeEfectoDTO>
+            {
+                new RemesaInformeEfectoDTO { Asiento = 200, FechaCargo = new DateTime(2026, 7, 25) },
+                new RemesaInformeEfectoDTO { Asiento = 102, FechaCargo = new DateTime(2026, 7, 24) },
+                new RemesaInformeEfectoDTO { Asiento = 101, FechaCargo = new DateTime(2026, 7, 24) }
+            };
+
+            List<IGrouping<int, RemesaInformeEfectoDTO>> grupos =
+                GeneradorPdfRemesa.AgruparPorAsiento(efectos, DateTime.Today);
+
+            CollectionAssert.AreEqual(new[] { 101, 102, 200 }, grupos.Select(g => g.Key).ToList(),
+                "Primero por día de valor, luego por asiento (estable para asientos del mismo día)");
         }
 
         [TestMethod]

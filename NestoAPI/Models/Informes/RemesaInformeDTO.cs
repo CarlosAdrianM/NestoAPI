@@ -26,7 +26,12 @@ namespace NestoAPI.Models.Informes
         public string Efecto { get; set; }
         public string Iban { get; set; }
         public decimal Importe { get; set; }
-        /// <summary>FechaVto del pago = fecha en la que el banco carga el efecto.</summary>
+        /// <summary>NestoAPI#358: e.Fecha del apunte = fecha de cargo real (día de valor del
+        /// banco, #345), NO el vencimiento de la factura.</summary>
         public DateTime? FechaCargo { get; set; }
+        /// <summary>NestoAPI#358: asiento contable del pago. El informe agrupa por él: un asiento
+        /// = un abono del banco (en "respetar vencimientos" hay uno por fecha de cargo; en modo
+        /// forzado, uno solo). Dos asientos con el mismo día de valor se muestran separados.</summary>
+        public int Asiento { get; set; }
     }
 }

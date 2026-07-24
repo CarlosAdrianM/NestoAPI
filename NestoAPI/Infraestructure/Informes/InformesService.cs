@@ -297,7 +297,12 @@ namespace NestoAPI.Infraestructure.Informes
 
         // NestoAPI#353: los efectos del informe son los PAGOS del extracto (nacen con el nº de
         // remesa al contabilizarla, ver CrearRemesaService) — mismo criterio de selección que
-        // prdCrearRemesaIso20022. La FechaVto del pago es la fecha en que el banco lo carga.
+        // prdCrearRemesaIso20022. NestoAPI#358: el informe agrupa por e.Asiento (un asiento = un
+        // abono del banco), y la fecha que pinta es e.Fecha (día de valor del apunte, #345), NO
+        // e.FechaVto (el vencimiento de la factura, que prdLiquidar copia al pago y varía por
+        // efecto — agrupar por él partía la 10902 en dos grupos con una sola fecha de cargo). En
+        // "respetar vencimientos" salen N asientos (N abonos, aunque compartan día de valor); en
+        // modo forzado, uno solo. Se traen Fecha y Asiento; se ordena por fecha y asiento.
         public async Task<RemesaInformeDTO> LeerRemesaAsync(string empresa, int remesa)
         {
             const string sqlCabecera = @"
@@ -325,14 +330,14 @@ namespace NestoAPI.Infraestructure.Informes
                     rtrim(e.Efecto) Efecto,
                     UPPER(REPLACE(ISNULL(cc.Pais,'') + ISNULL(cc.DC_IBAN,'') + ISNULL(cc.Entidad,'')
                         + ISNULL(cc.Oficina,'') + ISNULL(cc.DC,'') + ISNULL(cc.[Nº Cuenta],''), ' ', '')) Iban,
-                    -e.Importe Importe, e.FechaVto FechaCargo
+                    -e.Importe Importe, e.Fecha FechaCargo, e.Asiento Asiento
                 FROM ExtractoCliente e
                 INNER JOIN Clientes cl
                     ON cl.Empresa = e.Empresa AND cl.[Nº Cliente] = e.Número AND cl.Contacto = e.Contacto
                 LEFT JOIN CCC cc
                     ON cc.Empresa = e.Empresa AND cc.Cliente = e.Número AND cc.Contacto = e.Contacto AND cc.Número = e.CCC
                 WHERE e.Empresa = @Empresa AND e.Remesa = @Remesa AND e.TipoApunte = @TipoPago
-                ORDER BY e.FechaVto, e.Número";
+                ORDER BY e.Fecha, e.Asiento, e.Número";
 
             List<RemesaInformeEfectoDTO> efectos = await db.Database
                 .SqlQuery<RemesaInformeEfectoDTO>(sqlEfectos,

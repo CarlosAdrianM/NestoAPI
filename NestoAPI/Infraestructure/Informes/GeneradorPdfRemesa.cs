@@ -20,12 +20,12 @@ namespace NestoAPI.Infraestructure.Informes
         public ByteArrayContent GenerarPdf(RemesaInformeDTO remesa)
         {
             List<RemesaInformeEfectoDTO> efectos = remesa.Efectos ?? new List<RemesaInformeEfectoDTO>();
-            // Los pagos siempre nacen con FechaVto (la fecha de cargo); el fallback a la fecha
-            // de la remesa es solo un cinturón para datos históricos incompletos.
-            List<IGrouping<DateTime, RemesaInformeEfectoDTO>> grupos = efectos
-                .GroupBy(e => (e.FechaCargo ?? remesa.Fecha).Date)
-                .OrderBy(g => g.Key)
-                .ToList();
+            // NestoAPI#358: un grupo por ASIENTO contable (= un abono del banco). En "respetar
+            // vencimientos" el banco hace un abono por fecha de cargo solicitada y cada uno es su
+            // propio asiento; dos asientos pueden compartir día de valor (#345) y se muestran
+            // SEPARADOS. En modo forzado todo va en un único asiento -> un grupo. La fecha que se
+            // pinta es e.Fecha (día de valor del apunte, lo que el banco muestra en el extracto).
+            List<IGrouping<int, RemesaInformeEfectoDTO>> grupos = AgruparPorAsiento(efectos, remesa.Fecha);
 
             var documento = Document.Create(container =>
             {
@@ -44,6 +44,26 @@ namespace NestoAPI.Infraestructure.Informes
 
             byte[] pdfBytes = documento.GeneratePdf();
             return new ByteArrayContent(pdfBytes);
+        }
+
+        /// <summary>NestoAPI#358: agrupa los efectos por asiento contable (un asiento = un abono
+        /// del banco), ordenados por día de valor y luego por asiento (estable para asientos que
+        /// comparten fecha). Interno para poder testear la agrupación sin generar el PDF.</summary>
+        internal static List<IGrouping<int, RemesaInformeEfectoDTO>> AgruparPorAsiento(
+            IEnumerable<RemesaInformeEfectoDTO> efectos, DateTime fechaRemesa)
+        {
+            return (efectos ?? Enumerable.Empty<RemesaInformeEfectoDTO>())
+                .GroupBy(e => e.Asiento)
+                .OrderBy(g => FechaDeGrupo(g, fechaRemesa))
+                .ThenBy(g => g.Key)
+                .ToList();
+        }
+
+        /// <summary>Día de valor de un asiento: la Fecha de sus efectos (todas iguales dentro de
+        /// un asiento), con fallback a la fecha de la remesa para datos históricos incompletos.</summary>
+        private static DateTime FechaDeGrupo(IEnumerable<RemesaInformeEfectoDTO> grupo, DateTime fechaRemesa)
+        {
+            return (grupo.FirstOrDefault()?.FechaCargo ?? fechaRemesa).Date;
         }
 
         /// <summary>IBAN en grupos de 4 para legibilidad: ES0621006273900200063554 →
@@ -79,7 +99,7 @@ namespace NestoAPI.Infraestructure.Informes
         }
 
         private void ComponerTabla(IContainer container, RemesaInformeDTO remesa,
-            List<IGrouping<DateTime, RemesaInformeEfectoDTO>> grupos)
+            List<IGrouping<int, RemesaInformeEfectoDTO>> grupos)
         {
             container.Table(table =>
             {
@@ -101,10 +121,11 @@ namespace NestoAPI.Infraestructure.Informes
                     CeldaCabecera(header.Cell(), "Importe", alinearDerecha: true);
                 });
 
-                foreach (IGrouping<DateTime, RemesaInformeEfectoDTO> grupo in grupos)
+                foreach (IGrouping<int, RemesaInformeEfectoDTO> grupo in grupos)
                 {
+                    DateTime fechaGrupo = FechaDeGrupo(grupo, remesa.Fecha);
                     _ = table.Cell().ColumnSpan(5).Background(Colors.Grey.Lighten3).Padding(3)
-                        .Text($"Fecha de cargo: {grupo.Key:dd/MM/yyyy}").Bold().FontSize(9);
+                        .Text($"Fecha de cargo: {fechaGrupo:dd/MM/yyyy}").Bold().FontSize(9);
 
                     foreach (RemesaInformeEfectoDTO efecto in grupo)
                     {
@@ -115,11 +136,11 @@ namespace NestoAPI.Infraestructure.Informes
                         CeldaDato(table.Cell(), efecto.Importe.ToString("N2") + " €", alinearDerecha: true);
                     }
 
-                    // Con una sola fecha el subtotal coincidiría con el total: no aporta nada.
+                    // Con un solo asiento el subtotal coincidiría con el total: no aporta nada.
                     if (grupos.Count > 1)
                     {
                         CeldaSubtotal(table.Cell().ColumnSpan(4),
-                            $"Subtotal {grupo.Key:dd/MM/yyyy} ({EnEfectos(grupo.Count())})");
+                            $"Subtotal {fechaGrupo:dd/MM/yyyy} ({EnEfectos(grupo.Count())})");
                         CeldaSubtotal(table.Cell(), grupo.Sum(e => e.Importe).ToString("N2") + " €", alinearDerecha: true);
                     }
                 }
