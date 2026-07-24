@@ -1237,6 +1237,26 @@ namespace NestoAPI.Controllers
                     $"Esto indica un error en la creación de las líneas. Líneas afectadas: {errores}");
             }
 
+            // NestoAPI#360: guard del invariante estado<->Nº factura (constraint CK_LinPedidoVta_1):
+            // una línea en estado FACTURA (4) DEBE tener Nº factura, y una que no está facturada NO
+            // puede tenerlo. Sin esto, la incoherencia reventaba con el texto SQL crudo de la
+            // constraint (poco accionable). Condición EXACTA (== null / != null) para no ser más
+            // estricto que la BD (unos espacios no son NULL). Anticiparlo da un mensaje claro con
+            // las líneas afectadas.
+            var lineasFacturaIncoherente = cabPedidoVta.LinPedidoVtas
+                .Where(l => (l.Estado == Constantes.EstadosLineaVenta.FACTURA && l.Nº_Factura == null)
+                         || (l.Estado != Constantes.EstadosLineaVenta.FACTURA && l.Nº_Factura != null))
+                .ToList();
+            if (lineasFacturaIncoherente.Any())
+            {
+                var detalle = string.Join(", ", lineasFacturaIncoherente.Select(l =>
+                    $"línea {l.Nº_Orden} (estado {l.Estado}, factura '{l.Nº_Factura?.Trim()}')"));
+                throw new InvalidOperationException(
+                    $"No se puede guardar el pedido {pedido.numero}: hay líneas con estado y Nº de factura incoherentes " +
+                    "(una línea facturada debe llevar Nº factura y una no facturada no puede llevarlo). " +
+                    $"Líneas afectadas: {detalle}. Indica un error al crear/modificar las líneas (CK_LinPedidoVta_1).");
+            }
+
             try
             {
                 _ = await db.SaveChangesAsync();
