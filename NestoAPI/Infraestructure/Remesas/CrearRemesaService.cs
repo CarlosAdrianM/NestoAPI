@@ -104,12 +104,23 @@ namespace NestoAPI.Infraestructure.Remesas
                 .Where(e => e.Empresa == peticion.Empresa && idsPedidos.Contains(e.Nº_Orden))
                 .ToListAsync().ConfigureAwait(false);
             decimal importeTotal = efectos.Sum(e => e.ImportePdte);
-            // NestoAPI#345: en modo RESPETAR el suelo es SIEMPRE HOY (los vencidos se cobran ya
-            // y los futuros conservan su fecha; la FechaCargo del request no pinta nada ahí).
+            // NestoAPI#345: en modo RESPETAR el suelo de AGRUPACIÓN es HOY (los vencidos se cobran
+            // ya y los futuros conservan su fecha; la FechaCargo del request no pinta nada ahí).
             // En modo forzado, la fecha única elegida — nunca anterior a hoy.
             DateTime fechaCargo = peticion.RespetarVencimientos
                 ? DateTime.Today
                 : FechaCargoEfectiva(peticion.FechaCargo);
+            // NestoAPI#345 (ajuste 24/07/26 tras ver el extracto de La Caixa de la remesa 10901):
+            // el banco NUNCA valora un recibo el mismo día de la presentación (SEPA D-1). Los
+            // recibos con cargo hoy los abona el SIGUIENTE día laborable, en un apunte SEPARADO
+            // (no los funde con los del día siguiente). Por eso la FECHA CONTABLE del apunte tiene
+            // como suelo la próxima fecha de cargo (hoy+1 laborable), aunque la agrupación y la
+            // ReqdColltnDt del fichero sigan por el vencimiento solicitado. En modo forzado no
+            // aplica: la fecha única la elige el usuario.
+            DateTime? fechaValorMinima = peticion.RespetarVencimientos
+                ? ProximaFechaCargo(DateTime.Today, 1,
+                    f => Models.RecursosHumanos.GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE))
+                : (DateTime?)null;
 
             db.Database.CommandTimeout = 120; // margen para diarios con contención (#322)
             using (System.Data.Entity.DbContextTransaction transaccion = db.Database.BeginTransaction())
@@ -131,7 +142,7 @@ namespace NestoAPI.Infraestructure.Remesas
                         new SqlParameter("@p3", peticion.Banco)).ConfigureAwait(false);
 
                     List<PreContabilidad> lineas = ConstruirLineasRemesa(numeroRemesa, peticion.Empresa, banco, efectos, usuario,
-                        peticion.RespetarVencimientos, fechaCargo);
+                        peticion.RespetarVencimientos, fechaCargo, fechaValorMinima);
                     int resultado = await contabilidad.CrearLineasYContabilizarDiario(lineas, db).ConfigureAwait(false);
                     if (resultado <= 0)
                     {
@@ -249,30 +260,41 @@ namespace NestoAPI.Infraestructure.Remesas
         /// HABER una línea de CLIENTE por efecto ("Pago Factura {doc}  {efecto}") con
         /// Liquidado (la cartera que salda) y Nº_Remesa (que prdContabilizar copia al pago y
         /// prdLiquidar propaga a la cartera), y DEBE el banco. NestoAPI#345: en modo
-        /// "respetar vencimientos" cada efecto conserva su fecha (con suelo en fechaCargo) y
-        /// cada fecha de cargo forma un ASIENTO PROPIO (efectos + su línea de banco, con su
-        /// total y su fecha) — el banco hará un apunte en cuenta por cada fecha. En modo
-        /// forzado (default) todo va a fechaCargo en un único asiento, como siempre.
+        /// "respetar vencimientos" cada efecto va a la remesa por su fecha de cargo SOLICITADA
+        /// (su vencimiento, con suelo hoy) y esa fecha forma un ASIENTO PROPIO (efectos + su
+        /// línea de banco) — es la que agrupa las PmtInf del fichero (ReqdColltnDt sale de
+        /// FechaVto), así que el banco hace un abono por fecha solicitada. La FECHA CONTABLE
+        /// (Fecha), en cambio, es el DÍA DE VALOR: como el banco no cobra el mismo día de la
+        /// presentación (SEPA D-1), el grupo de hoy se contabiliza el siguiente laborable
+        /// (fechaValorMinima), en un apunte SEPARADO — dos asientos pueden compartir día de
+        /// valor sin fundirse porque prdContabilizar numera por el CAMBIO de asiento provisional,
+        /// no por la fecha. En modo forzado (default) todo va a fechaCargo en un único asiento.
         /// Pura y estática.
         /// </summary>
         internal static List<PreContabilidad> ConstruirLineasRemesa(int numeroRemesa, string empresa,
             Banco banco, List<ExtractoCliente> efectos, string usuario,
-            bool respetarVencimientos = false, DateTime? fechaCargo = null)
+            bool respetarVencimientos = false, DateTime? fechaCargo = null, DateTime? fechaValorMinima = null)
         {
             var lineas = new List<PreContabilidad>();
             string cuentaBanco = banco.Cuenta_Contable?.Trim();
             DateTime suelo = FechaCargoEfectiva(fechaCargo);
+            // Suelo de la FECHA CONTABLE (día de valor del banco): la próxima fecha de cargo si
+            // se ha calculado (modo respetar), o el propio suelo de agrupación si no (forzado/tests).
+            DateTime sueloValor = fechaValorMinima.HasValue && fechaValorMinima.Value.Date > suelo
+                ? fechaValorMinima.Value.Date : suelo;
 
-            // prdContabilizar exige UNA fecha por asiento ("El Asiento 1 tiene diferentes
-            // fechas", 23/07/26): cada fecha de cargo forma su propio asiento provisional
-            // (1..N por orden de fecha) y prdContabilizar les da número definitivo distinto.
+            // AGRUPACIÓN por la fecha de cargo SOLICITADA (vencimiento con suelo hoy): los recibos
+            // del día quedan en un asiento distinto de los de mañana, y el fichero SEPA (que agrupa
+            // las PmtInf por FechaVto) genera un abono por cada fecha solicitada. prdContabilizar
+            // exige UNA fecha por asiento ("El Asiento 1 tiene diferentes fechas", 23/07/26): cada
+            // grupo es su propio asiento provisional (1..N por orden) con número definitivo distinto.
             var totalesPorFecha = new SortedDictionary<DateTime, decimal>();
             foreach (ExtractoCliente efecto in efectos)
             {
-                DateTime fechaEfecto = respetarVencimientos
+                DateTime fechaSolicitada = respetarVencimientos
                     ? VencimientoEfectivo(efecto.FechaVto, suelo)
                     : suelo;
-                totalesPorFecha[fechaEfecto] = (totalesPorFecha.TryGetValue(fechaEfecto, out decimal acumulado)
+                totalesPorFecha[fechaSolicitada] = (totalesPorFecha.TryGetValue(fechaSolicitada, out decimal acumulado)
                     ? acumulado : 0) + efecto.ImportePdte;
             }
             Dictionary<DateTime, int> asientoPorFecha = totalesPorFecha.Keys
@@ -281,9 +303,13 @@ namespace NestoAPI.Infraestructure.Remesas
 
             foreach (ExtractoCliente efecto in efectos)
             {
-                DateTime fechaEfecto = respetarVencimientos
+                DateTime fechaSolicitada = respetarVencimientos
                     ? VencimientoEfectivo(efecto.FechaVto, suelo)
                     : suelo;
+                // El día de VALOR (fecha contable): el banco no abona antes de la próxima fecha de
+                // cargo, así que el grupo de hoy sube al siguiente laborable; los futuros conservan
+                // su fecha. VencimientoEfectivo = max(fechaSolicitada, sueloValor).
+                DateTime fechaValor = VencimientoEfectivo(fechaSolicitada, sueloValor);
 
                 string documento = efecto.Nº_Documento?.Trim();
                 string concepto = $"Pago Factura {documento}  {efecto.Efecto?.Trim()}".TrimEnd();
@@ -303,9 +329,9 @@ namespace NestoAPI.Infraestructure.Remesas
                     Nº_Documento = documento,
                     Efecto = efecto.Efecto?.Trim(),
                     Diario = DIARIO_REMESA,
-                    Fecha = fechaEfecto,
-                    FechaVto = fechaEfecto,
-                    Asiento = asientoPorFecha[fechaEfecto],
+                    Fecha = fechaValor,
+                    FechaVto = fechaSolicitada,
+                    Asiento = asientoPorFecha[fechaSolicitada],
                     Asiento_Automático = true,
                     Delegación = efecto.Delegación?.Trim(),
                     FormaVenta = efecto.FormaVenta?.Trim(),
@@ -320,11 +346,13 @@ namespace NestoAPI.Infraestructure.Remesas
                 });
             }
 
-            // Un apunte de banco por fecha de cargo (una sola en modo forzado): el banco hará
-            // un movimiento en cuenta por cada fecha, y así cuadra apunte a apunte.
+            // Un apunte de banco por fecha de cargo SOLICITADA (una sola en modo forzado): el
+            // banco hace un abono en cuenta por cada fecha solicitada, con el DÍA DE VALOR como
+            // fecha contable — así cuadra apunte a apunte contra el extracto.
             string conceptoBanco = $"Remesa:{numeroRemesa}. Al Banco: {cuentaBanco}";
             foreach (KeyValuePair<DateTime, decimal> grupo in totalesPorFecha)
             {
+                DateTime fechaValor = VencimientoEfectivo(grupo.Key, sueloValor);
                 lineas.Add(new PreContabilidad
                 {
                     Empresa = empresa,
@@ -337,8 +365,8 @@ namespace NestoAPI.Infraestructure.Remesas
                     Concepto = conceptoBanco.Length > 50 ? conceptoBanco.Substring(0, 50) : conceptoBanco,
                     Nº_Documento = numeroRemesa.ToString(),
                     Diario = DIARIO_REMESA,
-                    Fecha = grupo.Key,
-                    FechaVto = grupo.Key,
+                    Fecha = fechaValor,
+                    FechaVto = fechaValor,
                     Asiento = asientoPorFecha[grupo.Key],
                     Asiento_Automático = true,
                     Nº_Remesa = numeroRemesa.ToString(),
@@ -359,9 +387,10 @@ namespace NestoAPI.Infraestructure.Remesas
         public List<int> Efectos { get; set; }
 
         /// <summary>
-        /// NestoAPI#345: true = cada efecto conserva su vencimiento original (con suelo en
-        /// FechaCargo/hoy) y el asiento lleva un apunte de banco POR FECHA; false (default,
-        /// comportamiento de siempre) = todos los efectos se fuerzan a FechaCargo.
+        /// NestoAPI#345: true = cada efecto va por su vencimiento original (con suelo hoy) y el
+        /// asiento lleva un apunte de banco POR FECHA solicitada, pero contabilizado en su DÍA
+        /// DE VALOR (el grupo de hoy sube al siguiente laborable, imitando al banco); false
+        /// (default, comportamiento de siempre) = todos los efectos se fuerzan a FechaCargo.
         /// </summary>
         public bool RespetarVencimientos { get; set; }
 

@@ -220,6 +220,52 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void ConstruirLineasRemesa_RespetandoVencimientos_ElGrupoDelDiaSeValoraElSiguienteLaborablePeroSeparado()
+        {
+            // NestoAPI#345 (ajuste 24/07/26): La Caixa valoró los recibos con cargo HOY el día
+            // SIGUIENTE (SEPA D-1: no se cobra el mismo día de la presentación), pero en un apunte
+            // SEPARADO del grupo de mañana (no los funde). Remesa real 10901: 2 efectos del 23
+            // (69,93 €) + 1 del 24 (16,63 €) -> el banco hizo DOS abonos, AMBOS con fecha 24.
+            DateTime hoy = DateTime.Today;
+            DateTime manana = hoy.AddDays(1);
+            var efectos = new List<ExtractoCliente>
+            {
+                Efecto(1, "15191", 40.66m, "NV1", vencimiento: hoy),
+                Efecto(2, "26985", 29.27m, "NV2", vencimiento: hoy),
+                Efecto(3, "40227", 16.63m, "NV3", vencimiento: manana)
+            };
+
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10901, "1", BancoSabadell(), efectos, "carlos",
+                respetarVencimientos: true, fechaCargo: hoy, fechaValorMinima: manana);
+
+            // Dos apuntes de banco SEPARADOS (dos asientos), pero AMBOS con fecha de valor = mañana
+            List<PreContabilidad> bancos = lineas
+                .Where(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE)
+                .ToList();
+            Assert.AreEqual(2, bancos.Count, "El banco los mantiene separados: un apunte por fecha solicitada");
+            Assert.IsTrue(bancos.All(b => b.Fecha == manana), "Ambos apuntes van con fecha del día siguiente (día de valor)");
+            Assert.AreEqual(2, bancos.Select(b => b.Asiento).Distinct().Count(), "Siguen siendo dos asientos distintos");
+            CollectionAssert.AreEquivalent(new[] { 69.93m, 16.63m }, bancos.Select(b => b.Debe).ToList(),
+                "Cada grupo conserva su importe: no se funden en 86,56");
+
+            // Todo se contabiliza en el día de valor (mañana), pero cada asiento cuadra por sí mismo
+            Assert.IsTrue(lineas.All(l => l.Fecha == manana), "Nada se contabiliza en la fecha de presentación (hoy)");
+            foreach (var asiento in lineas.GroupBy(l => l.Asiento))
+            {
+                Assert.AreEqual(1, asiento.Select(l => l.Fecha).Distinct().Count(),
+                    $"El asiento {asiento.Key} tiene una única fecha (prdContabilizar lo exige)");
+                Assert.AreEqual(asiento.Sum(l => l.Debe), asiento.Sum(l => l.Haber), $"El asiento {asiento.Key} cuadra");
+            }
+
+            // La ReqdColltnDt del fichero SEPA sale de FechaVto: los recibos del día se siguen
+            // SOLICITANDO al día de hoy (dos PmtInf, 23 y 24), que es lo que produce los dos abonos.
+            PreContabilidad pagoHoy = lineas.Single(l => l.Liquidado == 1);
+            Assert.AreEqual(hoy, pagoHoy.FechaVto, "El fichero SEPA sigue pidiendo el cargo al día solicitado (hoy)");
+            Assert.AreEqual(manana, pagoHoy.Fecha, "pero contablemente se valora el día siguiente");
+        }
+
+        [TestMethod]
         public void ConstruirLineasRemesa_VencimientoPasadoONulo_SeCobraEnLaFechaDeCargo()
         {
             // "Hay que controlar que las fechas nunca sean anteriores a hoy" (Carlos 22/07)
