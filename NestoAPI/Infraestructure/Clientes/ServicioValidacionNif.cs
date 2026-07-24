@@ -376,7 +376,27 @@ namespace NestoAPI.Infraestructure.Clientes
                 "INNER JOIN Clientes c ON c.Empresa = v.Empresa AND c.[Nº Cliente] = v.Cliente AND c.Contacto = v.Contacto " +
                 "WHERE v.Estado = @p0 AND c.[CIF/NIF] = v.Nif AND c.Nombre = v.Nombre " +
                 condicionVendedor +
-                "ORDER BY TienePedidoPendiente DESC, v.FechaValidacion DESC";
+                // NestoAPI#363: además de los INCORRECTO del censo AEAT, se listan los clientes cuyo
+                // envío a Verifactu falló por FORMATO de IVA/NIF (típicamente extranjeros con el VAT
+                // truncado a char(9) o mal escrito). Así aparecen en la MISMA ventana y se corrigen
+                // desde Nesto con "Marcar como extranjero" (VAT completo). El NOT EXISTS evita duplicar
+                // a los que ya salen como INCORRECTO.
+                "UNION " +
+                "SELECT LTRIM(RTRIM(c.[Nº Cliente])), LTRIM(RTRIM(c.Contacto)), c.Nombre, c.[CIF/NIF], " +
+                "       'VERIFACTU: formato de IVA/NIF rechazado', " +
+                "       ISNULL(MAX(f.VerifactuUltimoIntento), CAST('20000101' AS datetime)), LTRIM(RTRIM(c.Vendedor)), " +
+                "       CAST(CASE WHEN EXISTS (SELECT 1 FROM LinPedidoVta l " +
+                "               WHERE l.Empresa = c.Empresa AND l.[Nº Cliente] = c.[Nº Cliente] " +
+                "               AND l.Estado >= -1 AND l.Estado <= 2) THEN 1 ELSE 0 END AS bit) " +
+                "FROM CabFacturaVta f " +
+                "INNER JOIN Clientes c ON c.Empresa = f.Empresa AND c.[Nº Cliente] = f.[Nº Cliente] AND c.Contacto = f.Contacto " +
+                "WHERE f.VerifactuUltimoError LIKE '%no tiene un formato valido%' " +
+                "  AND NOT EXISTS (SELECT 1 FROM ValidacionesNif v2 WHERE v2.Empresa = c.Empresa " +
+                "        AND v2.Cliente = c.[Nº Cliente] AND v2.Contacto = c.Contacto AND v2.Estado = @p0 " +
+                "        AND c.[CIF/NIF] = v2.Nif AND c.Nombre = v2.Nombre) " +
+                condicionVendedor +
+                "GROUP BY c.Empresa, c.[Nº Cliente], c.Contacto, c.Nombre, c.[CIF/NIF], c.Vendedor " +
+                "ORDER BY TienePedidoPendiente DESC, FechaValidacion DESC";
 
             return await db.Database.SqlQuery<ClienteNifIncorrectoDTO>(sql, parametros.ToArray())
                 .ToListAsync().ConfigureAwait(false);
