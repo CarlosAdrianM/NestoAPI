@@ -108,6 +108,40 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task Enviar_UsuarioDistintoDelVendedor_VaTambienEnCopia()
+        {
+            // Carlos 24/07: un usuario mete un pedido de un cliente que NO es suyo. El aviso va al
+            // vendedor del cliente, pero el usuario (que tiene al cliente delante) debe ir en copia
+            // para poder corregir el NIF al momento.
+            ConFicha(vendedor: "DV ");
+            ConVendedor("DV ", "vendedora@nuevavision.es");
+            ConCorreoUsuario("Alfredo", "alfredo@nuevavision.es");
+
+            await Enviar(usuario: "NUEVAVISION\\Alfredo");
+
+            Assert.AreEqual("vendedora@nuevavision.es", enviado.To.Single().Address);
+            var copias = enviado.CC.Select(c => c.Address).ToList();
+            CollectionAssert.Contains(copias, Constantes.Correos.CORREO_ADMON);
+            CollectionAssert.Contains(copias, "alfredo@nuevavision.es");
+            Assert.AreEqual(2, copias.Count, "En copia van administración y el usuario que metió el pedido");
+        }
+
+        [TestMethod]
+        public async Task Enviar_UsuarioEsElPropioVendedor_NoSeDuplicaEnCopia()
+        {
+            // Si el usuario ES el vendedor del cliente (mete su propio cliente), ya va en Para:
+            // no debe aparecer también en CC.
+            ConFicha(vendedor: "DV ");
+            ConVendedor("DV ", "vendedora@nuevavision.es");
+            ConCorreoUsuario("Laura", "vendedora@nuevavision.es");
+
+            await Enviar(usuario: "NUEVAVISION\\Laura");
+
+            Assert.AreEqual("vendedora@nuevavision.es", enviado.To.Single().Address);
+            Assert.AreEqual(Constantes.Correos.CORREO_ADMON, enviado.CC.Single().Address);
+        }
+
+        [TestMethod]
         public async Task Enviar_VendedorGeneral_VaAlUsuarioQueMetioElDocumento()
         {
             // El caso del correo del 22/07: vendedor NV (General) → el aviso iba a informática.

@@ -41,9 +41,10 @@ namespace NestoAPI.Infraestructure.Clientes
             // y si tampoco tiene correo, solo a administración (sin duplicarla en CC).
             bool vendedorGeneral = ficha?.Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL;
             string correoVendedor = vendedor?.Mail?.Trim();
+            string correoUsuario = LeerCorreoUsuario(empresa, usuario);
             string destinatario = !vendedorGeneral && !string.IsNullOrWhiteSpace(correoVendedor)
                 ? correoVendedor
-                : LeerCorreoUsuario(empresa, usuario);
+                : correoUsuario;
 
             var mail = new MailMessage
             {
@@ -68,6 +69,16 @@ namespace NestoAPI.Infraestructure.Clientes
             {
                 mail.To.Add(new MailAddress(destinatario.ToLower()));
                 mail.CC.Add(new MailAddress(Constantes.Correos.CORREO_ADMON));
+                // Carlos 24/07: el USUARIO que metió el documento va SIEMPRE en copia (tiene al
+                // cliente delante o al teléfono y puede corregir el NIF al momento), aunque el
+                // aviso vaya dirigido al vendedor del cliente. Se omite si ya es el destinatario
+                // (vendedor general o él mismo es el vendedor) o si coincide con administración.
+                if (!string.IsNullOrWhiteSpace(correoUsuario)
+                    && !string.Equals(correoUsuario, destinatario, System.StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(correoUsuario, Constantes.Correos.CORREO_ADMON, System.StringComparison.OrdinalIgnoreCase))
+                {
+                    mail.CC.Add(new MailAddress(correoUsuario.ToLower()));
+                }
             }
             else
             {
