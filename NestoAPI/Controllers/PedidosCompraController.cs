@@ -288,130 +288,117 @@ namespace NestoAPI.Controllers
             return Ok(pedido);
         }
 
+        /// <summary>
+        /// NestoAPI#367: los datos de compra de cada producto (necesidad hasta el stock máximo,
+        /// pendientes, descuentos y ofertas) se calculan con UNA consulta agregada sencilla por
+        /// tabla y se componen en memoria. La versión anterior (GroupJoin + subconsultas
+        /// correladas por producto + colecciones anidadas) generaba un único SQL de ~69K
+        /// caracteres que tardaba 8-30+ segundos y agotaba el timeout; esta forma baja de 100 ms.
+        /// </summary>
         private IEnumerable<LineaPedidoCompraDTO> DatosProductosProcesados(IQueryable<Producto> productos, string empresa, string proveedor, DateTime fechaRecepcion)
         {
-            var controles = db.ControlesStocks.Where(c =>
-                productos.Select(p => p.Número).Contains(c.Número) &&
-                c.Empresa == empresa && c.Almacén == Constantes.Almacenes.ALGETE
-            );
-            var stock = db.ExtractosProducto.Where(e =>
-                e.Almacén == Constantes.Almacenes.ALGETE &&
-                productos.Select(p => p.Número).Contains(e.Número)
-            );
-            var pendientesRecibir = db.LinPedidoCmps.Where(l =>
-                l.TipoLínea == Constantes.TiposLineaCompra.PRODUCTO &&
-                l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
-                productos.Select(p => p.Número).Contains(l.Producto)
-            );
-            var pendientesEntregar = db.LinPedidoVtas.Where(l =>
-                l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO &&
-                l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
-                productos.Select(p => p.Número).Contains(l.Producto)
-            );
-            var descuentosProducto = db.DescuentosProductoes.Where(d =>
-                productos.Select(p => p.Número).Contains(d.Nº_Producto) &&
-                d.Empresa == empresa &&
-                d.NºProveedor == proveedor
-            );
-            var ofertas = db.OfertasProveedores.Where(d =>
-                productos.Select(p => p.Número).Contains(d.Producto) &&
-                d.CantidadOferta != 0 && d.CantidadRegalo != 0 &&
-                d.Empresa == empresa &&
-                d.NºProveedor == proveedor
-            );
+            var datosProductos = productos
+                .Select(p => new { p.Número, p.Grupo, p.SubGrupo, p.IVA_Soportado, p.Nombre, p.PVP, p.Estado })
+                .ToList();
+            if (!datosProductos.Any())
+            {
+                return new List<LineaPedidoCompraDTO>();
+            }
+            List<string> numeros = datosProductos.Select(p => p.Número).ToList();
 
-            var prequery = productos
-                .GroupJoin(controles, prod => prod.Número, ctrl => ctrl.Número, (prod, ctrl) => new { prod = prod, ctrl = ctrl })
-                .SelectMany(x => x.ctrl.DefaultIfEmpty(), 
-                (x, prod) =>
-                new
-                {
-                    EsNulo = x.ctrl.FirstOrDefault() == null,
-                    StockMaximo = x.ctrl.FirstOrDefault() != null ? x.ctrl.FirstOrDefault().StockMáximo : 0,
-                    Stock = stock.Where(p => p.Número == x.prod.Número).Select(e => (int)e.Cantidad).DefaultIfEmpty().Sum(),
-                    PendienteEntregar = pendientesEntregar.Where(p => p.Producto == x.prod.Número).Select(p => (int)p.Cantidad).DefaultIfEmpty().Sum(),
-                    PendienteRecibir = pendientesRecibir.Where(p => p.Producto == x.prod.Número).Select(p => (int)p.Cantidad).DefaultIfEmpty().Sum(),
-                    Producto = x.prod.Número.Trim(),
-                    Grupo = x.prod.Grupo,
-                    Subgrupo = x.prod.SubGrupo,
-                    Estado = Constantes.EstadosLineaVenta.EN_CURSO,
-                    CodigoIvaProducto = x.prod.IVA_Soportado.Trim(),
-                    TipoLinea = Constantes.TiposLineaCompra.PRODUCTO,
-                    Texto = x.prod.Nombre.Trim(),
-                    Multiplos = x.ctrl.FirstOrDefault() != null ? x.ctrl.FirstOrDefault().Múltiplos : 1,
-                    PrecioTarifa = (decimal)((x.prod.PVP) ?? 0),
-                    EstadoProducto = (int)x.prod.Estado,
-                    Descuentos = descuentosProducto.Where(d => d.Nº_Producto == x.prod.Número).Select(d => new DescuentoCantidadCompra
-                    {
-                        CantidadMinima = d.CantidadMínima,
-                        Descuento = d.Descuento,
-                        Precio = (decimal)(d.Precio ?? (decimal?)x.prod.PVP ?? 0)
-                    }),
-                    Ofertas = ofertas.Where(d => d.Producto == x.prod.Número).Select(d => new OfertaCompra
-                    {
-                        CantidadCobrada = d.CantidadOferta,
-                        CantidadRegalo = d.CantidadRegalo
-                    })
-                })
-                //.Where(l => !l.EsNulo)
-                .Select(l => new
-                {
-                    Cantidad = l.StockMaximo - l.Stock + l.PendienteEntregar - l.PendienteRecibir > 0 ? l.StockMaximo - l.Stock + l.PendienteEntregar - l.PendienteRecibir : 0,
-                    CantidadBruta = l.StockMaximo - l.Stock + l.PendienteEntregar - l.PendienteRecibir,
-                    Producto = l.Producto,
-                    Grupo = l.Grupo,
-                    Subgrupo = l.Subgrupo,
-                    Estado = l.Estado,
-                    CodigoIvaProducto = l.CodigoIvaProducto,
-                    TipoLinea = l.TipoLinea,
-                    Texto = l.Texto,
-                    Multiplos = l.Multiplos,
-                    StockMaximo = l.StockMaximo,
-                    Stock = l.Stock,
-                    PendienteEntregar = l.PendienteEntregar,
-                    PendienteRecibir = l.PendienteRecibir,
-                    PrecioTarifa = l.PrecioTarifa,
-                    EstadoProducto = l.EstadoProducto,
-                    Descuentos = l.Descuentos,
-                    Ofertas = l.Ofertas
-                });
+            Dictionary<string, ControlStock> controles = db.ControlesStocks
+                .Where(c => c.Empresa == empresa && c.Almacén == Constantes.Almacenes.ALGETE && numeros.Contains(c.Número))
+                .ToList()
+                .GroupBy(c => c.Número)
+                .ToDictionary(g => g.Key, g => g.First());
 
-            var query = prequery.AsEnumerable();
+            Dictionary<string, int> stocks = db.ExtractosProducto
+                .Where(e => e.Almacén == Constantes.Almacenes.ALGETE && numeros.Contains(e.Número))
+                .GroupBy(e => e.Número)
+                .Select(g => new { Producto = g.Key, Cantidad = g.Sum(e => (int)e.Cantidad) })
+                .ToDictionary(x => x.Producto, x => x.Cantidad);
 
-            var productosInsertar = query
-                .Select(x => new LineaPedidoCompraDTO
+            Dictionary<string, int> pendientesEntregar = db.LinPedidoVtas
+                .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO &&
+                    l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
+                    numeros.Contains(l.Producto))
+                .GroupBy(l => l.Producto)
+                .Select(g => new { Producto = g.Key, Cantidad = g.Sum(l => (int)l.Cantidad) })
+                .ToDictionary(x => x.Producto, x => x.Cantidad);
+
+            Dictionary<string, int> pendientesRecibir = db.LinPedidoCmps
+                .Where(l => l.TipoLínea == Constantes.TiposLineaCompra.PRODUCTO &&
+                    l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO &&
+                    numeros.Contains(l.Producto))
+                .GroupBy(l => l.Producto)
+                .Select(g => new { Producto = g.Key, Cantidad = g.Sum(l => (int)l.Cantidad) })
+                .ToDictionary(x => x.Producto, x => x.Cantidad);
+
+            Dictionary<string, List<DescuentosProducto>> descuentos = db.DescuentosProductoes
+                .Where(d => d.Empresa == empresa && d.NºProveedor == proveedor && numeros.Contains(d.Nº_Producto))
+                .ToList()
+                .GroupBy(d => d.Nº_Producto)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            Dictionary<string, List<OfertaProveedor>> ofertas = db.OfertasProveedores
+                .Where(o => o.Empresa == empresa && o.NºProveedor == proveedor &&
+                    o.CantidadOferta != 0 && o.CantidadRegalo != 0 && numeros.Contains(o.Producto))
+                .ToList()
+                .GroupBy(o => o.Producto)
+                .ToDictionary(g => g.Key, g => g.ToList());
+
+            var productosInsertar = new List<LineaPedidoCompraDTO>();
+            foreach (var prod in datosProductos)
+            {
+                _ = controles.TryGetValue(prod.Número, out ControlStock control);
+                int stockMaximo = control?.StockMáximo ?? 0;
+                int stock = stocks.TryGetValue(prod.Número, out int s) ? s : 0;
+                int pendienteEntregar = pendientesEntregar.TryGetValue(prod.Número, out int pe) ? pe : 0;
+                int pendienteRecibir = pendientesRecibir.TryGetValue(prod.Número, out int pr) ? pr : 0;
+                int cantidadBruta = stockMaximo - stock + pendienteEntregar - pendienteRecibir;
+                int cantidadNecesaria = cantidadBruta > 0 ? cantidadBruta : 0;
+                // Sin control de stock el múltiplo es 1; un múltiplo 0 en la tabla también se
+                // trata como 1 (antes petaba con división por cero al calcular el módulo).
+                int multiplos = control == null || control.Múltiplos == 0 ? 1 : control.Múltiplos;
+
+                productosInsertar.Add(new LineaPedidoCompraDTO
                 {
                     Id = -1, // si ponemos id = 0 piensa que viene del datagrid y da error
-                    Producto = x.Producto,
-                    Grupo = x.Grupo,
-                    Subgrupo = x.Subgrupo,
-                    Descuentos = x.Descuentos.ToList(),
-                    Ofertas = x.Ofertas.ToList(),
-                    Cantidad = (int)(x.Cantidad % x.Multiplos == 0 ? x.Cantidad : Math.Ceiling((double)x.Cantidad / x.Multiplos) * x.Multiplos), // Multiplos
-                    CantidadBruta = x.CantidadBruta,
+                    Producto = prod.Número.Trim(),
+                    Grupo = prod.Grupo,
+                    Subgrupo = prod.SubGrupo,
+                    // Descuentos debe asignarse ANTES que Cantidad: el setter de Cantidad aplica
+                    // el descuento por cantidad (precio y descuento del tramo alcanzado).
+                    Descuentos = (descuentos.TryGetValue(prod.Número, out List<DescuentosProducto> dtos) ? dtos : new List<DescuentosProducto>())
+                        .Select(d => new DescuentoCantidadCompra
+                        {
+                            CantidadMinima = d.CantidadMínima,
+                            Descuento = d.Descuento,
+                            Precio = (decimal)(d.Precio ?? prod.PVP ?? 0)
+                        }).ToList(),
+                    Ofertas = (ofertas.TryGetValue(prod.Número, out List<OfertaProveedor> ofs) ? ofs : new List<OfertaProveedor>())
+                        .Select(o => new OfertaCompra
+                        {
+                            CantidadCobrada = o.CantidadOferta,
+                            CantidadRegalo = o.CantidadRegalo
+                        }).ToList(),
+                    Cantidad = cantidadNecesaria % multiplos == 0 ? cantidadNecesaria : (int)(Math.Ceiling((double)cantidadNecesaria / multiplos) * multiplos),
+                    CantidadBruta = cantidadBruta,
                     Estado = Constantes.EstadosLineaVenta.EN_CURSO,
                     FechaRecepcion = fechaRecepcion,
-                    CodigoIvaProducto = x.CodigoIvaProducto,
+                    CodigoIvaProducto = prod.IVA_Soportado?.Trim(),
                     TipoLinea = Constantes.TiposLineaCompra.PRODUCTO,
-                    Texto = x.Texto,
-                    Stock = x.Stock,
-                    StockMaximo = x.StockMaximo,
-                    PendienteEntregar = x.PendienteEntregar,
-                    PendienteRecibir = x.PendienteRecibir,
-                    Multiplos = x.Multiplos != 0 ? x.Multiplos : 1,
-                    PrecioTarifa = x.PrecioTarifa,
-                    EstadoProducto = x.EstadoProducto
-                }
-            );
-            /*
-            var p2 = productos.ToList();
-            var c1 = controles.ToList();
-            var d1 = descuentosProducto.ToList();
-            var o1 = ofertas.ToList();
-            var p1 = prequery.ToList();
-            var q1 = query.ToList();
-            var i1 = productosInsertar.ToList();
-            */
+                    Texto = prod.Nombre?.Trim(),
+                    Stock = stock,
+                    StockMaximo = stockMaximo,
+                    PendienteEntregar = pendienteEntregar,
+                    PendienteRecibir = pendienteRecibir,
+                    Multiplos = multiplos,
+                    PrecioTarifa = prod.PVP ?? 0,
+                    EstadoProducto = prod.Estado ?? 0
+                });
+            }
+
             return productosInsertar;
         }
 

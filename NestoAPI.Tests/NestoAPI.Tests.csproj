@@ -371,6 +371,7 @@
     <Compile Include="Infrastructure\CanalesExternos\Amazon\ServicioFacturasAmazonTests.cs" />
     <Compile Include="Infrastructure\CanalesExternos\Amazon\AmazonFacturasJobsServiceTests.cs" />
     <Compile Include="Controllers\FacturasAmazonControllerTests.cs" />
+    <Compile Include="Controllers\AmpliarPedidoAlStockMaximoTests.cs" />
     <Compile Include="Infrastructure\CanalesExternos\Amazon\AwsSignatureV4Tests.cs" />
     <Compile Include="Infrastructure\Pagos\FormatoCorreoReclamacionTests.cs" />
     <Compile Include="Infrastructure\Pagos\RedsysServiceTests.cs" />
