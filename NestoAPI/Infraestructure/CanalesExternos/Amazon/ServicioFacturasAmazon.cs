@@ -69,6 +69,18 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
             CabPedidoVta cabecera = _db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == empresa && p.Número == pedido)
                 ?? throw new InvalidOperationException($"No existe el pedido {pedido} de la empresa {empresa}.");
 
+            // Los clientes ficticios de consumidor final (Amazon 32624, tienda online, público
+            // final) generan factura SIMPLIFICADA (F2, sin datos del comprador): no se sube a
+            // Amazon. Solo se suben facturas completas, es decir, pedidos facturados a un cliente
+            // real (el comprador pidió factura y se cambió el "Cliente al que se factura").
+            if (Constantes.ClientesEspeciales.EsClienteFacturaSimplificada(cabecera.Nº_Cliente))
+            {
+                throw new InvalidOperationException(
+                    $"El pedido {pedido} factura al cliente {cabecera.Nº_Cliente?.Trim()} (factura simplificada, " +
+                    "sin datos del comprador) y no se sube a Amazon. Si el comprador pide factura, cambia el " +
+                    "cliente del pedido a un cliente real y vuelve a intentarlo.");
+            }
+
             string amazonOrderId = ExtraerAmazonOrderId(cabecera.Comentarios)
                 ?? throw new InvalidOperationException(
                     $"El pedido {pedido} no tiene AmazonOrderId en los comentarios; no parece un pedido de Amazon.");
@@ -141,7 +153,7 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
 
         public IReadOnlyList<FacturaSubidaAmazonDTO> ConsultarSubidas(string empresa, IReadOnlyCollection<int> pedidos)
         {
-            return _almacen.ObtenerVarias(empresa, pedidos)
+            List<FacturaSubidaAmazonDTO> resultado = _almacen.ObtenerVarias(empresa, pedidos)
                 .Select(f => new FacturaSubidaAmazonDTO
                 {
                     Pedido = f.Pedido,
@@ -150,6 +162,26 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
                     FechaEnvio = f.FechaEnvio
                 })
                 .ToList();
+
+            // Los pedidos de clientes de factura simplificada se devuelven como OMITIDA para que
+            // el grid los pinte como "no se sube" y el lote de pendientes no los intente.
+            var conEstado = new HashSet<int>(resultado.Select(r => r.Pedido));
+            List<int> sinEstado = (pedidos ?? new List<int>()).Where(p => !conEstado.Contains(p)).ToList();
+            if (sinEstado.Count > 0)
+            {
+                var clientes = _db.CabPedidoVtas
+                    .Where(p => p.Empresa == empresa && sinEstado.Contains(p.Número))
+                    .Select(p => new { p.Número, p.Nº_Cliente })
+                    .ToList();
+                resultado.AddRange(clientes
+                    .Where(p => Constantes.ClientesEspeciales.EsClienteFacturaSimplificada(p.Nº_Cliente))
+                    .Select(p => new FacturaSubidaAmazonDTO
+                    {
+                        Pedido = p.Número,
+                        Estado = EstadosFacturaAmazon.OMITIDA
+                    }));
+            }
+            return resultado;
         }
 
         private async Task<byte[]> GenerarPdfFactura(string empresa, string numeroFactura, string usuario)

@@ -129,6 +129,62 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
         }
 
         [TestMethod]
+        public async Task FacturarYSubir_ClienteDeFacturaSimplificada_LanzaSinFacturarNiSubir()
+        {
+            // Amazon 32624, tienda online 31517 y público final 10458 generan factura SIMPLIFICADA
+            // (F2 sin datos del comprador, mismo criterio que Verifactu #325): no se suben a Amazon.
+            ConfigurarPedido(new CabPedidoVta
+            {
+                Empresa = EMPRESA,
+                Número = PEDIDO,
+                Nº_Cliente = Constantes.ClientesEspeciales.AMAZON,
+                Comentarios = $"{AMAZON_ORDER_ID}\r\nNueva Visión"
+            });
+
+            await Assert.ThrowsExceptionAsync<System.InvalidOperationException>(
+                () => servicio.FacturarYSubirAsync(EMPRESA, PEDIDO, "carlos"));
+
+            A.CallTo(() => gestor.CrearFactura(A<string>._, A<int>._, A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => gateway.CrearDocumentoFeedAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => almacen.Registrar(A<AmazonFacturaSubida>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void ConsultarSubidas_PedidoDeClienteSimplificadaSinSubida_SeDevuelveComoOmitida()
+        {
+            // Así el grid lo pinta como "no se sube" y el lote de pendientes no lo intenta.
+            A.CallTo(() => almacen.ObtenerVarias(EMPRESA, A<IReadOnlyCollection<int>>._))
+                .Returns(new List<AmazonFacturaSubida>());
+            ConfigurarPedido(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Nº_Cliente = Constantes.ClientesEspeciales.AMAZON });
+
+            IReadOnlyList<FacturaSubidaAmazonDTO> subidas = servicio.ConsultarSubidas(EMPRESA, new[] { PEDIDO });
+
+            Assert.AreEqual(1, subidas.Count);
+            Assert.AreEqual(EstadosFacturaAmazon.OMITIDA, subidas[0].Estado);
+            Assert.IsNull(subidas[0].NumeroFactura);
+        }
+
+        [TestMethod]
+        public void ConsultarSubidas_PedidoDeClienteRealSinSubida_NoDevuelveFila()
+        {
+            A.CallTo(() => almacen.ObtenerVarias(EMPRESA, A<IReadOnlyCollection<int>>._))
+                .Returns(new List<AmazonFacturaSubida>());
+            ConfigurarPedido(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Nº_Cliente = "12345" });
+
+            Assert.AreEqual(0, servicio.ConsultarSubidas(EMPRESA, new[] { PEDIDO }).Count);
+        }
+
+        [TestMethod]
+        public void EsClienteFacturaSimplificada_LosTresClientesFicticios()
+        {
+            Assert.IsTrue(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("32624"));   // Amazon
+            Assert.IsTrue(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("31517 ")); // tienda online (con relleno)
+            Assert.IsTrue(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("10458"));  // público final
+            Assert.IsFalse(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada("15191")); // El Edén factura completa
+            Assert.IsFalse(Constantes.ClientesEspeciales.EsClienteFacturaSimplificada(null));
+        }
+
+        [TestMethod]
         public async Task FacturarYSubir_PedidoConVariasFacturas_Lanza()
         {
             ConfigurarLineas(

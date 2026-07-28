@@ -25,12 +25,14 @@ namespace NestoAPI.Models.CanalesExternos
     }
 
     /// <summary>Estados del registro: ENVIADA (feed aceptado, pendiente de procesar) y el
-    /// processingStatus final de Amazon (DONE, FATAL, CANCELLED).</summary>
+    /// processingStatus final de Amazon (DONE, FATAL, CANCELLED). OMITIDA no se persiste: se
+    /// calcula al consultar, para los pedidos de clientes de factura simplificada (no se suben).</summary>
     public static class EstadosFacturaAmazon
     {
         public const string ENVIADA = "ENVIADA";
         public const string DONE = "DONE";
         public const string FATAL = "FATAL";
         public const string CANCELLED = "CANCELLED";
+        public const string OMITIDA = "OMITIDA";
     }
 }

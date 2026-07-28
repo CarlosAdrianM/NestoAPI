@@ -165,12 +165,7 @@ namespace NestoAPI.Infraestructure.Verifactu
         /// física se agrupan en clientes ficticios con NIF que no existe en el censo de la AEAT.
         /// </summary>
         internal static bool EsFacturaSimplificada(CabFacturaVta factura)
-        {
-            string cliente = factura?.Nº_Cliente?.Trim();
-            return cliente == Constantes.ClientesEspeciales.AMAZON
-                || cliente == Constantes.ClientesEspeciales.TIENDA_ONLINE
-                || cliente == Constantes.ClientesEspeciales.PUBLICO_FINAL;
-        }
+            => Constantes.ClientesEspeciales.EsClienteFacturaSimplificada(factura?.Nº_Cliente);
 
         /// <summary>
         /// Issue #36: el tipo AEAT de una rectificativa (R1-R5) sale del TipoRectificativa
