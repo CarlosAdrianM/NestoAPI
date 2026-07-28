@@ -240,6 +240,7 @@
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />
     <Compile Include="Infrastructure\Agencias\RegistroAgenciasTests.cs" />
+    <Compile Include="Infrastructure\Agencias\PerfilesAgenciasTests.cs" />
     <Compile Include="Infrastructure\Agencias\GateAgenciasActivasTests.cs" />
     <Compile Include="Infrastructure\Agencias\CalculadoraCosteEnvioTests.cs" />
     <Compile Include="Infrastructure\Agencias\ComparadorAgenciasTests.cs" />

@@ -30,6 +30,21 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
         public static RegistroAgencias PorReflexion(IGateAgenciasActivas gate)
             => new RegistroAgencias(DescubrirPerfiles(typeof(RegistroAgencias).Assembly), gate);
 
+        /// <summary>
+        /// Registro con TODOS los perfiles, sin puerta de activas (Fase 3 de #258). La cuarentena
+        /// gobierna qué agencias se tramitan/siguen server-side; las reglas de destino y los
+        /// defaults de envío son reglas estáticas que aplican también a las agencias en cuarentena
+        /// (CEX, Sending), igual que hacían los switch del controller. No toca la BBDD, así que se
+        /// puede cachear estáticamente.
+        /// </summary>
+        public static RegistroAgencias PorReflexionSinPuerta()
+            => new RegistroAgencias(DescubrirPerfiles(typeof(RegistroAgencias).Assembly), new GateTodasActivas());
+
+        private class GateTodasActivas : IGateAgenciasActivas
+        {
+            public bool EstaActiva(int agenciaId) => true;
+        }
+
         /// <summary>Perfil activo de esa agencia, o null si no existe clase o está inactiva.</summary>
         public IPerfilAgencia Perfil(int agenciaId) => _activos.FirstOrDefault(p => p.AgenciaId == agenciaId);
 

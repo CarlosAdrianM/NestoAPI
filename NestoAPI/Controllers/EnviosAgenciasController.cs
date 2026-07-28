@@ -959,53 +959,21 @@ namespace NestoAPI.Controllers
             return comentarios.Substring(0, LONGITUD_MAXIMA_OBSERVACIONES);
         }
 
+        // NestoAPI#258 (Fase 3): las reglas de destino y los defaults por agencia viven en los
+        // perfiles (PerfilesAgencias.cs). Registro SIN puerta: las reglas aplican también a
+        // agencias en cuarentena (CEX, Sending), como hacían los switch que había aquí. Es puro
+        // (sin BBDD), por eso se cachea estáticamente.
+        private static readonly Infraestructure.Agencias.Perfiles.RegistroAgencias _perfilesAgencias =
+            Infraestructure.Agencias.Perfiles.RegistroAgencias.PorReflexionSinPuerta();
+
         /// <summary>
-        /// NestoAPI#204: rechazos por combinación agencia + destino. Devuelve mensaje de error o null
-        /// si la combinación es válida. Cubre:
-        /// - CEX no entrega en Canarias → forzar Canteras.
-        /// - Canteras solo opera en Canarias.
-        /// - Canteras es operativa manual y no admite contra reembolso.
-        /// - Canteras exige importe del pedido ≥ <see cref="Models.Picking.GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS"/>
-        ///   o una línea de portes ≥ <see cref="Constantes.Portes.CANARIAS"/>.
+        /// NestoAPI#204: rechazos por combinación agencia + destino (mensaje de error o null si es
+        /// válida). La regla de cada agencia vive en su perfil (IPerfilConReglasDestino).
         /// </summary>
         private static string ValidarAgenciaCompatibleConDestino(int agencia, string codPostal, CabPedidoVta pedido, bool cobrarReembolso)
         {
-            bool esCanarias = Infraestructure.PedidosVenta.GestorPortes.EsCanarias(codPostal);
-
-            if (agencia == Constantes.Agencias.AGENCIA_CORREOS_EXPRESS && esCanarias)
-            {
-                return "Correos Express no entrega en Canarias. Usa la agencia Canteras para envíos a Canarias.";
-            }
-
-            if (agencia == Constantes.Agencias.AGENCIA_CANTERAS)
-            {
-                if (!esCanarias)
-                {
-                    return "La agencia Canteras solo opera en Canarias (códigos postales 35xxx y 38xxx).";
-                }
-                if (cobrarReembolso)
-                {
-                    return "La agencia Canteras no admite contra reembolso. Cobra el pedido por otro medio antes de tramitar el envío.";
-                }
-
-                decimal baseImponiblePedido = pedido.LinPedidoVtas?
-                    .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
-                    .Sum(l => l.Base_Imponible) ?? 0M;
-                bool llevaLineaPortesCanarias = pedido.LinPedidoVtas?
-                    .Any(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE
-                        && l.Producto != null
-                        && l.Producto.Trim().StartsWith("624")
-                        && l.Base_Imponible >= Constantes.Portes.CANARIAS) ?? false;
-
-                if (baseImponiblePedido < Models.Picking.GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS
-                    && !llevaLineaPortesCanarias)
-                {
-                    return $"El pedido no llega al mínimo de Canarias ({Models.Picking.GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS:N0} €) " +
-                           $"y no lleva una línea de portes de {Constantes.Portes.CANARIAS:N0} €. Añade portes o aumenta el importe.";
-                }
-            }
-
-            return null;
+            return (_perfilesAgencias.Perfil(agencia) as Infraestructure.Agencias.Perfiles.IPerfilConReglasDestino)?
+                .ValidarDestino(codPostal, pedido, cobrarReembolso);
         }
 
         /// <summary>
@@ -1036,40 +1004,11 @@ namespace NestoAPI.Controllers
             return null;
         }
 
+        /// <summary>Defaults de envío de la agencia (su perfil) o el genérico si no tiene.</summary>
         private static (short Servicio, short Horario, int Pais) ObtenerDefaultsAgencia(int agencia, string codPostal)
         {
-            switch (agencia)
-            {
-                case Constantes.Agencias.AGENCIA_GLS:
-                    return (Servicio: 96, Horario: 18, Pais: 34); // BusinessParcel, Economy, España
-                case Constantes.Agencias.AGENCIA_CORREOS_EXPRESS:
-                    if (EsCodigoPostalPortugues(codPostal))
-                    {
-                        return (Servicio: 63, Horario: 0, Pais: 724); // Paq24, Portugal
-                    }
-                    if (EsCodigoPostalEspanol(codPostal))
-                    {
-                        return (Servicio: 93, Horario: 0, Pais: 724); // ePaq24, España
-                    }
-                    return (Servicio: 90, Horario: 0, Pais: 724); // Internacional monobulto
-                case Constantes.Agencias.AGENCIA_SENDING:
-                    return (Servicio: 1, Horario: 1, Pais: 34); // Send Express, Normal, España
-                default:
-                    return (Servicio: 0, Horario: 0, Pais: 1);
-            }
-        }
-
-        private static bool EsCodigoPostalEspanol(string codPostal)
-        {
-            return codPostal.Length == 5 && int.TryParse(codPostal, out int cp) && cp >= 1000 && cp <= 52999;
-        }
-
-        private static bool EsCodigoPostalPortugues(string codPostal)
-        {
-            // Formato portugués: 4 dígitos o 4 dígitos-3 dígitos (ej: "1000" o "1000-001")
-            var sinGuion = codPostal.Replace("-", "");
-            return (codPostal.Length == 4 || codPostal.Length == 8)
-                && int.TryParse(sinGuion, out int cp) && cp >= 1000 && cp <= 9999999;
+            return (_perfilesAgencias.Perfil(agencia) as Infraestructure.Agencias.Perfiles.IPerfilConDefaultsEnvio)?
+                .DefaultsEnvio(codPostal) ?? (Servicio: 0, Horario: 0, Pais: 1);
         }
 
         [HttpPut]

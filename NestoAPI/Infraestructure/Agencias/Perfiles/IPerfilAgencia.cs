@@ -41,13 +41,22 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
 
     /// <summary>
     /// Capacidad: la agencia tiene REGLAS propias de compatibilidad con el destino (Canteras solo
-    /// Canarias y sin reembolso, CEX no entrega en Canarias...). Fase 3.
+    /// Canarias y sin reembolso, CEX no entrega en Canarias...). Estas reglas aplican a CUALQUIER
+    /// etiqueta que se cree, esté la agencia en cuarentena o no (por eso el controller las consulta
+    /// en el registro SIN puerta).
     /// </summary>
-    public interface IPerfilConReglasDestino : IPerfilAgencia { }
+    public interface IPerfilConReglasDestino : IPerfilAgencia
+    {
+        /// <summary>Mensaje de error si la combinación agencia+destino no es válida, o null si lo es.</summary>
+        string ValidarDestino(string codPostal, CabPedidoVta pedido, bool cobrarReembolso);
+    }
 
     /// <summary>
     /// Capacidad: la agencia tiene valores por DEFECTO de envío propios (servicio, horario, país)
-    /// según el código postal. Fase 3.
+    /// según el código postal. Como las reglas de destino, aplican con o sin cuarentena.
     /// </summary>
-    public interface IPerfilConDefaultsEnvio : IPerfilAgencia { }
+    public interface IPerfilConDefaultsEnvio : IPerfilAgencia
+    {
+        (short Servicio, short Horario, int Pais) DefaultsEnvio(string codPostal);
+    }
 }

@@ -65,11 +65,93 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
             string uid = ConfigurationManager.AppSettings["GLS:UidSeguimiento"];
             return new SeguimientoAgenciaRemotaConReintentos(new AgenciaRemotaGls(new ClienteTrackingGls(uid)));
         }
+
+        public (short Servicio, short Horario, int Pais) DefaultsEnvio(string codPostal)
+            => (Servicio: 96, Horario: 18, Pais: 34); // BusinessParcel, Economy, España
     }
 
     /// <summary>Canteras (Canarias, operativa manual): tiene reglas propias de compatibilidad con el destino.</summary>
     public class PerfilAgenciaCanteras : IPerfilConReglasDestino
     {
         public int AgenciaId => Constantes.Agencias.AGENCIA_CANTERAS;
+
+        // NestoAPI#204: Canteras solo opera en Canarias, sin reembolso y con mínimo de importe.
+        public string ValidarDestino(string codPostal, CabPedidoVta pedido, bool cobrarReembolso)
+        {
+            if (!PedidosVenta.GestorPortes.EsCanarias(codPostal))
+            {
+                return "La agencia Canteras solo opera en Canarias (códigos postales 35xxx y 38xxx).";
+            }
+            if (cobrarReembolso)
+            {
+                return "La agencia Canteras no admite contra reembolso. Cobra el pedido por otro medio antes de tramitar el envío.";
+            }
+
+            decimal baseImponiblePedido = pedido.LinPedidoVtas?
+                .Where(l => l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                .Sum(l => l.Base_Imponible) ?? 0M;
+            bool llevaLineaPortesCanarias = pedido.LinPedidoVtas?
+                .Any(l => l.TipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE
+                    && l.Producto != null
+                    && l.Producto.Trim().StartsWith("624")
+                    && l.Base_Imponible >= Constantes.Portes.CANARIAS) ?? false;
+
+            if (baseImponiblePedido < Models.Picking.GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS
+                && !llevaLineaPortesCanarias)
+            {
+                return $"El pedido no llega al mínimo de Canarias ({Models.Picking.GestorImportesMinimos.IMPORTE_MINIMO_CANARIAS:N0} €) " +
+                       $"y no lleva una línea de portes de {Constantes.Portes.CANARIAS:N0} €. Añade portes o aumenta el importe.";
+            }
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Correos Express: en cuarentena (no se tramita), pero sus reglas de destino y defaults siguen
+    /// aplicando a las etiquetas que se creen a mano.
+    /// </summary>
+    public class PerfilAgenciaCorreosExpress : IPerfilConReglasDestino, IPerfilConDefaultsEnvio
+    {
+        public int AgenciaId => Constantes.Agencias.AGENCIA_CORREOS_EXPRESS;
+
+        public string ValidarDestino(string codPostal, CabPedidoVta pedido, bool cobrarReembolso)
+            => PedidosVenta.GestorPortes.EsCanarias(codPostal)
+                ? "Correos Express no entrega en Canarias. Usa la agencia Canteras para envíos a Canarias."
+                : null;
+
+        public (short Servicio, short Horario, int Pais) DefaultsEnvio(string codPostal)
+        {
+            if (EsCodigoPostalPortugues(codPostal))
+            {
+                return (Servicio: 63, Horario: 0, Pais: 724); // Paq24, Portugal
+            }
+            if (EsCodigoPostalEspanol(codPostal))
+            {
+                return (Servicio: 93, Horario: 0, Pais: 724); // ePaq24, España
+            }
+            return (Servicio: 90, Horario: 0, Pais: 724); // Internacional monobulto
+        }
+
+        internal static bool EsCodigoPostalEspanol(string codPostal)
+        {
+            return codPostal.Length == 5 && int.TryParse(codPostal, out int cp) && cp >= 1000 && cp <= 52999;
+        }
+
+        internal static bool EsCodigoPostalPortugues(string codPostal)
+        {
+            // Formato portugués: 4 dígitos o 4 dígitos-3 dígitos (ej: "1000" o "1000-001")
+            string sinGuion = codPostal.Replace("-", "");
+            return (codPostal.Length == 4 || codPostal.Length == 8)
+                && int.TryParse(sinGuion, out int cp) && cp >= 1000 && cp <= 9999999;
+        }
+    }
+
+    /// <summary>Sending: en cuarentena (no se tramita), pero conserva sus defaults de envío.</summary>
+    public class PerfilAgenciaSending : IPerfilConDefaultsEnvio
+    {
+        public int AgenciaId => Constantes.Agencias.AGENCIA_SENDING;
+
+        public (short Servicio, short Horario, int Pais) DefaultsEnvio(string codPostal)
+            => (Servicio: 1, Horario: 1, Pais: 34); // Send Express, Normal, España
     }
 }
