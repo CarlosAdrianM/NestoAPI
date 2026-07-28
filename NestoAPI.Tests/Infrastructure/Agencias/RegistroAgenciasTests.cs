@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Agencias.Perfiles;
 using NestoAPI.Models;
 
@@ -19,8 +20,14 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         private class PerfilRemotoConSeguimiento : IPerfilConGestionRemota, IPerfilConSeguimiento
         {
             public int AgenciaId => 12;
+            public IAgenciaRemota CrearGestionRemota(NVEntities db) => null;
+            public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db) => null;
         }
-        private class PerfilSoloSeguimiento : IPerfilConSeguimiento { public int AgenciaId => 1; }
+        private class PerfilSoloSeguimiento : IPerfilConSeguimiento
+        {
+            public int AgenciaId => 1;
+            public ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db) => null;
+        }
         private class PerfilSuelto : IPerfilAgencia { public int AgenciaId => 8; }
 
         private class GateFake : IGateAgenciasActivas

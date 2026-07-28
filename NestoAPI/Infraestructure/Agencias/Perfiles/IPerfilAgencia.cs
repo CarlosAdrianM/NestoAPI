@@ -20,17 +20,24 @@ namespace NestoAPI.Infraestructure.Agencias.Perfiles
     }
 
     /// <summary>
-    /// Capacidad: la agencia se TRAMITA server-side (insertar envío + obtener etiqueta). Fase 2 de
-    /// #258 le añadirá el método de composición; por ahora es un marcador con el que el registro
-    /// deriva qué agencias tienen gestión remota (hoy hardcodeado en FabricaAgenciasRemotas).
+    /// Capacidad: la agencia se TRAMITA server-side (insertar envío + obtener etiqueta). El perfil
+    /// compone la estrategia completa (cliente + operaciones + decorador de reintentos); recibe la BD
+    /// porque algunas agencias leen su configuración de AgenciasTransporte (p.ej. Identificador).
     /// </summary>
-    public interface IPerfilConGestionRemota : IPerfilAgencia { }
+    public interface IPerfilConGestionRemota : IPerfilAgencia
+    {
+        IAgenciaRemota CrearGestionRemota(NVEntities db);
+    }
 
     /// <summary>
     /// Capacidad: la agencia expone SEGUIMIENTO (consultar el estado de un envío por su albarán). La
-    /// cumplen tanto las de tramitación (Innovatrans) como las que solo siguen (GLS).
+    /// cumplen tanto las de tramitación (Innovatrans, cuya estrategia de tramitar ya sigue) como las
+    /// que solo siguen (GLS).
     /// </summary>
-    public interface IPerfilConSeguimiento : IPerfilAgencia { }
+    public interface IPerfilConSeguimiento : IPerfilAgencia
+    {
+        ISeguimientoAgenciaRemota CrearSeguimiento(NVEntities db);
+    }
 
     /// <summary>
     /// Capacidad: la agencia tiene REGLAS propias de compatibilidad con el destino (Canteras solo
