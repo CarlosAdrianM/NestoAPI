@@ -21,5 +21,11 @@ namespace NestoAPI.Models.Direcciones
         public string Poblacion { get; set; }
         public string Provincia { get; set; }
         public string DireccionFormateada { get; set; }
+
+        /// <summary>Nesto#436: nombre del país de la dirección ("Italia") tal y como lo da Google.</summary>
+        public string Pais { get; set; }
+
+        /// <summary>Nesto#436: código ISO 3166-1 alpha-2 del país ("IT"), para la ficha del cliente.</summary>
+        public string PaisIso { get; set; }
     }
 }

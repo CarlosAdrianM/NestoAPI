@@ -75,6 +75,54 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task ComprobarDatosGenerales_PaisExtranjero_NoConsultaLaTablaDeCPsNiGoogleYAsignaRuta00()
+        {
+            // Nesto#436: una dirección de Italia no está en nuestra tabla de CPs (lanzaría "No
+            // existe el código postal...") ni debe pasar por el geocoding restringido a España
+            // (colaba ", España" o "El código postal X es incorrecto"). Ruta 00 = Fuera de Madrid,
+            // la que llevan los clientes extranjeros.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
+
+            var respuesta = await gestor.ComprobarDatosGenerales("Via Roma, 1", "20121", "+390212345678", direccionVerificada: true, pais: "IT");
+
+            Assert.AreEqual(Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS, respuesta.Ruta);
+            Assert.AreEqual("20121", respuesta.CodigoPostal);
+            Assert.AreEqual("VIA ROMA, 1", respuesta.DireccionFormateada);
+            A.CallTo(() => servicio.CogerDatosCodigoPostal(A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => servicioAgencias.LeerDireccionGoogleMaps(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task ComprobarDatosGenerales_PaisExtranjeroSinVerificar_TampocoPasaPorElGeocodingDeEspana()
+        {
+            // Aunque la dirección se teclee a mano, si el país no es ES no hay geocoding: solo
+            // normalización de mayúsculas y abreviaturas.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencias);
+
+            var respuesta = await gestor.ComprobarDatosGenerales("Avenue des Champs-Élysées, 10", "75008", "+33123456789", direccionVerificada: false, pais: "FR");
+
+            // Las abreviaturas son de vías españolas (CALLE→C/, AVENIDA→Av.); un prefijo
+            // extranjero queda tal cual, solo en mayúsculas.
+            Assert.AreEqual("AVENUE DES CHAMPS-ÉLYSÉES, 10", respuesta.DireccionFormateada);
+            A.CallTo(() => servicioAgencias.LeerDireccionGoogleMaps(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void EsPaisExtranjero_EspanaVacioONuloNoLoSon()
+        {
+            Assert.IsFalse(GestorClientes.EsPaisExtranjero(null));
+            Assert.IsFalse(GestorClientes.EsPaisExtranjero(" "));
+            Assert.IsFalse(GestorClientes.EsPaisExtranjero("ES"));
+            Assert.IsFalse(GestorClientes.EsPaisExtranjero("es "));
+            Assert.IsTrue(GestorClientes.EsPaisExtranjero("IT"));
+            Assert.IsTrue(GestorClientes.EsPaisExtranjero("DE"));
+        }
+
+        [TestMethod]
         [ExpectedException(typeof(ArgumentException))]
         public async Task GestorClientes_ComprobarNifNombre_SiElNombreEstaVacioDaError()
         {

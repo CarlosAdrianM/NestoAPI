@@ -17,17 +17,19 @@ namespace NestoAPI.Infraestructure.Direcciones
     /// </summary>
     public interface IServicioDireccionesGoogle
     {
-        Task<List<Models.Direcciones.SugerenciaDireccionDTO>> BuscarSugerencias(string texto, string sessionToken);
+        /// <param name="pais">Código ISO 3166-1 alpha-2 del país donde buscar (Nesto#436: el país
+        /// de la dirección puede no ser España). Null o vacío = España.</param>
+        Task<List<Models.Direcciones.SugerenciaDireccionDTO>> BuscarSugerencias(string texto, string sessionToken, string pais = null);
         Task<Models.Direcciones.DireccionDetalleDTO> LeerDetalle(string placeId, string sessionToken);
     }
 
     public class ServicioDireccionesGoogle : IServicioDireccionesGoogle
     {
-        public async Task<List<Models.Direcciones.SugerenciaDireccionDTO>> BuscarSugerencias(string texto, string sessionToken)
+        public async Task<List<Models.Direcciones.SugerenciaDireccionDTO>> BuscarSugerencias(string texto, string sessionToken, string pais = null)
         {
             string url = "https://maps.googleapis.com/maps/api/place/autocomplete/json" +
                 "?input=" + Uri.EscapeDataString(texto) +
-                "&components=country:es&language=es&types=address" +
+                "&components=country:" + NormalizarPais(pais) + "&language=es&types=address" +
                 (string.IsNullOrWhiteSpace(sessionToken) ? "" : "&sessiontoken=" + Uri.EscapeDataString(sessionToken)) +
                 "&key=" + ConfigurationManager.AppSettings["GoogleMapsApiKey"];
 
@@ -51,6 +53,25 @@ namespace NestoAPI.Infraestructure.Direcciones
                 string json = await client.GetStringAsync(url).ConfigureAwait(false);
                 return ParsearDetalle(json);
             }
+        }
+
+        /// <summary>
+        /// Normaliza el país al formato de components de Places (ISO alpha-2 en minúsculas).
+        /// Vacío = España (comportamiento de siempre); un valor con formato inválido lanza
+        /// ArgumentException (el controller lo convierte en 400).
+        /// </summary>
+        internal static string NormalizarPais(string pais)
+        {
+            if (string.IsNullOrWhiteSpace(pais))
+            {
+                return "es";
+            }
+            string normalizado = pais.Trim().ToLowerInvariant();
+            if (normalizado.Length != 2 || normalizado.Any(c => c < 'a' || c > 'z'))
+            {
+                throw new ArgumentException($"El país '{pais}' no es un código ISO de dos letras.");
+            }
+            return normalizado;
         }
 
         // Parsers puros (testeables sin HTTP). ZERO_RESULTS no es un error: lista vacía / null.
@@ -94,7 +115,13 @@ namespace NestoAPI.Infraestructure.Direcciones
             {
                 var tipos = componente["types"].Select(t => (string)t).ToList();
                 string valor = (string)componente["long_name"];
-                if (tipos.Contains("route"))
+                if (tipos.Contains("country"))
+                {
+                    // Nesto#436: el país de la dirección, para que la ficha no asuma España.
+                    detalle.Pais = valor;
+                    detalle.PaisIso = ((string)componente["short_name"])?.ToUpperInvariant();
+                }
+                else if (tipos.Contains("route"))
                 {
                     detalle.Calle = valor;
                 }

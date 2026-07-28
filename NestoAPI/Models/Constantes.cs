@@ -64,6 +64,9 @@ namespace NestoAPI.Models
         {
             public const char SEPARADOR_TELEFONOS = '/';
             public const short ESTADO_DISTRIBUIDORES = 6;
+            /// <summary>Nesto#436: ruta de los clientes con dirección extranjera ("00", Fuera de
+            /// Madrid): sus CPs no están en nuestra tabla y no llevan ruta de reparto propia.</summary>
+            public const string RUTA_CLIENTES_EXTRANJEROS = "00";
             public static class Estados
             {
                 public const short NULO = -1;

@@ -33,7 +33,7 @@ namespace NestoAPI.Infraestructure
             _sincronizacionEventWrapper = sincronizacionEventWrapper;
         }
 
-        public async Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false)
+        public async Task<RespuestaDatosGeneralesClientes> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null)
         {
             if (string.IsNullOrWhiteSpace(direccion))
             {
@@ -47,23 +47,42 @@ namespace NestoAPI.Infraestructure
                 throw new ArgumentException("El código postal no puede estar en blanco");
             }
 
-            RespuestaDatosGeneralesClientes respuesta = await servicio.CogerDatosCodigoPostal(codigoPostal);
-
-            if (direccionVerificada)
+            RespuestaDatosGeneralesClientes respuesta;
+            if (EsPaisExtranjero(pais))
             {
-                // NestoAPI#306: la dirección viene del combo de Places (dirección y CP ya son
-                // consistentes entre sí, los dio Google juntos) → NO hay que volver a preguntar a
-                // Google ni pasar por la cirugía de strings de LimpiarDireccion (la fuente de los
-                // falsos "El código postal X es incorrecto"). Solo se aplica la normalización de
-                // nuestra BD (mayúsculas + abreviaturas C/, Av., ...).
-                respuesta.DireccionFormateada = PonerAbreviaturas(direccion.ToUpper().Trim());
+                // Nesto#436: dirección en el extranjero. Su CP no está en nuestra tabla (lanzaría
+                // "No existe el código postal...") y el geocoding restringido a España colaba
+                // ", España" o tiraba "El código postal X es incorrecto". Sin ruta de reparto
+                // propia (la 00 "Fuera de Madrid", la que llevan los clientes extranjeros) y la
+                // dirección solo se normaliza; población/provincia las pone el cliente con lo que
+                // dio el combo de Google.
+                respuesta = new RespuestaDatosGeneralesClientes
+                {
+                    CodigoPostal = codigoPostal.Trim(),
+                    Ruta = Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS,
+                    DireccionFormateada = PonerAbreviaturas(direccion.ToUpper().Trim())
+                };
             }
             else
             {
-                string direccionProcesar = ProcesarDireccion(direccion, respuesta);
-                RespuestaAgencia respuestaAgencia = await servicioAgencias.LeerDireccionGoogleMaps(direccionProcesar, codigoPostal);
+                respuesta = await servicio.CogerDatosCodigoPostal(codigoPostal);
 
-                respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
+                if (direccionVerificada)
+                {
+                    // NestoAPI#306: la dirección viene del combo de Places (dirección y CP ya son
+                    // consistentes entre sí, los dio Google juntos) → NO hay que volver a preguntar a
+                    // Google ni pasar por la cirugía de strings de LimpiarDireccion (la fuente de los
+                    // falsos "El código postal X es incorrecto"). Solo se aplica la normalización de
+                    // nuestra BD (mayúsculas + abreviaturas C/, Av., ...).
+                    respuesta.DireccionFormateada = PonerAbreviaturas(direccion.ToUpper().Trim());
+                }
+                else
+                {
+                    string direccionProcesar = ProcesarDireccion(direccion, respuesta);
+                    RespuestaAgencia respuestaAgencia = await servicioAgencias.LeerDireccionGoogleMaps(direccionProcesar, codigoPostal);
+
+                    respuesta.DireccionFormateada = LimpiarDireccion(direccion, respuestaAgencia.DireccionFormateada, codigoPostal);
+                }
             }
             respuesta.TelefonoFormateado = LimpiarTelefono(telefono);
 
@@ -79,6 +98,10 @@ namespace NestoAPI.Infraestructure
 
             return respuesta;
         }
+
+        /// <summary>Nesto#436: ¿la dirección está fuera de España? (pais = ISO-2; vacío = España).</summary>
+        internal static bool EsPaisExtranjero(string pais)
+            => !string.IsNullOrWhiteSpace(pais) && !string.Equals(pais.Trim(), "ES", StringComparison.OrdinalIgnoreCase);
 
         public async Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre)
         {

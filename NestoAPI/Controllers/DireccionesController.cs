@@ -23,11 +23,12 @@ namespace NestoAPI.Controllers
             this.servicio = servicio;
         }
 
-        // GET: api/Direcciones/Sugerencias?texto=Avenida Castilla 3&sessionToken=...
+        // GET: api/Direcciones/Sugerencias?texto=Avenida Castilla 3&sessionToken=...&pais=IT
+        // Nesto#436: pais es el ISO alpha-2 donde buscar; sin él se busca en España (como siempre).
         [HttpGet]
         [Route("api/Direcciones/Sugerencias")]
         [ResponseType(typeof(List<SugerenciaDireccionDTO>))]
-        public async Task<IHttpActionResult> GetSugerencias(string texto, string sessionToken = null)
+        public async Task<IHttpActionResult> GetSugerencias(string texto, string sessionToken = null, string pais = null)
         {
             if (string.IsNullOrWhiteSpace(texto) || texto.Trim().Length < 3)
             {
@@ -35,8 +36,15 @@ namespace NestoAPI.Controllers
                 return Ok(new List<SugerenciaDireccionDTO>());
             }
 
-            List<SugerenciaDireccionDTO> sugerencias = await servicio.BuscarSugerencias(texto.Trim(), sessionToken);
-            return Ok(sugerencias);
+            try
+            {
+                List<SugerenciaDireccionDTO> sugerencias = await servicio.BuscarSugerencias(texto.Trim(), sessionToken, pais);
+                return Ok(sugerencias);
+            }
+            catch (System.ArgumentException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
         // GET: api/Direcciones/Detalle?placeId=...&sessionToken=...
