@@ -145,6 +145,12 @@ namespace NestoAPI.Infraestructure.Clientes
         public string Vendedor { get; set; }
         /// <summary>Prioritario: su factura se va a encontrar el problema.</summary>
         public bool TienePedidoPendiente { get; set; }
+
+        /// <summary>
+        /// NestoAPI#354: si el NIF parece un NIF-IVA intracomunitario, país ISO-2 sugerido para
+        /// "marcar como extranjero" tipo 02 con un clic (null si no aplica). Solo sugerencia.
+        /// </summary>
+        public string PaisIntracomunitarioSugerido { get; set; }
     }
 
     /// <summary>Resultado de la corrección centralizada del NIF (#327/Nesto#417).</summary>

@@ -371,7 +371,10 @@ namespace NestoAPI.Infraestructure.Clientes
                 "       v.Nombre, v.Nif, v.ResultadoAeat, v.FechaValidacion, LTRIM(RTRIM(c.Vendedor)) AS Vendedor, " +
                 "       CAST(CASE WHEN EXISTS (SELECT 1 FROM LinPedidoVta l " +
                 "               WHERE l.Empresa = c.Empresa AND l.[Nº Cliente] = c.[Nº Cliente] " +
-                "               AND l.Estado >= -1 AND l.Estado <= 2) THEN 1 ELSE 0 END AS bit) AS TienePedidoPendiente " +
+                "               AND l.Estado >= -1 AND l.Estado <= 2) THEN 1 ELSE 0 END AS bit) AS TienePedidoPendiente, " +
+                // NestoAPI#354: la sugerencia se calcula en C# tras materializar; la columna NULL
+                // existe solo para que SqlQuery pueda mapear el DTO.
+                "       CAST(NULL AS varchar(2)) AS PaisIntracomunitarioSugerido " +
                 "FROM ValidacionesNif v " +
                 "INNER JOIN Clientes c ON c.Empresa = v.Empresa AND c.[Nº Cliente] = v.Cliente AND c.Contacto = v.Contacto " +
                 "WHERE v.Estado = @p0 AND c.[CIF/NIF] = v.Nif AND c.Nombre = v.Nombre " +
@@ -387,7 +390,8 @@ namespace NestoAPI.Infraestructure.Clientes
                 "       ISNULL(MAX(f.VerifactuUltimoIntento), CAST('20000101' AS datetime)), LTRIM(RTRIM(c.Vendedor)), " +
                 "       CAST(CASE WHEN EXISTS (SELECT 1 FROM LinPedidoVta l " +
                 "               WHERE l.Empresa = c.Empresa AND l.[Nº Cliente] = c.[Nº Cliente] " +
-                "               AND l.Estado >= -1 AND l.Estado <= 2) THEN 1 ELSE 0 END AS bit) " +
+                "               AND l.Estado >= -1 AND l.Estado <= 2) THEN 1 ELSE 0 END AS bit), " +
+                "       CAST(NULL AS varchar(2)) " +
                 "FROM CabFacturaVta f " +
                 "INNER JOIN Clientes c ON c.Empresa = f.Empresa AND c.[Nº Cliente] = f.[Nº Cliente] AND c.Contacto = f.Contacto " +
                 "WHERE f.VerifactuUltimoError LIKE '%no tiene un formato valido%' " +
@@ -398,8 +402,49 @@ namespace NestoAPI.Infraestructure.Clientes
                 "GROUP BY c.Empresa, c.[Nº Cliente], c.Contacto, c.Nombre, c.[CIF/NIF], c.Vendedor " +
                 "ORDER BY TienePedidoPendiente DESC, FechaValidacion DESC";
 
-            return await db.Database.SqlQuery<ClienteNifIncorrectoDTO>(sql, parametros.ToArray())
+            List<ClienteNifIncorrectoDTO> lista = await db.Database.SqlQuery<ClienteNifIncorrectoDTO>(sql, parametros.ToArray())
                 .ToListAsync().ConfigureAwait(false);
+            // NestoAPI#354: si el NIF parece un NIF-IVA intracomunitario (prefijo de país UE),
+            // se sugiere el país para que la pantalla de Nesto#417 ofrezca "marcar como
+            // extranjero tipo 02" con un clic. Solo sugerencia: la decisión sigue siendo humana.
+            foreach (ClienteNifIncorrectoDTO fila in lista)
+            {
+                fila.PaisIntracomunitarioSugerido = DetectarPaisNifIvaIntracomunitario(fila.Nif);
+            }
+            return lista;
+        }
+
+        // Prefijos de NIF-IVA intracomunitario (EU-27 sin ES + XI Irlanda del Norte). Grecia usa
+        // EL en el VAT pero GR como país; XI se declara con GB.
+        private static readonly Dictionary<string, string> _prefijosVatUe = new Dictionary<string, string>
+        {
+            ["AT"] = "AT", ["BE"] = "BE", ["BG"] = "BG", ["CY"] = "CY", ["CZ"] = "CZ",
+            ["DE"] = "DE", ["DK"] = "DK", ["EE"] = "EE", ["EL"] = "GR", ["FI"] = "FI",
+            ["FR"] = "FR", ["HR"] = "HR", ["HU"] = "HU", ["IE"] = "IE", ["IT"] = "IT",
+            ["LT"] = "LT", ["LU"] = "LU", ["LV"] = "LV", ["MT"] = "MT", ["NL"] = "NL",
+            ["PL"] = "PL", ["PT"] = "PT", ["RO"] = "RO", ["SE"] = "SE", ["SI"] = "SI",
+            ["SK"] = "SK", ["XI"] = "GB"
+        };
+
+        /// <summary>
+        /// NestoAPI#354: país (ISO-2) si el NIF tiene pinta de NIF-IVA intracomunitario (dos letras
+        /// de país UE distinto de ES + al menos un dígito después), o null. Los NIE (X/Y/Z + dígitos)
+        /// y los CIF españoles (una letra) no casan porque su segundo carácter es numérico.
+        /// </summary>
+        internal static string DetectarPaisNifIvaIntracomunitario(string nif)
+        {
+            string limpio = nif?.Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(limpio) || limpio.Length < 5)
+            {
+                return null;
+            }
+            string prefijo = limpio.Substring(0, 2);
+            if (!_prefijosVatUe.TryGetValue(prefijo, out string pais))
+            {
+                return null;
+            }
+            string resto = limpio.Substring(2);
+            return resto.Any(char.IsDigit) ? pais : null;
         }
 
         public async Task MarcarIncorrecto(string cliente, string motivo, string usuario)

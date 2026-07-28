@@ -544,5 +544,32 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("05231909J", desalineado.CIF_NIF, "Sin veredicto de la AEAT no se propaga nada");
             A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
         }
+
+        // NestoAPI#354: sugerencia de país para NIF-IVA intracomunitarios en la lista de NIF
+        // incorrectos (la pantalla de Nesto#417 ofrece "marcar como extranjero tipo 02" con un clic).
+
+        [TestMethod]
+        public void DetectarPaisNifIvaIntracomunitario_PrefijoDePaisUeConDigitos_DevuelveElPais()
+        {
+            Assert.AreEqual("IT", ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("IT0280027"));   // caso NV2612580
+            Assert.AreEqual("IE", ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("IE6388047T"));  // Google Ireland
+            Assert.AreEqual("DE", ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario(" de129273398 "));
+            Assert.AreEqual("GR", ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("EL123456789"), "Grecia usa EL en el VAT pero GR como país");
+            Assert.AreEqual("GB", ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("XI110305878"), "Irlanda del Norte declara con GB");
+        }
+
+        [TestMethod]
+        public void DetectarPaisNifIvaIntracomunitario_NieCifEspanolYBasura_DevuelveNull()
+        {
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("X9495760A"), "NIE: una letra + dígitos");
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("A83671234"), "CIF español");
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("05231909J"), "DNI");
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("ES12345678"), "ES no es extranjero");
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("222222"));
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("ITALIA"), "Letras sin dígitos no es un VAT");
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("IT1"), "Demasiado corto");
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario(null));
+            Assert.IsNull(ServicioValidacionNif.DetectarPaisNifIvaIntracomunitario("  "));
+        }
     }
 }
