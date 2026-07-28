@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="..\packages\Microsoft.ML.FastTree.4.0.2\build\netstandard2.0\Microsoft.ML.FastTree.props" Condition="Exists('..\packages\Microsoft.ML.FastTree.4.0.2\build\netstandard2.0\Microsoft.ML.FastTree.props')" />
   <Import Project="..\packages\Microsoft.ML.4.0.2\build\netstandard2.0\Microsoft.ML.props" Condition="Exists('..\packages\Microsoft.ML.4.0.2\build\netstandard2.0\Microsoft.ML.props')" />
@@ -541,6 +541,7 @@
     <Compile Include="Controllers\FormasVentaController.cs" />
     <Compile Include="Controllers\GanavisionesController.cs" />
     <Compile Include="Controllers\CredencialesAmazonController.cs" />
+    <Compile Include="Controllers\FacturasAmazonController.cs" />
     <Compile Include="Controllers\OfertasCombinadasController.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />
@@ -865,6 +866,12 @@
     <Compile Include="Infraestructure\CanalesExternos\Amazon\IServicioRotacionCredencialesAmazon.cs" />
     <Compile Include="Infraestructure\CanalesExternos\Amazon\ServicioRotacionCredencialesAmazon.cs" />
     <Compile Include="Infraestructure\CanalesExternos\Amazon\AmazonCredencialRotacionJobsService.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\IAmazonFeedsGateway.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\AmazonFeedsGateway.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\IAlmacenFacturasAmazon.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\AlmacenFacturasAmazon.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\ServicioFacturasAmazon.cs" />
+    <Compile Include="Infraestructure\CanalesExternos\Amazon\AmazonFacturasJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\CorreosPostCompraJobsService.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\GeneradorContenidoCorreoPostCompra.cs" />
     <Compile Include="Infraestructure\CorreosPostCompra\IServicioRecomendacionesPostCompra.cs" />
@@ -1303,6 +1310,8 @@
     <Compile Include="Models\PedidosVenta\EfectoPedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\ResumenPedidoVentaCanalExternoDTO.cs" />
     <Compile Include="Models\CanalesExternos\AmazonSpApiCredencial.cs" />
+    <Compile Include="Models\CanalesExternos\AmazonFacturaSubida.cs" />
+    <Compile Include="Models\CanalesExternos\SubirFacturaAmazonDTOs.cs" />
     <Compile Include="Models\CanalesExternos\AmazonNotificationPayload.cs" />
     <Compile Include="Models\CanalesExternos\CredencialAmazonDTO.cs" />
     <Compile Include="Models\PedidosVenta\LineaPedidoVentaBusquedaDTO.cs" />

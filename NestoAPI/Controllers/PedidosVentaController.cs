@@ -2071,24 +2071,13 @@ namespace NestoAPI.Controllers
             return Ok(resultado);
         }
 
-        private static readonly Regex _regexAmazonOrderId = new Regex(
-            @"\b\d{3}-\d{7}-\d{7}\b",
-            RegexOptions.Compiled);
-
         /// <summary>
         /// Extrae el AmazonOrderId (formato 123-4567890-1234567) del texto indicado. Devuelve
-        /// <c>null</c> si no se encuentra ningún identificador con el patrón esperado. Público
-        /// para tests; no se usa desde otros sitios por ahora.
+        /// <c>null</c> si no se encuentra ningún identificador con el patrón esperado. El helper
+        /// real vive en ServicioFacturasAmazon (NestoAPI#366); aquí solo se delega.
         /// </summary>
         public static string ExtraerAmazonOrderId(string texto)
-        {
-            if (string.IsNullOrWhiteSpace(texto))
-            {
-                return null;
-            }
-            var match = _regexAmazonOrderId.Match(texto);
-            return match.Success ? match.Value : null;
-        }
+            => Infraestructure.CanalesExternos.Amazon.ServicioFacturasAmazon.ExtraerAmazonOrderId(texto);
 
         /// <summary>
         /// Obtiene los documentos de impresión para un pedido ya facturado.

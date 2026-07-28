@@ -408,6 +408,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'verifactu-estados' configurado (cada hora)");
 
+            // NestoAPI#366: cada 30 minutos, cierra el bucle de las facturas subidas a Amazon
+            // (feed UPLOAD_VAT_INVOICE): consulta getFeed de las filas ENVIADA y guarda el
+            // resultado (DONE/FATAL) con su informe. No-op si no hay filas pendientes.
+            RecurringJob.AddOrUpdate(
+                "amazon-facturas-resultados",
+                () => Infraestructure.CanalesExternos.Amazon.AmazonFacturasJobsService.ComprobarResultadosFeeds(),
+                "*/30 * * * *", // Cron: cada 30 minutos
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'amazon-facturas-resultados' configurado (cada 30 minutos)");
+
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
 #if false
