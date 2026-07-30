@@ -147,6 +147,7 @@ namespace NestoAPI.Infraestructure
                 try
                 {
                     int intentos = 0;
+                    string direccionOriginal = direccion;
                     JObject respuestaJson = null;
                     while (intentos <= 2 && respuestaJson == null)
                     {
@@ -182,23 +183,17 @@ namespace NestoAPI.Infraestructure
                             respuestaJson = null;
                         }
                     }
+                    // NestoAPI#370: si Google no devuelve resultados tras los reintentos,
+                    // respuestaJson queda a null y aquí reventaba con NRE
+                    if (respuestaJson == null || respuestaJson["results"] == null || !respuestaJson["results"].Any())
+                    {
+                        throw new ArgumentException($"No se ha podido geolocalizar la dirección {direccionOriginal.Replace("+", " ")} ({codigoPostal})");
+                    }
                     string direccionFormateada = respuestaJson["results"][0]["formatted_address"].ToString();
                     double longitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lng"].ToString());
                     double latitud = double.Parse(respuestaJson["results"][0]["geometry"]["location"]["lat"].ToString());
-                    string codigoPostalGoogle = "";
-                    foreach (var componente in respuestaJson["results"][0]["address_components"])
-                    {
-                        if (componente["types"][0].ToString() != "postal_code")
-                        {
-                            continue;
-                        }
-                        codigoPostalGoogle = componente["short_name"].ToString();
-                        if (!string.IsNullOrWhiteSpace(codigoPostalGoogle))
-                        {
-                            break;
-                        }
-                    }
-                        
+                    string codigoPostalGoogle = ExtraerCodigoPostalGoogle(respuestaJson["results"][0]["address_components"]);
+
                     if (string.IsNullOrEmpty(codigoPostalGoogle))
                     {
                         TelemetryClient telemetry = new TelemetryClient();
@@ -224,6 +219,33 @@ namespace NestoAPI.Infraestructure
                     return null;
                 }
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#370: busca el código postal en los address_components de Google. El array
+        /// types puede venir vacío o sin postal_code en la primera posición: se recorre entero
+        /// en vez de indexar types[0] (que reventaba con ArgumentOutOfRangeException).
+        /// </summary>
+        internal static string ExtraerCodigoPostalGoogle(JToken addressComponents)
+        {
+            if (addressComponents == null)
+            {
+                return "";
+            }
+            foreach (var componente in addressComponents)
+            {
+                bool esCodigoPostal = componente["types"]?.Any(t => t.ToString() == "postal_code") == true;
+                if (!esCodigoPostal)
+                {
+                    continue;
+                }
+                string codigo = componente["short_name"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(codigo))
+                {
+                    return codigo;
+                }
+            }
+            return "";
         }
     }
 

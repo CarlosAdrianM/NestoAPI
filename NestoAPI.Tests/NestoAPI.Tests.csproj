@@ -321,6 +321,7 @@
     <Compile Include="Controllers\NovedadesControllerTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
+    <Compile Include="Infrastructure\ServicioAgenciasTests.cs" />
     <Compile Include="Infrastructure\ContabilidadServiceDeadlockTests.cs" />
     <Compile Include="Infrastructure\GestorComisionesResolverGrupoTests.cs" />
     <Compile Include="Infrastructure\GestorComisionesActualizarVendedorPedidoTests.cs" />
