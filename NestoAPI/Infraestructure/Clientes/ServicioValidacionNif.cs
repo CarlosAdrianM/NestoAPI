@@ -32,6 +32,14 @@ namespace NestoAPI.Infraestructure.Clientes
         /// <summary>Catálogo L7: 02 = NIF-IVA (intracomunitario). Tipo por defecto de un cliente
         /// con país fiscal de la UE distinto de España.</summary>
         internal const string TIPO_NIF_IVA = "02";
+
+        /// <summary>
+        /// NestoAPI#375: tipo L7 "documento oficial de identificación expedido por el país o
+        /// territorio de residencia". A diferencia del 02 (NIF-IVA), la AEAT NO lo valida contra
+        /// el censo VIES: es el tipo correcto para el destinatario de una venta OSS (que por
+        /// definición no está en VIES; si lo estuviera, la venta sería exenta intracomunitaria).
+        /// </summary>
+        internal const string TIPO_DOC_OFICIAL_PAIS = "04";
         private const string PAIS_ESPANA = "ES";
 
         /// <summary>NestoAPI#354: estados ISO-2 de la UE (mirror de Paises.UnionEuropea, que no

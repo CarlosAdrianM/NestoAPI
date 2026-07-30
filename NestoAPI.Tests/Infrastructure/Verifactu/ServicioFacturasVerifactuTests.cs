@@ -493,6 +493,76 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task EnviarFacturaAVerifactu_ClienteTipo02EnFacturaOss_DeclaraIdOtroTipo04()
+        {
+            // NestoAPI#375: la AEAT valida el tipo 02 (NIF-IVA) contra el censo VIES. Un cliente
+            // OSS no está en VIES por definición (se le cobra el IVA de su país), así que con 02
+            // el rechazo era estructural ("no se encuentra registrado en el censo VIES", ELMAH
+            // 26-30/07). En factura OSS debe declararse con tipo 04 (doc. oficial del país).
+            var factura = ConfigurarFactura();
+            factura.CifNif = "IT06207160489";
+            factura.IVA = "I22";
+            factura.LinPedidoVtas = new List<LinPedidoVta>
+            {
+                new LinPedidoVta { PorcentajeIVA = 22, PorcentajeRE = 0, Base_Imponible = 100.00M, ImporteIVA = 22.00M }
+            };
+            ConfigurarFakeDbSet(fakeParametrosIva, new List<ParametroIVA>
+            {
+                new ParametroIVA { Empresa = "1", IVA_Producto = "G21", IVA_Cliente_Prov = "I22", Pais = "IT" }
+            }.AsQueryable());
+            var validacion = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacion.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Extranjero,
+                    TipoIdentificacion = "02",
+                    Pais = "IT"
+                });
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-oss-04" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService,
+                almacenRectificativasPendientes: null, servicioValidacionNif: validacion);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.AreEqual("N2", enviado.DesgloseIva.Single().CalificacionOperacion, "La factura del test debe ser OSS");
+            Assert.IsNull(enviado.NifDestinatario, "Con IDOtro no puede viajar nif");
+            Assert.AreEqual("04", enviado.IdOtro.IdType, "En OSS el 02 se sustituye por 04 (sin validación VIES)");
+            Assert.AreEqual("IT", enviado.IdOtro.CodigoPais);
+            Assert.AreEqual("IT06207160489", enviado.IdOtro.Id);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_ClienteTipo02EnFacturaNoOss_MantieneTipo02()
+        {
+            // NestoAPI#375: la exenta intracomunitaria (cliente SÍ en VIES, sin desglose OSS)
+            // mantiene el NIF-IVA tipo 02 de siempre.
+            var factura = ConfigurarFactura();
+            factura.CifNif = "IT06207160489";
+            var validacion = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacion.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Extranjero,
+                    TipoIdentificacion = "02",
+                    Pais = "IT"
+                });
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-intra-02" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService,
+                almacenRectificativasPendientes: null, servicioValidacionNif: validacion);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsNull(enviado.DesgloseIva.Single().CalificacionOperacion, "La factura del test NO debe ser OSS");
+            Assert.AreEqual("02", enviado.IdOtro.IdType, "Sin OSS se mantiene el NIF-IVA tipo 02");
+        }
+
+        [TestMethod]
         public async Task EnviarFacturaAVerifactu_PaisPersistidoExtranjero_MandaSobreLaHeuristica()
         {
             // NestoAPI#347: G21 con 21% parece nacional, pero si ParámetrosIVA dice que el código

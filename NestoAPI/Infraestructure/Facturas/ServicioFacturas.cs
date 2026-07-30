@@ -867,10 +867,23 @@ namespace NestoAPI.Infraestructure.Facturas
                             && !string.IsNullOrWhiteSpace(marca.TipoIdentificacion)
                             && !string.IsNullOrWhiteSpace(marca.Pais))
                         {
+                            // NestoAPI#375: la AEAT valida el tipo 02 (NIF-IVA) contra el censo
+                            // VIES. En una venta OSS el cliente NO está en VIES por definición
+                            // (por eso se le cobra el IVA de su país y se declara N2/17): con 02
+                            // el rechazo es estructural, así que va como 04 (documento oficial
+                            // del país), que no pasa por VIES. La exenta intracomunitaria (sin
+                            // desglose OSS) mantiene el 02 de siempre.
+                            string tipoIdentificacion = marca.TipoIdentificacion.Trim();
+                            bool esFacturaOss = request.DesgloseIva.Any(d =>
+                                d.CalificacionOperacion == Verifactu.MapeadorFacturaVerifactu.CALIFICACION_NO_SUJETA_LOCALIZACION);
+                            if (esFacturaOss && tipoIdentificacion == Clientes.ServicioValidacionNif.TIPO_NIF_IVA)
+                            {
+                                tipoIdentificacion = Clientes.ServicioValidacionNif.TIPO_DOC_OFICIAL_PAIS;
+                            }
                             request.IdOtro = new Verifactu.VerifactuIdOtro
                             {
                                 CodigoPais = marca.Pais,
-                                IdType = marca.TipoIdentificacion,
+                                IdType = tipoIdentificacion,
                                 Id = request.NifDestinatario
                             };
                             request.NifDestinatario = null;
