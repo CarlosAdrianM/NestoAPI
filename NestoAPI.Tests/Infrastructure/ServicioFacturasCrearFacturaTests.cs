@@ -154,6 +154,39 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task CrearFactura_CCCInexistenteParaElContactoDeCobro_LanzaAntesDeLlamarAlSP()
+        {
+            // NestoAPI#373: los EFECTOS de cartera se insertan con el contacto de COBRO
+            // (@ContactoCobro+@CCC en prdCrearFacturaVta). Un CCC que solo existe para el
+            // contacto de envío pasaba la validación de #304 y el SP reventaba con
+            // FK_ExtractoCliente_CCC (cliente 40652, ELMAH 28/07/26).
+            var pedido = new CabPedidoVta
+            {
+                Empresa = "1",
+                Número = 922303,
+                Nº_Cliente = "40652",
+                Contacto = "2",
+                ContactoCobro = "0",
+                CCC = "1",
+                IVA = "G21",
+                LinPedidoVtas = new List<LinPedidoVta>()
+            };
+            ConfigurarFakeDbSet(fakePedidos, new List<CabPedidoVta> { pedido }.AsQueryable());
+            ConfigurarFakeCCCs(new List<CCC>
+            {
+                // La cuenta existe para el contacto de envío (2) pero NO para el de cobro (0)
+                new CCC { Empresa = "1", Cliente = "40652", Contacto = "2", Número = "1" }
+            });
+
+            var servicio = new ServicioFacturas(db);
+
+            var ex = await Assert.ThrowsExceptionAsync<FacturacionException>(
+                () => servicio.CrearFactura("1", 922303, "test"));
+            StringAssert.Contains(ex.Message, "cuenta bancaria");
+            StringAssert.Contains(ex.Message, "40652/0");
+        }
+
+        [TestMethod]
         public async Task CrearFactura_SinCCC_NoValidaCuentaBancaria()
         {
             var pedido = new CabPedidoVta

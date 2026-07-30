@@ -456,18 +456,31 @@ namespace NestoAPI.Infraestructure.Facturas
             // y si la cuenta se borró/renumeró después de crear el pedido revienta con
             // FK_CabFacturaVta_CCC ("No se ha podido crear la cabecera de factura" + ruido de
             // transacciones, familia #291/#296). Cortamos antes con un mensaje accionable.
-            if (!string.IsNullOrWhiteSpace(cabPedido.CCC)
-                && !await db.CCCs.AnyAsync(c => c.Empresa == empresa && c.Cliente == cabPedido.Nº_Cliente
-                    && c.Contacto == cabPedido.Contacto && c.Número == cabPedido.CCC))
+            // NestoAPI#373: el SP inserta los apuntes de factura con el CONTACTO del pedido y los
+            // EFECTOS de cartera con el contacto de COBRO (líneas @ContactoCobro+@CCC de
+            // prdCrearFacturaVta), así que el CCC tiene que existir para AMBOS contactos o
+            // revienta con FK_ExtractoCliente_CCC a mitad de transacción.
+            if (!string.IsNullOrWhiteSpace(cabPedido.CCC))
             {
-                throw new FacturacionException(
-                    $"El pedido {pedido} no se puede facturar porque su cuenta bancaria (CCC '{cabPedido.CCC.Trim()}') " +
-                    $"ya no existe para el cliente {cabPedido.Nº_Cliente?.Trim()}/{cabPedido.Contacto?.Trim()}. " +
-                    "Corrija la cuenta de cobro del pedido antes de facturar.",
-                    "FACTURACION_CCC_INEXISTENTE",
-                    empresa: empresa,
-                    pedido: pedido,
-                    usuario: usuario);
+                string contactoCobro = string.IsNullOrWhiteSpace(cabPedido.ContactoCobro)
+                    ? cabPedido.Contacto
+                    : cabPedido.ContactoCobro;
+                foreach (string contactoValidar in new[] { cabPedido.Contacto, contactoCobro }
+                    .Select(c => c?.Trim()).Distinct().ToList())
+                {
+                    if (!await db.CCCs.AnyAsync(c => c.Empresa == empresa && c.Cliente == cabPedido.Nº_Cliente
+                        && c.Contacto.Trim() == contactoValidar && c.Número == cabPedido.CCC))
+                    {
+                        throw new FacturacionException(
+                            $"El pedido {pedido} no se puede facturar porque su cuenta bancaria (CCC '{cabPedido.CCC.Trim()}') " +
+                            $"ya no existe para el cliente {cabPedido.Nº_Cliente?.Trim()}/{contactoValidar}. " +
+                            "Corrija la cuenta de cobro del pedido antes de facturar.",
+                            "FACTURACION_CCC_INEXISTENTE",
+                            empresa: empresa,
+                            pedido: pedido,
+                            usuario: usuario);
+                    }
+                }
             }
 
             // PREVENTIVO (NestoAPI#338): el SP rechaza el pedido entero si alguna línea viva no
