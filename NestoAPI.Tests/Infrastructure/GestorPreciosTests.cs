@@ -3940,6 +3940,36 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorPrecios_MontarOfertaProducto_SiUnaLineaTieneCantidadCeroNoDivideEntreCero()
+        {
+            // NestoAPI#371: una línea con Cantidad 0 reventaba con DivideByZeroException
+            PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();
+            LineaPedidoVentaDTO lineaNormal = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "AA11",
+                AplicarDescuento = false,
+                Cantidad = 1,
+                PrecioUnitario = 10
+            };
+            LineaPedidoVentaDTO lineaSinCantidad = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "AA11",
+                AplicarDescuento = false,
+                Cantidad = 0,
+                PrecioUnitario = 10
+            };
+            pedido.Lineas.Add(lineaNormal);
+            pedido.Lineas.Add(lineaSinCantidad);
+
+            PrecioDescuentoProducto precioDescuentoProducto = GestorOfertasPedido.MontarOfertaPedido("AA11", pedido);
+
+            Assert.AreEqual(1, precioDescuentoProducto.cantidad);
+            Assert.AreEqual(0, precioDescuentoProducto.cantidadOferta);
+        }
+
+        [TestMethod]
         public void GestorPrecios_MontarOfertaProducto_SiHayUnaLineaDeRegaloLaPoneEnCantidadOferta()
         {
             PedidoVentaDTO pedido = A.Fake<PedidoVentaDTO>();

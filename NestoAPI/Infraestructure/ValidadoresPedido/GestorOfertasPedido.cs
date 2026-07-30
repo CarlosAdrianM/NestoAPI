@@ -25,8 +25,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return null;
             }
 
-            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.BaseImponible / l.Cantidad != 0);
-            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.BaseImponible / l.Cantidad == 0);
+            // NestoAPI#371: una línea con Cantidad 0 no tiene precio por unidad; se trata como
+            // línea sin precio en vez de reventar con DivideByZeroException
+            IEnumerable<LineaPedidoVentaDTO> lineasConPrecio = lineasProducto.Where(l => l.Cantidad != 0 && l.BaseImponible / l.Cantidad != 0);
+            IEnumerable<LineaPedidoVentaDTO> lineasSinPrecio = lineasProducto.Where(l => l.Cantidad == 0 || l.BaseImponible / l.Cantidad == 0);
 
             Producto producto = GestorPrecios.servicio.BuscarProducto(numeroProducto);
 
