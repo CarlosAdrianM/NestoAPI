@@ -112,4 +112,32 @@ namespace NestoAPI.Tests.Controllers
             Assert.AreEqual("DELETE FROM SeguimientosLeidos WHERE NºOrden IN (5,9,12)", sql);
         }
     }
+
+    [TestClass]
+    public class FormatearSeguimientoResumenTests
+    {
+        // NestoAPI#374: un seguimiento con Tipo o Contacto null tumbaba el resumen diario con NRE
+
+        [TestMethod]
+        public void FormatearSeguimientoResumen_TipoYContactoNull_NoRevienta()
+        {
+            string texto = NestoAPI.Controllers.SeguimientosClientesController.FormatearSeguimientoResumen(
+                null, "JE", "12345", null, "Comentario suficientemente largo", false);
+
+            StringAssert.Contains(texto, "Tipo: Desconocido");
+            StringAssert.Contains(texto, "Cliente: 12345/");
+            StringAssert.Contains(texto, "Terminó en pedido: No");
+        }
+
+        [TestMethod]
+        public void FormatearSeguimientoResumen_DatosCompletos_FormateaComoSiempre()
+        {
+            string texto = NestoAPI.Controllers.SeguimientosClientesController.FormatearSeguimientoResumen(
+                "V", "JE", "12345", "0", "Visita al cliente para enseñar novedades", true);
+
+            StringAssert.Contains(texto, "Tipo: Visita");
+            StringAssert.Contains(texto, "Cliente: 12345/0");
+            StringAssert.Contains(texto, "Terminó en pedido: Sí");
+        }
+    }
 }

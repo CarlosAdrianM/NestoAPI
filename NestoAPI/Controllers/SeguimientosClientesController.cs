@@ -259,6 +259,33 @@ namespace NestoAPI.Controllers
             return Ok(new { Resumen = resumenConjunto, Errores = errores, VendedoresConRapport = vendedoresConRapport.Length });
         }
 
+        /// <summary>
+        /// NestoAPI#374: formatea un seguimiento para el texto del resumen diario. Null-safe en
+        /// Tipo/Contacto (un solo registro cojo tumbaba el correo de todo el día con un NRE).
+        /// </summary>
+        internal static string FormatearSeguimientoResumen(string tipo, string vendedor, string numero,
+            string contacto, string comentarios, bool pedido)
+        {
+            string pedidoTexto = pedido ? "Sí" : "No";
+            string tipoTexto;
+            switch (tipo?.Trim())
+            {
+                case "V":
+                    tipoTexto = "Tipo: Visita\n";
+                    break;
+                case "T":
+                    tipoTexto = "Tipo: Teléfono\n";
+                    break;
+                case "W":
+                    tipoTexto = "Tipo: WhatsApp\n";
+                    break;
+                default:
+                    tipoTexto = "Tipo: Desconocido\n";
+                    break;
+            }
+            return tipoTexto + $"Vendedor: {vendedor}\nCliente: {numero?.Trim()}/{contacto?.Trim()} \nComentario: {comentarios?.Trim()}\nTerminó en pedido: {pedidoTexto}\n\n";
+        }
+
         private async Task<string> EnviarCorreoResumenRapportsDia(string empresa, DateTime fecha, string[] vendedores, string correo, bool resto)
         {
             // Resto discrimina entre si vendedores[] son los que enviamos o los que no enviamos
@@ -286,23 +313,8 @@ namespace NestoAPI.Controllers
             string textoEntrada = $"Resumen de seguimientos del día {fecha}. Los siguientes son los comentarios:\n\n";
             foreach (var seguimiento in seguimientos.Where(s => s.Comentarios?.Length >= 10))
             {
-                string pedidoTexto = seguimiento.Pedido ? "Sí" : "No";
-                switch (seguimiento.Tipo.Trim())
-                {
-                    case "V":
-                        textoEntrada += "Tipo: Visita\n";
-                        break;
-                    case "T":
-                        textoEntrada += "Tipo: Teléfono\n";
-                        break;
-                    case "W":
-                        textoEntrada += "Tipo: WhatsApp\n";
-                        break;
-                    default:
-                        textoEntrada += "Tipo: Desconocido\n";
-                        break;
-                }
-                textoEntrada += $"Vendedor: {seguimiento.Vendedor}\nCliente: {seguimiento.Número.Trim()}/{seguimiento.Contacto.Trim()} \nComentario: {seguimiento.Comentarios.Trim()}\nTerminó en pedido: {pedidoTexto}\n\n";
+                textoEntrada += FormatearSeguimientoResumen(seguimiento.Tipo, seguimiento.Vendedor,
+                    seguimiento.Número, seguimiento.Contacto, seguimiento.Comentarios, seguimiento.Pedido);
             }
 
             // Llama a OpenAI para obtener el resumen
