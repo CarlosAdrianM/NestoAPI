@@ -28,6 +28,7 @@ namespace NestoAPI.Tests.Controllers
         {
             db = A.Fake<NVEntities>();
             fakeProductos = A.Fake<DbSet<Producto>>(o => o.Implements<IQueryable<Producto>>().Implements<IDbAsyncEnumerable<Producto>>());
+            A.CallTo(() => fakeProductos.Include(A<string>.Ignored)).Returns(fakeProductos);
             A.CallTo(() => db.Productos).Returns(fakeProductos);
             controller = new ProductosController(db, A.Fake<IGestorSincronizacion>());
         }
@@ -91,6 +92,26 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsNotNull(contentResult, "Debe devolver la lista de candidatos");
             Assert.AreEqual(HttpStatusCode.Conflict, contentResult.StatusCode);
             Assert.AreEqual(2, contentResult.Content.Count);
+        }
+
+        [TestMethod]
+        public async Task GetProducto_ProductoSinFamiliaNiSubgrupoNiPVP_DevuelveFichaSinReventar()
+        {
+            // NestoAPI#369: un producto a medio dar de alta (Familia, SubGrupo y PVP a NULL)
+            // reventaba la ficha con NullReferenceException al escanear su código de barras
+            Producto producto = CrearProducto("45464", "8437005216235", "Producto a medias");
+            producto.Estado = 1;
+            producto.Kits = new List<Kit>();
+            ConfigurarProductos(producto);
+
+            IHttpActionResult resultado = await controller.GetProducto("1", "45464", false);
+
+            var okResult = resultado as OkNegotiatedContentResult<ProductoDTO>;
+            Assert.IsNotNull(okResult, "Debe devolver la ficha aunque falten datos del alta");
+            Assert.AreEqual("45464", okResult.Content.Producto);
+            Assert.IsNull(okResult.Content.Familia);
+            Assert.IsNull(okResult.Content.Subgrupo);
+            Assert.AreEqual(0, okResult.Content.PrecioProfesional);
         }
 
         [TestMethod]

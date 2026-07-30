@@ -144,6 +144,8 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
+            // NestoAPI#369: un producto a medio dar de alta (sin familia, subgrupo o PVP) no puede
+            // tirar la ficha con un NRE: se mapea null-safe y el que lo consulta ve lo que haya
             ProductoDTO productoDTO = new ProductoDTO()
             {
                 UrlFoto = fichaCompleta ? await ProductoDTO.RutaImagen(id).ConfigureAwait(false) : null,
@@ -153,11 +155,11 @@ namespace NestoAPI.Controllers
                 Nombre = producto.Nombre?.Trim(),
                 Tamanno = producto.Tamaño,
                 UnidadMedida = producto.UnidadMedida?.Trim(),
-                Familia = producto.Familia1.Descripción?.Trim(),
-                PrecioProfesional = (decimal)producto.PVP,
-                Estado = (short)producto.Estado,
+                Familia = producto.Familia1?.Descripción?.Trim(),
+                PrecioProfesional = producto.PVP ?? 0,
+                Estado = producto.Estado ?? 0,
                 Grupo = producto.Grupo,
-                Subgrupo = producto.SubGruposProducto.Descripción?.Trim(),
+                Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                 RoturaStockProveedor = producto.RoturaStockProveedor,
                 CodigoBarras = producto.CodBarras?.Trim()
             };
