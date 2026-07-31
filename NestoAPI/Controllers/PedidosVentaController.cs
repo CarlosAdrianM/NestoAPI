@@ -371,6 +371,13 @@ namespace NestoAPI.Controllers
 
             CabPedidoVta cabPedidoVta = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.numero);
 
+            // NestoAPI#377: sin esta guarda, db.Entry(null) lanza ArgumentNullException y el
+            // cliente recibe un 500 sin información en vez de un 404
+            if (cabPedidoVta == null)
+            {
+                return NotFound();
+            }
+
             try
             {
                 // Guardamos registro de los cambios

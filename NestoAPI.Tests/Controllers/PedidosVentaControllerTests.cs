@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
+using System.Threading.Tasks;
+using System.Web.Http.Results;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
@@ -18,6 +21,29 @@ namespace NestoAPI.Tests.Controllers
         public void PedidoVentaController_ComprobarSiSePuedenInsertarLineas_SiElPedidoTienePickingYEtiquetaImpresaNoSePuedeCambiarElContacto()
         {
 
+        }
+
+        // NestoAPI#377: el PUT de un pedido que no existe daba 500 (db.Entry(null) lanza
+        // ArgumentNullException 'entity') en vez de 404.
+        [TestMethod]
+        public async Task PutPedidoVenta_PedidoInexistente_DevuelveNotFound()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            DbSet<CabPedidoVta> fakeCabs = A.Fake<DbSet<CabPedidoVta>>(o => o
+                .Implements<IQueryable<CabPedidoVta>>()
+                .Implements<IDbAsyncEnumerable<CabPedidoVta>>());
+            var vacio = new List<CabPedidoVta>().AsQueryable();
+            A.CallTo(() => ((IQueryable<CabPedidoVta>)fakeCabs).Provider).Returns(vacio.Provider);
+            A.CallTo(() => ((IQueryable<CabPedidoVta>)fakeCabs).Expression).Returns(vacio.Expression);
+            A.CallTo(() => ((IQueryable<CabPedidoVta>)fakeCabs).ElementType).Returns(vacio.ElementType);
+            A.CallTo(() => ((IQueryable<CabPedidoVta>)fakeCabs).GetEnumerator()).Returns(vacio.GetEnumerator());
+            A.CallTo(() => db.CabPedidoVtas).Returns(fakeCabs);
+            PedidosVentaController controller = new PedidosVentaController(db);
+            PedidoVentaDTO pedido = new PedidoVentaDTO { empresa = "1", numero = 999999 };
+
+            var resultado = await controller.PutPedidoVenta(pedido);
+
+            Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
         }
 
         // NOTA: Los tests del endpoint ObtenerDocumentosImpresion son complejos de mockear
