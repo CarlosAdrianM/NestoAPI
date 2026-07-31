@@ -103,6 +103,35 @@ namespace NestoAPI.Infraestructure
         internal static bool EsPaisExtranjero(string pais)
             => !string.IsNullOrWhiteSpace(pais) && !string.Equals(pais.Trim(), "ES", StringComparison.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// NestoAPI#376: los CPs extranjeros no están en CódigosPostales y la FK
+        /// FK_Clientes_CódigosPostales impide guardar el cliente; se dan de alta al vuelo
+        /// en la ruta 00 de clientes extranjeros.
+        /// </summary>
+        internal async Task<CodigoPostal> AsegurarCodigoPostalExtranjero(NVEntities db, string empresa, string codigoPostal, string poblacion, string provincia, string pais)
+        {
+            empresa = empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            CodigoPostal cpDb = await servicio.BuscarCodigoPostal(empresa, codigoPostal).ConfigureAwait(false);
+            if (cpDb != null)
+            {
+                return cpDb;
+            }
+            cpDb = new CodigoPostal
+            {
+                Empresa = empresa,
+                Número = codigoPostal.Trim(),
+                Descripción = Truncar((string.IsNullOrWhiteSpace(poblacion) ? pais : poblacion).ToUpper().Trim(), 50),
+                Provincia = Truncar((string.IsNullOrWhiteSpace(provincia) ? pais : provincia).ToUpper().Trim(), 30),
+                Ruta = Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS,
+                Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL
+            };
+            _ = db.CodigosPostales.Add(cpDb);
+            return cpDb;
+        }
+
+        private static string Truncar(string texto, int longitud)
+            => texto != null && texto.Length > longitud ? texto.Substring(0, longitud) : texto;
+
         public async Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre)
         {
             if (string.IsNullOrWhiteSpace(nombre))
@@ -863,7 +892,15 @@ namespace NestoAPI.Infraestructure
             if (clienteDB.CodPostal?.Trim() != clienteModificar.CodigoPostal)
             {
                 CodigoPostal cp = await servicio.BuscarCodigoPostal(clienteModificar.Empresa, clienteModificar.CodigoPostal).ConfigureAwait(false);
-                clienteDB.Población = cp.Descripción?.Substring(0, 30);
+                if (cp == null && EsPaisExtranjero(clienteDB.Pais))
+                {
+                    cp = await AsegurarCodigoPostalExtranjero(db, clienteModificar.Empresa, clienteModificar.CodigoPostal, clienteModificar.Poblacion, clienteModificar.Provincia, clienteDB.Pais.Trim()).ConfigureAwait(false);
+                }
+                if (cp == null)
+                {
+                    throw new ArgumentException($"No existe el código postal {clienteModificar.CodigoPostal} en la base de datos");
+                }
+                clienteDB.Población = Truncar(cp.Descripción, 30);
                 clienteDB.Provincia = cp.Provincia;
             }
             clienteDB.CodPostal = clienteModificar.CodigoPostal;
@@ -1122,6 +1159,11 @@ namespace NestoAPI.Infraestructure
                 Vendedor = clienteCrear.VendedorEstetica,
                 Usuario = clienteCrear.Usuario
             };
+
+            if (EsPaisExtranjero(cliente.Pais) && !string.IsNullOrWhiteSpace(cliente.CodPostal))
+            {
+                cliente.CódigosPostales = await AsegurarCodigoPostalExtranjero(db, cliente.Empresa, cliente.CodPostal, cliente.Población, cliente.Provincia, cliente.Pais).ConfigureAwait(false);
+            }
 
             if (clienteCrear.Peluqueria && !clienteCrear.Estetica)
             {
@@ -1724,6 +1766,16 @@ namespace NestoAPI.Infraestructure
         public async Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif)
         {
             return await servicio.BuscarClientePorEmailNif(email, nif);
+        }
+
+        // Nesto#340: mínimo 7 dígitos para no devolver medio fichero de clientes por un
+        // teléfono corto (misma regla que ClientesMismoTelefono)
+        public async Task<List<ClienteDTO>> BuscarClientesPorTelefono(string telefono)
+        {
+            telefono = telefono?.Trim();
+            return string.IsNullOrEmpty(telefono) || telefono.Length < 7
+                ? new List<ClienteDTO>()
+                : await servicio.BuscarClientesPorTelefono(telefono).ConfigureAwait(false);
         }
     }
 }

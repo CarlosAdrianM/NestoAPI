@@ -506,6 +506,39 @@ namespace NestoAPI.Infraestructure
             }
         }
 
+        // Nesto#340: búsqueda de clientes activos por teléfono para los pedidos de canales
+        // externos (antes CanalExternoPedidosAmazon consultaba la BD con EF desde el cliente)
+        public async Task<List<ClienteDTO>> BuscarClientesPorTelefono(string telefono)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                return await db.Clientes
+                    .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Estado >= 0 && c.Teléfono.Contains(telefono))
+                    .OrderBy(c => c.Nº_Cliente).ThenBy(c => c.Contacto)
+                    .Take(5)
+                    .Select(c => new ClienteDTO
+                    {
+                        empresa = c.Empresa.Trim(),
+                        cliente = c.Nº_Cliente.Trim(),
+                        contacto = c.Contacto.Trim(),
+                        contactoCobro = c.ContactoCobro.Trim(),
+                        clientePrincipal = c.ClientePrincipal,
+                        nombre = c.Nombre.Trim(),
+                        direccion = c.Dirección.Trim(),
+                        codigoPostal = c.CodPostal.Trim(),
+                        poblacion = c.Población.Trim(),
+                        provincia = c.Provincia.Trim(),
+                        telefono = c.Teléfono.Trim(),
+                        vendedor = c.Vendedor.Trim(),
+                        iva = c.IVA.Trim(),
+                        comentarioPicking = c.ComentarioPicking,
+                        estado = c.Estado
+                    })
+                    .ToListAsync().ConfigureAwait(false);
+            }
+        }
+
         public async Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif)
         {
             using (NVEntities db = new NVEntities())

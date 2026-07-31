@@ -1068,6 +1068,155 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("FR", clienteNuevo.Pais);
         }
 
+        // NestoAPI#376: el CP de un cliente extranjero no está en CódigosPostales y el INSERT
+        // de Clientes rompía con FK_Clientes_CódigosPostales
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_PaisExtranjeroConCpNuevo_DaDeAltaElCodigoPostal()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, A<string>.Ignored)).Returns(Task.FromResult<CodigoPostal>(null));
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "38950",
+                Nif = "516169467",
+                Nombre = "COSMAKE, LDA",
+                Pais = "PT",
+                CodigoPostal = "4445-294",
+                Poblacion = "ERMESINDE",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.IsNotNull(clienteNuevo.CódigosPostales, "El CP extranjero debe darse de alta al vuelo para que no rompa la FK");
+            Assert.AreEqual("4445-294", clienteNuevo.CódigosPostales.Número);
+            Assert.AreEqual("ERMESINDE", clienteNuevo.CódigosPostales.Descripción);
+            Assert.AreEqual(Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS, clienteNuevo.CódigosPostales.Ruta);
+            A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.That.Matches(c => c.Número == "4445-294"))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_PaisExtranjeroConCpYaExistente_NoLoDuplica()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            CodigoPostal cpExistente = new CodigoPostal { Empresa = "1", Número = "1000-103", Descripción = "LISBOA", Ruta = "00" };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "1000-103")).Returns(cpExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nombre = "LISBOA LDA",
+                Pais = "PT",
+                CodigoPostal = "1000-103",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreSame(cpExistente, clienteNuevo.CódigosPostales);
+            A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_PaisEspanna_NoTocaCodigosPostales()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nombre = "ACME",
+                CodigoPostal = "28004",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_PaisExtranjeroConCpNuevo_DaDeAltaElCodigoPostal()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, A<string>.Ignored)).Returns(Task.FromResult<CodigoPostal>(null));
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.CodigoPostal = "4445-294";
+            clienteCrear.Poblacion = "ERMESINDE";
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Pais = "PT";
+            clienteExistente.CodPostal = "1000-103";
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteCrear, db).Result;
+
+            Assert.AreEqual("4445-294", clienteNuevo.CodPostal);
+            Assert.AreEqual("ERMESINDE", clienteNuevo.Población);
+            A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.That.Matches(c => c.Número == "4445-294" && c.Ruta == Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS))).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_CpInexistenteEnEspanna_ErrorClaroEnVezDeNre()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, A<string>.Ignored)).Returns(Task.FromResult<CodigoPostal>(null));
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.CodigoPostal = "99999";
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Pais = "ES";
+            clienteExistente.CodPostal = "28004";
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            NVEntities db = A.Fake<NVEntities>();
+
+            AggregateException ex = Assert.ThrowsException<AggregateException>(() => _ = gestor.PrepararClienteModificar(clienteCrear, db).Result);
+
+            Assert.IsInstanceOfType(ex.InnerException, typeof(ArgumentException));
+            StringAssert.Contains(ex.InnerException.Message, "99999");
+        }
+
+        // Nesto#340: endpoint api/Clientes/PorTelefono para que CanalExternoPedidosAmazon
+        // no necesite EF en el cliente de escritorio
+
+        [TestMethod]
+        public void GestorClientes_BuscarClientesPorTelefono_TelefonoCorto_DevuelveVacioSinConsultar()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+
+            List<ClienteDTO> resultado = gestor.BuscarClientesPorTelefono("916 90").Result;
+
+            Assert.AreEqual(0, resultado.Count);
+            A.CallTo(() => servicio.BuscarClientesPorTelefono(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GestorClientes_BuscarClientesPorTelefono_TelefonoValido_DelegaEnElServicio()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            List<ClienteDTO> esperado = new List<ClienteDTO> { new ClienteDTO { cliente = "32624", contacto = "0" } };
+            A.CallTo(() => servicio.BuscarClientesPorTelefono("916903001")).Returns(esperado);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+
+            List<ClienteDTO> resultado = gestor.BuscarClientesPorTelefono(" 916903001 ").Result;
+
+            Assert.AreSame(esperado, resultado, "Debe recortar espacios y delegar en el servicio");
+        }
+
         [TestMethod]
         public void GestorClientes_PrepararClienteModificar_SiLaFormaDePagoEsEfectivoNoLeeElCCC()
         {

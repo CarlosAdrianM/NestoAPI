@@ -10,6 +10,8 @@ namespace NestoAPI.Models
         public string empresa { get; set; }
         public string cliente { get; set; }
         public string contacto { get; set; }
+        // Nesto#340: lo necesita CanalExternoPedidosAmazon para crear el pedido sin EF
+        public string contactoCobro { get; set; }
         public bool clientePrincipal { get; set; }
         public string nombre { get; set; }
         public string direccion { get; set; }

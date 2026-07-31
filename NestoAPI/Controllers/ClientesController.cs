@@ -626,6 +626,19 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        // GET: api/Clientes/PorTelefono
+        // Nesto#340: clientes activos cuyo teléfono contiene el buscado, para que los pedidos
+        // de canales externos (Amazon) no necesiten EF en el cliente de escritorio
+        [HttpGet]
+        [Route("api/Clientes/PorTelefono")]
+        [ResponseType(typeof(List<ClienteDTO>))]
+        public async Task<IHttpActionResult> GetClientesPorTelefono(string telefono)
+        {
+            List<ClienteDTO> respuesta = await _gestorClientes.BuscarClientesPorTelefono(telefono);
+
+            return Ok(respuesta);
+        }
+
         [HttpGet]
         [Route("api/Clientes/ComprobarDatosBanco")]
         // GET: api/Clientes/5
