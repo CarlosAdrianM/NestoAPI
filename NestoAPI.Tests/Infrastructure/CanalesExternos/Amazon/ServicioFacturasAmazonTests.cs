@@ -1,5 +1,6 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.CanalesExternos.Amazon;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Models;
@@ -32,6 +33,7 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
         private IGestorFacturas gestor;
         private IAmazonFeedsGateway gateway;
         private IAlmacenFacturasAmazon almacen;
+        private IServicioAlbaranesVenta albaranes;
         private ServicioFacturasAmazon servicio;
 
         [TestInitialize]
@@ -41,7 +43,8 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
             gestor = A.Fake<IGestorFacturas>();
             gateway = A.Fake<IAmazonFeedsGateway>();
             almacen = A.Fake<IAlmacenFacturasAmazon>();
-            servicio = new ServicioFacturasAmazon(db, gestor, gateway, almacen);
+            albaranes = A.Fake<IServicioAlbaranesVenta>();
+            servicio = new ServicioFacturasAmazon(db, gestor, gateway, almacen, albaranes);
 
             ConfigurarPedido(new CabPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Comentarios = $"FBA {AMAZON_ORDER_ID}\r\nCumplimiento por Amazon" });
             ConfigurarLineas();
@@ -99,6 +102,41 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
             A.CallTo(() => gateway.CrearFeedAsync(ServicioFacturasAmazon.FEED_TYPE_FACTURAS, MARKETPLACE_ES, "doc-1",
                     A<IReadOnlyDictionary<string, string>>.That.Matches(o => o["metadata:InvoiceNumber"] == "NV26100300")))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        // Nesto#434: los FBA (almacén AMZ) no pasan por picking ni rutas; si nadie los albaraneó,
+        // prdCrearFacturaVta daba "No hay líneas para facturar" (Enrique x4 en ELMAH, 30/07).
+
+        [TestMethod]
+        public async Task FacturarYSubir_PedidoSinAlbaran_AlbaraneaConLaFechaDeEntregaDeLasLineas()
+        {
+            System.DateTime manana = System.DateTime.Today.AddDays(1);
+            ConfigurarLineas(
+                new LinPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Fecha_Entrega = System.DateTime.Today },
+                new LinPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Estado = Constantes.EstadosLineaVenta.EN_CURSO, Fecha_Entrega = manana });
+            A.CallTo(() => gestor.CrearFactura(EMPRESA, PEDIDO, "carlos", "carlos"))
+                .Returns(Task.FromResult(new CrearFacturaResponseDTO { NumeroFactura = "NV26100300", Empresa = EMPRESA }));
+
+            SubirFacturaAmazonResponseDTO respuesta = await servicio.FacturarYSubirAsync(EMPRESA, PEDIDO, "carlos");
+
+            Assert.AreEqual("NV26100300", respuesta.NumeroFactura);
+            // La fecha de entrega puede ser posterior a hoy y la del SP por defecto la dejaría fuera
+            A.CallTo(() => albaranes.CrearAlbaran(EMPRESA, PEDIDO, "carlos", manana)).MustHaveHappenedOnceExactly()
+                .Then(A.CallTo(() => gestor.CrearFactura(EMPRESA, PEDIDO, "carlos", "carlos")).MustHaveHappenedOnceExactly());
+        }
+
+        [TestMethod]
+        public async Task FacturarYSubir_PedidoYaAlbaraneado_NoVuelveAAlbaranear()
+        {
+            ConfigurarLineas(
+                new LinPedidoVta { Empresa = EMPRESA, Número = PEDIDO, Estado = Constantes.EstadosLineaVenta.ALBARAN, Nº_Albarán = 555000 });
+            A.CallTo(() => gestor.CrearFactura(EMPRESA, PEDIDO, "carlos", "carlos"))
+                .Returns(Task.FromResult(new CrearFacturaResponseDTO { NumeroFactura = "NV26100301", Empresa = EMPRESA }));
+
+            SubirFacturaAmazonResponseDTO respuesta = await servicio.FacturarYSubirAsync(EMPRESA, PEDIDO, "carlos");
+
+            Assert.AreEqual("NV26100301", respuesta.NumeroFactura);
+            A.CallTo(() => albaranes.CrearAlbaran(A<string>._, A<int>._, A<string>._, A<System.DateTime?>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

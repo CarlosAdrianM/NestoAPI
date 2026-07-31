@@ -38,7 +38,7 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
             }
         }
 
-        public async Task<int> CrearAlbaran(string empresa, int pedido, string usuario)
+        public async Task<int> CrearAlbaran(string empresa, int pedido, string usuario, DateTime? fechaEntrega = null)
         {
             // Usar el db de la clase (puede ser externo o interno según el constructor)
             SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char)
@@ -51,7 +51,7 @@ namespace NestoAPI.Infraestructure.AlbaranesVenta
             };
             SqlParameter fechaEntregaParam = new SqlParameter("@FechaEntrega", System.Data.SqlDbType.DateTime)
             {
-                Value = DateTime.Now // De momento dejamos siempre la de hoy
+                Value = fechaEntrega ?? DateTime.Now // sin indicar, la de hoy (histórico de rutas)
             };
             SqlParameter importeMinimoParam = new SqlParameter("@ImporteMinimo", System.Data.SqlDbType.Decimal)
             {

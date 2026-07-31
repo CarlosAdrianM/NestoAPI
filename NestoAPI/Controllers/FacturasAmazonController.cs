@@ -29,7 +29,8 @@ namespace NestoAPI.Controllers
                 db,
                 new GestorFacturas(new ServicioFacturas()),
                 new AmazonFeedsGateway(new AmazonCredencialStore(db)),
-                new AlmacenFacturasAmazon(db));
+                new AlmacenFacturasAmazon(db),
+                new Infraestructure.AlbaranesVenta.ServicioAlbaranesVenta(db));
         }
 
         public FacturasAmazonController(IServicioFacturasAmazon servicio)

@@ -54,14 +54,17 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
         private readonly IGestorFacturas _gestorFacturas;
         private readonly IAmazonFeedsGateway _gateway;
         private readonly IAlmacenFacturasAmazon _almacen;
+        private readonly AlbaranesVenta.IServicioAlbaranesVenta _servicioAlbaranes;
 
         public ServicioFacturasAmazon(NVEntities db, IGestorFacturas gestorFacturas,
-            IAmazonFeedsGateway gateway, IAlmacenFacturasAmazon almacen)
+            IAmazonFeedsGateway gateway, IAlmacenFacturasAmazon almacen,
+            AlbaranesVenta.IServicioAlbaranesVenta servicioAlbaranes)
         {
             _db = db;
             _gestorFacturas = gestorFacturas;
             _gateway = gateway;
             _almacen = almacen;
+            _servicioAlbaranes = servicioAlbaranes;
         }
 
         public async Task<SubirFacturaAmazonResponseDTO> FacturarYSubirAsync(string empresa, int pedido, string usuario)
@@ -122,6 +125,21 @@ namespace NestoAPI.Infraestructure.CanalesExternos.Amazon
             }
             else
             {
+                // Nesto#434: los pedidos FBA (almacén AMZ) no pasan por picking ni por rutas, así
+                // que puede que nadie los haya albaraneado: sin líneas en estado ALBARÁN,
+                // prdCrearFacturaVta responde "No hay líneas para facturar". Se albaranea aquí con
+                // la fecha de entrega de las líneas (puede ser posterior a hoy y la fecha por
+                // defecto las dejaría fuera).
+                bool hayLineasEnAlbaran = _db.LinPedidoVtas.Any(l => l.Empresa == empresa && l.Número == pedido
+                    && l.Estado == Constantes.EstadosLineaVenta.ALBARAN);
+                if (!hayLineasEnAlbaran)
+                {
+                    DateTime? fechaEntrega = _db.LinPedidoVtas
+                        .Where(l => l.Empresa == empresa && l.Número == pedido && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO)
+                        .Max(l => (DateTime?)l.Fecha_Entrega);
+                    _ = await _servicioAlbaranes.CrearAlbaran(empresa, pedido, usuario, fechaEntrega).ConfigureAwait(false);
+                }
+
                 CrearFacturaResponseDTO creada = await _gestorFacturas.CrearFactura(empresa, pedido, usuario, usuario).ConfigureAwait(false);
                 respuesta.NumeroFactura = creada.NumeroFactura;
                 empresaFactura = creada.Empresa ?? empresa;
