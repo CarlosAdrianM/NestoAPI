@@ -114,6 +114,13 @@ namespace NestoAPI.Infraestructure
             CodigoPostal cpDb = await servicio.BuscarCodigoPostal(empresa, codigoPostal).ConfigureAwait(false);
             if (cpDb != null)
             {
+                // #378: si el CP ya existía pero sin país (Nesto viejo, o altas anteriores a la
+                // columna), se autocompleta con el de esta dirección. Solo rellena NULL: si ya
+                // tiene país (aunque sea otro por la colisión Empresa+Número), no se pisa.
+                if (string.IsNullOrWhiteSpace(cpDb.Pais))
+                {
+                    cpDb.Pais = pais?.Trim().ToUpper();
+                }
                 return cpDb;
             }
             cpDb = new CodigoPostal

@@ -1127,6 +1127,57 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_CpExistenteSinPais_LeRellenaElPais()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            // CP creado por Nesto viejo (o antes de la columna Pais): existe pero sin país
+            CodigoPostal cpExistente = new CodigoPostal { Empresa = "1", Número = "1000-103", Descripción = "LISBOA", Ruta = "00", Pais = null };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "1000-103")).Returns(cpExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nombre = "LISBOA LDA",
+                Pais = "pt",
+                CodigoPostal = "1000-103",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("PT", cpExistente.Pais, "#378: el CP huérfano de país se autocompleta con el de la dirección");
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_CpExistenteConPais_NoLoPisa()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            // Colisión Empresa+Número: el CP 12345 ya existe como español y un cliente italiano lo usa
+            CodigoPostal cpExistente = new CodigoPostal { Empresa = "1", Número = "12345", Descripción = "MADRID", Ruta = "16", Pais = "ES" };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "12345")).Returns(cpExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nombre = "RPF SRL",
+                Pais = "IT",
+                CodigoPostal = "12345",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("ES", cpExistente.Pais, "El país de un CP ya clasificado no se pisa (limitación PK sin país, #148)");
+            Assert.AreEqual("IT", clienteNuevo.Pais, "El país del CLIENTE sí es el suyo: vive en su ficha, no en el CP");
+        }
+
+        [TestMethod]
         public void GestorClientes_PrepararClienteCrear_PaisEspanna_NoTocaCodigosPostales()
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
