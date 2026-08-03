@@ -123,7 +123,8 @@ namespace NestoAPI.Infraestructure
                 Descripción = Truncar((string.IsNullOrWhiteSpace(poblacion) ? pais : poblacion).ToUpper().Trim(), 50),
                 Provincia = Truncar((string.IsNullOrWhiteSpace(provincia) ? pais : provincia).ToUpper().Trim(), 30),
                 Ruta = Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS,
-                Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL
+                Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL,
+                Pais = pais?.Trim().ToUpper() // #378: que el CP extranjero nazca con su país
             };
             _ = db.CodigosPostales.Add(cpDb);
             return cpDb;
@@ -1198,7 +1199,7 @@ namespace NestoAPI.Infraestructure
                     CorreoElectrónico = personaCrear.CorreoElectronico,
                     EnviarBoletin = true,
                     Estado = 0,
-                    Saludo = CultureInfo.InvariantCulture.TextInfo.ToTitleCase(personaCrear.Nombre?.ToLower()),
+                    Saludo = personaCrear.Nombre is null ? null : CultureInfo.InvariantCulture.TextInfo.ToTitleCase(personaCrear.Nombre.ToLower()),
                     Usuario = clienteCrear.Usuario
                 };
                 cliente.PersonasContactoClientes.Add(persona);

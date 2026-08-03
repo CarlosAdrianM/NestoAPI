@@ -1097,6 +1097,7 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("4445-294", clienteNuevo.CódigosPostales.Número);
             Assert.AreEqual("ERMESINDE", clienteNuevo.CódigosPostales.Descripción);
             Assert.AreEqual(Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS, clienteNuevo.CódigosPostales.Ruta);
+            Assert.AreEqual("PT", clienteNuevo.CódigosPostales.Pais, "#378: el CP extranjero nace con su país");
             A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.That.Matches(c => c.Número == "4445-294"))).MustHaveHappenedOnceExactly();
         }
 
@@ -1145,6 +1146,34 @@ namespace NestoAPI.Tests.Infrastructure
 
             A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
             A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
+        }
+
+        // ELMAH 03/08/26: ArgumentNullException "str" si la persona de contacto trae correo pero no
+        // nombre (pasa el filtro del Where y ToTitleCase(null) revienta)
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_ContactoSoloConCorreo_NoRevientaPorSaludo()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nombre = "ACME",
+                PersonasContacto = new List<PersonaContactoDTO>
+                {
+                    new PersonaContactoDTO { CorreoElectronico = "facturas@acme.com" }
+                }
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            PersonaContactoCliente persona = clienteNuevo.PersonasContactoClientes.Single();
+            Assert.AreEqual("facturas@acme.com", persona.CorreoElectrónico);
+            Assert.IsNull(persona.Saludo, "Sin nombre no hay saludo, pero el alta no puede reventar");
         }
 
         [TestMethod]
