@@ -517,6 +517,7 @@
     <Compile Include="Controllers\PagoRedirectController.cs" />
     <Compile Include="Controllers\BancosController.cs" />
     <Compile Include="Controllers\PaisesController.cs" />
+    <Compile Include="Controllers\CodigosPostalesController.cs" />
     <Compile Include="Controllers\BaseApiController.cs" />
     <Compile Include="Controllers\BuscadorController.cs" />
     <Compile Include="Controllers\CabRemesasPagoController.cs" />
@@ -829,6 +830,7 @@
     <Compile Include="Infraestructure\PedidosVenta\ConvertidorPedidoAPlantilla.cs" />
     <Compile Include="Controllers\DireccionesController.cs" />
     <Compile Include="Infraestructure\DiagnosticoBloqueos.cs" />
+    <Compile Include="Infraestructure\CodigosPostales\GestorMantenimientoCodigosPostales.cs" />
     <Compile Include="Infraestructure\Direcciones\ServicioDireccionesGoogle.cs" />
     <Compile Include="Models\Direcciones\DireccionesDTO.cs" />
     <Compile Include="Infraestructure\UsuarioAuditoriaHelper.cs" />
@@ -962,6 +964,7 @@
     </Compile>
     <Compile Include="Models\Clientes\ClienteCrear.cs" />
     <Compile Include="Models\Clientes\PaisDTO.cs" />
+    <Compile Include="Models\CodigosPostales\CodigoPostalMantenimientoDTO.cs" />
     <Compile Include="Models\Clientes\ClienteInteraccion.cs" />
     <Compile Include="Models\Clientes\ClienteProbabilidadVenta.cs" />
     <Compile Include="Models\Clientes\Iban.cs" />

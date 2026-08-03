@@ -421,6 +421,7 @@
           <Property Name="Provincia" Type="char" MaxLength="30" Nullable="false" />
           <Property Name="Ruta" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Pais" Type="varchar" MaxLength="2" />
         </EntityType>
         <EntityType Name="ComisionesAnualesDetalle">
           <Key>
@@ -11360,6 +11361,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Provincia" Type="String" Nullable="false" MaxLength="30" FixedLength="true" Unicode="false" />
           <Property Name="Ruta" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Vendedor" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Pais" Type="String" MaxLength="2" FixedLength="false" Unicode="false" />
           <NavigationProperty Name="Clientes" Relationship="NVModel.FK_Clientes_CódigosPostales" FromRole="CódigosPostales" ToRole="Cliente" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_CódigosPostales_Empresas" FromRole="CódigosPostales" ToRole="Empresa" />
           <NavigationProperty Name="Empresas" Relationship="NVModel.FK_Empresas_CódigosPostales" FromRole="CódigosPostales" ToRole="Empresa" />
@@ -14933,6 +14935,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="CodigosPostales">
             <EntityTypeMapping TypeName="NVModel.CodigoPostal">
               <MappingFragment StoreEntitySet="CódigosPostales">
+                <ScalarProperty Name="Pais" ColumnName="Pais" />
                 <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
                 <ScalarProperty Name="Ruta" ColumnName="Ruta" />
                 <ScalarProperty Name="Provincia" ColumnName="Provincia" />
