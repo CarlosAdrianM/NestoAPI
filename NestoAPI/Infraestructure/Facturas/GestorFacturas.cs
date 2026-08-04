@@ -72,15 +72,19 @@ namespace NestoAPI.Infraestructure.Facturas
             return FacturasEnPDF(facturas);
         }
 
-        public ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false, string usuario = null, bool mostrarImagenes = false)
+        public ByteArrayContent FacturasEnPDF(List<Factura> facturas, bool papelConMembrete = false, string usuario = null, bool mostrarImagenes = false, bool forzarQuestPdf = false)
         {
             if (mostrarImagenes)
             {
                 CargarUrlsImagenProductos(facturas);
             }
 
-            // Determinar qué motor usar según el parámetro del usuario
-            IGeneradorPdfFacturas generador = ObtenerGeneradorPdf(usuario);
+            // Determinar qué motor usar según el parámetro del usuario.
+            // forzarQuestPdf: los clientes de TiendasNuevaVision no son usuarios de Nesto (no tienen
+            // ParametrosUsuario), y para la tienda online se decidió usar siempre QuestPDF (TiendasNuevaVision#15)
+            IGeneradorPdfFacturas generador = forzarQuestPdf
+                ? new GeneradorPdfFacturasQuestPdf()
+                : ObtenerGeneradorPdf(usuario);
             return generador.GenerarPdf(facturas, papelConMembrete, mostrarImagenes);
         }
 

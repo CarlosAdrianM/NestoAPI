@@ -99,9 +99,13 @@ namespace NestoAPI.Controllers
                 };
                 List<Factura> facturas = gestor.LeerFacturas(lista);
 
+                // TiendasNuevaVision#15: los clientes de la tienda online (token con claim "cliente")
+                // usan siempre QuestPDF; no tienen ParametrosUsuario y no queremos RDLC para ellos
+                bool esClienteTienda = (User as System.Security.Claims.ClaimsPrincipal)?.HasClaim(c => c.Type == "cliente") == true;
+
                 var result = new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = gestor.FacturasEnPDF(facturas, papelConMembrete, User.Identity.Name, mostrarImagenes)
+                    Content = gestor.FacturasEnPDF(facturas, papelConMembrete, User.Identity.Name, mostrarImagenes, esClienteTienda)
                 };
                 //result.Content.Headers.ContentDisposition =
                 //    new ContentDispositionHeaderValue("attachment")
