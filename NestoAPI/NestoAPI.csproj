@@ -582,6 +582,7 @@
     <Compile Include="Controllers\RolesController.cs" />
     <Compile Include="Controllers\SeEstaVendiendoController.cs" />
     <Compile Include="Controllers\SeguimientosClientesController.cs" />
+    <Compile Include="Controllers\SolicitudAltaClienteController.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\ServicioAlbaranesVenta.cs" />
     <Compile Include="Controllers\ValuesController.cs" />
     <Compile Include="Controllers\VendedoresController.cs" />
@@ -963,6 +964,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\Clientes\ClienteCrear.cs" />
+    <Compile Include="Models\Clientes\SolicitudAltaClienteDTO.cs" />
     <Compile Include="Models\Clientes\PaisDTO.cs" />
     <Compile Include="Models\CodigosPostales\CodigoPostalMantenimientoDTO.cs" />
     <Compile Include="Models\Clientes\ClienteInteraccion.cs" />
