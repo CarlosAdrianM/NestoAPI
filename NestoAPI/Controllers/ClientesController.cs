@@ -599,9 +599,19 @@ namespace NestoAPI.Controllers
         // (ya son consistentes) → se salta el geocoding y solo normaliza para la BD.
         public async Task<IHttpActionResult> ComprobarDatosGenerales(string direccion, string codigoPostal, string telefono, bool direccionVerificada = false, string pais = null)
         {
-            RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono, direccionVerificada, pais);
+            try
+            {
+                RespuestaDatosGeneralesClientes respuesta = await _gestorClientes.ComprobarDatosGenerales(direccion, codigoPostal, telefono, direccionVerificada, pais);
 
-            return Ok(respuesta);
+                return Ok(respuesta);
+            }
+            catch (ArgumentException ex)
+            {
+                // Validaciones de datos del gestor ("La dirección no puede estar en blanco",
+                // "El código postal X es incorrecto"...): 400 con el motivo, no un 500 que
+                // ensucia ELMAH (triage 11/08/26). Los clientes ya parsean el Message del body.
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpGet]
