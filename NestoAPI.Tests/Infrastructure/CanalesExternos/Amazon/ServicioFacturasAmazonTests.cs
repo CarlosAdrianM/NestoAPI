@@ -55,7 +55,7 @@ namespace NestoAPI.Tests.Infrastructure.CanalesExternos.Amazon
                 .Returns(Task.FromResult(new AmazonFeedDocumento { FeedDocumentId = "doc-1", Url = "https://subida" }));
             A.CallTo(() => gateway.CrearFeedAsync(A<string>._, A<string>._, A<string>._, A<IReadOnlyDictionary<string, string>>._))
                 .Returns(Task.FromResult("feed-1"));
-            A.CallTo(() => gestor.FacturasEnPDF(A<List<Factura>>._, false, A<string>._, false))
+            A.CallTo(() => gestor.FacturasEnPDF(A<List<Factura>>._, false, A<string>._, false, false))
                 .Returns(new ByteArrayContent(new byte[] { 1, 2, 3 }));
         }
 

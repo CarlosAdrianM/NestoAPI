@@ -37,7 +37,7 @@ namespace NestoAPI.Tests.Infrastructure.Domiciliaciones
             // Arrange
             var factura = new Factura { NumeroFactura = "NV001234", ImporteTotal = 100M };
             A.CallTo(() => gestorFacturas.LeerFactura("1", "NV001234")).Returns(factura);
-            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false))
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false, false))
                 .ReturnsLazily(() => new ByteArrayContent(new byte[] { 1, 2, 3 }));
 
             var cliente = new DomiciliacionesCliente
@@ -82,7 +82,7 @@ namespace NestoAPI.Tests.Infrastructure.Domiciliaciones
             // Arrange
             var factura = new Factura { NumeroFactura = "NV001234", ImporteTotal = 100M };
             A.CallTo(() => gestorFacturas.LeerFactura("1", "NV001234")).Returns(factura);
-            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false))
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false, false))
                 .ReturnsLazily(() => new ByteArrayContent(new byte[] { 1, 2, 3 }));
 
             var cliente = new DomiciliacionesCliente
@@ -112,7 +112,7 @@ namespace NestoAPI.Tests.Infrastructure.Domiciliaciones
             var factura2 = new Factura { NumeroFactura = "NV005678", ImporteTotal = 200M };
             A.CallTo(() => gestorFacturas.LeerFactura("1", "NV001234")).Returns(factura1);
             A.CallTo(() => gestorFacturas.LeerFactura("1", "NV005678")).Returns(factura2);
-            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false))
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false, false))
                 .ReturnsLazily(() => new ByteArrayContent(new byte[] { 1, 2, 3 }));
 
             var cliente = new DomiciliacionesCliente
@@ -161,7 +161,7 @@ namespace NestoAPI.Tests.Infrastructure.Domiciliaciones
             // Arrange
             var factura = new Factura { NumeroFactura = "NV001234", ImporteTotal = 100M };
             A.CallTo(() => gestorFacturas.LeerFactura("1", "NV001234")).Returns(factura);
-            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false))
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false, false))
                 .Throws(new System.Exception("Error generando PDF"));
 
             var cliente = new DomiciliacionesCliente
@@ -186,7 +186,7 @@ namespace NestoAPI.Tests.Infrastructure.Domiciliaciones
             var factura = new Factura { NumeroFactura = "NV001234", ImporteTotal = 100M };
             A.CallTo(() => gestorFacturas.LeerFactura("1", "NV001234")).Returns(factura);
             A.CallTo(() => gestorFacturas.LeerFactura("1", "NV999999")).Returns((Factura)null);
-            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false))
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false, false))
                 .ReturnsLazily(() => new ByteArrayContent(new byte[] { 1, 2, 3 }));
 
             var cliente = new DomiciliacionesCliente
@@ -414,7 +414,7 @@ namespace NestoAPI.Tests.Infrastructure.Domiciliaciones
             // Arrange
             var factura = new Factura { NumeroFactura = "NV001234", ImporteTotal = 100M };
             A.CallTo(() => gestorFacturas.LeerFactura("1", "NV001234")).Returns(factura);
-            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false))
+            A.CallTo(() => gestorFacturas.FacturasEnPDF(A<List<Factura>>._, false, null, false, false))
                 .ReturnsLazily(() => new ByteArrayContent(new byte[] { 1, 2, 3 }));
 
             var cliente = new DomiciliacionesCliente
