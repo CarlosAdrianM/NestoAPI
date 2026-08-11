@@ -95,3 +95,14 @@ SELECT RTRIM(Empresa) AS Empresa, RTRIM(Número) AS Numero, RTRIM(Descripción) 
 FROM dbo.CódigosPostales
 WHERE Pais IS NULL
 ORDER BY Número;
+
+-- =====================================================================
+-- 4. GRANTs para la ventana de mantenimiento (añadido 11/08/26)
+-- Faltaban en la versión original del script: el 10/08 la ventana daba
+-- "Se denegó el permiso UPDATE en el objeto 'CódigosPostales'" porque la
+-- cuenta de máquina del API no tenía UPDATE/DELETE. Aplicado a mano en
+-- prod el 10/08; se deja aquí documentado (NestoConnection = BD NV,
+-- el API entra con la cuenta de máquina del RDS).
+-- =====================================================================
+GRANT SELECT, INSERT, UPDATE, DELETE ON dbo.CódigosPostales TO [NUEVAVISION\RDS2016$];
+GO
