@@ -298,6 +298,7 @@
     <Compile Include="Infrastructure\ElmahErrorFilterConfigTests.cs" />
     <Compile Include="Infrastructure\RequestFilteringConfigTests.cs" />
     <Compile Include="Infrastructure\CrearRemesaServiceTests.cs" />
+    <Compile Include="Infrastructure\GestorFacturasRectificativasTests.cs" />
     <Compile Include="Infrastructure\SelectorEfectosCobrablesTests.cs" />
     <Compile Include="Infrastructure\ServicioLiquidarEfectosTests.cs" />
     <Compile Include="Infrastructure\ServicioValidacionNifTests.cs" />

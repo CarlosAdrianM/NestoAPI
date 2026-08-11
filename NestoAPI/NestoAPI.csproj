@@ -826,6 +826,7 @@
     <Compile Include="Infraestructure\Rectificativas\GestorCopiaPedidos.cs" />
     <Compile Include="Infraestructure\Rectificativas\IAlmacenRectificativasPendientes.cs" />
     <Compile Include="Infraestructure\Rectificativas\AlmacenRectificativasPendientes.cs" />
+    <Compile Include="Infraestructure\Rectificativas\GestorFacturasRectificativas.cs" />
     <Compile Include="Infraestructure\UserSyncHandler.cs" />
     <Compile Include="Infraestructure\UsuarioContextInfoInterceptor.cs" />
     <Compile Include="Infraestructure\PedidosVenta\ConvertidorPedidoAPlantilla.cs" />
@@ -1334,6 +1335,7 @@
     <Compile Include="Models\Rectificativas\RectificativaPendienteDTO.cs" />
     <Compile Include="Models\Rectificativas\CopiarFacturaResponse.cs" />
     <Compile Include="Models\Rectificativas\ClienteFacturaDTO.cs" />
+    <Compile Include="Models\Rectificativas\VinculacionRectificativa.cs" />
     <Compile Include="Models\PersonaContactoCliente.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
