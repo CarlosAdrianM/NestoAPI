@@ -86,7 +86,7 @@ namespace NestoAPI.Infraestructure.Remesas
             // rechazaría con "ya no es candidato".
             List<EfectoCandidatoDTO> candidatos = await new SelectorEfectosCobrables(db)
                 .CandidatosSepa(peticion.Empresa, hasta: peticion.SeleccionHasta).ConfigureAwait(false);
-            List<string> errores = ValidarSeleccion(idsPedidos, candidatos);
+            List<string> errores = ValidarSeleccion(idsPedidos, candidatos, peticion.AceptarClientesConNegativos);
             if (errores.Any())
             {
                 throw new InvalidOperationException(string.Join(" ", errores));
@@ -191,9 +191,14 @@ namespace NestoAPI.Infraestructure.Remesas
         /// La selección del usuario contra los candidatos FRESCOS: todo lo pedido debe seguir
         /// siendo candidato, no retenido por el gating (#172) y sin la puerta de neteo
         /// pendiente (clientes con negativos: liquidar con #333 o sacar de la remesa).
+        /// NestoAPI#380: la puerta de neteo deja de ser obligatoria — con
+        /// aceptarClientesConNegativos (el usuario confirmó el aviso en el cliente) se permite
+        /// remesar sin liquidar (caso real: pago a cuenta de -30 € de un curso de septiembre
+        /// que no tiene nada que ver con los efectos que se giran).
         /// Pura y estática para testear sin BD.
         /// </summary>
-        internal static List<string> ValidarSeleccion(List<int> idsPedidos, List<EfectoCandidatoDTO> candidatos)
+        internal static List<string> ValidarSeleccion(List<int> idsPedidos, List<EfectoCandidatoDTO> candidatos,
+            bool aceptarClientesConNegativos = false)
         {
             var errores = new List<string>();
             Dictionary<int, EfectoCandidatoDTO> porId = candidatos.ToDictionary(c => c.Id);
@@ -209,17 +214,20 @@ namespace NestoAPI.Infraestructure.Remesas
                     errores.Add($"El efecto {id} está retenido: {candidato.Motivo}");
                 }
             }
-            List<string> clientesConNegativos = idsPedidos
-                .Where(porId.ContainsKey)
-                .Select(id => porId[id])
-                .Where(c => c.ClienteConNegativos)
-                .Select(c => c.Cliente)
-                .Distinct()
-                .ToList();
-            if (clientesConNegativos.Any())
+            if (!aceptarClientesConNegativos)
             {
-                errores.Add("Estos clientes tienen movimientos negativos pendientes de revisar (liquidar " +
-                    $"o sacar de la remesa): {string.Join(", ", clientesConNegativos)}.");
+                List<string> clientesConNegativos = idsPedidos
+                    .Where(porId.ContainsKey)
+                    .Select(id => porId[id])
+                    .Where(c => c.ClienteConNegativos)
+                    .Select(c => c.Cliente)
+                    .Distinct()
+                    .ToList();
+                if (clientesConNegativos.Any())
+                {
+                    errores.Add("Estos clientes tienen movimientos negativos pendientes de revisar (liquidar " +
+                        $"o sacar de la remesa): {string.Join(", ", clientesConNegativos)}.");
+                }
             }
             return errores;
         }
@@ -406,6 +414,14 @@ namespace NestoAPI.Infraestructure.Remesas
         /// Null = solo vencidos a hoy (comportamiento clásico).
         /// </summary>
         public DateTime? SeleccionHasta { get; set; }
+
+        /// <summary>
+        /// NestoAPI#380: true = el usuario ha visto el aviso de clientes con movimientos
+        /// negativos pendientes y confirma que quiere remesar SIN liquidarlos (el negativo
+        /// puede no tener nada que ver con los efectos que se giran). false (default) = la
+        /// puerta de neteo bloquea como hasta ahora.
+        /// </summary>
+        public bool AceptarClientesConNegativos { get; set; }
     }
 
     public class CrearRemesaResponse

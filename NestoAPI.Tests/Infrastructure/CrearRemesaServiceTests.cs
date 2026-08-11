@@ -84,6 +84,39 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(errores.Single(), "negativos");
         }
 
+        [TestMethod]
+        public void ValidarSeleccion_ClienteConNegativosAceptadoPorElUsuario_SinError()
+        {
+            // NestoAPI#380: la puerta de neteo deja de ser OBLIGATORIA. Caso real: un pago a
+            // cuenta de -30 € de un curso de septiembre no debe impedir girar un efecto de
+            // 450 € que no tiene nada que ver — el usuario confirma el aviso y se remesa.
+            var errores = CrearRemesaService.ValidarSeleccion(
+                new List<int> { 1, 2 },
+                new List<EfectoCandidatoDTO>
+                {
+                    Candidato(1, conNegativos: true, cliente: "15191"),
+                    Candidato(2, cliente: "30676")
+                },
+                aceptarClientesConNegativos: true);
+
+            Assert.AreEqual(0, errores.Count);
+        }
+
+        [TestMethod]
+        public void ValidarSeleccion_AceptarNegativosNoAbreLasDemasPuertas_SigueBloqueando()
+        {
+            // El flag SOLO relaja la puerta de neteo: un efecto retenido (gating, IBAN #381)
+            // sigue bloqueando aunque el usuario haya aceptado los negativos.
+            var errores = CrearRemesaService.ValidarSeleccion(
+                new List<int> { 1 },
+                new List<EfectoCandidatoDTO> { Candidato(1, preseleccionado: false, conNegativos: true,
+                    motivo: "Retenido: el IBAN de la ficha bancaria está incompleto (#381).") },
+                aceptarClientesConNegativos: true);
+
+            Assert.AreEqual(1, errores.Count);
+            StringAssert.Contains(errores.Single(), "IBAN");
+        }
+
         // Composición de líneas: calcada del asiento real 1195101 (remesa 10898, 20/07/26)
 
         private static ExtractoCliente Efecto(int orden, string cliente, decimal pendiente,
