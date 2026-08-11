@@ -28,6 +28,7 @@ namespace NestoAPI.Tests.Infrastructure
         private DbSet<ExtractoCliente> fakeExtractos;
         private DbSet<LinPedidoVta> fakeLineas;
         private DbSet<EnviosAgencia> fakeEnvios;
+        private DbSet<CCC> fakeCccs;
         private List<string> estadosQueBloquean;
         private SelectorEfectosCobrables selector;
 
@@ -38,11 +39,15 @@ namespace NestoAPI.Tests.Infrastructure
             fakeExtractos = A.Fake<DbSet<ExtractoCliente>>(o => o.Implements<IQueryable<ExtractoCliente>>().Implements<IDbAsyncEnumerable<ExtractoCliente>>());
             fakeLineas = A.Fake<DbSet<LinPedidoVta>>(o => o.Implements<IQueryable<LinPedidoVta>>().Implements<IDbAsyncEnumerable<LinPedidoVta>>());
             fakeEnvios = A.Fake<DbSet<EnviosAgencia>>(o => o.Implements<IQueryable<EnviosAgencia>>().Implements<IDbAsyncEnumerable<EnviosAgencia>>());
+            fakeCccs = A.Fake<DbSet<CCC>>(o => o.Implements<IQueryable<CCC>>().Implements<IDbAsyncEnumerable<CCC>>());
             A.CallTo(() => db.ExtractosCliente).Returns(fakeExtractos);
             A.CallTo(() => db.LinPedidoVtas).Returns(fakeLineas);
             A.CallTo(() => db.EnviosAgencias).Returns(fakeEnvios);
+            A.CallTo(() => db.CCCs).Returns(fakeCccs);
             ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>().AsQueryable());
             ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>().AsQueryable());
+            // NestoAPI#381: fichas bancarias válidas por defecto para los clientes de los tests
+            ConfigurarFakeDbSet(fakeCccs, new List<CCC> { Ficha("15191"), Ficha("30676") }.AsQueryable());
             estadosQueBloquean = new List<string>();
             selector = new SelectorEfectosCobrables(db, e => Task.FromResult(estadosQueBloquean));
         }
@@ -77,6 +82,27 @@ namespace NestoAPI.Tests.Infrastructure
                 FechaVto = vencimiento ?? HOY.AddDays(-1),
                 Nº_Documento = documento,
                 Estado = estado
+            };
+        }
+
+        // NestoAPI#381: ficha bancaria (CCC) del cliente. Por defecto con el IBAN de ejemplo
+        // válido ES91 2100 0418 45 0200051332 (mod-97 correcto).
+        private static CCC Ficha(string cliente = "15191", string numero = "1", string pais = "ES",
+            string dcIban = "91", string entidad = "2100", string oficina = "0418", string dc = "45",
+            string cuenta = "0200051332")
+        {
+            return new CCC
+            {
+                Empresa = "1",
+                Cliente = cliente,
+                Contacto = "0",
+                Número = numero,
+                Pais = pais,
+                DC_IBAN = dcIban,
+                Entidad = entidad,
+                Oficina = oficina,
+                DC = dc,
+                Nº_Cuenta = cuenta
             };
         }
 
@@ -307,6 +333,76 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(2, candidatos.Count);
             Assert.IsTrue(candidatos.Single(c => c.Cliente == "15191").ClienteConNegativos);
             Assert.IsFalse(candidatos.Single(c => c.Cliente == "30676").ClienteConNegativos);
+        }
+
+        // NestoAPI#381: la validación del IBAN se adelanta a la selección. Antes el error
+        // "El cliente X no tiene un IBAN correcto" saltaba al GENERAR EL FICHERO, con la
+        // remesa ya creada y contabilizada (caso real cliente 14986, 07/08/26).
+
+        [TestMethod]
+        public async Task CandidatosSepa_CccSinFichaBancaria_RetenidoConMotivo()
+        {
+            // El INNER JOIN del SP descartaría este efecto EN SILENCIO del fichero SEPA
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, ccc: "9"),   // el cliente 15191 solo tiene la ficha "1"
+                Efecto(id: 2, ccc: "1")
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            EfectoCandidatoDTO retenido = candidatos.Single(c => c.Id == 1);
+            Assert.IsFalse(retenido.Preseleccionado);
+            StringAssert.Contains(retenido.Motivo, "no existe en la ficha bancaria");
+            Assert.IsTrue(candidatos.Single(c => c.Id == 2).Preseleccionado);
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_IbanConComponenteNulo_RetenidoConMotivo()
+        {
+            // Regla EXACTA del SP: pais+dc_iban+entidad+oficina+dc+cuenta con algún NULL
+            // da IBAN NULL → raiserror "no tiene un IBAN correcto" al crear el fichero
+            ConfigurarFakeDbSet(fakeCccs, new List<CCC>
+            {
+                Ficha("15191", dc: null),
+                Ficha("30676")
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, cliente: "15191"),
+                Efecto(id: 2, cliente: "30676")
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            EfectoCandidatoDTO retenido = candidatos.Single(c => c.Id == 1);
+            Assert.IsFalse(retenido.Preseleccionado);
+            StringAssert.Contains(retenido.Motivo, "incompleto");
+            Assert.IsTrue(candidatos.Single(c => c.Id == 2).Preseleccionado);
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_IbanCompletoPeroInvalido_RetenidoConMotivo()
+        {
+            // Un IBAN completo pero con mod-97 incorrecto pasaría el SP y lo rechazaría el
+            // banco: también se retiene (validador exacto)
+            ConfigurarFakeDbSet(fakeCccs, new List<CCC>
+            {
+                Ficha("15191", dcIban: "00")   // dígitos de control incorrectos
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente> { Efecto() }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            EfectoCandidatoDTO retenido = candidatos.Single();
+            Assert.IsFalse(retenido.Preseleccionado);
+            StringAssert.Contains(retenido.Motivo, "no es válido");
+        }
+
+        [TestMethod]
+        public void MotivoRetencionIban_IbanValido_DevuelveNull()
+        {
+            Assert.IsNull(SelectorEfectosCobrables.MotivoRetencionIban(Ficha(), "1"));
         }
     }
 }

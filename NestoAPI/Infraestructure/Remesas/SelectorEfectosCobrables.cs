@@ -1,4 +1,5 @@
 using NestoAPI.Models;
+using NestoAPI.Models.Clientes;
 using NestoAPI.Models.Remesas;
 using System;
 using System.Collections.Generic;
@@ -115,9 +116,25 @@ namespace NestoAPI.Infraestructure.Remesas
                 .ToDictionary(g => g.Key, g => g.Max(x => (short)x.Estado));
             HashSet<int> pedidosRetenidos = new HashSet<int>(peorEstadoPorPedido.Keys);
 
+            List<string> clientes = efectos.Select(e => e.Número?.Trim()).Distinct().ToList();
+
+            // NestoAPI#381: la ficha bancaria (CCC) de cada efecto, para ADELANTAR la validación
+            // del IBAN a la selección. El SP del fichero (prdCrearRemesaIso20022) compone el IBAN
+            // como pais+dc_iban+entidad+oficina+dc+cuenta y falla con "no tiene un IBAN correcto"
+            // si algún componente es NULL — pero eso salta al GENERAR EL FICHERO, cuando la remesa
+            // ya está creada y contabilizada (caso real cliente 14986, 07/08/26). Peor aún: si el
+            // registro CCC no existe, el INNER JOIN del SP descarta el efecto EN SILENCIO (iría
+            // remesado sin recibo en el fichero). Aquí se retiene con motivo; ValidarSeleccion lo
+            // revalida en el POST y el SP conserva su comprobación como última red.
+            List<CCC> fichasCcc = await db.CCCs
+                .Where(c => c.Empresa == empresa && clientes.Contains(c.Cliente.Trim()))
+                .ToListAsync().ConfigureAwait(false);
+            Dictionary<string, CCC> cccPorClave = fichasCcc
+                .GroupBy(c => ClaveCcc(c.Cliente, c.Contacto, c.Número))
+                .ToDictionary(g => g.Key, g => g.First());
+
             // Puerta de neteo (#332): clientes de la selección con movimientos NEGATIVOS
             // pendientes (abonos, pagos a cuenta) de cualquier tipo → revisar/liquidar antes.
-            List<string> clientes = efectos.Select(e => e.Número?.Trim()).Distinct().ToList();
             List<string> clientesConNegativos = await db.ExtractosCliente
                 .Where(e => e.Empresa == empresa && clientes.Contains(e.Número.Trim())
                     && e.ImportePdte < 0)
@@ -137,7 +154,12 @@ namespace NestoAPI.Infraestructure.Remesas
                 {
                     motivo = $"El estado '{estadoEfecto}' del movimiento bloquea la liquidación: no se puede remesar.";
                 }
-                else if (documento != null
+                if (motivo == null)
+                {
+                    _ = cccPorClave.TryGetValue(ClaveCcc(cliente, e.Contacto, e.CCC), out CCC fichaCcc);
+                    motivo = MotivoRetencionIban(fichaCcc, e.CCC?.Trim());
+                }
+                if (motivo == null && documento != null
                     && pedidosPorFactura.TryGetValue(documento, out List<int> pedidosFactura))
                 {
                     List<short> estadosEnvios = pedidosFactura
@@ -171,6 +193,44 @@ namespace NestoAPI.Infraestructure.Remesas
                     Motivo = motivo
                 };
             }).ToList();
+        }
+
+        private static string ClaveCcc(string cliente, string contacto, string numero)
+            => $"{cliente?.Trim()}|{contacto?.Trim()}|{numero?.Trim()}";
+
+        /// <summary>
+        /// NestoAPI#381: motivo de retención de un efecto por su ficha bancaria, o null si el
+        /// IBAN está bien. Replica la regla del SP (componentes NULL = IBAN nulo) y añade la
+        /// validación mod-97 (un IBAN completo pero mal formado lo rechazaría el banco).
+        /// Pura y estática para testear sin BD.
+        /// </summary>
+        internal static string MotivoRetencionIban(CCC fichaCcc, string codigoCcc)
+        {
+            if (fichaCcc == null)
+            {
+                return $"Retenido: el CCC '{codigoCcc}' del efecto no existe en la ficha bancaria " +
+                    "del cliente — el fichero SEPA lo descartaría en silencio (#381).";
+            }
+            if (fichaCcc.Pais == null || fichaCcc.DC_IBAN == null || fichaCcc.Entidad == null
+                || fichaCcc.Oficina == null || fichaCcc.DC == null || fichaCcc.Nº_Cuenta == null)
+            {
+                return "Retenido: el IBAN de la ficha bancaria está incompleto — el fichero SEPA " +
+                    "fallaría al generarse; corregir la ficha antes de remesar (#381).";
+            }
+            string compuesto = Iban.ComponerIban(fichaCcc).Trim();
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(compuesto) && new Iban(compuesto).EsValido)
+                {
+                    return null;
+                }
+            }
+            catch
+            {
+                // El propio constructor de Iban lanza con IBANes rotos: mismo tratamiento.
+            }
+            return $"Retenido: el IBAN '{compuesto}' de la ficha bancaria no es válido — " +
+                "corregirlo antes de remesar (#381).";
         }
     }
 }
