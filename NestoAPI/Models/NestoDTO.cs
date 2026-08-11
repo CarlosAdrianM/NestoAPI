@@ -12,6 +12,9 @@ namespace NestoAPI.Models
         public string contacto { get; set; }
         // Nesto#340: lo necesita CanalExternoPedidosAmazon para crear el pedido sin EF
         public string contactoCobro { get; set; }
+        // Nesto#340: lo necesita CanalExternoPedidosPrestashopNuevaVision (el pedido web
+        // se crea sobre el contacto por defecto del cliente encontrado por NIF)
+        public string contactoDefecto { get; set; }
         public bool clientePrincipal { get; set; }
         public string nombre { get; set; }
         public string direccion { get; set; }

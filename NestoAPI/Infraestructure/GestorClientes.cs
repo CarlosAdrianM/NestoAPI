@@ -1792,6 +1792,17 @@ namespace NestoAPI.Infraestructure
                 ? new List<ClienteDTO>()
                 : await servicio.BuscarClientesPorTelefono(telefono).ConfigureAwait(false);
         }
+
+        // Nesto#340: mínimo 5 caracteres — el cliente de Prestashop limpia el DNI (quita
+        // separadores y ceros iniciales) y un resto demasiado corto barrería el fichero
+        // entero con el Contains del fallback
+        public async Task<List<ClienteDTO>> BuscarClientesPorNif(string nif)
+        {
+            nif = nif?.Trim();
+            return string.IsNullOrEmpty(nif) || nif.Length < 5
+                ? new List<ClienteDTO>()
+                : await servicio.BuscarClientesPorNif(nif).ConfigureAwait(false);
+        }
     }
 }
 

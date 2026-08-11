@@ -29,6 +29,7 @@ namespace NestoAPI.Infraestructure
         Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email);
         Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif);
         Task<List<ClienteDTO>> BuscarClientesPorTelefono(string telefono);
+        Task<List<ClienteDTO>> BuscarClientesPorNif(string nif);
         Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null);
     }
 }

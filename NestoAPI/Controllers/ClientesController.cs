@@ -639,6 +639,19 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        // GET: api/Clientes/PorNif
+        // Nesto#340: clientes principales activos por NIF (exacto y, si no hay, Contains),
+        // para que los pedidos de Prestashop no necesiten EF en el cliente de escritorio
+        [HttpGet]
+        [Route("api/Clientes/PorNif")]
+        [ResponseType(typeof(List<ClienteDTO>))]
+        public async Task<IHttpActionResult> GetClientesPorNif(string nif)
+        {
+            List<ClienteDTO> respuesta = await _gestorClientes.BuscarClientesPorNif(nif);
+
+            return Ok(respuesta);
+        }
+
         [HttpGet]
         [Route("api/Clientes/ComprobarDatosBanco")]
         // GET: api/Clientes/5

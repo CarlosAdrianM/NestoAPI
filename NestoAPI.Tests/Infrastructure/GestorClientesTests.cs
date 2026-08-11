@@ -1328,6 +1328,36 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreSame(esperado, resultado, "Debe recortar espacios y delegar en el servicio");
         }
 
+        // Nesto#340: endpoint api/Clientes/PorNif para que CanalExternoPedidosPrestashopNuevaVision
+        // no necesite EF en el cliente de escritorio
+
+        [TestMethod]
+        public void GestorClientes_BuscarClientesPorNif_NifCorto_DevuelveVacioSinConsultar()
+        {
+            // El cliente limpia el DNI (quita separadores y ceros iniciales): un resto corto
+            // barrería el fichero entero con el Contains del fallback
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+
+            List<ClienteDTO> resultado = gestor.BuscarClientesPorNif("123").Result;
+
+            Assert.AreEqual(0, resultado.Count);
+            A.CallTo(() => servicio.BuscarClientesPorNif(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GestorClientes_BuscarClientesPorNif_NifValido_DelegaEnElServicio()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            List<ClienteDTO> esperado = new List<ClienteDTO> { new ClienteDTO { cliente = "15191", contactoDefecto = "1" } };
+            A.CallTo(() => servicio.BuscarClientesPorNif("12345678Z")).Returns(esperado);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+
+            List<ClienteDTO> resultado = gestor.BuscarClientesPorNif(" 12345678Z ").Result;
+
+            Assert.AreSame(esperado, resultado, "Debe recortar espacios y delegar en el servicio");
+        }
+
         [TestMethod]
         public void GestorClientes_PrepararClienteModificar_SiLaFormaDePagoEsEfectivoNoLeeElCCC()
         {

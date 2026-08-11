@@ -539,6 +539,53 @@ namespace NestoAPI.Infraestructure
             }
         }
 
+        // Nesto#340: búsqueda de cliente por NIF para los pedidos de la tienda online
+        // (antes CanalExternoPedidosPrestashopNuevaVision consultaba la BD con EF desde el
+        // cliente de escritorio). Semántica calcada del cliente viejo: primero coincidencia
+        // EXACTA y, si no hay, Contains; solo clientes principales activos.
+        public async Task<List<ClienteDTO>> BuscarClientesPorNif(string nif)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                db.Configuration.LazyLoadingEnabled = false;
+                List<ClienteDTO> exactos = await ConsultaClientesPorNif(db, c => c.CIF_NIF == nif);
+                return exactos.Any()
+                    ? exactos
+                    : await ConsultaClientesPorNif(db, c => c.CIF_NIF.Contains(nif));
+            }
+        }
+
+        private static async Task<List<ClienteDTO>> ConsultaClientesPorNif(NVEntities db,
+            System.Linq.Expressions.Expression<Func<Cliente, bool>> filtroNif)
+        {
+            return await db.Clientes
+                .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.ClientePrincipal && c.Estado >= 0)
+                .Where(filtroNif)
+                .OrderBy(c => c.Nº_Cliente).ThenBy(c => c.Contacto)
+                .Take(5)
+                .Select(c => new ClienteDTO
+                {
+                    empresa = c.Empresa.Trim(),
+                    cliente = c.Nº_Cliente.Trim(),
+                    contacto = c.Contacto.Trim(),
+                    contactoCobro = c.ContactoCobro.Trim(),
+                    contactoDefecto = c.ContactoDefecto.Trim(),
+                    clientePrincipal = c.ClientePrincipal,
+                    nombre = c.Nombre.Trim(),
+                    direccion = c.Dirección.Trim(),
+                    codigoPostal = c.CodPostal.Trim(),
+                    poblacion = c.Población.Trim(),
+                    provincia = c.Provincia.Trim(),
+                    telefono = c.Teléfono.Trim(),
+                    cifNif = c.CIF_NIF.Trim(),
+                    vendedor = c.Vendedor.Trim(),
+                    iva = c.IVA.Trim(),
+                    comentarioPicking = c.ComentarioPicking,
+                    estado = c.Estado
+                })
+                .ToListAsync().ConfigureAwait(false);
+        }
+
         public async Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif)
         {
             using (NVEntities db = new NVEntities())
