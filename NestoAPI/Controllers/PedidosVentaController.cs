@@ -1936,6 +1936,29 @@ namespace NestoAPI.Controllers
             return Ok(importeReembolso);
         }
 
+        // GET: api/PedidosVenta/PorReferenciaCanal
+        // Nesto#340: nº del pedido Nesto cuyos Comentarios EMPIEZAN por la referencia del canal
+        // externo (Prestashop la escribe en la primera línea al crear el pedido). Antes
+        // PrestashopService lo consultaba con EF desde el cliente de escritorio. 0 = no hay.
+        [HttpGet]
+        [ResponseType(typeof(int))]
+        [Route("api/PedidosVenta/PorReferenciaCanal")]
+        public async Task<IHttpActionResult> GetPedidoPorReferenciaCanal(string referencia)
+        {
+            referencia = referencia?.Trim();
+            if (string.IsNullOrEmpty(referencia) || referencia.Length < 4)
+            {
+                // una referencia residual con StartsWith barrería la tabla entera
+                return Ok(0);
+            }
+            int numero = await db.CabPedidoVtas
+                .Where(c => c.Comentarios.StartsWith(referencia))
+                .OrderByDescending(c => c.Número) // determinista: el más reciente si hay varios
+                .Select(c => c.Número)
+                .FirstOrDefaultAsync().ConfigureAwait(false);
+            return Ok(numero);
+        }
+
         [HttpPost]
         [ResponseType(typeof(ResultadoPortes))]
         [Route("api/PedidosVenta/CalcularPortes")]

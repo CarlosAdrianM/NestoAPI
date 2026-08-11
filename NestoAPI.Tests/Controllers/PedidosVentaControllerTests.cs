@@ -10,6 +10,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
+using NestoAPI.Tests.Helpers;
 
 namespace NestoAPI.Tests.Controllers
 {
@@ -44,6 +45,71 @@ namespace NestoAPI.Tests.Controllers
             var resultado = await controller.PutPedidoVenta(pedido);
 
             Assert.IsInstanceOfType(resultado, typeof(NotFoundResult));
+        }
+
+        // Nesto#340: GET api/PedidosVenta/PorReferenciaCanal — el nº de pedido Nesto por la
+        // referencia del canal externo (antes PrestashopService lo consultaba con EF)
+
+        private static NVEntities DbConCabeceras(params CabPedidoVta[] cabeceras)
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            DbSet<CabPedidoVta> fakeCabs = A.Fake<DbSet<CabPedidoVta>>(o => o
+                .Implements<IQueryable<CabPedidoVta>>()
+                .Implements<IDbAsyncEnumerable<CabPedidoVta>>());
+            var datos = cabeceras.ToList().AsQueryable();
+            A.CallTo(() => ((IDbAsyncEnumerable<CabPedidoVta>)fakeCabs).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<CabPedidoVta>(datos.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<CabPedidoVta>)fakeCabs).Provider)
+                .Returns(new TestDbAsyncQueryProvider<CabPedidoVta>(datos.Provider));
+            A.CallTo(() => ((IQueryable<CabPedidoVta>)fakeCabs).Expression).Returns(datos.Expression);
+            A.CallTo(() => ((IQueryable<CabPedidoVta>)fakeCabs).ElementType).Returns(datos.ElementType);
+            A.CallTo(() => ((IQueryable<CabPedidoVta>)fakeCabs).GetEnumerator()).Returns(datos.GetEnumerator());
+            A.CallTo(() => db.CabPedidoVtas).Returns(fakeCabs);
+            return db;
+        }
+
+        [TestMethod]
+        public async Task GetPedidoPorReferenciaCanal_ComentarioEmpiezaPorLaReferencia_DevuelveElNumero()
+        {
+            NVEntities db = DbConCabeceras(
+                new CabPedidoVta { Número = 920001, Comentarios = "XKBKNABJK \r\nJUAN PÉREZ" },
+                new CabPedidoVta { Número = 920002, Comentarios = "OTRAREF \r\nOTRO CLIENTE" });
+            PedidosVentaController controller = new PedidosVentaController(db);
+
+            var resultado = await controller.GetPedidoPorReferenciaCanal("XKBKNABJK");
+
+            var ok = resultado as OkNegotiatedContentResult<int>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(920001, ok.Content);
+        }
+
+        [TestMethod]
+        public async Task GetPedidoPorReferenciaCanal_SinCoincidencias_DevuelveCero()
+        {
+            NVEntities db = DbConCabeceras(
+                new CabPedidoVta { Número = 920001, Comentarios = "OTRAREF \r\nOTRO CLIENTE" });
+            PedidosVentaController controller = new PedidosVentaController(db);
+
+            var resultado = await controller.GetPedidoPorReferenciaCanal("XKBKNABJK");
+
+            var ok = resultado as OkNegotiatedContentResult<int>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(0, ok.Content);
+        }
+
+        [TestMethod]
+        public async Task GetPedidoPorReferenciaCanal_ReferenciaCorta_DevuelveCeroSinBarrerLaTabla()
+        {
+            // Un StartsWith con una referencia residual casaría con media tabla
+            NVEntities db = DbConCabeceras(
+                new CabPedidoVta { Número = 920001, Comentarios = "XKBKNABJK \r\nJUAN PÉREZ" });
+            PedidosVentaController controller = new PedidosVentaController(db);
+
+            var resultado = await controller.GetPedidoPorReferenciaCanal("XK");
+
+            var ok = resultado as OkNegotiatedContentResult<int>;
+            Assert.IsNotNull(ok);
+            Assert.AreEqual(0, ok.Content);
         }
 
         // NOTA: Los tests del endpoint ObtenerDocumentosImpresion son complejos de mockear
