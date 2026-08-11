@@ -1127,6 +1127,37 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_CpConBlancoInicial_EncuentraElExistenteYNoLoDuplica()
+        {
+            // ELMAH 10/08/26: un alta extranjera con el CP precedido de un blanco invisible
+            // (NBSP de un autocompletado) no encontraba el CP existente (SQL ignora blancos
+            // finales pero no iniciales) y el INSERT, que sí hacía Trim, reventaba con
+            // PK_CódigosPostales duplicada (CAP 16145 de Génova vs CP 16145 de Cuenca).
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            CodigoPostal cpExistente = new CodigoPostal { Empresa = "1", Número = "16145", Descripción = "PAJARES", Ruta = "00", Pais = "ES" };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, A<string>.Ignored)).Returns(Task.FromResult<CodigoPostal>(null));
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "16145")).Returns(cpExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nombre = "GENOVA SRL",
+                Pais = "IT",
+                CodigoPostal = " 16145",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreSame(cpExistente, clienteNuevo.CódigosPostales, "La búsqueda debe hacerse con el CP normalizado (sin blancos)");
+            Assert.AreEqual("16145", clienteNuevo.CodPostal, "El CP del cliente se guarda sin blancos o rompería la FK");
+            A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
         public void GestorClientes_PrepararClienteCrear_CpExistenteSinPais_LeRellenaElPais()
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();

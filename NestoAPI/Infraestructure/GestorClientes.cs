@@ -111,6 +111,13 @@ namespace NestoAPI.Infraestructure
         internal async Task<CodigoPostal> AsegurarCodigoPostalExtranjero(NVEntities db, string empresa, string codigoPostal, string poblacion, string provincia, string pais)
         {
             empresa = empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            // ELMAH 10/08/26: el CP puede llegar con blancos invisibles al PRINCIPIO (espacio,
+            // NBSP de un autocompletado...). La comparación de SQL Server ignora los blancos
+            // finales pero no los iniciales, así que la búsqueda no encontraba el CP existente
+            // y el INSERT (que sí hacía Trim) chocaba con PK_CódigosPostales (caso real: CAP
+            // 16145 de Génova vs CP 16145 de Cuenca ya en la tabla). Búsqueda e insert deben
+            // usar el mismo valor normalizado.
+            codigoPostal = codigoPostal?.Trim();
             CodigoPostal cpDb = await servicio.BuscarCodigoPostal(empresa, codigoPostal).ConfigureAwait(false);
             if (cpDb != null)
             {
@@ -126,7 +133,7 @@ namespace NestoAPI.Infraestructure
             cpDb = new CodigoPostal
             {
                 Empresa = empresa,
-                Número = codigoPostal.Trim(),
+                Número = codigoPostal,
                 Descripción = Truncar((string.IsNullOrWhiteSpace(poblacion) ? pais : poblacion).ToUpper().Trim(), 50),
                 Provincia = Truncar((string.IsNullOrWhiteSpace(provincia) ? pais : provincia).ToUpper().Trim(), 30),
                 Ruta = Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS,
@@ -911,7 +918,7 @@ namespace NestoAPI.Infraestructure
                 clienteDB.Población = Truncar(cp.Descripción, 30);
                 clienteDB.Provincia = cp.Provincia;
             }
-            clienteDB.CodPostal = clienteModificar.CodigoPostal;
+            clienteDB.CodPostal = clienteModificar.CodigoPostal?.Trim();
             clienteDB.Teléfono = clienteModificar.Telefono;
             clienteDB.Vendedor = clienteModificar.VendedorEstetica;
             clienteDB.Comentarios = clienteModificar.Comentarios;
@@ -1145,7 +1152,7 @@ namespace NestoAPI.Infraestructure
                 // NestoAPI#355: país ISO-2; sin indicar = ES (default de la casa para el histórico).
                 Pais = string.IsNullOrWhiteSpace(clienteCrear.Pais) ? "ES" : clienteCrear.Pais.Trim().ToUpper(),
                 ClientePrincipal = !clienteCrear.EsContacto,
-                CodPostal = clienteCrear.CodigoPostal,
+                CodPostal = clienteCrear.CodigoPostal?.Trim(),
                 Comentarios = clienteCrear.Comentarios,
                 ComentarioPicking = clienteCrear.ComentariosPicking,
                 ComentarioRuta = clienteCrear.ComentariosRuta,
