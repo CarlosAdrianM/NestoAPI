@@ -194,6 +194,7 @@
     <Compile Include="Controllers\FacturacionRutasControllerTests.cs" />
     <Compile Include="Controllers\ErroresControllerTests.cs" />
     <Compile Include="Controllers\ExtractosClienteControllerTests.cs" />
+    <Compile Include="Controllers\ExtractoProveedoresControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerCodigoBarrasTests.cs" />
     <Compile Include="Controllers\GanavisionesControllerTests.cs" />
     <Compile Include="Controllers\PlanesVentajasControllerTests.cs" />

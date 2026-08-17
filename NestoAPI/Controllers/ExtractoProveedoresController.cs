@@ -16,11 +16,37 @@ namespace NestoAPI.Controllers
 {
     public class ExtractoProveedoresController : ApiController
     {
-        private NVEntities db = new NVEntities();
+        private readonly NVEntities db;
 
-        public ExtractoProveedoresController()
+        public ExtractoProveedoresController() : this(new NVEntities())
         {
+        }
+
+        // Nesto#340: inyección para tests (patrón del resto de controllers).
+        internal ExtractoProveedoresController(NVEntities db)
+        {
+            this.db = db;
             db.Configuration.LazyLoadingEnabled = false;
+        }
+
+        /// <summary>
+        /// Nesto#340: asiento del apunte de PAGO (TipoApunte 3) de un proveedor por fecha e
+        /// importe exactos. Sustituye la consulta EF directa del módulo CanalesExternos de
+        /// Nesto (cuadre de pagos de Amazon). Sin coincidencia devuelve 0, el mismo contrato
+        /// que aplicaba el cliente.
+        /// </summary>
+        [HttpGet]
+        [Route("api/ExtractoProveedores/BuscarPago")]
+        [ResponseType(typeof(int))]
+        public async Task<IHttpActionResult> BuscarPago(string proveedor, DateTime fecha, decimal importe)
+        {
+            const string TIPO_APUNTE_PAGO = "3";
+            int asiento = await db.ExtractosProveedor
+                .Where(e => e.Número == proveedor && e.Fecha == fecha && e.Importe == importe
+                    && e.TipoApunte == TIPO_APUNTE_PAGO)
+                .Select(e => e.Asiento)
+                .FirstOrDefaultAsync();
+            return Ok(asiento);
         }
 
         // GET: api/ExtractoProveedores
