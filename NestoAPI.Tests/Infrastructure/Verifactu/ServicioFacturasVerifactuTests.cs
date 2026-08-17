@@ -52,6 +52,8 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             A.CallTo(() => db.VerifactuRegistros).Returns(fakeRegistros);
             _ = A.CallTo(() => fakeRegistros.Add(A<VerifactuRegistro>.Ignored))
                 .Invokes((VerifactuRegistro r) => registrosInsertados.Add(r));
+            // NestoAPI#385: la comprobación del duplicado benigno relee la factura sin tracking
+            A.CallTo(() => fakeFacturas.AsNoTracking()).Returns(fakeFacturas);
             servicioVerifactu = A.Fake<IServicioVerifactu>();
             A.CallTo(() => servicioVerifactu.EstaHabilitado).Returns(true);
             logService = A.Fake<ILogService>();
@@ -333,6 +335,79 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             await servicio.VincularRectificativaPendiente("1", "NV2600123", 900001); // no debe lanzar
 
             A.CallTo(() => logService.LogError(A<string>.That.Contains("900001"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        // NestoAPI#385 (caso real NV2613897, 17/08/26 10:15): carrera entre el job horario y el
+        // envío del flujo de facturación — ambos vieron la factura con UUID null y ambos hicieron
+        // el alta; Verifacti rechazó la segunda con "Ya existe una factura con la misma serie,
+        // numero y fecha_expedicion" y el error pisaba VerifactuUltimoError (incoherente con
+        // Estado=Correcto) y ensuciaba ELMAH.
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_DosEnviosConcurrentes_SoloUnoLlegaAVerifacti()
+        {
+            var factura = ConfigurarFactura();
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .ReturnsLazily(async call =>
+                {
+                    await Task.Delay(150); // ventana real: los dos emisores se solapan
+                    return new VerifactuResponse { Exitoso = true, Uuid = "uuid-1", Estado = "Correcto" };
+                });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            Task<VerifactuResponse> envio1 = servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+            Task<VerifactuResponse> envio2 = servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+            _ = await Task.WhenAll(envio1, envio2);
+
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            Assert.AreEqual("uuid-1", factura.VerifactuUUID);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_YaExisteYOtroEmisorPersistioElUuid_EsBenigno()
+        {
+            // Otro emisor (p. ej. otro proceso) registró la factura mientras enviábamos: el
+            // rechazo por duplicado no es un error — ni ELMAH ni pisar el rastro.
+            var factura = ConfigurarFactura();
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes(() => factura.VerifactuUUID = "uuid-otro-emisor")
+                .Returns(new VerifactuResponse
+                {
+                    Exitoso = false,
+                    CodigoError = "400",
+                    MensajeError = "Ya existe una factura con la misma serie, numero y fecha_expedicion."
+                });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            _ = await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.AreEqual("uuid-otro-emisor", factura.VerifactuUUID, "El UUID del emisor que ganó no se pisa");
+            Assert.IsNull(factura.VerifactuUltimoError, "Duplicado benigno: sin rastro de error");
+            A.CallTo(() => logService.LogError(A<string>.Ignored, A<Exception>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_YaExisteSinUuidLocal_DejaMensajeAccionable()
+        {
+            // Huérfana real: un envío anterior registró la factura en Verifacti pero la respuesta
+            // se perdió (timeout) y no tenemos UUID. Reintentar el alta cada hora con el mismo
+            // rechazo no lleva a nada: el rastro debe decir cómo salir (recuperar el UUID).
+            var factura = ConfigurarFactura();
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Returns(new VerifactuResponse
+                {
+                    Exitoso = false,
+                    CodigoError = "400",
+                    MensajeError = "Ya existe una factura con la misma serie, numero y fecha_expedicion."
+                });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            _ = await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            StringAssert.Contains(factura.VerifactuUltimoError, "recuperar");
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("recuperar"), A<Exception>.Ignored))
                 .MustHaveHappenedOnceExactly();
         }
 

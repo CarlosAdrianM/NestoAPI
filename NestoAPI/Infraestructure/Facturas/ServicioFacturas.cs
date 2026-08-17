@@ -783,6 +783,24 @@ namespace NestoAPI.Infraestructure.Facturas
         /// operativo AEAT para reenviar como subsanación un registro que nunca se aceptó).</summary>
         private const string RECHAZO_PREVIO_ALTA_RECHAZADA = "X";
 
+        /// <summary>NestoAPI#385: rechazo de Verifacti cuando la factura ya está registrada
+        /// (doble alta por carrera, o respuesta perdida de un envío anterior).</summary>
+        internal const string ERROR_FACTURA_YA_REGISTRADA = "Ya existe una factura con la misma serie";
+
+        // NestoAPI#385: el job horario de Verifactu y el envío al facturar corren en el MISMO
+        // proceso (Hangfire in-process, un único servidor): un candado por factura elimina la
+        // doble alta cuando la factura se crea en la ventana de la pasada del job (caso real
+        // NV2613897, 17/08/26). Stripes fijos: una colisión de hash solo serializa brevemente
+        // dos envíos de facturas distintas.
+        private static readonly System.Threading.SemaphoreSlim[] CandadosEnvioVerifactu =
+            Enumerable.Range(0, 32).Select(_ => new System.Threading.SemaphoreSlim(1, 1)).ToArray();
+
+        private static System.Threading.SemaphoreSlim CandadoEnvioVerifactu(string empresa, string numeroFactura)
+        {
+            uint hash = (uint)$"{empresa?.Trim()}|{numeroFactura?.Trim()}".GetHashCode();
+            return CandadosEnvioVerifactu[hash % (uint)CandadosEnvioVerifactu.Length];
+        }
+
         /// <summary>NestoAPI#347: valor de ParámetrosIVA.Pais que marca un código nacional.</summary>
         private const string PAIS_NACIONAL = "ES";
 
@@ -800,6 +818,30 @@ namespace NestoAPI.Infraestructure.Facturas
                     return null;
                 }
 
+                // NestoAPI#385: serializar los envíos de la MISMA factura (job vs facturación);
+                // el segundo emisor entra después, ve el UUID persistido y no envía.
+                System.Threading.SemaphoreSlim candado = CandadoEnvioVerifactu(empresa, numeroFactura);
+                await candado.WaitAsync();
+                try
+                {
+                    return await EnviarAVerifactuSerializado(empresa, numeroFactura, permitirRectificativas);
+                }
+                finally
+                {
+                    _ = candado.Release();
+                }
+            }
+            catch (Exception ex)
+            {
+                logService.LogError($"Verifactu: error inesperado al enviar la factura {numeroFactura}", ex);
+                return null;
+            }
+        }
+
+        private async Task<Verifactu.VerifactuResponse> EnviarAVerifactuSerializado(string empresa, string numeroFactura, bool permitirRectificativas)
+        {
+            try
+            {
                 CabFacturaVta factura = await db.CabsFacturasVtas
                     .Include(f => f.LinPedidoVtas)
                     .FirstOrDefaultAsync(f => f.Empresa == empresa && f.Número == numeroFactura);
@@ -928,9 +970,31 @@ namespace NestoAPI.Infraestructure.Facturas
                 // queda consultable en la factura (VerifactuUltimoError/UltimoIntento) y cada
                 // registro declarado queda auditado en VerifactuRegistros con su payload.
                 bool exitoso = respuesta != null && respuesta.Exitoso;
+
+                // NestoAPI#385: "ya existe" = Verifacti ya tiene la factura registrada. Si su
+                // UUID está persistido (otro emisor ganó la carrera — p. ej. otro proceso), el
+                // rechazo es BENIGNO: ni error ni ELMAH. Si no hay UUID, es una huérfana (la
+                // respuesta de un envío anterior se perdió tras registrar Verifacti): reintentar
+                // el alta no lleva a nada y el rastro debe decir cómo salir.
+                bool esDuplicado = !exitoso && respuesta?.MensajeError != null
+                    && respuesta.MensajeError.IndexOf(ERROR_FACTURA_YA_REGISTRADA, StringComparison.OrdinalIgnoreCase) >= 0;
+                bool duplicadoBenigno = false;
+                if (esDuplicado)
+                {
+                    string uuidPersistido = await db.CabsFacturasVtas.AsNoTracking()
+                        .Where(f => f.Empresa == empresa && f.Número == numeroFactura)
+                        .Select(f => f.VerifactuUUID)
+                        .FirstOrDefaultAsync();
+                    duplicadoBenigno = !string.IsNullOrWhiteSpace(uuidPersistido)
+                        || !string.IsNullOrWhiteSpace(factura.VerifactuUUID);
+                }
+
                 factura.VerifactuUltimoIntento = DateTime.Now;
-                factura.VerifactuUltimoError = exitoso
-                    ? null
+                factura.VerifactuUltimoError =
+                    exitoso || duplicadoBenigno ? null
+                    : esDuplicado ? Truncar("Registrada en Verifacti pero sin UUID local (la " +
+                        "respuesta de un envío anterior se perdió): recuperar el UUID desde el " +
+                        "panel de Verifacti (o POST /verifactu/list) y grabarlo en VerifactuUUID (#385).", 500)
                     : Truncar($"({respuesta?.CodigoError}) {respuesta?.MensajeError}", 500);
                 db.VerifactuRegistros.Add(new VerifactuRegistro
                 {
@@ -958,12 +1022,22 @@ namespace NestoAPI.Infraestructure.Facturas
                     factura.VerifactuEstado = respuesta.Estado;
                     Verifactu.DeduplicadorErroresVerifactu.Limpiar(claveRuido);
                 }
+                else if (duplicadoBenigno)
+                {
+                    // NestoAPI#385: registrada y con UUID — nada que hacer ni que loguear
+                    Verifactu.DeduplicadorErroresVerifactu.Limpiar(claveRuido);
+                }
                 else
                 {
                     // NestoAPI#346: el mismo error de la misma factura solo se loguea la primera
                     // vez (el job reintenta cada pasada y repetirlo inundaba ELMAH).
-                    string mensaje = $"Verifactu: error al enviar la factura {numeroFactura} " +
-                        $"({respuesta?.CodigoError}): {respuesta?.MensajeError}";
+                    string mensaje = esDuplicado
+                        ? $"Verifactu: la factura {numeroFactura} ya está registrada en Verifacti " +
+                          "pero no tenemos su UUID (la respuesta de un envío anterior se perdió): " +
+                          "hay que recuperar el UUID (panel de Verifacti o POST /verifactu/list) " +
+                          "y grabarlo en VerifactuUUID (#385)."
+                        : $"Verifactu: error al enviar la factura {numeroFactura} " +
+                          $"({respuesta?.CodigoError}): {respuesta?.MensajeError}";
                     if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad(claveRuido, mensaje))
                     {
                         logService.LogError(mensaje);
