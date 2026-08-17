@@ -343,13 +343,22 @@ namespace NestoAPI.Infraestructure.Remesas
                 .Select((grupo, indice) => new { grupo, indice })
                 .ToDictionary(x => x.grupo, x => x.indice + 1);
 
+            // NestoAPI#386 (caso real 10909, presentada viernes 31/07): el banco abona los FRST
+            // el día que PROCESA el fichero, sin el D-1 de los RCUR (el FRST del 31/07 se abonó
+            // el mismo 31/07; los RCUR, el lunes 03/08). Día de valor del grupo FRST = el suelo
+            // (hoy, la presentación); los RCUR suben al siguiente laborable como siempre.
+            DateTime FechaValorDe(string secuencia, DateTime fechaSolicitada) =>
+                secuencia == SECUENCIA_RECURRENTE
+                    ? VencimientoEfectivo(fechaSolicitada, sueloValor)
+                    : suelo;
+
             foreach (ExtractoCliente efecto in efectos)
             {
                 DateTime fechaSolicitada = FechaSolicitadaDe(efecto);
-                // El día de VALOR (fecha contable): el banco no abona antes de la próxima fecha de
-                // cargo, así que el grupo de hoy sube al siguiente laborable; los futuros conservan
-                // su fecha. VencimientoEfectivo = max(fechaSolicitada, sueloValor).
-                DateTime fechaValor = VencimientoEfectivo(fechaSolicitada, sueloValor);
+                // El día de VALOR (fecha contable): el banco no abona los RCUR antes de la próxima
+                // fecha de cargo, así que el grupo de hoy sube al siguiente laborable; los futuros
+                // conservan su fecha; los FRST van al día de presentación (#386).
+                DateTime fechaValor = FechaValorDe(SecuenciaDe(efecto), fechaSolicitada);
 
                 string documento = efecto.Nº_Documento?.Trim();
                 string concepto = $"Pago Factura {documento}  {efecto.Efecto?.Trim()}".TrimEnd();
@@ -392,7 +401,7 @@ namespace NestoAPI.Infraestructure.Remesas
             // El sufijo FRST en el concepto ayuda al punteo (los RCUR se quedan como siempre).
             foreach (KeyValuePair<Tuple<string, DateTime>, decimal> grupo in totalesPorGrupo)
             {
-                DateTime fechaValor = VencimientoEfectivo(grupo.Key.Item2, sueloValor);
+                DateTime fechaValor = FechaValorDe(grupo.Key.Item1, grupo.Key.Item2);
                 string conceptoBanco = $"Remesa:{numeroRemesa}. Al Banco: {cuentaBanco}" +
                     (grupo.Key.Item1 == SECUENCIA_RECURRENTE ? string.Empty : $" {grupo.Key.Item1}");
                 lineas.Add(new PreContabilidad

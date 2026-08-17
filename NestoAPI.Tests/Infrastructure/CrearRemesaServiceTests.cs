@@ -255,6 +255,36 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void ConstruirLineasRemesa_GrupoFrst_SeContabilizaConValorDeHoy()
+        {
+            // Caso real remesa 10909 (creada viernes 31/07): el banco abonó el grupo FRST el
+            // MISMO día de la presentación (31/07) y los RCUR el siguiente hábil (03/08). Los
+            // FRST no llevan el D-1: su día de valor es el de presentación (hoy), mientras que
+            // los RCUR del mismo día suben a fechaValorMinima como siempre.
+            DateTime hoy = DateTime.Today;
+            DateTime lunes = hoy.AddDays(3); // simula el siguiente laborable tras el fin de semana
+            var efectos = new List<ExtractoCliente>
+            {
+                Efecto(1, "15191", 257.06m, "NV1", vencimiento: hoy),
+                Efecto(2, "26985", 2141.50m, "NV2", vencimiento: hoy)
+            };
+            var secuencias = new Dictionary<int, string> { { 1, "FRST" }, { 2, "RCUR" } };
+
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10909, "1", BancoSabadell(), efectos, "carlos", respetarVencimientos: true,
+                fechaValorMinima: lunes, secuenciaPorEfecto: secuencias);
+
+            PreContabilidad bancoFrst = lineas.Single(l =>
+                l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE && l.Concepto.Contains("FRST"));
+            PreContabilidad bancoRcur = lineas.Single(l =>
+                l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE && !l.Concepto.Contains("FRST"));
+            Assert.AreEqual(hoy, bancoFrst.Fecha, "El FRST se abona el día de la presentación (sin D-1)");
+            Assert.AreEqual(lunes, bancoRcur.Fecha, "El RCUR sube al siguiente laborable, como siempre");
+            Assert.AreEqual(hoy, lineas.Single(l => l.Liquidado == 1).Fecha, "El pago FRST acompaña a su banco");
+            Assert.AreEqual(lunes, lineas.Single(l => l.Liquidado == 2).Fecha);
+        }
+
+        [TestMethod]
         public void ConstruirLineasRemesa_SinSecuencias_TodoRecurrenteComoHastaAhora()
         {
             // Compatibilidad: sin diccionario (o efecto sin ficha) todo cuenta como RCUR — un
