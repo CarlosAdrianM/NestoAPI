@@ -194,6 +194,11 @@ namespace NestoAPI.Infraestructure.Verifactu
                 {
                     await servicioValidacionNif.MarcarIncorrecto(factura.Nº_Cliente,
                         $"RECHAZO VERIFACTU: {respuesta.MensajeError}", "VerifactuJob").ConfigureAwait(false);
+                    // NestoAPI#383: el rechazo puede ser por el NOMBRE (cambio de apellido) con
+                    // el NIF bueno. Si hay un nombre censal verificable, se corrige el persistido
+                    // y la siguiente pasada la declara sola.
+                    _ = await servicioValidacionNif.CorregirNombreFiscalFactura(factura, "VerifactuJob")
+                        .ConfigureAwait(false);
                 }
             }
             if (hayExcluidas)

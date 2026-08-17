@@ -277,6 +277,121 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("90021192", historica.CifNif, "El histórico pre-Verifactu no se toca");
         }
 
+        // NestoAPI#383 (caso real NV2612562/NV2612940): el rechazo de censo puede ser por el
+        // NOMBRE y no por el NIF (cambio de apellido por matrimonio). El circuito #327 propagaba
+        // el NIF corregido a las facturas sin declarar pero NO el nombre: quedaban atascadas
+        // para siempre reintentándose con el apellido de soltera.
+
+        [TestMethod]
+        public async Task CorregirNif_FacturasSinDeclarar_PropagaTambienElNombreFiscal()
+        {
+            ConFicha(Ficha(cliente: "26760", nif: "60243388", nombre: "DEREN KIDASUK ZHANNA"));
+            ConMasFakes();
+            AeatResponde(valido: true, resultado: "IDENTIFICADO");
+            System.DateTime inicio = NestoAPI.Infraestructure.Verifactu.VerifactuJobsService.FechaInicioDeclaracion;
+            var sinDeclarar = new CabFacturaVta { Empresa = "1", Número = "NV2612562", Nº_Cliente = "26760", Fecha = inicio.AddDays(1), CifNif = "60243388", NombreFiscal = "ZHANNA YURCHYK", VerifactuUUID = null };
+            ConFacturas(sinDeclarar);
+
+            var resultado = await servicio.CorregirNif("26760", "60243388V", "carlos");
+
+            Assert.IsTrue(resultado.Corregido);
+            Assert.AreEqual("60243388V", sinDeclarar.CifNif);
+            Assert.AreEqual("DEREN KIDASUK ZHANNA", sinDeclarar.NombreFiscal,
+                "El nombre fiscal persistido debe corregirse junto al NIF (el mapeador declara factura.NombreFiscal)");
+        }
+
+        [TestMethod]
+        public async Task CorregirNombreFiscalFactura_OtraFacturaAceptadaConElMismoNif_AdoptaSuNombre()
+        {
+            // La ficha del cliente sigue con el apellido de soltera (crearon un cliente NUEVO en
+            // vez de renombrarla), pero la factura nueva del otro cliente (mismo NIF) ya está
+            // aceptada por la AEAT: su nombre es el censal y es el candidato que desatasca.
+            ConFicha(Ficha(cliente: "26760", nif: "60243388V", nombre: "ZHANNA YURCHYK"));
+            ConMasFakes();
+            var atascada = new CabFacturaVta { Empresa = "1", Número = "NV2612562", Nº_Cliente = "26760", CifNif = "60243388V", NombreFiscal = "ZHANNA YURCHYK" };
+            var aceptada = new CabFacturaVta { Empresa = "1", Número = "NV2612941", Nº_Cliente = "41791", CifNif = "60243388V", NombreFiscal = "DEREN KIDASUK ZHANNA", VerifactuUUID = "uuid-ok", VerifactuEstado = "Correcto" };
+            ConFacturas(atascada, aceptada);
+            A.CallTo(() => aeat.ComprobarNifNombre("60243388V", "DEREN KIDASUK ZHANNA"))
+                .Returns(new RespuestaNifNombreCliente { NifValidado = true, ResultadoAeat = "IDENTIFICADO", NombreFormateado = "DEREN KIDASUK ZHANNA" });
+
+            bool corregido = await servicio.CorregirNombreFiscalFactura(atascada, "VerifactuJob");
+
+            Assert.IsTrue(corregido);
+            Assert.AreEqual("DEREN KIDASUK ZHANNA", atascada.NombreFiscal);
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CorregirNombreFiscalFactura_FichaRenombrada_EsElPrimerCandidato()
+        {
+            // El flujo previsto por #329 ("corrige la ficha y se declara sola") por fin funciona
+            // también para el nombre: la ficha renombrada es el primer candidato.
+            ConFicha(Ficha(cliente: "26760", nif: "60243388V", nombre: "DEREN KIDASUK ZHANNA"));
+            ConMasFakes();
+            var atascada = new CabFacturaVta { Empresa = "1", Número = "NV2612562", Nº_Cliente = "26760", CifNif = "60243388V", NombreFiscal = "ZHANNA YURCHYK" };
+            ConFacturas(atascada);
+            // La AEAT identifica pero sin devolver nombre formateado: se adopta el candidato
+            A.CallTo(() => aeat.ComprobarNifNombre("60243388V", "DEREN KIDASUK ZHANNA"))
+                .Returns(new RespuestaNifNombreCliente { NifValidado = true, ResultadoAeat = "IDENTIFICADO" });
+
+            bool corregido = await servicio.CorregirNombreFiscalFactura(atascada, "VerifactuJob");
+
+            Assert.IsTrue(corregido);
+            Assert.AreEqual("DEREN KIDASUK ZHANNA", atascada.NombreFiscal);
+        }
+
+        [TestMethod]
+        public async Task CorregirNombreFiscalFactura_LaAeatDevuelveSimilar_AdoptaElNombreCensalDeLaAeat()
+        {
+            // NO IDENTIFICADO-SIMILAR: la AEAT reconoce el NIF con un nombre parecido y devuelve
+            // el censal EXACTO en nombreDevuelto — ese es el que pasa el filtro de Verifacti.
+            ConFicha(Ficha(cliente: "26760", nif: "60243388V", nombre: "DEREN KIDASUK"));
+            ConMasFakes();
+            var atascada = new CabFacturaVta { Empresa = "1", Número = "NV2612562", Nº_Cliente = "26760", CifNif = "60243388V", NombreFiscal = "ZHANNA YURCHYK" };
+            ConFacturas(atascada);
+            A.CallTo(() => aeat.ComprobarNifNombre("60243388V", "DEREN KIDASUK"))
+                .Returns(new RespuestaNifNombreCliente { NifValidado = true, ResultadoAeat = "NO IDENTIFICADO-SIMILAR", NombreFormateado = "DEREN KIDASUK ZHANNA" });
+
+            bool corregido = await servicio.CorregirNombreFiscalFactura(atascada, "VerifactuJob");
+
+            Assert.IsTrue(corregido);
+            Assert.AreEqual("DEREN KIDASUK ZHANNA", atascada.NombreFiscal, "Debe adoptarse el nombre censal de la AEAT, no el candidato aproximado");
+        }
+
+        [TestMethod]
+        public async Task CorregirNombreFiscalFactura_SinCandidatoQueIdentifique_NoTocaNada()
+        {
+            ConFicha(Ficha(cliente: "26760", nif: "60243388V", nombre: "OTRO NOMBRE CUALQUIERA"));
+            ConMasFakes();
+            var atascada = new CabFacturaVta { Empresa = "1", Número = "NV2612562", Nº_Cliente = "26760", CifNif = "60243388V", NombreFiscal = "ZHANNA YURCHYK" };
+            ConFacturas(atascada);
+            AeatResponde(valido: false, resultado: "NO IDENTIFICADO");
+
+            bool corregido = await servicio.CorregirNombreFiscalFactura(atascada, "VerifactuJob");
+
+            Assert.IsFalse(corregido);
+            Assert.AreEqual("ZHANNA YURCHYK", atascada.NombreFiscal, "Sin candidato censal no se toca nada");
+            A.CallTo(() => db.SaveChangesAsync()).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CorregirNombreFiscalFactura_ResultadoConAviso_NoSeAdopta()
+        {
+            // IDENTIFICADO-BAJA/REVOCADO: NifValidado es true pero el nombre devuelto lleva el
+            // prefijo de aviso ("¡EMPRESA DE BAJA! ..."): no es un nombre censal utilizable.
+            ConFicha(Ficha(cliente: "26760", nif: "60243388V", nombre: "DEREN KIDASUK ZHANNA"));
+            ConMasFakes();
+            var atascada = new CabFacturaVta { Empresa = "1", Número = "NV2612562", Nº_Cliente = "26760", CifNif = "60243388V", NombreFiscal = "ZHANNA YURCHYK" };
+            ConFacturas(atascada);
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new RespuestaNifNombreCliente { NifValidado = true, ResultadoAeat = "IDENTIFICADO-BAJA", NombreFormateado = "¡EMPRESA DE BAJA! DEREN KIDASUK ZHANNA" });
+
+            bool corregido = await servicio.CorregirNombreFiscalFactura(atascada, "VerifactuJob");
+
+            Assert.IsFalse(corregido);
+            Assert.AreEqual("ZHANNA YURCHYK", atascada.NombreFiscal);
+        }
+
         [TestMethod]
         public async Task MarcarIdentificacionExtranjera_GuardaElRegistroConTipoYPais()
         {

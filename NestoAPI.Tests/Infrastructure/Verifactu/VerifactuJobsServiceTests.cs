@@ -258,6 +258,27 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task Reintentos_RechazoPorNif_IntentaCorregirElNombreFiscalDesdeElCenso()
+        {
+            // NestoAPI#383 (caso NV2612562/940): el rechazo de censo puede ser por el NOMBRE
+            // (cambio de apellido). Además de marcar la ficha, el job intenta el autocurado del
+            // nombre fiscal persistido para que la siguiente pasada la declare bien.
+            var factura = Factura("NV2612562", nombreFiscal: "ZHANNA YURCHYK");
+            ConFacturas(factura);
+            respuestaReenvio = new VerifactuResponse
+            {
+                Exitoso = false,
+                MensajeError = "El NIF/NOMBRE (60243388V/ZHANNA YURCHYK) del destinatario no se encuentra registrado"
+            };
+
+            var resumen = new ResumenJobVerifactu();
+            await job.ReintentarNoDeclaradas(resumen);
+
+            A.CallTo(() => validacionNif.CorregirNombreFiscalFactura(factura, "VerifactuJob"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
         public async Task ProcesarPasada_ConLaSombraApagada_NoHaceNada()
         {
             A.CallTo(() => servicioVerifactu.EstaHabilitado).Returns(false);

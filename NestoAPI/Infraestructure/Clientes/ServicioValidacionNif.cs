@@ -243,8 +243,10 @@ namespace NestoAPI.Infraestructure.Clientes
                     && (f.VerifactuUUID == null || f.VerifactuUUID == ""))
                 .ToListAsync().ConfigureAwait(false);
             int facturasActualizadas = 0;
+            string nombrePrincipal = principal.Nombre?.Trim();
             foreach (CabFacturaVta factura in facturasSinDeclarar)
             {
+                bool corregida = false;
                 if (factura.CifNif?.Trim() != nifNuevo)
                 {
                     _ = db.Modificaciones.Add(new Modificacion
@@ -255,6 +257,25 @@ namespace NestoAPI.Infraestructure.Clientes
                         Usuario = usuario
                     });
                     factura.CifNif = nifNuevo;
+                    corregida = true;
+                }
+                // NestoAPI#383: al censo viaja el PAR NIF/NOMBRE persistido en la factura; si solo
+                // se corrige el NIF y el nombre cambió (apellido por matrimonio), sigue atascada.
+                // El nombre del principal ya está validado contra la AEAT unas líneas más arriba.
+                if (!string.IsNullOrWhiteSpace(nombrePrincipal) && factura.NombreFiscal?.Trim() != nombrePrincipal)
+                {
+                    _ = db.Modificaciones.Add(new Modificacion
+                    {
+                        Tabla = "CabFacturaVta",
+                        Anterior = $"Factura {factura.Número?.Trim()} NombreFiscal={factura.NombreFiscal?.Trim()}",
+                        Nuevo = $"NombreFiscal={nombrePrincipal} (corrección centralizada #383, factura sin declarar)",
+                        Usuario = usuario
+                    });
+                    factura.NombreFiscal = nombrePrincipal;
+                    corregida = true;
+                }
+                if (corregida)
+                {
                     facturasActualizadas++;
                 }
             }
@@ -306,6 +327,103 @@ namespace NestoAPI.Infraestructure.Clientes
             return nif != null && nif.Length > 2 && nif.StartsWith("ES", StringComparison.OrdinalIgnoreCase)
                 ? nif.Substring(2)
                 : nif;
+        }
+
+        /// <summary>
+        /// NestoAPI#383 (caso real NV2612562/940): factura atascada en Verifactu por el par
+        /// NIF/NOMBRE cuando el NIF es bueno pero el nombre persistido ya no casa con el censo
+        /// (apellido cambiado por matrimonio). Se prueban candidatos censales por orden de
+        /// fiabilidad y se adopta el nombre que la AEAT confirme (en NO IDENTIFICADO-SIMILAR
+        /// devuelve el censal exacto). Best-effort: con la AEAT caída no se toca nada (el job
+        /// vuelve a intentarlo en la siguiente pasada).
+        /// </summary>
+        public async Task<bool> CorregirNombreFiscalFactura(CabFacturaVta factura, string usuario)
+        {
+            string nif = factura?.CifNif?.Trim();
+            if (string.IsNullOrEmpty(nif))
+            {
+                return false;
+            }
+            string nombreActual = factura.NombreFiscal?.Trim();
+
+            foreach (string candidato in await BuscarNombresCensalesCandidatos(factura, nif, nombreActual).ConfigureAwait(false))
+            {
+                RespuestaNifNombreCliente respuesta;
+                try
+                {
+                    respuesta = await servicioAeat.ComprobarNifNombre(NifParaCenso(nif), candidato).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ElmahHelper.Log(new Exception(
+                        $"ValidacionNif: VNifV2 no disponible al buscar el nombre censal de {nif} " +
+                        $"(factura {factura.Número?.Trim()}): {ex.Message}", ex));
+                    return false;
+                }
+                string resultado = respuesta?.ResultadoAeat?.Trim().ToUpper();
+                // BAJA/REVOCADO validan el NIF pero el nombre viene con prefijo de aviso: no vale.
+                if (resultado != "IDENTIFICADO" && resultado != "NO IDENTIFICADO-SIMILAR")
+                {
+                    continue;
+                }
+                string nombreCensal = string.IsNullOrWhiteSpace(respuesta.NombreFormateado)
+                    ? candidato
+                    : respuesta.NombreFormateado.Trim();
+                if (nombreCensal == nombreActual)
+                {
+                    continue; // ya estaba así: el rechazo será por otra causa
+                }
+                _ = db.Modificaciones.Add(new Modificacion
+                {
+                    Tabla = "CabFacturaVta",
+                    Anterior = $"Factura {factura.Número?.Trim()} NombreFiscal={nombreActual}",
+                    Nuevo = $"NombreFiscal={nombreCensal} (nombre censal #383, AEAT: {respuesta.ResultadoAeat})",
+                    Usuario = usuario
+                });
+                factura.NombreFiscal = nombreCensal;
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>Candidatos a nombre censal para el NIF de la factura, por orden de
+        /// fiabilidad: la ficha principal de su cliente (renombrada tras el rechazo), el nombre
+        /// de otra factura del mismo NIF YA ACEPTADA por la AEAT y el de otra ficha con ese NIF
+        /// (cliente nuevo creado con los datos buenos). Todos se verifican contra la AEAT antes
+        /// de usarse: esto solo decide qué probar, no qué escribir.</summary>
+        private async Task<List<string>> BuscarNombresCensalesCandidatos(CabFacturaVta factura, string nif, string nombreActual)
+        {
+            var candidatos = new List<string>();
+
+            Cliente principal = await db.Clientes.FirstOrDefaultAsync(c =>
+                c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                && c.Nº_Cliente == factura.Nº_Cliente && c.ClientePrincipal).ConfigureAwait(false);
+            if (principal != null)
+            {
+                candidatos.Add(principal.Nombre?.Trim());
+            }
+
+            List<string> deFacturasAceptadas = await db.CabsFacturasVtas
+                .Where(f => f.CifNif == nif && f.VerifactuUUID != null && f.VerifactuUUID != ""
+                    && f.VerifactuEstado == "Correcto" && f.NombreFiscal != null)
+                .OrderByDescending(f => f.Fecha)
+                .Select(f => f.NombreFiscal)
+                .Take(3)
+                .ToListAsync().ConfigureAwait(false);
+            candidatos.AddRange(deFacturasAceptadas.Select(n => n?.Trim()));
+
+            List<string> deOtrasFichas = await db.Clientes
+                .Where(c => c.CIF_NIF == nif && c.ClientePrincipal && c.Nº_Cliente != factura.Nº_Cliente)
+                .Select(c => c.Nombre)
+                .Take(3)
+                .ToListAsync().ConfigureAwait(false);
+            candidatos.AddRange(deOtrasFichas.Select(n => n?.Trim()));
+
+            return candidatos
+                .Where(n => !string.IsNullOrWhiteSpace(n) && n != nombreActual)
+                .Distinct()
+                .ToList();
         }
 
         public async Task<int> UnificarNifContactos(string cliente, string usuario)

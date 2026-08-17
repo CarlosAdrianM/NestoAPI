@@ -131,6 +131,16 @@ namespace NestoAPI.Infraestructure.Clientes
         /// se propaga a las fichas y a las facturas sin declarar (el VAT intracomunitario no cabía
         /// en el char(9) antiguo y se truncaba). Null/vacío = se marca el NIF existente sin tocarlo.</param>
         Task<ResultadoCorreccionNif> MarcarIdentificacionExtranjera(string cliente, string tipoIdentificacion, string pais, string usuario, string nifNuevo = null);
+
+        /// <summary>
+        /// NestoAPI#383: el rechazo de censo puede ser por el NOMBRE y no por el NIF (cambio de
+        /// apellido por matrimonio). Busca un nombre censal candidato para el NIF persistido de
+        /// la factura (ficha del cliente, otra factura ya aceptada con el mismo NIF, otra ficha
+        /// con ese NIF), lo verifica contra VNifV2 y, si la AEAT lo identifica, corrige el
+        /// NombreFiscal persistido (con auditoría) para que el job la declare en la siguiente
+        /// pasada. Devuelve true si ha corregido algo.
+        /// </summary>
+        Task<bool> CorregirNombreFiscalFactura(NestoAPI.Models.CabFacturaVta factura, string usuario);
     }
 
     /// <summary>Fila del listado de NIF incorrectos (#327, para Nesto#417/NestoApp#157).</summary>
