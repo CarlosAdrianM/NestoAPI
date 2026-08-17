@@ -502,7 +502,11 @@ namespace NestoAPI.Infraestructure.Clientes
                 "       CAST(NULL AS varchar(2)) AS PaisIntracomunitarioSugerido " +
                 "FROM ValidacionesNif v " +
                 "INNER JOIN Clientes c ON c.Empresa = v.Empresa AND c.[Nº Cliente] = v.Cliente AND c.Contacto = v.Contacto " +
+                // 17/08/26 (caso 31794 MATERIALES CURSOS): una ficha ANULADA (Estado negativo)
+                // no debe salir en la ventana — ya no se le puede facturar, no hay nada que
+                // corregir. Aplica a ambas ramas del UNION.
                 "WHERE v.Estado = @p0 AND c.[CIF/NIF] = v.Nif AND c.Nombre = v.Nombre " +
+                "  AND c.Estado >= 0 " +
                 condicionVendedor +
                 // NestoAPI#363: además de los INCORRECTO del censo AEAT, se listan los clientes cuyo
                 // envío a Verifactu falló por FORMATO de IVA/NIF (típicamente extranjeros con el VAT
@@ -520,6 +524,7 @@ namespace NestoAPI.Infraestructure.Clientes
                 "FROM CabFacturaVta f " +
                 "INNER JOIN Clientes c ON c.Empresa = f.Empresa AND c.[Nº Cliente] = f.[Nº Cliente] AND c.Contacto = f.Contacto " +
                 "WHERE f.VerifactuUltimoError LIKE '%no tiene un formato valido%' " +
+                "  AND c.Estado >= 0 " +
                 "  AND NOT EXISTS (SELECT 1 FROM ValidacionesNif v2 WHERE v2.Empresa = c.Empresa " +
                 "        AND v2.Cliente = c.[Nº Cliente] AND v2.Contacto = c.Contacto AND v2.Estado = @p0 " +
                 "        AND c.[CIF/NIF] = v2.Nif AND c.Nombre = v2.Nombre) " +
