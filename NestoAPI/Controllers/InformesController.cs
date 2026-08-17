@@ -428,6 +428,46 @@ namespace NestoAPI.Controllers
             return result;
         }
 
+        // NestoAPI#350: balance o cuenta de resultados (BPY, PGP...) definido en las tablas
+        // Balances/LinBalance, calculado para el periodo indicado y su año anterior.
+        [HttpGet]
+        [Route("api/Informes/Balance")]
+        [ResponseType(typeof(BalanceInformeDTO))]
+        public async Task<IHttpActionResult> GetBalance(string empresa, string numero, DateTime desde, DateTime hasta)
+        {
+            BalanceInformeDTO balance = await _servicio
+                .LeerBalanceAsync(empresa, numero, desde, hasta)
+                .ConfigureAwait(false);
+
+            if (balance == null)
+            {
+                return NotFound();
+            }
+            return Ok(balance);
+        }
+
+        [HttpGet]
+        [Route("api/Informes/Balance/Pdf")]
+        public async Task<HttpResponseMessage> GetBalancePdf(string empresa, string numero, DateTime desde, DateTime hasta)
+        {
+            BalanceInformeDTO balance = await _servicio
+                .LeerBalanceAsync(empresa, numero, desde, hasta)
+                .ConfigureAwait(false);
+
+            if (balance == null)
+            {
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            }
+
+            GeneradorPdfBalance generador = new GeneradorPdfBalance();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = generador.GenerarPdf(balance)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
         [HttpGet]
         [Route("api/Informes/PedidoCompra")]
         [ResponseType(typeof(PedidoCompraInformeDTO))]

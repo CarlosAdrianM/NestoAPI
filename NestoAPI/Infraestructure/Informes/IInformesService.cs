@@ -26,6 +26,10 @@ namespace NestoAPI.Infraestructure.Informes
         /// <summary>NestoAPI#353: informe de remesa (relación de efectos remitidos al banco).
         /// Null si la remesa no existe.</summary>
         Task<RemesaInformeDTO> LeerRemesaAsync(string empresa, int remesa);
+
+        /// <summary>NestoAPI#350: balance o cuenta de resultados definido en Balances/LinBalance
+        /// (BPY, PGP...), calculado para el periodo y su año anterior. Null si no existe.</summary>
+        Task<BalanceInformeDTO> LeerBalanceAsync(string empresa, string numero, DateTime desde, DateTime hasta);
         Task<PedidoCompraInformeDTO> LeerPedidoCompraAsync(string empresa, int pedido);
         Task<List<ExtractoProveedorDTO>> LeerExtractoProveedorAsync(string empresa, string proveedor, DateTime fechaDesde, DateTime fechaHasta);
         Task<SaldoCuenta555ResultadoDto> LeerSaldoCuenta555Async(string empresa, string cuenta, DateTime fechaCorte);

@@ -25,6 +25,15 @@ namespace NestoAPI.Infraestructure.Informes
             this.db = db;
         }
 
+        // NestoAPI#350: el cálculo vive en GestorBalances (parser de fórmulas de LinBalance +
+        // evaluación contra el mayor); aquí solo se orquesta con el contexto del servicio.
+        public async Task<BalanceInformeDTO> LeerBalanceAsync(string empresa, string numero, DateTime desde, DateTime hasta)
+        {
+            return await new GestorBalances(db)
+                .CalcularAsync(empresa, numero, desde, hasta)
+                .ConfigureAwait(false);
+        }
+
         public async Task<List<ResumenVentasDTO>> LeerResumenVentasAsync(DateTime fechaDesde, DateTime fechaHasta, bool soloFacturas)
         {
             SqlParameter fechaDesdeParam = new SqlParameter("@FechaDesde", SqlDbType.DateTime)
