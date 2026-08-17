@@ -73,6 +73,47 @@ namespace NestoAPI.Controllers
         public decimal Reembolso { get; set; }
     }
 
+    /// <summary>
+    /// Nesto#340 (Agencias, slice A1): fila de los listados de la ventana de Agencias de Nesto
+    /// (pendientes, en curso, tramitados, incidentados, reembolsos y retornos), calcada del
+    /// EnvioAgenciaWrapper del cliente, con el nombre de la agencia aplanado para no viajar
+    /// entidades ni navegaciones.
+    /// </summary>
+    public class EnvioAgenciaListadoDTO
+    {
+        public int Numero { get; set; }
+        public string Empresa { get; set; }
+        public int Agencia { get; set; }
+        public string NombreAgencia { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
+        public int? Pedido { get; set; }
+        public short Estado { get; set; }
+        public DateTime Fecha { get; set; }
+        public short Servicio { get; set; }
+        public short Horario { get; set; }
+        public short Bultos { get; set; }
+        public short Retorno { get; set; }
+        public string Nombre { get; set; }
+        public string Direccion { get; set; }
+        public string CodPostal { get; set; }
+        public string Poblacion { get; set; }
+        public string Provincia { get; set; }
+        public string Telefono { get; set; }
+        public string Movil { get; set; }
+        public string Email { get; set; }
+        public string Observaciones { get; set; }
+        public string Atencion { get; set; }
+        public decimal Reembolso { get; set; }
+        public string CodigoBarras { get; set; }
+        public int Pais { get; set; }
+        public DateTime? FechaEntrega { get; set; }
+        public decimal ImporteAsegurado { get; set; }
+        public decimal Peso { get; set; }
+        /// <summary>Para la concurrencia optimista del PUT cuando la pestaña migre (slice A2).</summary>
+        public byte[] RowVersion { get; set; }
+    }
+
     // Issue #189: [Authorize] de clase. Llamantes auditados 13/07/26: Nesto (JWT vía
     // IClienteApiFactory desde 1.10.9.0), NestoApp (interceptor Bearer + refresh desde v2.17.2)
     // y TiendasNuevaVision (MyHttpClient con AuthHeaderHandler). Lo anónimo, explícito abajo.
@@ -97,6 +138,163 @@ namespace NestoAPI.Controllers
 
         private NVEntities db;
         private IFabricaAgenciasRemotas fabricaAgenciasRemotas;
+
+        // ========== Nesto#340 (Agencias, slice A1): listados de la ventana de Agencias ==========
+        // Cada endpoint replica el filtro EXACTO del método EF de AgenciaService en el cliente,
+        // para que la migración por pestañas sea un cambio de origen de datos sin cambio de
+        // comportamiento. La proyección aplana el nombre de la agencia (sin Include ni entidades).
+
+        private static IQueryable<EnvioAgenciaListadoDTO> ProyectarListado(IQueryable<EnviosAgencia> envios)
+        {
+            return envios.Select(e => new EnvioAgenciaListadoDTO
+            {
+                Numero = e.Numero,
+                Empresa = e.Empresa.Trim(),
+                Agencia = e.Agencia,
+                NombreAgencia = e.AgenciasTransporte != null ? e.AgenciasTransporte.Nombre.Trim() : null,
+                Cliente = e.Cliente.Trim(),
+                Contacto = e.Contacto.Trim(),
+                Pedido = e.Pedido,
+                Estado = e.Estado,
+                Fecha = e.Fecha,
+                Servicio = e.Servicio,
+                Horario = e.Horario,
+                Bultos = e.Bultos,
+                Retorno = e.Retorno,
+                Nombre = e.Nombre,
+                Direccion = e.Direccion,
+                CodPostal = e.CodPostal,
+                Poblacion = e.Poblacion,
+                Provincia = e.Provincia,
+                Telefono = e.Telefono,
+                Movil = e.Movil,
+                Email = e.Email,
+                Observaciones = e.Observaciones,
+                Atencion = e.Atencion,
+                Reembolso = e.Reembolso,
+                CodigoBarras = e.CodigoBarras,
+                Pais = e.Pais,
+                FechaEntrega = e.FechaEntrega,
+                ImporteAsegurado = e.ImporteAsegurado,
+                Peso = e.Peso,
+                RowVersion = e.RowVersion
+            });
+        }
+
+        /// <summary>Pendientes (Estado &lt; 0), de todas las empresas — pestaña Pendientes.</summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/Pendientes")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosPendientes()
+        {
+            List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
+                .Where(e => e.Estado < Constantes.Agencias.ESTADO_EN_CURSO))
+                .ToListAsync();
+            return Ok(envios);
+        }
+
+        /// <summary>En curso (Estado = 0, etiqueta creada sin cerrar el día) de una agencia —
+        /// pestaña En curso.</summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/EnCurso")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosEnCurso(int agencia)
+        {
+            List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
+                .Where(e => e.Agencia == agencia && e.Estado == Constantes.Agencias.ESTADO_EN_CURSO)
+                .OrderBy(e => e.Numero))
+                .ToListAsync();
+            return Ok(envios);
+        }
+
+        /// <summary>
+        /// Tramitados (Estado &gt;= 1, que incluye Entregado e Incidentado, #387) con las tres
+        /// búsquedas de la pestaña: por agencia+fecha, por cliente o por texto (nombre,
+        /// dirección o teléfonos). Sin ningún filtro no hay listado: el histórico es enorme.
+        /// </summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/Tramitados")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosTramitados(string empresa, int? agencia = null,
+            DateTime? fecha = null, string cliente = null, string texto = null)
+        {
+            if (fecha == null && string.IsNullOrWhiteSpace(cliente) && string.IsNullOrWhiteSpace(texto))
+            {
+                return BadRequest("Indique al menos una fecha, un cliente o un texto de búsqueda.");
+            }
+
+            IQueryable<EnviosAgencia> query = db.EnviosAgencias
+                .Where(e => e.Empresa == empresa && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO);
+            if (agencia.HasValue)
+            {
+                query = query.Where(e => e.Agencia == agencia.Value);
+            }
+            if (fecha.HasValue)
+            {
+                DateTime dia = fecha.Value.Date;
+                query = query.Where(e => e.Fecha == dia);
+            }
+            if (!string.IsNullOrWhiteSpace(cliente))
+            {
+                query = query.Where(e => e.Cliente == cliente);
+            }
+            if (!string.IsNullOrWhiteSpace(texto))
+            {
+                query = query.Where(e =>
+                    (e.Nombre != null && e.Nombre.Contains(texto)) ||
+                    (e.Direccion != null && e.Direccion.Contains(texto)) ||
+                    (e.Telefono != null && e.Telefono.Contains(texto)) ||
+                    (e.Movil != null && e.Movil.Contains(texto)));
+            }
+
+            List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(
+                query.OrderByDescending(e => e.Fecha)).ToListAsync();
+            return Ok(envios);
+        }
+
+        /// <summary>Incidentados (#387): estado de paso, sin filtro de fecha. Los devueltos
+        /// (terminales) no aparecen a propósito: la lista crecería sin fin.</summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/Incidentados")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosIncidentados(string empresa)
+        {
+            List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
+                .Where(e => e.Empresa == empresa && e.Estado == Constantes.Agencias.ESTADO_INCIDENTADO)
+                .OrderByDescending(e => e.Fecha))
+                .ToListAsync();
+            return Ok(envios);
+        }
+
+        /// <summary>Reembolsos tramitados pendientes de pago por la agencia — pestaña Reembolsos.</summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/Reembolsos")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosReembolsos(string empresa, int agencia)
+        {
+            List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
+                .Where(e => e.Empresa == empresa && e.Agencia == agencia
+                    && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO
+                    && e.Reembolso != 0 && e.FechaPagoReembolso == null))
+                .ToListAsync();
+            return Ok(envios);
+        }
+
+        /// <summary>Retornos pendientes de recibir (excluyendo el tipo "sin retorno" de cada
+        /// agencia) — pestaña Retornos.</summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/Retornos")]
+        [ResponseType(typeof(List<EnvioAgenciaListadoDTO>))]
+        public async Task<IHttpActionResult> GetEnviosRetornos(string empresa, int agencia, int tipoRetornoExcluido)
+        {
+            List<EnvioAgenciaListadoDTO> envios = await ProyectarListado(db.EnviosAgencias
+                .Where(e => e.Empresa == empresa && e.Agencia == agencia
+                    && e.Estado >= Constantes.Agencias.ESTADO_TRAMITADO
+                    && e.Retorno != tipoRetornoExcluido && e.FechaRetornoRecibido == null)
+                .OrderBy(e => e.Fecha))
+                .ToListAsync();
+            return Ok(envios);
+        }
 
         /*
         // GET: api/EnviosAgencias
