@@ -202,6 +202,12 @@ namespace NestoAPI.Controllers
                 _ = await gestorContabilidad.PersistirCuaderno43(apuntes);
                 return Ok(apuntes);
             }
+            catch (Infraestructure.Exceptions.NestoBusinessException)
+            {
+                // Error de negocio con motivo (banco no dado de alta, fichero vacío o repetido):
+                // debe llegar como 400 con su mensaje, no envuelto en un 500 genérico.
+                throw;
+            }
             catch (Exception ex)
             {
                 throw new Exception("Error al cargar el fichero de movimientos", ex);

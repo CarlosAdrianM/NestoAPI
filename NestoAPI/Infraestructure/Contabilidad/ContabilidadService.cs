@@ -418,11 +418,24 @@ namespace NestoAPI.Infraestructure.Contabilidad
                         FechaCreacion = DateTime.Now // Fecha actual                    
                     };
 
-                    Banco banco = await db.Bancos.SingleAsync(b => b.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && b.Entidad == fichero.ClaveEntidad && b.Sucursal == fichero.ClaveOficina && b.Nº_Cuenta == fichero.NumeroCuenta);
+                    // NestoAPI triage 17/08/26: SingleAsync/First sin elementos daban "La secuencia
+                    // no contiene elementos" (500 sin pista). Guardas con motivo → 400 de negocio.
+                    Banco banco = await db.Bancos.SingleOrDefaultAsync(b => b.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && b.Entidad == fichero.ClaveEntidad && b.Sucursal == fichero.ClaveOficina && b.Nº_Cuenta == fichero.NumeroCuenta);
+                    if (banco == null)
+                    {
+                        throw new Exceptions.NestoBusinessException(
+                            $"No hay ningún banco dado de alta con entidad {fichero.ClaveEntidad?.Trim()}, " +
+                            $"oficina {fichero.ClaveOficina?.Trim()} y cuenta {fichero.NumeroCuenta?.Trim()}: " +
+                            "revise que el fichero es de una cuenta de la empresa o dé de alta la cuenta en Bancos.");
+                    }
+                    if (contenido.Apuntes == null || !contenido.Apuntes.Any())
+                    {
+                        throw new Exceptions.NestoBusinessException("El fichero no contiene ningún movimiento.");
+                    }
                     DateTime fechaFichero = contenido.Apuntes.First().FechaOperacion;
                     if (db.ApuntesBancarios.Any(c => c.FechaOperacion == fechaFichero && c.Empresa == banco.Empresa && c.BancoId == banco.Número))
                     {
-                        throw new Exception($"Ya se ha contabilizado el fichero del día {fechaFichero.ToShortDateString()}");
+                        throw new Exceptions.NestoBusinessException($"Ya se ha contabilizado el fichero del día {fechaFichero.ToShortDateString()}");
                     }
                     // Iterar sobre cada ApunteBancarioDTO en la lista contenido.Apuntes
                     foreach (ApunteBancarioDTO apunteDto in contenido.Apuntes)
@@ -494,9 +507,10 @@ namespace NestoAPI.Infraestructure.Contabilidad
                     _ = await db.SaveChangesAsync();
                     return true;
                 }
-                catch (Exception ex)
+                catch (Exception)
                 {
-                    throw ex;
+                    // throw ex; machacaba el stack original y ELMAH apuntaba siempre a esta línea
+                    throw;
                 }
             }
         }
