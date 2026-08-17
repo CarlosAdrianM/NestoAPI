@@ -105,6 +105,8 @@ namespace NestoAPI.Controllers
         public string Observaciones { get; set; }
         public string Atencion { get; set; }
         public decimal Reembolso { get; set; }
+        public DateTime? FechaPagoReembolso { get; set; }
+        public decimal ImporteGasto { get; set; }
         public string CodigoBarras { get; set; }
         public int Pais { get; set; }
         public DateTime? FechaEntrega { get; set; }
@@ -172,6 +174,8 @@ namespace NestoAPI.Controllers
                 Observaciones = e.Observaciones,
                 Atencion = e.Atencion,
                 Reembolso = e.Reembolso,
+                FechaPagoReembolso = e.FechaPagoReembolso,
+                ImporteGasto = e.ImporteGasto,
                 CodigoBarras = e.CodigoBarras,
                 Pais = e.Pais,
                 FechaEntrega = e.FechaEntrega,
