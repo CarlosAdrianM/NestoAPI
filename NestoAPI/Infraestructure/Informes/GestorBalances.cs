@@ -171,10 +171,12 @@ namespace NestoAPI.Infraestructure.Informes
             empresa = empresa?.Trim();
             numero = numero?.Trim();
 
+            // OJO: Grupo es char(3) en BD ("1  "): sin el CAST, SqlQuery revienta al materializar
+            // el int del DTO ("cast from String to Int32 is not valid", visto en el deploy 17/08).
             List<LineaBalanceDefinicion> definiciones = await db.Database
                 .SqlQuery<LineaBalanceDefinicion>(
                     "SELECT NºOrden AS Orden, RTRIM([Descripción]) AS Descripcion, RTRIM(Tipo) AS Tipo, " +
-                    "       Grupo, Total AS EsTotal, [Fórmula] AS Formula " +
+                    "       CAST(LTRIM(RTRIM(Grupo)) AS int) AS Grupo, Total AS EsTotal, [Fórmula] AS Formula " +
                     "FROM LinBalance WHERE Empresa = @p0 AND [Número] = @p1",
                     new SqlParameter("@p0", empresa), new SqlParameter("@p1", numero))
                 .ToListAsync().ConfigureAwait(false);
