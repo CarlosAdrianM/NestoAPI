@@ -153,6 +153,50 @@ namespace NestoAPI.Infraestructure.PedidosCompra
             }
         }
 
+        /// <summary>
+        /// NestoAPI#384: guarda de idempotencia. La contabilización de gastos desde conciliación
+        /// hace UNA llamada por factura; si la segunda muere (deadlock) y el usuario reintenta,
+        /// la regla vuelve a generar TODAS las líneas y la primera se duplicaba (caso real
+        /// 88130/88131, 17/08/26). La clave natural es proveedor + nº de factura del proveedor
+        /// (NºDocumentoProv, que el SP copia del pedido a la factura).
+        /// </summary>
+        public async Task<CrearFacturaCmpResponse> BuscarFacturaExistente(string proveedor, string facturaProveedor, NVEntities db)
+        {
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            proveedor = proveedor?.Trim();
+            facturaProveedor = facturaProveedor?.Trim();
+            if (string.IsNullOrEmpty(proveedor) || string.IsNullOrEmpty(facturaProveedor))
+            {
+                return null; // sin clave natural no se puede garantizar idempotencia: se crea como siempre
+            }
+
+            CabFacturaCmp factura = await db.CabFacturasCmp
+                .FirstOrDefaultAsync(f => f.Empresa == empresa && f.NºProveedor == proveedor
+                    && f.NºDocumentoProv == facturaProveedor).ConfigureAwait(false);
+            if (factura == null)
+            {
+                return null;
+            }
+
+            _ = int.TryParse(factura.Número?.Trim(), out int numeroFactura);
+            var respuesta = new CrearFacturaCmpResponse
+            {
+                Exito = true,
+                YaExistia = true,
+                Factura = numeroFactura
+            };
+            ExtractoProveedor extracto = await db.ExtractosProveedor
+                .FirstOrDefaultAsync(e => e.Empresa == empresa && e.Número == factura.NºProveedor
+                    && e.TipoApunte == Constantes.TiposExtractoCliente.FACTURA
+                    && e.NºDocumento == factura.Número).ConfigureAwait(false);
+            if (extracto != null)
+            {
+                respuesta.AsientoFactura = extracto.Asiento;
+                respuesta.ImporteFactura = extracto.Importe;
+            }
+            return respuesta;
+        }
+
         public async Task<int> CrearPagoFactura(CrearFacturaCmpRequest request, CrearFacturaCmpResponse respuesta, NVEntities db)
         {
             try

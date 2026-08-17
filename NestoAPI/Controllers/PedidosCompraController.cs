@@ -473,8 +473,30 @@ namespace NestoAPI.Controllers
                 return null;
             }
 
+            // NestoAPI#384: reintento ante deadlock de la operación COMPLETA (transacción y
+            // contexto NUEVOS en cada intento, patrón #273: la víctima 1205 se revierte entera).
+            // Caso real 17/08/26: los gastos de remesa deadlockeaban a las y cuarto contra el
+            // job de Verifactu y el usuario veía el 500 con la mitad contabilizada.
+            CrearFacturaCmpResponse resultado = await Infraestructure.Contabilidad.ContabilidadService
+                .ReintentarSiDeadlock(() => CrearAlbaranYFacturaUnaVez(request));
+            return Ok(resultado);
+        }
+
+        private async Task<CrearFacturaCmpResponse> CrearAlbaranYFacturaUnaVez(CrearFacturaCmpRequest request)
+        {
             using (var db = new NVEntities())
             {
+                // NestoAPI#384: guarda de idempotencia — si la factura del proveedor ya está
+                // contabilizada (el reintento del usuario tras un error a mitad de lote), se
+                // devuelve la existente y NO se crea nada. Así "volver a dar al botón" solo
+                // crea las facturas que falten (caso real: 88130 duplicada como 88131).
+                CrearFacturaCmpResponse existente = await _servicio.BuscarFacturaExistente(
+                    request.Pedido?.Proveedor, request.Pedido?.FacturaProveedor, db);
+                if (existente != null)
+                {
+                    return existente;
+                }
+
                 using (var transaction = db.Database.BeginTransaction())
                 {
                     try
@@ -503,7 +525,7 @@ namespace NestoAPI.Controllers
                             transaction.RollbackSeguro();
                         }
 
-                        return Ok(respuesta);
+                        return respuesta;
                     }
                     catch (Exception ex)
                     {
@@ -511,10 +533,12 @@ namespace NestoAPI.Controllers
                         // (el incidente de la #287 salió como 'failed on Rollback/connection
                         // null' y ocultó el 'Invalid object name' real).
                         transaction.RollbackSeguro();
+                        // #384: los deadlock viajan tal cual para que ReintentarSiDeadlock los
+                        // reconozca (1205 en la cadena de InnerException) y reintente.
                         throw new Exception("No se ha podido crear la factura de compra", ex);
                     }
                 }
-            }                                    
+            }
         }
 
         /*

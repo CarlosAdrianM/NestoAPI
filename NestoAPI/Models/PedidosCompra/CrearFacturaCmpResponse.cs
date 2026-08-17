@@ -9,5 +9,8 @@
         public int Factura { get; set; }
         public decimal ImporteFactura { get; set; }
         public int Pedido { get; set; }
+        /// <summary>NestoAPI#384: la factura del proveedor YA estaba contabilizada y no se ha
+        /// creado nada (idempotencia: reintentar tras un error solo crea lo que falta).</summary>
+        public bool YaExistia { get; set; }
     }
 }

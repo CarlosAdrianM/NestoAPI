@@ -1,6 +1,7 @@
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.PedidosCompra;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosCompra;
 using NestoAPI.Tests.Helpers;
@@ -132,6 +133,74 @@ namespace NestoAPI.Tests.Controllers
                     }
                 }
             };
+        }
+
+        // NestoAPI#384: guarda de idempotencia de CrearAlbaranYFactura. Caso real 17/08/26:
+        // contabilizando los gastos de una remesa (una llamada por factura), la segunda murió
+        // por deadlock y al reintentar el botón se duplicó la primera (88130/88131). Con la
+        // guarda, la factura ya contabilizada (proveedor + nº factura del proveedor) se
+        // devuelve tal cual y solo se crea lo que falta.
+
+        private DbSet<ExtractoProveedor> ConFakeExtractosProveedor(params ExtractoProveedor[] extractos)
+        {
+            var fakeExtractos = A.Fake<DbSet<ExtractoProveedor>>(o =>
+                o.Implements<IQueryable<ExtractoProveedor>>().Implements<IDbAsyncEnumerable<ExtractoProveedor>>());
+            A.CallTo(() => db.ExtractosProveedor).Returns(fakeExtractos);
+            ConfigurarFakeDbSet(fakeExtractos, extractos.AsQueryable());
+            return fakeExtractos;
+        }
+
+        [TestMethod]
+        public async Task BuscarFacturaExistente_FacturaYaContabilizada_LaDevuelveConSusDatos()
+        {
+            ConfigurarFakeDbSet(fakeCabFacturasCmp, new List<CabFacturaCmp>
+            {
+                new CabFacturaCmp { Empresa = "1", Número = "88130", NºProveedor = "433", NºDocumentoProv = "189642364" }
+            }.AsQueryable());
+            _ = ConFakeExtractosProveedor(new ExtractoProveedor
+            {
+                Empresa = "1",
+                Número = "433",
+                TipoApunte = Constantes.TiposExtractoCliente.FACTURA,
+                NºDocumento = "88130",
+                Asiento = 555,
+                Importe = 5.98M
+            });
+
+            var servicio = new PedidosCompraService();
+            var resultado = await servicio.BuscarFacturaExistente("433", "189642364", db);
+
+            Assert.IsNotNull(resultado);
+            Assert.IsTrue(resultado.YaExistia);
+            Assert.IsTrue(resultado.Exito);
+            Assert.AreEqual(88130, resultado.Factura);
+            Assert.AreEqual(555, resultado.AsientoFactura);
+            Assert.AreEqual(5.98M, resultado.ImporteFactura);
+        }
+
+        [TestMethod]
+        public async Task BuscarFacturaExistente_SinFacturaPrevia_DevuelveNull()
+        {
+            ConfigurarFakeDbSet(fakeCabFacturasCmp, new List<CabFacturaCmp>
+            {
+                new CabFacturaCmp { Empresa = "1", Número = "88130", NºProveedor = "433", NºDocumentoProv = "189642364" }
+            }.AsQueryable());
+
+            var servicio = new PedidosCompraService();
+            var resultado = await servicio.BuscarFacturaExistente("433", "189642399", db);
+
+            Assert.IsNull(resultado, "Sin factura previa con ese documento, se crea como siempre");
+        }
+
+        [TestMethod]
+        public async Task BuscarFacturaExistente_SinNumeroDeFacturaDelProveedor_DevuelveNull()
+        {
+            // Sin clave natural no hay idempotencia posible: no debe bloquear la creación.
+            var servicio = new PedidosCompraService();
+
+            Assert.IsNull(await servicio.BuscarFacturaExistente("433", null, db));
+            Assert.IsNull(await servicio.BuscarFacturaExistente("433", "  ", db));
+            Assert.IsNull(await servicio.BuscarFacturaExistente(null, "189642364", db));
         }
 
         private void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
