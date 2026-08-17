@@ -3,7 +3,10 @@ using System.Net.Mail;
 
 namespace NestoAPI.Models.Facturas.SeriesFactura
 {
-    public class SerieEV : ISerieFactura
+    // Decisión Carlos 17/08/26 (#39): la serie se MANTIENE (marca Eva Visnú para distribuidores;
+    // las series por marca son legales, RD 1619/2012 art. 6.1.a) y pasa a tramitar Verifactu:
+    // son ventas reales que estaban quedando sin declarar.
+    public class SerieEV : ISerieFacturaVerifactu
     {
         public string RutaInforme => @"Models\Facturas\FacturaVC.rdlc";
 
@@ -21,5 +24,13 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
         public bool EsDescargable => true;
         public bool EsImprimible => true;
         public bool UsaFormatoTicket => false;
+
+        // Propiedades Verifactu
+        public bool TramitaVerifactu => true;
+        public string TipoFacturaVerifactuPorDefecto => "F1";
+        public bool EsRectificativa => false;
+        public string DescripcionVerifactu => "Venta de productos Eva Visnú";
+        // DV deja de usarse: los abonos de EV van a la serie rectificativa común
+        public string SerieRectificativaAsociada => "RV";
     }
 }

@@ -222,22 +222,37 @@ namespace NestoAPI.Tests.Models.Facturas
             Assert.IsTrue(serie.DescripcionVerifactu.Length <= 500);
         }
 
-        // Tests para series eliminadas (no deben existir en el diccionario)
+        // Decisión Carlos 17/08/26 (#39): EV (Eva Visnú) y UL (Unión Láser) se MANTIENEN — las
+        // series por marca son legales (RD 1619/2012 art. 6.1.a, lista abierta de razones que lo
+        // justifiquen) y Verifacti cobra por NIF emisor, no por serie. Son ventas reales a
+        // distribuidores y DEBEN declararse (estaban fuera del registro y no tramitaban).
+        // DV y VC sí se eliminan (dejan de usarse).
 
         [TestMethod]
-        public void RegistroSeriesVerifactu_ObtenerSerie_SerieEVNoExiste()
+        public void RegistroSeriesVerifactu_ObtenerSerie_SerieEVTramitaComoF1ConRectificativaRV()
         {
             var serie = RegistroSeriesVerifactu.ObtenerSerie("EV");
 
-            Assert.IsNull(serie);
+            Assert.IsNotNull(serie);
+            Assert.IsTrue(serie.TramitaVerifactu);
+            Assert.AreEqual("F1", serie.TipoFacturaVerifactuPorDefecto);
+            Assert.IsFalse(serie.EsRectificativa);
+            // DV deja de usarse: los abonos de EV irán a la serie RV común
+            Assert.AreEqual("RV", serie.SerieRectificativaAsociada);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(serie.DescripcionVerifactu));
         }
 
         [TestMethod]
-        public void RegistroSeriesVerifactu_ObtenerSerie_SerieULNoExiste()
+        public void RegistroSeriesVerifactu_ObtenerSerie_SerieULTramitaComoF1ConRectificativaRV()
         {
             var serie = RegistroSeriesVerifactu.ObtenerSerie("UL");
 
-            Assert.IsNull(serie);
+            Assert.IsNotNull(serie);
+            Assert.IsTrue(serie.TramitaVerifactu);
+            Assert.AreEqual("F1", serie.TipoFacturaVerifactuPorDefecto);
+            Assert.IsFalse(serie.EsRectificativa);
+            Assert.AreEqual("RV", serie.SerieRectificativaAsociada);
+            Assert.IsFalse(string.IsNullOrWhiteSpace(serie.DescripcionVerifactu));
         }
 
         [TestMethod]

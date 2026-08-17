@@ -3,7 +3,9 @@ using System.Net.Mail;
 
 namespace NestoAPI.Models.Facturas.SeriesFactura
 {
-    public class SerieUL : ISerieFactura
+    // Decisión Carlos 17/08/26 (#39): la serie se MANTIENE (marca Unión Láser, misma lógica que
+    // EV) y pasa a tramitar Verifactu: son ventas reales que estaban quedando sin declarar.
+    public class SerieUL : ISerieFacturaVerifactu
     {
         public string RutaInforme => @"Models\Facturas\FacturaUL.rdlc";
 
@@ -21,5 +23,12 @@ namespace NestoAPI.Models.Facturas.SeriesFactura
         public bool EsDescargable => true;
         public bool EsImprimible => true;
         public bool UsaFormatoTicket => false;
+
+        // Propiedades Verifactu
+        public bool TramitaVerifactu => true;
+        public string TipoFacturaVerifactuPorDefecto => "F1";
+        public bool EsRectificativa => false;
+        public string DescripcionVerifactu => "Venta de productos Unión Láser";
+        public string SerieRectificativaAsociada => "RV";
     }
 }

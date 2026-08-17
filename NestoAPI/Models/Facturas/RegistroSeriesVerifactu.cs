@@ -7,7 +7,8 @@ namespace NestoAPI.Models.Facturas
     /// <summary>
     /// Registro centralizado de series de factura que tramitan por Verifactu.
     /// Solo las series incluidas en este diccionario enviarán facturas a Verifacti.
-    /// Series como GB (interna) o las eliminadas (EV, UL, VC, DV) no están aquí.
+    /// Series como GB (interna) o las eliminadas (VC, DV) no están aquí. EV y UL se
+    /// mantienen (decisión 17/08/26, #39): series por marca, legales y con ventas reales.
     /// </summary>
     public static class RegistroSeriesVerifactu
     {
@@ -16,6 +17,8 @@ namespace NestoAPI.Models.Facturas
             {
                 { "NV", new SerieNV() },
                 { "CV", new SerieCV() },
+                { "EV", new SerieEV() },
+                { "UL", new SerieUL() },
                 { "RV", new SerieRV() },
                 { "RC", new SerieRC() },
             };
