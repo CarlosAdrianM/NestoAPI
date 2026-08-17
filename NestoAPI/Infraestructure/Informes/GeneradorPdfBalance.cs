@@ -11,44 +11,40 @@ namespace NestoAPI.Infraestructure.Informes
 {
     /// <summary>
     /// NestoAPI#350: PDF de balances y cuentas de resultados (BPY, PGP...), sustituyendo al
-    /// informe del Nesto viejo. Misma información, presentación nueva: si hay líneas de pasivo
-    /// (Tipo 'P') se pintan dos paneles enfrentados (activo/pasivo, como el modelo oficial);
-    /// si no (PyG), una sola columna a ancho completo — el viejo desperdiciaba medio folio y
-    /// encabezaba el PyG con "ACTIVO". Sin descripciones truncadas ni importes solapados con
-    /// la columna %, y los porcentajes sin base (año anterior 0) van en blanco.
+    /// informe del Nesto viejo. Misma información, presentación nueva EN VERTICAL (petición de
+    /// Carlos 17/08/26, y es el formato de los modelos oficiales del PGC Pymes): el ACTIVO en
+    /// su página y el PATRIMONIO NETO Y PASIVO en la siguiente, cada uno a ancho completo; las
+    /// cuentas de resultados (sin líneas 'P'), una sola sección. Sin descripciones truncadas ni
+    /// importes solapados con la columna %, y los porcentajes sin base (año anterior 0) van en
+    /// blanco.
     /// </summary>
     public class GeneradorPdfBalance
     {
         public ByteArrayContent GenerarPdf(BalanceInformeDTO balance)
         {
             List<LineaBalanceInformeDTO> lineas = balance.Lineas ?? new List<LineaBalanceInformeDTO>();
-            List<LineaBalanceInformeDTO> panelIzquierdo = lineas.Where(l => l.Tipo != "P").ToList();
-            List<LineaBalanceInformeDTO> panelDerecho = lineas.Where(l => l.Tipo == "P").ToList();
-            bool dosPaneles = panelDerecho.Any();
+            List<LineaBalanceInformeDTO> lineasActivo = lineas.Where(l => l.Tipo != "P").ToList();
+            List<LineaBalanceInformeDTO> lineasPasivo = lineas.Where(l => l.Tipo == "P").ToList();
+            bool esBalance = lineasPasivo.Any();
 
             var documento = Document.Create(container =>
             {
                 container.Page(page =>
                 {
-                    page.Size(dosPaneles ? PageSizes.A4.Landscape() : PageSizes.A4);
+                    page.Size(PageSizes.A4);
                     page.MarginVertical(1.2f, Unit.Centimetre);
                     page.MarginHorizontal(1.2f, Unit.Centimetre);
-                    page.DefaultTextStyle(x => x.FontSize(8));
+                    page.DefaultTextStyle(x => x.FontSize(9));
 
                     page.Header().Element(c => ComponerCabecera(c, balance));
-                    page.Content().Element(c =>
+                    page.Content().Column(contenido =>
                     {
-                        if (dosPaneles)
+                        contenido.Item().Element(c => ComponerPanel(c, esBalance ? "ACTIVO" : null, lineasActivo));
+                        if (esBalance)
                         {
-                            c.Row(row =>
-                            {
-                                row.RelativeItem().PaddingRight(8).Element(izq => ComponerPanel(izq, "ACTIVO", panelIzquierdo));
-                                row.RelativeItem().PaddingLeft(8).Element(der => ComponerPanel(der, "PATRIMONIO NETO Y PASIVO", panelDerecho));
-                            });
-                        }
-                        else
-                        {
-                            ComponerPanel(c, null, panelIzquierdo);
+                            // El PN y pasivo empieza en página nueva, con todo el ancho para él
+                            contenido.Item().PageBreak();
+                            contenido.Item().Element(c => ComponerPanel(c, "PATRIMONIO NETO Y PASIVO", lineasPasivo));
                         }
                     });
                     page.Footer().AlignCenter().Text(text =>

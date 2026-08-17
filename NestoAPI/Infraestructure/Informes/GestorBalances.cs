@@ -166,9 +166,19 @@ namespace NestoAPI.Infraestructure.Informes
             return resultado;
         }
 
+        /// <param name="empresa">Una empresa ("1") o varias separadas por comas ("1,3"): con
+        /// varias se AGREGAN los mayores (ojo: agregado, no consolidado — las operaciones
+        /// cruzadas entre empresas no se eliminan). Las definiciones y el título salen de la
+        /// primera (los balances están definidos solo en la empresa 1).</param>
         public async Task<BalanceInformeDTO> CalcularAsync(string empresa, string numero, DateTime desde, DateTime hasta)
         {
-            empresa = empresa?.Trim();
+            List<string> listaEmpresas = (empresa ?? string.Empty).Split(',')
+                .Select(e => e.Trim()).Where(e => e != string.Empty).Distinct().ToList();
+            if (!listaEmpresas.Any())
+            {
+                return null;
+            }
+            empresa = listaEmpresas.First();
             numero = numero?.Trim();
 
             // OJO: Grupo es char(3) en BD ("1  "): sin el CAST, SqlQuery revienta al materializar
@@ -191,17 +201,21 @@ namespace NestoAPI.Infraestructure.Informes
                 .ToListAsync().ConfigureAwait(false)).FirstOrDefault();
 
             IReadOnlyDictionary<string, decimal> saldosActual =
-                await LeerSaldos(empresa, desde, hasta).ConfigureAwait(false);
+                await LeerSaldos(listaEmpresas, desde, hasta).ConfigureAwait(false);
             IReadOnlyDictionary<string, decimal> saldosAnterior =
-                await LeerSaldos(empresa, desde.AddYears(-1), hasta.AddYears(-1)).ConfigureAwait(false);
+                await LeerSaldos(listaEmpresas, desde.AddYears(-1), hasta.AddYears(-1)).ConfigureAwait(false);
 
-            Empresa fichaEmpresa = await db.Empresas
-                .FirstOrDefaultAsync(e => e.Número == empresa).ConfigureAwait(false);
+            List<Empresa> fichasEmpresa = await db.Empresas
+                .Where(e => listaEmpresas.Contains(e.Número.Trim()))
+                .ToListAsync().ConfigureAwait(false);
+            string nombreEmpresas = string.Join(" + ", listaEmpresas
+                .Select(le => fichasEmpresa.FirstOrDefault(f => f.Número.Trim() == le)?.Nombre?.Trim())
+                .Where(n => !string.IsNullOrWhiteSpace(n)));
 
             return new BalanceInformeDTO
             {
-                Empresa = empresa,
-                NombreEmpresa = fichaEmpresa?.Nombre?.Trim(),
+                Empresa = string.Join(",", listaEmpresas),
+                NombreEmpresa = nombreEmpresas,
                 Numero = numero,
                 Descripcion = descripcion ?? numero,
                 Desde = desde.Date,
@@ -211,13 +225,14 @@ namespace NestoAPI.Infraestructure.Informes
         }
 
         /// <summary>Saldo Debe−Haber por cuenta del mayor en [desde, hasta] (ambos incluidos;
-        /// el desde arranca en la apertura del ejercicio para que el balance sea a-la-fecha).</summary>
-        private async Task<IReadOnlyDictionary<string, decimal>> LeerSaldos(string empresa, DateTime desde, DateTime hasta)
+        /// el desde arranca en la apertura del ejercicio para que el balance sea a-la-fecha),
+        /// AGREGANDO todas las empresas indicadas.</summary>
+        private async Task<IReadOnlyDictionary<string, decimal>> LeerSaldos(List<string> empresas, DateTime desde, DateTime hasta)
         {
             DateTime hastaExclusivo = hasta.Date.AddDays(1);
             DateTime desdeInclusivo = desde.Date;
             var saldos = await db.Contabilidades
-                .Where(c => c.Empresa == empresa && c.Fecha >= desdeInclusivo && c.Fecha < hastaExclusivo)
+                .Where(c => empresas.Contains(c.Empresa.Trim()) && c.Fecha >= desdeInclusivo && c.Fecha < hastaExclusivo)
                 .GroupBy(c => c.Nº_Cuenta)
                 .Select(g => new { Cuenta = g.Key, Saldo = g.Sum(x => x.Debe - x.Haber) })
                 .ToListAsync().ConfigureAwait(false);
