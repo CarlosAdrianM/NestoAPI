@@ -63,12 +63,11 @@ namespace NestoAPI.Infraestructure.Clientes
                 && PaisesUnionEuropea.Contains(codigo);
         }
 
-        private static readonly HashSet<string> ClientesSimplificadas = new HashSet<string>
-        {
-            Constantes.ClientesEspeciales.AMAZON,
-            Constantes.ClientesEspeciales.TIENDA_ONLINE,
-            Constantes.ClientesEspeciales.PUBLICO_FINAL
-        };
+        // Criterio único en Constantes.ClientesEspeciales (#325/#366): la lista de clientes
+        // ficticios de simplificadas ya no vive duplicada aquí (DRY, ajuste 17/08/26 al añadir
+        // MATERIALES_CURSOS).
+        private static bool EsClienteSimplificadas(string cliente)
+            => Constantes.ClientesEspeciales.EsClienteFacturaSimplificada(cliente);
 
         private readonly NVEntities db;
         private readonly IAlmacenValidacionesNif almacen;
@@ -184,7 +183,7 @@ namespace NestoAPI.Infraestructure.Clientes
             {
                 return new ResultadoCorreccionNif { Corregido = false, Motivo = "El NIF no puede estar vacío." };
             }
-            if (ClientesSimplificadas.Contains(cliente?.Trim()))
+            if (EsClienteSimplificadas(cliente))
             {
                 return new ResultadoCorreccionNif { Corregido = false, Motivo = "Los clientes de facturas simplificadas no llevan NIF real." };
             }
@@ -428,7 +427,7 @@ namespace NestoAPI.Infraestructure.Clientes
 
         public async Task<int> UnificarNifContactos(string cliente, string usuario)
         {
-            if (ClientesSimplificadas.Contains(cliente?.Trim()))
+            if (EsClienteSimplificadas(cliente))
             {
                 return 0;
             }
@@ -575,7 +574,7 @@ namespace NestoAPI.Infraestructure.Clientes
 
         public async Task MarcarIncorrecto(string cliente, string motivo, string usuario)
         {
-            if (ClientesSimplificadas.Contains(cliente?.Trim()))
+            if (EsClienteSimplificadas(cliente))
             {
                 return;
             }
@@ -614,7 +613,7 @@ namespace NestoAPI.Infraestructure.Clientes
             string nombre = ficha.Nombre?.Trim();
             var resultado = new ResultadoValidacionNif { Nif = nif, Nombre = nombre };
 
-            if (ClientesSimplificadas.Contains(ficha.Nº_Cliente?.Trim()))
+            if (EsClienteSimplificadas(ficha.Nº_Cliente))
             {
                 resultado.Estado = EstadoValidacionNif.Excluido;
                 return resultado;
@@ -685,7 +684,7 @@ namespace NestoAPI.Infraestructure.Clientes
             {
                 return new ResultadoCorreccionNif { Corregido = false, Motivo = "Hay que indicar el país en formato ISO de 2 letras (FR, MA, GB...)." };
             }
-            if (ClientesSimplificadas.Contains(cliente?.Trim()))
+            if (EsClienteSimplificadas(cliente))
             {
                 return new ResultadoCorreccionNif { Corregido = false, Motivo = "Los clientes de facturas simplificadas no llevan identificación real." };
             }

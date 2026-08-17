@@ -411,12 +411,16 @@ namespace NestoAPI.Models
             public const string TIENDA_ONLINE = "31517";
             public const string AMAZON = "32624";
             public const string PUBLICO_FINAL = "10458";
+            /// <summary>Ficticio interno de agrupación de materiales de cursos (NIF '6').
+            /// Decisión Carlos 17/08/26: deja de usarse para facturar (los materiales salen
+            /// por diario); mientras existan facturas suyas, se declaran como simplificadas.</summary>
+            public const string MATERIALES_CURSOS = "31794";
 
             // Clientes ficticios de venta a consumidor final: sus facturas son SIMPLIFICADAS
             // (F2 sin destinatario, art. 6.1.d RD 1619/2012). Criterio único compartido por
             // Verifactu (#325) y por la subida de facturas a Amazon (#366), que las excluye.
             private static readonly HashSet<string> _clientesFacturaSimplificada =
-                new HashSet<string> { AMAZON, TIENDA_ONLINE, PUBLICO_FINAL };
+                new HashSet<string> { AMAZON, TIENDA_ONLINE, PUBLICO_FINAL, MATERIALES_CURSOS };
 
             public static bool EsClienteFacturaSimplificada(string cliente)
                 => !string.IsNullOrWhiteSpace(cliente) && _clientesFacturaSimplificada.Contains(cliente.Trim());

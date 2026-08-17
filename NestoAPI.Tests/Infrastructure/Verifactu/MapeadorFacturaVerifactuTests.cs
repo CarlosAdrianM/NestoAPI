@@ -126,6 +126,24 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public void Mapear_FacturaDeMaterialesCursos_TambienEsF2()
+        {
+            // Decisión Carlos 17/08/26 (caso NV2613363, atascada con NIF '6'): el cliente 31794
+            // "MATERIALES CURSOS" es un ficticio interno de agrupación, como Amazon o público
+            // final: sus facturas son simplificadas (F2 sin destinatario). Hacia delante el
+            // cliente deja de usarse (los materiales de cursos saldrán por diario, sin factura).
+            var factura = CrearFacturaNV();
+            factura.Nº_Cliente = "31794";
+            factura.CifNif = "6";
+            factura.NombreFiscal = "MATERIALES CURSOS";
+
+            VerifactuFacturaRequest request = MapeadorFacturaVerifactu.Mapear(factura);
+
+            Assert.AreEqual("F2", request.TipoFactura);
+            Assert.IsNull(request.NifDestinatario);
+        }
+
+        [TestMethod]
         public void Mapear_FacturaDeClienteNormal_SigueSiendoF1ConDestinatario()
         {
             // El caso masivo no cambia: las 33 facturas de clientes reales que ya aceptaba la AEAT
