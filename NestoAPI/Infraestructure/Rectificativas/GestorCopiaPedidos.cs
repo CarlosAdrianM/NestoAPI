@@ -757,6 +757,17 @@ namespace NestoAPI.Infraestructure.Rectificativas
             string numeroFacturaRectificativa,
             List<LineaCopiadaDTO> lineasCopiadas)
         {
+            // Verifactu #38: si la factura ya tiene vinculaciones no se duplican. Hoy las copias
+            // facturan en serie NV y este caso no se da, pero cuando el flujo pase a serie RV
+            // (#39) el fallback LIFO de ServicioFacturas.CrearFactura habrá corrido antes.
+            string numeroLimpio = numeroFacturaRectificativa?.Trim();
+            bool yaVinculada = await _db.LinFacturaVtaRectificaciones
+                .AnyAsync(r => r.Empresa == empresa && r.NumeroFactura.Trim() == numeroLimpio);
+            if (yaVinculada)
+            {
+                return;
+            }
+
             // Obtener las líneas de la factura rectificativa recién creada
             var lineasFacturadas = await _db.LinPedidoVtas
                 .Where(l => l.Empresa == empresa

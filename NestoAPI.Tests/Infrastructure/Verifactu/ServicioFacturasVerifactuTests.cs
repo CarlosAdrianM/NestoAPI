@@ -336,6 +336,122 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
                 .MustHaveHappenedOnceExactly();
         }
 
+        // Verifactu #38: rectificativa facturada A MANO (pedido negativo creado directamente en
+        // una serie RV/RC, sin pasar por CopiarFactura): no hay metadata en RectificativaPendiente
+        // ni vinculaciones — la búsqueda LIFO de #37 las genera, se guardan y se envía.
+
+        private DbSet<LinPedidoVta> ConLineasPedido(params LinPedidoVta[] lineas)
+        {
+            var fakeLineas = A.Fake<DbSet<LinPedidoVta>>(o => o.Implements<IQueryable<LinPedidoVta>>().Implements<IDbAsyncEnumerable<LinPedidoVta>>());
+            A.CallTo(() => db.LinPedidoVtas).Returns(fakeLineas);
+            ConfigurarFakeDbSet(fakeLineas, lineas.AsQueryable());
+            return fakeLineas;
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaFacturadaAMano_SinVinculacionesPrevias_GeneraLifoGuardaYEnvia()
+        {
+            // RV2600001 con -3 uds de P1; el cliente compró 2 uds en la NV111 (reciente) y 5 en
+            // la NV110 (antigua): el LIFO vincula 2 de NV111 + 1 de NV110 y la rectificativa
+            // se declara con sus dos facturas rectificadas.
+            var rectificativa = new CabFacturaVta
+            {
+                Empresa = "1",
+                Serie = "RV",
+                Número = "RV2600001",
+                Fecha = DateTime.Today,
+                CifNif = "12345678Z",
+                NombreFiscal = "CLIENTE DE PRUEBA SL",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = -100.00M, ImporteIVA = -21.00M }
+                }
+            };
+            var originalReciente = new CabFacturaVta { Empresa = "1", Serie = "NV", Número = "NV111", Fecha = DateTime.Today.AddDays(-5), LinPedidoVtas = new List<LinPedidoVta>() };
+            var originalAntigua = new CabFacturaVta { Empresa = "1", Serie = "NV", Número = "NV110", Fecha = DateTime.Today.AddDays(-30), LinPedidoVtas = new List<LinPedidoVta>() };
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta> { rectificativa, originalReciente, originalAntigua }.AsQueryable());
+            _ = ConLineasPedido(
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Orden = 1, Nº_Cliente = "C1", Producto = "P1", Cantidad = -3, Nº_Factura = "RV2600001" },
+                new LinPedidoVta { Empresa = "1", Nº_Cliente = "C1", Producto = "P1", Cantidad = 2, Estado = Constantes.EstadosLineaVenta.FACTURA, Nº_Factura = "NV111", Nº_Orden = 5, Fecha_Factura = DateTime.Today.AddDays(-5) },
+                new LinPedidoVta { Empresa = "1", Nº_Cliente = "C1", Producto = "P1", Cantidad = 5, Estado = Constantes.EstadosLineaVenta.FACTURA, Nº_Factura = "NV110", Nº_Orden = 3, Fecha_Factura = DateTime.Today.AddDays(-30) });
+            // Las vinculaciones guardadas se reflejan en el set para que el envío las encuentre
+            var vinculadas = new List<LinFacturaVtaRectificacion>();
+            _ = A.CallTo(() => fakeRectificaciones.Add(A<LinFacturaVtaRectificacion>.Ignored))
+                .Invokes((LinFacturaVtaRectificacion fila) =>
+                {
+                    vinculadas.Add(fila);
+                    ConfigurarFakeDbSet(fakeRectificaciones, vinculadas.AsQueryable());
+                });
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-lifo" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.VincularRectificativaFacturadaAMano("1", "RV2600001", "RV", "C1");
+
+            Assert.AreEqual(2, vinculadas.Count, "Una vinculación por compra original (LIFO)");
+            Assert.AreEqual("NV111", vinculadas[0].FacturaOriginalNumero);
+            Assert.AreEqual(5, vinculadas[0].FacturaOriginalLinea);
+            Assert.AreEqual(2M, vinculadas[0].CantidadRectificada);
+            Assert.AreEqual("NV110", vinculadas[1].FacturaOriginalNumero);
+            Assert.AreEqual(3, vinculadas[1].FacturaOriginalLinea);
+            Assert.AreEqual(1M, vinculadas[1].CantidadRectificada);
+            Assert.AreEqual(1, vinculadas[0].NumeroLinea, "La línea rectificativa de origen");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+            Assert.IsNotNull(enviado, "Con las vinculaciones ya guardadas, la rectificativa se declara");
+            Assert.AreEqual("I", enviado.TipoRectificacion);
+            Assert.AreEqual(2, enviado.FacturasRectificadas.Count);
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaFacturadaAMano_SerieNoRectificativa_NoHaceNada()
+        {
+            // El caso masivo: facturas normales NV no pasan por aquí.
+            _ = ConfigurarFactura();
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.VincularRectificativaFacturadaAMano("1", "NV2600123", "NV", "C1");
+
+            A.CallTo(() => fakeRectificaciones.Add(A<LinFacturaVtaRectificacion>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaFacturadaAMano_ConVinculacionesPrevias_NoDuplica()
+        {
+            // Si la rectificativa ya tiene vinculaciones (CopiarFactura o RectificativaPendiente,
+            // que son EXACTAS), el LIFO no debe pisarlas ni duplicarlas.
+            _ = ConfigurarFactura(serie: "RV", numero: "RV2600001");
+            ConfigurarFakeDbSet(fakeRectificaciones, new List<LinFacturaVtaRectificacion>
+            {
+                new LinFacturaVtaRectificacion { Empresa = "1", NumeroFactura = "RV2600001", NumeroLinea = 10, FacturaOriginalNumero = "NV2600123", FacturaOriginalLinea = 5, CantidadRectificada = 2 }
+            }.AsQueryable());
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.VincularRectificativaFacturadaAMano("1", "RV2600001", "RV", "C1");
+
+            A.CallTo(() => fakeRectificaciones.Add(A<LinFacturaVtaRectificacion>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task VincularRectificativaFacturadaAMano_SinOrigenSuficiente_NoRompeYDejaRastro()
+        {
+            // El cliente no compró (o no queda cantidad por rectificar): el LIFO lanza, el motivo
+            // queda en ELMAH y la factura sigue creada y reintentable. Jamás rompe CrearFactura.
+            _ = ConfigurarFactura(serie: "RV", numero: "RV2600001");
+            _ = ConLineasPedido(
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Orden = 1, Nº_Cliente = "C1", Producto = "P1", Cantidad = -3, Nº_Factura = "RV2600001" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            await servicio.VincularRectificativaFacturadaAMano("1", "RV2600001", "RV", "C1"); // no debe lanzar
+
+            A.CallTo(() => fakeRectificaciones.Add(A<LinFacturaVtaRectificacion>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("RV2600001"), A<Exception>.Ignored))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored)).MustNotHaveHappened();
+        }
+
         [TestMethod]
         public async Task EnviarRectificativaAVerifactu_SinVinculaciones_NoEnviaYLoguea()
         {
