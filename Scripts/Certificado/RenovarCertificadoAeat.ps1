@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Renueva el certificado de la AEAT con UN solo comando: lo importa en el servidor de
     producción por remoto (detectando solo el app pool de IIS y dándole permiso) y deja
@@ -28,7 +28,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $patronEmpresa = 'VATES-A78368255|R: ?A78368255'
 
-# ─── 1. Localizar el .pfx ────────────────────────────────────────────────────────────
+# === 1. Localizar el .pfx ===
 if (-not $RutaPfx) {
     $descargas = Join-Path $env:USERPROFILE 'Downloads'
     $candidato = Get-ChildItem $descargas -Filter *.pfx -ErrorAction SilentlyContinue |
@@ -42,7 +42,7 @@ if (-not $RutaPfx) {
 }
 if (-not (Test-Path $RutaPfx)) { throw "No existe el fichero: $RutaPfx" }
 
-# ─── 2. Contraseña (una sola vez) y comprobacion del .pfx antes de tocar nada ───────
+# === 2. Contraseña (una sola vez) y comprobacion del .pfx antes de tocar nada ===
 if ($Password) {
     $passwordSegura = ConvertTo-SecureString $Password -AsPlainText -Force
 } else {
@@ -63,7 +63,7 @@ if ($certificado.Subject -notmatch $patronEmpresa) {
     throw "Este certificado no parece el de la empresa (falta A78368255 en el sujeto): $($certificado.Subject)"
 }
 
-# ─── 3. Servidor de produccion (remoto): importar + ACL al app pool + verificar ─────
+# === 3. Servidor de produccion (remoto): importar + ACL al app pool + verificar ===
 if (-not $SoloLocal) {
     Write-Host ""
     Write-Host "=== Instalando en $Servidor (produccion) ===" -ForegroundColor Cyan
@@ -118,7 +118,7 @@ if (-not $SoloLocal) {
         if ($resultado.Pool) {
             Write-Host "  Permiso de lectura de la clave dado a 'IIS AppPool\$($resultado.Pool)'" -ForegroundColor Green
         } elseif ($resultado.AvisoPool) {
-            Write-Host "  ⚠ $($resultado.AvisoPool)" -ForegroundColor Yellow
+            Write-Host "  OJO: $($resultado.AvisoPool)" -ForegroundColor Yellow
         }
         Write-Host "  Certificados de la empresa en el servidor (NestoAPI usa el primero):"
         $resultado.CertificadosEmpresa | ForEach-Object { Write-Host "    $_" }
@@ -136,7 +136,7 @@ if (-not $SoloLocal) {
     }
 }
 
-# ─── 4. Esta maquina (opcional, solo para depurar en local) ─────────────────────────
+# === 4. Esta maquina (opcional, solo para depurar en local) ===
 if ($TambienEnLocal -or $SoloLocal) {
     $esAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
         ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -153,7 +153,7 @@ if ($TambienEnLocal -or $SoloLocal) {
     }
 }
 
-# ─── 5. Recordatorio de limpieza ─────────────────────────────────────────────────────
+# === 5. Recordatorio de limpieza ===
 if (-not $SoloLocal) {
     Write-Host ""
     $borrar = Read-Host "¿Borrar ya el .pfx de '$RutaPfx'? (recomendado tras verificar) [s/N]"
