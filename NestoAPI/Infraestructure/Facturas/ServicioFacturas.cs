@@ -551,20 +551,24 @@ namespace NestoAPI.Infraestructure.Facturas
             {
                 System.Diagnostics.Debug.WriteLine($"  → Ejecutando prdCrearFacturaVta para pedido {pedido}");
 
-                SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char) { Value = empresa };
-                SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int) { Value = pedido };
-                SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime) { Value = DateTime.Today };
-                SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char) { Value = usuario };
-                SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) { Direction = ParameterDirection.Output };
+                // NestoAPI#364: reintento ante deadlock (1205). prdCrearFacturaVta abre su propia
+                // transacción, así que la víctima se revierte ENTERA y reejecutar es seguro. Los
+                // SqlParameter se crean DENTRO del intento: no se pueden reutilizar entre comandos.
+                string resultadoProcedimiento = await ReintentosSql.ReintentarSiDeadlockAsync(async () =>
+                {
+                    SqlParameter empresaParam = new SqlParameter("@Empresa", System.Data.SqlDbType.Char) { Value = empresa };
+                    SqlParameter pedidoParam = new SqlParameter("@Pedido", System.Data.SqlDbType.Int) { Value = pedido };
+                    SqlParameter fechaEntregaParam = new SqlParameter("@Fecha", System.Data.SqlDbType.DateTime) { Value = DateTime.Today };
+                    SqlParameter usuarioParam = new SqlParameter("@Usuario", System.Data.SqlDbType.Char) { Value = usuario };
+                    SqlParameter numFactura = new SqlParameter("@NumFactura", SqlDbType.Char, 10) { Direction = ParameterDirection.Output };
 
-                // Ejecutar el procedimiento almacenado
-                _ = await db.Database.ExecuteSqlCommandAsync(
-                    "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
-                    empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
-                );
+                    _ = await db.Database.ExecuteSqlCommandAsync(
+                        "EXEC prdCrearFacturaVta @Empresa, @Pedido, @Fecha, @NumFactura OUTPUT, @Usuario",
+                        empresaParam, pedidoParam, fechaEntregaParam, numFactura, usuarioParam
+                    );
 
-                // Obtener el valor de retorno del parámetro
-                string resultadoProcedimiento = numFactura.Value.ToString().Trim();
+                    return numFactura.Value.ToString().Trim();
+                });
 
                 if (seAplicoAutoFix)
                 {

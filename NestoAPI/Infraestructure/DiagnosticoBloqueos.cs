@@ -177,6 +177,129 @@ ORDER BY bloqueados.N DESC, at.transaction_begin_time ASC";
                 : $"Sin bloqueadores activos entre las {sesionesVisibles} sesiones visibles: el bloqueo pudo liberarse antes de ejecutar el diagnóstico.";
         }
 
+        /// <summary>Ring buffer de system_health: el último xml_deadlock_report registrado.</summary>
+        private const string CONSULTA_ULTIMO_DEADLOCK = @"
+SELECT TOP (1)
+    n.value('@timestamp', 'datetime2') AS FechaUtc,
+    CONVERT(nvarchar(max), n.query('data/value/deadlock')) AS Grafo
+FROM (SELECT CAST(st.target_data AS xml) AS datos
+      FROM sys.dm_xe_sessions s
+      INNER JOIN sys.dm_xe_session_targets st ON st.event_session_address = s.address
+      WHERE s.name = 'system_health' AND st.target_name = 'ring_buffer') rb
+CROSS APPLY rb.datos.nodes('RingBufferTarget/event[@name=""xml_deadlock_report""]') q(n)
+ORDER BY n.value('@timestamp', 'datetime2') DESC";
+
+        /// <summary>Un deadlock más antiguo que esto no puede ser el de la petición actual.</summary>
+        private const int MINUTOS_DEADLOCK_RECIENTE = 2;
+
+        /// <summary>
+        /// NestoAPI#364: para un DEADLOCK la consulta de bloqueadores activos no sirve por diseño
+        /// (SQL Server mata a la víctima al instante y el bloqueo desaparece); el causante está en
+        /// el xml_deadlock_report que la sesión system_health guarda en su ring buffer. NUNCA lanza.
+        /// </summary>
+        public static ResultadoDiagnostico DescribirUltimoDeadlock()
+        {
+            try
+            {
+                DateTime fechaUtc;
+                string grafo;
+                using (SqlConnection conexion = new SqlConnection(CadenaDiagnostico()))
+                {
+                    conexion.Open();
+                    using (SqlCommand comando = new SqlCommand(CONSULTA_ULTIMO_DEADLOCK, conexion) { CommandTimeout = 5 })
+                    using (SqlDataReader lector = comando.ExecuteReader())
+                    {
+                        if (!lector.Read())
+                        {
+                            return new ResultadoDiagnostico
+                            {
+                                MotivoSinBloqueadores = "system_health no tiene ningún xml_deadlock_report en el ring buffer (¿reciclado o sesión parada?)."
+                            };
+                        }
+                        fechaUtc = lector.GetDateTime(0);
+                        grafo = lector.IsDBNull(1) ? null : lector.GetString(1);
+                    }
+                }
+
+                if (fechaUtc < DateTime.UtcNow.AddMinutes(-MINUTOS_DEADLOCK_RECIENTE))
+                {
+                    return new ResultadoDiagnostico
+                    {
+                        MotivoSinBloqueadores = $"El último deadlock del ring buffer es antiguo ({fechaUtc:HH:mm:ss} UTC), no corresponde a esta petición."
+                    };
+                }
+
+                string resumen = ResumirDeadlockGraph(grafo, fechaUtc.ToLocalTime());
+                return resumen != null
+                    ? new ResultadoDiagnostico { Bloqueadores = resumen }
+                    : new ResultadoDiagnostico { MotivoSinBloqueadores = "No se pudo interpretar el grafo del deadlock de system_health." };
+            }
+            catch (Exception ex)
+            {
+                return new ResultadoDiagnostico
+                {
+                    MotivoSinBloqueadores = $"La consulta del deadlock graph falló: {ex.Message}"
+                };
+            }
+        }
+
+        /// <summary>
+        /// Resume el grafo para el usuario: quién era la víctima (su operación, la que ve el
+        /// error) y con quién chocó. El inputbuf se trunca: es orientativo, no un volcado.
+        /// </summary>
+        internal static string ResumirDeadlockGraph(string grafoXml, DateTime fechaLocal)
+        {
+            const int MAXIMO_SQL = 150;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(grafoXml))
+                {
+                    return null;
+                }
+                System.Xml.Linq.XElement deadlock = System.Xml.Linq.XElement.Parse(grafoXml);
+                var procesos = deadlock.Element("process-list")?.Elements("process").ToList();
+                if (procesos == null || !procesos.Any())
+                {
+                    return null;
+                }
+                HashSet<string> victimas = new HashSet<string>(
+                    deadlock.Element("victim-list")?.Elements("victimProcess")
+                        .Select(v => (string)v.Attribute("id")) ?? Enumerable.Empty<string>());
+
+                string Describir(System.Xml.Linq.XElement proceso)
+                {
+                    string login = (string)proceso.Attribute("loginname");
+                    string host = (string)proceso.Attribute("hostname");
+                    string app = (string)proceso.Attribute("clientapp");
+                    string sql = proceso.Element("inputbuf")?.Value?.Trim();
+                    if (sql != null && sql.Length > MAXIMO_SQL)
+                    {
+                        sql = sql.Substring(0, MAXIMO_SQL) + "…";
+                    }
+                    string quien = string.IsNullOrWhiteSpace(host) ? login : $"{login} en {host}";
+                    if (!string.IsNullOrWhiteSpace(app))
+                    {
+                        quien += $" ({app.Trim()})";
+                    }
+                    return string.IsNullOrWhiteSpace(sql) ? quien : $"{quien} ejecutando «{sql}»";
+                }
+
+                var ordenados = procesos
+                    .OrderByDescending(p => victimas.Contains((string)p.Attribute("id")))
+                    .ToList();
+                string victima = Describir(ordenados.First());
+                string otros = string.Join(" | ", ordenados.Skip(1).Take(2).Select(Describir));
+
+                return $"Interbloqueo (deadlock) de las {fechaLocal:HH:mm:ss}: la operación elegida víctima fue la de {victima}" +
+                    (string.IsNullOrEmpty(otros) ? "." : $"; chocó con {otros}.") +
+                    " Reintenta la operación; si se repite, avisad al otro usuario.";
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         internal static string FormatearBloqueadores(IList<FilaBloqueador> bloqueadores)
         {
             if (bloqueadores == null || !bloqueadores.Any())

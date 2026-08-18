@@ -46,8 +46,12 @@ namespace NestoAPI.Infraestructure.Filters
             // para que el usuario pueda llamarle directamente. Solo se consulta en este tipo de
             // error (raro) y DescribirBloqueadores nunca lanza. NestoAPI#321: si no identifica
             // al bloqueador, el motivo va a la ficha de ELMAH; nunca más un null silencioso.
-            DiagnosticoBloqueos.ResultadoDiagnostico diagnosticoBloqueos = DiagnosticoBloqueos.EsErrorDeBloqueo(exception)
-                ? DiagnosticoBloqueos.DescribirBloqueadores()
+            // NestoAPI#364: si es un DEADLOCK (1205), los bloqueadores activos ya no existen
+            // (SQL Server mata a la víctima al instante): el causante se saca del deadlock
+            // graph de system_health.
+            DiagnosticoBloqueos.ResultadoDiagnostico diagnosticoBloqueos =
+                ReintentosSql.EsVictimaDeDeadlock(exception) ? DiagnosticoBloqueos.DescribirUltimoDeadlock()
+                : DiagnosticoBloqueos.EsErrorDeBloqueo(exception) ? DiagnosticoBloqueos.DescribirBloqueadores()
                 : null;
             string bloqueos = diagnosticoBloqueos?.Bloqueadores;
 

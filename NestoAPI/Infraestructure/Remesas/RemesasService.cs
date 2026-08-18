@@ -238,14 +238,17 @@ namespace NestoAPI.Infraestructure.Remesas
                 db.Database.CommandTimeout = 600;
                 // @usuario se forwardea a prdContabilizar dentro del SP. Si va NULL (llamada sin
                 // Identity), el SP cae al SYSTEM_USER como antes; con Identity, graba el usuario real.
-                _ = await db.Database.ExecuteSqlCommandAsync(
-                    "EXEC prdContabilizarImpagadosSepa @fichero, @usuario",
-                    new System.Data.SqlClient.SqlParameter("@fichero", System.Data.SqlDbType.Xml) { Value = fichero },
-                    new System.Data.SqlClient.SqlParameter("@usuario", System.Data.SqlDbType.VarChar, 30)
-                    {
-                        Value = string.IsNullOrWhiteSpace(usuario) ? (object)System.DBNull.Value : usuario
-                    })
-                    .ConfigureAwait(false);
+                // NestoAPI#364: reintento ante deadlock (el SP abre su propia transacción: la
+                // víctima se revierte entera). Los SqlParameter se crean dentro del intento.
+                _ = await ReintentosSql.ReintentarSiDeadlockAsync(async () =>
+                    await db.Database.ExecuteSqlCommandAsync(
+                        "EXEC prdContabilizarImpagadosSepa @fichero, @usuario",
+                        new System.Data.SqlClient.SqlParameter("@fichero", System.Data.SqlDbType.Xml) { Value = fichero },
+                        new System.Data.SqlClient.SqlParameter("@usuario", System.Data.SqlDbType.VarChar, 30)
+                        {
+                            Value = string.IsNullOrWhiteSpace(usuario) ? (object)System.DBNull.Value : usuario
+                        })
+                    .ConfigureAwait(false)).ConfigureAwait(false);
             }
         }
 
