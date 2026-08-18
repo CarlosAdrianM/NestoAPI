@@ -50,11 +50,25 @@ Write-Host "  Clave priv: $($cert.HasPrivateKey)"
 
 if ($AppPool) {
     # El app pool de IIS necesita LEER la clave privada para autenticarse por TLS en la AEAT.
+    # El fichero de la clave puede estar en Crypto\Keys (CNG) o en Crypto\RSA\MachineKeys
+    # (CSP); el tipo del wrapper de .NET no es fiable para saberlo (RSACng puede envolver
+    # una clave CSP), asi que se prueba en ambos y, si no, se busca por nombre.
     $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
     if ($rsa -is [System.Security.Cryptography.RSACng]) {
-        $rutaClave = Join-Path $env:ProgramData "Microsoft\Crypto\Keys\$($rsa.Key.UniqueName)"
+        $nombreClave = $rsa.Key.UniqueName
     } else {
-        $rutaClave = Join-Path $env:ProgramData "Microsoft\Crypto\RSA\MachineKeys\$($rsa.CspKeyContainerInfo.UniqueKeyContainerName)"
+        $nombreClave = $rsa.CspKeyContainerInfo.UniqueKeyContainerName
+    }
+    $rutaClave = @(
+        (Join-Path $env:ProgramData "Microsoft\Crypto\Keys\$nombreClave"),
+        (Join-Path $env:ProgramData "Microsoft\Crypto\RSA\MachineKeys\$nombreClave")
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $rutaClave) {
+        $rutaClave = Get-ChildItem (Join-Path $env:ProgramData 'Microsoft\Crypto') -Recurse -Filter $nombreClave -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+    }
+    if (-not $rutaClave) {
+        throw "Importado, pero no se encontro el fichero de la clave '$nombreClave' bajo $env:ProgramData\Microsoft\Crypto para dar permiso al pool '$AppPool'."
     }
     icacls $rutaClave /grant "IIS AppPool\${AppPool}:(R)" | Out-Null
     Write-Host "  Permiso de lectura de la clave concedido a 'IIS AppPool\$AppPool'" -ForegroundColor Green

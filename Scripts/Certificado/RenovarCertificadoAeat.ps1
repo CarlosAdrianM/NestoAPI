@@ -83,14 +83,32 @@ if (-not $SoloLocal) {
                 $pool = if ($sitio) { $sitio.applicationPool } else { $null }
                 $avisoPool = $null
                 if ($pool) {
+                    # El fichero de la clave puede estar en Crypto\Keys (CNG) o en
+                    # Crypto\RSA\MachineKeys (CSP); el tipo del wrapper de .NET no es fiable
+                    # para saberlo (RSACng puede envolver una clave CSP), asi que se prueba
+                    # en ambos y, si no, se busca por nombre.
                     $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($cert)
                     if ($rsa -is [System.Security.Cryptography.RSACng]) {
-                        $rutaClave = Join-Path $env:ProgramData "Microsoft\Crypto\Keys\$($rsa.Key.UniqueName)"
+                        $nombreClave = $rsa.Key.UniqueName
                     } else {
-                        $rutaClave = Join-Path $env:ProgramData "Microsoft\Crypto\RSA\MachineKeys\$($rsa.CspKeyContainerInfo.UniqueKeyContainerName)"
+                        $nombreClave = $rsa.CspKeyContainerInfo.UniqueKeyContainerName
                     }
-                    icacls $rutaClave /grant "IIS AppPool\${pool}:(R)" | Out-Null
-                } else {
+                    $rutaClave = @(
+                        (Join-Path $env:ProgramData "Microsoft\Crypto\Keys\$nombreClave"),
+                        (Join-Path $env:ProgramData "Microsoft\Crypto\RSA\MachineKeys\$nombreClave")
+                    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+                    if (-not $rutaClave) {
+                        $rutaClave = Get-ChildItem (Join-Path $env:ProgramData 'Microsoft\Crypto') -Recurse -Filter $nombreClave -File -ErrorAction SilentlyContinue |
+                            Select-Object -First 1 -ExpandProperty FullName
+                    }
+                    if ($rutaClave) {
+                        icacls $rutaClave /grant "IIS AppPool\${pool}:(R)" | Out-Null
+                    } else {
+                        $avisoPool = "Importado, pero no se encontro el fichero de la clave '$nombreClave' bajo $env:ProgramData\Microsoft\Crypto para dar permiso al pool '$pool'."
+                        $pool = $null
+                    }
+                }
+                if (-not $pool -and -not $avisoPool) {
                     $avisoPool = "No se encontro un sitio IIS con physicalPath *inetpub\Api*. Sitios: " +
                         ((Get-Website | ForEach-Object { "$($_.Name) [$($_.physicalPath)] -> $($_.applicationPool)" }) -join '; ') +
                         ". Da el permiso a mano: repite con ImportarCertificadoAeat.ps1 -AppPool <pool>."
