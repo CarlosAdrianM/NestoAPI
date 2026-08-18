@@ -64,8 +64,8 @@ namespace NestoAPI.Infraestructure
                 <soapenv:Body>
                     <vnif:VNifV2Ent>
                         <vnif:Contribuyente>
-                            <vnif:Nif> " + nif + @" </vnif:Nif>
-                            <vnif:Nombre> " + nombre + @" </vnif:Nombre>
+                            <vnif:Nif> " + System.Security.SecurityElement.Escape(nif) + @" </vnif:Nif>
+                            <vnif:Nombre> " + System.Security.SecurityElement.Escape(nombre) + @" </vnif:Nombre>
                         </vnif:Contribuyente>
                     </vnif:VNifV2Ent>
                 </soapenv:Body>
@@ -182,29 +182,18 @@ namespace NestoAPI.Infraestructure
 
         private static HttpWebRequest CreateWebRequest()
         {
-            string pathApp = AppDomain.CurrentDomain.BaseDirectory;
-            //string certName = @"C:\Users\Administrador.NUEVAVISION\source\repos\NestoAPI\NestoAPI\Infraestructure\Certificados\cert_cam_nv.pfx";
-            string fileName = "cert_cam_nv.pfx";
-            string certName = Path.Combine(pathApp, @"Infraestructure\Certificados\", fileName);
-            string password = ConfigurationManager.AppSettings["CertificadoDigital"];
             string host = @"https://www1.agenciatributaria.gob.es/wlpl/BURT-JDIT/ws/VNifV2SOAP";
 
-            X509Certificate2Collection certificates = new X509Certificate2Collection();
-            try
-            {
-                certificates.Import(certName, password, X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
-            }
-            catch (Exception ex)
-            {
-                throw ex;
-            }
+            // NestoAPI#388: OJO, aquí no puede haber ServerCertificateValidationCallback => true:
+            // ServicePointManager es global al proceso y anularía la validación TLS de TODAS las
+            // llamadas salientes (Verifacti, Redsys, Amazon...), no solo la de la AEAT.
+            X509Certificate2 certificado = Clientes.ProveedorCertificadoAeat.ObtenerCertificado();
 
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            ServicePointManager.ServerCertificateValidationCallback = (a, b, c, d) => true;
 
             HttpWebRequest webRequest = (HttpWebRequest)WebRequest.Create(host);
             webRequest.AllowAutoRedirect = true;
-            webRequest.ClientCertificates = certificates;
+            webRequest.ClientCertificates = new X509Certificate2Collection(certificado);
 
             webRequest.Headers.Add(@"SOAP:Action");
             webRequest.ContentType = "text/xml;charset=\"utf-8\"";
