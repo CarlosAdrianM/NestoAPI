@@ -6,67 +6,67 @@ de **representante de persona jurídica** (Carlos / Nueva Visión, A78368255). C
 **2 años**. Cuando falten menos de 15 días, ELMAH avisa a diario ("CertificadoAeat: el
 certificado de la AEAT caduca el...").
 
-## El proceso completo (⏱ ~10 minutos + la espera de la FNMT)
+## El proceso (⏱ ~5 minutos + la espera de la FNMT)
 
-### 1. Conseguir el certificado nuevo (esto es lo que tarda días)
+### 1. Conseguir el certificado nuevo (esto es lo único que tarda: ~2 días)
 
 1. Solicitar la renovación en la FNMT (https://www.sede.fnmt.gob.es/certificados/certificado-de-representante).
-2. Pagar y acreditar la representación (el certificado del Registro Mercantil lo pide la
-   propia FNMT; entre ambos suelen tardar ~2 días).
-3. Descargar el certificado en el navegador donde se solicitó y **exportarlo a un .pfx CON
-   clave privada** (certmgr.msc → Personal → clic derecho → Exportar → "Sí, exportar la
-   clave privada" → poner contraseña).
+   Entre el Registro Mercantil y la FNMT suelen tardar un par de días.
+2. Descargar el certificado en el navegador donde se solicitó y **exportarlo a un .pfx**:
+   `Win+R` → `certmgr.msc` → Personal → Certificados → clic derecho sobre el nuevo →
+   Todas las tareas → Exportar → **"Sí, exportar la clave privada"** ⚠️ (imprescindible) →
+   siguiente, siguiente → ponerle una contraseña → guardarlo en **Descargas**.
 
-### 2. Instalarlo en el SERVIDOR (RDS2016) — esto es TODO lo que necesita NestoAPI
-
-1. Copiar el .pfx a una carpeta temporal del servidor (p. ej. `C:\Temp\`).
-2. Abrir PowerShell **como administrador** en el servidor y ejecutar:
-
-   ```powershell
-   C:\ruta\al\repo\Scripts\Certificado\ImportarCertificadoAeat.ps1 -RutaPfx C:\Temp\certificado_nuevo.pfx -AppPool Api
-   ```
-
-   (Si no recuerdas el nombre del app pool: `Get-Website | Select Name, ApplicationPool`.
-   Si el script no está a mano, está en el repo en `Scripts/Certificado/`.)
-
-3. Comprobar en la salida del script que el certificado nuevo aparece el PRIMERO en la
-   tabla (caducidad más lejana) y con `ClavePrivada = True`.
-4. **Borrar el .pfx** de `C:\Temp\` (y de descargas/correo si quedó por ahí).
-
-**No hay que hacer nada más**: ni redesplegar, ni reciclar IIS, ni tocar `secretos.config`,
-ni pegar el .pfx en el repo. NestoAPI busca en el almacén de Windows en cada llamada y usa
-automáticamente el certificado vigente con la caducidad más lejana (`ProveedorCertificadoAeat`).
-
-### 3. Instalarlo en la máquina de DESARROLLO (opcional, para depurar VNifV2 en local)
-
-El mismo script, sin `-AppPool` (en dev no hay IIS; el usuario administrador ya puede leer
-la clave):
+### 2. Ejecutar UN comando (en tu máquina de desarrollo, PowerShell normal)
 
 ```powershell
-.\ImportarCertificadoAeat.ps1 -RutaPfx C:\Temp\certificado_nuevo.pfx
+powershell -ExecutionPolicy Bypass -File C:\Users\Carlos\source\repos\NestoAPI\Scripts\Certificado\RenovarCertificadoAeat.ps1
 ```
 
-### 4. Verificar que funciona
+El script hace todo solo:
+- Encuentra el .pfx más reciente de Descargas (te lo confirma) y te pide su contraseña una vez.
+- Comprueba que lleva la clave privada y que es el de la empresa.
+- Lo instala en **RDS2016** (producción) por remoto: importación no exportable en el
+  almacén de Windows, detecta el app pool del API en IIS y le da permiso de lectura,
+  enseña la lista de certificados y limpia los temporales.
+- Te ofrece borrar el .pfx al terminar.
 
-Desde Nesto, abrir una ficha de cliente y comprobar un NIF (o esperar a la siguiente
-facturación). Si algo falla, en ELMAH saldría "CertificadoAeat: ..." con el motivo.
+No hay que redesplegar, ni reciclar IIS, ni tocar `secretos.config`, ni pegar nada en el
+repo: NestoAPI mira el almacén en cada llamada y usa automáticamente el certificado
+vigente con la caducidad más lejana (`ProveedorCertificadoAeat`).
+
+### 3. Verificar
+
+Desde Nesto, abrir una ficha de cliente y comprobar un NIF. Si algo falla, en ELMAH sale
+"CertificadoAeat: ..." con el motivo.
+
+## Variantes
+
+- **Importarlo también en la máquina de desarrollo** (solo hace falta para depurar VNifV2
+  en local): añadir `-TambienEnLocal` al comando (saltará el aviso de elevación de Windows).
+- **Si el remoto a RDS2016 fallara** (WinRM apagado): el propio script imprime el plan B —
+  copiar el .pfx al servidor y ejecutar allí, como administrador,
+  `Scripts\Certificado\ImportarCertificadoAeat.ps1 -RutaPfx <pfx> -AppPool <pool>`.
 
 ## Dónde vive cada cosa
 
 | Qué | Dónde |
 |---|---|
-| Certificado (clave privada, no exportable) | Almacén de Windows `LocalMachine\My` del servidor (y de dev) |
+| Certificado (clave privada, no exportable) | Almacén de Windows `LocalMachine\My` del servidor |
 | Código que lo elige | `NestoAPI/Infraestructure/Clientes/ProveedorCertificadoAeat.cs` |
 | Aviso de caducidad | ELMAH, diario, desde 15 días antes |
+| Script todo-en-uno | `Scripts/Certificado/RenovarCertificadoAeat.ps1` |
+| Script de bajo nivel (plan B, en el servidor) | `Scripts/Certificado/ImportarCertificadoAeat.ps1` |
 | Fallback legado (a extinguir, issue #388) | `NestoAPI/Infraestructure/Certificados/cert_cam_nv.pfx` + clave `CertificadoDigital` en `secretos.config` |
 
 ## Problemas típicos
 
-- **"No hay ningún certificado de la AEAT vigente"**: no hay certificado en el almacén (o
-  está caducado) y el fallback .pfx ya no existe/caducó → ejecutar el paso 2.
+- **"Este .pfx NO lleva la clave privada"**: al exportar no se marcó "exportar la clave
+  privada" → repetir el paso 1.2.
+- **"No hay ningún certificado de la AEAT vigente"** (en ELMAH): no hay certificado
+  vigente en el almacén del servidor ni fallback → ejecutar el paso 2.
 - **La AEAT rechaza la conexión TLS**: el app pool no puede leer la clave privada →
-  repetir el script con `-AppPool` correcto (o revisar la ACL del fichero de clave en
-  `C:\ProgramData\Microsoft\Crypto\...`).
+  repetir el paso 2 (o el plan B con `-AppPool`).
 - **Importado pero NestoAPI no lo usa**: comprobar que el Subject contiene
   `VATES-A78368255` o `R: A78368255` (si la FNMT cambiara el formato, ajustar
   `ProveedorCertificadoAeat.EsDeLaEmpresa`, que tiene tests).
