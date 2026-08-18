@@ -128,44 +128,61 @@ namespace NestoAPI.Infraestructure.Notificaciones
 
             using (NVEntities db = new NVEntities())
             {
+                void ActualizarDatos(DispositivoNotificacion dispositivo)
+                {
+                    dispositivo.Usuario = usuario;
+                    dispositivo.Empresa = registro.Empresa;
+                    dispositivo.Vendedor = registro.Vendedor;
+                    dispositivo.Cliente = registro.Cliente;
+                    dispositivo.Contacto = registro.Contacto;
+                    dispositivo.Plataforma = registro.Plataforma;
+                    dispositivo.Aplicacion = registro.Aplicacion;
+                    dispositivo.FechaUltimaActividad = DateTime.Now;
+                    dispositivo.Activo = true;
+                }
+
                 var existente = await db.DispositivosNotificaciones
                     .FirstOrDefaultAsync(d => d.Token == registro.Token)
                     .ConfigureAwait(false);
 
                 if (existente != null)
                 {
-                    existente.Usuario = usuario;
-                    existente.Empresa = registro.Empresa;
-                    existente.Vendedor = registro.Vendedor;
-                    existente.Cliente = registro.Cliente;
-                    existente.Contacto = registro.Contacto;
-                    existente.Plataforma = registro.Plataforma;
-                    existente.Aplicacion = registro.Aplicacion;
-                    existente.FechaUltimaActividad = DateTime.Now;
-                    existente.Activo = true;
-
+                    ActualizarDatos(existente);
                     await db.SaveChangesAsync().ConfigureAwait(false);
                     return existente;
                 }
 
                 var nuevo = new DispositivoNotificacion
                 {
-                    Usuario = usuario,
-                    Empresa = registro.Empresa,
-                    Vendedor = registro.Vendedor,
-                    Cliente = registro.Cliente,
-                    Contacto = registro.Contacto,
                     Token = registro.Token,
-                    Plataforma = registro.Plataforma,
-                    Aplicacion = registro.Aplicacion,
-                    FechaRegistro = DateTime.Now,
-                    FechaUltimaActividad = DateTime.Now,
-                    Activo = true
+                    FechaRegistro = DateTime.Now
                 };
+                ActualizarDatos(nuevo);
 
                 db.DispositivosNotificaciones.Add(nuevo);
-                await db.SaveChangesAsync().ConfigureAwait(false);
-                return nuevo;
+                try
+                {
+                    await db.SaveChangesAsync().ConfigureAwait(false);
+                    return nuevo;
+                }
+                catch (System.Data.Entity.Infrastructure.DbUpdateException)
+                {
+                    // NestoAPI#389: carrera — dos registros simultáneos del mismo token (la app
+                    // registra en el arranque y en el login casi a la vez) leen ambos "no existe"
+                    // y el segundo insert viola UQ_DispositivosNotificaciones_Token. La fila ya
+                    // existe (la creó la otra petición): se actualiza y en paz.
+                    db.Entry(nuevo).State = System.Data.Entity.EntityState.Detached;
+                    var ganador = await db.DispositivosNotificaciones
+                        .FirstOrDefaultAsync(d => d.Token == registro.Token)
+                        .ConfigureAwait(false);
+                    if (ganador == null)
+                    {
+                        throw; // no era la carrera del token duplicado
+                    }
+                    ActualizarDatos(ganador);
+                    await db.SaveChangesAsync().ConfigureAwait(false);
+                    return ganador;
+                }
             }
         }
 
