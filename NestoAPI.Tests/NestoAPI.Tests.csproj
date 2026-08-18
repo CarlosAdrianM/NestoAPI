@@ -306,6 +306,7 @@
     <Compile Include="Infrastructure\SelectorEfectosCobrablesTests.cs" />
     <Compile Include="Infrastructure\ServicioLiquidarEfectosTests.cs" />
     <Compile Include="Infrastructure\ProveedorCertificadoAeatTests.cs" />
+    <Compile Include="Infrastructure\ResolutorSecuenciasCccTests.cs" />
     <Compile Include="Infrastructure\ServicioValidacionNifTests.cs" />
     <Compile Include="Infrastructure\NotificadorNifIncorrectoTests.cs" />
     <Compile Include="Infrastructure\ElmahHelperTests.cs" />

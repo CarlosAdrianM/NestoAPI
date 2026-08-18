@@ -144,14 +144,89 @@ namespace NestoAPI.Infraestructure.Remesas
             using (NVEntities db = new NVEntities())
             {
                 db.Database.CommandTimeout = 600;
-                List<string> lineas = await db.Database.SqlQuery<string>(
-                    "EXEC prdCrearRemesaIso20022 @remesa, @codigo, @fechaCobro",
-                    new System.Data.SqlClient.SqlParameter("@remesa", remesa),
-                    new System.Data.SqlClient.SqlParameter("@codigo", codigo ?? string.Empty),
-                    new System.Data.SqlClient.SqlParameter("@fechaCobro", fechaCobro))
-                    .ToListAsync().ConfigureAwait(false);
-                return string.Concat(lineas);
+
+                // NestoAPI#368: el SP aborta si CUALQUIER cliente de la BD (esté o no en esta
+                // remesa) tiene la Secuencia distinta entre contactos del mismo CCC. Saneamos
+                // antes lo que es seguro (FRST/RCUR de la misma cuenta → RCUR) y lo demás se
+                // convierte en un error accionable en vez de un 500 que solo se veía en ELMAH.
+                await SanearSecuenciasCccAsync(db, remesa).ConfigureAwait(false);
+
+                try
+                {
+                    List<string> lineas = await db.Database.SqlQuery<string>(
+                        "EXEC prdCrearRemesaIso20022 @remesa, @codigo, @fechaCobro",
+                        new System.Data.SqlClient.SqlParameter("@remesa", remesa),
+                        new System.Data.SqlClient.SqlParameter("@codigo", codigo ?? string.Empty),
+                        new System.Data.SqlClient.SqlParameter("@fechaCobro", fechaCobro))
+                        .ToListAsync().ConfigureAwait(false);
+                    return string.Concat(lineas);
+                }
+                catch (System.Exception ex) when (
+                    ResolutorSecuenciasCcc.EsErrorDeSecuencias(ex.Message)
+                    || ResolutorSecuenciasCcc.EsErrorDeSecuencias(ex.InnerException?.Message))
+                {
+                    // Red de seguridad: el raiserror del SP llega al usuario con instrucciones.
+                    string motivo = ResolutorSecuenciasCcc.EsErrorDeSecuencias(ex.Message)
+                        ? ex.Message
+                        : ex.InnerException.Message;
+                    throw new Exceptions.NestoBusinessException(
+                        $"No se puede generar el fichero de la remesa {remesa}: {motivo} " +
+                        "Unifica la Secuencia (FRST/RCUR) en las fichas CCC de ese cliente y vuelve a " +
+                        "generar el fichero. OJO: ese cliente bloquea TODAS las remesas aunque no esté en esta.",
+                        ex);
+                }
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#368: replica el chequeo global del SP y lo resuelve ANTES de generar el
+        /// fichero: FRST/RCUR de la misma cuenta se unifican a RCUR (mismo mandato, ya cobrado)
+        /// con rastro en ELMAH; el resto de incoherencias paran con el detalle exacto.
+        /// </summary>
+        private static async Task SanearSecuenciasCccAsync(NVEntities db, int remesa)
+        {
+            List<CCC> incoherentes = await db.CCCs
+                .Where(c => c.Estado >= 0 && c.Secuencia != null && db.CCCs.Any(i =>
+                    i.Empresa == c.Empresa && i.Cliente == c.Cliente && i.Número == c.Número
+                    && i.Contacto != c.Contacto && i.Estado >= 0 && i.Secuencia != null
+                    && i.Secuencia != c.Secuencia))
+                .ToListAsync().ConfigureAwait(false);
+            if (!incoherentes.Any())
+            {
+                return;
+            }
+
+            ResolucionSecuencias resolucion = ResolutorSecuenciasCcc.Resolver(incoherentes.Select(c => new CccSecuencia
+            {
+                Empresa = c.Empresa,
+                Cliente = c.Cliente,
+                Ccc = c.Número,
+                Contacto = c.Contacto,
+                Secuencia = c.Secuencia,
+                CuentaBancaria = $"{c.Pais}{c.DC_IBAN}{c.Entidad}{c.Oficina}{c.DC}{c.Nº_Cuenta}"
+            }));
+
+            if (resolucion.Errores.Any())
+            {
+                throw new Exceptions.NestoBusinessException(
+                    $"No se puede generar el fichero de la remesa {remesa}. " +
+                    string.Join(" | ", resolucion.Errores));
+            }
+
+            foreach (GrupoCccUnificar grupo in resolucion.UnificarARcur)
+            {
+                foreach (CCC ccc in incoherentes.Where(c => c.Empresa?.Trim() == grupo.Empresa
+                    && c.Cliente?.Trim() == grupo.Cliente && c.Número?.Trim() == grupo.Ccc
+                    && c.Secuencia?.Trim() == ResolutorSecuenciasCcc.FRST))
+                {
+                    ccc.Secuencia = ResolutorSecuenciasCcc.RCUR;
+                }
+                ElmahHelper.Log(new System.Exception(
+                    $"Remesas (#368): unificada a RCUR la Secuencia del cliente {grupo.Cliente} " +
+                    $"CCC {grupo.Ccc} ({grupo.Detalle}) al generar el fichero de la remesa {remesa}: " +
+                    "es el mismo mandato para todos los contactos y ya tuvo cobros."));
+            }
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
         }
 
         // Nesto#340 Fase 1C.14 slice 7: único call site del SP que contabiliza las devoluciones
