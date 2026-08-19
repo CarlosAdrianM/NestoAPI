@@ -424,6 +424,11 @@ namespace NestoAPI.Models
 
             public static bool EsClienteFacturaSimplificada(string cliente)
                 => !string.IsNullOrWhiteSpace(cliente) && _clientesFacturaSimplificada.Contains(cliente.Trim());
+
+            // NestoAPI#391: el listado de NIF incorrectos los excluye por SQL, así que necesita
+            // la lista completa (el resto del código usa el predicado de arriba).
+            public static System.Collections.Generic.IReadOnlyCollection<string> ClientesFacturaSimplificada
+                => _clientesFacturaSimplificada;
         }
 
         public static class Vendedores

@@ -40,6 +40,11 @@ namespace NestoAPI.Infraestructure.Clientes
         /// definición no está en VIES; si lo estuviera, la venta sería exenta intracomunitaria).
         /// </summary>
         internal const string TIPO_DOC_OFICIAL_PAIS = "04";
+
+        /// <summary>NestoAPI#391: tipo L7 "no censado". Para clientes españoles cuyo NIF real no
+        /// se puede conseguir (error humano en facturas ya emitidas): la AEAT no valida IDOtro
+        /// contra el censo, así que las facturas atascadas pueden declararse.</summary>
+        internal const string TIPO_NO_CENSADO = "07";
         private const string PAIS_ESPANA = "ES";
 
         /// <summary>NestoAPI#354: estados ISO-2 de la UE (mirror de Paises.UnionEuropea, que no
@@ -491,6 +496,12 @@ namespace NestoAPI.Infraestructure.Clientes
                 condicionVendedor = $"AND c.Vendedor IN ({string.Join(", ", marcadores)}) ";
             }
 
+            // NestoAPI#391: los clientes de facturas simplificadas (F2, sin destinatario) no
+            // llevan NIF real. Las demás rutas ya los saltan (MarcarIncorrecto, CalcularEstado),
+            // pero una validación INCORRECTO antigua los dejaba clavados en la ventana (caso
+            // 31794) sin nada que corregir. Se excluyen de ambas ramas.
+            string condicionSimplificadas = ConstruirCondicionClientesSimplificadas(parametros);
+
             string sql =
                 "SELECT LTRIM(RTRIM(v.Cliente)) AS Cliente, LTRIM(RTRIM(v.Contacto)) AS Contacto, " +
                 "       v.Nombre, v.Nif, v.ResultadoAeat, v.FechaValidacion, LTRIM(RTRIM(c.Vendedor)) AS Vendedor, " +
@@ -507,6 +518,7 @@ namespace NestoAPI.Infraestructure.Clientes
                 // corregir. Aplica a ambas ramas del UNION.
                 "WHERE v.Estado = @p0 AND c.[CIF/NIF] = v.Nif AND c.Nombre = v.Nombre " +
                 "  AND c.Estado >= 0 " +
+                condicionSimplificadas +
                 condicionVendedor +
                 // NestoAPI#363: además de los INCORRECTO del censo AEAT, se listan los clientes cuyo
                 // envío a Verifactu falló por FORMATO de IVA/NIF (típicamente extranjeros con el VAT
@@ -525,6 +537,7 @@ namespace NestoAPI.Infraestructure.Clientes
                 "INNER JOIN Clientes c ON c.Empresa = f.Empresa AND c.[Nº Cliente] = f.[Nº Cliente] AND c.Contacto = f.Contacto " +
                 "WHERE f.VerifactuUltimoError LIKE '%no tiene un formato valido%' " +
                 "  AND c.Estado >= 0 " +
+                condicionSimplificadas +
                 "  AND NOT EXISTS (SELECT 1 FROM ValidacionesNif v2 WHERE v2.Empresa = c.Empresa " +
                 "        AND v2.Cliente = c.[Nº Cliente] AND v2.Contacto = c.Contacto AND v2.Estado = @p0 " +
                 "        AND c.[CIF/NIF] = v2.Nif AND c.Nombre = v2.Nombre) " +
@@ -542,6 +555,24 @@ namespace NestoAPI.Infraestructure.Clientes
                 fila.PaisIntracomunitarioSugerido = DetectarPaisNifIvaIntracomunitario(fila.Nif);
             }
             return lista;
+        }
+
+        // NestoAPI#391: fragmento SQL "NOT IN" con los clientes de facturas simplificadas,
+        // añadiendo sus parámetros a la lista. Internal para poder testearlo.
+        internal static string ConstruirCondicionClientesSimplificadas(List<object> parametros)
+        {
+            List<string> clientes = Constantes.ClientesEspeciales.ClientesFacturaSimplificada.ToList();
+            if (!clientes.Any())
+            {
+                return string.Empty;
+            }
+            var marcadores = new List<string>();
+            for (int i = 0; i < clientes.Count; i++)
+            {
+                marcadores.Add($"@s{i}");
+                parametros.Add(new SqlParameter($"@s{i}", clientes[i]));
+            }
+            return $"AND c.[Nº Cliente] NOT IN ({string.Join(", ", marcadores)}) ";
         }
 
         // Prefijos de NIF-IVA intracomunitario (EU-27 sin ES + XI Irlanda del Norte). Grecia usa
@@ -784,11 +815,16 @@ namespace NestoAPI.Infraestructure.Clientes
                 Pais = pais
             }).ConfigureAwait(false);
 
+            // NestoAPI#391: el tipo 07 (no censado) se usa también para clientes ESPAÑOLES cuyo
+            // NIF real no se puede conseguir; el mensaje no debe hablar de "extranjera".
+            bool esNoCensado = tipoIdentificacion == TIPO_NO_CENSADO;
             _ = db.Modificaciones.Add(new Modificacion
             {
                 Tabla = "Clientes",
                 Anterior = $"Cliente {principal.Nº_Cliente?.Trim()} identificación {principal.CIF_NIF?.Trim()}",
-                Nuevo = $"Marcada como EXTRANJERA tipo {tipoIdentificacion} país {pais} (#339)",
+                Nuevo = esNoCensado
+                    ? $"Marcada como NO CENSADO (IDOtro 07, país {pais}) (#391)"
+                    : $"Marcada como EXTRANJERA tipo {tipoIdentificacion} país {pais} (#339)",
                 Usuario = usuario
             });
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
@@ -802,7 +838,9 @@ namespace NestoAPI.Infraestructure.Clientes
                 Nif = nifFinal,
                 ContactosActualizados = fichasActualizadas,
                 FacturasActualizadas = facturasActualizadas,
-                Motivo = $"Identificación marcada como extranjera (tipo {tipoIdentificacion}, país {pais}): " +
+                Motivo = (esNoCensado
+                    ? $"Cliente marcado como NO CENSADO (IDOtro tipo 07, país {pais}): "
+                    : $"Identificación marcada como extranjera (tipo {tipoIdentificacion}, país {pais}): ") +
                     "deja de validarse contra el censo y las facturas se declararán con IDOtro." + extra
             };
         }

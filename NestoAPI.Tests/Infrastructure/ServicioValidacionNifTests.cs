@@ -527,6 +527,50 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, resultado.FacturasActualizadas);
         }
 
+        // NestoAPI#391: tipo 07 "no censado" para clientes ESPAÑOLES cuyo NIF real no se puede
+        // conseguir (error humano en facturas ya emitidas y rectificadas). Reutiliza el circuito
+        // de la marca extranjera: IDOtro no se valida contra el censo.
+
+        [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_Tipo07Espana_MarcaNoCensadoSinValidarCenso()
+        {
+            ConFicha(Ficha(cliente: "9093", nif: "1000000", nombre: "AMPARO CORELLA RUBIO"));
+            ConMasFakes();
+
+            var resultado = await servicio.MarcarIdentificacionExtranjera("9093",
+                ServicioValidacionNif.TIPO_NO_CENSADO, "es", "carlos");
+
+            Assert.IsTrue(resultado.Corregido);
+            Assert.IsTrue(resultado.Motivo.Contains("NO CENSADO"),
+                "El mensaje no debe hablar de 'extranjera' para un cliente español no censado");
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.That.Matches(r =>
+                r.Estado == ServicioValidacionNif.ESTADO_EXTRANJERO
+                && r.TipoIdentificacion == "07" && r.Pais == "ES" && r.Nif == "1000000")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void ConstruirCondicionClientesSimplificadas_ExcluyeTodosLosClientesDeLaLista()
+        {
+            // NestoAPI#391: el listado de NIF incorrectos no debe mostrar los clientes de
+            // facturas simplificadas (caso 31794: validación INCORRECTO antigua sin nada que
+            // corregir, porque sus facturas van como F2 sin destinatario).
+            var parametros = new List<object>();
+
+            string condicion = ServicioValidacionNif.ConstruirCondicionClientesSimplificadas(parametros);
+
+            int esperados = Constantes.ClientesEspeciales.ClientesFacturaSimplificada.Count;
+            Assert.IsTrue(esperados > 0, "La lista de clientes de simplificadas no puede estar vacía");
+            Assert.IsTrue(condicion.Contains("NOT IN"), "La condición debe excluir con NOT IN");
+            Assert.AreEqual(esperados, parametros.Count, "Un parámetro SQL por cliente de la lista");
+            foreach (string cliente in Constantes.ClientesEspeciales.ClientesFacturaSimplificada)
+            {
+                Assert.IsTrue(parametros.Cast<System.Data.SqlClient.SqlParameter>().Any(p => (string)p.Value == cliente),
+                    $"Falta el parámetro del cliente {cliente}");
+            }
+        }
+
         [TestMethod]
         public async Task MarcarIdentificacionExtranjera_TipoOPaisInvalidos_NoGuardaNada()
         {
