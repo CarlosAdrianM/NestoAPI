@@ -93,6 +93,39 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task Listados_ConservanPaddingYLlevanTodasLasColumnas()
+        {
+            // Nesto#448 (caso real, pedido 924495): el cliente compara Empresa/Cliente/Contacto
+            // EN MEMORIA contra otras entidades char ('1  ' != '1' en .NET aunque en SQL casen) y
+            // reconstruye EnviosAgencia entero desde el DTO: un campo ausente se machaca a NULL
+            // en la BD al modificar (Vendedor, plaza...).
+            var envio = Envio(1, estado: -1, empresa: "1  ", cliente: "17649     ");
+            envio.Contacto = "0  ";
+            envio.Vendedor = "MPP";
+            envio.NombrePlaza = "MADRID";
+            envio.Nemonico = "MAD";
+            envio.TelefonoPlaza = "910000000";
+            envio.EmailPlaza = "plaza@asm.es";
+            envio.Usuario = @"NUEVAVISION\Aida";
+            envio.FechaFactura = new DateTime(2026, 8, 18);
+            ConEnvios(envio);
+
+            var resultado = await controller.GetEnviosPendientes() as OkNegotiatedContentResult<List<EnvioAgenciaListadoDTO>>;
+
+            var dto = resultado.Content.Single();
+            Assert.AreEqual("1  ", dto.Empresa, "Empresa debe conservar el relleno del char");
+            Assert.AreEqual("17649     ", dto.Cliente, "Cliente debe conservar el relleno del char");
+            Assert.AreEqual("0  ", dto.Contacto, "Contacto debe conservar el relleno del char");
+            Assert.AreEqual("MPP", dto.Vendedor);
+            Assert.AreEqual("MADRID", dto.NombrePlaza);
+            Assert.AreEqual("MAD", dto.Nemonico);
+            Assert.AreEqual("910000000", dto.TelefonoPlaza);
+            Assert.AreEqual("plaza@asm.es", dto.EmailPlaza);
+            Assert.AreEqual(@"NUEVAVISION\Aida", dto.Usuario);
+            Assert.AreEqual(new DateTime(2026, 8, 18), dto.FechaFactura);
+        }
+
+        [TestMethod]
         public async Task EnCurso_FiltraPorAgenciaYEstadoInicialOrdenadoPorNumero()
         {
             ConEnvios(

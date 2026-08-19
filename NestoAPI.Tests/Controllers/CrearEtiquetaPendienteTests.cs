@@ -281,6 +281,17 @@ namespace NestoAPI.Tests.Controllers
             Assert.IsInstanceOfType(resultado, typeof(ConflictResult));
         }
 
+        // Nesto#340 (Agencias, slice A2): el DELETE borra también EnviosHistoria por SQL crudo
+        // (db.Database no es fakeable), así que se intercepta igual que en AnularModificarEnvioTests.
+        private class ControllerSinHistoria : EnviosAgenciasController
+        {
+            public ControllerSinHistoria(NVEntities db) : base(db) { }
+            internal override Task<int> BorrarHistoriaEnvio(int id)
+            {
+                return Task.FromResult(0);
+            }
+        }
+
         [TestMethod]
         public async Task DeleteEnviosAgencia_EtiquetaPendiente_LaElimina()
         {
@@ -293,9 +304,10 @@ namespace NestoAPI.Tests.Controllers
             };
             A.CallTo(() => fakeEnvios.FindAsync(1)).Returns(Task.FromResult(envio));
             A.CallTo(() => db.SaveChangesAsync()).Returns(Task.FromResult(1));
+            var sut = new ControllerSinHistoria(db);
 
             // Act
-            var resultado = await controller.DeleteEnviosAgencia(1);
+            var resultado = await sut.DeleteEnviosAgencia(1);
 
             // Assert
             Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EnviosAgencia>));

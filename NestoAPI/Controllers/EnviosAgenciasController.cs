@@ -112,6 +112,16 @@ namespace NestoAPI.Controllers
         public DateTime? FechaEntrega { get; set; }
         public decimal ImporteAsegurado { get; set; }
         public decimal Peso { get; set; }
+        // Nesto#448: columnas que faltaban — sin ellas, Modificar machacaba estos campos a NULL.
+        public string Vendedor { get; set; }
+        public DateTime? FechaFactura { get; set; }
+        public string Usuario { get; set; }
+        public DateTime FechaModificacion { get; set; }
+        public DateTime? FechaRetornoRecibido { get; set; }
+        public string NombrePlaza { get; set; }
+        public string Nemonico { get; set; }
+        public string TelefonoPlaza { get; set; }
+        public string EmailPlaza { get; set; }
         /// <summary>Para la concurrencia optimista del PUT cuando la pestaña migre (slice A2).</summary>
         public byte[] RowVersion { get; set; }
     }
@@ -151,11 +161,15 @@ namespace NestoAPI.Controllers
             return envios.Select(e => new EnvioAgenciaListadoDTO
             {
                 Numero = e.Numero,
-                Empresa = e.Empresa.Trim(),
+                // Nesto#448: Empresa/Cliente/Contacto van SIN trimear, con el relleno del char,
+                // como los daba EF. El cliente los compara EN MEMORIA contra otras entidades
+                // ('1  ' != '1' en .NET, aunque en SQL sí casen) y trimearlos rompía, p. ej.,
+                // el Single() de empresas al modificar un reembolso (pedido 924495).
+                Empresa = e.Empresa,
                 Agencia = e.Agencia,
                 NombreAgencia = e.AgenciasTransporte != null ? e.AgenciasTransporte.Nombre.Trim() : null,
-                Cliente = e.Cliente.Trim(),
-                Contacto = e.Contacto.Trim(),
+                Cliente = e.Cliente,
+                Contacto = e.Contacto,
                 Pedido = e.Pedido,
                 Estado = e.Estado,
                 Fecha = e.Fecha,
@@ -181,6 +195,18 @@ namespace NestoAPI.Controllers
                 FechaEntrega = e.FechaEntrega,
                 ImporteAsegurado = e.ImporteAsegurado,
                 Peso = e.Peso,
+                // Nesto#448: el DTO tiene que llevar TODAS las columnas de la entidad: el cliente
+                // reconstruye EnviosAgencia desde aquí y Modificar (PUT / EF attach) actualiza la
+                // fila ENTERA — cada campo que falte se machaca a NULL en la BD al modificar.
+                Vendedor = e.Vendedor,
+                FechaFactura = e.FechaFactura,
+                Usuario = e.Usuario,
+                FechaModificacion = e.FechaModificacion,
+                FechaRetornoRecibido = e.FechaRetornoRecibido,
+                NombrePlaza = e.NombrePlaza,
+                Nemonico = e.Nemonico,
+                TelefonoPlaza = e.TelefonoPlaza,
+                EmailPlaza = e.EmailPlaza,
                 RowVersion = e.RowVersion
             });
         }
@@ -395,8 +421,10 @@ namespace NestoAPI.Controllers
                 }
             }
 
-
-            return StatusCode(HttpStatusCode.NoContent);
+            // Nesto#340 (Agencias, slice A2): se devuelve la RowVersion refrescada para que el
+            // cliente pueda encadenar modificaciones sobre el mismo objeto sin recargar (antes
+            // 204 sin cuerpo; 200 con cuerpo es compatible con quien solo mira IsSuccessStatusCode).
+            return Ok(new { enviosAgencia.RowVersion });
         }
 
         // POST: api/EnviosAgencias/5/Tramitar
@@ -987,9 +1015,15 @@ namespace NestoAPI.Controllers
 
 
         // DELETE: api/EnviosAgencias/5
+        // Nesto#340 (Agencias, slice A2): permitirEnCurso es para Nesto, que borra envíos ya
+        // tramitados TRAS anularlos en la agencia (o descarta el que acaba de insertar si la
+        // etiqueta no llegó a generarse). Las apps (etiquetas pendientes, #427) no mandan el
+        // flag y siguen limitadas a Estado < EN_CURSO. Se borra también la historia de
+        // seguimiento (paridad con el borrado que hacía Nesto por EF; EnviosHistoria no está
+        // en el EDMX, así que va por SQL crudo, patrón ValidacionesNif).
         [Authorize]
         [ResponseType(typeof(EnviosAgencia))]
-        public async Task<IHttpActionResult> DeleteEnviosAgencia(int id)
+        public async Task<IHttpActionResult> DeleteEnviosAgencia(int id, bool permitirEnCurso = false)
         {
             EnviosAgencia enviosAgencia = await db.EnviosAgencias.FindAsync(id);
             if (enviosAgencia == null)
@@ -997,15 +1031,23 @@ namespace NestoAPI.Controllers
                 return NotFound();
             }
 
-            if (enviosAgencia.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
+            if (!permitirEnCurso && enviosAgencia.Estado >= Constantes.Agencias.ESTADO_EN_CURSO)
             {
                 return BadRequest("Solo se pueden eliminar etiquetas pendientes (Estado < 0)");
             }
 
+            _ = await BorrarHistoriaEnvio(id);
             db.EnviosAgencias.Remove(enviosAgencia);
             await db.SaveChangesAsync();
 
             return Ok(enviosAgencia);
+        }
+
+        // internal virtual para interceptarlo en los tests (db.Database no es fakeable).
+        internal virtual Task<int> BorrarHistoriaEnvio(int id)
+        {
+            return db.Database.ExecuteSqlCommandAsync(
+                "DELETE FROM EnviosHistoria WHERE NumeroEnvio = @p0", id);
         }
 
         [HttpPost]

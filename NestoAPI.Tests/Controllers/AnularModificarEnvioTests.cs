@@ -414,5 +414,80 @@ namespace NestoAPI.Tests.Controllers
         }
 
         #endregion
+
+        #region Delete (Nesto#340, Agencias slice A2)
+
+        // El DELETE borra también la historia de seguimiento (paridad con el borrado que hacía
+        // Nesto por EF) y admite permitirEnCurso para los borrados de Nesto tras anular en la
+        // agencia; las apps (etiquetas pendientes, #427) no mandan el flag y siguen protegidas.
+
+        private class ControllerConHistoriaInterceptada : EnviosAgenciasController
+        {
+            public int? HistoriaBorradaDelEnvio;
+            public ControllerConHistoriaInterceptada(NVEntities db, IFabricaAgenciasRemotas fabrica)
+                : base(db, fabrica) { }
+            internal override Task<int> BorrarHistoriaEnvio(int id)
+            {
+                HistoriaBorradaDelEnvio = id;
+                return Task.FromResult(1);
+            }
+        }
+
+        private ControllerConHistoriaInterceptada CrearControllerDelete()
+            => new ControllerConHistoriaInterceptada(db, fakeFabrica);
+
+        private static EnviosAgencia EtiquetaPendiente() => new EnviosAgencia
+        {
+            Numero = 7,
+            Estado = -1, // pendiente (< ESTADO_EN_CURSO)
+            Pedido = 924001,
+            Nombre = "CLIENTE PENDIENTE"
+        };
+
+        [TestMethod]
+        public async Task Delete_EtiquetaPendiente_BorraElEnvioYSuHistoria()
+        {
+            var envio = EtiquetaPendiente();
+            ConEnvio(envio);
+            var sut = CrearControllerDelete();
+
+            var resultado = await sut.DeleteEnviosAgencia(envio.Numero);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EnviosAgencia>));
+            Assert.AreEqual(envio.Numero, sut.HistoriaBorradaDelEnvio, "Debe borrar la historia del envío");
+            A.CallTo(() => fakeEnvios.Remove(envio)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Delete_EnvioEnCurso_SinFlag_DevuelveBadRequestYNoBorraNada()
+        {
+            var envio = EnvioEnCurso();
+            ConEnvio(envio);
+            var sut = CrearControllerDelete();
+
+            var resultado = await sut.DeleteEnviosAgencia(envio.Numero);
+
+            Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
+            Assert.IsNull(sut.HistoriaBorradaDelEnvio, "No debe tocar la historia si rechaza el borrado");
+            A.CallTo(() => fakeEnvios.Remove(A<EnviosAgencia>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task Delete_EnvioEnCurso_ConPermitirEnCurso_Borra()
+        {
+            // Caso Nesto: el usuario anula el envío en la agencia y después lo borra de la BD.
+            var envio = EnvioEnCurso();
+            ConEnvio(envio);
+            var sut = CrearControllerDelete();
+
+            var resultado = await sut.DeleteEnviosAgencia(envio.Numero, permitirEnCurso: true);
+
+            Assert.IsInstanceOfType(resultado, typeof(OkNegotiatedContentResult<EnviosAgencia>));
+            Assert.AreEqual(envio.Numero, sut.HistoriaBorradaDelEnvio);
+            A.CallTo(() => fakeEnvios.Remove(envio)).MustHaveHappenedOnceExactly();
+        }
+
+        #endregion
     }
 }
