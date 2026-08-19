@@ -1101,5 +1101,58 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
         }
 
         #endregion
+
+        #region SerieParaPedidoNuevo (NestoAPI#39: rectificativas a serie RV/RC)
+
+        // Art. 6.1.a RD 1619/2012: las rectificativas exigen serie específica. Con la serie
+        // RV/RC el mapeador de Verifactu (#36) declara tipo R con las facturas vinculadas.
+
+        [TestMethod]
+        public void SerieParaPedidoNuevo_RectificativaDeNV_VaASerieRV()
+        {
+            var request = new CopiarFacturaRequest { InvertirCantidades = true };
+            var original = new CabPedidoVta { Serie = "NV " }; // padded, como en BD
+
+            Assert.AreEqual("RV", GestorCopiaPedidos.SerieParaPedidoNuevo(request, original));
+        }
+
+        [TestMethod]
+        public void SerieParaPedidoNuevo_RectificativaDeCV_VaASerieRC()
+        {
+            var request = new CopiarFacturaRequest { InvertirCantidades = true };
+            var original = new CabPedidoVta { Serie = "CV" };
+
+            Assert.AreEqual("RC", GestorCopiaPedidos.SerieParaPedidoNuevo(request, original));
+        }
+
+        [TestMethod]
+        public void SerieParaPedidoNuevo_CopiaNormal_MantieneLaSerie()
+        {
+            var request = new CopiarFacturaRequest { InvertirCantidades = false };
+            var original = new CabPedidoVta { Serie = "NV" };
+
+            Assert.AreEqual("NV", GestorCopiaPedidos.SerieParaPedidoNuevo(request, original));
+        }
+
+        [TestMethod]
+        public void SerieParaPedidoNuevo_SerieSinRectificativaAsociada_MantieneLaSerie()
+        {
+            // GB (interna, no registrada en Verifactu) no tiene rectificativa asociada:
+            // la rectificativa se queda en su serie, como hasta ahora.
+            var request = new CopiarFacturaRequest { InvertirCantidades = true };
+            var original = new CabPedidoVta { Serie = "GB" };
+
+            Assert.AreEqual("GB", GestorCopiaPedidos.SerieParaPedidoNuevo(request, original));
+        }
+
+        [TestMethod]
+        public void SerieParaPedidoNuevo_SinPedidoOriginal_RectificativaVaARV()
+        {
+            var request = new CopiarFacturaRequest { InvertirCantidades = true };
+
+            Assert.AreEqual("RV", GestorCopiaPedidos.SerieParaPedidoNuevo(request, null));
+        }
+
+        #endregion
     }
 }

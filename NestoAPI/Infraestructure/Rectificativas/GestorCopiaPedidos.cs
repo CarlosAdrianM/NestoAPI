@@ -171,6 +171,28 @@ namespace NestoAPI.Infraestructure.Rectificativas
             return response;
         }
 
+        // NestoAPI#39: una rectificativa (InvertirCantidades) va en su serie rectificativa
+        // (NV→RV, CV→RC, EV/UL→RV; art. 6.1.a RD 1619/2012: las rectificativas exigen serie
+        // específica). Con la serie RV/RC, el mapeador de Verifactu (#36) declara tipo R "por
+        // diferencias" con las facturas rectificadas vinculadas, en vez del F1 en negativo de
+        // antes. La copia normal (y las series sin rectificativa asociada, p. ej. GB) mantienen
+        // la serie original. OJO: requiere las filas RV/RC en la tabla Series (contador de
+        // numeración) — Scripts/Issue39_AltaSeriesRectificativas.sql antes de desplegar.
+        internal static string SerieParaPedidoNuevo(CopiarFacturaRequest request, CabPedidoVta pedidoOriginal)
+        {
+            string serieOriginal = pedidoOriginal?.Serie?.Trim();
+            if (string.IsNullOrEmpty(serieOriginal))
+            {
+                serieOriginal = "NV";
+            }
+            if (!request.InvertirCantidades)
+            {
+                return serieOriginal;
+            }
+            string rectificativa = Models.Facturas.RegistroSeriesVerifactu.ObtenerSerieRectificativa(serieOriginal);
+            return string.IsNullOrEmpty(rectificativa) ? serieOriginal : rectificativa;
+        }
+
         /// <summary>
         /// Copia múltiples facturas creando una rectificativa separada por cada una.
         /// </summary>
@@ -514,7 +536,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
                     : clienteDb.Vendedor,
                 Periodo_Facturacion = clienteDb.PeriodoFacturación,
                 Ruta = clienteDb.Ruta,
-                Serie = pedidoOriginal?.Serie ?? "NV", // TODO: Usar serie rectificativa cuando exista
+                Serie = SerieParaPedidoNuevo(request, pedidoOriginal),
                 CCC = clienteDb.CCC,
                 Origen = request.Empresa,
                 ContactoCobro = clienteDb.ContactoCobro,
