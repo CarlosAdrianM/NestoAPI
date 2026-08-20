@@ -683,6 +683,60 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.AreEqual("AB123456", enviado.IdOtro.Id);
         }
 
+        // Verifactu #39 (Fase C, gate 20/08/26): un abono puro facturado por serie normal
+        // saldría como F1 negativo sin vinculaciones. El gate en CrearFactura (único call site
+        // de prdCrearFacturaVta) lo corrige automáticamente a la serie rectificativa asociada
+        // (opción b del plan); la factura mixta es F1 lícita (art. 15.2 RD 1619/2012) y no se toca.
+
+        private static LinPedidoVta Linea(decimal baseImponible, int estado = Constantes.EstadosLineaVenta.ALBARAN)
+            => new LinPedidoVta { Base_Imponible = baseImponible, Estado = (short)estado };
+
+        [TestMethod]
+        public void EsAbonoPuro_TodasLasLineasPendientesNegativas_True()
+        {
+            Assert.IsTrue(ServicioFacturas.EsAbonoPuro(new[] { Linea(-50m), Linea(-9.95m) }));
+        }
+
+        [TestMethod]
+        public void EsAbonoPuro_FacturaMixta_False()
+        {
+            // Devolución + venta nueva = F1 lícita aunque el total salga negativo
+            Assert.IsFalse(ServicioFacturas.EsAbonoPuro(new[] { Linea(-50m), Linea(20m) }));
+        }
+
+        [TestMethod]
+        public void EsAbonoPuro_SoloPositivasOSinLineas_False()
+        {
+            Assert.IsFalse(ServicioFacturas.EsAbonoPuro(new[] { Linea(50m) }));
+            Assert.IsFalse(ServicioFacturas.EsAbonoPuro(new List<LinPedidoVta>()));
+            Assert.IsFalse(ServicioFacturas.EsAbonoPuro(null));
+        }
+
+        [TestMethod]
+        public void EsAbonoPuro_AnadirAPedidoOriginal_SoloCuentanLasPendientes()
+        {
+            // Flujo AnadirAPedidoOriginal: las líneas positivas originales ya están FACTURADAS;
+            // las negativas nuevas pendientes son lo que se va a facturar ahora → abono puro.
+            Assert.IsTrue(ServicioFacturas.EsAbonoPuro(new[]
+            {
+                Linea(100m, Constantes.EstadosLineaVenta.FACTURA),
+                Linea(-30m)
+            }));
+        }
+
+        [TestMethod]
+        public void SerieRectificativaParaAbono_DecideSegunSerieYLineas()
+        {
+            var abono = new[] { Linea(-50m) };
+            var mixta = new[] { Linea(-50m), Linea(20m) };
+
+            Assert.AreEqual("RV", ServicioFacturas.SerieRectificativaParaAbono("NV", abono));
+            Assert.AreEqual("RC", ServicioFacturas.SerieRectificativaParaAbono("CV ", abono), "Con padding de la BD");
+            Assert.IsNull(ServicioFacturas.SerieRectificativaParaAbono("NV", mixta), "La mixta no se toca");
+            Assert.IsNull(ServicioFacturas.SerieRectificativaParaAbono("RV", abono), "Ya es rectificativa");
+            Assert.IsNull(ServicioFacturas.SerieRectificativaParaAbono("GB", abono), "GB no está en el registro Verifactu");
+        }
+
         [TestMethod]
         public async Task EnviarFacturaAVerifactu_NoCensadoConNifBienFormado_DeclaraIdOtro07()
         {

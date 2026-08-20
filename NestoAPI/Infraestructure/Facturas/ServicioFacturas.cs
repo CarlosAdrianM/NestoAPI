@@ -435,6 +435,51 @@ namespace NestoAPI.Infraestructure.Facturas
                     usuario: usuario);
             }
 
+            // Verifactu #39 (Fase C, gate server-side 20/08/26): un ABONO PURO (todas las líneas
+            // pendientes en negativo, sin ningún suministro positivo) facturado por una serie
+            // normal saldría como F1 negativo sin vinculaciones — con Verifactu operativo no se
+            // puede declarar. Como prdCrearFacturaVta solo se llama desde aquí (único call site),
+            // el cierre cubre a TODOS los clientes (Nesto viejo incluido) y también el flujo
+            // AnadirAPedidoOriginal. Decisión 20/08 (opción b del comentario 18/08 en #39):
+            // CORRECCIÓN AUTOMÁTICA — el pedido pasa a su serie rectificativa asociada (NV→RV,
+            // CV→RC) y el LIFO de #38 genera las vinculaciones al facturar. La factura MIXTA
+            // (devolución + venta nueva, art. 15.2 RD 1619/2012) es F1 lícita CON INDEPENDENCIA
+            // del signo del total: no se toca.
+            string avisoSerieRectificativa = null;
+            string serieAbono = SerieRectificativaParaAbono(cabPedido.Serie, cabPedido.LinPedidoVtas);
+            if (serieAbono != null)
+            {
+                // La serie tiene que existir en la tabla Series de ESTA empresa (RV/RC solo
+                // están dadas de alta en la 1): en la espejo no se corrige, se avisa en ELMAH
+                // para verlo en la sombra y decidir si se dan de alta allí también.
+                int existeSerie = (await db.Database.SqlQuery<int>(
+                    "SELECT COUNT(*) FROM Series WHERE Empresa = @p0 AND [Número] = @p1",
+                    new SqlParameter("@p0", empresa), new SqlParameter("@p1", serieAbono)).ToListAsync()).Single();
+                if (existeSerie > 0)
+                {
+                    string serieOriginal = cabPedido.Serie?.Trim();
+                    _ = db.Modificaciones.Add(new Modificacion
+                    {
+                        Tabla = "CabPedidoVta",
+                        Anterior = $"Pedido {pedido} Serie={serieOriginal}",
+                        Nuevo = $"Serie={serieAbono} (abono puro → serie rectificativa, gate Verifactu #39)",
+                        Usuario = usuarioAutenticado ?? usuario
+                    });
+                    cabPedido.Serie = serieAbono;
+                    _ = await db.SaveChangesAsync();
+                    avisoSerieRectificativa = $"El pedido {pedido} es un abono puro: se ha facturado por la " +
+                        $"serie rectificativa {serieAbono} (antes {serieOriginal}) para declararse a Verifactu " +
+                        "como rectificativa con sus vinculaciones.";
+                }
+                else
+                {
+                    logService.LogError($"Verifactu #39: el pedido {pedido} (empresa {empresa.Trim()}) es un " +
+                        $"abono puro en serie {cabPedido.Serie?.Trim()} pero la serie rectificativa {serieAbono} " +
+                        "no está dada de alta en Series para esa empresa: se factura SIN corregir. " +
+                        "Valorar dar de alta la serie o revisar el caso.");
+                }
+            }
+
             // PREVENTIVO (NestoAPI#276): la ruta del pedido debe existir en Rutas. Si no, el SP
             // prdCrearFacturaVta falla al insertar el apunte en ExtractoCliente (FK_ExtractoCliente_Rutas)
             // y encima deja el @@TRANCOUNT descuadrado (ROLLBACK sin BEGIN), lo que corrompe el estado de
@@ -599,6 +644,12 @@ namespace NestoAPI.Infraestructure.Facturas
                     Empresa = empresa,
                     NumeroPedido = pedido
                 };
+
+                // Gate Verifactu #39: el que factura tiene que enterarse del cambio de serie.
+                if (avisoSerieRectificativa != null)
+                {
+                    respuestaFactura.Avisos.Add(avisoSerieRectificativa);
+                }
 
                 // NestoAPI#327 (periodo de gracia hasta 01/12/2026): la factura SE HA creado,
                 // pero el que factura tiene que enterarse de que con Verifactu obligatorio no
@@ -1151,6 +1202,42 @@ namespace NestoAPI.Infraestructure.Facturas
         /// encuentra origen suficiente, el motivo queda en ELMAH y la factura sigue creada y
         /// reintentable (VerifactuUUID null); jamás rompe la facturación.
         /// </summary>
+        /// <summary>
+        /// Verifactu #39 (Fase C): ¿el pedido es un ABONO PURO? = tiene líneas pendientes de
+        /// facturar (PENDIENTE..ALBARAN) con importe, y TODAS son negativas. Cualquier línea
+        /// positiva lo convierte en factura mixta (F1 lícita por el art. 15.2 RD 1619/2012,
+        /// con independencia del signo del total) y NO se toca. Pura y testeable.
+        /// </summary>
+        internal static bool EsAbonoPuro(IEnumerable<LinPedidoVta> lineas)
+        {
+            List<LinPedidoVta> pendientes = (lineas ?? Enumerable.Empty<LinPedidoVta>())
+                .Where(l => l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                    && l.Estado <= Constantes.EstadosLineaVenta.ALBARAN
+                    && l.Base_Imponible != 0)
+                .ToList();
+            return pendientes.Any() && pendientes.All(l => l.Base_Imponible < 0);
+        }
+
+        /// <summary>
+        /// Verifactu #39 (Fase C): serie rectificativa por la que debe facturarse el pedido si
+        /// es un abono puro en una serie normal con rectificativa asociada (NV→RV, CV→RC,
+        /// EV/UL→RV), o null si no procede corregir (mixta, ya rectificativa, GB sin asociada,
+        /// serie fuera del registro). Pura y testeable.
+        /// </summary>
+        internal static string SerieRectificativaParaAbono(string serie, IEnumerable<LinPedidoVta> lineas)
+        {
+            if (RegistroSeriesVerifactu.EsSerieRectificativa(serie))
+            {
+                return null;
+            }
+            string asociada = RegistroSeriesVerifactu.ObtenerSerieRectificativa(serie);
+            if (string.IsNullOrWhiteSpace(asociada))
+            {
+                return null;
+            }
+            return EsAbonoPuro(lineas) ? asociada.Trim() : null;
+        }
+
         internal async Task VincularRectificativaFacturadaAMano(string empresa, string numeroFactura,
             string serieFactura, string cliente)
         {
