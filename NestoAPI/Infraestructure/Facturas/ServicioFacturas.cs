@@ -941,9 +941,14 @@ namespace NestoAPI.Infraestructure.Facturas
                                 && !Clientes.ServicioValidacionNif.TieneFormatoNif(request.NifDestinatario))
                             {
                                 factura.VerifactuEstado = Verifactu.VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES;
+                                // El mensaje DEBE llevar el marcador de formato: es lo que hace que el
+                                // cliente siga saliendo en la ventana de NIF incorrectos para poder
+                                // meter el DNI real cuando se consiga (fallo 20/08/26: sin él, 9093
+                                // desapareció de la ventana y no había dónde corregirlo).
                                 factura.VerifactuUltimoError = Truncar("Marcada como NO CENSADO (07) pero el NIF " +
-                                    $"'{request.NifDestinatario?.Trim()}' no tiene formato de NIF: la AEAT lo rechaza. " +
-                                    "Conseguir el NIF real del cliente y corregirlo (la reabre). Excluida de los reintentos.", 500);
+                                    $"'{request.NifDestinatario?.Trim()}' {Clientes.ServicioValidacionNif.MARCADOR_ERROR_FORMATO_NIF} " +
+                                    "de NIF: la AEAT lo rechaza. Conseguir el NIF real del cliente y corregirlo (la reabre). " +
+                                    "Excluida de los reintentos.", 500);
                                 factura.VerifactuUltimoIntento = DateTime.Now;
                                 string claveRuidoNif = $"{empresa}|{numeroFactura?.Trim()}";
                                 string mensajeNif = $"Verifactu: la factura {numeroFactura} está marcada como NO CENSADO (07) " +

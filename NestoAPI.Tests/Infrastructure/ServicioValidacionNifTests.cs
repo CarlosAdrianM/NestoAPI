@@ -277,6 +277,34 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("90021192", historica.CifNif, "El histórico pre-Verifactu no se toca");
         }
 
+        [TestMethod]
+        public async Task CorregirNif_FacturasExcluidasDelJob_LasReabre()
+        {
+            // Fallo 20/08/26 (cliente 9093 de Amparo): las facturas marcadas NO CENSADO con NIF
+            // de relleno quedan EXCLUIDAS del job (VerifactuEstado="SinDatosFiscales"). Al llegar
+            // el DNI real, CorregirNif debe REABRIRLAS (VerifactuEstado null) — antes solo
+            // corregía CifNif/NombreFiscal y seguían excluidas para siempre. La reapertura aplica
+            // también si el NIF ya estaba bien: una factura sin declarar con estado informado es
+            // una exclusión o un rechazo, nunca una declaración en curso (esas tienen UUID).
+            ConFicha(Ficha(cliente: "9093", nif: "1000000", nombre: "AMPARO CORELLA RUBIO"));
+            ConMasFakes();
+            AeatResponde(valido: true, resultado: "IDENTIFICADO");
+            System.DateTime inicio = NestoAPI.Infraestructure.Verifactu.VerifactuJobsService.FechaInicioDeclaracion;
+            var excluida = new CabFacturaVta { Empresa = "1", Número = "NV2613367", Nº_Cliente = "9093", Fecha = inicio.AddDays(1), CifNif = "1000000", VerifactuEstado = "SinDatosFiscales", VerifactuUUID = null };
+            var excluidaConNifBueno = new CabFacturaVta { Empresa = "1", Número = "NV2613965", Nº_Cliente = "9093", Fecha = inicio.AddDays(1), CifNif = "12345678Z", NombreFiscal = "AMPARO CORELLA RUBIO", VerifactuEstado = "SinDatosFiscales", VerifactuUUID = null };
+            var yaDeclarada = new CabFacturaVta { Empresa = "1", Número = "NV2613999", Nº_Cliente = "9093", Fecha = inicio.AddDays(1), CifNif = "1000000", VerifactuEstado = "Correcto", VerifactuUUID = "uuid-ok" };
+            ConFacturas(excluida, excluidaConNifBueno, yaDeclarada);
+
+            var resultado = await servicio.CorregirNif("9093", "12345678Z", "carlos");
+
+            Assert.IsTrue(resultado.Corregido);
+            Assert.AreEqual("12345678Z", excluida.CifNif);
+            Assert.IsNull(excluida.VerifactuEstado, "La factura excluida se reabre para que el job la declare");
+            Assert.IsNull(excluidaConNifBueno.VerifactuEstado, "También se reabre aunque su NIF ya estuviera bien");
+            Assert.AreEqual("Correcto", yaDeclarada.VerifactuEstado, "Una factura ya declarada no se toca");
+            Assert.AreEqual(2, resultado.FacturasActualizadas);
+        }
+
         // NestoAPI#383 (caso real NV2612562/NV2612940): el rechazo de censo puede ser por el
         // NOMBRE y no por el NIF (cambio de apellido por matrimonio). El circuito #327 propagaba
         // el NIF corregido a las facturas sin declarar pero NO el nombre: quedaban atascadas

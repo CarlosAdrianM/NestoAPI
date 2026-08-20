@@ -53,6 +53,17 @@ namespace NestoAPI.Infraestructure.Clientes
         private const string PAIS_ESPANA = "ES";
 
         /// <summary>
+        /// Marcador que engancha una factura a la rama "formato rechazado" de la ventana de NIF
+        /// incorrectos (#363): el listado busca este texto en VerifactuUltimoError (LIKE con
+        /// collation acento-insensible, por eso también casa con el "no tiene un formato válido"
+        /// que devuelve Verifacti). Cualquier error propio que deba salir en esa ventana (p. ej.
+        /// la exclusión por NO CENSADO con NIF de relleno, fallo 20/08/26) tiene que contener
+        /// este marcador — el 20/08 un mensaje que no lo llevaba dejó al cliente 9093 INVISIBLE
+        /// en la ventana y sin sitio donde meter el DNI real al conseguirlo.
+        /// </summary>
+        internal const string MARCADOR_ERROR_FORMATO_NIF = "no tiene un formato válido";
+
+        /// <summary>
         /// Formato SINTÁCTICO de identificación fiscal española (DNI, NIE o CIF), carácter de
         /// control incluido. No consulta el censo: es el algoritmo oficial. La AEAT lo exige en
         /// el ID del IDOtro tipo 07 (no censado): el NIF no está censado pero tiene que SER un
@@ -335,6 +346,18 @@ namespace NestoAPI.Infraestructure.Clientes
                     factura.NombreFiscal = nombrePrincipal;
                     corregida = true;
                 }
+                // Fallo 20/08/26: la factura pudo quedar EXCLUIDA del job ("SinDatosFiscales",
+                // p. ej. NO CENSADO con NIF de relleno) o con un rechazo previo persistido.
+                // Corregir el NIF debe REABRIRLA (VerifactuEstado null = el job la reintenta),
+                // igual que ya hacía MarcarIdentificacionExtranjera (#348) — si no, las facturas
+                // de 9093 seguirían excluidas para siempre aun con el DNI bueno. También si el
+                // NIF ya estaba bien: una factura SIN declarar con estado informado es siempre
+                // una exclusión o un rechazo, nunca una declaración en curso (esas tienen UUID).
+                if (factura.VerifactuEstado != null)
+                {
+                    factura.VerifactuEstado = null;
+                    corregida = true;
+                }
                 if (corregida)
                 {
                     facturasActualizadas++;
@@ -592,7 +615,9 @@ namespace NestoAPI.Infraestructure.Clientes
                 "       CAST(NULL AS varchar(2)) " +
                 "FROM CabFacturaVta f " +
                 "INNER JOIN Clientes c ON c.Empresa = f.Empresa AND c.[Nº Cliente] = f.[Nº Cliente] AND c.Contacto = f.Contacto " +
-                "WHERE f.VerifactuUltimoError LIKE '%no tiene un formato valido%' " +
+                // El marcador compartido (collation AI: casa con y sin acento) engancha tanto los
+                // rechazos de Verifacti como las exclusiones propias (NO CENSADO con relleno).
+                $"WHERE f.VerifactuUltimoError LIKE '%{MARCADOR_ERROR_FORMATO_NIF}%' " +
                 "  AND c.Estado >= 0 " +
                 condicionSimplificadas +
                 "  AND NOT EXISTS (SELECT 1 FROM ValidacionesNif v2 WHERE v2.Empresa = c.Empresa " +

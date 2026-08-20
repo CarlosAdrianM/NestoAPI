@@ -741,7 +741,11 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
                 .MustNotHaveHappened();
             Assert.AreEqual(NestoAPI.Infraestructure.Verifactu.VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES,
                 factura.VerifactuEstado, "Excluida de los reintentos del job hasta corregir el NIF");
-            StringAssert.Contains(factura.VerifactuUltimoError, "formato");
+            // Fallo 20/08/26 (2º round): el error DEBE llevar el marcador de formato — es lo que
+            // hace que el cliente siga saliendo en la ventana de NIF incorrectos (#363) para
+            // poder meter el DNI real cuando se consiga.
+            StringAssert.Contains(factura.VerifactuUltimoError,
+                NestoAPI.Infraestructure.Clientes.ServicioValidacionNif.MARCADOR_ERROR_FORMATO_NIF);
         }
 
         [TestMethod]
