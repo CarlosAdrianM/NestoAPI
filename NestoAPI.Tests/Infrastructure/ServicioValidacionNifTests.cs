@@ -86,6 +86,19 @@ namespace NestoAPI.Tests.Infrastructure
                 .Returns(new RespuestaNifNombreCliente { NifValidado = valido, ResultadoAeat = resultado });
         }
 
+        // NestoAPI#388 (guarda 20/08/26): certificado AEAT caducado → todo se da por bueno
+        // SIN verificar, y NADA debe cachearse como validado.
+        private void AeatEnModoDegradado()
+        {
+            A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new RespuestaNifNombreCliente
+                {
+                    NifValidado = true,
+                    SinVerificar = true,
+                    ResultadoAeat = "SIN VERIFICAR (certificado AEAT caducado)"
+                });
+        }
+
         [TestMethod]
         public async Task ValidarSiHaceFalta_SinRegistro_PreguntaALaAeatYGuardaCorrecto()
         {
@@ -99,6 +112,36 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.That.Matches(r =>
                 r.Estado == ServicioValidacionNif.ESTADO_CORRECTO && r.Nif == "05231909H")))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task ValidarSiHaceFalta_CertificadoCaducado_NoBloqueaYNoCacheaNada()
+        {
+            // Guarda #388: en modo degradado el NIF pasa como bueno pero la ficha queda SIN
+            // VALIDAR (nada en ValidacionesNif): al renovar el certificado se valida de verdad.
+            ConFicha(Ficha(nif: "05231909H"));
+            AeatEnModoDegradado();
+
+            var resultado = await servicio.ValidarSiHaceFalta("1", "30676", "0", "carlos");
+
+            Assert.AreEqual(EstadoValidacionNif.SinValidar, resultado.Estado, "Ni correcto ni incorrecto: sin validar");
+            Assert.IsFalse(resultado.AcabaDeResultarIncorrecto, "Nunca debe saltar el correo de NIF incorrecto sin verificar");
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CorregirNif_CertificadoCaducado_EscribeElNifPeroNoCacheaLaValidacion()
+        {
+            // Guarda #388: el usuario no se queda bloqueado (el NIF se escribe en fichas y
+            // facturas sin declarar), pero NO se registra como validado.
+            ConFicha(Ficha(nif: "90021192"));
+            ConMasFakes();
+            AeatEnModoDegradado();
+
+            var resultado = await servicio.CorregirNif("30676", "90021192c", "carlos");
+
+            Assert.IsTrue(resultado.Corregido, "El cambio de NIF no se bloquea en modo degradado");
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.Ignored)).MustNotHaveHappened();
         }
 
         [TestMethod]

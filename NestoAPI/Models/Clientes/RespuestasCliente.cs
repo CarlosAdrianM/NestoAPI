@@ -13,6 +13,14 @@ namespace NestoAPI.Models.Clientes
         // NestoAPI#327: literal devuelto por VNifV2 (IDENTIFICADO, NO IDENTIFICADO,
         // IDENTIFICADO-BAJA...), para persistirlo en ValidacionesNif.
         public string ResultadoAeat { get; set; }
+        /// <summary>
+        /// NestoAPI#388 (guarda 20/08/26): true = el NIF se ha dado por BUENO sin consultar a
+        /// la AEAT porque no hay certificado vigente (caducado, pendiente de renovar). Los
+        /// flujos siguen funcionando (alta de clientes, corregir NIF, facturar) pero NADA se
+        /// cachea como validado: al importar el certificado renovado en el almacén todo vuelve
+        /// a validarse de verdad, sin recompilar ni redesplegar.
+        /// </summary>
+        public bool SinVerificar { get; set; }
         public bool ExisteElCliente { get; set; }
         public string NumeroCliente { get; set; }
         public short EstadoCliente { get; set; }

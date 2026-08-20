@@ -210,6 +210,14 @@ namespace NestoAPI.Infraestructure.Clientes
                 return estadoActual;
             }
 
+            // GUARDA #388 (20/08/26): certificado AEAT caducado → el NIF se ha dado por bueno
+            // SIN consultar el censo. No se cachea NADA (la ficha queda "sin validar"): al
+            // importar el certificado renovado, la siguiente factura/pedido la valida de verdad.
+            if (respuesta.SinVerificar)
+            {
+                return estadoActual;
+            }
+
             var registro = new ValidacionNifRegistro
             {
                 Empresa = empresa?.Trim(),
@@ -366,18 +374,24 @@ namespace NestoAPI.Infraestructure.Clientes
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
 
             // Registrar la validación del principal (es el NIF que se declara al facturar).
-            await almacen.Guardar(new ValidacionNifRegistro
+            // GUARDA #388 (20/08/26): en modo degradado (certificado AEAT caducado) el NIF se
+            // ha ESCRITO igualmente (el usuario no se queda bloqueado), pero NO se registra
+            // como validado: al renovar el certificado, la siguiente factura lo valida de verdad.
+            if (!respuesta.SinVerificar)
             {
-                Empresa = principal.Empresa?.Trim(),
-                Cliente = principal.Nº_Cliente?.Trim(),
-                Contacto = principal.Contacto?.Trim(),
-                Nif = nifNuevo,
-                Nombre = principal.Nombre?.Trim(),
-                Estado = ESTADO_CORRECTO,
-                ResultadoAeat = respuesta.ResultadoAeat,
-                FechaValidacion = DateTime.Now,
-                Usuario = usuario
-            }).ConfigureAwait(false);
+                await almacen.Guardar(new ValidacionNifRegistro
+                {
+                    Empresa = principal.Empresa?.Trim(),
+                    Cliente = principal.Nº_Cliente?.Trim(),
+                    Contacto = principal.Contacto?.Trim(),
+                    Nif = nifNuevo,
+                    Nombre = principal.Nombre?.Trim(),
+                    Estado = ESTADO_CORRECTO,
+                    ResultadoAeat = respuesta.ResultadoAeat,
+                    FechaValidacion = DateTime.Now,
+                    Usuario = usuario
+                }).ConfigureAwait(false);
+            }
 
             return new ResultadoCorreccionNif
             {

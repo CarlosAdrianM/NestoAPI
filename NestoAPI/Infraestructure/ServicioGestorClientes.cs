@@ -48,6 +48,10 @@ namespace NestoAPI.Infraestructure
             }
         }
 
+        // NestoAPI#388 (guarda 20/08/26): un solo aviso diario en ELMAH mientras dure el modo
+        // degradado — sin él, cada validación metía su propio error y ensuciaba el log.
+        private static DateTime _fechaUltimoAvisoDegradado = DateTime.MinValue;
+
         public async Task<RespuestaNifNombreCliente> ComprobarNifNombre(string nif, string nombre)
         {
             byte[] bytesNif = Encoding.Default.GetBytes(nif?.ToUpper().Trim());
@@ -56,7 +60,43 @@ namespace NestoAPI.Infraestructure
             byte[] bytesNombre = Encoding.Default.GetBytes(nombre?.ToUpper().Trim());
             nombre = Encoding.UTF8.GetString(bytesNombre);
 
-            HttpWebRequest request = CreateWebRequest();
+            HttpWebRequest request;
+            try
+            {
+                request = CreateWebRequest();
+            }
+            catch (Exceptions.NestoBusinessException ex)
+            {
+                // GUARDA #388 (20/08/26): sin certificado de la AEAT VIGENTE (caducó y el
+                // renovado aún no está importado) NO se rompe ningún flujo. Menos es nada
+                // (petición de Carlos): se valida en LOCAL el formato del NIF/CIF con su
+                // dígito de control (TieneFormatoNif, el algoritmo clásico) — un NIF bien
+                // formado pasa como bueno SIN VERIFICAR contra el censo (nada se cachea como
+                // validado); uno mal formado se rechaza igual que lo rechazaría la AEAT. En
+                // cuanto se importe el certificado renovado en el almacén
+                // (RenovarCertificadoAeat.ps1), ObtenerCertificado lo encuentra solo y la
+                // validación real vuelve SIN recompilar ni redesplegar.
+                if (_fechaUltimoAvisoDegradado.Date != DateTime.Today)
+                {
+                    _fechaUltimoAvisoDegradado = DateTime.Now;
+                    ElmahHelper.Log(new Exception(
+                        "CertificadoAeat: MODO DEGRADADO — la validación de NIF contra el censo está " +
+                        "desactivada (certificado caducado); los NIF con formato válido (algoritmo " +
+                        "local) se están dando por buenos sin verificar. Importar el renovado cuanto " +
+                        $"antes. Detalle: {ex.Message}"));
+                }
+                bool formatoValido = Clientes.ServicioValidacionNif.TieneFormatoNif(nif);
+                return new RespuestaNifNombreCliente
+                {
+                    NifValidado = formatoValido,
+                    SinVerificar = true,
+                    NifFormateado = nif,
+                    NombreFormateado = nombre,
+                    ResultadoAeat = formatoValido
+                        ? "SIN VERIFICAR (certificado AEAT caducado): formato de NIF válido"
+                        : "SIN VERIFICAR (certificado AEAT caducado): el NIF NO tiene un formato válido"
+                };
+            }
             XmlDocument soapEnvelopeXml = new XmlDocument();
             soapEnvelopeXml.LoadXml(@"<?xml version=""1.0"" encoding=""utf-8""?>
                 <soapenv:Envelope xmlns:soapenv=""http://schemas.xmlsoap.org/soap/envelope/"" xmlns:vnif=""http://www2.agenciatributaria.gob.es/static_files/common/internet/dep/aplicaciones/es/aeat/burt/jdit/ws/VNifV2Ent.xsd"">
