@@ -285,6 +285,32 @@ namespace NestoAPI.Controllers
             return result;
         }
 
+        // Nesto#340 (Fase 2): PDF de etiquetas de tienda server-side (QuestPDF), sustituyendo
+        // el render RDLC local de ProductoViewModel. etiquetaPrimera = primera posición libre
+        // de la hoja (para aprovechar hojas de etiquetas empezadas). El cliente lo consume
+        // tras el flag por usuario MotorPdfEtiquetasTienda (papel precortado: validar antes).
+        [HttpGet]
+        [Route("api/Informes/EtiquetasTienda/Pdf")]
+        public async Task<HttpResponseMessage> GetEtiquetasTiendaPdf(string productos, int etiquetaPrimera = 1)
+        {
+            List<string> lista = (productos ?? string.Empty)
+                .Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Trim())
+                .Where(p => p.Length > 0)
+                .ToList();
+            List<EtiquetasTiendaDTO> datos = await _servicio
+                .LeerEtiquetasTiendaAsync(lista)
+                .ConfigureAwait(false);
+
+            GeneradorPdfEtiquetasTienda generador = new GeneradorPdfEtiquetasTienda();
+            HttpResponseMessage result = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = await generador.GenerarPdf(datos, etiquetaPrimera).ConfigureAwait(false)
+            };
+            result.Content.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+            return result;
+        }
+
         [HttpGet]
         [Route("api/Informes/Picking")]
         [ResponseType(typeof(List<PickingDTO>))]
