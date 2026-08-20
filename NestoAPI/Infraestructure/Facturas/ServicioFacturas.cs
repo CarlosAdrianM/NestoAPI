@@ -927,6 +927,25 @@ namespace NestoAPI.Infraestructure.Facturas
                     facturasRectificadas = await CargarFacturasRectificadas(empresa, numeroFactura);
                     if (!facturasRectificadas.Any())
                     {
+                        // AUTO-CURADO (20/08/26, caso real RV2600001): la rectificativa puede
+                        // haberse quedado SIN vinculaciones (el guardado de la copia falló, p. ej.
+                        // por el GRANT de LinFacturaVtaRectificacion). Antes de rendirse, el
+                        // reintento del job las regenera por el LIFO de #38 (idempotente: si ya
+                        // existen no toca nada) y recarga. Best-effort: si el LIFO falla, el
+                        // motivo queda en ELMAH y se sigue al aviso de siempre.
+                        try
+                        {
+                            _ = await GenerarVinculacionesLifo(empresa, numeroFactura, factura.Nº_Cliente);
+                        }
+                        catch (Exception exLifo)
+                        {
+                            logService.LogError($"Verifactu #38: auto-curado de vinculaciones fallido " +
+                                $"para la rectificativa {numeroFactura?.Trim()}: {exLifo.Message}", exLifo);
+                        }
+                        facturasRectificadas = await CargarFacturasRectificadas(empresa, numeroFactura);
+                    }
+                    if (!facturasRectificadas.Any())
+                    {
                         // Sin vinculaciones no se puede identificar qué se rectifica: no se envía
                         // (queda con VerifactuUUID null, reintentable). El alta manual de
                         // vinculaciones para rectificativas creadas fuera de CopiarFactura es #38/#87.
@@ -1249,55 +1268,68 @@ namespace NestoAPI.Infraestructure.Facturas
                     return;
                 }
 
-                string numeroLimpio = numeroFactura?.Trim();
-                bool yaVinculada = await db.LinFacturaVtaRectificaciones
-                    .AnyAsync(r => r.Empresa == empresa && r.NumeroFactura.Trim() == numeroLimpio);
-                if (yaVinculada)
+                if (await GenerarVinculacionesLifo(empresa, numeroFactura, cliente))
                 {
-                    return;
+                    // Con las vinculaciones ya en su sitio, la rectificativa puede declararse (#36)
+                    await EnviarRectificativaAVerifactu(empresa, numeroFactura);
                 }
-
-                List<LinPedidoVta> lineasRectificativas = await db.LinPedidoVtas
-                    .Where(l => l.Empresa == empresa && l.Nº_Factura.Trim() == numeroLimpio && l.Cantidad < 0)
-                    .ToListAsync();
-                if (!lineasRectificativas.Any())
-                {
-                    return;
-                }
-
-                // Primero se resuelven TODAS las líneas y luego se añaden: si el LIFO de una
-                // línea lanza, no queda ninguna vinculación a medias en el contexto.
-                var gestor = new Rectificativas.GestorFacturasRectificativas(db);
-                var nuevas = new List<LinFacturaVtaRectificacion>();
-                foreach (LinPedidoVta linea in lineasRectificativas)
-                {
-                    List<Models.Rectificativas.VinculacionRectificativa> vinculaciones =
-                        await gestor.BuscarFacturasOriginales(empresa, cliente, linea.Producto,
-                            -(linea.Cantidad ?? 0));
-                    nuevas.AddRange(vinculaciones.Select(v => new LinFacturaVtaRectificacion
-                    {
-                        Empresa = empresa,
-                        NumeroFactura = numeroFactura,
-                        NumeroLinea = linea.Nº_Orden,
-                        FacturaOriginalNumero = v.FacturaOriginalNumero,
-                        FacturaOriginalLinea = v.FacturaOriginalLinea,
-                        CantidadRectificada = v.CantidadRectificada
-                    }));
-                }
-                foreach (LinFacturaVtaRectificacion nueva in nuevas)
-                {
-                    _ = db.LinFacturaVtaRectificaciones.Add(nueva);
-                }
-                _ = await db.SaveChangesAsync();
-
-                // Con las vinculaciones ya en su sitio, la rectificativa puede declararse (#36)
-                await EnviarRectificativaAVerifactu(empresa, numeroFactura);
             }
             catch (Exception ex)
             {
                 logService.LogError($"Verifactu #38: no se pudieron generar las vinculaciones LIFO " +
                     $"de la rectificativa {numeroFactura?.Trim()} (cliente {cliente?.Trim()}): {ex.Message}", ex);
             }
+        }
+
+        /// <summary>
+        /// Verifactu #38: genera las vinculaciones LIFO de una rectificativa que no las tiene
+        /// (pedido negativo creado a mano, o copia cuyo guardado falló — caso RV2600001 del
+        /// 20/08/26, GRANT de LinFacturaVtaRectificacion). Idempotente: si ya está vinculada
+        /// no toca nada. Devuelve true si las ha CREADO ahora (el llamante decide si declara).
+        /// </summary>
+        internal async Task<bool> GenerarVinculacionesLifo(string empresa, string numeroFactura, string cliente)
+        {
+            string numeroLimpio = numeroFactura?.Trim();
+            bool yaVinculada = await db.LinFacturaVtaRectificaciones
+                .AnyAsync(r => r.Empresa == empresa && r.NumeroFactura.Trim() == numeroLimpio);
+            if (yaVinculada)
+            {
+                return false;
+            }
+
+            List<LinPedidoVta> lineasRectificativas = await db.LinPedidoVtas
+                .Where(l => l.Empresa == empresa && l.Nº_Factura.Trim() == numeroLimpio && l.Cantidad < 0)
+                .ToListAsync();
+            if (!lineasRectificativas.Any())
+            {
+                return false;
+            }
+
+            // Primero se resuelven TODAS las líneas y luego se añaden: si el LIFO de una
+            // línea lanza, no queda ninguna vinculación a medias en el contexto.
+            var gestor = new Rectificativas.GestorFacturasRectificativas(db);
+            var nuevas = new List<LinFacturaVtaRectificacion>();
+            foreach (LinPedidoVta linea in lineasRectificativas)
+            {
+                List<Models.Rectificativas.VinculacionRectificativa> vinculaciones =
+                    await gestor.BuscarFacturasOriginales(empresa, cliente, linea.Producto,
+                        -(linea.Cantidad ?? 0));
+                nuevas.AddRange(vinculaciones.Select(v => new LinFacturaVtaRectificacion
+                {
+                    Empresa = empresa,
+                    NumeroFactura = numeroFactura,
+                    NumeroLinea = linea.Nº_Orden,
+                    FacturaOriginalNumero = v.FacturaOriginalNumero,
+                    FacturaOriginalLinea = v.FacturaOriginalLinea,
+                    CantidadRectificada = v.CantidadRectificada
+                }));
+            }
+            foreach (LinFacturaVtaRectificacion nueva in nuevas)
+            {
+                _ = db.LinFacturaVtaRectificaciones.Add(nueva);
+            }
+            _ = await db.SaveChangesAsync();
+            return nuevas.Any();
         }
 
         /// <summary>

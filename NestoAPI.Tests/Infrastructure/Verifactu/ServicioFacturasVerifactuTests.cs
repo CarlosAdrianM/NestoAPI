@@ -42,6 +42,12 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             fakeRectificaciones = A.Fake<DbSet<LinFacturaVtaRectificacion>>(o => o.Implements<IQueryable<LinFacturaVtaRectificacion>>().Implements<IDbAsyncEnumerable<LinFacturaVtaRectificacion>>());
             A.CallTo(() => db.LinFacturaVtaRectificaciones).Returns(fakeRectificaciones);
             ConfigurarFakeDbSet(fakeRectificaciones, new List<LinFacturaVtaRectificacion>().AsQueryable());
+            // Auto-curado #38 (20/08/26): el LIFO lee LinPedidoVtas cuando una rectificativa no
+            // tiene vinculaciones; por defecto vacío (sin líneas negativas → no hay nada que
+            // curar) salvo que el test configure el suyo.
+            var fakeLineasDefecto = A.Fake<DbSet<LinPedidoVta>>(o => o.Implements<IQueryable<LinPedidoVta>>().Implements<IDbAsyncEnumerable<LinPedidoVta>>());
+            A.CallTo(() => db.LinPedidoVtas).Returns(fakeLineasDefecto);
+            ConfigurarFakeDbSet(fakeLineasDefecto, new List<LinPedidoVta>().AsQueryable());
             // NestoAPI#347: país por código de IVA (vacío salvo que el test lo configure)
             fakeParametrosIva = A.Fake<DbSet<ParametroIVA>>(o => o.Implements<IQueryable<ParametroIVA>>().Implements<IDbAsyncEnumerable<ParametroIVA>>());
             A.CallTo(() => db.ParametrosIVA).Returns(fakeParametrosIva);
@@ -477,6 +483,56 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.IsNotNull(enviado, "Con las vinculaciones ya guardadas, la rectificativa se declara");
             Assert.AreEqual("I", enviado.TipoRectificacion);
             Assert.AreEqual(2, enviado.FacturasRectificadas.Count);
+        }
+
+        [TestMethod]
+        public async Task EnviarRectificativaAVerifactu_SinVinculacionesPeroConLifoPosible_SeAutocuraYDeclara()
+        {
+            // Caso real RV2600001 (20/08/26): el guardado de las vinculaciones de la copia falló
+            // (GRANT de LinFacturaVtaRectificacion) y la rectificativa quedó sin ellas. El
+            // reintento del job NO debe rendirse: regenera las vinculaciones por el LIFO de #38
+            // y la declara en la misma pasada.
+            var rectificativa = new CabFacturaVta
+            {
+                Empresa = "1",
+                Serie = "RV",
+                Número = "RV2600001",
+                Nº_Cliente = "32624", // el LIFO busca las compras originales por cliente
+                Fecha = DateTime.Today,
+                CifNif = "12345678Z",
+                NombreFiscal = "CLIENTE DE PRUEBA SL",
+                LinPedidoVtas = new List<LinPedidoVta>
+                {
+                    new LinPedidoVta { PorcentajeIVA = 21, PorcentajeRE = 0, Base_Imponible = -100.00M, ImporteIVA = -21.00M }
+                }
+            };
+            var original = new CabFacturaVta { Empresa = "1", Serie = "NV", Número = "NV111", Fecha = DateTime.Today.AddDays(-5), LinPedidoVtas = new List<LinPedidoVta>() };
+            ConfigurarFakeDbSet(fakeFacturas, new List<CabFacturaVta> { rectificativa, original }.AsQueryable());
+            _ = ConLineasPedido(
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Orden = 1, Nº_Cliente = "32624", Producto = "P1", Cantidad = -3, Nº_Factura = "RV2600001" },
+                new LinPedidoVta { Empresa = "1", Nº_Cliente = "32624", Producto = "P1", Cantidad = 3, Estado = Constantes.EstadosLineaVenta.FACTURA, Nº_Factura = "NV111", Nº_Orden = 5, Fecha_Factura = DateTime.Today.AddDays(-5) });
+            var vinculadas = new List<LinFacturaVtaRectificacion>();
+            _ = A.CallTo(() => fakeRectificaciones.Add(A<LinFacturaVtaRectificacion>.Ignored))
+                .Invokes((LinFacturaVtaRectificacion fila) =>
+                {
+                    vinculadas.Add(fila);
+                    ConfigurarFakeDbSet(fakeRectificaciones, vinculadas.AsQueryable());
+                });
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-autocurado" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            VerifactuResponse respuesta = await servicio.EnviarRectificativaAVerifactu("1", "RV2600001");
+
+            Assert.IsNotNull(respuesta, "Antes del auto-curado devolvía null y quedaba atascada para siempre");
+            Assert.IsTrue(respuesta.Exitoso);
+            Assert.AreEqual(1, vinculadas.Count, "Las vinculaciones se regeneran por LIFO");
+            Assert.IsNotNull(enviado);
+            Assert.AreEqual(1, enviado.FacturasRectificadas.Count);
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("no tiene"), A<Exception>.Ignored))
+                .MustNotHaveHappened();
         }
 
         [TestMethod]
