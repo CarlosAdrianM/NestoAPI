@@ -763,6 +763,7 @@
     <Compile Include="Infraestructure\Informes\GeneradorPdfExtractoContable.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfEtiquetasTienda.cs" />
     <Compile Include="Infraestructure\ParametrosUsuario\ServicioParametrosEditables.cs" />
+    <Compile Include="Models\PedidosVenta\GrupoProductoDTO.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfKitsQueSePuedenMontar.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfMontarKitProductos.cs" />
     <Compile Include="Infraestructure\Informes\GeneradorPdfResumenVentas.cs" />

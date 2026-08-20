@@ -2325,6 +2325,21 @@ namespace NestoAPI.Controllers
             return Ok(series);
         }
 
+        // NestoAPI#352: grupos de producto para elegir por cuál comisiona una línea de
+        // inmovilizado (Nesto lo pregunta al guardar el pedido). Salen de la tabla
+        // GruposProducto (no está en el EDMX): si mañana hay un grupo nuevo, aparece solo.
+        [HttpGet]
+        [Route("api/PedidosVenta/GruposProducto")]
+        [ResponseType(typeof(List<GrupoProductoDTO>))]
+        public async Task<IHttpActionResult> GetGruposProducto(string empresa = "1")
+        {
+            List<GrupoProductoDTO> grupos = await db.Database.SqlQuery<GrupoProductoDTO>(
+                "SELECT RTRIM([Número]) AS Codigo, RTRIM([Descripción]) AS Nombre " +
+                "FROM GruposProducto WHERE Empresa = @p0 ORDER BY [Número]",
+                new System.Data.SqlClient.SqlParameter("@p0", empresa)).ToListAsync().ConfigureAwait(false);
+            return Ok(grupos);
+        }
+
         // NestoAPI#176: validación server-side de servirJunto al crear/modificar pedido.
         // Cierra los agujeros de "orden de operaciones" que el validador cliente no puede
         // cubrir: desmarcar servirJunto primero y luego añadir MMP/bonificado, o bypass

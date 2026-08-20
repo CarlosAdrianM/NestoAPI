@@ -698,35 +698,48 @@ namespace NestoAPI.Tests.Infrastructure
 
         #region CrearLineaVta - Issue #352 (línea de inmovilizado)
 
-        [TestMethod]
-        public void CrearLineaVta_LineaInmovilizadoConTextoNull_NoLanzaNRE()
+        // NestoAPI#352 parte 2 (decisión Carlos 20/08/26): la línea de inmovilizado comisiona
+        // por el grupo que ELIGE quien mete el pedido (Nesto lo pregunta al guardar). El grupo
+        // es OBLIGATORIO (sin él no comisionaba, en silencio) y el subgrupo se resuelve con la
+        // regla del #319 (LeerSubGrupoParaGrupo: convención código = grupo, o el primero).
+
+        private static IServicioPedidosVenta ServicioParaInmovilizado(string subGrupoDeApa = "APA")
         {
-            // NestoAPI#352: una línea de inmovilizado (tipoLinea 3) cae en la rama default del switch
-            // y suele llegar con texto null (el cliente no lo manda). El inicializador de LinPedidoVta
-            // reventaba con NullReferenceException en linea.texto.Length (ELMAH 22/07/2026, POST
-            // /api/PedidosVenta de Carlos). No debe petar y el Texto debe quedar en cadena vacía.
             var servicio = A.Fake<IServicioPedidosVenta>();
             A.CallTo(() => servicio.LeerEmpresa(A<string>._)).Returns(new Empresa());
             // Sin esto FakeItEasy devuelve un dummy ParametroIVA (no null) con C__IVA nulo y
             // CalcularImportesLinea revienta al hacer (byte)parametroIva.C__IVA. En producción
-            // LeerParametroIVA sí trae valores; aquí no nos importa el importe, solo el texto.
+            // LeerParametroIVA sí trae valores; aquí no nos importa el importe.
             A.CallTo(() => servicio.LeerParametroIVA(A<string>._, A<string>._, A<string>._)).Returns((ParametroIVA)null);
-            var gestor = new GestorPedidosVenta(servicio);
+            A.CallTo(() => servicio.LeerSubGrupoParaGrupo(A<string>._, "APA")).Returns(subGrupoDeApa);
+            return servicio;
+        }
 
-            var linea = new LineaPedidoVentaDTO
+        private static LineaPedidoVentaDTO LineaInmovilizado(string texto = "Aparato", string grupo = "APA")
+        {
+            return new LineaPedidoVentaDTO
             {
                 tipoLinea = Constantes.TiposLineaVenta.INMOVILIZADO,
                 Producto = "2160000001",
                 Cantidad = 1,
-                texto = null,                                   // <-- el disparador del crash
+                texto = texto,
+                GrupoProducto = grupo,
                 fechaEntrega = new DateTime(2026, 7, 22),
                 almacen = Constantes.Almacenes.ALGETE,
                 formaVenta = "1",
                 delegacion = Constantes.Almacenes.ALGETE
             };
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_LineaInmovilizadoConTextoNull_NoLanzaNRE()
+        {
+            // NestoAPI#352 parte 1: el inicializador de LinPedidoVta reventaba con
+            // NullReferenceException en linea.texto.Length con texto null (ELMAH 22/07/2026).
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
             var plazoPago = new PlazoPago { DtoProntoPago = 0 };
 
-            LinPedidoVta resultado = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+            LinPedidoVta resultado = gestor.CrearLineaVta(LineaInmovilizado(texto: null), PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
 
             Assert.IsNotNull(resultado);
             Assert.AreEqual(string.Empty, resultado.Texto);
@@ -736,30 +749,50 @@ namespace NestoAPI.Tests.Infrastructure
         public void CrearLineaVta_LineaInmovilizadoConTextoLargo_LoTruncaA50()
         {
             // El texto de la línea se guarda en un varchar(50); si viene más largo, se trunca sin petar.
-            var servicio = A.Fake<IServicioPedidosVenta>();
-            A.CallTo(() => servicio.LeerEmpresa(A<string>._)).Returns(new Empresa());
-            // Sin esto FakeItEasy devuelve un dummy ParametroIVA (no null) con C__IVA nulo y
-            // CalcularImportesLinea revienta al hacer (byte)parametroIva.C__IVA. En producción
-            // LeerParametroIVA sí trae valores; aquí no nos importa el importe, solo el texto.
-            A.CallTo(() => servicio.LeerParametroIVA(A<string>._, A<string>._, A<string>._)).Returns((ParametroIVA)null);
-            var gestor = new GestorPedidosVenta(servicio);
-
-            var linea = new LineaPedidoVentaDTO
-            {
-                tipoLinea = Constantes.TiposLineaVenta.INMOVILIZADO,
-                Producto = "2160000001",
-                Cantidad = 1,
-                texto = new string('X', 80),
-                fechaEntrega = new DateTime(2026, 7, 22),
-                almacen = Constantes.Almacenes.ALGETE,
-                formaVenta = "1",
-                delegacion = Constantes.Almacenes.ALGETE
-            };
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
             var plazoPago = new PlazoPago { DtoProntoPago = 0 };
 
-            LinPedidoVta resultado = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+            LinPedidoVta resultado = gestor.CrearLineaVta(LineaInmovilizado(texto: new string('X', 80)), PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
 
             Assert.AreEqual(50, resultado.Texto.Length);
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_LineaInmovilizadoConGrupo_ComisionaPorEseGrupoConSubgrupoResuelto()
+        {
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado(subGrupoDeApa: "APA"));
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            LinPedidoVta resultado = gestor.CrearLineaVta(LineaInmovilizado(grupo: "APA"), PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+
+            Assert.AreEqual("APA", resultado.Grupo);
+            Assert.AreEqual("APA", resultado.SubGrupo, "El subgrupo lo resuelve el servidor (regla #319), no lo manda el cliente");
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_LineaInmovilizadoSinGrupo_ErrorClaroNoSeCreaSinComisionar()
+        {
+            // Antes se guardaba con Grupo null y no comisionaba EN SILENCIO. Mejor error accionable.
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                gestor.CrearLineaVta(LineaInmovilizado(grupo: null), PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM"));
+
+            StringAssert.Contains(ex.Message, "grupo");
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_LineaInmovilizadoConGrupoInexistente_ErrorClaro()
+        {
+            // LeerSubGrupoParaGrupo devuelve null si el grupo no existe o no tiene subgrupos
+            var gestor = new GestorPedidosVenta(ServicioParaInmovilizado());
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                gestor.CrearLineaVta(LineaInmovilizado(grupo: "XXX"), PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM"));
+
+            StringAssert.Contains(ex.Message, "XXX");
         }
 
         #endregion

@@ -410,6 +410,34 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     }
                     break;
 
+                case Constantes.TiposLineaVenta.INMOVILIZADO:
+                    precioTarifa = 0;
+                    coste = 0;
+                    familia = null;
+                    _ = servicio.LeerEmpresa(empresa).TipoIvaDefecto;
+                    estadoProducto = 0;
+                    // NestoAPI#352 (parte 2, 20/08/26): la línea de inmovilizado comisiona por el
+                    // grupo que elige QUIEN mete el pedido (Nesto lo pregunta al guardar). Antes
+                    // caía en la rama default y se guardaba sin Grupo: no comisionaba, en
+                    // silencio. Regla de la casa (#319): la comisión toca el bolsillo de un
+                    // compañero — mejor error claro y accionable que comisionar mal (o no
+                    // comisionar) sin avisar. El subgrupo se resuelve con la convención del
+                    // grupo (código = grupo, o el primero) para no romper la FK de LinPedidoVta.
+                    if (string.IsNullOrWhiteSpace(linea.GrupoProducto))
+                    {
+                        throw new Exception("La línea de inmovilizado necesita el grupo por el que comisiona " +
+                            "(GrupoProducto). Desde Nesto se pregunta al guardar el pedido; si no te lo " +
+                            "pregunta, actualiza Nesto.");
+                    }
+                    grupo = linea.GrupoProducto.Trim();
+                    subGrupo = servicio.LeerSubGrupoParaGrupo(empresa, grupo);
+                    if (string.IsNullOrWhiteSpace(subGrupo))
+                    {
+                        throw new Exception($"El grupo '{grupo}' de la línea de inmovilizado no existe o no " +
+                            "tiene ningún subgrupo en SubGruposProducto: no se puede crear la línea.");
+                    }
+                    break;
+
                 default:
                     precioTarifa = 0;
                     coste = 0;
