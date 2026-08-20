@@ -84,6 +84,49 @@ namespace NestoAPI.Tests.Controllers
             Tipo = "application/zpl", Codificacion = "base64", Contenido = "XlhBfkNJMTUw"
         };
 
+        #region Alta (POST) — fallo 20/08/26
+
+        // Fallo 20/08/26 (A2 CRUD por API): "crear etiqueta" desde CanalesExternos posteaba el
+        // envío SIN Usuario (NOT NULL en BD) y el alta reventaba con DbEntityValidationException
+        // en cada intento; los compañeros tenían que crear las etiquetas a mano. El usuario de
+        // auditoría sale SIEMPRE del Identity (mismo criterio que el PUT), nunca del cliente.
+
+        [TestMethod]
+        public async Task Post_SinUsuario_LoRellenaDelIdentity()
+        {
+            EnviosAgencia insertado = null;
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored))
+                .Invokes((EnviosAgencia e) => insertado = e)
+                .ReturnsLazily((EnviosAgencia e) => e);
+            controller.User = new System.Security.Principal.GenericPrincipal(
+                new System.Security.Principal.GenericIdentity("NUEVAVISION\\Laura"), new string[0]);
+            EnviosAgencia envio = EnvioEnCurso();
+            envio.Usuario = null;
+
+            _ = await controller.PostEnviosAgencia(envio);
+
+            Assert.IsNotNull(insertado, "El envío debe llegar a insertarse");
+            Assert.AreEqual("NUEVAVISION\\Laura", insertado.Usuario, "El Usuario sale del Identity autenticado");
+            A.CallTo(() => db.SaveChangesAsync()).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public async Task Post_SinIdentity_UsaElFallbackDeAuditoria()
+        {
+            EnviosAgencia insertado = null;
+            A.CallTo(() => fakeEnvios.Add(A<EnviosAgencia>.Ignored))
+                .Invokes((EnviosAgencia e) => insertado = e)
+                .ReturnsLazily((EnviosAgencia e) => e);
+            EnviosAgencia envio = EnvioEnCurso();
+            envio.Usuario = null;
+
+            _ = await controller.PostEnviosAgencia(envio);
+
+            Assert.AreEqual("NestoAPI", insertado.Usuario, "Sin Identity, el fallback evita el NOT NULL");
+        }
+
+        #endregion
+
         #region Anular (#316)
 
         [TestMethod]

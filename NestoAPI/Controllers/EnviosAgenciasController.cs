@@ -977,6 +977,12 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            // Fallo 20/08/26 (A2 CRUD por API): el cliente no manda Usuario (NOT NULL en BD) y el
+            // alta reventaba con DbEntityValidationException ("El campo Usuario es obligatorio")
+            // al crear la etiqueta desde CanalesExternos. Igual que en el PUT: el usuario de
+            // auditoría sale SIEMPRE del Identity, nunca del cliente (UsuarioAuditoriaHelper
+            // además cubre el principal anónimo, cuyo Name es "" y no null).
+            enviosAgencia.Usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
             db.EnviosAgencias.Add(enviosAgencia);
             await db.SaveChangesAsync();
 
