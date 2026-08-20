@@ -278,6 +278,7 @@
     <Compile Include="Infrastructure\RoundingHelperTests.cs" />
     <Compile Include="Infrastructure\Filters\GlobalExceptionFilterTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfEtiquetasTiendaTests.cs" />
+    <Compile Include="Infrastructure\ServicioParametrosEditablesTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfMontarKitProductosTests.cs" />
     <Compile Include="Infrastructure\GeneradorPdfModelo347Tests.cs" />
     <Compile Include="Infrastructure\ClienteChangeDetectorTests.cs" />

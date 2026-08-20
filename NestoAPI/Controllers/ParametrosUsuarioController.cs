@@ -1,5 +1,7 @@
-﻿using NestoAPI.Models;
+﻿using NestoAPI.Infraestructure.ParametrosUsuario;
+using NestoAPI.Models;
 using System;
+using System.Collections.Generic;
 using System.Data.Entity;
 using System.Data.Entity.Infrastructure;
 using System.Linq;
@@ -116,6 +118,40 @@ namespace NestoAPI.Controllers
             }
         }
 
+
+        // Caso real 20/08/26: el usuario de Tienda Online que factura los FBA (almacén AMZ)
+        // cubre rutas por vacaciones y necesita pasar a ALG unos días y volver. El catálogo de
+        // qué parámetro puede editarse cada usuario (y con qué valores) vive server-side en
+        // ServicioParametrosEditables: la ventana de Nesto solo pinta lo que esto declare.
+        [Authorize]
+        [HttpGet]
+        [Route("api/ParametrosUsuario/Editables")]
+        [ResponseType(typeof(List<ParametroEditableDTO>))]
+        public async Task<IHttpActionResult> GetEditables(string empresa = "1")
+        {
+            var servicio = new ServicioParametrosEditables(db);
+            return Ok(await servicio.LeerEditables(User, empresa.Trim()));
+        }
+
+        // Cambia un parámetro del PROPIO usuario autenticado (el usuario sale del JWT, nunca
+        // del cliente). Valida grupo, clave y valor contra el catálogo; la primera vez que se
+        // cambia se captura el valor TITULAR para poder ofrecer restaurarlo al arrancar Nesto.
+        [Authorize]
+        [HttpPost]
+        [Route("api/ParametrosUsuario/Editables")]
+        [ResponseType(typeof(ParametroEditableDTO))]
+        public async Task<IHttpActionResult> PostEditable(CambioParametroRequest peticion)
+        {
+            try
+            {
+                var servicio = new ServicioParametrosEditables(db);
+                return Ok(await servicio.Cambiar(User, peticion));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+        }
 
         // PUT: api/ParametrosUsuario/5
         [ResponseType(typeof(void))]
