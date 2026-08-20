@@ -22,11 +22,17 @@ namespace NestoAPI.Infraestructure.Remesas
     {
         private readonly NVEntities db;
         private readonly Func<string, Task<List<string>>> leerEstadosQueBloquean;
+        private readonly Func<int[]> leerAgenciasConSeguimiento;
 
-        public SelectorEfectosCobrables(NVEntities db, Func<string, Task<List<string>>> leerEstadosQueBloquean = null)
+        public SelectorEfectosCobrables(NVEntities db, Func<string, Task<List<string>>> leerEstadosQueBloquean = null,
+            Func<int[]> leerAgenciasConSeguimiento = null)
         {
             this.db = db;
             this.leerEstadosQueBloquean = leerEstadosQueBloquean ?? LeerEstadosQueBloqueanBd;
+            // Fallo 20/08/26: el gating solo puede mirar agencias cuyo estado SÍ actualizamos
+            // (las del poll de seguimiento). Inyectable para tests.
+            this.leerAgenciasConSeguimiento = leerAgenciasConSeguimiento
+                ?? (() => new Agencias.FabricaAgenciasRemotas(db).AgenciasConSeguimiento.ToArray());
         }
 
         // EstadosExtracto no está en el EDMX (SQL crudo, patrón Cargos). Inyectable para tests.
@@ -93,6 +99,10 @@ namespace NestoAPI.Infraestructure.Remesas
             // - INCIDENTADO: retiene siempre, con su motivo.
             // - DEVUELTO: retiene siempre — la mercancía volvió, ese cobro no procede por
             //   remesa; salida manual (abono / corregir el envío).
+            // - Fallo 20/08/26 (caso 3028653): solo cuentan los envíos de agencias CON
+            //   SEGUIMIENTO (las que el poll actualiza hasta Entregado: ASM, Innovatrans...).
+            //   Un envío de Correos Express u otra agencia sin integración se queda en
+            //   'tramitado' PARA SIEMPRE y retenía el efecto eternamente: nunca iba al banco.
             List<string> documentos = efectos.Select(e => e.Nº_Documento?.Trim())
                 .Where(d => !string.IsNullOrEmpty(d)).Distinct().ToList();
             var facturaPedidos = await db.LinPedidoVtas
@@ -102,8 +112,10 @@ namespace NestoAPI.Infraestructure.Remesas
                 .ToListAsync().ConfigureAwait(false);
             List<int> pedidos = facturaPedidos.Select(fp => fp.Pedido).Distinct().ToList();
             DateTime corteSeguimiento = SeguimientoEnviosJobsService.FECHA_CORTE;
+            int[] agenciasConSeguimiento = leerAgenciasConSeguimiento();
             var enviosNoEntregados = await db.EnviosAgencias
                 .Where(ea => ea.Pedido != null && pedidos.Contains(ea.Pedido.Value)
+                    && agenciasConSeguimiento.Contains(ea.Agencia)
                     && ea.Estado != Constantes.Agencias.ESTADO_ENTREGADO
                     && ea.Fecha >= corteSeguimiento)
                 .Select(ea => new { Pedido = ea.Pedido.Value, ea.Estado })
@@ -148,6 +160,7 @@ namespace NestoAPI.Infraestructure.Remesas
                 string documento = e.Nº_Documento?.Trim();
                 string cliente = e.Número?.Trim();
                 string motivo = null;
+                bool forzable = false;
 
                 string estadoEfecto = e.Estado?.Trim();
                 if (!string.IsNullOrEmpty(estadoEfecto) && estadosBloqueados.Contains(estadoEfecto))
@@ -174,6 +187,10 @@ namespace NestoAPI.Infraestructure.Remesas
                             : peorEstado >= Constantes.Agencias.ESTADO_INCIDENTADO
                                 ? "Retenido: envío INCIDENTADO — esperar a que se resuelva la incidencia (#172)."
                                 : "Retenido: el pedido tiene envíos de agencia sin confirmar la entrega (#172).";
+                        // Fallo 20/08/26: la retención por entrega pendiente o incidencia se puede
+                        // FORZAR desde la remesa (el usuario confirma que quiere girarlo igual);
+                        // el DEVUELTO no — la mercancía volvió y ese cobro no procede.
+                        forzable = peorEstado < Constantes.Agencias.ESTADO_DEVUELTO;
                     }
                 }
 
@@ -190,7 +207,8 @@ namespace NestoAPI.Infraestructure.Remesas
                     Ccc = e.CCC?.Trim(),
                     ClienteConNegativos = conNegativos.Contains(cliente ?? string.Empty),
                     Preseleccionado = motivo == null,
-                    Motivo = motivo
+                    Motivo = motivo,
+                    Forzable = forzable
                 };
             }).ToList();
         }

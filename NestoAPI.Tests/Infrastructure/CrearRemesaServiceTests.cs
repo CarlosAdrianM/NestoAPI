@@ -22,7 +22,8 @@ namespace NestoAPI.Tests.Infrastructure
     public class CrearRemesaServiceTests
     {
         private static EfectoCandidatoDTO Candidato(int id, bool preseleccionado = true,
-            string motivo = null, bool conNegativos = false, string cliente = "15191")
+            string motivo = null, bool conNegativos = false, string cliente = "15191",
+            bool forzable = false)
         {
             return new EfectoCandidatoDTO
             {
@@ -30,7 +31,8 @@ namespace NestoAPI.Tests.Infrastructure
                 Cliente = cliente,
                 Preseleccionado = preseleccionado,
                 Motivo = motivo,
-                ClienteConNegativos = conNegativos
+                ClienteConNegativos = conNegativos,
+                Forzable = forzable
             };
         }
 
@@ -117,6 +119,48 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(errores.Single(), "IBAN");
         }
 
+        // Fallo 20/08/26 (caso real 3028653): el gating de entrega se puede FORZAR por efecto —
+        // el usuario confirma que quiere remesarlo aunque el envío no conste entregado. Solo
+        // las retenciones Forzables (entrega pendiente/incidentado); IBAN, estado bloqueado y
+        // DEVUELTO siguen bloqueando aunque se intenten forzar.
+
+        [TestMethod]
+        public void ValidarSeleccion_EfectoForzableForzadoPorElUsuario_SinError()
+        {
+            var errores = CrearRemesaService.ValidarSeleccion(
+                new List<int> { 1 },
+                new List<EfectoCandidatoDTO> { Candidato(1, preseleccionado: false, forzable: true,
+                    motivo: "Retenido: el pedido tiene envíos de agencia sin confirmar la entrega (#172).") },
+                efectosForzados: new List<int> { 1 });
+
+            Assert.AreEqual(0, errores.Count);
+        }
+
+        [TestMethod]
+        public void ValidarSeleccion_EfectoForzableSinForzar_SigueRetenido()
+        {
+            var errores = CrearRemesaService.ValidarSeleccion(
+                new List<int> { 1 },
+                new List<EfectoCandidatoDTO> { Candidato(1, preseleccionado: false, forzable: true,
+                    motivo: "Retenido: el pedido tiene envíos de agencia sin confirmar la entrega (#172).") });
+
+            Assert.AreEqual(1, errores.Count);
+        }
+
+        [TestMethod]
+        public void ValidarSeleccion_EfectoNoForzableAunqueSeFuerce_SigueBloqueando()
+        {
+            // Forzar solo abre el gating de entrega: el IBAN roto (#381) o el DEVUELTO no
+            var errores = CrearRemesaService.ValidarSeleccion(
+                new List<int> { 1 },
+                new List<EfectoCandidatoDTO> { Candidato(1, preseleccionado: false, forzable: false,
+                    motivo: "Retenido: el IBAN de la ficha bancaria está incompleto (#381).") },
+                efectosForzados: new List<int> { 1 });
+
+            Assert.AreEqual(1, errores.Count);
+            StringAssert.Contains(errores.Single(), "IBAN");
+        }
+
         // Composición de líneas: calcada del asiento real 1195101 (remesa 10898, 20/07/26)
 
         private static ExtractoCliente Efecto(int orden, string cliente, decimal pendiente,
@@ -187,6 +231,46 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(lineas.All(l => l.Diario == CrearRemesaService.DIARIO_REMESA));
             Assert.IsTrue(lineas.All(l => l.Usuario == "carlos"));
             Assert.IsTrue(lineas.All(l => l.Asiento_Automático));
+        }
+
+        // Fallo 20/08/26 (apunte real 7100551): el apunte del BANCO iba sin delegación ni forma
+        // de venta (los de pago del cliente sí las llevan, de su efecto). Se rellena con la
+        // mayoritaria entre los efectos del grupo; sin datos, con las de por defecto.
+
+        [TestMethod]
+        public void ConstruirLineasRemesa_LaLineaDelBancoLlevaDelegacionYFormaVentaMayoritarias()
+        {
+            var conReina = Efecto(1, "15191", 100m, "NV1");
+            conReina.Delegación = "REI";
+            conReina.FormaVenta = "TEL";
+            var efectos = new List<ExtractoCliente>
+            {
+                conReina,
+                Efecto(2, "30676", 50m, "NV2"),   // ALG / VAR
+                Efecto(3, "40227", 25m, "NV3")    // ALG / VAR
+            };
+
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10900, "1", BancoSabadell(), efectos, "carlos");
+
+            PreContabilidad banco = lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE);
+            Assert.AreEqual("ALG", banco.Delegación, "La delegación mayoritaria entre los efectos (2 ALG vs 1 REI)");
+            Assert.AreEqual("VAR", banco.FormaVenta, "La forma de venta mayoritaria (2 VAR vs 1 TEL)");
+        }
+
+        [TestMethod]
+        public void ConstruirLineasRemesa_EfectosSinDelegacionNiFormaVenta_ElBancoLlevaLasPorDefecto()
+        {
+            var sinDatos = Efecto(1, "15191", 100m, "NV1");
+            sinDatos.Delegación = null;
+            sinDatos.FormaVenta = "  ";
+
+            List<PreContabilidad> lineas = CrearRemesaService.ConstruirLineasRemesa(
+                10900, "1", BancoSabadell(), new List<ExtractoCliente> { sinDatos }, "carlos");
+
+            PreContabilidad banco = lineas.Single(l => l.TipoCuenta == Constantes.Contabilidad.TiposCuenta.CUENTA_CONTABLE);
+            Assert.AreEqual(Constantes.Empresas.DELEGACION_POR_DEFECTO, banco.Delegación);
+            Assert.AreEqual(Constantes.Empresas.FORMA_VENTA_POR_DEFECTO, banco.FormaVenta);
         }
 
         // NestoAPI#386 (caso real remesa 10908): el banco abona por (secuencia SEPA, fecha de

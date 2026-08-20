@@ -30,6 +30,7 @@ namespace NestoAPI.Tests.Infrastructure
         private DbSet<EnviosAgencia> fakeEnvios;
         private DbSet<CCC> fakeCccs;
         private List<string> estadosQueBloquean;
+        private List<int> agenciasConSeguimiento;
         private SelectorEfectosCobrables selector;
 
         [TestInitialize]
@@ -49,7 +50,11 @@ namespace NestoAPI.Tests.Infrastructure
             // NestoAPI#381: fichas bancarias válidas por defecto para los clientes de los tests
             ConfigurarFakeDbSet(fakeCccs, new List<CCC> { Ficha("15191"), Ficha("30676") }.AsQueryable());
             estadosQueBloquean = new List<string>();
-            selector = new SelectorEfectosCobrables(db, e => Task.FromResult(estadosQueBloquean));
+            // Fallo 20/08/26: el gating solo mira envíos de agencias CON seguimiento. Los envíos
+            // de los tests no fijan Agencia (0), así que 0 cuenta como "con seguimiento" aquí.
+            agenciasConSeguimiento = new List<int> { 0 };
+            selector = new SelectorEfectosCobrables(db, e => Task.FromResult(estadosQueBloquean),
+                () => agenciasConSeguimiento.ToArray());
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
@@ -276,6 +281,44 @@ namespace NestoAPI.Tests.Infrastructure
             StringAssert.Contains(candidatos.Single(c => c.Id == 1).Motivo, "INCIDENTADO");
             StringAssert.Contains(candidatos.Single(c => c.Id == 2).Motivo, "DEVUELTO");
             Assert.IsTrue(candidatos.All(c => !c.Preseleccionado));
+            // Fallo 20/08/26: incidentado se puede forzar en la remesa; devuelto NUNCA
+            Assert.IsTrue(candidatos.Single(c => c.Id == 1).Forzable, "Incidentado: forzable");
+            Assert.IsFalse(candidatos.Single(c => c.Id == 2).Forzable, "Devuelto: no forzable");
+        }
+
+        [TestMethod]
+        public async Task CandidatosSepa_EnvioDeAgenciaSinSeguimiento_NoRetiene()
+        {
+            // Fallo 20/08/26 (caso real 3028653): un envío de Correos Express (u otra agencia
+            // sin integración de seguimiento) se queda en 'tramitado' PARA SIEMPRE porque el
+            // poll no la actualiza — retenía el efecto eternamente y nunca iba al banco. El
+            // gating solo puede mirar agencias cuyo estado SÍ actualizamos hasta Entregado.
+            agenciasConSeguimiento = new List<int> { 6 };
+            ConfigurarFakeDbSet(fakeExtractos, new List<ExtractoCliente>
+            {
+                Efecto(id: 1, documento: "NV2612001"),
+                Efecto(id: 2, documento: "NV2612002")
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeLineas, new List<LinPedidoVta>
+            {
+                new LinPedidoVta { Empresa = "1", Número = 922001, Nº_Factura = "NV2612001" },
+                new LinPedidoVta { Empresa = "1", Número = 922002, Nº_Factura = "NV2612002" }
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeEnvios, new List<EnviosAgencia>
+            {
+                // Correos Express (sin seguimiento): tramitado eterno, NO debe retener
+                new EnviosAgencia { Numero = 1, Pedido = 922001, Agencia = 9, Estado = (short)Constantes.Agencias.ESTADO_TRAMITADO, Fecha = HOY.AddDays(-3) },
+                // Agencia con seguimiento: sin entregar, SÍ retiene
+                new EnviosAgencia { Numero = 2, Pedido = 922002, Agencia = 6, Estado = (short)Constantes.Agencias.ESTADO_TRAMITADO, Fecha = HOY.AddDays(-3) }
+            }.AsQueryable());
+
+            List<EfectoCandidatoDTO> candidatos = await selector.CandidatosSepa("1", HOY);
+
+            Assert.IsTrue(candidatos.Single(c => c.Id == 1).Preseleccionado,
+                "Agencia sin seguimiento: su 'tramitado' no significa nada, no retiene");
+            EfectoCandidatoDTO retenido = candidatos.Single(c => c.Id == 2);
+            Assert.IsFalse(retenido.Preseleccionado, "Agencia con seguimiento sin entregar: retiene");
+            Assert.IsTrue(retenido.Forzable, "La retención por entrega pendiente se puede forzar");
         }
 
         [TestMethod]

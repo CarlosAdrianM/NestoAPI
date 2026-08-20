@@ -90,5 +90,13 @@ namespace NestoAPI.Models.Remesas
         public bool Preseleccionado { get; set; }
         public string Motivo { get; set; }
         public bool ClienteConNegativos { get; set; }
+
+        /// <summary>
+        /// Fallo 20/08/26: true = la retención es del gating de entrega (#172: envío sin
+        /// confirmar o incidentado) y el usuario puede forzar el efecto en la remesa mandándolo
+        /// en EfectosForzados. Las retenciones de IBAN, estado bloqueado o envío DEVUELTO no
+        /// son forzables.
+        /// </summary>
+        public bool Forzable { get; set; }
     }
 }

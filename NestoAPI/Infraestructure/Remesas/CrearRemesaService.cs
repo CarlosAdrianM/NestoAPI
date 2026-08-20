@@ -86,7 +86,8 @@ namespace NestoAPI.Infraestructure.Remesas
             // rechazaría con "ya no es candidato".
             List<EfectoCandidatoDTO> candidatos = await new SelectorEfectosCobrables(db)
                 .CandidatosSepa(peticion.Empresa, hasta: peticion.SeleccionHasta).ConfigureAwait(false);
-            List<string> errores = ValidarSeleccion(idsPedidos, candidatos, peticion.AceptarClientesConNegativos);
+            List<string> errores = ValidarSeleccion(idsPedidos, candidatos, peticion.AceptarClientesConNegativos,
+                peticion.EfectosForzados);
             if (errores.Any())
             {
                 throw new InvalidOperationException(string.Join(" ", errores));
@@ -215,12 +216,18 @@ namespace NestoAPI.Infraestructure.Remesas
         /// aceptarClientesConNegativos (el usuario confirmó el aviso en el cliente) se permite
         /// remesar sin liquidar (caso real: pago a cuenta de -30 € de un curso de septiembre
         /// que no tiene nada que ver con los efectos que se giran).
+        /// Fallo 20/08/26: el gating de entrega se puede FORZAR por efecto (efectosForzados) —
+        /// el usuario confirma que quiere remesarlo aunque el envío no conste entregado (caso
+        /// real 3028653: efecto vencido de un envío que la agencia nunca confirmó). Solo se
+        /// pueden forzar las retenciones marcadas Forzable por el selector (envío sin entregar
+        /// o incidentado); las de IBAN, estado bloqueado o envío DEVUELTO siguen bloqueando.
         /// Pura y estática para testear sin BD.
         /// </summary>
         internal static List<string> ValidarSeleccion(List<int> idsPedidos, List<EfectoCandidatoDTO> candidatos,
-            bool aceptarClientesConNegativos = false)
+            bool aceptarClientesConNegativos = false, List<int> efectosForzados = null)
         {
             var errores = new List<string>();
+            var forzados = new HashSet<int>(efectosForzados ?? new List<int>());
             Dictionary<int, EfectoCandidatoDTO> porId = candidatos.ToDictionary(c => c.Id);
             foreach (int id in idsPedidos)
             {
@@ -229,7 +236,7 @@ namespace NestoAPI.Infraestructure.Remesas
                     errores.Add($"El efecto {id} ya no es candidato a remesa (cobrado, remesado o modificado): refresque la pantalla.");
                     continue;
                 }
-                if (!candidato.Preseleccionado)
+                if (!candidato.Preseleccionado && !(candidato.Forzable && forzados.Contains(id)))
                 {
                     errores.Add($"El efecto {id} está retenido: {candidato.Motivo}");
                 }
@@ -399,11 +406,24 @@ namespace NestoAPI.Infraestructure.Remesas
             // forzado clásico sin FRST: el banco hace un abono en cuenta por cada PmtInf, con el
             // DÍA DE VALOR como fecha contable — así cuadra apunte a apunte contra el extracto.
             // El sufijo FRST en el concepto ayuda al punteo (los RCUR se quedan como siempre).
+            // Fallo 20/08/26 (apunte 7100551): el apunte del banco iba SIN delegación ni forma de
+            // venta (los de pago del cliente sí las llevan, de su efecto). Se rellenan con la
+            // MAYORITARIA entre los efectos del grupo y, si ninguno la trae, con la de por defecto.
+            string Mayoritaria(IEnumerable<string> valores, string porDefecto) => valores
+                .Select(v => v?.Trim())
+                .Where(v => !string.IsNullOrEmpty(v))
+                .GroupBy(v => v)
+                .OrderByDescending(g => g.Count())
+                .Select(g => g.Key)
+                .FirstOrDefault() ?? porDefecto;
             foreach (KeyValuePair<Tuple<string, DateTime>, decimal> grupo in totalesPorGrupo)
             {
                 DateTime fechaValor = FechaValorDe(grupo.Key.Item1, grupo.Key.Item2);
                 string conceptoBanco = $"Remesa:{numeroRemesa}. Al Banco: {cuentaBanco}" +
                     (grupo.Key.Item1 == SECUENCIA_RECURRENTE ? string.Empty : $" {grupo.Key.Item1}");
+                List<ExtractoCliente> efectosGrupo = efectos
+                    .Where(e => SecuenciaDe(e) == grupo.Key.Item1 && FechaSolicitadaDe(e) == grupo.Key.Item2)
+                    .ToList();
                 lineas.Add(new PreContabilidad
                 {
                     Empresa = empresa,
@@ -413,6 +433,10 @@ namespace NestoAPI.Infraestructure.Remesas
                     // (bug 22/07). "1" = lo que lleva la línea de banco del asiento real 10898.
                     TipoApunte = Constantes.TiposExtractoCliente.FACTURA,
                     Debe = grupo.Value,
+                    Delegación = Mayoritaria(efectosGrupo.Select(e => e.Delegación),
+                        Constantes.Empresas.DELEGACION_POR_DEFECTO),
+                    FormaVenta = Mayoritaria(efectosGrupo.Select(e => e.FormaVenta),
+                        Constantes.Empresas.FORMA_VENTA_POR_DEFECTO),
                     Concepto = conceptoBanco.Length > 50 ? conceptoBanco.Substring(0, 50) : conceptoBanco,
                     Nº_Documento = numeroRemesa.ToString(),
                     Diario = DIARIO_REMESA,
@@ -465,6 +489,14 @@ namespace NestoAPI.Infraestructure.Remesas
         /// puerta de neteo bloquea como hasta ahora.
         /// </summary>
         public bool AceptarClientesConNegativos { get; set; }
+
+        /// <summary>
+        /// Fallo 20/08/26: efectos que el usuario quiere remesar AUNQUE el gating de entrega
+        /// (#172) los retenga (envío sin confirmar entrega o incidentado). Solo surten efecto
+        /// sobre retenciones que el selector marca Forzable: las de IBAN, estado bloqueado o
+        /// envío DEVUELTO no se pueden forzar. Null/vacío = comportamiento de siempre.
+        /// </summary>
+        public List<int> EfectosForzados { get; set; }
     }
 
     public class CrearRemesaResponse
