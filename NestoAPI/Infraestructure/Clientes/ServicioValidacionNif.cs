@@ -41,11 +41,68 @@ namespace NestoAPI.Infraestructure.Clientes
         /// </summary>
         internal const string TIPO_DOC_OFICIAL_PAIS = "04";
 
-        /// <summary>NestoAPI#391: tipo L7 "no censado". Para clientes españoles cuyo NIF real no
-        /// se puede conseguir (error humano en facturas ya emitidas): la AEAT no valida IDOtro
-        /// contra el censo, así que las facturas atascadas pueden declararse.</summary>
+        /// <summary>NestoAPI#391: tipo L7 "no censado". Para clientes españoles cuyo NIF esté
+        /// bien formado pero NO en el censo de la AEAT. OJO (fallo 20/08/26, cliente 9093): la
+        /// AEAT SÍ valida que el ID del tipo 07 tenga FORMATO de NIF — no vale un relleno tipo
+        /// "1000000"; sin el NIF real no hay forma de declarar la factura completa.</summary>
         internal const string TIPO_NO_CENSADO = "07";
+
+        /// <summary>Catálogo L7: 03 = pasaporte. Con CodigoPais ES la AEAT solo admite 03 y 07
+        /// (error 1233 de Verifactu si se manda otro tipo).</summary>
+        internal const string TIPO_PASAPORTE = "03";
         private const string PAIS_ESPANA = "ES";
+
+        /// <summary>
+        /// Formato SINTÁCTICO de identificación fiscal española (DNI, NIE o CIF), carácter de
+        /// control incluido. No consulta el censo: es el algoritmo oficial. La AEAT lo exige en
+        /// el ID del IDOtro tipo 07 (no censado): el NIF no está censado pero tiene que SER un
+        /// NIF (fallo 20/08/26: el relleno "1000000" del cliente 9093 se envió como 07 y
+        /// Verifacti lo rechazó con "El campo id_otro.id no tiene un formato válido").
+        /// Pura y estática para testear sin BD.
+        /// </summary>
+        internal static bool TieneFormatoNif(string nif)
+        {
+            string valor = nif?.Trim().ToUpperInvariant();
+            if (string.IsNullOrEmpty(valor) || valor.Length != 9)
+            {
+                return false;
+            }
+
+            const string LETRAS_DNI = "TRWAGMYFPDXBNJZSQVHLCKE";
+            // DNI: 8 dígitos + letra de control (resto de dividir entre 23)
+            if (valor.Substring(0, 8).All(char.IsDigit))
+            {
+                return valor[8] == LETRAS_DNI[int.Parse(valor.Substring(0, 8)) % 23];
+            }
+            // NIE: X/Y/Z + 7 dígitos + letra (misma tabla, con X=0, Y=1, Z=2 delante)
+            if ("XYZ".IndexOf(valor[0]) >= 0 && valor.Substring(1, 7).All(char.IsDigit))
+            {
+                int numero = int.Parse("XYZ".IndexOf(valor[0]) + valor.Substring(1, 7));
+                return valor[8] == LETRAS_DNI[numero % 23];
+            }
+            // CIF: letra de organización + 7 dígitos + control (dígito o letra según entidad;
+            // se aceptan ambos, que es lo que valida la AEAT sintácticamente)
+            if ("ABCDEFGHJKLMNPQRSUVW".IndexOf(valor[0]) >= 0 && valor.Substring(1, 7).All(char.IsDigit))
+            {
+                int suma = 0;
+                for (int i = 1; i <= 7; i++)
+                {
+                    int digito = valor[i] - '0';
+                    if (i % 2 == 1) // posiciones impares (1ª, 3ª...): se doblan y suman sus cifras
+                    {
+                        int doble = digito * 2;
+                        suma += (doble / 10) + (doble % 10);
+                    }
+                    else
+                    {
+                        suma += digito;
+                    }
+                }
+                int control = (10 - (suma % 10)) % 10;
+                return valor[8] == (char)('0' + control) || valor[8] == "JABCDEFGHI"[control];
+            }
+            return false;
+        }
 
         /// <summary>NestoAPI#354: estados ISO-2 de la UE (mirror de Paises.UnionEuropea, que no
         /// está en el EDMX). Un cliente con país fiscal aquí y distinto de ES se declara a
@@ -732,6 +789,44 @@ namespace NestoAPI.Infraestructure.Clientes
             if (principal == null || (string.IsNullOrWhiteSpace(principal.CIF_NIF) && string.IsNullOrWhiteSpace(nifNuevo)))
             {
                 return new ResultadoCorreccionNif { Corregido = false, Motivo = $"No existe el cliente {cliente?.Trim()} o su ficha no tiene identificación." };
+            }
+
+            // Fallo 20/08/26 (cliente 9093 de Amparo): la AEAT exige que el ID del tipo 07 (no
+            // censado) tenga FORMATO de NIF — con el relleno "1000000" la marca se guardaba y
+            // luego CADA reintento del job fallaba con "El campo id_otro.id no tiene un formato
+            // válido". Se valida AQUÍ, al marcar, con el motivo explicado: sin el NIF real (bien
+            // formado, aunque no esté censado) no hay forma legal de declarar la factura completa.
+            // Además, con país ES la AEAT solo admite los tipos 03 (pasaporte) y 07 (error 1233).
+            if (tipoIdentificacion == TIPO_NO_CENSADO)
+            {
+                if (pais != PAIS_ESPANA)
+                {
+                    return new ResultadoCorreccionNif
+                    {
+                        Corregido = false,
+                        Motivo = "El tipo 07 (no censado) es solo para NIF españoles: el país debe ser ES."
+                    };
+                }
+                string nifPrevisto = !string.IsNullOrWhiteSpace(nifNuevo) ? nifNuevo : principal.CIF_NIF?.Trim();
+                if (!TieneFormatoNif(nifPrevisto))
+                {
+                    return new ResultadoCorreccionNif
+                    {
+                        Corregido = false,
+                        Motivo = $"No se puede marcar como NO CENSADO: la AEAT exige que el identificador sea un " +
+                            $"NIF con formato válido (aunque no esté censado) y '{nifPrevisto}' no lo es. " +
+                            "Hay que conseguir el NIF real del cliente y corregirlo primero."
+                    };
+                }
+            }
+            else if (pais == PAIS_ESPANA && tipoIdentificacion != TIPO_PASAPORTE)
+            {
+                return new ResultadoCorreccionNif
+                {
+                    Corregido = false,
+                    Motivo = $"Con país ES la AEAT solo admite los tipos 03 (pasaporte) y 07 (no censado); " +
+                        $"el tipo {tipoIdentificacion} se rechazaría (error 1233 de Verifactu)."
+                };
             }
 
             // NestoAPI#356/#354: si se indica el NIF-IVA extranjero COMPLETO se propaga a las fichas

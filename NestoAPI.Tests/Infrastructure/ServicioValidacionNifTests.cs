@@ -527,14 +527,17 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(0, resultado.FacturasActualizadas);
         }
 
-        // NestoAPI#391: tipo 07 "no censado" para clientes ESPAÑOLES cuyo NIF real no se puede
-        // conseguir (error humano en facturas ya emitidas y rectificadas). Reutiliza el circuito
-        // de la marca extranjera: IDOtro no se valida contra el censo.
+        // NestoAPI#391: tipo 07 "no censado" para clientes ESPAÑOLES cuyo NIF no esté censado.
+        // Reutiliza el circuito de la marca extranjera: IDOtro no se valida contra el censo.
+        // Fallo 20/08/26 (cliente 9093 de Amparo): la AEAT SÍ valida que el ID del tipo 07
+        // tenga FORMATO de NIF ("El campo id_otro.id no tiene un formato válido" en cada
+        // reintento del job con el relleno "1000000"), así que la marca exige NIF bien formado.
 
         [TestMethod]
         public async Task MarcarIdentificacionExtranjera_Tipo07Espana_MarcaNoCensadoSinValidarCenso()
         {
-            ConFicha(Ficha(cliente: "9093", nif: "1000000", nombre: "AMPARO CORELLA RUBIO"));
+            // NIF con formato válido (letra de control correcta) que la AEAT no tiene censado
+            ConFicha(Ficha(cliente: "9093", nif: "12345678Z", nombre: "AMPARO CORELLA RUBIO"));
             ConMasFakes();
 
             var resultado = await servicio.MarcarIdentificacionExtranjera("9093",
@@ -545,9 +548,76 @@ namespace NestoAPI.Tests.Infrastructure
                 "El mensaje no debe hablar de 'extranjera' para un cliente español no censado");
             A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.That.Matches(r =>
                 r.Estado == ServicioValidacionNif.ESTADO_EXTRANJERO
-                && r.TipoIdentificacion == "07" && r.Pais == "ES" && r.Nif == "1000000")))
+                && r.TipoIdentificacion == "07" && r.Pais == "ES" && r.Nif == "12345678Z")))
                 .MustHaveHappenedOnceExactly();
             A.CallTo(() => aeat.ComprobarNifNombre(A<string>.Ignored, A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_Tipo07ConNifDeRelleno_SeRechazaConElMotivo()
+        {
+            // El caso real de Amparo (20/08/26): NV2613367/NV2613965 del cliente 9093 con NIF
+            // "1000000". La marca se guardaba y Verifacti rechazaba el alta en cada pasada.
+            ConFicha(Ficha(cliente: "9093", nif: "1000000", nombre: "AMPARO CORELLA RUBIO"));
+            ConMasFakes();
+
+            var resultado = await servicio.MarcarIdentificacionExtranjera("9093",
+                ServicioValidacionNif.TIPO_NO_CENSADO, "es", "carlos");
+
+            Assert.IsFalse(resultado.Corregido);
+            Assert.IsTrue(resultado.Motivo.Contains("formato"),
+                "El motivo debe explicar que la AEAT exige un NIF con formato válido");
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_Tipo07ConPaisNoEspanol_SeRechaza()
+        {
+            ConFicha(Ficha(cliente: "9093", nif: "12345678Z"));
+            ConMasFakes();
+
+            var resultado = await servicio.MarcarIdentificacionExtranjera("9093",
+                ServicioValidacionNif.TIPO_NO_CENSADO, "fr", "carlos");
+
+            Assert.IsFalse(resultado.Corregido);
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task MarcarIdentificacionExtranjera_PaisEspanaConTipoQueNoAdmiteLaAeat_SeRechaza()
+        {
+            // AEAT error 1233: con CodigoPais ES el IDType solo puede ser 03 (pasaporte) o 07
+            ConFicha(Ficha());
+            ConMasFakes();
+
+            var resultado = await servicio.MarcarIdentificacionExtranjera("30676", "06", "es", "carlos");
+
+            Assert.IsFalse(resultado.Corregido);
+            Assert.IsTrue(resultado.Motivo.Contains("1233"), "El motivo debe citar la validación de la AEAT");
+            A.CallTo(() => almacen.Guardar(A<ValidacionNifRegistro>.Ignored)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void TieneFormatoNif_ValidaDniNieYCifConSuControl()
+        {
+            // DNI: letra = número % 23 sobre TRWAGMYFPDXBNJZSQVHLCKE
+            Assert.IsTrue(ServicioValidacionNif.TieneFormatoNif("12345678Z"));
+            Assert.IsTrue(ServicioValidacionNif.TieneFormatoNif("53444788X"));
+            Assert.IsFalse(ServicioValidacionNif.TieneFormatoNif("12345678A"), "Letra de control incorrecta");
+            // NIE: X/Y/Z + 7 dígitos + letra (X=0 delante)
+            Assert.IsTrue(ServicioValidacionNif.TieneFormatoNif("X1234567L"));
+            Assert.IsFalse(ServicioValidacionNif.TieneFormatoNif("X1234567T"), "Letra de control incorrecta");
+            // CIF: letra de organización + 7 dígitos + control (dígito o letra equivalente)
+            Assert.IsTrue(ServicioValidacionNif.TieneFormatoNif("A58818501"));
+            Assert.IsTrue(ServicioValidacionNif.TieneFormatoNif("A5881850A"), "La letra equivalente al dígito también vale");
+            Assert.IsFalse(ServicioValidacionNif.TieneFormatoNif("A58818502"), "Dígito de control incorrecto");
+            // Rellenos y basura: lo que provocó el fallo del 20/08/26
+            Assert.IsFalse(ServicioValidacionNif.TieneFormatoNif("1000000"));
+            Assert.IsFalse(ServicioValidacionNif.TieneFormatoNif(""));
+            Assert.IsFalse(ServicioValidacionNif.TieneFormatoNif(null));
+            Assert.IsFalse(ServicioValidacionNif.TieneFormatoNif("123456789"));
+            // Normaliza espacios y minúsculas (el char de BD llega con padding)
+            Assert.IsTrue(ServicioValidacionNif.TieneFormatoNif(" 12345678z "));
         }
 
         [TestMethod]

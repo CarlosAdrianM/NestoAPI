@@ -684,6 +684,67 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
         }
 
         [TestMethod]
+        public async Task EnviarFacturaAVerifactu_NoCensadoConNifBienFormado_DeclaraIdOtro07()
+        {
+            // NestoAPI#391: cliente español marcado NO CENSADO con un NIF bien formado que la
+            // AEAT no tiene censado → IDOtro tipo 07 con país ES, sin nif.
+            var factura = ConfigurarFactura();
+            factura.CifNif = "12345678Z";
+            var validacion = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacion.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Extranjero,
+                    TipoIdentificacion = "07",
+                    Pais = "ES"
+                });
+            VerifactuFacturaRequest enviado = null;
+            _ = A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .Invokes((VerifactuFacturaRequest r) => enviado = r)
+                .Returns(new VerifactuResponse { Exitoso = true, Uuid = "uuid-07" });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService,
+                almacenRectificativasPendientes: null, servicioValidacionNif: validacion);
+
+            await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsNull(enviado.NifDestinatario, "Con IDOtro no puede viajar nif");
+            Assert.AreEqual("07", enviado.IdOtro.IdType);
+            Assert.AreEqual("ES", enviado.IdOtro.CodigoPais);
+            Assert.AreEqual("12345678Z", enviado.IdOtro.Id);
+        }
+
+        [TestMethod]
+        public async Task EnviarFacturaAVerifactu_NoCensadoConNifDeRelleno_SeExcluyeSinEnviar()
+        {
+            // Fallo 20/08/26 (cliente 9093 de Amparo, NV2613367/NV2613965): la AEAT exige que
+            // el ID del tipo 07 tenga FORMATO de NIF. Con el relleno "1000000" el alta es
+            // estructuralmente imposible: NO se envía y la factura se excluye del job (mismo
+            // mecanismo que "sin datos fiscales"; corregir el NIF real la reabre) en vez de
+            // fallar con "id_otro.id no tiene un formato válido" en cada pasada.
+            var factura = ConfigurarFactura();
+            factura.CifNif = "1000000";
+            var validacion = A.Fake<NestoAPI.Infraestructure.Clientes.IServicioValidacionNif>();
+            _ = A.CallTo(() => validacion.ValidarPrincipal(A<string>.Ignored, A<string>.Ignored))
+                .Returns(new NestoAPI.Infraestructure.Clientes.ResultadoValidacionNif
+                {
+                    Estado = NestoAPI.Infraestructure.Clientes.EstadoValidacionNif.Extranjero,
+                    TipoIdentificacion = "07",
+                    Pais = "ES"
+                });
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService,
+                almacenRectificativasPendientes: null, servicioValidacionNif: validacion);
+
+            var respuesta = await servicio.EnviarFacturaAVerifactu("1", "NV2600123");
+
+            Assert.IsNull(respuesta, "No hay nada que enviar: el alta se rechazaría siempre");
+            A.CallTo(() => servicioVerifactu.EnviarFacturaAsync(A<VerifactuFacturaRequest>.Ignored))
+                .MustNotHaveHappened();
+            Assert.AreEqual(NestoAPI.Infraestructure.Verifactu.VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES,
+                factura.VerifactuEstado, "Excluida de los reintentos del job hasta corregir el NIF");
+            StringAssert.Contains(factura.VerifactuUltimoError, "formato");
+        }
+
+        [TestMethod]
         public async Task EnviarFacturaAVerifactu_ClienteTipo02EnFacturaOss_DeclaraIdOtroTipo04()
         {
             // NestoAPI#375: la AEAT valida el tipo 02 (NIF-IVA) contra el censo VIES. Un cliente

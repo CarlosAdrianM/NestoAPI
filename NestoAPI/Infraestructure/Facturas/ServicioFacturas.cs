@@ -932,6 +932,30 @@ namespace NestoAPI.Infraestructure.Facturas
                             {
                                 tipoIdentificacion = Clientes.ServicioValidacionNif.TIPO_DOC_OFICIAL_PAIS;
                             }
+                            // Fallo 20/08/26 (#391, cliente 9093): la AEAT exige que el ID del tipo
+                            // 07 (no censado) tenga FORMATO de NIF. Con un relleno ("1000000") el
+                            // alta es ESTRUCTURALMENTE imposible: se excluye del job (mismo
+                            // mecanismo que "sin datos fiscales") en vez de fallar cada pasada.
+                            // Corregir el NIF real por el circuito de la pantalla de NIF la reabre.
+                            if (tipoIdentificacion == Clientes.ServicioValidacionNif.TIPO_NO_CENSADO
+                                && !Clientes.ServicioValidacionNif.TieneFormatoNif(request.NifDestinatario))
+                            {
+                                factura.VerifactuEstado = Verifactu.VerifactuJobsService.ESTADO_SIN_DATOS_FISCALES;
+                                factura.VerifactuUltimoError = Truncar("Marcada como NO CENSADO (07) pero el NIF " +
+                                    $"'{request.NifDestinatario?.Trim()}' no tiene formato de NIF: la AEAT lo rechaza. " +
+                                    "Conseguir el NIF real del cliente y corregirlo (la reabre). Excluida de los reintentos.", 500);
+                                factura.VerifactuUltimoIntento = DateTime.Now;
+                                string claveRuidoNif = $"{empresa}|{numeroFactura?.Trim()}";
+                                string mensajeNif = $"Verifactu: la factura {numeroFactura} está marcada como NO CENSADO (07) " +
+                                    $"pero su NIF '{request.NifDestinatario?.Trim()}' no tiene formato de NIF válido: la AEAT " +
+                                    "exige un NIF real (aunque no censado). Se excluye de los reintentos hasta corregir el NIF.";
+                                if (Verifactu.DeduplicadorErroresVerifactu.EsNovedad(claveRuidoNif, mensajeNif))
+                                {
+                                    logService.LogError(mensajeNif);
+                                }
+                                _ = await db.SaveChangesAsync();
+                                return null;
+                            }
                             request.IdOtro = new Verifactu.VerifactuIdOtro
                             {
                                 CodigoPais = marca.Pais,
