@@ -4,6 +4,7 @@ using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Vendedores;
+using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -38,6 +39,48 @@ namespace NestoAPI.Tests.Controllers
             {
                 Assert.AreEqual("Por favor, utilice un filtro de al menos 4 caracteres", ex.Message);
             }
+        }
+
+        // NestoAPI#393 (Vendedores → Clientes): cambiar SOLO el estado se descartaba en
+        // silencio porque su asignación vivía dentro del if del cambio de vendedor (y el PUT
+        // devolvía 204 + "guardado correctamente" en Nesto sin cambiar nada).
+
+        [TestMethod]
+        public void AplicarCambiosClienteComercial_SoloCambiaElEstado_SePersisteSinTocarVendedor()
+        {
+            var clienteDB = new Cliente { Estado = 5, Vendedor = "NV ", Usuario = "viejo" };
+            var dto = new ClienteDTO { estado = 9, vendedor = "NV", usuario = "carlos" };
+
+            ClientesController.AplicarCambiosClienteComercial(clienteDB, dto);
+
+            Assert.AreEqual((short)9, clienteDB.Estado);
+            Assert.AreEqual("carlos", clienteDB.Usuario, "El cambio de estado audita su usuario");
+            Assert.AreEqual("NV ", clienteDB.Vendedor, "El vendedor no cambió y no se toca");
+        }
+
+        [TestMethod]
+        public void AplicarCambiosClienteComercial_CambianVendedorYEstado_SePersistenAmbos()
+        {
+            var clienteDB = new Cliente { Estado = 5, Vendedor = "NV ", Usuario = "viejo" };
+            var dto = new ClienteDTO { estado = 9, vendedor = "DV", usuario = "carlos" };
+
+            ClientesController.AplicarCambiosClienteComercial(clienteDB, dto);
+
+            Assert.AreEqual((short)9, clienteDB.Estado);
+            Assert.AreEqual("DV", clienteDB.Vendedor);
+        }
+
+        [TestMethod]
+        public void AplicarCambiosClienteComercial_EstadoNullDelDto_NoMachacaElEstado()
+        {
+            // Un llamante que no envíe estado (nullable en el DTO) no debe ponerlo a null
+            var clienteDB = new Cliente { Estado = 5, Vendedor = "NV ", Usuario = "viejo" };
+            var dto = new ClienteDTO { estado = null, vendedor = "NV", usuario = "carlos" };
+
+            ClientesController.AplicarCambiosClienteComercial(clienteDB, dto);
+
+            Assert.AreEqual((short)5, clienteDB.Estado);
+            Assert.AreEqual("viejo", clienteDB.Usuario, "Sin cambios no se toca la auditoría");
         }
 
         // NestoAPI#327: endpoints del circuito de validación de NIF contra la AEAT

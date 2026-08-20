@@ -692,13 +692,7 @@ namespace NestoAPI.Controllers
                 return BadRequest();
             }
 
-            // Cambiamos los vendedores
-            if (clienteDB.Vendedor != null && cliente.vendedor != null && clienteDB.Vendedor.Trim() != cliente.vendedor.Trim())
-            {
-                clienteDB.Vendedor = cliente.vendedor;
-                clienteDB.Estado = cliente.estado;
-                clienteDB.Usuario = cliente.usuario;
-            }
+            AplicarCambiosClienteComercial(clienteDB, cliente);
 
             db.Entry(clienteDB).State = System.Data.Entity.EntityState.Modified;
 
@@ -726,6 +720,29 @@ namespace NestoAPI.Controllers
             }
 
             return StatusCode(HttpStatusCode.NoContent);
+        }
+
+        /// <summary>
+        /// NestoAPI#393: cambios que aplica el PUT de ClienteComercial (Vendedores → Clientes).
+        /// El ESTADO se actualiza con independencia del vendedor — antes su asignación vivía
+        /// DENTRO del if del cambio de vendedor, y cambiar solo el estado se descartaba EN
+        /// SILENCIO (204 + "guardado correctamente" en Nesto, pero sin cambiar nada).
+        /// Pura y estática para testear sin BD.
+        /// </summary>
+        internal static void AplicarCambiosClienteComercial(Cliente clienteDB, ClienteDTO cliente)
+        {
+            // estado es nullable en el DTO: un llamante que no lo envíe no debe machacarlo
+            if (cliente.estado != null && clienteDB.Estado != cliente.estado)
+            {
+                clienteDB.Estado = cliente.estado;
+                clienteDB.Usuario = cliente.usuario;
+            }
+
+            if (clienteDB.Vendedor != null && cliente.vendedor != null && clienteDB.Vendedor.Trim() != cliente.vendedor.Trim())
+            {
+                clienteDB.Vendedor = cliente.vendedor;
+                clienteDB.Usuario = cliente.usuario;
+            }
         }
 
         [HttpPut]
