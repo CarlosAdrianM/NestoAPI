@@ -15,6 +15,45 @@ namespace NestoAPI.Tests.Infrastructure
     [TestClass]
     public class GestorPresupuestosTests
     {
+        // Regla de financiación (Carlos 20/08/26): cada efecto ≥ 150 €, salvo que la
+        // financiación media del plazo (columna Financiacion de PlazosPago, días ponderados)
+        // no supere los 30 días del plazo estándar. Cuando se supera, administración va en
+        // copia del correo de Nuevo Pedido (no se bloquea).
+
+        private static PlazoPago Plazo(byte plazos, decimal financiacionDias)
+            => new PlazoPago { Nº_Plazos = plazos, Financiacion = financiacionDias };
+
+        [TestMethod]
+        public void EsFinanciacionExcesiva_LosEjemplosDeLaRegla()
+        {
+            // 200 € a "30 días": un efecto de 200 ≥ 150 → permitido
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(200, Plazo(1, 30)));
+            // 200 € a "entrada y 30 días": efectos de 100 < 150, PERO financiación media 15 ≤ 30
+            // (mejor que 200 a 30 días, que está permitido) → permitido
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(200, Plazo(2, 15)));
+            // 200 € a "30 y 60 días": efectos de 100 < 150 y financiación media 45 > 30 → EXCESIVA
+            Assert.IsTrue(GestorPresupuestos.EsFinanciacionExcesiva(200, Plazo(2, 45)));
+            // 450 € a "30, 60 y 90": efectos de 150 → permitido
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(450, Plazo(3, 60)));
+            // 400 € a "30, 60 y 90": efectos de 133 < 150 a 60 días de media → EXCESIVA
+            Assert.IsTrue(GestorPresupuestos.EsFinanciacionExcesiva(400, Plazo(3, 60)));
+            // 100 € a "60 días" (un solo plazo): efecto de 100 < 150 a 60 días → EXCESIVA
+            Assert.IsTrue(GestorPresupuestos.EsFinanciacionExcesiva(100, Plazo(1, 60)));
+            // 100 € al contado o a 30: efecto < 150 pero financiación ≤ 30 → permitido
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(100, Plazo(1, 0)));
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(100, Plazo(1, 30)));
+        }
+
+        [TestMethod]
+        public void EsFinanciacionExcesiva_CasosDegenerados_NoAvisa()
+        {
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(200, null), "Sin plazo cargado no se puede juzgar");
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(200, Plazo(0, 60)), "Nº_Plazos 0: datos rotos, no dividir");
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(0, Plazo(3, 60)), "Un abono o total 0 no es financiación");
+            Assert.IsFalse(GestorPresupuestos.EsFinanciacionExcesiva(200, new PlazoPago { Nº_Plazos = 2, Financiacion = null }),
+                "Financiación null en la ficha = se trata como 0");
+        }
+
         /// <summary>
         /// Test que verifica que no se cuentan dos veces las unidades pendientes del propio pedido.
         /// Escenario: Pedido de 3 unidades del producto X para ALG

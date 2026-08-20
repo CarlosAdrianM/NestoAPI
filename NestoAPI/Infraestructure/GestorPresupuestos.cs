@@ -227,20 +227,76 @@ namespace NestoAPI.Infraestructure
             {
                 mail.CC.Add(Constantes.Correos.TIENDA_ONLINE);
             }
-            // Si tiene varios plazos y se podría servir junto, ponemos en copia a administración
+            PlazoPago plazoPagoPedido = db.PlazosPago
+                .SingleOrDefault(f => f.Empresa == pedido.empresa && f.Número == pedido.plazosPago);
+
+            // Si se podría servir en varias entregas, ponemos en copia a administración — pero
+            // SOLO si los plazos generan MÁS DE UN EFECTO (regla Carlos 20/08/26): con contado
+            // o un único plazo se puede aplicar esa forma de pago a cada factura de cada
+            // entrega sin problema; con 30/60/90 partido en facturas pequeñas quedan
+            // vencimientos ridículos. El prepago ya está cobrado y no genera vencimientos
+            // nuevos: deja de disparar la copia (antes Prepagos.Any() también la ponía).
             if (mail.Body.Contains("¡¡¡ ATENCIÓN !!!"))
             {
                 mail.Priority = MailPriority.High;
-                if (pedido.Prepagos.Any() || db.PlazosPago.Where(f => f.Empresa == pedido.empresa && f.Número == pedido.plazosPago && f.Nº_Plazos > 1).Any())
+                if (plazoPagoPedido != null && plazoPagoPedido.Nº_Plazos > 1)
                 {
-                    mail.CC.Add(Constantes.Correos.CORREO_ADMON);
+                    AnadirAdministracionSiFalta(mail);
                 }
+            }
+
+            // Regla de financiación (Carlos 20/08/26): cada efecto debe quedar de al menos
+            // 150 €, SALVO que la financiación media del plazo (columna Financiacion de
+            // PlazosPago = días medios ponderados) no supere los 30 días del plazo estándar.
+            // Ejemplos: 200 € a "30 días" vale (un efecto de 200); 200 € a "entrada y 30 días"
+            // también (dos efectos de 100, pero financiación media 15 días — mejor que a 30);
+            // 200 € a "30 y 60 días" NO (dos efectos de 100 a 45 días de media). No se
+            // bloquea el pedido: administración va en copia y el asunto queda marcado para
+            // que lo tengan controlado.
+            if (EsFinanciacionExcesiva(pedido.Lineas.Sum(l => l.Total), plazoPagoPedido))
+            {
+                mail.Priority = MailPriority.High;
+                mail.Subject = "[Financiación a revisar] " + mail.Subject;
+                AnadirAdministracionSiFalta(mail);
             }
 
             // Carlos 23/10/25: Usar siempre el servicio de correo (puede ser real o mockeado)
             // El ServicioCorreoElectronico ya tiene lógica de retry interna
             servicioCorreo.EnviarCorreoSMTP(mail);
         }
+        /// <summary>Regla de financiación (Carlos 20/08/26): importe mínimo de cada efecto.</summary>
+        internal const decimal IMPORTE_MINIMO_EFECTO = 150;
+
+        /// <summary>Financiación media (días ponderados, columna Financiacion de PlazosPago)
+        /// hasta la que NO se exige el mínimo por efecto: partir en efectos pequeños está bien
+        /// si se cobra ANTES que el plazo estándar de 30 días (p. ej. "entrada y 30" = 15).</summary>
+        internal const decimal FINANCIACION_ESTANDAR_DIAS = 30;
+
+        /// <summary>
+        /// ¿El pedido se está financiando por encima de lo permitido? = los efectos quedan por
+        /// debajo del mínimo Y la financiación media del plazo supera la estándar. El importe
+        /// por efecto se aproxima como total/nº de plazos (los plazos de la casa reparten a
+        /// partes iguales). Pura y estática para testear sin BD.
+        /// </summary>
+        internal static bool EsFinanciacionExcesiva(decimal totalPedido, PlazoPago plazoPago)
+        {
+            if (plazoPago == null || plazoPago.Nº_Plazos == 0 || totalPedido <= 0)
+            {
+                return false;
+            }
+            decimal importePorEfecto = totalPedido / plazoPago.Nº_Plazos;
+            return importePorEfecto < IMPORTE_MINIMO_EFECTO
+                && (plazoPago.Financiacion ?? 0) > FINANCIACION_ESTANDAR_DIAS;
+        }
+
+        private static void AnadirAdministracionSiFalta(MailMessage mail)
+        {
+            if (!mail.CC.Any(cc => cc.Address.Equals(Constantes.Correos.CORREO_ADMON, StringComparison.OrdinalIgnoreCase)))
+            {
+                mail.CC.Add(Constantes.Correos.CORREO_ADMON);
+            }
+        }
+
         // NestoAPI#170: detecta si la URL devuelta por Prestashop indica imagen ausente.
         // La tienda usa el patrón "…-home_default/.jpg" cuando no encuentra foto (el
         // nombre del archivo queda vacío entre el separador "/" y la extensión) y
