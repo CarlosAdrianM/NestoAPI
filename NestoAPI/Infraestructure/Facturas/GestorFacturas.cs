@@ -877,6 +877,14 @@ namespace NestoAPI.Infraestructure.Facturas
         {
             string claseSerie = "NestoAPI.Models.Facturas.SeriesFactura.Serie" + serie.Trim();
             Type elementType = Type.GetType(claseSerie);
+            // Verifactu #39 (20/08/26): una serie HISTÓRICA sin clase (DV, que deja de usarse y
+            // nunca tuvo clase propia) reventaba aquí con NullReference al reimprimir su
+            // factura. El duplicado de una serie retirada sale con la plantilla por defecto:
+            // la clase de serie solo gobierna presentación (logo, notas, ruta del informe).
+            if (elementType == null)
+            {
+                return new Models.Facturas.SeriesFactura.SerieNV();
+            }
             ISerieFactura serieFactura = (ISerieFactura)Activator.CreateInstance(elementType);
             return serieFactura;
         }

@@ -233,65 +233,62 @@ namespace NestoAPI.Tests.Infrastructure.PedidosVenta
 
         #endregion
 
-        #region Tests del endpoint de series
+        #region Tests del endpoint de series (contra el controller REAL, no una copia local)
 
-        [TestMethod]
-        public void GetSeries_DevuelveListaNoVacia()
+        private static List<SerieDTO> SeriesDelEndpoint()
         {
-            // Arrange - Simular la lista que devuelve el endpoint
-            var series = new List<SerieDTO>
-            {
-                new SerieDTO { Codigo = "NV", Nombre = "Nueva Visión" },
-                new SerieDTO { Codigo = "CV", Nombre = "Cursos" },
-                new SerieDTO { Codigo = "UL", Nombre = "Unión Láser" },
-                new SerieDTO { Codigo = "VC", Nombre = "Visnú Cosméticos" },
-                new SerieDTO { Codigo = "DV", Nombre = "Deuda Vencida" }
-            };
-
-            // Assert
-            Assert.AreEqual(5, series.Count);
+            var resultado = new NestoAPI.Controllers.PedidosVentaController().GetSeries()
+                as System.Web.Http.Results.OkNegotiatedContentResult<List<SerieDTO>>;
+            Assert.IsNotNull(resultado, "GetSeries debe devolver Ok con la lista");
+            return resultado.Content;
         }
 
         [TestMethod]
-        public void GetSeries_ContieneSerieCursos()
+        public void GetSeries_OfreceSoloLasSeriesVivas()
         {
-            // Arrange
-            var series = new List<SerieDTO>
-            {
-                new SerieDTO { Codigo = "NV", Nombre = "Nueva Visión" },
-                new SerieDTO { Codigo = "CV", Nombre = "Cursos" },
-                new SerieDTO { Codigo = "UL", Nombre = "Unión Láser" },
-                new SerieDTO { Codigo = "VC", Nombre = "Visnú Cosméticos" },
-                new SerieDTO { Codigo = "DV", Nombre = "Deuda Vencida" }
-            };
+            // Verifactu #39 (20/08/26): VC nunca existió en la BD y DV deja de usarse (sus
+            // abonos van por RV). El combo de series para pedidos NUEVOS no debe ofrecerlas;
+            // los pedidos/facturas DV históricos no se ven afectados (solo gobierna la elección).
+            List<SerieDTO> series = SeriesDelEndpoint();
 
-            // Act
-            var serieCursos = series.FirstOrDefault(s => s.Codigo == "CV");
-
-            // Assert
-            Assert.IsNotNull(serieCursos);
-            Assert.AreEqual("Cursos", serieCursos.Nombre);
+            CollectionAssert.AreEquivalent(new[] { "NV", "CV", "UL" }, series.Select(s => s.Codigo).ToArray());
+            Assert.IsFalse(series.Any(s => s.Codigo == "VC" || s.Codigo == "DV"),
+                "VC y DV no se ofrecen para pedidos nuevos");
         }
 
         [TestMethod]
         public void GetSeries_TodasTienenCodigoYNombre()
         {
-            // Arrange
-            var series = new List<SerieDTO>
+            foreach (SerieDTO serie in SeriesDelEndpoint())
             {
-                new SerieDTO { Codigo = "NV", Nombre = "Nueva Visión" },
-                new SerieDTO { Codigo = "CV", Nombre = "Cursos" },
-                new SerieDTO { Codigo = "UL", Nombre = "Unión Láser" },
-                new SerieDTO { Codigo = "VC", Nombre = "Visnú Cosméticos" },
-                new SerieDTO { Codigo = "DV", Nombre = "Deuda Vencida" }
-            };
-
-            // Assert
-            foreach (var serie in series)
-            {
-                Assert.IsFalse(string.IsNullOrEmpty(serie.Codigo), $"Código no debe estar vacío");
+                Assert.IsFalse(string.IsNullOrEmpty(serie.Codigo), "Código no debe estar vacío");
                 Assert.IsFalse(string.IsNullOrEmpty(serie.Nombre), $"Nombre no debe estar vacío para {serie.Codigo}");
             }
+        }
+
+        #endregion
+
+        #region LeerSerie: series históricas sin clase propia
+
+        [TestMethod]
+        public void LeerSerie_SerieHistoricaSinClase_UsaLaPlantillaPorDefecto()
+        {
+            // Verifactu #39 (20/08/26): reimprimir una factura DV (serie retirada, nunca tuvo
+            // clase SerieDV) reventaba con NullReference en Activator.CreateInstance(null).
+            // El duplicado de una serie sin clase sale con la plantilla por defecto (NV): la
+            // clase de serie solo gobierna presentación (logo, notas, ruta del informe).
+            var serie = NestoAPI.Infraestructure.Facturas.GestorFacturas.LeerSerie("DV");
+
+            Assert.IsInstanceOfType(serie, typeof(NestoAPI.Models.Facturas.SeriesFactura.SerieNV));
+        }
+
+        [TestMethod]
+        public void LeerSerie_SerieConClase_DevuelveSuClase()
+        {
+            Assert.IsInstanceOfType(NestoAPI.Infraestructure.Facturas.GestorFacturas.LeerSerie("CV "),
+                typeof(NestoAPI.Models.Facturas.SeriesFactura.SerieCV), "Con padding de la BD incluido");
+            Assert.IsInstanceOfType(NestoAPI.Infraestructure.Facturas.GestorFacturas.LeerSerie("RV"),
+                typeof(NestoAPI.Models.Facturas.SeriesFactura.SerieRV));
         }
 
         #endregion

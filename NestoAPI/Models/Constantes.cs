@@ -53,11 +53,12 @@ namespace NestoAPI.Models
         /// </summary>
         public static class Series
         {
+            // Verifactu #39 (20/08/26): VC y DV eliminadas del código (VC nunca existió en la
+            // BD; DV deja de usarse — sus abonos van por RV). Los datos históricos DV siguen
+            // en la BD y se imprimen con la plantilla por defecto (fallback de LeerSerie).
             public const string SERIE_POR_DEFECTO = "NV";
             public const string SERIE_CURSOS = "CV";
             public const string SERIE_UNION_LASER = "UL";
-            public const string SERIE_VISNU_COSMETICOS = "VC";
-            public const string SERIE_DEUDA_VENCIDA = "DV";
         }
 
         public static class Clientes

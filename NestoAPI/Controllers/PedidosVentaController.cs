@@ -2306,6 +2306,11 @@ namespace NestoAPI.Controllers
 
         // Carlos 09/12/25: Issue #245 - Endpoint para obtener lista de series de facturación
         // GET: api/PedidosVenta/Series
+        // Verifactu #39 (20/08/26): series OFRECIDAS para pedidos nuevos. VC eliminada (nunca
+        // llegó a existir en la BD) y DV retirada (deja de usarse; sus abonos futuros van por
+        // la serie rectificativa RV). Los pedidos/facturas DV históricos no se tocan: esta
+        // lista solo gobierna qué series se pueden ELEGIR al crear un pedido. Las series
+        // rectificativas (RV/RC) tampoco se ofrecen: se asignan solas al copiar en negativo.
         [HttpGet]
         [Route("api/PedidosVenta/Series")]
         public IHttpActionResult GetSeries()
@@ -2314,9 +2319,7 @@ namespace NestoAPI.Controllers
             {
                 new SerieDTO { Codigo = "NV", Nombre = "Nueva Visión" },
                 new SerieDTO { Codigo = "CV", Nombre = "Cursos" },
-                new SerieDTO { Codigo = "UL", Nombre = "Unión Láser" },
-                new SerieDTO { Codigo = "VC", Nombre = "Visnú Cosméticos" },
-                new SerieDTO { Codigo = "DV", Nombre = "Deuda Vencida" }
+                new SerieDTO { Codigo = "UL", Nombre = "Unión Láser" }
             };
 
             return Ok(series);
