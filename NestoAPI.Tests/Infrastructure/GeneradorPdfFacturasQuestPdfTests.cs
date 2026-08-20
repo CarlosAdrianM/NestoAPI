@@ -46,6 +46,32 @@ namespace NestoAPI.Tests.Infrastructure
 
         #endregion
 
+        #region Etiqueta del número según el documento (fallo 20/08/26)
+
+        [TestMethod]
+        public void EtiquetaNumeroDocumento_SegunElTipoDeDocumento()
+        {
+            // Fallo 20/08/26: la cabecera ponía "Nº Factura" fijo, pero en pedidos, notas de
+            // entrega y proformas el número impreso es el del PEDIDO, y en el albarán el del
+            // albarán. Solo las facturas (y rectificativas) llevan número de factura.
+            Assert.AreEqual("Nº Factura", GeneradorPdfFacturasQuestPdf.EtiquetaNumeroDocumento(
+                NestoAPI.Models.Constantes.Facturas.TiposDocumento.FACTURA));
+            Assert.AreEqual("Nº Factura", GeneradorPdfFacturasQuestPdf.EtiquetaNumeroDocumento(
+                NestoAPI.Models.Constantes.Facturas.TiposDocumento.FACTURA_RECTIFICATIVA));
+            Assert.AreEqual("Nº Pedido", GeneradorPdfFacturasQuestPdf.EtiquetaNumeroDocumento(
+                NestoAPI.Models.Constantes.Facturas.TiposDocumento.NOTA_ENTREGA));
+            Assert.AreEqual("Nº Pedido", GeneradorPdfFacturasQuestPdf.EtiquetaNumeroDocumento(
+                NestoAPI.Models.Constantes.Facturas.TiposDocumento.PEDIDO));
+            Assert.AreEqual("Nº Pedido", GeneradorPdfFacturasQuestPdf.EtiquetaNumeroDocumento(
+                NestoAPI.Models.Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA));
+            Assert.AreEqual("Nº Albarán", GeneradorPdfFacturasQuestPdf.EtiquetaNumeroDocumento(
+                NestoAPI.Models.Constantes.Facturas.TiposDocumento.ALBARAN));
+            // Sin tipo (null o desconocido): el comportamiento clásico
+            Assert.AreEqual("Nº Factura", GeneradorPdfFacturasQuestPdf.EtiquetaNumeroDocumento(null));
+        }
+
+        #endregion
+
         #region QR Verifactu (#35)
 
         // PNG válido de 1x1 px (para probar el QR sin depender de Verifacti)

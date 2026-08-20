@@ -26,6 +26,27 @@ namespace NestoAPI.Infraestructure.Facturas
         // la generación del PDF).
         private static readonly byte[] _selloMadridExcelente = RecursosGraficos.SelloMadridExcelente;
 
+        /// <summary>
+        /// Etiqueta de la columna del número en el cuadro de cabecera. El número que se imprime
+        /// es el de la factura solo cuando el documento ES una factura: en pedidos, notas de
+        /// entrega y proformas es el número de PEDIDO, y en el albarán el del albarán (ponía
+        /// "Nº Factura" fijo para todos, fallo 20/08/26).
+        /// </summary>
+        internal static string EtiquetaNumeroDocumento(string tipoDocumento)
+        {
+            switch (tipoDocumento?.Trim())
+            {
+                case Models.Constantes.Facturas.TiposDocumento.PEDIDO:
+                case Models.Constantes.Facturas.TiposDocumento.NOTA_ENTREGA:
+                case Models.Constantes.Facturas.TiposDocumento.FACTURA_PROFORMA:
+                    return "Nº Pedido";
+                case Models.Constantes.Facturas.TiposDocumento.ALBARAN:
+                    return "Nº Albarán";
+                default:
+                    return "Nº Factura";
+            }
+        }
+
         public ByteArrayContent GenerarPdf(List<Factura> facturas, bool papelConMembrete = false, bool mostrarImagenes = false)
         {
             _papelConMembrete = papelConMembrete;
@@ -342,7 +363,7 @@ namespace NestoAPI.Infraestructure.Facturas
                             columns.RelativeColumn();  // Representantes
                             columns.RelativeColumn();  // Delegación
                             columns.RelativeColumn();  // Fecha
-                            columns.RelativeColumn();  // Nº Factura
+                            columns.RelativeColumn();  // Nº Factura/Pedido/Albarán (según documento)
                         });
 
                         // Fila de encabezados
@@ -351,7 +372,7 @@ namespace NestoAPI.Infraestructure.Facturas
                         table.Cell().Padding(2).Text("Representantes").SemiBold().FontSize(8);
                         table.Cell().Padding(2).Text("Delegación").SemiBold().FontSize(8);
                         table.Cell().Padding(2).Text("Fecha").SemiBold().FontSize(8);
-                        table.Cell().Padding(2).Text("Nº Factura").SemiBold().FontSize(8);
+                        table.Cell().Padding(2).Text(EtiquetaNumeroDocumento(factura.TipoDocumento)).SemiBold().FontSize(8);
 
                         // Fila de valores
                         table.Cell().Padding(2).Text(factura.Cliente ?? "").FontSize(8);
