@@ -149,62 +149,14 @@ namespace NestoAPI.Infraestructure.Facturas
         }
 
         /// <summary>
-        /// Obtiene el generador de PDF apropiado según el parámetro MotorPdfFacturas del usuario.
-        /// Si el parámetro es "QuestPDF", usa la nueva implementación. En cualquier otro caso, usa RDLC.
-        /// IMPORTANTE: Este método NUNCA debe fallar. Si hay cualquier error, usa RDLC por defecto.
+        /// Nesto#340 (Fase 2, retirada de flags 20/08/26): el flag MotorPdfFacturas llevaba
+        /// semanas al 100% en QuestPDF (el "(defecto)" y TODOS los usuarios de ParametrosUsuario):
+        /// el camino RDLC era código muerto. Switch directo; el generador RDLC y su .rdlc se
+        /// eliminarán en la purga final junto a ManifiestoAgencia y EtiquetasTienda.
         /// </summary>
         internal IGeneradorPdfFacturas ObtenerGeneradorPdf(string usuario)
         {
-            // Si no hay usuario, intentar con (defecto) antes de ir a RDLC
-            string usuarioAConsultar = string.IsNullOrEmpty(usuario) ? "(defecto)" : usuario;
-
-            try
-            {
-                string motorPdf = lectorParametros.LeerParametro(
-                    Constantes.Empresas.EMPRESA_POR_DEFECTO,
-                    usuarioAConsultar,
-                    "MotorPdfFacturas");
-
-                if (string.Equals(motorPdf, "QuestPDF", StringComparison.OrdinalIgnoreCase))
-                {
-                    return new GeneradorPdfFacturasQuestPdf();
-                }
-            }
-            catch (Exception ex)
-            {
-                // Si falla con el usuario real, intentar con (defecto)
-                if (!string.IsNullOrEmpty(usuario) && usuario != "(defecto)")
-                {
-                    ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
-                        $"Error al leer MotorPdfFacturas para usuario '{usuario}': {ex.Message}. Intentando con (defecto).", ex)));
-
-                    try
-                    {
-                        string motorPdfDefecto = lectorParametros.LeerParametro(
-                            Constantes.Empresas.EMPRESA_POR_DEFECTO,
-                            "(defecto)",
-                            "MotorPdfFacturas");
-
-                        if (string.Equals(motorPdfDefecto, "QuestPDF", StringComparison.OrdinalIgnoreCase))
-                        {
-                            return new GeneradorPdfFacturasQuestPdf();
-                        }
-                    }
-                    catch (Exception exDefecto)
-                    {
-                        ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
-                            $"Error al leer MotorPdfFacturas para (defecto): {exDefecto.Message}. Usando RDLC.", exDefecto)));
-                    }
-                }
-                else
-                {
-                    ErrorLog.GetDefault(null)?.Log(new Error(new Exception(
-                        $"Error al leer MotorPdfFacturas para '{usuarioAConsultar}': {ex.Message}. Usando RDLC.", ex)));
-                }
-            }
-
-            // Por defecto, usar RDLC (también si el parámetro no existe o tiene otro valor)
-            return new GeneradorPdfFacturasRdlc();
+            return new GeneradorPdfFacturasQuestPdf();
         }
 
         public Factura LeerFactura(string empresa, string numeroFactura)
