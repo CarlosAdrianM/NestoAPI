@@ -1289,16 +1289,22 @@ namespace NestoAPI.Infraestructure.Facturas
         /// </summary>
         internal async Task<bool> GenerarVinculacionesLifo(string empresa, string numeroFactura, string cliente)
         {
+            // ELMAH 20-21/08/26: el job llama con factura.Empresa TAL CUAL sale de la BD, y
+            // CabFacturaVta.Empresa es char(3) → "1  ". LinFacturaVtaRectificacion.Empresa es
+            // char(1), así que EF lanzaba DbEntityValidationException (MaxLength) en CADA
+            // ejecución: RV2600001 se quedó sin declarar y el auto-curado metía 2 errores por
+            // hora indefinidamente. Se normaliza aquí, que es donde se construye la entidad.
+            string empresaLimpia = empresa?.Trim();
             string numeroLimpio = numeroFactura?.Trim();
             bool yaVinculada = await db.LinFacturaVtaRectificaciones
-                .AnyAsync(r => r.Empresa == empresa && r.NumeroFactura.Trim() == numeroLimpio);
+                .AnyAsync(r => r.Empresa == empresaLimpia && r.NumeroFactura.Trim() == numeroLimpio);
             if (yaVinculada)
             {
                 return false;
             }
 
             List<LinPedidoVta> lineasRectificativas = await db.LinPedidoVtas
-                .Where(l => l.Empresa == empresa && l.Nº_Factura.Trim() == numeroLimpio && l.Cantidad < 0)
+                .Where(l => l.Empresa == empresaLimpia && l.Nº_Factura.Trim() == numeroLimpio && l.Cantidad < 0)
                 .ToListAsync();
             if (!lineasRectificativas.Any())
             {
@@ -1312,12 +1318,12 @@ namespace NestoAPI.Infraestructure.Facturas
             foreach (LinPedidoVta linea in lineasRectificativas)
             {
                 List<Models.Rectificativas.VinculacionRectificativa> vinculaciones =
-                    await gestor.BuscarFacturasOriginales(empresa, cliente, linea.Producto,
+                    await gestor.BuscarFacturasOriginales(empresaLimpia, cliente?.Trim(), linea.Producto,
                         -(linea.Cantidad ?? 0));
                 nuevas.AddRange(vinculaciones.Select(v => new LinFacturaVtaRectificacion
                 {
-                    Empresa = empresa,
-                    NumeroFactura = numeroFactura,
+                    Empresa = empresaLimpia,
+                    NumeroFactura = numeroLimpio,
                     NumeroLinea = linea.Nº_Orden,
                     FacturaOriginalNumero = v.FacturaOriginalNumero,
                     FacturaOriginalLinea = v.FacturaOriginalLinea,

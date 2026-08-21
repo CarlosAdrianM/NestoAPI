@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Facturas;
@@ -533,6 +533,30 @@ namespace NestoAPI.Tests.Infrastructure.Verifactu
             Assert.AreEqual(1, enviado.FacturasRectificadas.Count);
             A.CallTo(() => logService.LogError(A<string>.That.Contains("no tiene"), A<Exception>.Ignored))
                 .MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task GenerarVinculacionesLifo_EmpresaConPaddingDeLaBd_LaNormalizaAntesDeGuardar()
+        {
+            // ELMAH 20-21/08/26 (RV2600001): VerifactuJobsService llama con factura.Empresa tal
+            // cual sale de la BD y CabFacturaVta.Empresa es char(3) -> "1  ".
+            // LinFacturaVtaRectificacion.Empresa es char(1), asi que EF lanzaba
+            // DbEntityValidationException (MaxLength) en CADA pasada del job: la rectificativa
+            // se quedaba sin declarar y el auto-curado metia 2 errores por hora indefinidamente.
+            _ = ConLineasPedido(
+                new LinPedidoVta { Empresa = "1", Número = 900001, Nº_Orden = 1, Nº_Cliente = "32624", Producto = "P1", Cantidad = -3, Nº_Factura = "RV2600001" },
+                new LinPedidoVta { Empresa = "1", Nº_Cliente = "32624", Producto = "P1", Cantidad = 3, Estado = Constantes.EstadosLineaVenta.FACTURA, Nº_Factura = "NV111", Nº_Orden = 5, Fecha_Factura = DateTime.Today.AddDays(-5) });
+            var vinculadas = new List<LinFacturaVtaRectificacion>();
+            _ = A.CallTo(() => fakeRectificaciones.Add(A<LinFacturaVtaRectificacion>.Ignored))
+                .Invokes((LinFacturaVtaRectificacion fila) => vinculadas.Add(fila));
+            var servicio = new ServicioFacturas(db, servicioVerifactu, logService);
+
+            bool creadas = await servicio.GenerarVinculacionesLifo("1  ", "RV2600001 ", "32624 ");
+
+            Assert.IsTrue(creadas, "Con el padding de la BD tambien tiene que encontrar las lineas");
+            Assert.AreEqual(1, vinculadas.Count);
+            Assert.AreEqual("1", vinculadas[0].Empresa, "Empresa char(1): sin Trim, EF rechaza la fila entera");
+            Assert.AreEqual("RV2600001", vinculadas[0].NumeroFactura, "Coherente con el AnyAsync de idempotencia, que compara con Trim()");
         }
 
         [TestMethod]
