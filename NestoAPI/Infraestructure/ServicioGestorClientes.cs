@@ -86,12 +86,21 @@ namespace NestoAPI.Infraestructure
                         $"antes. Detalle: {ex.Message}"));
                 }
                 bool formatoValido = Clientes.ServicioValidacionNif.TieneFormatoNif(nif);
+                // GUARDA #388 (21/08/26): si el NIF es de persona JURÍDICA, el cliente no deja
+                // escribir el nombre y manda un relleno ("UNDEFINED"/"undefined") esperando que
+                // le devolvamos la razón social del censo. Sin censo NO hay razón social que
+                // devolver: se devuelve el nombre VACÍO (nunca el relleno, que acabaría siendo
+                // el nombre del cliente) y SinVerificar=true, para que el cliente habilite el
+                // campo y lo escriba el usuario. Los clientes que aún no entienden SinVerificar
+                // se topan con la guarda de PrepararClienteCrear al grabar.
+                bool nombreLoPoniaElCenso = Clientes.NombreFiscalPlaceholder.EsRelleno(nombre);
                 return new RespuestaNifNombreCliente
                 {
                     NifValidado = formatoValido,
                     SinVerificar = true,
                     NifFormateado = nif,
-                    NombreFormateado = nombre,
+                    NombreFormateado = nombreLoPoniaElCenso ? string.Empty : nombre,
+                    NombreLoDebeEscribirElUsuario = nombreLoPoniaElCenso,
                     ResultadoAeat = formatoValido
                         ? "SIN VERIFICAR (certificado AEAT caducado): formato de NIF válido"
                         : "SIN VERIFICAR (certificado AEAT caducado): el NIF NO tiene un formato válido"

@@ -1499,6 +1499,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Nombre = "CLIENTE DE PRUEBA"; // NestoAPI#388: crear exige nombre fiscal
             clienteCrear.VendedorEstetica = "JE";
             clienteCrear.VendedorPeluqueria = "AH";
             clienteCrear.Estetica = false;
@@ -1519,6 +1520,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Nombre = "CLIENTE DE PRUEBA"; // NestoAPI#388: crear exige nombre fiscal
             clienteCrear.VendedorEstetica = "JE";
             clienteCrear.VendedorPeluqueria = null;
             clienteCrear.Estetica = false;
@@ -1539,6 +1541,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Nombre = "CLIENTE DE PRUEBA"; // NestoAPI#388: crear exige nombre fiscal
             clienteCrear.FormaPago = "EFC";
             clienteCrear.Iban = "NULL XXXX 7890 1234 5678 9012";
             NVEntities db = A.Fake<NVEntities>();
@@ -1556,6 +1559,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Nombre = "CLIENTE DE PRUEBA"; // NestoAPI#388: crear exige nombre fiscal
             clienteCrear.FormaPago = "RCB";
             clienteCrear.Iban = "XX12 3456 7890 1234 5678 9012";
             NVEntities db = A.Fake<NVEntities>();
@@ -1573,6 +1577,7 @@ namespace NestoAPI.Tests.Infrastructure
             IServicioAgencias servicioAgencias = A.Fake<IServicioAgencias>();
             GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
             ClienteCrear clienteCrear = A.Fake<ClienteCrear>();
+            clienteCrear.Nombre = "CLIENTE DE PRUEBA"; // NestoAPI#388: crear exige nombre fiscal
             clienteCrear.Nif = "";
             NVEntities db = A.Fake<NVEntities>();
 
@@ -2764,6 +2769,70 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(1, resultado.Count);
             Assert.AreEqual("Sin mandato", resultado.Single().descripcion);
         }
+
+                #region NestoAPI#388 - nombre fiscal de relleno con el certificado de la AEAT caducado
+
+        // Cuando el NIF es de persona JURIDICA, el wizard bloquea el campo del nombre y manda
+        // el relleno "UNDEFINED" esperando la razon social del censo. Con el certificado
+        // caducado no hay censo: el relleno NO puede acabar siendo el nombre del cliente.
+        [TestMethod]
+        [ExpectedException(typeof(System.ComponentModel.DataAnnotations.ValidationException))]
+        public void PrepararClienteCrear_NombreEsElRellenoDelCenso_NoDaDeAltaElCliente()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio);
+            ClienteCrear cliente = new ClienteCrear { Empresa = "1", Nombre = "UNDEFINED", Nif = "B12345674" };
+
+            _ = gestor.PrepararClienteCrear(cliente, db).GetAwaiter().GetResult();
+        }
+
+        // NestoApp manda el relleno en minusculas (this.cliente.nombre = undefined).
+        [TestMethod]
+        [ExpectedException(typeof(System.ComponentModel.DataAnnotations.ValidationException))]
+        public void PrepararClienteCrear_NombreEsElRellenoEnMinusculas_NoDaDeAltaElCliente()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio);
+            ClienteCrear cliente = new ClienteCrear { Empresa = "1", Nombre = "undefined", Nif = "B12345674" };
+
+            _ = gestor.PrepararClienteCrear(cliente, db).GetAwaiter().GetResult();
+        }
+
+        // Si el cliente viejo avanza con el nombre vacio (la API ya no le devuelve el relleno),
+        // tampoco se puede dar de alta una ficha sin nombre fiscal.
+        [TestMethod]
+        [ExpectedException(typeof(System.ComponentModel.DataAnnotations.ValidationException))]
+        public void PrepararClienteCrear_NombreEnBlanco_NoDaDeAltaElCliente()
+        {
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            GestorClientes gestor = CrearGestorClientes(servicio);
+            ClienteCrear cliente = new ClienteCrear { Empresa = "1", Nombre = "   ", Nif = "B12345674" };
+
+            _ = gestor.PrepararClienteCrear(cliente, db).GetAwaiter().GetResult();
+        }
+
+        [TestMethod]
+        public void ValidarNombreFiscal_NombreDeVerdad_NoProtesta()
+        {
+            GestorClientes.ValidarNombreFiscal("NUEVA VISION SL");
+        }
+
+        // Al MODIFICAR no se exige nombre (hay otros llamantes del PUT), pero el relleno
+        // tampoco puede colarse.
+        [TestMethod]
+        public void ValidarNombreFiscal_AlModificarConNombreVacio_NoProtesta()
+        {
+            GestorClientes.ValidarNombreFiscal(null, exigirNombre: false);
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(System.ComponentModel.DataAnnotations.ValidationException))]
+        public void ValidarNombreFiscal_AlModificarConElRelleno_Protesta()
+        {
+            GestorClientes.ValidarNombreFiscal("UNDEFINED", exigirNombre: false);
+        }
+
+        #endregion
 
         #endregion
     }

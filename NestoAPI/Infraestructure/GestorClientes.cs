@@ -182,6 +182,26 @@ namespace NestoAPI.Infraestructure
             return respuesta;
         }
 
+        /// <summary>
+        /// NestoAPI#388 (21/08/26): el nombre fiscal que llega para grabar en la ficha nunca
+        /// puede ser el relleno que los wizards mandan cuando esperan la razón social del censo
+        /// de la AEAT. Con el certificado caducado el censo no contesta y, sin esta guarda, el
+        /// cliente se daba de alta llamándose "UNDEFINED".
+        /// </summary>
+        /// <param name="nombre">Nombre fiscal que viene del cliente.</param>
+        /// <param name="exigirNombre">
+        /// true al CREAR (un cliente nuevo sin nombre no tiene sentido). Al modificar solo se
+        /// rechaza el relleno, para no cambiar el comportamiento de otros llamantes del PUT.
+        /// </param>
+        internal static void ValidarNombreFiscal(string nombre, bool exigirNombre = true)
+        {
+            if (Clientes.NombreFiscalPlaceholder.EsRelleno(nombre)
+                || (exigirNombre && string.IsNullOrWhiteSpace(nombre)))
+            {
+                throw new ValidationException(Clientes.NombreFiscalPlaceholder.MENSAJE_ERROR);
+            }
+        }
+
         private string LimpiarNif(string param)
         {
             var resultado = Regex.Replace(param, "[^a-zA-Z0-9_]+", string.Empty);
@@ -879,6 +899,10 @@ namespace NestoAPI.Infraestructure
 
         public async Task<Cliente> PrepararClienteModificar(ClienteCrear clienteModificar, NVEntities db)
         {
+            // GUARDA #388 (21/08/26): igual que al crear — modificar la ficha tampoco puede
+            // dejar el nombre de relleno que debía haber traído el censo de la AEAT.
+            ValidarNombreFiscal(clienteModificar.Nombre, exigirNombre: false);
+
             Cliente clienteDB = await servicio.BuscarCliente(db, clienteModificar.Empresa, clienteModificar.Cliente, clienteModificar.Contacto);
             if (clienteDB == null)
             {
@@ -1128,6 +1152,13 @@ namespace NestoAPI.Infraestructure
 
         public async Task<Cliente> PrepararClienteCrear(ClienteCrear clienteCrear, NVEntities db)
         {
+            // GUARDA #388 (21/08/26): con el certificado de la AEAT caducado, el wizard de una
+            // persona jurídica manda el nombre de relleno ("UNDEFINED") esperando la razón
+            // social del censo. Sin esta guarda se daba de alta un cliente llamado UNDEFINED.
+            // Va aquí, en el último punto antes de grabar, para que proteja a TODOS los clientes
+            // (Nesto, NestoApp) sin depender de que estén actualizados.
+            ValidarNombreFiscal(clienteCrear.Nombre);
+
             string contacto = await servicio.CalcularSiguienteContacto(clienteCrear.Empresa, clienteCrear.Cliente);
 
             if (clienteCrear.Nif != null && clienteCrear.Nif.Trim() == string.Empty)

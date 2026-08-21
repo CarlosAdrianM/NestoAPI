@@ -21,6 +21,13 @@ namespace NestoAPI.Models.Clientes
         /// a validarse de verdad, sin recompilar ni redesplegar.
         /// </summary>
         public bool SinVerificar { get; set; }
+        /// <summary>
+        /// NestoAPI#388 (guarda 21/08/26): true = el nombre lo iba a poner el censo de la AEAT
+        /// (persona jurídica: el cliente manda el relleno "UNDEFINED" con el campo bloqueado) y
+        /// NO se ha podido consultar. El cliente debe DESBLOQUEAR el campo del nombre y exigir
+        /// que lo escriba el usuario: aquí se devuelve vacío, nunca el relleno.
+        /// </summary>
+        public bool NombreLoDebeEscribirElUsuario { get; set; }
         public bool ExisteElCliente { get; set; }
         public string NumeroCliente { get; set; }
         public short EstadoCliente { get; set; }

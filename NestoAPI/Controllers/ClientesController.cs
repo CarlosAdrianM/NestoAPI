@@ -809,6 +809,13 @@ namespace NestoAPI.Controllers
             {
                 return NotFound();
             }
+            // NestoAPI#388: el POST ya devolvía el motivo al usuario; el PUT lo convertía en un
+            // 500 (y en un error de ELMAH). La guarda del nombre fiscal necesita que el mensaje
+            // llegue a la pantalla para que el usuario sepa qué corregir.
+            catch (ValidationException ex)
+            {
+                return BadRequest(ex.Message);
+            }
         }
 
 
