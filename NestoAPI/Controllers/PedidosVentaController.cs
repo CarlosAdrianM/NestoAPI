@@ -332,6 +332,47 @@ namespace NestoAPI.Controllers
             return pedido == null ? NotFound() : (IHttpActionResult)Ok(pedido);
         }
 
+        /// <summary>
+        /// Nesto#340 (slice A3): el pedido que necesita el módulo de Agencias, para que deje de
+        /// leerlo con EF. Una sola ruta con tres modos, uno por cada método que sustituye:
+        ///
+        /// - <c>?empresa=1&amp;numero=924645</c> → CargarPedido (por clave)
+        /// - <c>?numero=924645</c> → CargarPedidoPorNumero, excluyendo la empresa espejo
+        /// - <c>?numero=924645&amp;incluirEspejo=true</c> → la sobrecarga que sí la incluye
+        /// - <c>?factura=NV2612345</c> → CargarPedidoPorFactura
+        ///
+        /// Devuelve 404 cuando no hay pedido: el cliente lo traduce a Nothing, que es lo que
+        /// devolvía EF, y sus caminos de "no encontrado" siguen igual.
+        /// </summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/ParaAgencia")]
+        [ResponseType(typeof(PedidoParaAgenciaDTO))]
+        public async Task<IHttpActionResult> GetPedidoParaAgencia(string empresa = null, int? numero = null,
+            string factura = null, bool incluirEspejo = false)
+        {
+            var gestor = new Infraestructure.PedidosVenta.GestorPedidoParaAgencia(db);
+            PedidoParaAgenciaDTO pedido;
+
+            if (!string.IsNullOrWhiteSpace(factura))
+            {
+                pedido = await gestor.LeerPorFactura(factura).ConfigureAwait(false);
+            }
+            else if (numero == null)
+            {
+                return BadRequest("Hay que indicar 'numero' o 'factura'.");
+            }
+            else if (!string.IsNullOrWhiteSpace(empresa))
+            {
+                pedido = await gestor.LeerPorEmpresaYNumero(empresa, numero.Value).ConfigureAwait(false);
+            }
+            else
+            {
+                pedido = await gestor.LeerPorNumero(numero.Value, incluirEspejo).ConfigureAwait(false);
+            }
+
+            return pedido == null ? NotFound() : (IHttpActionResult)Ok(pedido);
+        }
+
         // Nesto#397: el pedido YA en forma de plantilla (ofertas colapsadas, Ganavisiones como
         // regalos). La inversión vive en el backend para que Nesto y NestoApp no la dupliquen.
         [HttpGet]

@@ -645,6 +645,8 @@
     <Compile Include="Infraestructure\Verifactu\DeduplicadorErroresVerifactu.cs" />
     <Compile Include="Infraestructure\Clientes\ProveedorCertificadoAeat.cs" />
     <Compile Include="Infraestructure\Remesas\ResolutorSecuenciasCcc.cs" />
+    <Compile Include="Infraestructure\PedidosVenta\GestorPedidoParaAgencia.cs" />
+    <Compile Include="Models\PedidosVenta\PedidoParaAgenciaDTO.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
     <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
     <Compile Include="Infraestructure\Clientes\ValidacionNif.cs" />
