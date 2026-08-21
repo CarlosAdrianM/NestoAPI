@@ -403,6 +403,7 @@ namespace NestoAPI.Controllers
             }
 
             enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
+            RecortarTextosLibres(enviosAgencia);
             db.Entry(enviosAgencia).State = EntityState.Modified;
 
             try
@@ -947,6 +948,43 @@ namespace NestoAPI.Controllers
                 ? null
                 : string.Join("\n\n", intercambios.Select(i => $"=== {i.Operacion} ===\n{parte(i)}"));
 
+        /// <summary>
+        /// ELMAH 20-21/08/26: el alta de un envío reventaba entero con DbEntityValidationException
+        /// porque Observaciones venía con más de 80 caracteres (columna varchar(80)), y el
+        /// expedidor se quedaba sin poder tramitar el envío. Los textos LIBRES se recortan a lo
+        /// que cabe —más de 80 no se puede guardar de ninguna manera, así que recortar es
+        /// estrictamente mejor que perder el envío— y queda rastro en ELMAH para poder limitarlo
+        /// también en el cliente.
+        ///
+        /// A propósito NO se recortan Nombre, Direccion, CodPostal, Poblacion, Provincia,
+        /// Telefono ni Movil: ahí un recorte silencioso significa un paquete mal entregado, así
+        /// que es preferible que falle de forma ruidosa.
+        /// </summary>
+        internal static void RecortarTextosLibres(EnviosAgencia envio)
+        {
+            if (envio == null)
+            {
+                return;
+            }
+            envio.Observaciones = RecortarAvisando(envio.Observaciones, LONGITUD_TEXTO_LIBRE, nameof(envio.Observaciones), envio);
+            envio.Atencion = RecortarAvisando(envio.Atencion, LONGITUD_TEXTO_LIBRE, nameof(envio.Atencion), envio);
+        }
+
+        private const int LONGITUD_TEXTO_LIBRE = 80;
+
+        private static string RecortarAvisando(string valor, int maximo, string campo, EnviosAgencia envio)
+        {
+            if (valor == null || valor.Length <= maximo)
+            {
+                return valor;
+            }
+            Infraestructure.ElmahHelper.Log(new Exception(
+                $"EnviosAgencias: se ha recortado {campo} de {valor.Length} a {maximo} caracteres " +
+                $"(pedido {envio.Pedido}, cliente {envio.Cliente?.Trim()}). El envío se tramita igual, " +
+                $"pero conviene limitarlo también en el cliente. Texto completo: {valor}"));
+            return valor.Substring(0, maximo);
+        }
+
         // Recorta a la longitud máxima de la columna y nunca devuelve null (las columnas son NOT NULL).
         private static string Limitar(string valor, int maximo)
         {
@@ -983,6 +1021,7 @@ namespace NestoAPI.Controllers
             // auditoría sale SIEMPRE del Identity, nunca del cliente (UsuarioAuditoriaHelper
             // además cubre el principal anónimo, cuyo Name es "" y no null).
             enviosAgencia.Usuario = Infraestructure.UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            RecortarTextosLibres(enviosAgencia);
             db.EnviosAgencias.Add(enviosAgencia);
             await db.SaveChangesAsync();
 
