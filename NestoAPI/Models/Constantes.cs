@@ -294,6 +294,23 @@ namespace NestoAPI.Models
             public const string CONTADO = "CONTADO";
             public const string CONTADO_RIGUROSO = "CR";
             public const string PREPAGO = "PRE";
+
+            /// <summary>
+            /// NestoAPI#396 (Carlos 21/08/26): importe mínimo que debe quedar en CADA efecto.
+            /// Vive aquí y no en cada sitio porque la misma regla de negocio se aplicaba en dos
+            /// lados con números distintos: el selector de plazos (PlazosPagoController) usaba
+            /// 100 € y el aviso del correo de nuevo pedido 150 €, así que el correo marcaba como
+            /// sospechosos plazos que el propio selector le había ofrecido al vendedor. El valor
+            /// bueno es 150; el 100 se quedó sin actualizar.
+            /// </summary>
+            public const decimal IMPORTE_MINIMO_EFECTO = 150M;
+
+            /// <summary>
+            /// NestoAPI#396: financiación media (días ponderados, columna Financiacion de
+            /// PlazosPago) hasta la que NO se exige el mínimo por efecto. 30 días se los damos a
+            /// todo el mundo, así que por debajo de eso no hay nada que revisar.
+            /// </summary>
+            public const decimal FINANCIACION_ESTANDAR_DIAS = 30M;
         }
 
         public static class Portes

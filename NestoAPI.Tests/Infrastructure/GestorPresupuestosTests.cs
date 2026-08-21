@@ -54,6 +54,97 @@ namespace NestoAPI.Tests.Infrastructure
                 "Financiación null en la ficha = se trata como 0");
         }
 
+        #region NestoAPI#396 - cuando hay que marcar "[Financiación a revisar]"
+
+        // Atajos para leer los casos de un vistazo: (total, plazo, servirJunto, mantenerJunto, autorizadaEnFicha)
+        private static bool Revisar(decimal total, PlazoPago plazo, bool servirJunto, bool mantenerJunto, bool autorizada)
+            => GestorPresupuestos.EsFinanciacionARevisar(total, plazo, servirJunto, mantenerJunto, autorizada);
+
+        /// <summary>
+        /// EL CASO QUE MOTIVÓ LA ISSUE (correo real recibido por Carlos el 21/08/26): el pedido
+        /// lleva la forma de pago que el cliente tiene en ficha, o sea que ya se autorizó al
+        /// ponérsela. Con el pedido entero (servir junto) no hay nada que revisar.
+        /// </summary>
+        [TestMethod]
+        public void EsFinanciacionARevisar_AutorizadaEnFichaYSeFacturaEntera_NoAvisa()
+        {
+            Assert.IsFalse(Revisar(200, Plazo(2, 45), servirJunto: true, mantenerJunto: true, autorizada: true));
+            Assert.IsFalse(Revisar(200, Plazo(2, 45), servirJunto: true, mantenerJunto: false, autorizada: true));
+            Assert.IsFalse(Revisar(200, Plazo(2, 45), servirJunto: false, mantenerJunto: true, autorizada: true),
+                "Mantener junto retiene la facturación hasta tenerlo todo: acaba en UNA factura");
+        }
+
+        /// <summary>Riesgo A: sale bajo con el total y el cliente NO lo tiene autorizado.</summary>
+        [TestMethod]
+        public void EsFinanciacionARevisar_SaleBajoYNoEstaAutorizada_Avisa()
+        {
+            Assert.IsTrue(Revisar(200, Plazo(2, 45), servirJunto: true, mantenerJunto: true, autorizada: false));
+        }
+
+        /// <summary>
+        /// Riesgo A con UN SOLO efecto (Carlos: "si sale bajo aunque sea un solo efecto, hay que
+        /// avisar, salvo que lo tenga autorizado en ficha").
+        /// </summary>
+        [TestMethod]
+        public void EsFinanciacionARevisar_UnSoloEfectoQueSaleBajo_AvisaSalvoAutorizada()
+        {
+            Assert.IsTrue(Revisar(100, Plazo(1, 60), servirJunto: true, mantenerJunto: true, autorizada: false));
+            Assert.IsFalse(Revisar(100, Plazo(1, 60), servirJunto: true, mantenerJunto: true, autorizada: true));
+        }
+
+        /// <summary>
+        /// Riesgo B: sin servir junto NI mantener junto, el pedido se sirve a trozos y se factura
+        /// a trozos, así que cada factura irá por menos importe que el pedido y con sus plazos.
+        /// La autorización de ficha NO lo perdona: se concedió para el importe del pedido entero.
+        /// </summary>
+        [TestMethod]
+        public void EsFinanciacionARevisar_SinJuntoYVariosPlazos_AvisaAunqueEsteAutorizada()
+        {
+            Assert.IsTrue(Revisar(2000, Plazo(2, 45), servirJunto: false, mantenerJunto: false, autorizada: true),
+                "2.000 € enteros dan efectos de 1.000, pero troceado en facturas pueden quedar ridículos");
+            Assert.IsTrue(Revisar(2000, Plazo(2, 45), servirJunto: false, mantenerJunto: false, autorizada: false));
+        }
+
+        /// <summary>Con un solo plazo no hay nada que trocear: el riesgo B no aplica.</summary>
+        [TestMethod]
+        public void EsFinanciacionARevisar_SinJuntoPeroUnSoloPlazo_NoAvisaPorTrocearse()
+        {
+            Assert.IsFalse(Revisar(2000, Plazo(1, 60), servirJunto: false, mantenerJunto: false, autorizada: true));
+        }
+
+        /// <summary>
+        /// 30 días se los damos a todo el mundo: por debajo de esa financiación media no hay nada
+        /// que revisar, ni siquiera troceando.
+        /// </summary>
+        [TestMethod]
+        public void EsFinanciacionARevisar_FinanciacionEstandarOMenor_NuncaAvisa()
+        {
+            Assert.IsFalse(Revisar(100, Plazo(2, 30), servirJunto: false, mantenerJunto: false, autorizada: false));
+            Assert.IsFalse(Revisar(100, Plazo(2, 15), servirJunto: false, mantenerJunto: false, autorizada: false));
+        }
+
+        [TestMethod]
+        public void EsFinanciacionARevisar_CasosDegenerados_NoAvisa()
+        {
+            Assert.IsFalse(Revisar(200, null, false, false, false), "Sin plazo cargado no se puede juzgar");
+            Assert.IsFalse(Revisar(200, Plazo(0, 60), false, false, false), "Nº_Plazos 0: datos rotos");
+            Assert.IsFalse(Revisar(0, Plazo(3, 60), false, false, false), "Un abono o total 0 no es financiación");
+        }
+
+        /// <summary>
+        /// NestoAPI#396: la misma regla la aplican el correo y el selector de plazos, así que el
+        /// mínimo por efecto tiene que salir de UN solo sitio. Antes eran 100 € en el selector y
+        /// 150 € en el correo, y por eso el correo marcaba plazos que el selector había ofrecido.
+        /// </summary>
+        [TestMethod]
+        public void ImporteMinimoEfecto_EsElMismoEnTodaLaSolucion()
+        {
+            Assert.AreEqual(150M, Constantes.PlazosPago.IMPORTE_MINIMO_EFECTO);
+            Assert.AreEqual(Constantes.PlazosPago.IMPORTE_MINIMO_EFECTO, GestorPresupuestos.IMPORTE_MINIMO_EFECTO);
+        }
+
+        #endregion
+
         /// <summary>
         /// Test que verifica que no se cuentan dos veces las unidades pendientes del propio pedido.
         /// Escenario: Pedido de 3 unidades del producto X para ALG

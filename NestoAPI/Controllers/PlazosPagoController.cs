@@ -139,17 +139,29 @@ namespace NestoAPI.Controllers
 
             try
             {
+                // NestoAPI#396: el mínimo por efecto sale de Constantes. Estaba escrito a mano
+                // como 100 € aquí y como 150 € en el aviso del correo de nuevo pedido, así que el
+                // correo marcaba como sospechosos plazos que este selector acababa de ofrecerle al
+                // vendedor. El valor bueno es 150 (Carlos 21/08/26); el 100 se quedó sin actualizar.
                 plazosPago = plazosPago
                 .Where(p => p.numeroPlazos == 1 ||
                     ((p.diasPrimerPlazo + p.mesesPrimerPlazo > 0) ?
-                    totalPedido / p.numeroPlazos >= 100 :
-                    totalPedido / (p.numeroPlazos - 1) >= 100)
+                    totalPedido / p.numeroPlazos >= Constantes.PlazosPago.IMPORTE_MINIMO_EFECTO :
+                    totalPedido / (p.numeroPlazos - 1) >= Constantes.PlazosPago.IMPORTE_MINIMO_EFECTO)
                     || (plazosPagoCliente.Any(c => c.ImporteMínimo <= totalPedido && c.PlazosPago.Trim() == p.plazoPago))
                     )
                 .ToList();
-            } catch (Exception ex)
+            }
+            catch (Exception ex)
             {
-
+                // NestoAPI#396: este catch estaba VACÍO. Si el filtro lanzaba, plazosPago se
+                // quedaba SIN FILTRAR y al vendedor se le ofrecían plazos que no debería poder
+                // elegir, en silencio y con consecuencias financieras. Se sigue sin romper la
+                // pantalla (devolver la lista completa es el comportamiento que había), pero
+                // ahora queda rastro para poder arreglarlo.
+                Infraestructure.ElmahHelper.Log(new Exception(
+                    $"PlazosPago: no se pudo aplicar el filtro de importe mínimo por efecto para el " +
+                    $"cliente {cliente?.Trim()} (total {totalPedido}); se devuelven TODOS los plazos: {ex.Message}", ex));
             }
             
                         

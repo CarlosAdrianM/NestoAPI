@@ -253,7 +253,9 @@ namespace NestoAPI.Infraestructure
             // 200 € a "30 y 60 días" NO (dos efectos de 100 a 45 días de media). No se
             // bloquea el pedido: administración va en copia y el asunto queda marcado para
             // que lo tengan controlado.
-            if (EsFinanciacionExcesiva(pedido.Lineas.Sum(l => l.Total), plazoPagoPedido))
+            decimal totalPedido = pedido.Lineas.Sum(l => l.Total);
+            if (EsFinanciacionARevisar(totalPedido, plazoPagoPedido, pedido.servirJunto,
+                    pedido.mantenerJunto, EstaAutorizadaEnFicha(pedido, totalPedido)))
             {
                 mail.Priority = MailPriority.High;
                 mail.Subject = "[Financiación a revisar] " + mail.Subject;
@@ -264,19 +266,58 @@ namespace NestoAPI.Infraestructure
             // El ServicioCorreoElectronico ya tiene lógica de retry interna
             servicioCorreo.EnviarCorreoSMTP(mail);
         }
-        /// <summary>Regla de financiación (Carlos 20/08/26): importe mínimo de cada efecto.</summary>
-        internal const decimal IMPORTE_MINIMO_EFECTO = 150;
-
-        /// <summary>Financiación media (días ponderados, columna Financiacion de PlazosPago)
-        /// hasta la que NO se exige el mínimo por efecto: partir en efectos pequeños está bien
-        /// si se cobra ANTES que el plazo estándar de 30 días (p. ej. "entrada y 30" = 15).</summary>
-        internal const decimal FINANCIACION_ESTANDAR_DIAS = 30;
+        /// <summary>NestoAPI#396: el mínimo por efecto y la financiación estándar viven en
+        /// Constantes, porque la MISMA regla la aplican el correo y el selector de plazos.</summary>
+        internal const decimal IMPORTE_MINIMO_EFECTO = Constantes.PlazosPago.IMPORTE_MINIMO_EFECTO;
+        internal const decimal FINANCIACION_ESTANDAR_DIAS = Constantes.PlazosPago.FINANCIACION_ESTANDAR_DIAS;
 
         /// <summary>
-        /// ¿El pedido se está financiando por encima de lo permitido? = los efectos quedan por
-        /// debajo del mínimo Y la financiación media del plazo supera la estándar. El importe
-        /// por efecto se aproxima como total/nº de plazos (los plazos de la casa reparten a
-        /// partes iguales). Pura y estática para testear sin BD.
+        /// NestoAPI#396 (Carlos 21/08/26): ¿hay que marcar el correo para que administración lo
+        /// mire? Son DOS riesgos distintos y basta con que se dé uno:
+        ///
+        /// A) <b>Ya sale bajo con el total del pedido</b>: los efectos quedan por debajo del
+        ///    mínimo y la financiación media supera los 30 días estándar. Se perdona si el
+        ///    cliente <b>tiene esa forma/plazos autorizada en ficha PARA ESE IMPORTE</b>: si ya
+        ///    se le autorizó, está revisado y no hay nada que mirar. Este era justo el falso
+        ///    aviso que motivó la issue.
+        ///
+        /// B) <b>Se va a partir en varias facturas</b>: sin "servir junto" NI "mantener junto",
+        ///    el pedido se sirve en varias entregas y se factura troceado, así que cada factura
+        ///    será por MENOS importe que el pedido y llevará sus varios plazos: ahí sí quedan
+        ///    efectos ridículos. La autorización de ficha NO lo perdona, porque se concedió
+        ///    para el importe del pedido entero, no para los trozos. Con cualquiera de los dos
+        ///    flags marcados acabamos en UNA sola factura por el total y el riesgo desaparece
+        ///    (MantenerJunto retiene la facturación hasta que todo está en albarán).
+        ///
+        /// Nunca bloquea el pedido: solo sube la prioridad, marca el asunto y pone a
+        /// administración en copia.
+        /// </summary>
+        internal static bool EsFinanciacionARevisar(decimal totalPedido, PlazoPago plazoPago,
+            bool servirJunto, bool mantenerJunto, bool autorizadaEnFicha)
+        {
+            if (plazoPago == null || plazoPago.Nº_Plazos == 0 || totalPedido <= 0)
+            {
+                return false;
+            }
+            // 30 días se los damos a todo el mundo: por debajo de ahí no hay financiación que revisar.
+            if ((plazoPago.Financiacion ?? 0) <= FINANCIACION_ESTANDAR_DIAS)
+            {
+                return false;
+            }
+
+            bool seFacturaEntero = servirJunto || mantenerJunto;
+            if (!seFacturaEntero && plazoPago.Nº_Plazos > 1)
+            {
+                return true; // riesgo B: facturas más pequeñas que el pedido, cada una a plazos
+            }
+
+            return EsFinanciacionExcesiva(totalPedido, plazoPago) && !autorizadaEnFicha; // riesgo A
+        }
+
+        /// <summary>
+        /// ¿Los efectos de este pedido quedan por debajo del mínimo? El importe por efecto se
+        /// aproxima como total/nº de plazos (los plazos de la casa reparten a partes iguales).
+        /// Pura y estática para testear sin BD.
         /// </summary>
         internal static bool EsFinanciacionExcesiva(decimal totalPedido, PlazoPago plazoPago)
         {
@@ -289,6 +330,37 @@ namespace NestoAPI.Infraestructure
                 && (plazoPago.Financiacion ?? 0) > FINANCIACION_ESTANDAR_DIAS;
         }
 
+        /// <summary>
+        /// NestoAPI#396: ¿la forma/plazos del pedido están autorizadas en la ficha del cliente
+        /// PARA EL IMPORTE de ese pedido? Ojo: CondPagoCliente.ImporteMínimo es un UMBRAL, cada
+        /// condición aplica de ese importe hacia arriba. Un cliente puede tener "30 días" desde
+        /// 0 € y "30 y 60 días" desde 400 €: un pedido de 200 € a 30 y 60 NO está autorizado
+        /// aunque esa condición figure en su ficha. Mismo criterio que PlazosPagoController.
+        /// </summary>
+        private bool EstaAutorizadaEnFicha(PedidoVentaDTO pedido, decimal totalPedido)
+        {
+            try
+            {
+                string formaPago = pedido.formaPago?.Trim();
+                string plazosPago = pedido.plazosPago?.Trim();
+                return db.CondPagoClientes.Any(c =>
+                    c.Empresa == pedido.empresa
+                    && c.Nº_Cliente == pedido.cliente
+                    && c.Contacto == pedido.contacto
+                    && c.FormaPago.Trim() == formaPago
+                    && c.PlazosPago.Trim() == plazosPago
+                    && (c.ImporteMínimo <= totalPedido || (totalPedido <= 0 && c.ImporteMínimo == 0)));
+            }
+            catch (Exception ex)
+            {
+                // Si no se puede consultar la ficha, se avisa (es lo prudente) pero queda rastro:
+                // un fallo aquí no puede convertirse en "no autorizada" silenciosa para siempre.
+                ElmahHelper.Log(new Exception(
+                    $"Financiación: no se pudo comprobar la condición de pago autorizada del cliente " +
+                    $"{pedido.cliente?.Trim()}/{pedido.contacto?.Trim()}: {ex.Message}", ex));
+                return false;
+            }
+        }
         private static void AnadirAdministracionSiFalta(MailMessage mail)
         {
             if (!mail.CC.Any(cc => cc.Address.Equals(Constantes.Correos.CORREO_ADMON, StringComparison.OrdinalIgnoreCase)))
