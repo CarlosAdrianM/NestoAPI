@@ -34,6 +34,7 @@ using NestoAPI.Providers;
 using Newtonsoft.Json.Serialization;
 using Owin;
 using System;
+using System.Net;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Data.Entity;
@@ -52,6 +53,8 @@ namespace NestoAPI
         {
             try
             {
+                ConfigurarTlsDelProceso();
+
                 _ = app.UseCors(Microsoft.Owin.Cors.CorsOptions.AllowAll);
 
                 HttpConfiguration httpConfig = new HttpConfiguration();
@@ -304,6 +307,36 @@ namespace NestoAPI
                     System.Diagnostics.EventLogEntryType.Error);
                 throw;
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#404: fija el protocolo TLS del proceso UNA VEZ, al arrancar.
+        ///
+        /// El Web.config declara <c>&lt;httpRuntime targetFramework="4.5"&gt;</c>, lo que activa el modo
+        /// de compatibilidad de .NET 4.5: ahí el valor por defecto de
+        /// <c>ServicePointManager.SecurityProtocol</c> es <b>SSL 3.0 + TLS 1.0</b> (a partir de 4.6
+        /// pasó a ser moderno). Y <c>ServicePointManager</c> es GLOBAL al proceso.
+        ///
+        /// Hasta ahora cada llamada saliente lo fijaba por su cuenta justo antes de usarlo (12
+        /// sitios repartidos), menos AmazonFeedsGateway, que no lo fija nunca. Resultado: si tras
+        /// un reinicio del app pool la PRIMERA llamada HTTPS saliente era la de Amazon, salía con
+        /// TLS 1.0 y la SP-API la rechazaba con "No se puede crear un canal seguro SSL/TLS". En
+        /// cuanto cualquier otro camino (Verifacti, Redsys, AEAT, agencias...) fijaba Tls12,
+        /// quedaba arreglado para todo el proceso y Amazon volvía a funcionar solo.
+        ///
+        /// Caso real: despliegue del 24/08/26. El app pool arrancó a las 13:28:20 y a las 13:30:06
+        /// fallaron a la vez las DOS rutas de Amazon (el botón "Subir factura" de Enrique y el job
+        /// AmazonFacturasJobs); ni una sola vez antes en 45 días ni después. Es una carrera que
+        /// reaparece en CADA reinicio, y en esa ventana la facturación de Amazon queda rota.
+        ///
+        /// Se deja Tls12 porque es exactamente lo que ya fijan los otros 12 sitios y lo que
+        /// funciona hoy en producción. Los 12 pasan a ser redundantes y se pueden ir quitando.
+        /// El arreglo de fondo sería subir el targetFramework a 4.8, pero eso cambia muchos
+        /// comportamientos de ASP.NET y merece su propio cambio.
+        /// </summary>
+        internal static void ConfigurarTlsDelProceso()
+        {
+            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
         }
 
         private void ConfigurarJobsRecurrentes()
