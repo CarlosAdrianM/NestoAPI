@@ -87,15 +87,35 @@ namespace NestoAPI.Infraestructure.ValidadoresServirJunto
                 return PuedeDesmarcar();
             }
 
-            var listaProductos = string.Join(", ", productosProblematicos.Select(p => p.ProductoNombre));
             return new ValidarServirJuntoResponse
             {
                 PuedeDesmarcar = false,
                 ProductosProblematicos = productosProblematicos,
-                Mensaje = $"El producto {listaProductos}, que es material promocional, se quedaría pendiente, " +
-                          $"lo que no está permitido. Borre primero el producto {listaProductos} " +
-                          $"para poder desmarcar el servir junto."
+                Mensaje = ConstruirMensaje(productosProblematicos)
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#394: el mensaje anterior interpolaba la lista de productos DOS veces en la misma
+        /// frase ("El producto {lista}... Borre primero el producto {lista}"). Con dos o más muestras
+        /// la lista ya lleva comas dentro, así que se leía como UN solo nombre larguísimo: una
+        /// comercial lo reportó como fallo cuando en realidad eran dos muestras distintas.
+        ///
+        /// Ahora la lista aparece UNA vez, al final, con el código delante del nombre (sin el código
+        /// hay que buscar la línea a ojo) y con el plural concordado.
+        /// </summary>
+        private static string ConstruirMensaje(List<ProductoSinStockDTO> productosProblematicos)
+        {
+            string listaProductos = string.Join(", ",
+                productosProblematicos.Select(p => $"{p.ProductoId} {p.ProductoNombre}"));
+
+            // "material promocional" se mantiene en el texto a propósito: explica al usuario POR QUÉ
+            // no se puede, y es lo que distingue este mensaje del del validador de regalos.
+            return productosProblematicos.Count == 1
+                ? "No se puede desmarcar 'Servir junto': esta muestra (material promocional) se quedaría " +
+                  $"pendiente y no está permitido. Bórrala primero del pedido: {listaProductos}."
+                : "No se puede desmarcar 'Servir junto': estas muestras (material promocional) se quedarían " +
+                  $"pendientes y no está permitido. Bórralas primero del pedido: {listaProductos}.";
         }
 
         private static ValidarServirJuntoResponse PuedeDesmarcar() =>

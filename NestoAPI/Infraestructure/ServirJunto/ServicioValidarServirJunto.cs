@@ -225,9 +225,12 @@ namespace NestoAPI.Infraestructure.ServirJunto
                     ? string.Join(", ", request.LineasPedido.Select(l => l.ProductoId?.Trim()))
                     : "";
 
+                // NestoAPI#394: el mensaje ya termina en punto, así que añadir otro dejaba un ".." en el log.
+                string motivo = (resultado.Mensaje ?? string.Empty).TrimEnd('.', ' ');
+
                 logService.LogError(
                     $"[ServirJunto NestoAPI#220] Denegado desmarcar 'servir junto' en almacén {request.Almacen?.Trim()}. " +
-                    $"Motivo: {resultado.Mensaje}. Productos problemáticos: [{problematicos}]. " +
+                    $"Motivo: {motivo}. Productos problemáticos: [{problematicos}]. " +
                     $"Bonificados enviados: [{bonificados}]. Líneas enviadas: [{lineas}].");
             }
             catch

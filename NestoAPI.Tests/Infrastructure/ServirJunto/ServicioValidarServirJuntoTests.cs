@@ -117,6 +117,103 @@ namespace NestoAPI.Tests.Infrastructure.ServirJunto
             A.CallTo(() => logService.LogError(A<string>._, A<Exception>._)).MustNotHaveHappened();
         }
 
+        // ===== NestoAPI#394: el mensaje de denegación tiene que entenderse =====
+        // Una comercial reportó como fallo lo que era la guarda funcionando, porque con DOS muestras
+        // el mensaje interpolaba la lista dos veces y se leía como un solo nombre larguísimo.
+
+        [TestMethod]
+        public async Task Validar_DosMuestrasSinStock_ElMensajeNoRepiteLaListaYUsaElPlural()
+        {
+            ValidarServirJuntoResponse resultado = await ValidarConMuestrasSinStock(
+                ("MMP1", "MUESTRA CREMA FACIAL"),
+                ("MMP2", "MUESTRA CREMA REPARADORA SILK SENSITIVE"));
+
+            Assert.IsFalse(resultado.PuedeDesmarcar);
+
+            // Antes: "El producto {lista}, ... Borre primero el producto {lista} ..."
+            Assert.AreEqual(1, ContarApariciones(resultado.Mensaje, "MUESTRA CREMA FACIAL"),
+                $"La lista de productos debe aparecer UNA sola vez. Mensaje: '{resultado.Mensaje}'");
+            Assert.IsFalse(resultado.Mensaje.Contains("El producto "),
+                $"Con varias muestras el singular confunde. Mensaje: '{resultado.Mensaje}'");
+            Assert.IsTrue(resultado.Mensaje.Contains("estas muestras"),
+                $"Se espera el plural. Mensaje: '{resultado.Mensaje}'");
+        }
+
+        [TestMethod]
+        public async Task Validar_MuestraSinStock_ElMensajeLlevaCodigoYNombreDelProducto()
+        {
+            ValidarServirJuntoResponse resultado = await ValidarConMuestrasSinStock(
+                ("MMP1", "MUESTRA CREMA FACIAL"));
+
+            Assert.IsFalse(resultado.PuedeDesmarcar);
+            // Sin el código hay que buscar la línea a ojo entre las del pedido.
+            Assert.IsTrue(resultado.Mensaje.Contains("MMP1 MUESTRA CREMA FACIAL"),
+                $"Se espera 'codigo nombre'. Mensaje: '{resultado.Mensaje}'");
+            Assert.IsTrue(resultado.Mensaje.Contains("esta muestra"),
+                $"Con una sola muestra se espera el singular. Mensaje: '{resultado.Mensaje}'");
+        }
+
+        [TestMethod]
+        public async Task Validar_CuandoSeDeniega_ElLogNoLlevaElPuntoDuplicado()
+        {
+            ILogService logService = A.Fake<ILogService>();
+            await ValidarConMuestrasSinStock(logService, ("MMP1", "MUESTRA CREMA FACIAL"));
+
+            // El mensaje ya acaba en punto: "Motivo: {mensaje}." dejaba un ".." en el log.
+            A.CallTo(() => logService.LogError(A<string>.That.Contains(".."), A<Exception>._))
+                .MustNotHaveHappened();
+            A.CallTo(() => logService.LogError(A<string>.That.Contains("Productos problemáticos"), A<Exception>._))
+                .MustHaveHappened();
+        }
+
+        private static Task<ValidarServirJuntoResponse> ValidarConMuestrasSinStock(
+            params (string Id, string Nombre)[] muestras) =>
+            ValidarConMuestrasSinStock(A.Fake<ILogService>(), muestras);
+
+        private static async Task<ValidarServirJuntoResponse> ValidarConMuestrasSinStock(
+            ILogService logService, params (string Id, string Nombre)[] muestras)
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            List<Producto> productos = muestras.Select(m => new Producto
+            {
+                Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                Número = m.Id,
+                Nombre = m.Nombre,
+                SubGrupo = Constantes.Productos.SUBGRUPO_MUESTRAS
+            }).ToList();
+            A.CallTo(() => db.Productos).Returns(FakeDbSet(productos));
+
+            IProductoService productoService = A.Fake<IProductoService>();
+            foreach ((string Id, string Nombre) muestra in muestras)
+            {
+                A.CallTo(() => productoService.CalcularStockProducto(muestra.Id, "ALG", A<int?>._))
+                    .Returns(Task.FromResult(new ProductoDTO.StockProducto { Almacen = "ALG", Stock = 0 }));
+            }
+
+            ServicioValidarServirJunto servicio = new ServicioValidarServirJunto(db, productoService, logService);
+            return await servicio.Validar(new ValidarServirJuntoRequest
+            {
+                Almacen = "ALG",
+                LineasPedido = muestras.Select(m => new ProductoBonificadoConCantidadRequest
+                {
+                    ProductoId = m.Id,
+                    Cantidad = 1,
+                    EsBonificadoGanavisiones = false
+                }).ToList()
+            });
+        }
+
+        private static int ContarApariciones(string texto, string busqueda)
+        {
+            int total = 0;
+            for (int i = texto.IndexOf(busqueda, StringComparison.Ordinal); i >= 0;
+                 i = texto.IndexOf(busqueda, i + busqueda.Length, StringComparison.Ordinal))
+            {
+                total++;
+            }
+            return total;
+        }
+
         private static DbSet<T> FakeDbSet<T>(List<T> data) where T : class
         {
             IQueryable<T> queryable = data.AsQueryable();
