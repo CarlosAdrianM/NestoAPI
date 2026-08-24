@@ -1332,6 +1332,7 @@
     <Compile Include="Models\Picking\GestorMargenes.cs" />
     <Compile Include="Models\Picking\GestorPicking.cs" />
     <Compile Include="Models\Picking\AvisadorPickingAutomatico.cs" />
+    <Compile Include="Infraestructure\Picking\PickingJobsService.cs" />
     <Compile Include="Models\Picking\GestorAvisosPicking.cs" />
     <Compile Include="Models\Picking\GestorPrepagos.cs" />
     <Compile Include="Models\Picking\GestorReservasStock.cs" />

@@ -35,61 +35,25 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// NestoAPI#361: el picking AUTOMÁTICO de las 11h, el que lanza la tarea del Task
-        /// Scheduler. Hace exactamente lo mismo que <see cref="SacarPicking()"/>, pero además
-        /// AVISA POR CORREO al almacén del resultado, porque ahí no hay nadie mirando la pantalla.
+        /// NestoAPI#361: disparo MANUAL del picking de CIERRE del día (el de las 11h).
         ///
-        /// Es un endpoint aparte y no un parámetro del de siempre por dos razones: la diferencia
-        /// no es una preferencia configurable sino QUIÉN llama (un parámetro global podría acabar
-        /// mandando correos en los pickings manuales), y añadir un bool opcional a SacarPicking()
-        /// crearía ambigüedad de ruta con la sobrecarga que recibe el cliente.
+        /// Su ejecución normal ya no pasa por aquí: desde la migración a Hangfire la lanza el job
+        /// recurrente <c>picking-cierre-diario</c>. Este endpoint se mantiene para poder relanzarlo
+        /// a mano si hiciera falta, y delega en EL MISMO método que el job, para que no haya dos
+        /// implementaciones del picking de cierre que puedan divergir.
         ///
-        /// La excepción se relanza igual que antes: así el Task Scheduler ve que ha fallado y los
-        /// errores técnicos siguen llegando a ELMAH. Lo único que se añade es el aviso.
-        ///
-        /// Y, sobre todo, DECLARA su horizonte de entrega (hoy) en vez de deducirlo del reloj.
-        /// Antes el horizonte salía de la hora exacta de arranque, así que a las 10:59:59 servía
-        /// hoy y a las 11:00:01 servía también lo de MAÑANA, adelantando un día las entregas sin
-        /// que se notase. Se toreaba programando la tarea a las 10:59:40, a costa de dejar fuera
-        /// los pedidos metidos en esos últimos 20 segundos. Ahora da igual el segundo en que
-        /// arranque: la tarea se puede programar a las 11:00 en punto (o más tarde) y el
-        /// resultado es el mismo.
+        /// A diferencia de <see cref="SacarPicking()"/>, declara su horizonte de entrega (hoy) en
+        /// vez de deducirlo del reloj, y avisa por correo al almacén del resultado.
         /// </summary>
         [HttpGet]
         [Route("api/Picking/Automatico")]
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> SacarPickingAutomatico()
         {
-            crearModulos();
-            try
-            {
-                await Task.Run(() => gestorPicking.SacarPicking(DateTime.Today));
-            }
-            catch (Exception ex)
-            {
-                CrearAvisador().Avisar(ex, DateTime.Now);
-                throw;
-            }
+            List<PedidoPicking> pedidos = await Task.Run(
+                () => Infraestructure.Picking.PickingJobsService.SacarPickingDeCierre());
 
-            return Ok(gestorPicking.PedidosEnPicking());
-        }
-
-        internal virtual AvisadorPickingAutomatico CrearAvisador()
-        {
-            return new AvisadorPickingAutomatico(
-                new Infraestructure.ServicioCorreoElectronico(),
-                new Infraestructure.LectorParametrosUsuario());
-        }
-
-        // GET: api/Picking/15191
-        [HttpGet]
-        [ResponseType(typeof(string))]
-        public async Task<IHttpActionResult> SacarPicking(string cliente)
-        {
-            crearModulos();
-            await Task.Run(() => gestorPicking.SacarPicking(cliente));
-
-            return Ok(gestorPicking.PedidosEnPicking());
+            return Ok(pedidos);
         }
 
         private void crearModulos()

@@ -7,6 +7,7 @@ using Microsoft.Owin.Security.Jwt;
 using Microsoft.Owin.Security.OAuth;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Picking;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Infraestructure.Alquileres;
 using NestoAPI.Infraestructure.AlbaranesVenta;
@@ -421,6 +422,28 @@ namespace NestoAPI
                 }
             );
             Console.WriteLine("✅ Job recurrente 'amazon-facturas-resultados' configurado (cada 30 minutos)");
+
+            // NestoAPI#361: picking de CIERRE del día. Venía de una tarea del Task Scheduler que
+            // llamaba a la API por HTTP y que estaba programada a las 10:59:40 para no pasarse de
+            // las 11h, porque el horizonte de entrega se deducía del reloj y arrancar un segundo
+            // tarde hacía que el picking sacara TAMBIÉN las entregas de mañana. Resuelto eso (el
+            // horizonte se declara, no se deduce), llegar unos segundos tarde dejó de costar nada
+            // y el job se puede programar a las 11:00 en punto.
+            //
+            // De hecho el retraso natural de Hangfire (unos segundos) ahora JUEGA A FAVOR: da
+            // margen a que commiteen los pedidos metidos justo antes del corte. El último pedido
+            // que entra es el de las 10:59:59; a las 11:00:00 ya se le asigna la siguiente ruta.
+            RecurringJob.AddOrUpdate(
+                "picking-cierre-diario",
+                () => PickingJobsService.SacarPickingDeCierre(),
+                "0 11 * * 1-5", // Cron: de lunes a viernes a las 11:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+
+            Console.WriteLine("✅ Job recurrente 'picking-cierre-diario' configurado (L-V a las 11:00)");
 
             // NOTA: El job de clientes está deshabilitado porque aún se usa Task Scheduler
             // Para habilitarlo en el futuro, cambia '#if false' por '#if true':
