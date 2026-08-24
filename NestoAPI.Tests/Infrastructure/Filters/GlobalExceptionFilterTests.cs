@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Filters;
 using System;
@@ -259,6 +259,84 @@ namespace NestoAPI.Tests.Infrastructure.Filters
             var details = error["details"] as Newtonsoft.Json.Linq.JObject;
             Assert.AreEqual("547", details["SqlErrorNumber"].ToString());
             Assert.AreEqual("prdCrearFacturaVta", details["StoredProcedure"].ToString());
+        }
+
+        // ===== NestoAPI#361: las denegaciones de negocio no ensucian ELMAH =====
+        // Hasta el 24/08/26 GlobalExceptionFilter registraba TODO en ELMAH, tambien las
+        // excepciones de negocio. En una semana, 25 de 237 entradas eran denegaciones esperadas
+        // (validaciones de pedido y "no hay stock para asignar picking"). Regla nueva:
+        // 4xx = negocio (no se registra), 5xx = fallo (se registra), y el que lanza puede
+        // forzarlo con RegistrarEnLog.
+
+        [TestMethod]
+        public void DebeRegistrarseEnElmah_ExcepcionDeNegocioCon400_NoSeRegistra()
+        {
+            var negocio = new NestoBusinessException("No hay stock suficiente para asignar picking");
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, negocio.StatusCode, "El default de negocio es 400");
+            Assert.IsFalse(GlobalExceptionFilter.DebeRegistrarseEnElmah(negocio));
+        }
+
+        [TestMethod]
+        public void DebeRegistrarseEnElmah_ExcepcionDeNegocioCon500_SiSeRegistra()
+        {
+            // Un 5xx en una excepcion de negocio significa que algo se rompio de verdad.
+            var negocio = new NestoBusinessException("Fallo al contabilizar")
+            {
+                StatusCode = HttpStatusCode.InternalServerError
+            };
+
+            Assert.IsTrue(GlobalExceptionFilter.DebeRegistrarseEnElmah(negocio));
+        }
+
+        [TestMethod]
+        public void DebeRegistrarseEnElmah_ExcepcionDeNegocioQuePideRegistrarse_SiSeRegistra()
+        {
+            // Valvula de escape para los casos que ademas de denegar interesa vigilar.
+            var negocio = new NestoBusinessException("Denegado, pero quiero verlo")
+            {
+                RegistrarEnLog = true
+            };
+
+            Assert.IsTrue(GlobalExceptionFilter.DebeRegistrarseEnElmah(negocio));
+        }
+
+        [TestMethod]
+        public void DebeRegistrarseEnElmah_ExcepcionQueNoEsDeNegocio_SiSeRegistra()
+        {
+            // Lo que NO es de negocio sigue yendo a ELMAH aunque su mensaje suene a aviso:
+            // los RAISERROR de los SP y las excepciones de los jobs se revisan una a una.
+            Assert.IsTrue(GlobalExceptionFilter.DebeRegistrarseEnElmah(
+                new InvalidOperationException("La secuencia contiene mas de un elemento")));
+            Assert.IsTrue(GlobalExceptionFilter.DebeRegistrarseEnElmah(
+                new Exception("[WARNING] No se puede facturar porque tiene marcado el servir junto")));
+        }
+
+        [TestMethod]
+        public void DebeRegistrarseEnElmah_ValidacionDePedido_NoSeRegistraPorDefecto()
+        {
+            // PedidoValidacionException hereda de NestoBusinessException y devuelve 400.
+            // OJO: adjunta el pedido serializado (#215) para poder reproducir el caso; si algun
+            // dia se quiere volver a ver en ELMAH, basta con RegistrarEnLog = true.
+            var validacion = new PedidoValidacionException(
+                "No se encuentra autorizado el descuento del 100,00 % para el producto 45001",
+                null, empresa: "1", pedido: 924645);
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, validacion.StatusCode);
+            Assert.IsFalse(GlobalExceptionFilter.DebeRegistrarseEnElmah(validacion));
+        }
+
+        [TestMethod]
+        public void OnException_ExcepcionDeNegocio_SigueDevolviendoEl400ConSuMensaje()
+        {
+            // Que no se registre en ELMAH no cambia NADA de la respuesta al cliente.
+            _context.Exception = new NestoBusinessException("No hay stock suficiente para asignar picking");
+
+            _filter.OnException(_context);
+
+            Assert.AreEqual(HttpStatusCode.BadRequest, _context.Response.StatusCode);
+            var error = LeerErrorDeLaRespuesta();
+            Assert.AreEqual("No hay stock suficiente para asignar picking", error["message"].ToString());
         }
     }
 }

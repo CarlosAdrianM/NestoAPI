@@ -55,15 +55,19 @@ namespace NestoAPI.Infraestructure.Filters
                 : null;
             string bloqueos = diagnosticoBloqueos?.Bloqueadores;
 
-            // Logging con Elmah (persiste en base de datos)
-            try
+            // Logging con Elmah (persiste en base de datos).
+            // NestoAPI#361: las denegaciones de negocio NO son fallos y no van a ELMAH.
+            if (DebeRegistrarseEnElmah(exception))
             {
-                RegistrarEnElmah(exception, diagnosticoBloqueos);
-            }
-            catch
-            {
-                // Si falla Elmah, continuar de todas formas
-                // Fallback a System.Diagnostics
+                try
+                {
+                    RegistrarEnElmah(exception, diagnosticoBloqueos);
+                }
+                catch
+                {
+                    // Si falla Elmah, continuar de todas formas
+                    // Fallback a System.Diagnostics
+                }
             }
 
             // Logging adicional en consola (útil para debugging)
@@ -95,6 +99,36 @@ namespace NestoAPI.Infraestructure.Filters
             AnadirBloqueosAlMensaje(responseContent, bloqueos);
 
             context.Response = context.Request.CreateResponse(statusCode, responseContent);
+        }
+
+        /// <summary>
+        /// NestoAPI#361 (continuación de #336, pero para errores de negocio): decide si una
+        /// excepción merece una ficha en ELMAH.
+        ///
+        /// Hasta ahora se registraba TODO, incluidas las excepciones de negocio. Pero una
+        /// <see cref="NestoBusinessException"/> es una respuesta esperada —un 400 que el cliente
+        /// sabe interpretar y enseñar al usuario—, no un fallo del sistema. En el triage del
+        /// 24/08/26, 25 de las 237 entradas de una semana eran denegaciones de negocio
+        /// (validaciones de pedido y "no hay stock para asignar picking"): ruido que tapa los
+        /// errores reales.
+        ///
+        /// Regla: <b>4xx es negocio (no se registra), 5xx es un fallo (se registra)</b>. El sitio
+        /// que lanza la excepción puede pedir explícitamente que sí se registre con
+        /// <see cref="NestoBusinessException.RegistrarEnLog"/>, para los casos que además de
+        /// denegar interesa vigilar.
+        ///
+        /// Lo que NO toca este filtro, a propósito: las excepciones que no son de negocio
+        /// (SqlException de un RAISERROR, excepciones genéricas de los jobs...) siguen yendo a
+        /// ELMAH aunque su mensaje suene a aviso. Esas se revisan una a una, no en bloque.
+        /// </summary>
+        internal static bool DebeRegistrarseEnElmah(Exception exception)
+        {
+            if (!(exception is NestoBusinessException negocio))
+            {
+                return true;
+            }
+
+            return negocio.RegistrarEnLog || (int)negocio.StatusCode >= 500;
         }
 
         internal static void AnadirBloqueosAlMensaje(object responseContent, string bloqueos)
