@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Transactions;
 using System.Web;
 using Elmah;
@@ -78,7 +78,7 @@ namespace NestoAPI.Infraestructure
         /// dentro de transacciones. Respeta el errorFilter de Web.config (que ErrorLog.Log se salta),
         /// por eso hay dos caminos: con HttpContext se usa la señal, y sin él el log directo.
         /// </summary>
-        public static void Señalar(Exception excepcion)
+        public static void Notificar(Exception excepcion)
         {
             if (excepcion == null)
             {

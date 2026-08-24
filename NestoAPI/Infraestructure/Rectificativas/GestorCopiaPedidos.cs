@@ -66,12 +66,12 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 // Registrar en ELMAH para diagnóstico
                 // NestoAPI#182: puede ejecutarse dentro de la transacción de la copia/facturación
                 // NestoAPI#400: salvo las denegaciones de negocio (le falta un dato a la petición),
-                // que no son fallos del sistema. OJO: este Señalar es una llamada EXPLÍCITA y por
+                // que no son fallos del sistema. OJO: este Notificar es una llamada EXPLÍCITA y por
                 // tanto NO pasa por GlobalExceptionFilter, así que el filtro de #361 no la cubría;
                 // hay que aplicar aquí la misma regla, reutilizándola para no tener dos criterios.
                 if (Filters.GlobalExceptionFilter.DebeRegistrarseEnElmah(ex))
                 {
-                    ElmahHelper.Señalar(ex);
+                    ElmahHelper.Notificar(ex);
                 }
 
                 return new CopiarFacturaResponse
@@ -987,7 +987,7 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 // NestoAPI#182: puede ejecutarse dentro de la transacción de la copia/facturación
                 if (Filters.GlobalExceptionFilter.DebeRegistrarseEnElmah(ex))
                 {
-                    ElmahHelper.Señalar(ex);
+                    ElmahHelper.Notificar(ex);
                 }
             }
 

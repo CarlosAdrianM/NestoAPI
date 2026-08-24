@@ -2683,7 +2683,7 @@ Error original: {excepcionOriginal.Message}";
                 // viene de UnirPedidos (PersistirUnion), y ahí la conexión de ELMAH se alistaba en
                 // la transacción ambiente y petaba con "The underlying provider failed on Open",
                 // perdiendo el JSON del pedido que es justo lo que sirve para reproducir el fallo.
-                ElmahHelper.Señalar(excepcionConPedido);
+                ElmahHelper.Notificar(excepcionConPedido);
             }
             catch
             {

@@ -1077,8 +1077,8 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
         }
 
         // ===== NestoAPI#400: las validaciones que faltan datos son de NEGOCIO, no fallos =====
-        // CopiarFactura tiene un catch que se lo traga TODO: llama a ElmahHelper.Señalar y devuelve
-        // Exitoso=false. Ese Señalar es una llamada EXPLICITA y no pasa por GlobalExceptionFilter,
+        // CopiarFactura tiene un catch que se lo traga TODO: llama a ElmahHelper.Notificar y devuelve
+        // Exitoso=false. Ese Notificar es una llamada EXPLICITA y no pasa por GlobalExceptionFilter,
         // asi que el filtro de #361 no lo cubria. Ahora se aplica ahi la misma regla.
         // Caso real: Santiago, 20/08/26, dos intentos en un minuto porque el mensaje parecia un
         // error del sistema en vez de "te falta un dato".

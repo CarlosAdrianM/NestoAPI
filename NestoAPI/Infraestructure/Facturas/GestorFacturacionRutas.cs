@@ -1,4 +1,4 @@
-using Elmah;
+﻿using Elmah;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.ExtractosRuta;
 using NestoAPI.Infraestructure.NotasEntrega;
@@ -1307,7 +1307,7 @@ namespace NestoAPI.Infraestructure.Facturas
                 // Registrar en ELMAH
                 // NestoAPI#182: la facturación de rutas registra el descuadre desde dentro de la
                 // transacción; sin Suppress el log se pierde con "underlying provider failed on Open".
-                ElmahHelper.Señalar(excepcionDescuadre);
+                ElmahHelper.Notificar(excepcionDescuadre);
 
                 System.Diagnostics.Debug.WriteLine($"[ELMAH] Registrado error de descuadre para pedido {pedido.Número}");
             }

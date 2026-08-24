@@ -1,4 +1,4 @@
-using Elmah;
+﻿using Elmah;
 using System;
 
 namespace NestoAPI.Infraestructure
@@ -14,7 +14,7 @@ namespace NestoAPI.Infraestructure
             var excepcion = excepcionOriginal != null
                 ? new Exception(mensaje, excepcionOriginal)
                 : new Exception(mensaje);
-            ElmahHelper.Señalar(excepcion);
+            ElmahHelper.Notificar(excepcion);
         }
     }
 }

@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using System;
 using System.Transactions;
@@ -66,11 +66,11 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public void Log_YSeñalar_ConExcepcionNull_NoLanzan()
+        public void Log_YNotificar_ConExcepcionNull_NoLanzan()
         {
             ElmahHelper.Log(null);
             ElmahHelper.Log(null, "Sistema (test)");
-            ElmahHelper.Señalar(null);
+            ElmahHelper.Notificar(null);
         }
 
         [TestMethod]
@@ -81,7 +81,7 @@ namespace NestoAPI.Tests.Infrastructure
             using (TransactionScope scope = new TransactionScope())
             {
                 ElmahHelper.Log(new Exception("prueba dentro de transacción"), "Sistema (test)");
-                ElmahHelper.Señalar(new Exception("prueba dentro de transacción"));
+                ElmahHelper.Notificar(new Exception("prueba dentro de transacción"));
             }
         }
     }
