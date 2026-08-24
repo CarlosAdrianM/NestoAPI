@@ -1331,6 +1331,7 @@
     <Compile Include="Models\Picking\GestorImportesMinimos.cs" />
     <Compile Include="Models\Picking\GestorMargenes.cs" />
     <Compile Include="Models\Picking\GestorPicking.cs" />
+    <Compile Include="Models\Picking\AvisadorPickingAutomatico.cs" />
     <Compile Include="Models\Picking\GestorAvisosPicking.cs" />
     <Compile Include="Models\Picking\GestorPrepagos.cs" />
     <Compile Include="Models\Picking\GestorReservasStock.cs" />

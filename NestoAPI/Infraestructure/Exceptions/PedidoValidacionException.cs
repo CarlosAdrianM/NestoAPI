@@ -77,6 +77,12 @@ namespace NestoAPI.Infraestructure.Exceptions
             // porque es un error de validación, no un error del servidor
             StatusCode = HttpStatusCode.BadRequest;
 
+            // NestoAPI#361: excepción de la regla "el negocio no va a ELMAH". Esta SÍ se registra,
+            // a propósito: adjunta el pedido serializado (pedidoBorradorJson, NestoAPI#215) y esa
+            // ficha se usa para REPRODUCIR la validación que falló. Sin ella no hay forma de
+            // recuperar el pedido exacto que se denegó.
+            RegistrarEnLog = true;
+
             // Agregar detalles de la validación al contexto
             if (respuestaValidacion != null)
             {

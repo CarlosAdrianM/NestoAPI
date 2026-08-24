@@ -101,7 +101,7 @@ namespace NestoAPI.Models.Picking
             {
                 throw new Infraestructure.Exceptions.NestoBusinessException(
                     "No hay stock suficiente para asignar picking a ninguna línea",
-                    new Infraestructure.Exceptions.ErrorContext { ErrorCode = "PICKING_SIN_STOCK" })
+                    new Infraestructure.Exceptions.ErrorContext { ErrorCode = Constantes.Picking.ERROR_SIN_STOCK })
                 {
                     IsWarning = true
                 };

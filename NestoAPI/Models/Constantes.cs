@@ -125,6 +125,8 @@ namespace NestoAPI.Models
             public const string INFORMATICA = "carlosadrian@nuevavision.es";
             public const string JEFE_VENTAS = "albertosancho@nuevavision.es";
             public const string LOGISTICA = "logistica@nuevavision.es";
+            /// <summary>NestoAPI#361: avisos del picking automatico de las 11h.</summary>
+            public const string ALMACEN = "almacen@nuevavision.es";
             public const string TIENDA_ONLINE = "tiendaonline@nuevavision.es";
             public const string TIENDA_REINA = "tienda@nuevavision.es";
         }
@@ -288,6 +290,16 @@ namespace NestoAPI.Models
             // #256: almacenes cuyo stock se muestra en la plantilla de venta (CSV, p. ej.
             // "ALG,ALC,REI" o "ALG"). El contrato de la clave es común a Nesto y NestoApp.
             public const string ALMACENES_PLANTILLA_VENTA = "AlmacenesPlantillaVenta";
+
+            /// <summary>Usuario bajo el que viven los parametros que no son de nadie en concreto.</summary>
+            public const string USUARIO_POR_DEFECTO = "(defecto)";
+
+            /// <summary>
+            /// NestoAPI#361: destinatarios del aviso del picking automatico de las 11h, separados
+            /// por ; o por coma. Si esta vacio se usa Correos.ALMACEN. Se puede cambiar sin
+            /// desplegar.
+            /// </summary>
+            public const string CORREO_AVISO_PICKING_AUTOMATICO = "CorreoAvisoPickingAutomatico";
         }
         public static class PlazosPago
         {
@@ -421,6 +433,13 @@ namespace NestoAPI.Models
         public static class Picking
         {
             public const int HORA_MAXIMA_AMPLIAR_PEDIDOS = 11;
+
+            /// <summary>
+            /// NestoAPI#361: "no habia nada que sacar" es un resultado NORMAL del picking, no un
+            /// fallo. Se identifica por este codigo para poder tratarlo distinto del resto
+            /// (correo tranquilizador en vez de alarma en el picking automatico).
+            /// </summary>
+            public const string ERROR_SIN_STOCK = "PICKING_SIN_STOCK";
         }
 
         public static class ClientesEspeciales

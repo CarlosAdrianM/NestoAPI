@@ -313,17 +313,19 @@ namespace NestoAPI.Tests.Infrastructure.Filters
         }
 
         [TestMethod]
-        public void DebeRegistrarseEnElmah_ValidacionDePedido_NoSeRegistraPorDefecto()
+        public void DebeRegistrarseEnElmah_ValidacionDePedido_SI_SeRegistra()
         {
-            // PedidoValidacionException hereda de NestoBusinessException y devuelve 400.
-            // OJO: adjunta el pedido serializado (#215) para poder reproducir el caso; si algun
-            // dia se quiere volver a ver en ELMAH, basta con RegistrarEnLog = true.
+            // EXCEPCION DELIBERADA a la regla "el negocio no va a ELMAH": aunque devuelve 400,
+            // PedidoValidacionException adjunta el pedido serializado (#215) y esa ficha se usa
+            // para REPRODUCIR la validacion denegada. Carlos la usa, asi que se conserva.
             var validacion = new PedidoValidacionException(
                 "No se encuentra autorizado el descuento del 100,00 % para el producto 45001",
                 null, empresa: "1", pedido: 924645);
 
-            Assert.AreEqual(HttpStatusCode.BadRequest, validacion.StatusCode);
-            Assert.IsFalse(GlobalExceptionFilter.DebeRegistrarseEnElmah(validacion));
+            Assert.AreEqual(HttpStatusCode.BadRequest, validacion.StatusCode, "sigue siendo un 400 para el cliente");
+            Assert.IsTrue(validacion.RegistrarEnLog);
+            Assert.IsTrue(GlobalExceptionFilter.DebeRegistrarseEnElmah(validacion),
+                "si esto se pone en falso, se pierde la capacidad de reproducir pedidos denegados (#215)");
         }
 
         [TestMethod]

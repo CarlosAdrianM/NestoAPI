@@ -34,6 +34,45 @@ namespace NestoAPI.Controllers
             return Ok(gestorPicking.PedidosEnPicking());
         }
 
+        /// <summary>
+        /// NestoAPI#361: el picking AUTOMÁTICO de las 11h, el que lanza la tarea del Task
+        /// Scheduler. Hace exactamente lo mismo que <see cref="SacarPicking()"/>, pero además
+        /// AVISA POR CORREO al almacén del resultado, porque ahí no hay nadie mirando la pantalla.
+        ///
+        /// Es un endpoint aparte y no un parámetro del de siempre por dos razones: la diferencia
+        /// no es una preferencia configurable sino QUIÉN llama (un parámetro global podría acabar
+        /// mandando correos en los pickings manuales), y añadir un bool opcional a SacarPicking()
+        /// crearía ambigüedad de ruta con la sobrecarga que recibe el cliente.
+        ///
+        /// La excepción se relanza igual que antes: así el Task Scheduler ve que ha fallado y los
+        /// errores técnicos siguen llegando a ELMAH. Lo único que se añade es el aviso.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Picking/Automatico")]
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> SacarPickingAutomatico()
+        {
+            crearModulos();
+            try
+            {
+                await Task.Run(() => gestorPicking.SacarPicking());
+            }
+            catch (Exception ex)
+            {
+                CrearAvisador().Avisar(ex, DateTime.Now);
+                throw;
+            }
+
+            return Ok(gestorPicking.PedidosEnPicking());
+        }
+
+        internal virtual AvisadorPickingAutomatico CrearAvisador()
+        {
+            return new AvisadorPickingAutomatico(
+                new Infraestructure.ServicioCorreoElectronico(),
+                new Infraestructure.LectorParametrosUsuario());
+        }
+
         // GET: api/Picking/15191
         [HttpGet]
         [ResponseType(typeof(string))]
