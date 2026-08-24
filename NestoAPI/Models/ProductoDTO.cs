@@ -59,7 +59,6 @@ namespace NestoAPI.Models
         {
             using (var client = new HttpClient())
             {
-                System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                 client.BaseAddress = new Uri("http://www.productosdeesteticaypeluqueriaprofesional.com/imagenesPorReferencia.php");
                 client.DefaultRequestHeaders.Accept.Clear();
                 //client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -88,7 +87,6 @@ namespace NestoAPI.Models
         {
             using (var client = new HttpClient())
             {
-                System.Net.ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
                 client.BaseAddress = new Uri("http://www.productosdeesteticaypeluqueriaprofesional.com/enlacePorReferencia.php");
                 client.DefaultRequestHeaders.Accept.Clear();
                 try

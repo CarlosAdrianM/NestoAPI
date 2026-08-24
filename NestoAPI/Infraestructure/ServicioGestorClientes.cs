@@ -238,7 +238,6 @@ namespace NestoAPI.Infraestructure
             // llamadas salientes (Verifacti, Redsys, Amazon...), no solo la de la AEAT.
             X509Certificate2 certificado = Clientes.ProveedorCertificadoAeat.ObtenerCertificado();
 
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             HttpWebRequest webRequest = (HttpWebRequest)WebRequest.Create(host);
             webRequest.AllowAutoRedirect = true;

@@ -1,4 +1,4 @@
-using Newtonsoft.Json;
+﻿using Newtonsoft.Json;
 using System;
 using System.Configuration;
 using System.Net;
@@ -44,7 +44,6 @@ namespace NestoAPI.Infraestructure.OpenAI
             if (string.IsNullOrWhiteSpace(userMessage))
                 throw new ArgumentNullException(nameof(userMessage));
 
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             using (var handler = new HttpClientHandler { UseProxy = false })
             using (var httpClient = new HttpClient(handler))

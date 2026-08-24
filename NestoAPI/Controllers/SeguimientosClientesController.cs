@@ -463,7 +463,6 @@ namespace NestoAPI.Controllers
 
 
 
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             HttpClientHandler handler = new HttpClientHandler
             {
@@ -515,7 +514,6 @@ namespace NestoAPI.Controllers
 
 
 
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             HttpClientHandler handler = new HttpClientHandler
             {
@@ -574,7 +572,6 @@ namespace NestoAPI.Controllers
 
 
 
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
 
             HttpClientHandler handler = new HttpClientHandler
             {

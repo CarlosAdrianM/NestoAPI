@@ -82,7 +82,6 @@ namespace NestoAPI.Infraestructure.Agencias
             client.Host = "smtp.office365.com";
             client.TargetName = "STARTTLS/smtp.office365.com"; // Añadir esta línea para especificar el nombre del objetivo para STARTTLS
             // Configurar TLS 1.2 explícitamente
-            ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             return client;
         }
 

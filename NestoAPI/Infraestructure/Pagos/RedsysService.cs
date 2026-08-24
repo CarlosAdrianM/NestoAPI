@@ -1,4 +1,4 @@
-using NestoAPI.Models.Pagos;
+﻿using NestoAPI.Models.Pagos;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RedsysAPIPrj;
@@ -170,7 +170,6 @@ namespace NestoAPI.Infraestructure.Pagos
             {
                 string peticionJson = JsonConvert.SerializeObject(peticion);
                 HttpContent content = new StringContent(peticionJson, Encoding.UTF8, "application/json");
-                System.Net.ServicePointManager.SecurityProtocol = System.Net.SecurityProtocolType.Tls12;
                 HttpResponseMessage response = await client.PostAsync(parametros.UrlRedsys, content).ConfigureAwait(false);
                 content.Dispose();
 
