@@ -46,6 +46,14 @@ namespace NestoAPI.Controllers
         ///
         /// La excepción se relanza igual que antes: así el Task Scheduler ve que ha fallado y los
         /// errores técnicos siguen llegando a ELMAH. Lo único que se añade es el aviso.
+        ///
+        /// Y, sobre todo, DECLARA su horizonte de entrega (hoy) en vez de deducirlo del reloj.
+        /// Antes el horizonte salía de la hora exacta de arranque, así que a las 10:59:59 servía
+        /// hoy y a las 11:00:01 servía también lo de MAÑANA, adelantando un día las entregas sin
+        /// que se notase. Se toreaba programando la tarea a las 10:59:40, a costa de dejar fuera
+        /// los pedidos metidos en esos últimos 20 segundos. Ahora da igual el segundo en que
+        /// arranque: la tarea se puede programar a las 11:00 en punto (o más tarde) y el
+        /// resultado es el mismo.
         /// </summary>
         [HttpGet]
         [Route("api/Picking/Automatico")]
@@ -55,7 +63,7 @@ namespace NestoAPI.Controllers
             crearModulos();
             try
             {
-                await Task.Run(() => gestorPicking.SacarPicking());
+                await Task.Run(() => gestorPicking.SacarPicking(DateTime.Today));
             }
             catch (Exception ex)
             {

@@ -17,29 +17,54 @@ namespace NestoAPI.Models.Picking
         {
             this.modulos = modulos;
         }
+        /// <summary>
+        /// Picking interactivo: el horizonte de entrega se DEDUCE de la hora, como siempre.
+        /// </summary>
         public void SacarPicking()
         {
+            SacarPicking(CalcularFechaPicking(DateTime.Now));
+        }
 
+        /// <summary>
+        /// NestoAPI#361: picking con el horizonte de entrega COMO DATO, no deducido del reloj.
+        ///
+        /// El horizonte decide hasta qué fecha de entrega se sirve
+        /// (<c>BorrarLineasEntregaFutura</c> quita las líneas con FechaEntrega mayor), y hasta
+        /// ahora salía siempre de <c>CalcularFechaPicking(DateTime.Now)</c>. Eso hacía que el
+        /// picking de cierre de las 11h fuera peligrosamente sensible al segundo exacto en que
+        /// arrancara: a las 10:59:59 servía HOY, y a las 11:00:01 pasaba a servir también lo de
+        /// MAÑANA, adelantando un día las entregas sin que nadie se enterase. Se toreaba
+        /// programando la tarea a las 10:59:40, a costa de dejar fuera los pedidos metidos en
+        /// esos últimos 20 segundos (que el propio PedidosVentaController sí permite meter,
+        /// porque su corte son las 11h en punto).
+        ///
+        /// El picking de cierre no necesita preguntarle la hora a nadie: ya sabe que sirve para
+        /// hoy. Pasándolo como dato, da igual que la tarea arranque a las 11:00:00, a las
+        /// 11:00:30 o tarde por lo que sea.
+        /// </summary>
+        /// <param name="fechaPicking">Fecha de entrega hasta la que se sirve en este picking.</param>
+        public void SacarPicking(DateTime fechaPicking)
+        {
             candidatos = modulos.rellenadorPicking.Rellenar();
-            Ejecutar();
+            Ejecutar(fechaPicking);
         }
 
         public void SacarPicking(List<Ruta> rutas)
         {
             candidatos = modulos.rellenadorPicking.Rellenar(rutas);
-            Ejecutar();
+            Ejecutar(CalcularFechaPicking(DateTime.Now));
         }
 
         public void SacarPicking(string empresa, int numeroPedido)
         {
             candidatos = modulos.rellenadorPicking.Rellenar(empresa, numeroPedido);
-            Ejecutar();
+            Ejecutar(CalcularFechaPicking(DateTime.Now));
         }
 
         public void SacarPicking(string cliente)
         {
             candidatos = modulos.rellenadorPicking.Rellenar(cliente);
-            Ejecutar();
+            Ejecutar(CalcularFechaPicking(DateTime.Now));
         }
 
 
@@ -48,11 +73,10 @@ namespace NestoAPI.Models.Picking
             return candidatos;
         }
 
-        private void Ejecutar()
+        private void Ejecutar(DateTime fechaPicking)
         {
             List<StockProducto> stocks;
             List<LineaPedidoPicking> todasLasLineas;
-            DateTime fechaPicking = this.calcularFechaPicking(DateTime.Now);
 
             stocks = modulos.rellenadorStocks.Rellenar(candidatos);
 
@@ -119,12 +143,27 @@ namespace NestoAPI.Models.Picking
             
         }
 
-        private DateTime calcularFechaPicking(DateTime fechaConHora)
+        /// <summary>
+        /// NestoAPI#361: ¿el instante dado está ya pasado el corte del día? Se extrae para poder
+        /// testear el límite exacto, que antes vivía enterrado en una comparación con
+        /// DateTime.Now y era intestable sin congelar el reloj. El corte son las 11:00:00 EN
+        /// PUNTO: a las 10:59:59 todavía se sirve hoy.
+        /// </summary>
+        internal static bool CorteDelDiaSuperado(DateTime instante)
+        {
+            return instante.Hour >= Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS;
+        }
+
+        /// <summary>
+        /// Deduce el horizonte de entrega a partir de la hora. Lo usa el picking INTERACTIVO; el
+        /// de cierre recibe el horizonte como dato (ver SacarPicking(DateTime)).
+        /// </summary>
+        internal static DateTime CalcularFechaPicking(DateTime fechaConHora)
         {
             DateTime fechaSinHora = new DateTime(fechaConHora.Year, fechaConHora.Month, fechaConHora.Day);
-            
+
             // Si es antes de las 11h devuelve la fecha de hoy (sin hora)
-            if (fechaConHora.Hour < Constantes.Picking.HORA_MAXIMA_AMPLIAR_PEDIDOS)
+            if (!CorteDelDiaSuperado(fechaConHora))
             {
                 return fechaSinHora;
             }

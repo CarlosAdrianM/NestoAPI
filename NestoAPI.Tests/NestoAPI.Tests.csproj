@@ -415,6 +415,7 @@
     <Compile Include="Models\Picking\GestorMargenesTest.cs" />
     <Compile Include="Models\Picking\RellenadorPickingServiceTests.cs" />
     <Compile Include="Models\Picking\AvisadorPickingAutomaticoTests.cs" />
+    <Compile Include="Models\Picking\GestorPickingCorteTests.cs" />
     <Compile Include="Models\Picking\GeneradorPendientesTest.cs" />
     <Compile Include="Models\RecursosHumanos\GestorAccionesTest.cs" />
     <Compile Include="Models\RecursosHumanos\ImportadorAccionesAlgeteTest.cs" />
