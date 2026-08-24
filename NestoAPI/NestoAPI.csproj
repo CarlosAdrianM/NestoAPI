@@ -620,6 +620,7 @@
     <Compile Include="Infraestructure\CondicionesPrecio\CerasConPrecioMinimo.cs" />
     <Compile Include="Infraestructure\CondicionesPrecio\DuNoPuedeLlevarCualquierDescuento.cs" />
     <Compile Include="Infraestructure\Contabilidad\ContabilidadService.cs" />
+    <Compile Include="Infraestructure\Contabilidad\GeneradorContraasiento.cs" />
     <Compile Include="Infraestructure\ExtractosCliente\ServicioLiquidarEfectos.cs" />
     <Compile Include="Infraestructure\Remesas\CrearRemesaService.cs" />
     <Compile Include="Infraestructure\Remesas\SelectorEfectosCobrables.cs" />
