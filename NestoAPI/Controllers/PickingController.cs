@@ -34,6 +34,17 @@ namespace NestoAPI.Controllers
             return Ok(gestorPicking.PedidosEnPicking());
         }
 
+        // GET: api/Picking/15191
+        [HttpGet]
+        [ResponseType(typeof(string))]
+        public async Task<IHttpActionResult> SacarPicking(string cliente)
+        {
+            crearModulos();
+            await Task.Run(() => gestorPicking.SacarPicking(cliente));
+
+            return Ok(gestorPicking.PedidosEnPicking());
+        }
+
         /// <summary>
         /// NestoAPI#361: disparo MANUAL del picking de CIERRE del día (el de las 11h).
         ///
