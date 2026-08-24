@@ -1158,6 +1158,66 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_CpExistente_LoAdjuntaAlContextoParaQueEfNoLoInserte()
+        {
+            // NestoAPI#403 (caso real: Enrique, 24/08/26, cliente frances con CP 13210, que ya
+            // existe como Villarta de San Juan, Ciudad Real).
+            //
+            // BuscarCodigoPostal abre su PROPIO DbContext y lo cierra, asi que el CP que devuelve
+            // viene DESCONECTADO. Al colgarlo de cliente.CodigosPostales y hacer
+            // db.Clientes.Add(cliente), EF trae al contexto todo el grafo alcanzable que no este
+            // ya siendo seguido y lo marca como Added -> INSERT -> PK_CodigosPostales duplicada.
+            //
+            // OJO con el test anterior a este fix: comprobaba que NO se llamara a
+            // db.CodigosPostales.Add, y era cierto. El INSERT no lo pedia Add, lo decidia EF al
+            // recorrer el grafo. Por eso hace falta comprobar explicitamente el Attach.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            CodigoPostal cpExistente = new CodigoPostal
+            {
+                Empresa = "1",
+                Número = "13210",
+                Descripción = "VILLARTA DE SAN JUAN",
+                Provincia = "CIUDAD REAL",
+                Ruta = "00",
+                Pais = "ES"
+            };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "13210")).Returns(cpExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nombre = "CLIENTE FRANCES",
+                Pais = "FR",
+                CodigoPostal = "13210",
+                Poblacion = "MARSELLA",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            A.CallTo(() => db.CodigosPostales.Attach(cpExistente)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
+            Assert.AreEqual("MARSELLA", clienteNuevo.Población,
+                "La poblacion del cliente es la SUYA, no la del CP compartido");
+        }
+
+        [TestMethod]
+        public void GestorClientes_AdjuntarCodigoPostalExistente_SiElContextoYaLoSigue_NoLanza()
+        {
+            // Attach lanza InvalidOperationException si el contexto ya sigue otra instancia con la
+            // misma clave. Ese caso no es un problema (lo que importa, que EF no lo inserte, ya se
+            // cumple), asi que no puede tumbar el alta del cliente.
+            NVEntities db = A.Fake<NVEntities>();
+            CodigoPostal cp = new CodigoPostal { Empresa = "1", Número = "13210" };
+            A.CallTo(() => db.CodigosPostales.Attach(cp)).Throws(new InvalidOperationException("ya seguido"));
+
+            GestorClientes.AdjuntarCodigoPostalExistente(db, cp);
+        }
+
+        [TestMethod]
         public void GestorClientes_PrepararClienteCrear_CpExistenteSinPais_LeRellenaElPais()
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();

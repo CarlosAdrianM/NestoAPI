@@ -121,6 +121,21 @@ namespace NestoAPI.Infraestructure
             CodigoPostal cpDb = await servicio.BuscarCodigoPostal(empresa, codigoPostal).ConfigureAwait(false);
             if (cpDb != null)
             {
+                // NestoAPI#403: BuscarCodigoPostal abre su PROPIO DbContext y lo cierra, así que
+                // devuelve una entidad DESCONECTADA. Al colgarla de cliente.CódigosPostales y
+                // hacer db.Clientes.Add(cliente), EF trae al contexto TODO el grafo alcanzable que
+                // no esté ya siendo seguido y lo marca como Added: intentaba INSERTAR un código
+                // postal que ya existe y reventaba con PK_CódigosPostales duplicada.
+                //
+                // Solo se ve cuando el CP extranjero YA existe, que es justo la colisión de
+                // Empresa+Número que documenta #378: el 13210 de Francia contra el de Villarta de
+                // San Juan (Ciudad Real). Casos reales: 16145 Génova (10/08) y 13210 (24/08).
+                //
+                // Los tests no lo cazaron porque usan un NVEntities falso, que no tiene
+                // seguimiento de cambios: comprobaban que no se llamara a Add —cierto— pero el
+                // INSERT no lo pedía Add, lo decidía EF al recorrer el grafo.
+                AdjuntarCodigoPostalExistente(db, cpDb);
+
                 // #378: si el CP ya existía pero sin país (Nesto viejo, o altas anteriores a la
                 // columna), se autocompleta con el de esta dirección. Solo rellena NULL: si ya
                 // tiene país (aunque sea otro por la colisión Empresa+Número), no se pisa.
@@ -142,6 +157,28 @@ namespace NestoAPI.Infraestructure
             };
             _ = db.CodigosPostales.Add(cpDb);
             return cpDb;
+        }
+
+        /// <summary>
+        /// NestoAPI#403: dice al contexto que este código postal YA está en la base de datos, para
+        /// que al guardar el cliente no intente insertarlo. Sin esto, EF lo trata como entidad
+        /// nueva (ver el comentario de <see cref="AsegurarCodigoPostalExtranjero"/>).
+        ///
+        /// Adjuntarlo como Unchanged tiene además un efecto que antes no funcionaba: el
+        /// autocompletado de país de #378 pasa a generar un UPDATE de verdad. Antes se cambiaba la
+        /// propiedad de una entidad desconectada y no llegaba nunca a la base de datos.
+        /// </summary>
+        internal static void AdjuntarCodigoPostalExistente(NVEntities db, CodigoPostal cp)
+        {
+            try
+            {
+                _ = db.CodigosPostales.Attach(cp);
+            }
+            catch (InvalidOperationException)
+            {
+                // El contexto ya sigue otra instancia con esa misma clave: no hay nada que
+                // adjuntar, y lo que importa (que EF no lo inserte) ya se cumple.
+            }
         }
 
         private static string Truncar(string texto, int longitud)
