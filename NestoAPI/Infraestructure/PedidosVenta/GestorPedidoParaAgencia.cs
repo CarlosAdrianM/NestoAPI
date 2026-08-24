@@ -83,6 +83,48 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
+        /// Equivale al fallback de CalcularPedidoTexto: cuando lo que se teclea en el hueco del
+        /// pedido no es ni un número ni una factura, se busca un CLIENTE cuyo nombre, dirección
+        /// o teléfono contengan ese texto, y se coge su pedido más reciente.
+        ///
+        /// En Nesto esto eran dos pasos: CargarClientePorUnDato (que abría un DbContext, lo
+        /// cerraba con Using y devolvía la entidad) y después
+        /// <c>clienteEncontrado.CabPedidoVta.OrderByDescending(...).FirstOrDefault()</c>. Esa
+        /// segunda parte navegaba una propiedad con lazy loading sobre un contexto YA CERRADO,
+        /// así que reventaba con ObjectDisposedException en cuanto la búsqueda encontraba
+        /// cliente. Al traerlo aquí, los dos pasos son una sola consulta y el fallo desaparece.
+        ///
+        /// Se conserva del original el FirstOrDefault del cliente (sin OrderBy: si varios
+        /// clientes casan con el texto, gana el que decida el plan de SQL Server) y el
+        /// OrderByDescending por número para quedarse con el pedido más reciente.
+        /// </summary>
+        public async Task<PedidoParaAgenciaDTO> LeerPorTextoDeCliente(string empresa, string texto)
+        {
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                return null;
+            }
+
+            Cliente cliente = await db.Clientes
+                .FirstOrDefaultAsync(c => c.Empresa == empresa
+                    && (c.Nombre.Contains(texto) || c.Dirección.Contains(texto) || c.Teléfono.Contains(texto)))
+                .ConfigureAwait(false);
+            if (cliente == null)
+            {
+                return null;
+            }
+
+            CabPedidoVta pedido = await db.CabPedidoVtas
+                .Where(p => p.Empresa == cliente.Empresa
+                         && p.Nº_Cliente == cliente.Nº_Cliente
+                         && p.Contacto == cliente.Contacto)
+                .OrderByDescending(p => p.Número)
+                .FirstOrDefaultAsync().ConfigureAwait(false);
+
+            return await Montar(pedido).ConfigureAwait(false);
+        }
+
+        /// <summary>
         /// Núcleo común: de la entidad al DTO. SIN Trim (ver PedidoParaAgenciaDTO) y con la
         /// ficha del cliente a null cuando no la hay, que para Agencias es una señal, no un
         /// descuido.

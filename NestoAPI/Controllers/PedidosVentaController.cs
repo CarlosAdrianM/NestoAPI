@@ -348,7 +348,7 @@ namespace NestoAPI.Controllers
         [Route("api/PedidosVenta/ParaAgencia")]
         [ResponseType(typeof(PedidoParaAgenciaDTO))]
         public async Task<IHttpActionResult> GetPedidoParaAgencia(string empresa = null, int? numero = null,
-            string factura = null, bool incluirEspejo = false)
+            string factura = null, bool incluirEspejo = false, string textoCliente = null)
         {
             var gestor = new Infraestructure.PedidosVenta.GestorPedidoParaAgencia(db);
             PedidoParaAgenciaDTO pedido;
@@ -357,9 +357,17 @@ namespace NestoAPI.Controllers
             {
                 pedido = await gestor.LeerPorFactura(factura).ConfigureAwait(false);
             }
+            else if (!string.IsNullOrWhiteSpace(textoCliente))
+            {
+                if (string.IsNullOrWhiteSpace(empresa))
+                {
+                    return BadRequest("Con 'textoCliente' hay que indicar tambien 'empresa'.");
+                }
+                pedido = await gestor.LeerPorTextoDeCliente(empresa, textoCliente).ConfigureAwait(false);
+            }
             else if (numero == null)
             {
-                return BadRequest("Hay que indicar 'numero' o 'factura'.");
+                return BadRequest("Hay que indicar 'numero', 'factura' o 'textoCliente'.");
             }
             else if (!string.IsNullOrWhiteSpace(empresa))
             {

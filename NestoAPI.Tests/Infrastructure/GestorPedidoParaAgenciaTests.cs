@@ -225,6 +225,82 @@ namespace NestoAPI.Tests.Infrastructure
                 "Sin linea con esa factura no hay pedido, aunque exista un pedido numero 0");
         }
 
+        // ===== Cuarto modo: buscar por texto de cliente =====
+        // Sustituye al fallback de CalcularPedidoTexto, que en Nesto eran dos pasos
+        // (CargarClientePorUnDato + navegar cliente.CabPedidoVta). El segundo paso navegaba una
+        // propiedad con lazy loading sobre un DbContext ya cerrado por su Using, asi que
+        // reventaba con ObjectDisposedException en cuanto la busqueda encontraba cliente. Aqui
+        // es una sola consulta.
+
+        [TestMethod]
+        public void LeerPorTextoDeCliente_PorNombre_DevuelveElPedidoMasRecienteDeEseCliente()
+        {
+            var antiguo = PedidoCompleto();
+            antiguo.Número = 900000;
+            var reciente = PedidoCompleto();
+            reciente.Número = 924645;
+            NVEntities db = CrearDb(new[] { antiguo, reciente }, new[] { FichaCompleta() });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            PedidoParaAgenciaDTO dto = gestor.LeerPorTextoDeCliente("1  ", "VILLEGAS").Result;
+
+            Assert.IsNotNull(dto);
+            Assert.AreEqual(924645, dto.Numero, "Se coge el pedido de numero mas alto, como el OrderByDescending original");
+        }
+
+        [TestMethod]
+        public void LeerPorTextoDeCliente_PorDireccionOPorTelefono_TambienEncuentra()
+        {
+            NVEntities db = CrearDb(new[] { PedidoCompleto() }, new[] { FichaCompleta() });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            Assert.IsNotNull(gestor.LeerPorTextoDeCliente("1  ", "REINA").Result, "por direccion");
+            Assert.IsNotNull(gestor.LeerPorTextoDeCliente("1  ", "916280000").Result, "por telefono");
+        }
+
+        [TestMethod]
+        public void LeerPorTextoDeCliente_DeOtraEmpresa_NoLoEncuentra()
+        {
+            NVEntities db = CrearDb(new[] { PedidoCompleto() }, new[] { FichaCompleta() });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            Assert.IsNull(gestor.LeerPorTextoDeCliente("2  ", "VILLEGAS").Result);
+        }
+
+        [TestMethod]
+        public void LeerPorTextoDeCliente_ClienteSinPedidos_DevuelveNulo()
+        {
+            NVEntities db = CrearDb(clientes: new[] { FichaCompleta() });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            Assert.IsNull(gestor.LeerPorTextoDeCliente("1  ", "VILLEGAS").Result,
+                "Hay cliente pero no tiene pedidos: Agencias lo trata como 'no encontrado'");
+        }
+
+        [TestMethod]
+        public void LeerPorTextoDeCliente_TextoVacio_DevuelveNuloSinConsultar()
+        {
+            NVEntities db = CrearDb(new[] { PedidoCompleto() }, new[] { FichaCompleta() });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            Assert.IsNull(gestor.LeerPorTextoDeCliente("1  ", null).Result);
+            Assert.IsNull(gestor.LeerPorTextoDeCliente("1  ", "   ").Result);
+        }
+
+        // Mismo contrato de padding que los otros tres modos.
+        [TestMethod]
+        public void LeerPorTextoDeCliente_CamposChar_ConservanElPaddingDeLaBd()
+        {
+            NVEntities db = CrearDb(new[] { PedidoCompleto() }, new[] { FichaCompleta() });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            PedidoParaAgenciaDTO dto = gestor.LeerPorTextoDeCliente("1  ", "VILLEGAS").Result;
+
+            Assert.AreEqual("1  ", dto.Empresa);
+            Assert.AreEqual("22709     ", dto.Cliente);
+            Assert.AreEqual("0  ", dto.Contacto);
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
