@@ -1122,7 +1122,10 @@ namespace NestoAPI.Tests.Infrastructure
 
             Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
 
-            Assert.AreSame(cpExistente, clienteNuevo.CódigosPostales);
+            // NestoAPI#403: un CP que YA existe no se cuelga de la navegacion (basta el FK escalar);
+            // colgarlo hacia que EF propagase su Empresa con padding y rompiese el fixup posterior.
+            Assert.IsNull(clienteNuevo.CódigosPostales, "El CP existente no se cuelga de la navegacion");
+            Assert.AreEqual("1000-103", clienteNuevo.CodPostal, "El FK escalar es lo que enlaza");
             A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
         }
 
@@ -1152,8 +1155,8 @@ namespace NestoAPI.Tests.Infrastructure
 
             Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
 
-            Assert.AreSame(cpExistente, clienteNuevo.CódigosPostales, "La búsqueda debe hacerse con el CP normalizado (sin blancos)");
-            Assert.AreEqual("16145", clienteNuevo.CodPostal, "El CP del cliente se guarda sin blancos o rompería la FK");
+            Assert.IsNull(clienteNuevo.CódigosPostales, "#403: el CP existente no se cuelga de la navegacion");
+            Assert.AreEqual("16145", clienteNuevo.CodPostal, "La busqueda debe hacerse con el CP normalizado y guardarse sin blancos");
             A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
         }
 
@@ -1202,6 +1205,53 @@ namespace NestoAPI.Tests.Infrastructure
             A.CallTo(() => db.CodigosPostales.Add(A<CodigoPostal>.Ignored)).MustNotHaveHappened();
             Assert.AreEqual("MARSELLA", clienteNuevo.Población,
                 "La poblacion del cliente es la SUYA, no la del CP compartido");
+            // NestoAPI#403 (segunda parte): tampoco se cuelga de la navegacion. Ver el test
+            // ...ElCpExistenteNoSeCuelgaDeLaNavegacion para el porque.
+            Assert.IsNull(clienteNuevo.CódigosPostales);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_CpExistente_ElClienteYSusHijosCompartenLaMismaEmpresa()
+        {
+            // NestoAPI#403 (segundo fallo, 24/08/26 tras desplegar el primero): al colgar de la
+            // navegacion un CP traido de OTRO contexto, EF propaga los valores de clave del
+            // principal al dependiente. Ese CP viene de la BD con el padding de char(3) ("1  "),
+            // asi que cliente.Empresa pasaba de "1" a "1  " DESPUES de que CondPagoCliente hubiera
+            // copiado el "1". La fila entraba bien en la BD pero el fixup posterior de EF fallaba
+            // con "A referential integrity constraint violation occurred", y Enrique veia un error
+            // en un alta que SI se habia hecho (cliente 41864).
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            // El CP viene de la BD CON el padding de char(3), como en produccion.
+            CodigoPostal cpExistente = new CodigoPostal
+            {
+                Empresa = "1  ",
+                Número = "13210          ",
+                Descripción = "VILLARTA DE SAN JUAN",
+                Ruta = "00",
+                Pais = "ES"
+            };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "13210")).Returns(cpExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "41864",
+                Empresa = "1",
+                Nombre = "DOCTEUR GHALI OTHMAN",
+                Pais = "FR",
+                CodigoPostal = "13210",
+                Poblacion = "SAINT-REMY-DE-PROVENCE",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            CondPagoCliente condPago = clienteNuevo.CondPagoClientes.Single();
+            Assert.AreEqual(clienteNuevo.Empresa, condPago.Empresa,
+                "Si el cliente y sus hijos no comparten Empresa, EF lanza al hacer el fixup DESPUES de guardar");
+            Assert.AreEqual("1", clienteNuevo.Empresa, "No debe heredar el padding de la fila de CodigosPostales");
         }
 
         [TestMethod]

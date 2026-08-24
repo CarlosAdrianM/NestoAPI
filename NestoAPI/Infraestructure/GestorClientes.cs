@@ -108,7 +108,7 @@ namespace NestoAPI.Infraestructure
         /// FK_Clientes_CódigosPostales impide guardar el cliente; se dan de alta al vuelo
         /// en la ruta 00 de clientes extranjeros.
         /// </summary>
-        internal async Task<CodigoPostal> AsegurarCodigoPostalExtranjero(NVEntities db, string empresa, string codigoPostal, string poblacion, string provincia, string pais)
+        internal async Task<(CodigoPostal CodigoPostal, bool EsNuevo)> AsegurarCodigoPostalExtranjero(NVEntities db, string empresa, string codigoPostal, string poblacion, string provincia, string pais)
         {
             empresa = empresa ?? Constantes.Empresas.EMPRESA_POR_DEFECTO;
             // ELMAH 10/08/26: el CP puede llegar con blancos invisibles al PRINCIPIO (espacio,
@@ -143,7 +143,7 @@ namespace NestoAPI.Infraestructure
                 {
                     cpDb.Pais = pais?.Trim().ToUpper();
                 }
-                return cpDb;
+                return (cpDb, false);
             }
             cpDb = new CodigoPostal
             {
@@ -156,7 +156,7 @@ namespace NestoAPI.Infraestructure
                 Pais = pais?.Trim().ToUpper() // #378: que el CP extranjero nazca con su país
             };
             _ = db.CodigosPostales.Add(cpDb);
-            return cpDb;
+            return (cpDb, true);
         }
 
         /// <summary>
@@ -970,7 +970,7 @@ namespace NestoAPI.Infraestructure
                 CodigoPostal cp = await servicio.BuscarCodigoPostal(clienteModificar.Empresa, clienteModificar.CodigoPostal).ConfigureAwait(false);
                 if (cp == null && EsPaisExtranjero(clienteDB.Pais))
                 {
-                    cp = await AsegurarCodigoPostalExtranjero(db, clienteModificar.Empresa, clienteModificar.CodigoPostal, clienteModificar.Poblacion, clienteModificar.Provincia, clienteDB.Pais.Trim()).ConfigureAwait(false);
+                    cp = (await AsegurarCodigoPostalExtranjero(db, clienteModificar.Empresa, clienteModificar.CodigoPostal, clienteModificar.Poblacion, clienteModificar.Provincia, clienteDB.Pais.Trim()).ConfigureAwait(false)).CodigoPostal;
                 }
                 if (cp == null)
                 {
@@ -1245,7 +1245,23 @@ namespace NestoAPI.Infraestructure
 
             if (EsPaisExtranjero(cliente.Pais) && !string.IsNullOrWhiteSpace(cliente.CodPostal))
             {
-                cliente.CódigosPostales = await AsegurarCodigoPostalExtranjero(db, cliente.Empresa, cliente.CodPostal, cliente.Población, cliente.Provincia, cliente.Pais).ConfigureAwait(false);
+                // NestoAPI#403: la navegación se cuelga SOLO si el código postal hay que crearlo, para
+                // que EF sepa que debe insertarlo ANTES que el cliente. Si ya existía basta con el FK
+                // escalar (cliente.CodPostal), que ya está puesto y apunta a una fila real.
+                //
+                // Colgar el CP existente reventaba de otra forma: EF propaga los valores de clave del
+                // principal al dependiente, y ese CP viene de la BD con el padding de char(3)
+                // ("1  "), así que cliente.Empresa pasaba de "1" a "1  " DESPUÉS de que
+                // CondPagoCliente hubiera copiado el "1". Al guardar, la fila entraba bien pero el
+                // fixup posterior de EF fallaba con "A referential integrity constraint violation
+                // occurred" y el usuario veía un error en un alta que SÍ se había hecho (caso real:
+                // cliente 41864 de Enrique, 24/08/26).
+                (CodigoPostal codigoPostal, bool esNuevo) = await AsegurarCodigoPostalExtranjero(
+                    db, cliente.Empresa, cliente.CodPostal, cliente.Población, cliente.Provincia, cliente.Pais).ConfigureAwait(false);
+                if (esNuevo)
+                {
+                    cliente.CódigosPostales = codigoPostal;
+                }
             }
 
             if (clienteCrear.Peluqueria && !clienteCrear.Estetica)
