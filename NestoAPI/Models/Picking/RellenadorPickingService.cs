@@ -48,8 +48,32 @@ namespace NestoAPI.Models.Picking
         public List<PedidoPicking> Rellenar(string empresa, int numeroPedido)
         {
             CabPedidoVta pedido = db.CabPedidoVtas.SingleOrDefault(p => p.Empresa == empresa && p.Número == numeroPedido);
-            pedidos.Add(pedido);
+            pedidos.Add(ValidarPedidoExiste(pedido, empresa, numeroPedido));
             return Ejecutar();
+        }
+
+        /// <summary>
+        /// Si el pedido no existe (número que no está, o empresa que no casa), SingleOrDefault
+        /// devuelve null. Antes se metía ese null en la lista y Ejecutar() reventaba con un
+        /// NullReferenceException al hacer p.LinPedidoVtas — un 500 sin ninguna pista de qué
+        /// pedido se había pedido. Se convierte en un error de NEGOCIO (400) con el número
+        /// dentro, que es lo que necesita quien está sacando el picking.
+        /// </summary>
+        internal static CabPedidoVta ValidarPedidoExiste(CabPedidoVta pedido, string empresa, int numeroPedido)
+        {
+            if (pedido == null)
+            {
+                throw new Infraestructure.Exceptions.NestoBusinessException(
+                    $"No existe el pedido {numeroPedido} en la empresa {empresa?.Trim()}",
+                    new Infraestructure.Exceptions.ErrorContext
+                    {
+                        ErrorCode = "PICKING_PEDIDO_NO_EXISTE",
+                        Empresa = empresa?.Trim(),
+                        Pedido = numeroPedido
+                    });
+            }
+
+            return pedido;
         }
 
         public List<PedidoPicking> Rellenar(string cliente)
