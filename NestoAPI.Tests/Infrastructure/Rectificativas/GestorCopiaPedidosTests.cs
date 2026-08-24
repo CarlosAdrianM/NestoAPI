@@ -1,8 +1,9 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Rectificativas;
 using NestoAPI.Models;
 using NestoAPI.Models.Rectificativas;
@@ -1073,6 +1074,73 @@ namespace NestoAPI.Tests.Infrastructure.Rectificativas
             // Assert: no se sobrescribe nada.
             Assert.AreEqual("CLIENTE EJEMPLO SL", abono.NombreFiscal);
             Assert.AreEqual("C/ Actual, 5", abono.DireccionFiscal);
+        }
+
+        // ===== NestoAPI#400: las validaciones que faltan datos son de NEGOCIO, no fallos =====
+        // CopiarFactura tiene un catch que se lo traga TODO: llama a ElmahHelper.Señalar y devuelve
+        // Exitoso=false. Ese Señalar es una llamada EXPLICITA y no pasa por GlobalExceptionFilter,
+        // asi que el filtro de #361 no lo cubria. Ahora se aplica ahi la misma regla.
+        // Caso real: Santiago, 20/08/26, dos intentos en un minuto porque el mensaje parecia un
+        // error del sistema en vez de "te falta un dato".
+
+        [TestMethod]
+        public async Task CopiarFactura_AbonoYCargoSinClienteDestino_DevuelveElMensajeDeNegocioSinDisfrazarlo()
+        {
+            GestorCopiaPedidos gestor = CrearGestorConFacturas();
+            var request = new CopiarFacturaRequest
+            {
+                Empresa = "1",
+                Cliente = "15234",
+                NumeroFactura = "NV26/001234",
+                CrearAbonoYCargo = true,
+                ClienteDestino = null,
+                ContactoDestino = null
+            };
+
+            CopiarFacturaResponse respuesta = await gestor.CopiarFactura(request, "Carlos");
+
+            Assert.IsFalse(respuesta.Exitoso);
+            Assert.IsTrue(respuesta.Mensaje.Contains("ClienteDestino"), respuesta.Mensaje);
+            Assert.IsFalse(respuesta.Mensaje.StartsWith("Error al copiar factura"),
+                $"Es una validacion de negocio, no un error del sistema: '{respuesta.Mensaje}'");
+            Assert.IsFalse(respuesta.Mensaje.StartsWith("Error en operación"),
+                $"Es una validacion de negocio, no un error del sistema: '{respuesta.Mensaje}'");
+        }
+
+        [TestMethod]
+        public async Task CopiarFactura_SinDatosObligatorios_NoSeRegistranEnElmah()
+        {
+            // La regla se comparte con GlobalExceptionFilter para no tener dos criterios distintos.
+            GestorCopiaPedidos gestor = CrearGestorConFacturas();
+
+            foreach (CopiarFacturaRequest request in new[]
+            {
+                new CopiarFacturaRequest { Empresa = null, Cliente = "15234", NumeroFactura = "NV26/001234" },
+                new CopiarFacturaRequest { Empresa = "1", Cliente = null, NumeroFactura = "NV26/001234" },
+                new CopiarFacturaRequest { Empresa = "1", Cliente = "15234", NumeroFactura = null },
+                new CopiarFacturaRequest { Empresa = "1", Cliente = "15234", NumeroFactura = "NV26/001234", ClienteDestino = "18456", ContactoDestino = null }
+            })
+            {
+                CopiarFacturaResponse respuesta = await gestor.CopiarFactura(request, "Carlos");
+
+                Assert.IsFalse(respuesta.Exitoso, respuesta.Mensaje);
+                Assert.IsFalse(respuesta.Mensaje.StartsWith("Error al copiar factura"),
+                    $"Deberia salir el mensaje de negocio tal cual: '{respuesta.Mensaje}'");
+            }
+        }
+
+        [TestMethod]
+        public void ValidacionesDeCopiaDeFactura_SonExcepcionesDeNegocio_YPorTantoNoVanAElmah()
+        {
+            // Lo que decide si va a ELMAH es DebeRegistrarseEnElmah, compartido con el filtro global.
+            var sinDestino = new NestoBusinessException("Para la operación Abono+Cargo debe especificar ClienteDestino y ContactoDestino",
+                new ErrorContext { ErrorCode = "ABONO_CARGO_SIN_DESTINO" });
+
+            Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, sinDestino.StatusCode);
+            Assert.IsFalse(NestoAPI.Infraestructure.Filters.GlobalExceptionFilter.DebeRegistrarseEnElmah(sinDestino));
+            // Un fallo de verdad si se sigue registrando.
+            Assert.IsTrue(NestoAPI.Infraestructure.Filters.GlobalExceptionFilter.DebeRegistrarseEnElmah(
+                new InvalidOperationException("La secuencia contiene mas de un elemento")));
         }
 
         private static GestorCopiaPedidos CrearGestorConFacturas(params CabFacturaVta[] facturas)

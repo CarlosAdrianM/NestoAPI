@@ -1,8 +1,9 @@
-using NestoAPI.Infraestructure.AlbaranesVenta;
+﻿using NestoAPI.Infraestructure.AlbaranesVenta;
 using NestoAPI.Infraestructure.Facturas;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
 using NestoAPI.Models.Rectificativas;
+using NestoAPI.Infraestructure.Exceptions;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -64,12 +65,21 @@ namespace NestoAPI.Infraestructure.Rectificativas
             {
                 // Registrar en ELMAH para diagnóstico
                 // NestoAPI#182: puede ejecutarse dentro de la transacción de la copia/facturación
-                ElmahHelper.Señalar(ex);
+                // NestoAPI#400: salvo las denegaciones de negocio (le falta un dato a la petición),
+                // que no son fallos del sistema. OJO: este Señalar es una llamada EXPLÍCITA y por
+                // tanto NO pasa por GlobalExceptionFilter, así que el filtro de #361 no la cubría;
+                // hay que aplicar aquí la misma regla, reutilizándola para no tener dos criterios.
+                if (Filters.GlobalExceptionFilter.DebeRegistrarseEnElmah(ex))
+                {
+                    ElmahHelper.Señalar(ex);
+                }
 
                 return new CopiarFacturaResponse
                 {
                     Exitoso = false,
-                    Mensaje = $"Error al copiar factura: {ex.Message}"
+                    // Una validación de negocio ya trae un mensaje claro para el usuario: no hace
+                    // falta disfrazarla de error del sistema.
+                    Mensaje = ex is NestoBusinessException ? ex.Message : $"Error al copiar factura: {ex.Message}"
                 };
             }
         }
@@ -344,20 +354,30 @@ namespace NestoAPI.Infraestructure.Rectificativas
             return lineasCopiadas;
         }
 
+        /// <summary>
+        /// NestoAPI#400: estas validaciones son de NEGOCIO —le falta un dato a la peticion—, no
+        /// fallos del servidor. Con ArgumentException salian como 500 y ademas ensuciaban ELMAH
+        /// como si algo se hubiera roto; el usuario, al ver un error de sistema, lo reintentaba en
+        /// vez de corregir el dato (caso real: Santiago, 20/08/26, dos intentos en un minuto).
+        /// Con NestoBusinessException salen como 400 con su mensaje y quedan fuera del log (#361).
+        /// </summary>
         private void ValidarRequest(CopiarFacturaRequest request)
         {
             if (string.IsNullOrWhiteSpace(request.Empresa))
-                throw new ArgumentException("La empresa es requerida");
+                throw new NestoBusinessException("La empresa es requerida",
+                    new ErrorContext { ErrorCode = "COPIA_FACTURA_SIN_EMPRESA" });
 
             if (string.IsNullOrWhiteSpace(request.Cliente))
-                throw new ArgumentException("El cliente es requerido");
+                throw new NestoBusinessException("El cliente es requerido",
+                    new ErrorContext { ErrorCode = "COPIA_FACTURA_SIN_CLIENTE", Empresa = request.Empresa?.Trim() });
 
             // Debe tener NumeroFactura O NumerosFactura con al menos un elemento
             bool tieneFacturaSimple = !string.IsNullOrWhiteSpace(request.NumeroFactura);
             bool tieneFacturasMultiples = request.NumerosFactura != null && request.NumerosFactura.Any();
 
             if (!tieneFacturaSimple && !tieneFacturasMultiples)
-                throw new ArgumentException("El número de factura es requerido");
+                throw new NestoBusinessException("El número de factura es requerido",
+                    new ErrorContext { ErrorCode = "COPIA_FACTURA_SIN_FACTURA", Empresa = request.Empresa?.Trim(), Cliente = request.Cliente?.Trim() });
 
             // Si hay NumerosFactura con un solo elemento, usar NumeroFactura para simplificar
             if (tieneFacturasMultiples && request.NumerosFactura.Count == 1)
@@ -366,7 +386,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
             }
 
             if (request.EsCambioCliente && string.IsNullOrWhiteSpace(request.ContactoDestino))
-                throw new ArgumentException("El contacto destino es requerido cuando se cambia de cliente");
+                throw new NestoBusinessException("El contacto destino es requerido cuando se cambia de cliente",
+                    new ErrorContext { ErrorCode = "COPIA_FACTURA_SIN_CONTACTO_DESTINO", Empresa = request.Empresa?.Trim(), Cliente = request.Cliente?.Trim(), Factura = request.NumeroFactura?.Trim() });
         }
 
         /// <summary>
@@ -858,7 +879,8 @@ namespace NestoAPI.Infraestructure.Rectificativas
                 // Validar que hay cliente destino (requerido para esta operación)
                 if (string.IsNullOrWhiteSpace(request.ClienteDestino) || string.IsNullOrWhiteSpace(request.ContactoDestino))
                 {
-                    throw new ArgumentException("Para la operación Abono+Cargo debe especificar ClienteDestino y ContactoDestino");
+                    throw new NestoBusinessException("Para la operación Abono+Cargo debe especificar ClienteDestino y ContactoDestino",
+                        new ErrorContext { ErrorCode = "ABONO_CARGO_SIN_DESTINO", Empresa = request.Empresa?.Trim(), Cliente = request.Cliente?.Trim(), Factura = request.NumeroFactura?.Trim() });
                 }
 
                 // Obtener datos del cliente origen desde la factura (o buscar por pedido)
@@ -960,9 +982,13 @@ namespace NestoAPI.Infraestructure.Rectificativas
             catch (Exception ex)
             {
                 response.Exitoso = false;
-                response.Mensaje = $"Error en operación Abono+Cargo: {ex.Message}";
+                // NestoAPI#400: ver el catch de CopiarFactura.
+                response.Mensaje = ex is NestoBusinessException ? ex.Message : $"Error en operación Abono+Cargo: {ex.Message}";
                 // NestoAPI#182: puede ejecutarse dentro de la transacción de la copia/facturación
-                ElmahHelper.Señalar(ex);
+                if (Filters.GlobalExceptionFilter.DebeRegistrarseEnElmah(ex))
+                {
+                    ElmahHelper.Señalar(ex);
+                }
             }
 
             return response;
