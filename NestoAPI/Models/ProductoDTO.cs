@@ -224,6 +224,15 @@ namespace NestoAPI.Models
             return pvpIvaIncluido > 0 ? pvpIvaIncluido : null;
         }
 
+        /// <summary>
+        /// ¿La búsqueda por referencia ha devuelto más de un producto? Entonces no hay respuesta:
+        /// elegir uno al azar es peor que calcular el precio, porque devolvería el de otro artículo.
+        /// </summary>
+        internal static bool EsReferenciaAmbigua(int productosEncontrados)
+        {
+            return productosEncontrados > 1;
+        }
+
         private static async Task<decimal> LeerPrecioPublicoFinalDesdePrestashop(string producto)
         {
             string urlPrestashop = $"http://www.productosdeesteticaypeluqueriaprofesional.com/api/products?filter[reference]={producto}";
@@ -250,7 +259,23 @@ namespace NestoAPI.Models
                     XmlDocument xmlDoc = new XmlDocument();
                     xmlDoc.LoadXml(xmlResponse);
 
-                    XmlNode productNode = xmlDoc.SelectSingleNode("//product");
+                    // NestoAPI#405 (coordinación con la tienda, 25/08/2026): en PrestaShop hay 239
+                    // referencias duplicadas que afectan a 484 productos. SelectSingleNode cogía el
+                    // primero que viniera, así que para esos se leía el precio de OTRO producto sin
+                    // que nadie lo supiera. Si la respuesta trae más de uno, no se elige: se deja
+                    // que el llamante calcule el precio en local.
+                    XmlNodeList productNodes = xmlDoc.SelectNodes("//product");
+                    if (EsReferenciaAmbigua(productNodes?.Count ?? 0))
+                    {
+                        Infraestructure.ElmahHelper.Log(new Exception(
+                            $"La referencia {producto} está duplicada en PrestaShop ({productNodes.Count} productos). " +
+                            "No se puede saber cuál es el precio bueno, así que se calcula desde el PVP. " +
+                            "Hay que dejar la referencia sin duplicar en la tienda."),
+                            "Sistema (precios de la tienda)");
+                        return 0;
+                    }
+
+                    XmlNode productNode = productNodes != null && productNodes.Count == 1 ? productNodes[0] : null;
 
                     if (productNode != null)
                     {

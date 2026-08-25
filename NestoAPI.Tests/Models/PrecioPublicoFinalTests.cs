@@ -139,6 +139,31 @@ namespace NestoAPI.Tests.Models
                 "El modo 'mismo precio' nunca puede salir mas caro que el que lleva el 30 %");
         }
 
+        // ===== Referencias duplicadas en PrestaShop =====
+
+        [TestMethod]
+        public void EsReferenciaAmbigua_UnSoloProducto_NoEsAmbigua()
+        {
+            Assert.IsFalse(ProductoDTO.EsReferenciaAmbigua(1));
+        }
+
+        [TestMethod]
+        public void EsReferenciaAmbigua_NingunProducto_NoEsAmbigua()
+        {
+            // No estar en la tienda no es ambigüedad: es el caso normal de los 2.474 productos
+            // que no se publican, y se resuelve calculando el precio en local igualmente.
+            Assert.IsFalse(ProductoDTO.EsReferenciaAmbigua(0));
+        }
+
+        [TestMethod]
+        public void EsReferenciaAmbigua_VariosProductos_SiEsAmbigua()
+        {
+            // 239 referencias duplicadas en PrestaShop afectan a 484 productos (25/08/2026). Antes
+            // se cogía el primero que viniera, así que se leía el precio de OTRO artículo.
+            Assert.IsTrue(ProductoDTO.EsReferenciaAmbigua(2));
+            Assert.IsTrue(ProductoDTO.EsReferenciaAmbigua(3));
+        }
+
         // ===== Contrato de serialización con el módulo =====
 
         /// <summary>
