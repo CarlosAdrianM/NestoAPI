@@ -125,7 +125,62 @@ namespace NestoAPI.Models
             }
 
             // Fallback: llamar a la API de Prestashop
-            return await LeerPrecioPublicoFinalDesdePrestashop(producto).ConfigureAwait(false);
+            decimal dePrestashop = await LeerPrecioPublicoFinalDesdePrestashop(producto).ConfigureAwait(false);
+            if (dePrestashop > 0)
+            {
+                return dePrestashop;
+            }
+
+            // PrestaShop no ha dado precio. NO es siempre un fallo: el caso habitual es un producto
+            // que sencillamente no está en la tienda online (2.474 productos vivos el 25/08/2026).
+            // Antes se devolvía 0, y ese 0 se convertía en un precio de venta de 0 € para el
+            // cliente PUBLICO_FINAL ("VENTA TIENDA", el mostrador). Se calcula en local.
+            return await CalcularPrecioPublicoEnLocal(producto, db).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Precio público calculado desde el PVP cuando PrestaShop no lo da. Réplica de la fórmula
+        /// del módulo NestoSync, que es el dueño del cálculo: público = PVP / 0,7 × (1 + IVA).
+        ///
+        /// El IVA sale de ParametrosIVA cruzando el tipo del producto con el del cliente de venta
+        /// en tienda (régimen general), NO del atajo "1,10 si R10, si no 1,21" que usan otros
+        /// puntos del código: hay 82 productos vivos exentos y 4 al 4 % que ese atajo inflaría
+        /// hasta un 21 %.
+        /// </summary>
+        private static async Task<decimal> CalcularPrecioPublicoEnLocal(string producto, NVEntities db)
+        {
+            Producto ficha = await db.Productos
+                .FirstOrDefaultAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto)
+                .ConfigureAwait(false);
+            if (ficha?.PVP == null || ficha.PVP <= 0)
+            {
+                return 0;   // sin PVP no hay nada que calcular (producto a medio dar de alta)
+            }
+
+            string ivaProducto = ficha.IVA_Repercutido;
+            decimal? porcentajeIva = await db.ParametrosIVA
+                .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                    && p.IVA_Producto == ivaProducto
+                    && p.IVA_Cliente_Prov == Constantes.Empresas.IVA_POR_DEFECTO)
+                .Select(p => p.C__IVA)
+                .FirstOrDefaultAsync()
+                .ConfigureAwait(false);
+
+            return CalcularPrecioPublicoDesdePvp(ficha.PVP.Value, porcentajeIva ?? PORCENTAJE_IVA_POR_DEFECTO);
+        }
+
+        // Si el producto tiene un tipo de IVA que no está en ParametrosIVA, el general: es el que
+        // llevan 7.264 de los 7.356 productos vivos, y equivocarse al alza nunca regala nada.
+        private const decimal PORCENTAJE_IVA_POR_DEFECTO = 21M;
+
+        /// <summary>
+        /// Público = PVP / 0,7 × (1 + IVA), redondeado como el resto de la casa (AwayFromZero,
+        /// que es el HALF_UP que usa PrestaShop: así el céntimo coincide con el de la web).
+        /// </summary>
+        internal static decimal CalcularPrecioPublicoDesdePvp(decimal pvp, decimal porcentajeIva)
+        {
+            decimal publicoSinIva = pvp / Constantes.Productos.FACTOR_PRECIO_PROFESIONAL;
+            return Math.Round(publicoSinIva * (1 + porcentajeIva / 100), 2, MidpointRounding.AwayFromZero);
         }
 
         /// <summary>

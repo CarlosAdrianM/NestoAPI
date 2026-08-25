@@ -386,6 +386,18 @@ namespace NestoAPI.Models
             public const decimal PVP_IVA_MISMO_QUE_PROFESIONAL = -1M;
 
             /// <summary>
+            /// El precio profesional (PVP) es el público MENOS el 30 %, así que el público sale de
+            /// dividir por esto. Ojo: no es lo mismo que multiplicar por 1,30 — un descuento del
+            /// 30 % sobre el público equivale a un margen del 42,86 % sobre el profesional.
+            ///
+            /// ⚠️ Este mismo factor está configurado en el módulo NestoSync de PrestaShop, que es
+            /// el dueño del cálculo. Aquí solo se usa cuando PrestaShop NO da precio (producto que
+            /// no está en la tienda, o tienda que no responde). Si allí se cambia el descuento por
+            /// defecto, hay que cambiarlo también aquí o los dos precios divergirán.
+            /// </summary>
+            public const decimal FACTOR_PRECIO_PROFESIONAL = 0.7M;
+
+            /// <summary>
             /// Grupos de producto que generan Ganavisiones (puntos para bonificaciones).
             /// Issue #94: Sistema Ganavisiones
             /// </summary>

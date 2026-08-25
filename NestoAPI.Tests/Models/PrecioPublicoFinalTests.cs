@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using System.Text.Json;
@@ -65,6 +65,58 @@ namespace NestoAPI.Tests.Models
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-1M));
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-5M));
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-0.01M));
+        }
+
+        // ===== Cálculo local, para cuando PrestaShop no da precio =====
+
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_IvaGeneral_AplicaElDescuentoDelTreintaYElIva()
+        {
+            // Réplica de la fórmula del módulo: PVP / 0,7 × 1,21. El profesional es el público
+            // MENOS el 30 %, así que se divide; multiplicar por 1,30 daría un 9,9 % menos.
+            Assert.AreEqual(17.29M, ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 21M));
+        }
+
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_IvaReducido_UsaElDiez()
+        {
+            Assert.AreEqual(15.71M, ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 10M));
+        }
+
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_ProductoExento_NoSumaIva()
+        {
+            // Hay 82 productos vivos exentos. El atajo "si no es R10, 1,21" que usan otros puntos
+            // del código les habría añadido un 21 % que no les corresponde.
+            Assert.AreEqual(14.29M, ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 0M));
+        }
+
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_Superreducido_UsaElCuatro()
+        {
+            Assert.AreEqual(14.86M, ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 4M));
+        }
+
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_RedondeaAlAlzaComoPrestashop()
+        {
+            // PrestaShop usa PS_PRICE_ROUND_MODE = HALF_UP, que es AwayFromZero: el céntimo tiene
+            // que coincidir con el que muestra la web o el mostrador cobraría distinto.
+            // 7,25 / 0,7 = 10,357142... × 1,21 = 12,53214... → 12,53
+            Assert.AreEqual(12.53M, ProductoDTO.CalcularPrecioPublicoDesdePvp(7.25M, 21M));
+            // Caso que cae justo en el medio: 2,893424... redondea al alza, no a par
+            Assert.AreEqual(2.90M, ProductoDTO.CalcularPrecioPublicoDesdePvp(1.6757M, 21M));
+        }
+
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_SiempreMayorQueElProfesionalConIva()
+        {
+            // Invariante de negocio: el público nunca puede salir por debajo del profesional, o
+            // estaríamos vendiendo en tienda más barato que a los profesionales.
+            decimal pvp = 12.50M;
+            decimal profesionalConIva = pvp * 1.21M;
+
+            Assert.IsTrue(ProductoDTO.CalcularPrecioPublicoDesdePvp(pvp, 21M) > profesionalConIva);
         }
 
         // ===== Contrato de serialización con el módulo =====
