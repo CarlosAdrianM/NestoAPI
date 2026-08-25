@@ -186,6 +186,9 @@ namespace NestoAPI.Models
         {
             public static class Estados
             {
+                // El apunte vivo y corriente. Ojo: en la BD conviven "NRM" y NULL para lo mismo,
+                // así que los filtros de apuntes normales tienen que aceptar los dos.
+                public const string NORMAL = "NRM";
                 public const string DEUDA_VENCIDA = "DVD";
                 public const string RETENIDO = "RTN";
             }
@@ -493,6 +496,8 @@ namespace NestoAPI.Models
             public static class Diarios
             {
                 public const string DIARIO_CIERRE = "_ASIENTCIE";
+                // Nesto#340 (A4.1): diario donde caen los cobros de reembolso de las agencias.
+                public const string DIARIO_REEMBOLSOS = "_Reembolso";
             }
 
             public static class TiposCuenta

@@ -604,6 +604,7 @@
     <Compile Include="Infraestructure\Agencias\Tarifas\TarifaCTT48h.cs" />
     <Compile Include="Infraestructure\Agencias\Tarifas\ZonasEnvioAgencia.cs" />
     <Compile Include="Infraestructure\Agencias\ServicioEnviosAgencia.cs" />
+    <Compile Include="Infraestructure\Agencias\TramitacionEnviosService.cs" />
     <Compile Include="Infraestructure\AlbaranesVenta\IGestorAlbaranesVenta.cs" />
     <Compile Include="Infraestructure\CorreoCliente.cs" />
     <Compile Include="Infraestructure\Telefono.cs" />

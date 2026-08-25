@@ -154,8 +154,15 @@ namespace NestoAPI.Controllers
             this.fabricaAgenciasRemotas = fabricaAgenciasRemotas;
         }
 
+        // Nesto#340 (A4.1): la tramitación se inyecta para poder testearla sin BD ni SP.
+        public EnviosAgenciasController(NVEntities db, ITramitacionEnviosService tramitacionEnviosService) : this(db)
+        {
+            this.tramitacionEnviosService = tramitacionEnviosService;
+        }
+
         private NVEntities db;
         private IFabricaAgenciasRemotas fabricaAgenciasRemotas;
+        private ITramitacionEnviosService tramitacionEnviosService;
 
         // ========== Nesto#340 (Agencias, slice A1): listados de la ventana de Agencias ==========
         // Cada endpoint replica el filtro EXACTO del método EF de AgenciaService en el cliente,
@@ -768,6 +775,28 @@ namespace NestoAPI.Controllers
             _ = await db.SaveChangesAsync();
 
             return Ok(new RestarReembolsoResponseDTO { Numero = envio.Numero, Reembolso = envio.Reembolso });
+        }
+
+        // POST: api/EnviosAgencias/5/ConfirmarTramitacion
+        /// <summary>
+        /// Nesto#340 (Agencias, slice A4.1) / Nesto#415: SEGUNDO paso de tramitar un envío, el que
+        /// cierra en NUESTRA base de datos — no confundir con <see cref="TramitarEnvio"/>, que es el
+        /// primero y habla con la agencia (registra el envío y trae la etiqueta ZPL). Aquí el envío
+        /// pasa a Tramitado con sus fechas y, si lleva reembolso, se contabiliza el cobro.
+        ///
+        /// Sustituye a <c>AgenciaService.TramitarEnvio</c> del cliente, que escribía por Entity
+        /// Framework y llamaba a <c>prdContabilizar</c> por su cuenta. El usuario del asiento sale
+        /// del JWT, no del cliente (ver reference_prdcontabilizar_usuario_api).
+        /// </summary>
+        [HttpPost]
+        [Route("api/EnviosAgencias/{id:int}/ConfirmarTramitacion")]
+        [ResponseType(typeof(ResultadoTramitacionEnvio))]
+        public async Task<IHttpActionResult> ConfirmarTramitacion(int id)
+        {
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            ITramitacionEnviosService servicio = tramitacionEnviosService ?? new TramitacionEnviosService(db);
+            ResultadoTramitacionEnvio resultado = await servicio.TramitarAsync(id, usuario);
+            return Ok(resultado);
         }
 
         // POST: api/EnviosAgencias/5/ActualizarSeguimiento
