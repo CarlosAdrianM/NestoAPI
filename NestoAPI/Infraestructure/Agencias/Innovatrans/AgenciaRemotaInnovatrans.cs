@@ -402,11 +402,14 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
             // incidentado. Antes caía en el catch-all -> Tramitado y NO entraba en "Incidentados"
             // (NestoAPI#259, albarán 6522393004, 27-29/06/2026). Se mira el último porque una INCIDENCIA
             // seguida de un evento de tránsito posterior ya estaría resuelta (el último manda).
-            if (ultimo != null && NombreContiene(ultimo, "INCIDEN"))
+            if (ultimo != null && NombreContiene(ultimo, "INCIDEN", ESTADO_DISPONIBLE_PARA_RECOGER))
             {
                 return new SeguimientoEnvioRemoto
                 {
                     Estado = EstadoEnvioSeguimiento.Incidentado,
+                    // El nombre del estado viaja como etiqueta hasta el grid de Incidentados
+                    // (EnviosAgencia.DetalleEstado): distingue "DISPONIBLE PARA RECOGER" de una
+                    // incidencia normal sin necesidad de una pestaña por estado y agencia.
                     Detalle = ultimo.Nombre
                 };
             }
@@ -420,6 +423,13 @@ namespace NestoAPI.Infraestructure.Agencias.Innovatrans
                 Detalle = ultimo?.Nombre
             };
         }
+
+        // El paquete está en un punto de recogida esperando a que el cliente vaya a por él: no es
+        // tránsito (nadie lo está moviendo) ni entrega (no lo tiene el cliente), y si nadie lo recoge
+        // acaba volviendo a origen. Cuenta como INCIDENCIA para que salga en la pestaña de
+        // Incidentados y alguien avise al cliente a tiempo (NestoAPI#259, albarán 6544316001,
+        // envío 247975 del 21/08/2026: 5 pasadas del poll seguidas en este estado).
+        private const string ESTADO_DISPONIBLE_PARA_RECOGER = "DISPONIBLE PARA RECOGER";
 
         // Estados de Innovatrans que YA sabemos que son "en tránsito" y caen bien en el catch-all
         // (-> Tramitado). Cualquier nombre que no sea entrega/devolución/incidencia NI uno de estos se

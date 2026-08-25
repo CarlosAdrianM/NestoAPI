@@ -221,13 +221,21 @@ namespace NestoAPI.Infraestructure
                 return false;
             }
 
+            // NestoAPI#259: el texto original de la agencia ("DISPONIBLE PARA RECOGER" de Innovatrans,
+            // la incidencia de GLS...) se guarda como etiqueta del estado. Antes se descartaba, y la
+            // pestaña de Incidentados no podía decir POR QUÉ estaba incidentado un envío. Cambiar SOLO
+            // el detalle (mismo estado, otro texto: p. ej. de una incidencia a otra) también cuenta
+            // como cambio: si no, el grid se quedaría con la etiqueta vieja.
+            string detalle = RecortarDetalle(seguimiento.Detalle);
             bool cambiaEstado = envio.Estado != (short)seguimiento.Estado;
             bool cambiaFecha = seguimiento.FechaEntrega.HasValue && envio.FechaEntrega != seguimiento.FechaEntrega.Value;
-            if (!cambiaEstado && !cambiaFecha)
+            bool cambiaDetalle = envio.DetalleEstado != detalle;
+            if (!cambiaEstado && !cambiaFecha && !cambiaDetalle)
             {
                 return false;
             }
             envio.Estado = (short)seguimiento.Estado;
+            envio.DetalleEstado = detalle;
             if (seguimiento.FechaEntrega.HasValue)
             {
                 envio.FechaEntrega = seguimiento.FechaEntrega.Value;
@@ -235,6 +243,23 @@ namespace NestoAPI.Infraestructure
             // #265: NO sellar FechaModificacion: es columna Computed en el EDMX y EF la ignora
             // (era código muerto que engañaba — parecía que reflejaba la última pasada del poll).
             return true;
+        }
+
+        // El texto lo escribe la agencia, no nosotros: cabe cualquier cosa. DetalleEstado es
+        // varchar(100), así que se recorta antes de asignar — un texto más largo reventaría al
+        // guardar con un error de validación de EF y tumbaría la pasada entera del poll (lección
+        // de EnviosAgencia.Observaciones, que se pasaba de 80).
+        private const int LONGITUD_MAXIMA_DETALLE = 100;
+        private static string RecortarDetalle(string detalle)
+        {
+            if (string.IsNullOrWhiteSpace(detalle))
+            {
+                return null;
+            }
+            string limpio = detalle.Trim();
+            return limpio.Length <= LONGITUD_MAXIMA_DETALLE
+                ? limpio
+                : limpio.Substring(0, LONGITUD_MAXIMA_DETALLE);
         }
     }
 }

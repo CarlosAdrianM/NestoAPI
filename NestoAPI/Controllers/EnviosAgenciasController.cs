@@ -124,6 +124,12 @@ namespace NestoAPI.Controllers
         public string EmailPlaza { get; set; }
         /// <summary>Para la concurrencia optimista del PUT cuando la pestaña migre (slice A2).</summary>
         public byte[] RowVersion { get; set; }
+        /// <summary>
+        /// NestoAPI#259: etiqueta del estado tal y como la da la agencia ("DISPONIBLE PARA RECOGER",
+        /// el texto de la incidencia de GLS...). Solo de lectura: lo escribe el poll de seguimiento,
+        /// y el PUT lo ignora a propósito para que el cliente no lo pise con un valor viejo.
+        /// </summary>
+        public string DetalleEstado { get; set; }
     }
 
     // Issue #189: [Authorize] de clase. Llamantes auditados 13/07/26: Nesto (JWT vía
@@ -207,7 +213,8 @@ namespace NestoAPI.Controllers
                 Nemonico = e.Nemonico,
                 TelefonoPlaza = e.TelefonoPlaza,
                 EmailPlaza = e.EmailPlaza,
-                RowVersion = e.RowVersion
+                RowVersion = e.RowVersion,
+                DetalleEstado = e.DetalleEstado
             });
         }
 
@@ -405,6 +412,10 @@ namespace NestoAPI.Controllers
             enviosAgencia.Usuario = User?.Identity?.Name ?? "NestoAPI";
             RecortarTextosLibres(enviosAgencia);
             db.Entry(enviosAgencia).State = EntityState.Modified;
+            // NestoAPI#259: DetalleEstado lo escribe SOLO el poll de seguimiento. Como este PUT marca
+            // la entidad entera como Modified, el cliente lo pisaría con el valor que cargó al abrir
+            // la pestaña (o con null si es una versión anterior de Nesto): se excluye del UPDATE.
+            db.Entry(enviosAgencia).Property(e => e.DetalleEstado).IsModified = false;
 
             try
             {

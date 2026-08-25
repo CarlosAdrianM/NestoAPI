@@ -54,6 +54,7 @@ namespace NestoAPI.Models
         public byte[] RowVersion { get; set; }
         public decimal ImporteAsegurado { get; set; }
         public decimal Peso { get; set; }
+        public string DetalleEstado { get; set; }
     
         public virtual Empresa Empresa1 { get; set; }
         public virtual Cliente Cliente1 { get; set; }

@@ -823,6 +823,7 @@
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="RowVersion" Type="timestamp" StoreGeneratedPattern="Computed" Nullable="false" />
+          <Property Name="DetalleEstado" Type="varchar" MaxLength="100" />
         </EntityType>
         <EntityType Name="EnviosAgenciaCoordenadas">
           <Key>
@@ -6638,6 +6639,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="AgenciasTransporte1" Relationship="NVModel.FK_EnviosAgencia_AgenciasTransporte1" FromRole="EnviosAgencia" ToRole="AgenciasTransporte" />
           <Property Name="ImporteAsegurado" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
           <Property Name="Peso" Type="Decimal" Nullable="false" Precision="5" Scale="2" />
+          <Property Name="DetalleEstado" Type="String" MaxLength="100" FixedLength="false" Unicode="false" />
         </EntityType>
         <EntityContainer Name="NVEntities" annotation:LazyLoadingEnabled="true">
           <EntitySet Name="EnviosAgencias" EntityType="Self.EnviosAgencia" />
@@ -13625,6 +13627,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="EnviosAgencias">
             <EntityTypeMapping TypeName="NVModel.EnviosAgencia">
               <MappingFragment StoreEntitySet="EnviosAgencia">
+                <ScalarProperty Name="DetalleEstado" ColumnName="DetalleEstado" />
                 <ScalarProperty Name="Peso" ColumnName="Peso" />
                 <ScalarProperty Name="ImporteAsegurado" ColumnName="ImporteAsegurado" />
                 <ScalarProperty Name="RowVersion" ColumnName="RowVersion" />

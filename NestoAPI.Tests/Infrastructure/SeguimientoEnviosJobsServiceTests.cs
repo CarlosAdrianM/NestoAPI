@@ -101,6 +101,106 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual(2, actualizados, "Los dos envíos deben pasar a Entregado");
         }
 
+        // ===== NestoAPI#259: la etiqueta del estado (texto de la agencia) se persiste =====
+
+        [TestMethod]
+        public void AplicarSeguimiento_EstadoConDetalle_GuardaLaEtiqueta()
+        {
+            // Sin esto, la pestaña de Incidentados no puede decir POR QUÉ está incidentado el envío:
+            // el detalle que devuelve la agencia se descartaba al persistir.
+            var envio = new EnviosAgencia { Numero = 1, Estado = Constantes.Agencias.ESTADO_TRAMITADO };
+
+            bool cambio = SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
+            {
+                Estado = EstadoEnvioSeguimiento.Incidentado,
+                Detalle = "DISPONIBLE PARA RECOGER"
+            });
+
+            Assert.IsTrue(cambio);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_INCIDENTADO, envio.Estado);
+            Assert.AreEqual("DISPONIBLE PARA RECOGER", envio.DetalleEstado);
+        }
+
+        [TestMethod]
+        public void AplicarSeguimiento_MismoEstadoPeroOtroDetalle_CuentaComoCambio()
+        {
+            // Dos incidencias distintas seguidas (mismo Estado=3, otro texto): si no contara como
+            // cambio, el grid se quedaría enseñando la etiqueta vieja para siempre.
+            var envio = new EnviosAgencia
+            {
+                Numero = 1,
+                Estado = Constantes.Agencias.ESTADO_INCIDENTADO,
+                DetalleEstado = "DISPONIBLE PARA RECOGER"
+            };
+
+            bool cambio = SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
+            {
+                Estado = EstadoEnvioSeguimiento.Incidentado,
+                Detalle = "DIRECCION INCORRECTA"
+            });
+
+            Assert.IsTrue(cambio);
+            Assert.AreEqual("DIRECCION INCORRECTA", envio.DetalleEstado);
+        }
+
+        [TestMethod]
+        public void AplicarSeguimiento_MismoEstadoYMismoDetalle_NoCuentaComoCambio()
+        {
+            var envio = new EnviosAgencia
+            {
+                Numero = 1,
+                Estado = Constantes.Agencias.ESTADO_INCIDENTADO,
+                DetalleEstado = "DISPONIBLE PARA RECOGER"
+            };
+
+            bool cambio = SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
+            {
+                Estado = EstadoEnvioSeguimiento.Incidentado,
+                Detalle = "DISPONIBLE PARA RECOGER"
+            });
+
+            Assert.IsFalse(cambio, "Sin cambios reales no hay que marcar la entidad como modificada");
+        }
+
+        [TestMethod]
+        public void AplicarSeguimiento_DetalleMasLargoQueLaColumna_LoRecorta()
+        {
+            // El texto lo escribe la agencia: DetalleEstado es varchar(100) y un texto más largo
+            // reventaría al guardar, tumbando la pasada entera del poll (lección de Observaciones > 80).
+            var envio = new EnviosAgencia { Numero = 1, Estado = Constantes.Agencias.ESTADO_TRAMITADO };
+
+            _ = SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
+            {
+                Estado = EstadoEnvioSeguimiento.Incidentado,
+                Detalle = new string('X', 250)
+            });
+
+            Assert.AreEqual(100, envio.DetalleEstado.Length);
+        }
+
+        [TestMethod]
+        public void AplicarSeguimiento_Desconocido_NoTocaLaEtiquetaExistente()
+        {
+            // NestoAPI#264: Desconocido no es un estado real. Igual que no pisa el Estado, tampoco
+            // puede borrar la etiqueta de la incidencia que sigue abierta.
+            var envio = new EnviosAgencia
+            {
+                Numero = 1,
+                Estado = Constantes.Agencias.ESTADO_INCIDENTADO,
+                DetalleEstado = "DISPONIBLE PARA RECOGER"
+            };
+
+            bool cambio = SeguimientoEnviosJobsService.AplicarSeguimiento(envio, new SeguimientoEnvioRemoto
+            {
+                Estado = EstadoEnvioSeguimiento.Desconocido,
+                Detalle = "No se encuentra la expedición"
+            });
+
+            Assert.IsFalse(cambio);
+            Assert.AreEqual(Constantes.Agencias.ESTADO_INCIDENTADO, envio.Estado);
+            Assert.AreEqual("DISPONIBLE PARA RECOGER", envio.DetalleEstado);
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
