@@ -135,7 +135,7 @@ namespace NestoAPI.Models
             // que sencillamente no está en la tienda online (2.474 productos vivos el 25/08/2026).
             // Antes se devolvía 0, y ese 0 se convertía en un precio de venta de 0 € para el
             // cliente PUBLICO_FINAL ("VENTA TIENDA", el mostrador). Se calcula en local.
-            return await CalcularPrecioPublicoEnLocal(producto, db).ConfigureAwait(false);
+            return await CalcularPrecioPublicoEnLocal(producto, db, prestashopProducto?.PVP_IVA_Incluido).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -147,7 +147,7 @@ namespace NestoAPI.Models
         /// puntos del código: hay 82 productos vivos exentos y 4 al 4 % que ese atajo inflaría
         /// hasta un 21 %.
         /// </summary>
-        private static async Task<decimal> CalcularPrecioPublicoEnLocal(string producto, NVEntities db)
+        private static async Task<decimal> CalcularPrecioPublicoEnLocal(string producto, NVEntities db, decimal? pvpIvaIncluido)
         {
             Producto ficha = await db.Productos
                 .FirstOrDefaultAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto)
@@ -166,7 +166,12 @@ namespace NestoAPI.Models
                 .FirstOrDefaultAsync()
                 .ConfigureAwait(false);
 
-            return CalcularPrecioPublicoDesdePvp(ficha.PVP.Value, porcentajeIva ?? PORCENTAJE_IVA_POR_DEFECTO);
+            // El modo del producto manda también aquí: con el sentinel -1 el público es el
+            // profesional, sin el 30 %. Si no se mirara, un producto de "mismo precio" al que
+            // PrestaShop no respondiera saldría un 42,86 % más caro.
+            bool mismoQueProfesional = pvpIvaIncluido == Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL;
+            return CalcularPrecioPublicoDesdePvp(
+                ficha.PVP.Value, porcentajeIva ?? PORCENTAJE_IVA_POR_DEFECTO, mismoQueProfesional);
         }
 
         // Si el producto tiene un tipo de IVA que no está en ParametrosIVA, el general: es el que
@@ -174,12 +179,18 @@ namespace NestoAPI.Models
         private const decimal PORCENTAJE_IVA_POR_DEFECTO = 21M;
 
         /// <summary>
-        /// Público = PVP / 0,7 × (1 + IVA), redondeado como el resto de la casa (AwayFromZero,
-        /// que es el HALF_UP que usa PrestaShop: así el céntimo coincide con el de la web).
+        /// Público = PVP / 0,7 × (1 + IVA) en el caso normal, y PVP × (1 + IVA) cuando el producto
+        /// está marcado como "mismo precio que el profesional" (sentinel -1).
+        ///
+        /// Redondeo AwayFromZero, como el resto de la casa: es el HALF_UP de PrestaShop
+        /// (PS_PRICE_ROUND_MODE), así que el céntimo coincide con el que muestra la web.
         /// </summary>
-        internal static decimal CalcularPrecioPublicoDesdePvp(decimal pvp, decimal porcentajeIva)
+        internal static decimal CalcularPrecioPublicoDesdePvp(decimal pvp, decimal porcentajeIva,
+            bool mismoQueProfesional = false)
         {
-            decimal publicoSinIva = pvp / Constantes.Productos.FACTOR_PRECIO_PROFESIONAL;
+            decimal publicoSinIva = mismoQueProfesional
+                ? pvp
+                : pvp / Constantes.Productos.FACTOR_PRECIO_PROFESIONAL;
             return Math.Round(publicoSinIva * (1 + porcentajeIva / 100), 2, MidpointRounding.AwayFromZero);
         }
 

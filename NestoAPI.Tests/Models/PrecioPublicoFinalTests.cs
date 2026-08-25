@@ -119,6 +119,26 @@ namespace NestoAPI.Tests.Models
             Assert.IsTrue(ProductoDTO.CalcularPrecioPublicoDesdePvp(pvp, 21M) > profesionalConIva);
         }
 
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_MismoQueProfesional_NoAplicaElTreinta()
+        {
+            // Si PrestaShop no responde para un producto marcado con el sentinel -1, el fallback
+            // tiene que respetar SU modo: público = profesional + IVA. Aplicarle el 30 % lo dejaría
+            // un 42,86 % por encima de lo que muestra la web.
+            Assert.AreEqual(12.10M,
+                ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 21M, mismoQueProfesional: true));
+        }
+
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_MismoQueProfesional_EsMasBaratoQueElModoNormal()
+        {
+            decimal conDescuento = ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 21M);
+            decimal mismoPrecio = ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 21M, mismoQueProfesional: true);
+
+            Assert.IsTrue(mismoPrecio < conDescuento,
+                "El modo 'mismo precio' nunca puede salir mas caro que el que lleva el 30 %");
+        }
+
         // ===== Contrato de serialización con el módulo =====
 
         /// <summary>
