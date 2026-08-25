@@ -45,26 +45,94 @@ namespace NestoAPI.Models.Picking
         /// <param name="fechaPicking">Fecha de entrega hasta la que se sirve en este picking.</param>
         public void SacarPicking(DateTime fechaPicking)
         {
-            candidatos = modulos.rellenadorPicking.Rellenar();
-            Ejecutar(fechaPicking);
+            EnExclusiva(() =>
+            {
+                candidatos = modulos.rellenadorPicking.Rellenar();
+                Ejecutar(fechaPicking);
+            });
         }
 
         public void SacarPicking(List<Ruta> rutas)
         {
-            candidatos = modulos.rellenadorPicking.Rellenar(rutas);
-            Ejecutar(CalcularFechaPicking(DateTime.Now));
+            EnExclusiva(() =>
+            {
+                candidatos = modulos.rellenadorPicking.Rellenar(rutas);
+                Ejecutar(CalcularFechaPicking(DateTime.Now));
+            });
         }
 
         public void SacarPicking(string empresa, int numeroPedido)
         {
-            candidatos = modulos.rellenadorPicking.Rellenar(empresa, numeroPedido);
-            Ejecutar(CalcularFechaPicking(DateTime.Now));
+            EnExclusiva(() =>
+            {
+                candidatos = modulos.rellenadorPicking.Rellenar(empresa, numeroPedido);
+                Ejecutar(CalcularFechaPicking(DateTime.Now));
+            });
         }
 
         public void SacarPicking(string cliente)
         {
-            candidatos = modulos.rellenadorPicking.Rellenar(cliente);
-            Ejecutar(CalcularFechaPicking(DateTime.Now));
+            EnExclusiva(() =>
+            {
+                candidatos = modulos.rellenadorPicking.Rellenar(cliente);
+                Ejecutar(CalcularFechaPicking(DateTime.Now));
+            });
+        }
+
+        // NestoAPI#406: el picking NO era idempotente frente a dos ejecuciones solapadas.
+        //
+        // Entre el Rellenar() (que lee las líneas con Picking null) y el SaveChanges del
+        // finalizador pasan segundos: reserva de stock, portes, pendientes y ubicaciones. Dos
+        // peticiones que entren dentro de esa ventana leen AMBAS las mismas líneas como
+        // disponibles y las procesan las dos. El número de picking de la línea se pisa (gana el
+        // último UPDATE) y no se nota, pero las ubicaciones NO se pisan: cada pasada reserva la
+        // suya, y la línea acaba con el DOBLE de unidades ubicadas. Como el SP del packing suma
+        // las ubicaciones de cada línea, la hoja sale con el doble y el almacén serviría de más.
+        //
+        // Pasó el 25/08/2026 con el picking 99327 (pedidos 924333, 924798 y 924799): la huella
+        // fue un número de picking consumido y sin usar, el 99326.
+        //
+        // Toda la ejecución pasa a ser sección crítica, con el mismo applock de #294. Se libera
+        // en el finally, y como los SaveChanges van en autocommit, cuando la segunda entra ya ve
+        // las líneas con su picking asignado y el filtro del rellenador las deja fuera.
+        private const string RECURSO_BLOQUEO = "Picking:SacarPicking";
+        private const int TIMEOUT_BLOQUEO_MS = 120000;  // el picking de cierre es largo
+
+        private void EnExclusiva(Action accion)
+        {
+            System.Data.Common.DbConnection conexion = db.Database.Connection;
+            // El applock de ámbito Session vive mientras viva la CONEXIÓN, así que hay que
+            // abrirla a mano: si se deja al pool, EF la devuelve entre operaciones y el bloqueo
+            // se soltaría a mitad de picking.
+            bool laAbrimosAqui = conexion.State != System.Data.ConnectionState.Open;
+            if (laAbrimosAqui)
+            {
+                conexion.Open();
+            }
+            try
+            {
+                _ = db.Database.ExecuteSqlCommand(
+                    @"DECLARE @resultado int;
+                      EXEC @resultado = sp_getapplock @Resource = @p0, @LockMode = 'Exclusive', @LockOwner = 'Session', @LockTimeout = @p1;
+                      IF @resultado < 0 RAISERROR('Ya se está sacando otro picking en este momento. Espere a que termine e inténtelo de nuevo.', 16, 1);",
+                    RECURSO_BLOQUEO, TIMEOUT_BLOQUEO_MS);
+                try
+                {
+                    accion();
+                }
+                finally
+                {
+                    _ = db.Database.ExecuteSqlCommand(
+                        "EXEC sp_releaseapplock @Resource = @p0, @LockOwner = 'Session';", RECURSO_BLOQUEO);
+                }
+            }
+            finally
+            {
+                if (laAbrimosAqui)
+                {
+                    conexion.Close();
+                }
+            }
         }
 
 
