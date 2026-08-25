@@ -7,8 +7,6 @@ namespace NestoAPI.Models.Clientes
     public class SolicitudAltaClienteDTO
     {
         public string Email { get; set; }
-        // TiendasNuevaVision#37: el login de la tienda se hace con NIF + email
-        public string Nif { get; set; }
         public string Telefono { get; set; }
         public string Pais { get; set; }
         public string CodigoPostal { get; set; }
