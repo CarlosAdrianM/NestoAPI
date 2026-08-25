@@ -5,6 +5,7 @@ using System.Data.Entity;
 using System.Data.SqlClient;
 using System.Linq;
 using System.Threading.Tasks;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using NestoAPI.Models.Informes;
 using NestoAPI.Models.Informes.SaldoCuenta555;
@@ -223,8 +224,72 @@ namespace NestoAPI.Infraestructure.Informes
                 .ConfigureAwait(false);
         }
 
+        /// <summary>
+        /// NestoAPI#406: red de seguridad ANTES de imprimir el packing.
+        ///
+        /// El SP suma las ubicaciones reservadas de cada línea, así que una línea con ubicaciones
+        /// de más sale en la hoja con más cantidad de la pedida y el almacén sirve de más sin que
+        /// nadie lo note (pasó el 25/08/2026 con el picking 99327: 14 líneas al doble). Tener
+        /// reservado MÁS de lo pedido no es legítimo en ningún caso, así que aquí se para.
+        ///
+        /// Se compara solo el exceso, nunca el defecto: una línea con "Recoger" o servida a
+        /// medias tiene menos ubicado que pedido y es perfectamente normal.
+        /// </summary>
+        internal static List<string> ErroresDeUbicacionesDelPicking(
+            IEnumerable<LineaConUbicaciones> lineas)
+        {
+            return lineas
+                .Where(l => l.Ubicado > l.Pedido)
+                .Select(l => $"pedido {l.Pedido_} línea {l.Producto?.Trim()}: pedidas {l.Pedido}, reservadas {l.Ubicado}")
+                .ToList();
+        }
+
+        internal class LineaConUbicaciones
+        {
+            public int Pedido_ { get; set; }
+            public string Producto { get; set; }
+            public int Pedido { get; set; }
+            public int Ubicado { get; set; }
+        }
+
+        private async Task ComprobarUbicacionesDelPickingAsync(int picking)
+        {
+            List<LineaConUbicaciones> lineas = await db.LinPedidoVtas
+                .Where(l => l.Picking == picking && l.TipoLinea == Constantes.TiposLineaVenta.PRODUCTO)
+                .Select(l => new LineaConUbicaciones
+                {
+                    Pedido_ = l.Número,
+                    Producto = l.Producto,
+                    Pedido = (int)l.Cantidad,
+                    Ubicado = db.Ubicaciones
+                        .Where(u => u.NºOrdenVta == l.Nº_Orden && u.Estado == Constantes.Ubicaciones.RESERVADO_PICKING)
+                        .Select(u => (int?)u.Cantidad)
+                        .DefaultIfEmpty(0)
+                        .Sum() ?? 0
+                })
+                .ToListAsync()
+                .ConfigureAwait(false);
+
+            List<string> errores = ErroresDeUbicacionesDelPicking(lineas);
+            if (errores.Count == 0)
+            {
+                return;
+            }
+
+            throw new NestoBusinessException(
+                $"El picking {picking} tiene líneas con más unidades reservadas de las pedidas, así que la " +
+                $"hoja saldría con cantidades de más. NO se sirve hasta revisarlo. Líneas: {string.Join("; ", errores)}.")
+            {
+                // Esta SÍ va a ELMAH aunque sea de negocio: significa que algo ha dejado las
+                // ubicaciones descuadradas y hay que enterarse en el momento.
+                RegistrarEnLog = true
+            };
+        }
+
         public async Task<List<PackingDTO>> LeerPackingAsync(int picking, int personas = 1)
         {
+            await ComprobarUbicacionesDelPickingAsync(picking).ConfigureAwait(false);
+
             // El SP prdInformePicking devuelve 26 columnas mezclando cabecera y líneas
             // con acentos/ñ (Número, NºCliente, NºProducto, Tamaño). El DTO conserva
             // esos nombres porque el RDLC (Packing.rdlc) bindea por nombre exacto.
