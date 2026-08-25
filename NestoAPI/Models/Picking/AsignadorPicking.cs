@@ -46,7 +46,7 @@ namespace NestoAPI.Models.Picking
                         lineaActual = db.LinPedidoVtas.Local.OrderBy(l => l.Nº_Orden).FirstOrDefault(l => l.Empresa == pedido.Empresa && l.Número == pedido.Id && l.TipoLinea == linea.TipoLinea && l.Producto == linea.Producto && l.Estado == Constantes.EstadosLineaVenta.EN_CURSO);
                     }
 
-                    // NestoAPI#406: segunda barrera contra la doble asignación. El rellenador ya
+                    // NestoAPI#405: segunda barrera contra la doble asignación. El rellenador ya
                     // filtra por Picking null o 0, así que en marcha normal esto no salta nunca;
                     // salta si dos ejecuciones se solapan y la otra ya asignó esta línea después
                     // de que nosotros la leyéramos. Volver a ubicarla es lo que dejaba la línea
@@ -57,7 +57,7 @@ namespace NestoAPI.Models.Picking
                         Infraestructure.ElmahHelper.Log(new Exception(
                             $"Picking {numeroPicking}: la línea {lineaActual.Nº_Orden} del pedido {lineaActual.Número} " +
                             $"ya tenía asignado el picking {lineaActual.Picking}. Se salta para no duplicar su ubicación " +
-                            "(NestoAPI#406: dos ejecuciones solapadas)."),
+                            "(NestoAPI#405: dos ejecuciones solapadas)."),
                             "Sistema (picking)");
                         continue;
                     }
@@ -84,7 +84,7 @@ namespace NestoAPI.Models.Picking
         }
 
         /// <summary>
-        /// NestoAPI#406: ¿esta línea ya la asignó OTRA pasada de picking? Se compara contra el
+        /// NestoAPI#405: ¿esta línea ya la asignó OTRA pasada de picking? Se compara contra el
         /// número de esta ejecución para no confundir una reentrada legítima (la misma pasada
         /// tocando la línea otra vez) con la asignación de una ejecución solapada.
         /// </summary>

@@ -1,5 +1,5 @@
 /*
-    NestoAPI#406 - Reparar las ubicaciones duplicadas del picking 99327 (25/08/2026)
+    NestoAPI#405 - Reparar las ubicaciones duplicadas del picking 99327 (25/08/2026)
 
     QUE PASO
     --------
@@ -79,7 +79,7 @@ BEGIN TRAN;
     SET u.Estado = 0,           -- ubicado / libre
         u.[NºOrdenVta] = NULL,
         u.PedidoVta = NULL,
-        u.Usuario = 'Fix NestoAPI#406'
+        u.Usuario = 'Fix NestoAPI#406'   -- ver nota de abajo
     FROM Ubicaciones u
     JOIN #Sobrantes s ON s.[NºOrden] = u.[NºOrden]
     WHERE u.Estado = 3;         -- guarda: no tocar nada que ya no este reservado
@@ -99,3 +99,7 @@ BEGIN TRAN;
 */
 
 -- DESPUES: volver a imprimir el packing del 99327 y contrastar con el pedido antes de servir.
+--
+-- NOTA sobre el 'Fix NestoAPI#406' del Usuario: las 14 filas se repararon en produccion antes de
+-- crear la issue, cuando el numero que se preveia era el 406. La issue acabo siendo la #405, pero
+-- el literal se deja como esta APLICADO para que quien busque esas filas en la BD las encuentre.

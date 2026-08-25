@@ -5,7 +5,7 @@ using System.Collections.Generic;
 namespace NestoAPI.Tests.Infrastructure
 {
     /// <summary>
-    /// NestoAPI#406 — red de seguridad antes de imprimir el packing.
+    /// NestoAPI#405 — red de seguridad antes de imprimir el packing.
     ///
     /// El SP suma las ubicaciones reservadas de cada línea, así que una línea con ubicaciones de
     /// más sale en la hoja con más cantidad de la pedida y el almacén sirve de más sin que nadie

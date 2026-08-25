@@ -5,7 +5,7 @@ using NestoAPI.Models.Picking;
 namespace NestoAPI.Tests.Models.Picking
 {
     /// <summary>
-    /// NestoAPI#406 — el picking tiene que ser idempotente frente a dos ejecuciones solapadas.
+    /// NestoAPI#405 — el picking tiene que ser idempotente frente a dos ejecuciones solapadas.
     ///
     /// El 25/08/2026 el picking se sacó dos veces sobre los mismos pedidos dentro de la ventana
     /// que va del Rellenar() (lee las líneas con Picking null) al SaveChanges del finalizador.

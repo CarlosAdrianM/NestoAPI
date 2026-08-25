@@ -79,7 +79,7 @@ namespace NestoAPI.Models.Picking
             });
         }
 
-        // NestoAPI#406: el picking NO era idempotente frente a dos ejecuciones solapadas.
+        // NestoAPI#405: el picking NO era idempotente frente a dos ejecuciones solapadas.
         //
         // Entre el Rellenar() (que lee las líneas con Picking null) y el SaveChanges del
         // finalizador pasan segundos: reserva de stock, portes, pendientes y ubicaciones. Dos
