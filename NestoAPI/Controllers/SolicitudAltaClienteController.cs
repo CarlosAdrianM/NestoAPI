@@ -52,6 +52,7 @@ namespace NestoAPI.Controllers
             _ = cuerpo.AppendLine("Solicitud de alta como cliente desde la app Tiendas Nueva Visión:");
             _ = cuerpo.AppendLine();
             _ = cuerpo.AppendLine($"Email: {remitente.Address}");
+            _ = cuerpo.AppendLine($"NIF: {solicitud.Nif?.Trim()}");
             _ = cuerpo.AppendLine($"Teléfono: {solicitud.Telefono?.Trim()}");
             _ = cuerpo.AppendLine($"País: {solicitud.Pais?.Trim()}");
             _ = cuerpo.AppendLine($"Código postal: {solicitud.CodigoPostal?.Trim()}");
