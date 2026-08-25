@@ -366,9 +366,13 @@ namespace NestoAPI.Infraestructure.PedidosVenta
             {
 
                 case Constantes.TiposLineaVenta.PRODUCTO:
+                    // NestoAPI#361: los tres casos de abajo son de NEGOCIO (el usuario ha pedido
+                    // algo que no se puede), no fallos del sistema: 400 con mensaje accionable y
+                    // fuera de ELMAH, donde tapaban los errores de verdad. El de cantidad 0 salía
+                    // a diario desde la plantilla de venta.
                     if (linea.Cantidad == 0)
                     {
-                        throw new Exception("No se pueden crear líneas de producto con cantidad 0");
+                        throw new NestoBusinessException("No se pueden crear líneas de producto con cantidad 0");
                     }
                     Producto producto = servicio.LeerProducto(empresa, linea.Producto);
                     // Issue #280: LeerProducto usa SingleOrDefault → null si el producto no existe en
@@ -376,11 +380,11 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                     // producto.Estado lanzaba una NullReferenceException opaca en vez de un mensaje útil.
                     if (producto == null)
                     {
-                        throw new Exception($"No existe el producto {linea.Producto?.Trim()} en la empresa {empresa?.Trim()}");
+                        throw new NestoBusinessException($"No existe el producto {linea.Producto?.Trim()} en la empresa {empresa?.Trim()}");
                     }
                     if (producto.Estado < Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO)
                     {
-                        throw new Exception($"El producto {producto.Número.Trim()} ({producto.Nombre?.Trim()}) está en un estado nulo ({producto.Estado})");
+                        throw new NestoBusinessException($"El producto {producto.Número.Trim()} ({producto.Nombre?.Trim()}) está en un estado nulo ({producto.Estado})");
                     }
                     precioTarifa = (decimal)producto.PVP;
                     coste = (decimal)producto.PrecioMedio;

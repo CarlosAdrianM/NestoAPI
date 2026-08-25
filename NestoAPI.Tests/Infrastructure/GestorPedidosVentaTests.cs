@@ -692,6 +692,41 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsNotNull(excepcion, "Debe lanzar una excepción cuando el producto no existe");
             Assert.IsFalse(excepcion is NullReferenceException, "No debe ser una NullReferenceException opaca");
             StringAssert.Contains(excepcion.Message, "99999999");
+            Assert.IsInstanceOfType(excepcion, typeof(NestoBusinessException), "Es de negocio: 400, no 500");
+        }
+
+        [TestMethod]
+        public void CrearLineaVta_CantidadCero_EsErrorDeNegocioYNoEnsuciaElLog()
+        {
+            // NestoAPI#361: salía a diario en ELMAH como Exception (500) desde la plantilla de
+            // venta. Que el usuario pida una línea con cantidad 0 es una respuesta esperada, no un
+            // fallo del sistema: 400 con el mismo mensaje y fuera del log.
+            var servicio = A.Fake<IServicioPedidosVenta>();
+            var gestor = new GestorPedidosVenta(servicio);
+            var linea = new LineaPedidoVentaDTO
+            {
+                tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                Producto = "12345",
+                Cantidad = 0,
+                texto = "PRODUCTO",
+                fechaEntrega = DateTime.Today
+            };
+            var plazoPago = new PlazoPago { DtoProntoPago = 0 };
+
+            NestoBusinessException excepcion = null;
+            try
+            {
+                _ = gestor.CrearLineaVta(linea, PEDIDO, EMPRESA, "G21", plazoPago, "12786", "0", "FW", "MRM");
+            }
+            catch (NestoBusinessException ex)
+            {
+                excepcion = ex;
+            }
+
+            Assert.IsNotNull(excepcion, "Debe ser una excepción de negocio");
+            Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, excepcion.StatusCode);
+            Assert.IsFalse(excepcion.RegistrarEnLog, "Una excepción de negocio no va a ELMAH por defecto");
+            StringAssert.Contains(excepcion.Message, "cantidad 0");
         }
 
         #endregion
