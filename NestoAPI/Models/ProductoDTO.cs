@@ -118,13 +118,66 @@ namespace NestoAPI.Models
                 .FirstOrDefaultAsync(pp => pp.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && pp.Número == producto)
                 .ConfigureAwait(false);
 
-            if (prestashopProducto?.PVP_IVA_Incluido != null && prestashopProducto.PVP_IVA_Incluido != 0)
+            decimal? pvpIvaIncluido = prestashopProducto?.PVP_IVA_Incluido;
+
+            // El sentinel necesita el PVP y el IVA de la ficha; solo se leen si hace falta.
+            Producto fichaProducto = pvpIvaIncluido == Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL
+                ? await db.Productos
+                    .FirstOrDefaultAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && p.Número == producto)
+                    .ConfigureAwait(false)
+                : null;
+
+            decimal? resuelto = ResolverPrecioPublicoFinal(
+                pvpIvaIncluido, fichaProducto?.PVP ?? 0, fichaProducto?.IVA_Repercutido);
+            if (resuelto.HasValue)
             {
-                return prestashopProducto.PVP_IVA_Incluido.Value;
+                return resuelto.Value;
             }
 
             // Fallback: llamar a la API de Prestashop
             return await LeerPrecioPublicoFinalDesdePrestashop(producto).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Decide el precio público a partir del campo <c>PVP_IVA_Incluido</c> de PrestashopProductos.
+        /// Devuelve <c>null</c> cuando hay que preguntárselo a PrestaShop.
+        ///
+        /// Los tres modos que emite el módulo de PrestaShop (ver
+        /// <see cref="Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL"/>):
+        ///
+        ///   · positivo → precio público con IVA, tal cual
+        ///   · -1       → público = profesional: se calcula aquí como PVP + IVA
+        ///   · NULL     → el público lleva el 30 % de descuento por defecto; esa regla vive SOLO en
+        ///                el módulo, así que se pregunta a PrestaShop y NO se replica el 30 % aquí
+        ///
+        /// El -1 se calcula en local, en vez de dejarlo caer al fallback, porque
+        /// <c>LeerPrecioPublicoFinalDesdePrestashop</c> devuelve 0 si la tienda no responde, y un 0
+        /// acaba siendo un precio de venta de 0 € para el cliente PUBLICO_FINAL. "Público =
+        /// profesional" no tiene ningún parámetro que mantener, así que calcularlo aquí no duplica
+        /// ninguna regla de negocio: el IVA ya es de NestoAPI.
+        ///
+        /// Cualquier otro valor que no sea un precio (0, o un negativo distinto del sentinel) cae
+        /// también al fallback: antes bastaba con ser distinto de 0 para viajar como precio.
+        /// </summary>
+        internal static decimal? ResolverPrecioPublicoFinal(decimal? pvpIvaIncluido, decimal pvp, string ivaRepercutido)
+        {
+            if (pvpIvaIncluido > 0)
+            {
+                return pvpIvaIncluido.Value;
+            }
+
+            if (pvpIvaIncluido == Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL)
+            {
+                return Math.Round(pvp * FactorIva(ivaRepercutido), 2, MidpointRounding.AwayFromZero);
+            }
+
+            return null;
+        }
+
+        /// <summary>Multiplicador para pasar de base imponible a precio con IVA.</summary>
+        internal static decimal FactorIva(string ivaRepercutido)
+        {
+            return ivaRepercutido?.Trim() == Constantes.Empresas.IVA_REDUCIDO ? 1.10M : 1.21M;
         }
 
         private static async Task<decimal> LeerPrecioPublicoFinalDesdePrestashop(string producto)

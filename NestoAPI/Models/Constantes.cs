@@ -367,6 +367,25 @@ namespace NestoAPI.Models
             public const decimal PORCENTAJE_MAXIMO_REGALOS = 0.10m; // 10%
 
             /// <summary>
+            /// Sentinel de <c>PrestashopProductos.PVP_IVA_Incluido</c>: este producto se vende al
+            /// público al MISMO precio que al profesional (público = PVP + IVA, sin el descuento
+            /// del 30 %). Los tres valores posibles del campo son:
+            ///
+            ///   · positivo → ese es el precio público con IVA (el profesional y el público difieren)
+            ///   · NULL     → el caso mayoritario: el público lleva el descuento por defecto del 30 %,
+            ///                y lo calcula el módulo de PrestaShop (la regla del 30 % vive SOLO allí)
+            ///   · -1       → público = profesional
+            ///
+            /// Es negativo a propósito: un precio negativo es imposible por naturaleza, así que
+            /// cualquier consumidor que valide "es un precio" (&gt; 0) lo descarta solo, sin
+            /// necesidad de conocer esta convención. Un sentinel positivo grande (int.MaxValue)
+            /// pasaría esas validaciones y viajaría como un precio de verdad.
+            ///
+            /// Misma convención que <see cref="Agencias.REEMBOLSO_NO_COBRAR"/>.
+            /// </summary>
+            public const decimal PVP_IVA_MISMO_QUE_PROFESIONAL = -1M;
+
+            /// <summary>
             /// Grupos de producto que generan Ganavisiones (puntos para bonificaciones).
             /// Issue #94: Sistema Ganavisiones
             /// </summary>

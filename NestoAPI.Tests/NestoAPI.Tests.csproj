@@ -221,6 +221,7 @@
     <Compile Include="Controllers\ConfirmarTramitacionTests.cs" />
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
+    <Compile Include="Models\PrecioPublicoFinalTests.cs" />
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\DiagnosticoBloqueosTests.cs" />
     <Compile Include="Infraestructure\ServicioDireccionesGoogleTests.cs" />
