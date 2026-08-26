@@ -49,6 +49,17 @@ namespace NestoAPI.Infraestructure
                                 return new System.Collections.Generic.List<ProductoDTO>();
                             }
 
+                            // Referencias reservadas ("no usar", altas a medio hacer): existen para que
+                            // nadie ocupe el número, pero no tienen PVP ni Estado. Publicarlas no se
+                            // puede —el DTO exige ambos— y hasta ahora reventaban aquí cada 5 minutos,
+                            // reintentándose para siempre y llamando en balde a la API de PrestaShop.
+                            // Se saltan: cuando se rellene la ficha, el trigger las vuelve a encolar.
+                            if (!TieneDatosMinimosParaSincronizar(producto))
+                            {
+                                Console.WriteLine($"⚠️ Producto {registro.ModificadoId} sin PVP o sin Estado (referencia reservada): no se sincroniza");
+                                return new System.Collections.Generic.List<ProductoDTO>();
+                            }
+
                             string productoId = registro.ModificadoId;
 
                             // Construir el ProductoDTO completo
@@ -69,6 +80,8 @@ namespace NestoAPI.Infraestructure
                                 RoturaStockProveedor = producto.RoturaStockProveedor,
                                 CodigoBarras = producto.CodBarras?.Trim()
                             };
+
+                            await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
 
                             // Agregar kits si existen
                             foreach (var kit in producto.Kits)
@@ -112,6 +125,16 @@ namespace NestoAPI.Infraestructure
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 throw; // Re-lanzar para que Hangfire lo registre y reintente
             }
+        }
+
+        /// <summary>
+        /// ¿Tiene la ficha lo mínimo para armar el ProductoDTO? PVP y Estado se copian al mensaje sin
+        /// poder ser nulos ((decimal)PVP, (short)Estado), así que sin ellos la publicación lanza
+        /// InvalidOperationException y el registro de Nesto_sync se queda pendiente para siempre.
+        /// </summary>
+        internal static bool TieneDatosMinimosParaSincronizar(Producto producto)
+        {
+            return producto != null && producto.PVP.HasValue && producto.Estado.HasValue;
         }
 
         /// <summary>
