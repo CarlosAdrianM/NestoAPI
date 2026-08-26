@@ -143,20 +143,50 @@ namespace NestoAPI.Infraestructure
                 {
                     cpDb.Pais = pais?.Trim().ToUpper();
                 }
+
+                // #409: si el CP quedó con los textos vacíos (o con el placeholder antiguo, que
+                // era el código de país repetido) y esta dirección los trae, se completan. Solo
+                // si la fila es de ESTE país: en una colisión Empresa+Número con un CP español
+                // (el 13210 de #378) no se le escribe una población extranjera.
+                if (string.Equals(cpDb.Pais?.Trim(), pais?.Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!string.IsNullOrWhiteSpace(poblacion) && EsTextoPendienteDeCompletar(cpDb.Descripción, cpDb.Pais))
+                    {
+                        cpDb.Descripción = Truncar(poblacion.ToUpper().Trim(), 50);
+                    }
+                    if (!string.IsNullOrWhiteSpace(provincia) && EsTextoPendienteDeCompletar(cpDb.Provincia, cpDb.Pais))
+                    {
+                        cpDb.Provincia = Truncar(provincia.ToUpper().Trim(), 30);
+                    }
+                }
                 return (cpDb, false);
             }
             cpDb = new CodigoPostal
             {
                 Empresa = empresa,
                 Número = codigoPostal,
-                Descripción = Truncar((string.IsNullOrWhiteSpace(poblacion) ? pais : poblacion).ToUpper().Trim(), 50),
-                Provincia = Truncar((string.IsNullOrWhiteSpace(provincia) ? pais : provincia).ToUpper().Trim(), 30),
+                // #409: si el alta no trae población/provincia se dejan en blanco, que es lo
+                // honesto: quien reciba el informe de CPs nuevos sabe que hay que completarlas.
+                // Antes se rellenaban con el código de país ("IT"/"IT"), que parecía un dato
+                // bueno y encima podía acabar como Población de la ficha del cliente.
+                Descripción = string.IsNullOrWhiteSpace(poblacion) ? null : Truncar(poblacion.ToUpper().Trim(), 50),
+                Provincia = string.IsNullOrWhiteSpace(provincia) ? string.Empty : Truncar(provincia.ToUpper().Trim(), 30),
                 Ruta = Constantes.Clientes.RUTA_CLIENTES_EXTRANJEROS,
                 Vendedor = Constantes.Vendedores.VENDEDOR_GENERAL,
                 Pais = pais?.Trim().ToUpper() // #378: que el CP extranjero nazca con su país
             };
             _ = db.CodigosPostales.Add(cpDb);
             return (cpDb, true);
+        }
+
+        /// <summary>
+        /// #409: ¿la descripción/provincia de un CP está pendiente de completar? Vacía, o con el
+        /// placeholder de las altas antiguas (el código de país repetido, "IT"/"IT").
+        /// </summary>
+        internal static bool EsTextoPendienteDeCompletar(string texto, string pais)
+        {
+            return string.IsNullOrWhiteSpace(texto)
+                || string.Equals(texto.Trim(), pais?.Trim(), StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -976,8 +1006,16 @@ namespace NestoAPI.Infraestructure
                 {
                     throw new ArgumentException($"No existe el código postal {clienteModificar.CodigoPostal} en la base de datos");
                 }
-                clienteDB.Población = Truncar(cp.Descripción, 30);
-                clienteDB.Provincia = cp.Provincia;
+                // #409: en un CP extranjero la tabla puede no tener población/provincia (se crean
+                // en blanco a propósito); si el DTO las trae, mandan las del DTO. Antes el cliente
+                // heredaba el placeholder del CP recién creado y perdía las que había tecleado.
+                bool preferirLasDelDto = EsPaisExtranjero(clienteDB.Pais);
+                clienteDB.Población = preferirLasDelDto && !string.IsNullOrWhiteSpace(clienteModificar.Poblacion)
+                    ? Truncar(clienteModificar.Poblacion.ToUpper().Trim(), 30)
+                    : Truncar(cp.Descripción, 30);
+                clienteDB.Provincia = preferirLasDelDto && !string.IsNullOrWhiteSpace(clienteModificar.Provincia)
+                    ? Truncar(clienteModificar.Provincia.ToUpper().Trim(), 30)
+                    : cp.Provincia;
             }
             clienteDB.CodPostal = clienteModificar.CodigoPostal?.Trim();
             clienteDB.Teléfono = clienteModificar.Telefono;

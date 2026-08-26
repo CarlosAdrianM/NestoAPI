@@ -1102,6 +1102,126 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_CpExtranjeroSinPoblacion_NoRellenaConElCodigoDePais()
+        {
+            // NestoAPI#409 (caso real 26/08/26): un alta italiana sin poblacion creaba el CP 18038
+            // con Descripcion="IT" y Provincia="IT". Ese placeholder parecia un dato bueno en el
+            // informe de CPs nuevos y podia acabar como Poblacion de la ficha del cliente.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, A<string>.Ignored)).Returns(Task.FromResult<CodigoPostal>(null));
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "41866",
+                Nombre = "VENZON DANIA",
+                Pais = "IT",
+                CodigoPostal = "18038",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.IsNull(clienteNuevo.CódigosPostales.Descripción, "Sin poblacion, la descripcion queda en blanco (pendiente de completar), no el pais");
+            Assert.AreEqual(string.Empty, clienteNuevo.CódigosPostales.Provincia, "Sin provincia, en blanco: nunca el codigo de pais");
+            Assert.AreEqual("IT", clienteNuevo.CódigosPostales.Pais, "El pais va en SU columna");
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_CpExtranjeroConPlaceholderAntiguo_LoCompletaConLaPoblacionDelAlta()
+        {
+            // NestoAPI#409: los CPs creados por altas antiguas con el placeholder ("IT"/"IT") se
+            // autocompletan en cuanto llega una direccion que si trae los datos.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            CodigoPostal cpExistente = new CodigoPostal { Empresa = "1", Número = "18038", Descripción = "IT", Provincia = "IT", Ruta = "00", Pais = "IT" };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "18038")).Returns(cpExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "41866",
+                Nombre = "VENZON DANIA",
+                Pais = "IT",
+                CodigoPostal = "18038",
+                Poblacion = "Sanremo",
+                Provincia = "Imperia",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            _ = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.AreEqual("SANREMO", cpExistente.Descripción);
+            Assert.AreEqual("IMPERIA", cpExistente.Provincia);
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteCrear_CpEspanolEnColisionSinDescripcion_NoLeEscribePoblacionExtranjera()
+        {
+            // NestoAPI#409 + #378: en una colision Empresa+Numero (CP frances contra CP espanol,
+            // como el 13210), la fila espanola no debe recibir la poblacion extranjera aunque
+            // tenga los textos vacios.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            A.CallTo(() => servicio.CalcularSiguienteContacto(A<string>.Ignored, A<string>.Ignored)).Returns("0");
+            A.CallTo(() => servicio.VendedoresTelefonicos()).Returns(new List<string>());
+            CodigoPostal cpExistente = new CodigoPostal { Empresa = "1", Número = "13210", Descripción = null, Provincia = "", Ruta = "20", Pais = "ES" };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "13210")).Returns(cpExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteCrear = new ClienteCrear
+            {
+                Cliente = "1234",
+                Nombre = "CLIENTE FRANCES",
+                Pais = "FR",
+                CodigoPostal = "13210",
+                Poblacion = "Saint-Rémy-de-Provence",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            _ = gestor.PrepararClienteCrear(clienteCrear, db).Result;
+
+            Assert.IsNull(cpExistente.Descripción, "La fila es del CP espanol: no se le escribe la poblacion francesa");
+        }
+
+        [TestMethod]
+        public void GestorClientes_PrepararClienteModificar_CpExtranjeroNuevoSinTextos_ElClienteConservaLaPoblacionDelDto()
+        {
+            // NestoAPI#409: al cambiar el CP de un cliente extranjero, el cliente heredaba los
+            // textos del CP (antes, el placeholder "IT"; en una colision con un CP espanol de
+            // textos vacios, un blanco) perdiendo lo tecleado. Manda la poblacion del DTO.
+            IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
+            CodigoPostal cpColision = new CodigoPostal { Empresa = "1", Número = "18038", Descripción = null, Provincia = "", Ruta = "20", Pais = "ES" };
+            A.CallTo(() => servicio.BuscarCodigoPostal(A<string>.Ignored, "18038")).Returns(cpColision);
+            Cliente clienteExistente = A.Fake<Cliente>();
+            clienteExistente.Pais = "IT";
+            clienteExistente.CodPostal = "00000";
+            clienteExistente.Vendedore = A.Fake<Vendedor>();
+            A.CallTo(() => servicio.BuscarCliente(A<NVEntities>.Ignored, A<string>.Ignored, A<string>.Ignored, A<string>.Ignored)).Returns(clienteExistente);
+            GestorClientes gestor = CrearGestorClientes(servicio, servicioAgencia);
+            ClienteCrear clienteModificar = new ClienteCrear
+            {
+                Cliente = "41866",
+                Nombre = "VENZON DANIA",
+                Pais = "IT",
+                CodigoPostal = "18038",
+                Poblacion = "Sanremo",
+                Provincia = "Imperia",
+                PlazosPago = "CONTADO",
+                FormaPago = "EFC",
+                PersonasContacto = new List<PersonaContactoDTO>()
+            };
+            NVEntities db = A.Fake<NVEntities>();
+
+            Cliente clienteNuevo = gestor.PrepararClienteModificar(clienteModificar, db).Result;
+
+            Assert.AreEqual("SANREMO", clienteNuevo.Población, "Manda la poblacion del DTO, no el blanco del CP recien creado");
+            Assert.AreEqual("IMPERIA", clienteNuevo.Provincia);
+        }
+
+        [TestMethod]
         public void GestorClientes_PrepararClienteCrear_PaisExtranjeroConCpYaExistente_NoLoDuplica()
         {
             IServicioGestorClientes servicio = A.Fake<IServicioGestorClientes>();
