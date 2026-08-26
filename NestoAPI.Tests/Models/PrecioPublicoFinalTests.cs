@@ -1,22 +1,22 @@
 ﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
-using NestoAPI.Models.Sincronizacion;
-using System.Text.Json;
 
 namespace NestoAPI.Tests.Models
 {
     /// <summary>
-    /// Contrato del campo <c>PrestashopProductos.PVP_IVA_Incluido</c>, compartido con el módulo
-    /// NestoSync de PrestaShop (v1.4.0). Tiene tres modos y uno de ellos es un sentinel, así que
-    /// conviene que estén fijados por tests: este campo alimenta el precio de venta del cliente
-    /// PUBLICO_FINAL, y un valor mal interpretado se convierte en un precio real de un pedido.
+    /// Contrato del campo <c>PrestashopProductos.PVP_IVA_Incluido</c>. Tiene tres modos y uno de
+    /// ellos es un sentinel, así que conviene que estén fijados por tests: este campo alimenta el
+    /// precio de venta del cliente PUBLICO_FINAL, y un valor mal interpretado se convierte en un
+    /// precio real de un pedido.
     ///
-    ///   · positivo → precio público con IVA, tal cual
-    ///   · NULL     → el público lleva el descuento por defecto (30 %)
+    ///   · positivo → precio público con IVA, fijado a mano
+    ///   · NULL     → el público se deriva del PVP con el descuento por defecto (30 %)
     ///   · -1       → público = profesional
     ///
-    /// NestoAPI solo sirve el valor positivo; los otros dos se los pregunta a PrestaShop, que es
-    /// quien deriva product.price y por tanto el dueño de ese cálculo.
+    /// Desde el cutover de precios (26/08/2026, módulo NestoSync 1.4.0) NestoAPI es EL DUEÑO del
+    /// cálculo: los tres modos se resuelven en local y por el bus solo viajan los dos precios
+    /// absolutos (profesional y público). El modo es información interna de Nesto; cuando un
+    /// sistema externo publica sus precios, la intención se deduce con InferirModoPrecioPublico.
     /// </summary>
     [TestClass]
     public class PrecioPublicoFinalTests
@@ -24,28 +24,25 @@ namespace NestoAPI.Tests.Models
         [TestMethod]
         public void ResolverPrecioPublicoFinal_ValorPositivo_LoDevuelveTalCual()
         {
-            // Caso "dos precios distintos": el módulo escribe el público con IVA y ese es el bueno.
+            // Precio fijado a mano: se sirve tal cual, sin fórmulas.
             Assert.AreEqual(29.95M, ProductoDTO.ResolverPrecioPublicoFinal(29.95M));
         }
 
         [TestMethod]
-        public void ResolverPrecioPublicoFinal_Nulo_PideElPrecioAPrestashop()
+        public void ResolverPrecioPublicoFinal_Nulo_NoEsUnPrecio()
         {
-            // El caso mayoritario (10.006 de 10.322 productos el 25/08/2026). El 30 % NO se replica
-            // aquí a propósito: es un parámetro de negocio y tiene un único dueño, el módulo.
+            // El caso mayoritario (10.006 de 10.322 productos el 25/08/2026): el público se
+            // calcula del PVP con el 30 %.
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(null),
-                "Con NULL hay que preguntar a PrestaShop, no inventarse el descuento");
+                "NULL es una intención (regla general del 30 %), no un precio");
         }
 
         [TestMethod]
-        public void ResolverPrecioPublicoFinal_Sentinel_PideElPrecioAPrestashop()
+        public void ResolverPrecioPublicoFinal_Sentinel_NoEsUnPrecio()
         {
-            // Tentación descartada: calcularlo aquí como PVP × (1+IVA). NestoAPI simplifica el IVA
-            // a "1,10 si R10, si no 1,21", y hay 88 productos exentos y 49 al 4 % que saldrían
-            // inflados hasta un 21 %. El módulo usa el IVA real de las reglas fiscales.
             Assert.IsNull(
                 ProductoDTO.ResolverPrecioPublicoFinal(Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL),
-                "El sentinel NO es un precio: lo deriva el módulo y se lee del webservice");
+                "El sentinel es una intención (público = profesional), no un precio");
         }
 
         [TestMethod]
@@ -60,20 +57,19 @@ namespace NestoAPI.Tests.Models
         {
             // REGRESIÓN: antes bastaba con ser distinto de 0 para devolverse como precio. Un -1
             // habría salido como precio público en la ficha y, dividido por el IVA en la plantilla
-            // de PUBLICO_FINAL, como precio de venta de -0,83 €. El módulo trata cualquier negativo
-            // como el sentinel, así que aquí ninguno puede pasar.
+            // de PUBLICO_FINAL, como precio de venta de -0,83 €.
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-1M));
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-5M));
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-0.01M));
         }
 
-        // ===== Cálculo local, para cuando PrestaShop no da precio =====
+        // ===== Cálculo del precio público desde el PVP =====
 
         [TestMethod]
         public void CalcularPrecioPublicoDesdePvp_IvaGeneral_AplicaElDescuentoDelTreintaYElIva()
         {
-            // Réplica de la fórmula del módulo: PVP / 0,7 × 1,21. El profesional es el público
-            // MENOS el 30 %, así que se divide; multiplicar por 1,30 daría un 9,9 % menos.
+            // PVP / 0,7 × 1,21. El profesional es el público MENOS el 30 %, así que se divide;
+            // multiplicar por 1,30 daría un 9,9 % menos.
             Assert.AreEqual(17.29M, ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 21M));
         }
 
@@ -122,9 +118,8 @@ namespace NestoAPI.Tests.Models
         [TestMethod]
         public void CalcularPrecioPublicoDesdePvp_MismoQueProfesional_NoAplicaElTreinta()
         {
-            // Si PrestaShop no responde para un producto marcado con el sentinel -1, el fallback
-            // tiene que respetar SU modo: público = profesional + IVA. Aplicarle el 30 % lo dejaría
-            // un 42,86 % por encima de lo que muestra la web.
+            // El sentinel -1: público = profesional + IVA. Aplicarle el 30 % lo dejaría un 42,86 %
+            // por encima de lo que muestra la web.
             Assert.AreEqual(12.10M,
                 ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 21M, mismoQueProfesional: true));
         }
@@ -139,85 +134,111 @@ namespace NestoAPI.Tests.Models
                 "El modo 'mismo precio' nunca puede salir mas caro que el que lleva el 30 %");
         }
 
-        // ===== Referencias duplicadas en PrestaShop =====
+        // ===== Inferencia del modo al recibir precios de fuera (PrestaShop, Odoo) =====
+        //
+        // La operación inversa: del par (público, PVP) que llega por el bus se deduce la intención
+        // que hay que guardar en PVP_IVA_Incluido. Tolerancia de DOS CÉNTIMOS (decidida el
+        // 26/08/2026): PHP y C# pueden redondear con distintos decimales por el camino.
 
         [TestMethod]
-        public void EsReferenciaAmbigua_UnSoloProducto_NoEsAmbigua()
+        public void InferirModoPrecioPublico_ElDerivadoExacto_GuardaNull()
         {
-            Assert.IsFalse(ProductoDTO.EsReferenciaAmbigua(1));
+            // PVP 10, IVA 21: derivado = 17,29. Es la regla general → NULL.
+            Assert.IsNull(ProductoDTO.InferirModoPrecioPublico(17.29M, 10M, 21M));
         }
 
         [TestMethod]
-        public void EsReferenciaAmbigua_NingunProducto_NoEsAmbigua()
+        public void InferirModoPrecioPublico_ElDerivadoConDosCentimosDeBaile_SigueSiendoNull()
         {
-            // No estar en la tienda no es ambigüedad: es el caso normal de los 2.474 productos
-            // que no se publican, y se resuelve calculando el precio en local igualmente.
-            Assert.IsFalse(ProductoDTO.EsReferenciaAmbigua(0));
+            Assert.IsNull(ProductoDTO.InferirModoPrecioPublico(17.31M, 10M, 21M));
+            Assert.IsNull(ProductoDTO.InferirModoPrecioPublico(17.27M, 10M, 21M));
         }
 
         [TestMethod]
-        public void EsReferenciaAmbigua_VariosProductos_SiEsAmbigua()
+        public void InferirModoPrecioPublico_IgualQueElProfesional_GuardaElSentinel()
         {
-            // 239 referencias duplicadas en PrestaShop afectan a 484 productos (25/08/2026). Antes
-            // se cogía el primero que viniera, así que se leía el precio de OTRO artículo.
-            Assert.IsTrue(ProductoDTO.EsReferenciaAmbigua(2));
-            Assert.IsTrue(ProductoDTO.EsReferenciaAmbigua(3));
+            // PVP 10, IVA 21: profesional con IVA = 12,10. Público igual → -1.
+            Assert.AreEqual(Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL,
+                ProductoDTO.InferirModoPrecioPublico(12.10M, 10M, 21M));
         }
 
-        // ===== Contrato de serialización con el módulo =====
+        [TestMethod]
+        public void InferirModoPrecioPublico_IgualQueElProfesionalConDosCentimos_SigueSiendoSentinel()
+        {
+            Assert.AreEqual(Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL,
+                ProductoDTO.InferirModoPrecioPublico(12.12M, 10M, 21M));
+            Assert.AreEqual(Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL,
+                ProductoDTO.InferirModoPrecioPublico(12.08M, 10M, 21M));
+        }
+
+        [TestMethod]
+        public void InferirModoPrecioPublico_TresCentimosYaNoEsIgual_GuardaElPrecio()
+        {
+            // La tolerancia son DOS céntimos, sin rangos generosos: desconocido = precio fijo.
+            Assert.AreEqual(17.32M, ProductoDTO.InferirModoPrecioPublico(17.32M, 10M, 21M));
+            Assert.AreEqual(12.13M, ProductoDTO.InferirModoPrecioPublico(12.13M, 10M, 21M));
+        }
+
+        [TestMethod]
+        public void InferirModoPrecioPublico_PrecioQueNoSaleDeNingunaFormula_GuardaElPrecio()
+        {
+            Assert.AreEqual(29.95M, ProductoDTO.InferirModoPrecioPublico(29.95M, 10M, 21M));
+        }
+
+        [TestMethod]
+        public void InferirModoPrecioPublico_ProductoExento_CompararSinIva()
+        {
+            // Un curso exento: PVP 715, derivado = 715/0,7 = 1.021,43; profesional = 715.
+            Assert.IsNull(ProductoDTO.InferirModoPrecioPublico(1021.43M, 715M, 0M));
+            Assert.AreEqual(Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL,
+                ProductoDTO.InferirModoPrecioPublico(715M, 715M, 0M));
+        }
+
+        // ===== Contrato de serialización con los consumidores =====
 
         /// <summary>
-        /// El módulo distingue con <c>array_key_exists</c> (no <c>isset</c>) tres estados:
-        /// clave con valor, clave presente con null (= modo 30 %) y clave AUSENTE (= no tocar nada).
-        ///
-        /// Si algún día se serializara con <c>WhenWritingNull</c> u opciones que omitan nulls, el
-        /// módulo leería "no cambiar" y los precios dejarían de actualizarse SIN NINGÚN ERROR
-        /// VISIBLE. Este test es la única cosa que impide ese fallo silencioso, porque el publisher
-        /// serializa con los defaults de System.Text.Json y no hay nada explícito que lo fije.
+        /// El módulo de PrestaShop distingue (estilo <c>array_key_exists</c>) entre clave con
+        /// valor, clave presente con null (= no tocar el texto de la tienda) y clave AUSENTE.
+        /// Si algún día se serializara con <c>WhenWritingNull</c> u opciones que omitan nulls,
+        /// los textos dejarían de comportarse como "no tocar" SIN NINGÚN ERROR VISIBLE. Este test
+        /// fija que las claves viajan presentes, porque el publisher usa los defaults de
+        /// System.Text.Json y no hay nada explícito que lo garantice.
         /// </summary>
         [TestMethod]
-        public void MensajePrestashop_ConPvpNulo_LaClaveViajaPresenteConNull()
+        public void MensajeProductos_TextosNulos_LasClavesViajanPresentesConNull()
         {
-            var mensaje = new PrestashopProductoSyncMessage
+            var mensaje = new NestoAPI.Models.Sincronizacion.ProductoSyncMessage
             {
-                Tabla = "PrestashopProductos",
+                Tabla = "Productos",
                 Source = "Nesto",
-                Producto = "12345",
-                PVP_IVA_Incluido = null
+                Producto = "17404",
+                NombrePersonalizado = null,
+                Descripcion = null,
+                DescripcionBreve = null
             };
 
-            // Se serializa EXACTAMENTE como en GooglePubSubEventPublisher: el mensaje llega como
-            // object y sin JsonSerializerOptions.
-            string json = JsonSerializer.Serialize((object)mensaje);
+            // Exactamente como en GooglePubSubEventPublisher: como object y sin opciones.
+            string json = System.Text.Json.JsonSerializer.Serialize((object)mensaje);
 
-            StringAssert.Contains(json, "\"PVP_IVA_Incluido\":null",
-                "La clave tiene que viajar presente con null: si se omite, el módulo entiende " +
-                "'no tocar' y deja de actualizar precios sin avisar");
+            StringAssert.Contains(json, "\"NombrePersonalizado\":null");
+            StringAssert.Contains(json, "\"Descripcion\":null");
+            StringAssert.Contains(json, "\"DescripcionBreve\":null");
         }
 
         [TestMethod]
-        public void MensajePrestashop_NombreDeLaClave_EsPascalCaseConGuionesBajos()
+        public void InferirModoPrecioPublico_LaIdaYLaVueltaCierran()
         {
-            var mensaje = new PrestashopProductoSyncMessage { Producto = "12345", PVP_IVA_Incluido = 29.95M };
+            // Round-trip: lo que Nesto publica con un modo, al volver de la tienda se infiere como
+            // ESE MISMO modo. Si esto se rompe, cada ciclo de sincronización cambiaría el modo.
+            decimal pvp = 24.6M;
+            decimal iva = 21M;
 
-            string json = JsonSerializer.Serialize((object)mensaje);
+            decimal publicadoDerivado = ProductoDTO.CalcularPrecioPublicoDesdePvp(pvp, iva);
+            Assert.IsNull(ProductoDTO.InferirModoPrecioPublico(publicadoDerivado, pvp, iva));
 
-            StringAssert.Contains(json, "\"PVP_IVA_Incluido\":29.95",
-                "El módulo busca la clave por ese nombre exacto: ni camelCase ni sin guiones bajos");
-        }
-
-        [TestMethod]
-        public void MensajePrestashop_ConSentinel_ViajaComoMenosUno()
-        {
-            var mensaje = new PrestashopProductoSyncMessage
-            {
-                Producto = "12345",
-                PVP_IVA_Incluido = Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL
-            };
-
-            string json = JsonSerializer.Serialize((object)mensaje);
-
-            StringAssert.Contains(json, "\"PVP_IVA_Incluido\":-1");
+            decimal publicadoMismo = ProductoDTO.CalcularPrecioPublicoDesdePvp(pvp, iva, mismoQueProfesional: true);
+            Assert.AreEqual(Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL,
+                ProductoDTO.InferirModoPrecioPublico(publicadoMismo, pvp, iva));
         }
     }
 }

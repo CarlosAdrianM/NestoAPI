@@ -34,6 +34,12 @@ namespace NestoAPI.Models
         public int ClasificacionMasVendidos { get; set; }
         public string CodigoBarras { get; set; }
 
+        // Textos editables de la tienda (PrestashopProductos), pensados para la web pero útiles
+        // para cualquier consumidor. null = sin texto personalizado (el consumidor no toca nada).
+        public string NombrePersonalizado { get; set; }
+        public string Descripcion { get; set; }
+        public string DescripcionBreve { get; set; }
+
         public ICollection<ProductoKit> ProductosKit { get; set; }
         public ICollection<StockProducto> Stocks { get; set; }
 
@@ -111,36 +117,36 @@ namespace NestoAPI.Models
             }
         }
 
+        /// <summary>
+        /// Precio público con IVA de un producto. NestoAPI es EL DUEÑO de este cálculo (decidido el
+        /// 26/08/2026 en el cutover de precios con el módulo NestoSync 1.4.0): ya no se le pregunta
+        /// nada a la API de PrestaShop, que era una llamada circular —le publicábamos un precio que
+        /// nos había dado la propia tienda— y una HTTP por producto en cada sincronización.
+        ///
+        /// El campo <c>PrestashopProductos.PVP_IVA_Incluido</c> guarda la INTENCIÓN (interna de
+        /// Nesto, no viaja por el bus):
+        ///   · positivo → precio público fijado a mano, se sirve tal cual
+        ///   · NULL     → el público se deriva del PVP con el descuento por defecto (30 %)
+        ///   · -1       → público = profesional (sentinel PVP_IVA_MISMO_QUE_PROFESIONAL)
+        /// </summary>
         public static async Task<decimal> LeerPrecioPublicoFinal(string producto, NVEntities db)
         {
-            // Issue #104: Consultar primero PrestashopProductos en BBDD
             var prestashopProducto = await db.PrestashopProductos
                 .FirstOrDefaultAsync(pp => pp.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && pp.Número == producto)
                 .ConfigureAwait(false);
 
-            decimal? resuelto = ResolverPrecioPublicoFinal(prestashopProducto?.PVP_IVA_Incluido);
-            if (resuelto.HasValue)
+            decimal? fijadoAMano = ResolverPrecioPublicoFinal(prestashopProducto?.PVP_IVA_Incluido);
+            if (fijadoAMano.HasValue)
             {
-                return resuelto.Value;
+                return fijadoAMano.Value;
             }
 
-            // Fallback: llamar a la API de Prestashop
-            decimal dePrestashop = await LeerPrecioPublicoFinalDesdePrestashop(producto).ConfigureAwait(false);
-            if (dePrestashop > 0)
-            {
-                return dePrestashop;
-            }
-
-            // PrestaShop no ha dado precio. NO es siempre un fallo: el caso habitual es un producto
-            // que sencillamente no está en la tienda online (2.474 productos vivos el 25/08/2026).
-            // Antes se devolvía 0, y ese 0 se convertía en un precio de venta de 0 € para el
-            // cliente PUBLICO_FINAL ("VENTA TIENDA", el mostrador). Se calcula en local.
             return await CalcularPrecioPublicoEnLocal(producto, db, prestashopProducto?.PVP_IVA_Incluido).ConfigureAwait(false);
         }
 
         /// <summary>
-        /// Precio público calculado desde el PVP cuando PrestaShop no lo da. Réplica de la fórmula
-        /// del módulo NestoSync, que es el dueño del cálculo: público = PVP / 0,7 × (1 + IVA).
+        /// Precio público calculado desde el PVP: público = PVP / 0,7 × (1 + IVA), o
+        /// PVP × (1 + IVA) si el producto está marcado con el sentinel -1.
         ///
         /// El IVA sale de ParametrosIVA cruzando el tipo del producto con el del cliente de venta
         /// en tienda (régimen general), NO del atajo "1,10 si R10, si no 1,21" que usan otros
@@ -157,21 +163,53 @@ namespace NestoAPI.Models
                 return 0;   // sin PVP no hay nada que calcular (producto a medio dar de alta)
             }
 
-            string ivaProducto = ficha.IVA_Repercutido;
+            decimal porcentajeIva = await LeerPorcentajeIvaProducto(db, ficha.IVA_Repercutido).ConfigureAwait(false);
+
+            // El modo del producto manda: con el sentinel -1 el público es el profesional, sin el
+            // 30 %. Si no se mirara, un producto de "mismo precio" saldría un 42,86 % más caro.
+            bool mismoQueProfesional = pvpIvaIncluido == Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL;
+            return CalcularPrecioPublicoDesdePvp(ficha.PVP.Value, porcentajeIva, mismoQueProfesional);
+        }
+
+        /// <summary>
+        /// Carga en el DTO los textos editables de la tienda (nombre personalizado y
+        /// descripciones) desde PrestashopProductos. Desde el cutover del 26/08/2026 estos textos
+        /// viajan DENTRO del mensaje de Productos (el mensaje de tabla PrestashopProductos se
+        /// retiró), así que hay que llamarla en TODOS los caminos que publiquen el producto.
+        /// Semántica para los consumidores: null = sin personalización, no tocar el texto que
+        /// tenga la tienda.
+        /// </summary>
+        internal static async Task CargarTextosTienda(ProductoDTO dto, NVEntities db)
+        {
+            PrestashopProducto fila = await db.PrestashopProductos
+                .FirstOrDefaultAsync(pp => pp.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && pp.Número == dto.Producto)
+                .ConfigureAwait(false);
+            if (fila == null)
+            {
+                return;
+            }
+
+            dto.NombrePersonalizado = string.IsNullOrWhiteSpace(fila.Nombre) ? null : fila.Nombre.Trim();
+            dto.Descripcion = fila.Descripción;
+            dto.DescripcionBreve = fila.DescripciónBreve;
+        }
+
+        /// <summary>
+        /// Porcentaje de IVA repercutido de un producto para el cliente de venta en tienda
+        /// (régimen general). Si el tipo del producto no está en ParametrosIVA, el general: es el
+        /// que llevan 7.264 de los 7.356 productos vivos, y equivocarse al alza nunca regala nada.
+        /// </summary>
+        internal static async Task<decimal> LeerPorcentajeIvaProducto(NVEntities db, string ivaRepercutido)
+        {
             decimal? porcentajeIva = await db.ParametrosIVA
                 .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
-                    && p.IVA_Producto == ivaProducto
+                    && p.IVA_Producto == ivaRepercutido
                     && p.IVA_Cliente_Prov == Constantes.Empresas.IVA_POR_DEFECTO)
-                .Select(p => p.C__IVA)
+                .Select(p => (decimal?)p.C__IVA)
                 .FirstOrDefaultAsync()
                 .ConfigureAwait(false);
 
-            // El modo del producto manda también aquí: con el sentinel -1 el público es el
-            // profesional, sin el 30 %. Si no se mirara, un producto de "mismo precio" al que
-            // PrestaShop no respondiera saldría un 42,86 % más caro.
-            bool mismoQueProfesional = pvpIvaIncluido == Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL;
-            return CalcularPrecioPublicoDesdePvp(
-                ficha.PVP.Value, porcentajeIva ?? PORCENTAJE_IVA_POR_DEFECTO, mismoQueProfesional);
+            return porcentajeIva ?? PORCENTAJE_IVA_POR_DEFECTO;
         }
 
         // Si el producto tiene un tipo de IVA que no está en ParametrosIVA, el general: es el que
@@ -195,29 +233,13 @@ namespace NestoAPI.Models
         }
 
         /// <summary>
-        /// Decide el precio público a partir del campo <c>PVP_IVA_Incluido</c> de PrestashopProductos.
-        /// Devuelve <c>null</c> cuando hay que preguntárselo a PrestaShop.
+        /// Decide si el campo <c>PVP_IVA_Incluido</c> de PrestashopProductos ES un precio o es una
+        /// intención. Devuelve el precio cuando lo es; <c>null</c> cuando hay que calcularlo del PVP
+        /// (modos NULL y -1, ver <see cref="Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL"/>).
         ///
-        /// Los tres modos que emite el módulo NestoSync de PrestaShop (ver
-        /// <see cref="Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL"/>):
-        ///
-        ///   · positivo → precio público con IVA, tal cual
-        ///   · NULL     → el público lleva el descuento por defecto (30 %)
-        ///   · -1       → público = profesional
-        ///
-        /// SOLO el valor positivo se sirve desde aquí. Los otros dos se preguntan a PrestaShop, que
-        /// es quien DERIVA <c>product.price</c> y por tanto el dueño de ese cálculo (módulo v1.4.0).
-        ///
-        /// La tentación es resolver el -1 en local como PVP × (1+IVA), pero sale mal: NestoAPI
-        /// simplifica el IVA a "1,10 si R10, si no 1,21", y en la empresa 1 hay 88 productos exentos
-        /// y 49 al 4 % (más 7 con tipos viejos) que saldrían inflados hasta un 21 %. El módulo usa
-        /// el IVA real del grupo de reglas fiscales. Dos dueños del mismo cálculo = precios que
-        /// divergen, que es justo lo que se evita dejando el 30 % en un solo sitio.
-        ///
-        /// Cualquier valor que no sea un precio (el 0, o un negativo) cae al fallback: antes
-        /// bastaba con ser distinto de 0 para viajar como precio, y un -1 habría salido como precio
-        /// público — y en la plantilla de PUBLICO_FINAL, dividido por el IVA, como precio de venta
-        /// NEGATIVO.
+        /// Cualquier valor que no sea un precio (el 0, o un negativo) cae al cálculo: antes bastaba
+        /// con ser distinto de 0 para viajar como precio, y un -1 habría salido como precio público
+        /// — y en la plantilla de PUBLICO_FINAL, dividido por el IVA, como precio de venta NEGATIVO.
         /// </summary>
         internal static decimal? ResolverPrecioPublicoFinal(decimal? pvpIvaIncluido)
         {
@@ -225,95 +247,41 @@ namespace NestoAPI.Models
         }
 
         /// <summary>
-        /// ¿La búsqueda por referencia ha devuelto más de un producto? Entonces no hay respuesta:
-        /// elegir uno al azar es peor que calcular el precio, porque devolvería el de otro artículo.
+        /// Margen para dar dos precios por iguales al comparar los nuestros con los que llegan de
+        /// fuera (PrestaShop redondea en PHP, nosotros en C#: el céntimo puede bailar). Dos céntimos,
+        /// decidido el 26/08/2026.
         /// </summary>
-        internal static bool EsReferenciaAmbigua(int productosEncontrados)
+        internal const decimal TOLERANCIA_IGUALDAD_PRECIOS = 0.02M;
+
+        /// <summary>
+        /// La operación inversa a <see cref="LeerPrecioPublicoFinal"/>: cuando un sistema externo
+        /// (PrestaShop, Odoo) publica un producto con su precio público, deduce QUÉ INTENCIÓN hay
+        /// detrás y devuelve lo que debe guardarse en <c>PrestashopProductos.PVP_IVA_Incluido</c>:
+        ///
+        ///   · público ≈ PVP / 0,7 × (1+IVA) → NULL (sigue la regla general del 30 %)
+        ///   · público ≈ PVP × (1+IVA)       → -1  (mismo precio que el profesional)
+        ///   · cualquier otra cosa           → el propio público (precio fijado a mano)
+        ///
+        /// Guardar la intención en vez del número es lo que hace que el público se recalcule solo
+        /// cuando cambie el PVP. El coste asumido: un precio fijado a mano que coincida al céntimo
+        /// con una de las fórmulas se guardará como intención y se moverá con el PVP. En ~10.000
+        /// referencias pasará alguna vez; el siguiente mensaje de la tienda lo recoloca.
+        /// </summary>
+        internal static decimal? InferirModoPrecioPublico(decimal publicoConIva, decimal pvp, decimal porcentajeIva)
         {
-            return productosEncontrados > 1;
-        }
-
-        private static async Task<decimal> LeerPrecioPublicoFinalDesdePrestashop(string producto)
-        {
-            string urlPrestashop = $"http://www.productosdeesteticaypeluqueriaprofesional.com/api/products?filter[reference]={producto}";
-            decimal precioPublico = 0;
-            string userName;
-            try
+            decimal derivado = CalcularPrecioPublicoDesdePvp(pvp, porcentajeIva);
+            if (Math.Abs(publicoConIva - derivado) <= TOLERANCIA_IGUALDAD_PRECIOS)
             {
-                userName = ConfigurationManager.AppSettings["PrestashopWebserviceKeyNV"];
-            }
-            catch
-            {
-                return precioPublico;
+                return null;
             }
 
-            using (var handler = new HttpClientHandler { Credentials = new NetworkCredential { UserName = userName } })
-            using (HttpClient client = new HttpClient(handler))
-            using (HttpResponseMessage response = await client.GetAsync(urlPrestashop))
-            using (HttpContent content = response.Content)
+            decimal profesionalConIva = CalcularPrecioPublicoDesdePvp(pvp, porcentajeIva, mismoQueProfesional: true);
+            if (Math.Abs(publicoConIva - profesionalConIva) <= TOLERANCIA_IGUALDAD_PRECIOS)
             {
-                try
-                {
-                    string xmlResponse = await content.ReadAsStringAsync();
-
-                    XmlDocument xmlDoc = new XmlDocument();
-                    xmlDoc.LoadXml(xmlResponse);
-
-                    // NestoAPI#405 (coordinación con la tienda, 25/08/2026): en PrestaShop hay 239
-                    // referencias duplicadas que afectan a 484 productos. SelectSingleNode cogía el
-                    // primero que viniera, así que para esos se leía el precio de OTRO producto sin
-                    // que nadie lo supiera. Si la respuesta trae más de uno, no se elige: se deja
-                    // que el llamante calcule el precio en local.
-                    XmlNodeList productNodes = xmlDoc.SelectNodes("//product");
-                    if (EsReferenciaAmbigua(productNodes?.Count ?? 0))
-                    {
-                        Infraestructure.ElmahHelper.Log(new Exception(
-                            $"La referencia {producto} está duplicada en PrestaShop ({productNodes.Count} productos). " +
-                            "No se puede saber cuál es el precio bueno, así que se calcula desde el PVP. " +
-                            "Hay que dejar la referencia sin duplicar en la tienda."),
-                            "Sistema (precios de la tienda)");
-                        return 0;
-                    }
-
-                    XmlNode productNode = productNodes != null && productNodes.Count == 1 ? productNodes[0] : null;
-
-                    if (productNode != null)
-                    {
-                        string urlProducto = $"{productNode.Attributes["xlink:href"].Value}?price[final_price][use_tax]=1";
-                        HttpResponseMessage responseProducto = await client.GetAsync(urlProducto).ConfigureAwait(false);
-
-                        if (responseProducto.IsSuccessStatusCode)
-                        {
-                            string responseContent = await responseProducto.Content.ReadAsStringAsync().ConfigureAwait(false);
-                            XmlDocument xmlDocProducto = new XmlDocument();
-                            xmlDocProducto.LoadXml(responseContent);
-
-                            XmlNode priceNode = xmlDocProducto.SelectSingleNode("//final_price");
-                            if (priceNode != null)
-                            {
-                                if (decimal.TryParse(priceNode.InnerText, NumberStyles.Any, CultureInfo.InvariantCulture, out decimal price))
-                                {
-                                    precioPublico = Math.Round(price, 2, MidpointRounding.AwayFromZero);
-                                }
-                            }
-                            else
-                            {
-                                Console.WriteLine("No se encontró el precio en el XML");
-                            }
-                        }
-                        else
-                        {
-                            Console.WriteLine("Error al hacer la solicitud");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    return 0;
-                }
-
-                return precioPublico;
+                return Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL;
             }
+
+            return publicoConIva;
         }
 
         /// <summary>

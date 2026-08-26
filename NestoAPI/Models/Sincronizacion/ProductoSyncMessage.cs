@@ -35,6 +35,22 @@ namespace NestoAPI.Models.Sincronizacion
         public string CodigoBarras { get; set; }
 
         /// <summary>
+        /// Nombre personalizado para la tienda (puede diferir del Nombre de la ficha).
+        /// null = sin personalización: el consumidor NO debe tocar el nombre que tenga.
+        /// </summary>
+        public string NombrePersonalizado { get; set; }
+
+        /// <summary>
+        /// Descripción completa del producto para la tienda. null = no tocar.
+        /// </summary>
+        public string Descripcion { get; set; }
+
+        /// <summary>
+        /// Descripción breve del producto para la tienda. null = no tocar.
+        /// </summary>
+        public string DescripcionBreve { get; set; }
+
+        /// <summary>
         /// Rotura de stock de proveedor
         /// </summary>
         public bool? RoturaStockProveedor { get; set; }
