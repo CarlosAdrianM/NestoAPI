@@ -354,6 +354,23 @@ namespace NestoAPI
 
             Console.WriteLine("✅ Job recurrente 'sincronizar-productos' configurado (cada 5 minutos)");
 
+            // NestoAPI#410: a las 2:00, encolar en Nesto_sync los productos con movimientos de
+            // stock de los últimos 2 días, para que los stocks de Odoo y PrestaShop no se desvíen.
+            // Solo encola: la publicación la hace 'sincronizar-productos' en sus pasadas.
+            // Si se pasa a cadencia horaria, cambiar el cron Y la ventana a la vez (ver el
+            // comentario de HORAS_VENTANA_NOCTURNA).
+            RecurringJob.AddOrUpdate(
+                "sincronizar-stocks-nocturno",
+                () => Infraestructure.Sincronizacion.SincronizacionStocksJobsService.EncolarProductosConMovimientos(
+                    Infraestructure.Sincronizacion.SincronizacionStocksJobsService.HORAS_VENTANA_NOCTURNA),
+                "0 2 * * *", // Cron: todos los días a las 2:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'sincronizar-stocks-nocturno' configurado (diario a las 2:00)");
+
             // Job de correos post-compra: se ejecuta los miércoles a las 20:30
             // Issue #74: Sistema de correos automáticos con videos personalizados post-compra
             RecurringJob.RemoveIfExists("correos-postcompra-procesar-albaranes"); // Eliminar job viejo (diario)
