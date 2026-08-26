@@ -59,6 +59,11 @@ namespace NestoAPI.Infraestructure
                 RoturaStockProveedor = productoDTO.RoturaStockProveedor,
                 ClasificacionMasVendidos = productoDTO.ClasificacionMasVendidos,
                 CodigoBarras = productoDTO.CodigoBarras?.Trim(),
+                // Textos de la tienda: desde el cutover del 26/08/2026 viajan aquí (el mensaje de
+                // tabla PrestashopProductos se retiró). null = no tocar el texto de la tienda.
+                NombrePersonalizado = productoDTO.NombrePersonalizado,
+                Descripcion = productoDTO.Descripcion,
+                DescripcionBreve = productoDTO.DescripcionBreve,
                 ProductosKit = productoDTO.ProductosKit?.Select(k => k.ProductoId).ToList(),
                 Stocks = productoDTO.Stocks?.ToList()
             };

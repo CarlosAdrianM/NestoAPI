@@ -107,6 +107,12 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                                 && p.Número.Trim() == productoId)
                         .FirstOrDefaultAsync();
 
+                    // El precio público del mensaje se traduce a la INTENCIÓN que guarda Nesto en
+                    // PrestashopProductos.PVP_IVA_Incluido. Va ANTES de la detección de cambios:
+                    // un cambio solo de precio público no toca ningún campo de Productos y se
+                    // perdería en el early-return de "sin cambios".
+                    await ActualizarModoPrecioPublico(db, productoNesto, message);
+
                     // Detectar cambios
                     var cambios = _changeDetector.DetectarCambios(productoNesto, message);
 
@@ -143,6 +149,81 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                 Console.WriteLine($"Stack trace: {ex.StackTrace}");
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Cutover de precios con NestoSync 1.4.0 (26/08/2026): por el bus solo viajan los dos
+        /// precios absolutos (profesional y público). Los modos NULL / -1 / fijo son internos de
+        /// Nesto, así que cuando un sistema externo publica su precio público, aquí se deduce la
+        /// intención (<see cref="ProductoDTO.InferirModoPrecioPublico"/>) y se guarda en
+        /// PrestashopProductos.PVP_IVA_Incluido. Guarda con su propio SaveChanges porque tiene que
+        /// ejecutarse aunque el resto del mensaje no cambie nada en Productos.
+        /// </summary>
+        private static async Task ActualizarModoPrecioPublico(NVEntities db, Producto productoNesto, ProductoSyncMessage message)
+        {
+            // Los mensajes de Nesto ("Nesto", "Nesto viejo") no enseñan nada: la intención ya está
+            // en la tabla, que es de donde salió el precio del propio mensaje.
+            string source = message.Source?.Trim() ?? string.Empty;
+            if (source.StartsWith("Nesto", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            if (productoNesto == null || !message.PrecioPublicoFinal.HasValue || message.PrecioPublicoFinal.Value <= 0)
+            {
+                return;
+            }
+            decimal publico = message.PrecioPublicoFinal.Value;
+
+            // El PVP del propio mensaje, que es la foto coherente con su público; el de la ficha
+            // solo si el mensaje no lo trae.
+            decimal pvp = message.PrecioProfesional ?? productoNesto.PVP ?? 0;
+            if (pvp <= 0)
+            {
+                return;
+            }
+
+            decimal porcentajeIva = await ProductoDTO.LeerPorcentajeIvaProducto(db, productoNesto.IVA_Repercutido);
+            decimal? modo = ProductoDTO.InferirModoPrecioPublico(publico, pvp, porcentajeIva);
+
+            var fila = await db.PrestashopProductos
+                .FirstOrDefaultAsync(pp => pp.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                    && pp.Número == productoNesto.Número);
+
+            if (fila == null)
+            {
+                // Solo merece ficha si hay algo que recordar: el modo por defecto (NULL) sin más
+                // datos es exactamente lo mismo que no tener fila.
+                if (modo == null)
+                {
+                    return;
+                }
+
+                db.PrestashopProductos.Add(new PrestashopProducto
+                {
+                    Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                    Número = productoNesto.Número,
+                    PVP_IVA_Incluido = modo,
+                    Usuario = string.IsNullOrWhiteSpace(message.Usuario) ? "EXTERNAL_SYNC" : message.Usuario,
+                    Fecha_Modificación = DateTime.Now
+                });
+            }
+            else
+            {
+                if (fila.PVP_IVA_Incluido == modo)
+                {
+                    return; // sin cambio de intención: no se ensucia ni auditoría ni fecha
+                }
+
+                fila.PVP_IVA_Incluido = modo;
+                fila.Usuario = string.IsNullOrWhiteSpace(message.Usuario) ? "EXTERNAL_SYNC" : message.Usuario;
+                fila.Fecha_Modificación = DateTime.Now;
+            }
+
+            _ = await db.SaveChangesAsync();
+            Console.WriteLine($"💶 Producto {productoNesto.Número?.Trim()}: modo de precio público ← " +
+                $"{(modo == null ? "NULL (30 %)" : modo == Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL ? "-1 (mismo que profesional)" : $"fijo {modo}")}" +
+                $" (público={publico}, PVP={pvp}, Source={source})");
         }
 
         /// <summary>

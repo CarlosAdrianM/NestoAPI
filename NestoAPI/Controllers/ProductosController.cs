@@ -637,6 +637,8 @@ namespace NestoAPI.Controllers
                         CodigoBarras = producto.CodBarras?.Trim()
                     };
 
+                    await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
+
                     // Agregar kits si existen
                     foreach (var kit in producto.Kits)
                     {
@@ -707,6 +709,8 @@ namespace NestoAPI.Controllers
                     RoturaStockProveedor = producto.RoturaStockProveedor,
                     CodigoBarras = producto.CodBarras?.Trim()
                 };
+
+                await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
 
                 // Agregar kits si existen
                 foreach (var kit in producto.Kits)
@@ -802,6 +806,8 @@ namespace NestoAPI.Controllers
                             RoturaStockProveedor = producto.RoturaStockProveedor,
                             CodigoBarras = producto.CodBarras?.Trim()
                         };
+
+                        await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
 
                         foreach (var kit in producto.Kits)
                         {

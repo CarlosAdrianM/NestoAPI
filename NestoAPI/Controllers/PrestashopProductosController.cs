@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
@@ -19,25 +19,20 @@ namespace NestoAPI.Controllers
         private readonly NVEntities db;
         private readonly IGestorProductos _gestorProductos;
         private readonly IProductoService _productoService;
-        private readonly SincronizacionEventWrapper _sincronizacionEventWrapper;
-
         public PrestashopProductosController()
         {
             db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
-            var eventWrapper = new SincronizacionEventWrapper(new GooglePubSubEventPublisher());
-            _gestorProductos = new GestorProductos(eventWrapper);
+            _gestorProductos = new GestorProductos(new SincronizacionEventWrapper(new GooglePubSubEventPublisher()));
             _productoService = new ProductoService();
-            _sincronizacionEventWrapper = eventWrapper;
         }
 
-        public PrestashopProductosController(NVEntities db, IGestorProductos gestorProductos = null, IProductoService productoService = null, SincronizacionEventWrapper sincronizacionEventWrapper = null)
+        public PrestashopProductosController(NVEntities db, IGestorProductos gestorProductos = null, IProductoService productoService = null)
         {
             this.db = db;
             this.db.Configuration.LazyLoadingEnabled = false;
             _gestorProductos = gestorProductos;
             _productoService = productoService;
-            _sincronizacionEventWrapper = sincronizacionEventWrapper;
         }
 
         // GET: api/PrestashopProductos/17404
@@ -119,7 +114,6 @@ namespace NestoAPI.Controllers
             await db.SaveChangesAsync();
 
             await PublicarProductoEnNestoSync(dto.ProductoId);
-            await PublicarPrestashopProductoSync(producto);
 
             string location = Url.Content($"~/api/PrestashopProductos/{dto.ProductoId}");
             return Created(location, MapToDTO(producto));
@@ -154,7 +148,6 @@ namespace NestoAPI.Controllers
             await db.SaveChangesAsync();
 
             await PublicarProductoEnNestoSync(dto.ProductoId);
-            await PublicarPrestashopProductoSync(producto);
 
             return Ok(MapToDTO(producto));
         }
@@ -195,6 +188,8 @@ namespace NestoAPI.Controllers
                 CodigoBarras = productoEntity.CodBarras?.Trim()
             };
 
+            await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
+
             foreach (var kit in productoEntity.Kits)
             {
                 productoDTO.ProductosKit.Add(new ProductoKit
@@ -213,28 +208,6 @@ namespace NestoAPI.Controllers
 
             string usuario = User?.Identity?.Name;
             await _gestorProductos.PublicarProductoSincronizar(productoDTO, "Nesto", usuario);
-        }
-
-        private async Task PublicarPrestashopProductoSync(PrestashopProducto producto)
-        {
-            if (_sincronizacionEventWrapper == null)
-            {
-                return;
-            }
-
-            var message = new PrestashopProductoSyncMessage
-            {
-                Tabla = "PrestashopProductos",
-                Source = "Nesto",
-                Usuario = User?.Identity?.Name,
-                Producto = producto.Número?.Trim(),
-                NombrePersonalizado = string.IsNullOrWhiteSpace(producto.Nombre) ? null : producto.Nombre.Trim(),
-                Descripcion = producto.Descripción,
-                DescripcionBreve = producto.DescripciónBreve,
-                PVP_IVA_Incluido = producto.PVP_IVA_Incluido
-            };
-
-            await _sincronizacionEventWrapper.PublishSincronizacionEventAsync("sincronizacion-tablas", message);
         }
 
         private static PrestashopProductoDTO MapToDTO(PrestashopProducto producto)
