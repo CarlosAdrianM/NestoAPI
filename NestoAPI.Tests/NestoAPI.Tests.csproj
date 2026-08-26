@@ -391,6 +391,7 @@
     <Compile Include="Infrastructure\Contabilidad\ContabilidadServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PrestashopProductosSyncHandlerTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SincronizacionJobsServiceTests.cs" />
+    <Compile Include="Infrastructure\Sincronizacion\GestorSincronizacionTests.cs" />
     <Compile Include="Infrastructure\GestorProductosTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SyncTableRouterTests.cs" />
     <Compile Include="Infrastructure\ClientesSyncHandlerVendedorTests.cs" />
