@@ -31,6 +31,7 @@ namespace NestoAPI.Models
         public decimal C_ComisiónFija { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
+        public bool PublicoIgualQueProfesional { get; set; }
     
         public virtual Empresa Empresa1 { get; set; }
         public virtual ICollection<LinPedidoVta> LinPedidoVtas { get; set; }

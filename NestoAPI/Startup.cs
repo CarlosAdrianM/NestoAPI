@@ -371,6 +371,20 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'sincronizar-stocks-nocturno' configurado (diario a las 2:00)");
 
+            // NestoAPI#406: marca con el sentinel -1 los productos de las familias con
+            // público = profesional. A la 1:30, ANTES del job de stocks: si marca algo, lo encola,
+            // y así la republicación entra en la misma tanda nocturna en vez de esperar un día.
+            RecurringJob.AddOrUpdate(
+                "sentinel-precio-publico",
+                () => Infraestructure.Sincronizacion.SentinelPrecioPublicoJobsService.MarcarProductosDeFamiliasConPublicoIgual(),
+                "30 1 * * *", // Cron: todos los días a la 1:30
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'sentinel-precio-publico' configurado (diario a la 1:30)");
+
             // Job de correos post-compra: se ejecuta los miércoles a las 20:30
             // Issue #74: Sistema de correos automáticos con videos personalizados post-compra
             RecurringJob.RemoveIfExists("correos-postcompra-procesar-albaranes"); // Eliminar job viejo (diario)

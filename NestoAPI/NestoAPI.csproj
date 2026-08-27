@@ -803,6 +803,7 @@
     <Compile Include="Infraestructure\Sincronizacion\ProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ISyncTableHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SincronizacionEventWrapper.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\SentinelPrecioPublicoJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SincronizacionStocksJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SyncTableRouter.cs" />
     <Compile Include="Infraestructure\Sincronizacion\MessageRetryManager.cs" />

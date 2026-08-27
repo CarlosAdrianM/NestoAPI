@@ -998,6 +998,7 @@
           <Property Name="%ComisiónFija" Type="decimal" Precision="4" Scale="2" Nullable="false" />
           <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+          <Property Name="PublicoIgualQueProfesional" Type="bit" Nullable="false" />
         </EntityType>
         <EntityType Name="FicheroCuaderno43">
           <Key>
@@ -8460,6 +8461,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="C_ComisiónFija" Type="Decimal" Nullable="false" Precision="4" Scale="2" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="PublicoIgualQueProfesional" Type="Boolean" Nullable="false" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Familias_Empresas" FromRole="Familia" ToRole="Empresa" />
           <NavigationProperty Name="LinPedidoVtas" Relationship="NVModel.FK_LinPedidoVta_Familias" FromRole="Familia" ToRole="LinPedidoVta" />
           <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_Familias" FromRole="Familia" ToRole="Producto" />
@@ -14182,6 +14184,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="Familias">
             <EntityTypeMapping TypeName="NVModel.Familia">
               <MappingFragment StoreEntitySet="Familias">
+                <ScalarProperty Name="PublicoIgualQueProfesional" ColumnName="PublicoIgualQueProfesional" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="C_ComisiónFija" ColumnName="%ComisiónFija" />
