@@ -204,18 +204,30 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                     Empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
                     Número = productoNesto.Número,
                     PVP_IVA_Incluido = modo,
+                    // NestoAPI#411: un precio fijo que llega de la tienda ya está PUBLICADO allí;
+                    // guardarlo sin visto bueno haría que la puerta lo derivara al 30 % en la
+                    // siguiente publicación y cada ciclo de sync cambiaría el precio.
+                    VistoBueno = modo > 0 ? true : (bool?)null,
                     Usuario = string.IsNullOrWhiteSpace(message.Usuario) ? "EXTERNAL_SYNC" : message.Usuario,
                     Fecha_Modificación = DateTime.Now
                 });
             }
             else
             {
-                if (fila.PVP_IVA_Incluido == modo)
+                // #411: si el modo inferido es un precio fijo, además de guardarlo hay que dejarlo
+                // con visto bueno (ver el comentario del alta); por eso el "sin cambios" exige
+                // también que el visto bueno ya esté puesto.
+                bool leFaltaVistoBueno = modo > 0 && fila.VistoBueno != true;
+                if (fila.PVP_IVA_Incluido == modo && !leFaltaVistoBueno)
                 {
                     return; // sin cambio de intención: no se ensucia ni auditoría ni fecha
                 }
 
                 fila.PVP_IVA_Incluido = modo;
+                if (modo > 0)
+                {
+                    fila.VistoBueno = true;
+                }
                 fila.Usuario = string.IsNullOrWhiteSpace(message.Usuario) ? "EXTERNAL_SYNC" : message.Usuario;
                 fila.Fecha_Modificación = DateTime.Now;
             }

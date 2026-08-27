@@ -1,5 +1,13 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using System;
+using System.Collections.Generic;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
+using System.Linq;
+using System.Threading.Tasks;
+using FakeItEasy;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Models;
+using NestoAPI.Tests.Helpers;
 
 namespace NestoAPI.Tests.Models
 {
@@ -61,6 +69,21 @@ namespace NestoAPI.Tests.Models
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-1M));
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-5M));
             Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(-0.01M));
+        }
+
+        [TestMethod]
+        public void ResolverPrecioPublicoFinal_FijoSinVistoBueno_NoEsUnPrecio()
+        {
+            // NestoAPI#411: la puerta de publicación. Un precio fijado a mano sin revisar no
+            // viaja; se cae al derivado (30 %), que no necesita revisión.
+            Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(29.95M, vistoBueno: null));
+            Assert.IsNull(ProductoDTO.ResolverPrecioPublicoFinal(29.95M, vistoBueno: false));
+        }
+
+        [TestMethod]
+        public void ResolverPrecioPublicoFinal_FijoConVistoBueno_Viaja()
+        {
+            Assert.AreEqual(29.95M, ProductoDTO.ResolverPrecioPublicoFinal(29.95M, vistoBueno: true));
         }
 
         // ===== Cálculo del precio público desde el PVP =====
@@ -239,6 +262,206 @@ namespace NestoAPI.Tests.Models
             decimal publicadoMismo = ProductoDTO.CalcularPrecioPublicoDesdePvp(pvp, iva, mismoQueProfesional: true);
             Assert.AreEqual(Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL,
                 ProductoDTO.InferirModoPrecioPublico(publicadoMismo, pvp, iva));
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#411: sin VistoBueno los datos de PrestashopProductos NO viajan. Es la regresión
+    /// respecto al proceso legacy, que solo publicaba nombre/descripciones/precio fijo con
+    /// VistoBueno = 1 (para eso existe la pestaña Revisar): sin la puerta, un texto a medio
+    /// escribir o un precio sin revisar salen a la web en cuanto algo toca el producto.
+    ///
+    /// ⚠️ Los modos NULL y -1 NO se gatean: los pone un proceso deliberado (la pantalla o el
+    /// script del sentinel del cutover), y las filas del sentinel tienen VistoBueno NULL —
+    /// gatearlas las devolvería al 30 % y desharía el cutover del 26/08/2026.
+    /// Foto de producción del 27/08/2026: 0 filas con precio fijo o textos sin VistoBueno = 1
+    /// (las 617 con VB NULL son todas sentinel), así que la puerta entra sin backfill.
+    /// </summary>
+    [TestClass]
+    public class VistoBuenoPuertaPublicacionTests
+    {
+        private NVEntities db;
+        private DbSet<PrestashopProducto> fakePrestashop;
+        private DbSet<Producto> fakeProductos;
+        private DbSet<ParametroIVA> fakeParametros;
+
+        private const string PRODUCTO = "17404";
+
+        [TestInitialize]
+        public void Setup()
+        {
+            db = A.Fake<NVEntities>();
+            fakePrestashop = A.Fake<DbSet<PrestashopProducto>>(o =>
+                o.Implements<IQueryable<PrestashopProducto>>().Implements<IDbAsyncEnumerable<PrestashopProducto>>());
+            fakeProductos = A.Fake<DbSet<Producto>>(o =>
+                o.Implements<IQueryable<Producto>>().Implements<IDbAsyncEnumerable<Producto>>());
+            fakeParametros = A.Fake<DbSet<ParametroIVA>>(o =>
+                o.Implements<IQueryable<ParametroIVA>>().Implements<IDbAsyncEnumerable<ParametroIVA>>());
+
+            A.CallTo(() => db.PrestashopProductos).Returns(fakePrestashop);
+            A.CallTo(() => db.Productos).Returns(fakeProductos);
+            A.CallTo(() => db.ParametrosIVA).Returns(fakeParametros);
+
+            // Ficha con PVP 10 e IVA general: derivado (30 %) = 17,29; profesional con IVA = 12,10.
+            ConfigurarFakeDbSet(fakeProductos, new List<Producto>
+            {
+                new Producto { Empresa = "1", Número = PRODUCTO, PVP = 10M, IVA_Repercutido = "G21" }
+            }.AsQueryable());
+            ConfigurarFakeDbSet(fakeParametros, new List<ParametroIVA>
+            {
+                new ParametroIVA { Empresa = "1", IVA_Producto = "G21", IVA_Cliente_Prov = "G21", C__IVA = 21M }
+            }.AsQueryable());
+        }
+
+        private void FilaPrestashop(PrestashopProducto fila)
+        {
+            ConfigurarFakeDbSet(fakePrestashop,
+                new List<PrestashopProducto> { fila }.AsQueryable());
+        }
+
+        // ===== Precio fijo =====
+
+        [TestMethod]
+        public async Task LeerPrecioPublicoFinal_FijoConVistoBueno_SirveElFijo()
+        {
+            FilaPrestashop(new PrestashopProducto
+            {
+                Empresa = "1",
+                Número = PRODUCTO,
+                PVP_IVA_Incluido = 50M,
+                VistoBueno = true
+            });
+
+            Assert.AreEqual(50M, await ProductoDTO.LeerPrecioPublicoFinal(PRODUCTO, db));
+        }
+
+        [TestMethod]
+        public async Task LeerPrecioPublicoFinal_FijoSinVistoBueno_CaeAlDerivado()
+        {
+            // La puerta: un precio fijado a mano que nadie ha revisado no se sirve; se cae a la
+            // regla general del 30 %, que no necesita revisión.
+            FilaPrestashop(new PrestashopProducto
+            {
+                Empresa = "1",
+                Número = PRODUCTO,
+                PVP_IVA_Incluido = 50M,
+                VistoBueno = null
+            });
+
+            Assert.AreEqual(17.29M, await ProductoDTO.LeerPrecioPublicoFinal(PRODUCTO, db));
+        }
+
+        [TestMethod]
+        public async Task LeerPrecioPublicoFinal_FijoConVistoBuenoAFalse_CaeAlDerivado()
+        {
+            FilaPrestashop(new PrestashopProducto
+            {
+                Empresa = "1",
+                Número = PRODUCTO,
+                PVP_IVA_Incluido = 50M,
+                VistoBueno = false
+            });
+
+            Assert.AreEqual(17.29M, await ProductoDTO.LeerPrecioPublicoFinal(PRODUCTO, db));
+        }
+
+        // ===== Los modos NULL y -1 no se gatean =====
+
+        [TestMethod]
+        public async Task LeerPrecioPublicoFinal_SentinelConVistoBuenoNull_SigueSiendoElProfesional()
+        {
+            // Las filas del sentinel del cutover tienen VistoBueno NULL (617 el 27/08/2026).
+            // Si la puerta las tocara, volverían al 30 % y la web subiría un 42,86 %.
+            FilaPrestashop(new PrestashopProducto
+            {
+                Empresa = "1",
+                Número = PRODUCTO,
+                PVP_IVA_Incluido = Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL,
+                VistoBueno = null
+            });
+
+            Assert.AreEqual(12.10M, await ProductoDTO.LeerPrecioPublicoFinal(PRODUCTO, db));
+        }
+
+        [TestMethod]
+        public async Task LeerPrecioPublicoFinal_ModoNullConVistoBuenoNull_DerivadoComoSiempre()
+        {
+            FilaPrestashop(new PrestashopProducto
+            {
+                Empresa = "1",
+                Número = PRODUCTO,
+                PVP_IVA_Incluido = null,
+                VistoBueno = null
+            });
+
+            Assert.AreEqual(17.29M, await ProductoDTO.LeerPrecioPublicoFinal(PRODUCTO, db));
+        }
+
+        // ===== Textos de tienda =====
+
+        private static PrestashopProducto FilaConTextos(bool? vistoBueno)
+        {
+            return new PrestashopProducto
+            {
+                Empresa = "1",
+                Número = PRODUCTO,
+                Nombre = "Nombre bonito para la web",
+                Descripción = "Descripción completa",
+                DescripciónBreve = "Breve",
+                VistoBueno = vistoBueno
+            };
+        }
+
+        [TestMethod]
+        public async Task CargarTextosTienda_ConVistoBueno_LosTextosViajan()
+        {
+            FilaPrestashop(FilaConTextos(vistoBueno: true));
+            var dto = new ProductoDTO { Producto = PRODUCTO };
+
+            await ProductoDTO.CargarTextosTienda(dto, db);
+
+            Assert.AreEqual("Nombre bonito para la web", dto.NombrePersonalizado);
+            Assert.AreEqual("Descripción completa", dto.Descripcion);
+            Assert.AreEqual("Breve", dto.DescripcionBreve);
+        }
+
+        [TestMethod]
+        public async Task CargarTextosTienda_SinVistoBueno_LosTextosNoViajan()
+        {
+            // null en el mensaje = "no tocar lo que tenga la tienda": un texto a medio escribir
+            // se queda en casa hasta que alguien lo revise.
+            FilaPrestashop(FilaConTextos(vistoBueno: false));
+            var dto = new ProductoDTO { Producto = PRODUCTO };
+
+            await ProductoDTO.CargarTextosTienda(dto, db);
+
+            Assert.IsNull(dto.NombrePersonalizado);
+            Assert.IsNull(dto.Descripcion);
+            Assert.IsNull(dto.DescripcionBreve);
+        }
+
+        [TestMethod]
+        public async Task CargarTextosTienda_VistoBuenoNull_LosTextosNoViajan()
+        {
+            FilaPrestashop(FilaConTextos(vistoBueno: null));
+            var dto = new ProductoDTO { Producto = PRODUCTO };
+
+            await ProductoDTO.CargarTextosTienda(dto, db);
+
+            Assert.IsNull(dto.NombrePersonalizado);
+            Assert.IsNull(dto.Descripcion);
+            Assert.IsNull(dto.DescripcionBreve);
+        }
+
+        private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
+        {
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+                .Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
         }
     }
 }

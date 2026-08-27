@@ -149,7 +149,8 @@ namespace NestoAPI.Models
                 .FirstOrDefaultAsync(pp => pp.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && pp.Número == producto)
                 .ConfigureAwait(false);
 
-            decimal? fijadoAMano = ResolverPrecioPublicoFinal(prestashopProducto?.PVP_IVA_Incluido);
+            decimal? fijadoAMano = ResolverPrecioPublicoFinal(prestashopProducto?.PVP_IVA_Incluido,
+                prestashopProducto?.VistoBueno);
             if (fijadoAMano.HasValue)
             {
                 return fijadoAMano.Value;
@@ -199,6 +200,14 @@ namespace NestoAPI.Models
                 .FirstOrDefaultAsync(pp => pp.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && pp.Número == dto.Producto)
                 .ConfigureAwait(false);
             if (fila == null)
+            {
+                return;
+            }
+
+            // NestoAPI#411: sin VistoBueno los textos no viajan (quedan null = "no tocar lo que
+            // tenga la tienda"). Es la puerta de publicación del proceso legacy: un texto a medio
+            // escribir se queda en casa hasta que alguien lo apruebe en la pestaña Revisar.
+            if (fila.VistoBueno != true)
             {
                 return;
             }
@@ -258,6 +267,18 @@ namespace NestoAPI.Models
         internal static decimal? ResolverPrecioPublicoFinal(decimal? pvpIvaIncluido)
         {
             return pvpIvaIncluido > 0 ? pvpIvaIncluido : null;
+        }
+
+        /// <summary>
+        /// NestoAPI#411: un precio FIJO solo se sirve con VistoBueno — sin revisar, se cae al
+        /// modo derivado (30 %), que no necesita revisión. La puerta NO toca los modos NULL y -1:
+        /// los pone un proceso deliberado (la pantalla o el script del sentinel del cutover, cuyas
+        /// filas tienen VistoBueno NULL), y este método ya los devuelve como "no es un precio"
+        /// antes de mirar el visto bueno.
+        /// </summary>
+        internal static decimal? ResolverPrecioPublicoFinal(decimal? pvpIvaIncluido, bool? vistoBueno)
+        {
+            return vistoBueno == true ? ResolverPrecioPublicoFinal(pvpIvaIncluido) : null;
         }
 
         /// <summary>
