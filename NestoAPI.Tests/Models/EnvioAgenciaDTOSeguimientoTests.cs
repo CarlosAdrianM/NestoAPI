@@ -76,5 +76,63 @@ namespace NestoAPI.Tests.Models
             var dto = new EnvioAgenciaDTO { AgenciaNombre = "AgenciaQueNoExiste", CodigoBarras = "123" };
             Assert.AreEqual("error, agencia no definida", dto.EnlaceSeguimiento);
         }
+
+        // ===== NestoAPI#417: tracking para Prestashop =====
+        //
+        // El transportista genérico 160 (GLS/Innovatrans) tiene la plantilla de URL vacía en la
+        // tienda ("https://@"), así que si viaja el número pelado el cliente ve un texto muerto.
+        // Para esas agencias viaja el ENLACE completo sin esquema (la plantilla antepone el
+        // https://); CEX y Sending tienen transportista propio con plantilla y siguen con el
+        // número de siempre.
+
+        [TestMethod]
+        public void TrackingPrestashop_ASM_ViajaElEnlaceCompletoSinEsquema()
+        {
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "ASM", CodigoBarras = "61197140248079", CodigoPostal = "31010" };
+            Assert.AreEqual("mygls.gls-spain.es/e/61197140248079/31010", dto.TrackingPrestashop);
+        }
+
+        [TestMethod]
+        public void TrackingPrestashop_ASM_SinCodigoPostal_CaeAlNumeroPelado()
+        {
+            // Sin CP no hay enlace posible: mejor el número que nada.
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "ASM", CodigoBarras = "61197140248079", CodigoPostal = null };
+            Assert.AreEqual("61197140248079", dto.TrackingPrestashop);
+        }
+
+        [TestMethod]
+        public void TrackingPrestashop_Innovatrans_ViajaElEnlaceCompletoSinEsquema()
+        {
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "Innovatrans", CodigoBarras = "6520139001" };
+            Assert.AreEqual("aplicaciones.tip-sa.com/cliente/datos_env.php?id=0280400280406520139001", dto.TrackingPrestashop);
+        }
+
+        [TestMethod]
+        public void TrackingPrestashop_CorreosExpress_SigueSiendoElNumeroPelado()
+        {
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "Correos Express", CodigoBarras = "123456789" };
+            Assert.AreEqual("123456789", dto.TrackingPrestashop);
+        }
+
+        [TestMethod]
+        public void TrackingPrestashop_Sending_SigueSiendoElNumeroPelado()
+        {
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "Sending", AgenciaIdentificador = "CLIENTE001", CodigoBarras = "LOC123" };
+            Assert.AreEqual("LOC123", dto.TrackingPrestashop);
+        }
+
+        [TestMethod]
+        public void TrackingPrestashop_OnTime_NoVendePorPrestashop_Null()
+        {
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "OnTime", Cliente = "00001", Pedido = 99999 };
+            Assert.IsNull(dto.TrackingPrestashop);
+        }
+
+        [TestMethod]
+        public void TrackingPrestashop_AgenciaDesconocida_Null()
+        {
+            var dto = new EnvioAgenciaDTO { AgenciaNombre = "AgenciaQueNoExiste", CodigoBarras = "123" };
+            Assert.IsNull(dto.TrackingPrestashop);
+        }
     }
 }

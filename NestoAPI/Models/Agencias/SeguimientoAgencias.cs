@@ -31,6 +31,14 @@ namespace NestoAPI.Models.Agencias
         // externo; los canales de Nesto los consumen del DTO en vez de re-parsear el enlace.
         /// <summary>Id del transportista en Prestashop, o null si no vende por ese canal.</summary>
         string TransportistaPrestashop { get; }
+        /// <summary>
+        /// NestoAPI#417: valor a enviar como "nº de seguimiento" a Prestashop. Para las agencias
+        /// del transportista genérico 160 (GLS/Innovatrans), cuya plantilla de URL en la tienda
+        /// está vacía, es el ENLACE de seguimiento completo SIN esquema (la plantilla antepone
+        /// "https://"); para las que tienen transportista propio con plantilla correcta
+        /// (CEX/Sending), el número pelado. Null si la agencia no vende por ese canal.
+        /// </summary>
+        string TrackingPrestashop(DatosSeguimientoEnvio datos);
         /// <summary>CarrierName para confirmar envíos en Amazon MFN, o null.</summary>
         string CarrierNameAmazon { get; }
         /// <summary>ShippingMethod para confirmar envíos en Amazon MFN, o null.</summary>
@@ -48,6 +56,10 @@ namespace NestoAPI.Models.Agencias
             => !string.IsNullOrEmpty(d.CodigoSeguimiento) && !string.IsNullOrEmpty(d.CodigoPostal)
                 ? $"https://mygls.gls-spain.es/e/{d.CodigoSeguimiento}/{d.CodigoPostal}"
                 : null;
+        // Transportista genérico sin plantilla: viaja el enlace entero (sin esquema). Si faltan
+        // datos para el enlace (p. ej. sin CP), mejor el número pelado que nada.
+        public string TrackingPrestashop(DatosSeguimientoEnvio d)
+            => SeguimientoUrl.SinEsquema(ConstruirUrl(d)) ?? d.CodigoSeguimiento?.Trim();
     }
 
     internal class SeguimientoOnTime : IEstrategiaSeguimientoAgencia
@@ -68,6 +80,7 @@ namespace NestoAPI.Models.Agencias
             string referencia = WebUtility.UrlEncode(d.Cliente.Trim() + "-" + d.Pedido);
             return $"https://ontimegts.alertran.net/gts/pub/clielocserv.seam?cliente=02890107&referencia={referencia}";
         }
+        public string TrackingPrestashop(DatosSeguimientoEnvio d) => null;
     }
 
     internal class SeguimientoCorreosExpress : IEstrategiaSeguimientoAgencia
@@ -80,6 +93,8 @@ namespace NestoAPI.Models.Agencias
             => !string.IsNullOrEmpty(d.CodigoSeguimiento)
                 ? $"https://s.correosexpress.com/c?n={d.CodigoSeguimiento}"
                 : null;
+        // Transportista propio (105) con plantilla correcta: el número pelado, como siempre.
+        public string TrackingPrestashop(DatosSeguimientoEnvio d) => d.CodigoSeguimiento?.Trim();
     }
 
     internal class SeguimientoSending : IEstrategiaSeguimientoAgencia
@@ -92,6 +107,8 @@ namespace NestoAPI.Models.Agencias
             => !string.IsNullOrEmpty(d.Identificador) && !string.IsNullOrEmpty(d.CodigoSeguimiento)
                 ? $"https://info.sending.es/fgts/pub/locNumServ.seam?cliente={d.Identificador}&localizador={d.CodigoSeguimiento}"
                 : null;
+        // Transportista propio (103) con plantilla correcta: el número pelado, como siempre.
+        public string TrackingPrestashop(DatosSeguimientoEnvio d) => d.CodigoSeguimiento?.Trim();
     }
 
     internal class SeguimientoInnovatrans : IEstrategiaSeguimientoAgencia
@@ -105,6 +122,17 @@ namespace NestoAPI.Models.Agencias
             => !string.IsNullOrEmpty(d.CodigoSeguimiento)
                 ? $"https://aplicaciones.tip-sa.com/cliente/datos_env.php?id=028040028040{d.CodigoSeguimiento.Trim()}"
                 : null;
+        // Comparte el transportista genérico 160: viaja el enlace entero (sin esquema).
+        public string TrackingPrestashop(DatosSeguimientoEnvio d)
+            => SeguimientoUrl.SinEsquema(ConstruirUrl(d)) ?? d.CodigoSeguimiento?.Trim();
+    }
+
+    internal static class SeguimientoUrl
+    {
+        /// <summary>Quita el "https://" inicial: la plantilla del transportista genérico de
+        /// Prestashop ya lo antepone al componer el enlace con el tracking.</summary>
+        internal static string SinEsquema(string url)
+            => url != null && url.StartsWith("https://") ? url.Substring("https://".Length) : url;
     }
 
     public static class RegistroSeguimientoAgencias

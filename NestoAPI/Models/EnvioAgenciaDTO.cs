@@ -46,17 +46,21 @@ namespace NestoAPI.Models
                 {
                     return "error, agencia no definida";
                 }
-                var datos = new DatosSeguimientoEnvio
-                {
-                    AgenciaNombre = AgenciaNombre,
-                    Identificador = AgenciaIdentificador,
-                    CodigoSeguimiento = CodigoBarras,
-                    CodigoPostal = CodigoPostal,
-                    Cliente = Cliente,
-                    Pedido = Pedido
-                };
-                return RegistroSeguimientoAgencias.ConstruirUrl(datos) ?? string.Empty;
+                return RegistroSeguimientoAgencias.ConstruirUrl(DatosSeguimiento()) ?? string.Empty;
             }
+        }
+
+        private DatosSeguimientoEnvio DatosSeguimiento()
+        {
+            return new DatosSeguimientoEnvio
+            {
+                AgenciaNombre = AgenciaNombre,
+                Identificador = AgenciaIdentificador,
+                CodigoSeguimiento = CodigoBarras,
+                CodigoPostal = CodigoPostal,
+                Cliente = Cliente,
+                Pedido = Pedido
+            };
         }
 
         // NestoAPI#258 slice (a): identificadores por canal externo declarados por la agencia.
@@ -69,6 +73,14 @@ namespace NestoAPI.Models
 
         /// <summary>Id del transportista en Prestashop (105 CEX, 103 Sending, 160 GLS/Innovatrans).</summary>
         public string TransportistaPrestashop => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.TransportistaPrestashop;
+
+        /// <summary>
+        /// NestoAPI#417: lo que debe viajar como "nº de seguimiento" a Prestashop para que el
+        /// cliente acabe viendo un ENLACE útil. Para las agencias del transportista genérico 160
+        /// (plantilla vacía en la tienda) es el enlace completo sin esquema
+        /// (mygls.gls-spain.es/e/{albarán}/{cp}); para CEX/Sending, el número pelado de siempre.
+        /// </summary>
+        public string TrackingPrestashop => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.TrackingPrestashop(DatosSeguimiento());
 
         /// <summary>CarrierName para confirmar el envío en Amazon MFN.</summary>
         public string CarrierNameAmazon => RegistroSeguimientoAgencias.Obtener(AgenciaNombre)?.CarrierNameAmazon;
