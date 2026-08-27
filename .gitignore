@@ -199,3 +199,7 @@ ModelManifest.xml
 /.vs/NestoAPI
 /NestoAPI/Secrets
 /NestoAPI/protos/google
+
+# Scripts de diagnóstico manual de la raíz: leen secretos.config y algunos llevan la
+# contraseña de la BD de producción en claro. Que no se cuelen en un commit por descuido.
+/_*.sh
