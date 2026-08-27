@@ -154,13 +154,13 @@ namespace NestoAPI.Tests.Infrastructure
                 Nombre = "PRODUCTO EXENTO",
                 PrecioProfesional = 10M,
                 PrecioPublicoFinal = 14.29M,
-                TipoIva = "SR",
+                TipoIva = "EX",   // exento (0 %); el superreducido 4 % es SR — no confundirlos
                 PorcentajeIva = 0M
             };
 
             var mensaje = await PublicarYCapturar(dto);
 
-            Assert.AreEqual("SR", mensaje.TipoIva);
+            Assert.AreEqual("EX", mensaje.TipoIva);
             Assert.AreEqual(0M, mensaje.PorcentajeIva);
         }
 
