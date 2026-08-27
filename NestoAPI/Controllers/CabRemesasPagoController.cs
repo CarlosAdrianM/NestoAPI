@@ -19,12 +19,18 @@ namespace NestoAPI.Controllers
     public class CabRemesasPagoController : ApiController
     {
         // Carlos 19/10/15: lo pongo para desactivar el Lazy Loading
-        public CabRemesasPagoController()
+        public CabRemesasPagoController() : this(new NVEntities())
         {
-            db.Configuration.LazyLoadingEnabled = false;
         }
 
-        private NVEntities db = new NVEntities();
+        // Constructor para tests, como el resto de controllers
+        public CabRemesasPagoController(NVEntities db)
+        {
+            this.db = db;
+            this.db.Configuration.LazyLoadingEnabled = false;
+        }
+
+        private readonly NVEntities db;
         const int LONGITUD_LINEA = 72;
         int numeroRegistrosTotales = 0;
 
@@ -32,12 +38,20 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> GetCrearFicheroRemesa(int remesaId)
         {
-            CabRemesaPago remesa = await db.CabRemesasPago.SingleAsync(r => r.Numero == remesaId);
+            // SingleAsync LANZA si no hay fila ("Sequence contains no elements"), así que el
+            // NotFound de debajo era código muerto y pedir una remesa inexistente devolvía un 500
+            // con su ELMAH. Pasa de verdad: se teclea en la casilla de remesa un nº de movimiento
+            // de proveedor (25/08/26, remesaId=10927, que es un NºOrden de ExtractoProveedor).
+            CabRemesaPago remesa = await db.CabRemesasPago.SingleOrDefaultAsync(r => r.Numero == remesaId);
             if (remesa == null)
             {
-                return NotFound();
+                return Content(HttpStatusCode.NotFound, $"No existe la remesa de pago {remesaId}. Si lo que quieres pagar es un movimiento suelto, indica el nº de orden del extracto y el banco.");
             }
             Banco banco = db.Bancos.SingleOrDefault(b => b.Empresa == remesa.Empresa && b.Número == remesa.Banco);
+            if (banco == null)
+            {
+                return Content(HttpStatusCode.NotFound, $"La remesa {remesaId} apunta al banco {remesa.Banco?.Trim()} de la empresa {remesa.Empresa?.Trim()}, que no existe.");
+            }
             List<ExtractoProveedor> movimientos = db.ExtractosProveedor.Where(e => e.Remesa == remesa.Numero).OrderBy(e => e.Número).ToList();
 
             return await GetCrearFicheroRemesa(banco, movimientos, remesa);
@@ -47,8 +61,17 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(string))]
         public async Task<IHttpActionResult> GetCrearFicheroRemesa(int extractoId, string numeroBanco)
         {
-            ExtractoProveedor movimiento = await db.ExtractosProveedor.SingleAsync(e => e.NºOrden == extractoId);
+            // Mismo caso que arriba: sin fila, SingleAsync lanzaba y salía un 500 en vez de un 404.
+            ExtractoProveedor movimiento = await db.ExtractosProveedor.SingleOrDefaultAsync(e => e.NºOrden == extractoId);
+            if (movimiento == null)
+            {
+                return Content(HttpStatusCode.NotFound, $"No existe el movimiento de proveedor con nº de orden {extractoId}.");
+            }
             Banco banco = db.Bancos.SingleOrDefault(b => b.Empresa == movimiento.Empresa && b.Número == numeroBanco);
+            if (banco == null)
+            {
+                return Content(HttpStatusCode.NotFound, $"No existe el banco {numeroBanco?.Trim()} en la empresa {movimiento.Empresa?.Trim()}.");
+            }
             List<ExtractoProveedor> movimientos = new List<ExtractoProveedor> { movimiento };
 
             return await GetCrearFicheroRemesa(banco, movimientos, null);
