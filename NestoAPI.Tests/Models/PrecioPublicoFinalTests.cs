@@ -88,6 +88,74 @@ namespace NestoAPI.Tests.Models
 
         // ===== Cálculo del precio público desde el PVP =====
 
+        #region NestoAPI#406 — la familia también decide el modo, y hace falta al publicar
+
+        private static NVEntities ContextoConFamilias(params Familia[] familias)
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            DbSet<Familia> fake = A.Fake<DbSet<Familia>>(o => o.Implements<IQueryable<Familia>>().Implements<IDbAsyncEnumerable<Familia>>());
+            A.CallTo(() => db.Familias).Returns(fake);
+
+            IQueryable<Familia> datos = familias.AsQueryable();
+            A.CallTo(() => ((IDbAsyncEnumerable<Familia>)fake).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<Familia>(datos.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<Familia>)fake).Provider).Returns(new TestDbAsyncQueryProvider<Familia>(datos.Provider));
+            A.CallTo(() => ((IQueryable<Familia>)fake).Expression).Returns(datos.Expression);
+            A.CallTo(() => ((IQueryable<Familia>)fake).ElementType).Returns(datos.ElementType);
+            A.CallTo(() => ((IQueryable<Familia>)fake).GetEnumerator()).Returns(datos.GetEnumerator());
+
+            return db;
+        }
+
+        private static Familia Familia(string codigo, bool publicoIgual) => new Familia
+        {
+            Empresa = "1",
+            Número = codigo,
+            PublicoIgualQueProfesional = publicoIgual
+        };
+
+        [TestMethod]
+        public async Task LaFamiliaVendeAlPublicoComoAlProfesional_FamiliaMarcada_DevuelveTrue()
+        {
+            // El caso que importa: un producto RECIÉN CREADO en Nesto no tiene ficha en
+            // PrestashopProductos, así que no tiene sentinel. El trigger trgProductosIns lo encola
+            // en el acto y se publica a los cinco minutos. Si la familia no se mirase aquí, saldría
+            // a la venta un 42,86 % más caro hasta que el job nocturno lo marcase.
+            NVEntities db = ContextoConFamilias(Familia("Staleks", true));
+
+            Assert.IsTrue(await ProductoDTO.LaFamiliaVendeAlPublicoComoAlProfesional(db, "Staleks"));
+        }
+
+        [TestMethod]
+        public async Task LaFamiliaVendeAlPublicoComoAlProfesional_FamiliaSinMarcar_DevuelveFalse()
+        {
+            // Ceras Depilatorias: su descuento es del 25 %, no del 30 %, así que NO iguala.
+            NVEntities db = ContextoConFamilias(Familia("Staleks", true), Familia("Ceras", false));
+
+            Assert.IsFalse(await ProductoDTO.LaFamiliaVendeAlPublicoComoAlProfesional(db, "Ceras"));
+        }
+
+        [TestMethod]
+        public async Task LaFamiliaVendeAlPublicoComoAlProfesional_FamiliaDesconocidaOVacia_DevuelveFalse()
+        {
+            NVEntities db = ContextoConFamilias(Familia("Staleks", true));
+
+            Assert.IsFalse(await ProductoDTO.LaFamiliaVendeAlPublicoComoAlProfesional(db, "Lisap"));
+            Assert.IsFalse(await ProductoDTO.LaFamiliaVendeAlPublicoComoAlProfesional(db, null));
+            Assert.IsFalse(await ProductoDTO.LaFamiliaVendeAlPublicoComoAlProfesional(db, "   "));
+        }
+
+        [TestMethod]
+        public void CalcularPrecioPublicoDesdePvp_FamiliaQueIguala_ElPublicoEsElProfesionalConIva()
+        {
+            // Es lo que debe salir cuando la familia manda: PVP + IVA, sin el /0,7.
+            Assert.AreEqual(12.10M, ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 21M, mismoQueProfesional: true));
+            Assert.AreEqual(17.29M, ProductoDTO.CalcularPrecioPublicoDesdePvp(10M, 21M),
+                "Y sin la regla sigue saliendo el derivado del 30 %, un 42,86 % por encima");
+        }
+
+        #endregion NestoAPI#406
+
         [TestMethod]
         public void CalcularPrecioPublicoDesdePvp_IvaGeneral_AplicaElDescuentoDelTreintaYElIva()
         {

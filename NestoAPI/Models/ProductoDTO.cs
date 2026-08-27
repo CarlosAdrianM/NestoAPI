@@ -203,8 +203,37 @@ namespace NestoAPI.Models
 
             // El modo del producto manda: con el sentinel -1 el público es el profesional, sin el
             // 30 %. Si no se mirara, un producto de "mismo precio" saldría un 42,86 % más caro.
-            bool mismoQueProfesional = pvpIvaIncluido == Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL;
+            //
+            // NestoAPI#406: la familia también manda, y hace falta AQUÍ y no solo en el job
+            // nocturno. Un producto se crea en Nesto y el trigger trgProductosIns lo encola en
+            // Nesto_sync en el acto, así que se publica a los cinco minutos, cuando todavía no
+            // tiene ficha en PrestashopProductos y por tanto no tiene sentinel. Sin esta línea
+            // saldría a la venta un 42,86 % más caro hasta que el job pasara de madrugada — y en
+            // estas marcas (Weelko, Staleks...) el stock 0 no impide comprar, porque van a sobre
+            // pedido. El job sigue haciendo falta para dejar el dato escrito, que es lo que leen
+            // Nesto, NestoApp y la tienda directamente de la base de datos.
+            bool mismoQueProfesional = pvpIvaIncluido == Constantes.Productos.PVP_IVA_MISMO_QUE_PROFESIONAL
+                || await LaFamiliaVendeAlPublicoComoAlProfesional(db, ficha.Familia).ConfigureAwait(false);
             return CalcularPrecioPublicoDesdePvp(ficha.PVP.Value, porcentajeIva, mismoQueProfesional);
+        }
+
+        /// <summary>
+        /// NestoAPI#406: ¿la familia del producto se vende al público al mismo precio que al
+        /// profesional? La regla vive en <c>Familias.PublicoIgualQueProfesional</c>, para que
+        /// sumar una marca nueva sea marcar su familia y no tocar código.
+        /// </summary>
+        internal static async Task<bool> LaFamiliaVendeAlPublicoComoAlProfesional(NVEntities db, string familia)
+        {
+            if (string.IsNullOrWhiteSpace(familia))
+            {
+                return false;
+            }
+
+            return await db.Familias
+                .AnyAsync(f => f.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+                            && f.Número == familia
+                            && f.PublicoIgualQueProfesional)
+                .ConfigureAwait(false);
         }
 
         /// <summary>
