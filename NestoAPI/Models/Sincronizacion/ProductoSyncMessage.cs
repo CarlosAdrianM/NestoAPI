@@ -64,6 +64,19 @@ namespace NestoAPI.Models.Sincronizacion
         public decimal? PorcentajeIva { get; set; }
 
         /// <summary>
+        /// NestoAPI#413: oferta de tarifa para el grupo Profesionales, en porcentaje 0-100.
+        /// null = sin oferta (retirar el specific_price porcentual si lo hubiera). Los precios
+        /// del mensaje siguen siendo PLENOS: la tienda pinta tachado + %.
+        /// </summary>
+        public decimal? DescuentoPorcentajeProfesional { get; set; }
+
+        /// <summary>
+        /// NestoAPI#413: oferta de tarifa para el público, en porcentaje 0-100. null = sin
+        /// oferta. Puede diferir del profesional (o existir solo uno de los dos).
+        /// </summary>
+        public decimal? DescuentoPorcentajePublico { get; set; }
+
+        /// <summary>
         /// Rotura de stock de proveedor
         /// </summary>
         public bool? RoturaStockProveedor { get; set; }

@@ -191,6 +191,7 @@ namespace NestoAPI.Controllers
             await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
             await ProductoDTO.CargarTipoIva(productoDTO, db, productoEntity.IVA_Repercutido).ConfigureAwait(false);
             await ProductoDTO.CargarCategoriasSecundarias(productoDTO, db).ConfigureAwait(false);
+            await ProductoDTO.CargarDescuentosWeb(productoDTO, db, productoEntity.PVP).ConfigureAwait(false);
 
             foreach (var kit in productoEntity.Kits)
             {

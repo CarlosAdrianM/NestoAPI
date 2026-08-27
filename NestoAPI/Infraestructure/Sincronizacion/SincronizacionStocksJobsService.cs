@@ -64,7 +64,15 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                                         AND k.Número = p.Número
                                         AND e.Empresa IN (@empresa, @empresaEspejo)
                                         AND e.Almacén IN (@almacen1, @almacen2, @almacen3)
-                                        AND e.Fecha >= @desde))
+                                        AND e.Fecha >= @desde)
+                               -- NestoAPI#413: un alta/cambio/borrado lógico en los descuentos de
+                               -- tarifa del producto también cambia lo que viaja (incluido pasar
+                               -- AmbitoWeb a 0, que debe RETIRAR la oferta de la web), así que
+                               -- cualquier fila tocada en la ventana encola el producto.
+                               OR EXISTS (SELECT 1 FROM DescuentosProducto d
+                                      WHERE d.Empresa = @empresa
+                                        AND d.[Nº Producto] = p.Número
+                                        AND d.[Fecha Modificación] >= @desde))
                           AND NOT EXISTS (SELECT 1 FROM Nesto_sync ns
                                           WHERE ns.Tabla = 'Productos'
                                             AND ns.ModificadoId = RTRIM(p.Número)

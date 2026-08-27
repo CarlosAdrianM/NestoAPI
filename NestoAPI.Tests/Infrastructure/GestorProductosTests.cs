@@ -143,6 +143,28 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task PublicarProductoSincronizar_LosDescuentosWebViajanPorAudiencia()
+        {
+            // NestoAPI#413: la oferta viaja como % APARTE por audiencia; los precios del mensaje
+            // siguen siendo plenos (100 € −20 %, no 80 € a secas).
+            var dto = new ProductoDTO
+            {
+                Producto = "41269",
+                Nombre = "PRODUCTO CON OFERTA",
+                PrecioProfesional = 18.38M,
+                PrecioPublicoFinal = 41.95M,
+                DescuentoPorcentajeProfesional = 20M,
+                DescuentoPorcentajePublico = null
+            };
+
+            var mensaje = await PublicarYCapturar(dto);
+
+            Assert.AreEqual(20M, mensaje.DescuentoPorcentajeProfesional);
+            Assert.IsNull(mensaje.DescuentoPorcentajePublico,
+                "null = sin oferta para el público (ámbito solo-profesional)");
+        }
+
+        [TestMethod]
         public async Task PublicarProductoSincronizar_ElTipoDeIvaViajaEnElMensaje()
         {
             // NestoAPI#415: los precios viajan CON IVA y el consumidor divide para guardar la
@@ -182,6 +204,124 @@ namespace NestoAPI.Tests.Infrastructure
 
             Assert.AreEqual(3, mensaje.Stocks[0].CantidadDisponible, "El disponible es solo el físico");
             Assert.AreEqual(7, mensaje.Stocks[0].CantidadMontable);
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#413: cálculo de las ofertas de tarifa hacia la web por audiencia
+    /// (<c>ProductoDTO.CalcularDescuentosWeb</c>). Las filas llegan YA filtradas (tarifa pura,
+    /// CantidadMínima menor que 2, AmbitoWeb mayor que 0): aquí se prueba la lógica de ámbitos,
+    /// la derivación desde precio fijo y el criterio de "gana el mayor".
+    /// </summary>
+    [TestClass]
+    public class CalcularDescuentosWebTests
+    {
+        private static DescuentosProducto Fila(byte ambito, decimal descuento = 0M,
+            decimal? precio = null, decimal? descuentoPublico = null)
+        {
+            return new DescuentosProducto
+            {
+                Empresa = "1",
+                Nº_Producto = "41269",
+                AmbitoWeb = ambito,
+                Descuento = descuento,
+                Precio = precio,
+                DescuentoPublico = descuentoPublico
+            };
+        }
+
+        private static DescuentosWebCalculados Calcular(decimal? pvp, params DescuentosProducto[] filas)
+        {
+            return ProductoDTO.CalcularDescuentosWeb(filas, pvp);
+        }
+
+        [TestMethod]
+        public void SinFilas_SinOfertas()
+        {
+            var resultado = Calcular(10M);
+            Assert.IsNull(resultado.Profesional);
+            Assert.IsNull(resultado.Publico);
+
+            var conNull = ProductoDTO.CalcularDescuentosWeb(null, 10M);
+            Assert.IsNull(conNull.Profesional);
+            Assert.IsNull(conNull.Publico);
+        }
+
+        [TestMethod]
+        public void AmbitoSoloProfesionales_ElPublicoNoSeEntera()
+        {
+            // El caso "no competir con nuestros clientes profesionales que revenden".
+            var resultado = Calcular(10M, Fila(ambito: 1, descuento: 0.20M));
+
+            Assert.AreEqual(20M, resultado.Profesional);
+            Assert.IsNull(resultado.Publico);
+        }
+
+        [TestMethod]
+        public void AmbitoAmbos_SinDescuentoPublico_MismoPorcentaje()
+        {
+            var resultado = Calcular(10M, Fila(ambito: 2, descuento: 0.20M));
+
+            Assert.AreEqual(20M, resultado.Profesional);
+            Assert.AreEqual(20M, resultado.Publico);
+        }
+
+        [TestMethod]
+        public void AmbitoAmbos_ConDescuentoPublicoPropio_CadaAudienciaElSuyo()
+        {
+            // "Al público solo el 10 aunque el profesional tenga el 20".
+            var resultado = Calcular(10M, Fila(ambito: 2, descuento: 0.20M, descuentoPublico: 0.10M));
+
+            Assert.AreEqual(20M, resultado.Profesional);
+            Assert.AreEqual(10M, resultado.Publico);
+        }
+
+        [TestMethod]
+        public void AmbitoSoloPublico_ElProfesionalNoSeEntera()
+        {
+            var resultado = Calcular(10M, Fila(ambito: 3, descuento: 0.15M));
+
+            Assert.IsNull(resultado.Profesional);
+            Assert.AreEqual(15M, resultado.Publico);
+        }
+
+        [TestMethod]
+        public void PrecioFijo_DerivaElPorcentajeContraElPvp_ComoElPaso7DelLegacy()
+        {
+            // Precio 8 sobre PVP 10 → 20 %.
+            var resultado = Calcular(10M, Fila(ambito: 2, precio: 8M));
+
+            Assert.AreEqual(20M, resultado.Profesional);
+            Assert.AreEqual(20M, resultado.Publico);
+        }
+
+        [TestMethod]
+        public void PrecioFijoPorEncimaDelPvp_NoEsUnaOferta()
+        {
+            var resultado = Calcular(10M, Fila(ambito: 2, precio: 12M));
+
+            Assert.IsNull(resultado.Profesional);
+            Assert.IsNull(resultado.Publico);
+        }
+
+        [TestMethod]
+        public void VariasFilas_GanaElMayorPorAudiencia()
+        {
+            var resultado = Calcular(10M,
+                Fila(ambito: 1, descuento: 0.25M),
+                Fila(ambito: 2, descuento: 0.10M));
+
+            Assert.AreEqual(25M, resultado.Profesional, "El 25 de solo-prof gana al 10 de ambos");
+            Assert.AreEqual(10M, resultado.Publico, "El público solo ve la fila de ámbito 2");
+        }
+
+        [TestMethod]
+        public void ElPorcentajeSeRedondeaADosDecimales()
+        {
+            // 1/3 de descuento → 33,33, no 33,3333...
+            var resultado = Calcular(9M, Fila(ambito: 2, precio: 6M));
+
+            Assert.AreEqual(33.33M, resultado.Profesional);
         }
     }
 
