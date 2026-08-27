@@ -127,6 +127,7 @@ namespace NestoAPI.Models
         public virtual DbSet<PagoTPV> PagosTPV { get; set; }
         public virtual DbSet<PagoTPV_Efecto> PagosTPV_Efectos { get; set; }
         public virtual DbSet<DispositivoNotificacion> DispositivosNotificaciones { get; set; }
+        public virtual DbSet<NotificacionBuzon> NotificacionesBuzon { get; set; }
         public virtual DbSet<ComparativaAgenciaSombra> ComparativaAgenciaSombras { get; set; }
         public virtual DbSet<LiquidacionCliente> LiquidacionesClientes { get; set; }
         public virtual DbSet<EstadoPlanVentajas> EstadosPlanesVentajas { get; set; }

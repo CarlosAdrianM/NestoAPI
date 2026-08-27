@@ -228,6 +228,7 @@
     <Compile Include="Controllers\ConfirmarTramitacionTests.cs" />
     <Compile Include="Controllers\TramitarEnvioTests.cs" />
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
+    <Compile Include="Models\MapeoEdmxTests.cs" />
     <Compile Include="Models\PrecioPublicoFinalTests.cs" />
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\Buscador\LuceneBuscadorTests.cs" />
@@ -252,6 +253,7 @@
     <Compile Include="Controllers\PedidosVentaJefeEquipoTests.cs" />
     <Compile Include="Controllers\PedidosVentaPorCanalExternoTests.cs" />
     <Compile Include="Controllers\PagoRedirectControllerTests.cs" />
+    <Compile Include="Infraestructure\Notificaciones\BuzonNotificacionesTests.cs" />
     <Compile Include="Infraestructure\Notificaciones\ServicioNotificacionesPushTests.cs" />
     <Compile Include="Infraestructure\Informes\InformeClientesNuevosTests.cs" />
     <Compile Include="Infraestructure\Informes\MotorSaldoCuentaTests.cs" />

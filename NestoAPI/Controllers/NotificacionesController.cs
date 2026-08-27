@@ -133,6 +133,110 @@ namespace NestoAPI.Controllers
             return Ok(enviados);
         }
 
+        /// <summary>
+        /// Buzón persistente (#387): las notificaciones que se enviaron a este usuario, para que la
+        /// app pueda volver a verlas aunque se descartara la notificación del sistema.
+        /// </summary>
+        [HttpGet]
+        [Route("Buzon")]
+        [Authorize]
+        public async Task<IHttpActionResult> ObtenerBuzon(string aplicacion = null, bool soloNoLeidas = false, int pagina = 1, int tamanoPagina = 20)
+        {
+            string usuario = User?.Identity?.Name;
+
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+
+            List<NotificacionBuzonDTO> notificaciones = await _servicio.ObtenerBuzon(
+                usuario,
+                aplicacion ?? Constantes.Aplicaciones.NESTO_APP,
+                soloNoLeidas,
+                pagina,
+                tamanoPagina
+            ).ConfigureAwait(false);
+
+            return Ok(notificaciones);
+        }
+
+        /// <summary>Contador para el badge del menú.</summary>
+        [HttpGet]
+        [Route("Buzon/NoLeidas")]
+        [Authorize]
+        public async Task<IHttpActionResult> ContarNoLeidas(string aplicacion = null)
+        {
+            string usuario = User?.Identity?.Name;
+
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+
+            int noLeidas = await _servicio.ContarNoLeidas(
+                usuario,
+                aplicacion ?? Constantes.Aplicaciones.NESTO_APP
+            ).ConfigureAwait(false);
+
+            return Ok(noLeidas);
+        }
+
+        [HttpPut]
+        [Route("Buzon/{id:int}/Leida")]
+        [Authorize]
+        public async Task<IHttpActionResult> MarcarLeida(int id)
+        {
+            string usuario = User?.Identity?.Name;
+
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+
+            bool marcada = await _servicio.MarcarLeida(id, usuario).ConfigureAwait(false);
+
+            // Si la notificación no es de este usuario se responde NotFound, no Forbidden: así no se
+            // confirma desde fuera que ese id existe.
+            return marcada ? (IHttpActionResult)Ok() : NotFound();
+        }
+
+        [HttpPut]
+        [Route("Buzon/Leidas")]
+        [Authorize]
+        public async Task<IHttpActionResult> MarcarTodasLeidas(string aplicacion = null)
+        {
+            string usuario = User?.Identity?.Name;
+
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+
+            int marcadas = await _servicio.MarcarTodasLeidas(
+                usuario,
+                aplicacion ?? Constantes.Aplicaciones.NESTO_APP
+            ).ConfigureAwait(false);
+
+            return Ok(marcadas);
+        }
+
+        [HttpDelete]
+        [Route("Buzon/{id:int}")]
+        [Authorize]
+        public async Task<IHttpActionResult> EliminarDelBuzon(int id)
+        {
+            string usuario = User?.Identity?.Name;
+
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return Unauthorized();
+            }
+
+            bool eliminada = await _servicio.EliminarDelBuzon(id, usuario).ConfigureAwait(false);
+
+            return eliminada ? (IHttpActionResult)Ok() : NotFound();
+        }
+
         [HttpPost]
         [Route("NuevoProtocolo")]
         public async Task<IHttpActionResult> NotificarNuevoProtocolo([FromBody] NuevoProtocoloDTO dto)

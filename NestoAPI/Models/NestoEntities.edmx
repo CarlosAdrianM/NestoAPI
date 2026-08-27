@@ -653,6 +653,24 @@
           <Property Name="FechaUltimaActividad" Type="datetime" Nullable="false" />
           <Property Name="Activo" Type="bit" Nullable="false" />
         </EntityType>
+        <EntityType Name="NotificacionesBuzon">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="50" />
+          <Property Name="Empresa" Type="char" MaxLength="3" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" />
+          <Property Name="Cliente" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="Aplicacion" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="Titulo" Type="nvarchar" MaxLength="200" Nullable="false" />
+          <Property Name="Cuerpo" Type="nvarchar(max)" />
+          <Property Name="Datos" Type="nvarchar(max)" />
+          <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+          <Property Name="FechaLeida" Type="datetime" />
+          <Property Name="FechaEliminada" Type="datetime" />
+        </EntityType>
         <EntityType Name="EfectosPedidoVenta">
           <Key>
             <PropertyRef Name="Id" />
@@ -5591,6 +5609,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="DiariosProducto" EntityType="Self.DiariosProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DíasPagoClientes" EntityType="Self.DíasPagoClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DispositivosNotificaciones" EntityType="Self.DispositivosNotificaciones" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="NotificacionesBuzon" EntityType="Self.NotificacionesBuzon" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EfectosPedidoVenta" EntityType="Self.EfectosPedidoVenta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Empresas" EntityType="Self.Empresas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Entidades" EntityType="Self.Entidades" Schema="dbo" store:Type="Tables" />
@@ -7752,6 +7771,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="PagosTPV_Efectos" EntitySet="PagosTPV_Efectos" />
           </AssociationSet>
           <EntitySet Name="DispositivosNotificaciones" EntityType="NVModel.DispositivoNotificacion" />
+          <EntitySet Name="NotificacionesBuzon" EntityType="NVModel.NotificacionBuzon" />
           <EntitySet Name="ComparativaAgenciaSombras" EntityType="NVModel.ComparativaAgenciaSombra" />
           <EntitySet Name="LiquidacionesClientes" EntityType="NVModel.LiquidacionCliente" />
           <AssociationSet Name="FK_LiquidacionesClientes_Empresas" Association="NVModel.FK_LiquidacionesClientes_Empresas">
@@ -13494,6 +13514,24 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="FechaUltimaActividad" Type="DateTime" Nullable="false" Precision="3" />
           <Property Name="Activo" Type="Boolean" Nullable="false" />
         </EntityType>
+        <EntityType Name="NotificacionBuzon">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="Usuario" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="Empresa" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Vendedor" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Cliente" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="Contacto" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Aplicacion" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="Titulo" Type="String" Nullable="false" MaxLength="200" FixedLength="false" Unicode="true" />
+          <Property Name="Cuerpo" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Datos" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="FechaCreacion" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="FechaLeida" Type="DateTime" Precision="3" />
+          <Property Name="FechaEliminada" Type="DateTime" Precision="3" />
+        </EntityType>
         <EntityType Name="ComparativaAgenciaSombra">
           <Key>
             <PropertyRef Name="Id" />
@@ -15888,6 +15926,25 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Aplicacion" ColumnName="Aplicacion" />
                 <ScalarProperty Name="Plataforma" ColumnName="Plataforma" />
                 <ScalarProperty Name="Token" ColumnName="Token" />
+                <ScalarProperty Name="Contacto" ColumnName="Contacto" />
+                <ScalarProperty Name="Cliente" ColumnName="Cliente" />
+                <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Id" ColumnName="Id" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="NotificacionesBuzon">
+            <EntityTypeMapping TypeName="NVModel.NotificacionBuzon">
+              <MappingFragment StoreEntitySet="NotificacionesBuzon">
+                <ScalarProperty Name="FechaEliminada" ColumnName="FechaEliminada" />
+                <ScalarProperty Name="FechaLeida" ColumnName="FechaLeida" />
+                <ScalarProperty Name="FechaCreacion" ColumnName="FechaCreacion" />
+                <ScalarProperty Name="Datos" ColumnName="Datos" />
+                <ScalarProperty Name="Cuerpo" ColumnName="Cuerpo" />
+                <ScalarProperty Name="Titulo" ColumnName="Titulo" />
+                <ScalarProperty Name="Aplicacion" ColumnName="Aplicacion" />
                 <ScalarProperty Name="Contacto" ColumnName="Contacto" />
                 <ScalarProperty Name="Cliente" ColumnName="Cliente" />
                 <ScalarProperty Name="Vendedor" ColumnName="Vendedor" />

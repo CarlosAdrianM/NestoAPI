@@ -885,6 +885,10 @@
     <Compile Include="Models\DispositivoNotificacion.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\NotificacionBuzon.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\NotificacionBuzonDTO.cs" />
     <Compile Include="Models\Entidad.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
