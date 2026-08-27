@@ -28,8 +28,16 @@ namespace NestoAPI.Infraestructure.Picking
     public class PickingJobsService
     {
         /// <summary>
-        /// Punto de entrada para Hangfire (job recurrente <c>picking-cierre-diario</c>) y para el
-        /// endpoint manual <c>api/Picking/Automatico</c>. Una sola implementación para los dos.
+        /// Punto de entrada para Hangfire (job recurrente <c>picking-cierre-diario</c>).
+        ///
+        /// <para>NestoAPI#416: es <c>void</c> A PROPÓSITO. Hangfire serializa el valor de retorno
+        /// del job y lo escribe dentro de la misma transacción que marca el Succeeded. En la
+        /// primera ejecución real (26/08/2026, job 89877) el picking salió bien, pero la lista
+        /// completa de pedidos con sus líneas reventó ese commit: la transacción quedó "completada
+        /// pero sin desechar" en la conexión dedicada del worker, los 10 reintentos del cambio de
+        /// estado reutilizaron la conexión envenenada y el job acabó en Failed sin que fallara
+        /// nada del negocio. El resultado solo lo necesita el endpoint manual
+        /// (<c>api/Picking/Automatico</c>), que sigue llamando a <see cref="SacarPickingDeCierre"/>.</para>
         ///
         /// <para>SIN REINTENTO AUTOMÁTICO a propósito. No es por riesgo —el picking es idempotente,
         /// las líneas ya asignadas se filtran por <c>Picking == null || Picking == 0</c>— sino para
@@ -39,6 +47,18 @@ namespace NestoAPI.Infraestructure.Picking
         /// </summary>
         [AutomaticRetry(Attempts = 0)]
         [DisableConcurrentExecution(timeoutInSeconds: 600)]
+        public static void SacarPickingDeCierreJob()
+        {
+            _ = SacarPickingDeCierre();
+        }
+
+        /// <summary>
+        /// El picking de cierre en sí. Lo comparten el job de Hangfire (vía
+        /// <see cref="SacarPickingDeCierreJob"/>, que tira el resultado) y el endpoint manual
+        /// <c>api/Picking/Automatico</c> (que responde con él): una sola implementación para los
+        /// dos. La protección contra ejecuciones solapadas de cualquier origen es el applock de
+        /// <c>GestorPicking</c> (NestoAPI#405), no los filtros de Hangfire.
+        /// </summary>
         public static List<PedidoPicking> SacarPickingDeCierre()
         {
             GestorPicking gestorPicking = CrearGestor();

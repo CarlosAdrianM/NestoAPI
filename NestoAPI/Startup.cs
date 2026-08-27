@@ -483,9 +483,13 @@ namespace NestoAPI
             // De hecho el retraso natural de Hangfire (unos segundos) ahora JUEGA A FAVOR: da
             // margen a que commiteen los pedidos metidos justo antes del corte. El último pedido
             // que entra es el de las 10:59:59; a las 11:00:00 ya se le asigna la siguiente ruta.
+            // NestoAPI#416: se registra el punto de entrada VOID. El que devuelve la lista es
+            // solo para el endpoint manual: Hangfire serializa el retorno dentro del commit del
+            // Succeeded y la lista entera de pedidos lo reventaba (job en Failed con el picking
+            // ya sacado).
             RecurringJob.AddOrUpdate(
                 "picking-cierre-diario",
-                () => PickingJobsService.SacarPickingDeCierre(),
+                () => PickingJobsService.SacarPickingDeCierreJob(),
                 "0 11 * * 1-5", // Cron: de lunes a viernes a las 11:00
                 new RecurringJobOptions
                 {
