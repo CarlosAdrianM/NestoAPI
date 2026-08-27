@@ -195,23 +195,6 @@
           <Property Name="VerifactuUltimoError" Type="nvarchar" MaxLength="500" />
           <Property Name="VerifactuUltimoIntento" Type="datetime" />
         </EntityType>
-        <EntityType Name="VerifactuRegistros">
-          <Key>
-            <PropertyRef Name="Id" />
-          </Key>
-          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
-          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
-          <Property Name="NumeroFactura" Type="varchar" MaxLength="10" Nullable="false" />
-          <Property Name="TipoRegistro" Type="varchar" MaxLength="12" Nullable="false" />
-          <Property Name="RechazoPrevio" Type="char" MaxLength="1" />
-          <Property Name="Payload" Type="nvarchar(max)" />
-          <Property Name="RespuestaUuid" Type="varchar" MaxLength="50" />
-          <Property Name="RespuestaEstado" Type="varchar" MaxLength="50" />
-          <Property Name="RespuestaError" Type="nvarchar" MaxLength="500" />
-          <Property Name="Exitoso" Type="bit" Nullable="false" />
-          <Property Name="FechaEnvio" Type="datetime" Nullable="false" />
-          <Property Name="Usuario" Type="varchar" MaxLength="30" />
-        </EntityType>
         <EntityType Name="CabPedidoCmp">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -255,7 +238,6 @@
           <Property Name="Vendedor" Type="char" MaxLength="3" />
           <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="ComentarioPicking" Type="nvarchar(max)" />
-          <Property Name="AvisarConImporteAlCogerPicking" Type="bit" Nullable="false" />
           <Property Name="Periodo Facturacion" Type="char" MaxLength="3" />
           <Property Name="Ruta" Type="char" MaxLength="3" />
           <Property Name="Serie" Type="char" MaxLength="3" />
@@ -277,6 +259,7 @@
           <Property Name="TipoRectificativa" Type="char" MaxLength="2" />
           <Property Name="SuPedido" Type="nvarchar" MaxLength="50" />
           <Property Name="NoCobrarComisionReembolso" Type="bit" Nullable="false" />
+          <Property Name="AvisarConImporteAlCogerPicking" Type="bit" Nullable="false" />
         </EntityType>
         <EntityType Name="CabRemesaPagos">
           <Key>
@@ -380,7 +363,6 @@
           <Property Name="Comentarios" Type="nvarchar(max)" />
           <Property Name="CodPostal" Type="char" MaxLength="15" />
           <Property Name="CIF/NIF" Type="varchar" MaxLength="20" />
-          <Property Name="Pais" Type="varchar" MaxLength="2" />
           <Property Name="Provincia" Type="char" MaxLength="30" />
           <Property Name="Estado" Type="smallint" />
           <Property Name="IVA" Type="char" MaxLength="3" />
@@ -409,6 +391,7 @@
           <Property Name="MantenerJunto" Type="bit" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="Pais" Type="varchar" MaxLength="2" />
         </EntityType>
         <EntityType Name="CódigosPostales">
           <Key>
@@ -452,6 +435,29 @@
           <Property Name="Comision" Type="money" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+        </EntityType>
+        <EntityType Name="ComparativaAgenciaSombra">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="NumeroEnvio" Type="int" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Pedido" Type="int" />
+          <Property Name="FechaEnvio" Type="datetime" />
+          <Property Name="CodigoPostal" Type="varchar" MaxLength="10" />
+          <Property Name="Zona" Type="varchar" MaxLength="20" />
+          <Property Name="Peso" Type="decimal" Precision="10" Scale="2" Nullable="false" />
+          <Property Name="Reembolso" Type="decimal" Precision="12" Scale="2" Nullable="false" />
+          <Property Name="AgenciaRealId" Type="int" Nullable="false" />
+          <Property Name="AgenciaRealNombre" Type="nvarchar" MaxLength="50" />
+          <Property Name="CosteReal" Type="decimal" Precision="10" Scale="2" />
+          <Property Name="AgenciaSombraId" Type="int" />
+          <Property Name="AgenciaSombraNombre" Type="nvarchar" MaxLength="50" />
+          <Property Name="CosteSombra" Type="decimal" Precision="10" Scale="2" />
+          <Property Name="SombraGana" Type="bit" Nullable="false" />
+          <Property Name="Ahorro" Type="decimal" Precision="10" Scale="2" />
+          <Property Name="FechaCalculo" Type="datetime" Nullable="false" />
         </EntityType>
         <EntityType Name="ConciliacionBancariaPunteo">
           <Key>
@@ -644,29 +650,6 @@
           <Property Name="FechaRegistro" Type="datetime" Nullable="false" />
           <Property Name="FechaUltimaActividad" Type="datetime" Nullable="false" />
           <Property Name="Activo" Type="bit" Nullable="false" />
-        </EntityType>
-        <EntityType Name="ComparativaAgenciaSombra">
-          <Key>
-            <PropertyRef Name="Id" />
-          </Key>
-          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
-          <Property Name="NumeroEnvio" Type="int" Nullable="false" />
-          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
-          <Property Name="Pedido" Type="int" />
-          <Property Name="FechaEnvio" Type="datetime" />
-          <Property Name="CodigoPostal" Type="varchar" MaxLength="10" />
-          <Property Name="Zona" Type="varchar" MaxLength="20" />
-          <Property Name="Peso" Type="decimal" Precision="10" Scale="2" Nullable="false" />
-          <Property Name="Reembolso" Type="decimal" Precision="12" Scale="2" Nullable="false" />
-          <Property Name="AgenciaRealId" Type="int" Nullable="false" />
-          <Property Name="AgenciaRealNombre" Type="nvarchar" MaxLength="50" />
-          <Property Name="CosteReal" Type="decimal" Precision="10" Scale="2" />
-          <Property Name="AgenciaSombraId" Type="int" />
-          <Property Name="AgenciaSombraNombre" Type="nvarchar" MaxLength="50" />
-          <Property Name="CosteSombra" Type="decimal" Precision="10" Scale="2" />
-          <Property Name="SombraGana" Type="bit" Nullable="false" />
-          <Property Name="Ahorro" Type="decimal" Precision="10" Scale="2" />
-          <Property Name="FechaCalculo" Type="datetime" Nullable="false" />
         </EntityType>
         <EntityType Name="EfectosPedidoVenta">
           <Key>
@@ -882,7 +865,7 @@
           <Property Name="Liquidado" Type="int" />
           <Property Name="FormaPago" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Remesa" Type="int" />
-          <Property Name="CIF/NIF" Type="varchar" MaxLength="20" />
+          <Property Name="CIF/NIF" Type="char" MaxLength="9" />
           <Property Name="CCC" Type="char" MaxLength="3" />
           <Property Name="Ruta" Type="char" MaxLength="3" />
           <Property Name="Origen" Type="char" MaxLength="3" />
@@ -1389,17 +1372,6 @@
           <Property Name="Grupo" Type="char" MaxLength="3" />
           <Property Name="Subgrupo" Type="char" MaxLength="3" />
         </EntityType>
-        <EntityType Name="ProductosGruposComisionablesAlternativos">
-          <Key>
-            <PropertyRef Name="Id" />
-          </Key>
-          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
-          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
-          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
-          <Property Name="GrupoAlternativo" Type="char" MaxLength="3" Nullable="false" />
-          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
-          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
-        </EntityType>
         <EntityType Name="OfertasEscalonadas">
           <Key>
             <PropertyRef Name="Id" />
@@ -1536,7 +1508,7 @@
           <Property Name="CtaRecargoSoportado" Type="char" MaxLength="10" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
-          <Property Name="Pais" Type="char" MaxLength="2" />
+          <Property Name="Pais" Type="varchar" MaxLength="2" />
         </EntityType>
         <EntityType Name="ParámetrosUsuario">
           <Key>
@@ -1836,6 +1808,31 @@
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="ProductosCategoriasSecundarias">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="Orden" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="Orden" Type="int" Nullable="false" />
+          <Property Name="Grupo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="SubGrupo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" />
+          <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="ProductosGruposComisionablesAlternativos">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Producto" Type="char" MaxLength="15" Nullable="false" />
+          <Property Name="GrupoAlternativo" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="30" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="Proveedores">
           <Key>
             <PropertyRef Name="Empresa" />
@@ -2103,6 +2100,23 @@ advertencia 6002: La tabla o vista 'NV.dbo.RentingFacturas' no tiene definida ni
           <Property Name="Vendedor" Type="char" MaxLength="3" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="VerifactuRegistros">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="NumeroFactura" Type="varchar" MaxLength="10" Nullable="false" />
+          <Property Name="TipoRegistro" Type="varchar" MaxLength="12" Nullable="false" />
+          <Property Name="RechazoPrevio" Type="char" MaxLength="1" />
+          <Property Name="Payload" Type="nvarchar(max)" />
+          <Property Name="RespuestaUuid" Type="varchar" MaxLength="50" />
+          <Property Name="RespuestaEstado" Type="varchar" MaxLength="50" />
+          <Property Name="RespuestaError" Type="nvarchar" MaxLength="500" />
+          <Property Name="Exitoso" Type="bit" Nullable="false" />
+          <Property Name="FechaEnvio" Type="datetime" Nullable="false" />
+          <Property Name="Usuario" Type="varchar" MaxLength="30" />
         </EntityType>
         <EntityType Name="Videos">
           <Key>
@@ -5094,6 +5108,64 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_ProductosCategoriasSecundarias_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="ProductosCategoriasSecundarias" Type="Self.ProductosCategoriasSecundarias" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ProductosCategoriasSecundarias">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ProductosCategoriasSecundarias_SubGrupos">
+          <End Role="SubGruposProducto" Type="Self.SubGruposProducto" Multiplicity="1" />
+          <End Role="ProductosCategoriasSecundarias" Type="Self.ProductosCategoriasSecundarias" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="SubGruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ProductosCategoriasSecundarias">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="SubGrupo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ProductosGruposComisionablesAlternativos_GruposProducto">
+          <End Role="GruposProducto" Type="Self.GruposProducto" Multiplicity="1" />
+          <End Role="ProductosGruposComisionablesAlternativos" Type="Self.ProductosGruposComisionablesAlternativos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ProductosGruposComisionablesAlternativos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoAlternativo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ProductosGruposComisionablesAlternativos_Productos">
+          <End Role="Productos" Type="Self.Productos" Multiplicity="1" />
+          <End Role="ProductosGruposComisionablesAlternativos" Type="Self.ProductosGruposComisionablesAlternativos" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Productos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ProductosGruposComisionablesAlternativos">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_Proveedores_CCCProveedores">
           <End Role="CCCProveedores" Type="Self.CCCProveedores" Multiplicity="0..1" />
           <End Role="Proveedores" Type="Self.Proveedores" Multiplicity="*" />
@@ -5494,7 +5566,6 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="CabAlquileres" EntityType="Self.CabAlquileres" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaCmp" EntityType="Self.CabFacturaCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabFacturaVta" EntityType="Self.CabFacturaVta" Schema="dbo" store:Type="Tables" />
-          <EntitySet Name="VerifactuRegistros" EntityType="Self.VerifactuRegistros" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoCmp" EntityType="Self.CabPedidoCmp" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabPedidoVta" EntityType="Self.CabPedidoVta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CabRemesaPagos" EntityType="Self.CabRemesaPagos" Schema="dbo" store:Type="Tables" />
@@ -5506,6 +5577,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="CódigosPostales" EntityType="Self.CódigosPostales" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ComisionesAnualesDetalle" EntityType="Self.ComisionesAnualesDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ComisionesAnualesResumenMes" EntityType="Self.ComisionesAnualesResumenMes" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ComparativaAgenciaSombra" EntityType="Self.ComparativaAgenciaSombra" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ConciliacionBancariaPunteo" EntityType="Self.ConciliacionBancariaPunteo" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="CondPagoClientes" EntityType="Self.CondPagoClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Contabilidad" EntityType="Self.Contabilidad" Schema="dbo" store:Type="Tables" />
@@ -5517,7 +5589,6 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="DiariosProducto" EntityType="Self.DiariosProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DíasPagoClientes" EntityType="Self.DíasPagoClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DispositivosNotificaciones" EntityType="Self.DispositivosNotificaciones" Schema="dbo" store:Type="Tables" />
-          <EntitySet Name="ComparativaAgenciaSombra" EntityType="Self.ComparativaAgenciaSombra" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EfectosPedidoVenta" EntityType="Self.EfectosPedidoVenta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Empresas" EntityType="Self.Empresas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Entidades" EntityType="Self.Entidades" Schema="dbo" store:Type="Tables" />
@@ -5549,7 +5620,6 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
-          <EntitySet Name="ProductosGruposComisionablesAlternativos" EntityType="Self.ProductosGruposComisionablesAlternativos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasEscalonadas" EntityType="Self.OfertasEscalonadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasEscalonadasProductos" EntityType="Self.OfertasEscalonadasProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasEscalonadasTramos" EntityType="Self.OfertasEscalonadasTramos" Schema="dbo" store:Type="Tables" />
@@ -5571,6 +5641,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="Prepagos" EntityType="Self.Prepagos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="PrestashopProductos" EntityType="Self.PrestashopProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Productos" EntityType="Self.Productos" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ProductosCategoriasSecundarias" EntityType="Self.ProductosCategoriasSecundarias" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="ProductosGruposComisionablesAlternativos" EntityType="Self.ProductosGruposComisionablesAlternativos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Proveedores" EntityType="Self.Proveedores" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ProveedoresProducto" EntityType="Self.ProveedoresProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="RegaloImportePedido" EntityType="Self.RegaloImportePedido" Schema="dbo" store:Type="Tables" />
@@ -5587,6 +5659,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="VendedoresCodigoPostalGrupoProducto" EntityType="Self.VendedoresCodigoPostalGrupoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VendedoresPedidoGrupoProducto" EntityType="Self.VendedoresPedidoGrupoProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VendedorLinPedidoVta" EntityType="Self.VendedorLinPedidoVta" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="VerifactuRegistros" EntityType="Self.VerifactuRegistros" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Videos" EntityType="Self.Videos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="VideosProductos" EntityType="Self.VideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="RentingFacturas" EntityType="Self.RentingFacturas" store:Type="Tables" store:Schema="dbo">
@@ -6474,6 +6547,22 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_Productos_SubGruposProducto" Association="Self.FK_Productos_SubGruposProducto">
             <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
             <End Role="Productos" EntitySet="Productos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ProductosCategoriasSecundarias_Productos" Association="Self.FK_ProductosCategoriasSecundarias_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="ProductosCategoriasSecundarias" EntitySet="ProductosCategoriasSecundarias" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ProductosCategoriasSecundarias_SubGrupos" Association="Self.FK_ProductosCategoriasSecundarias_SubGrupos">
+            <End Role="SubGruposProducto" EntitySet="SubGruposProducto" />
+            <End Role="ProductosCategoriasSecundarias" EntitySet="ProductosCategoriasSecundarias" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ProductosGruposComisionablesAlternativos_GruposProducto" Association="Self.FK_ProductosGruposComisionablesAlternativos_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProducto" />
+            <End Role="ProductosGruposComisionablesAlternativos" EntitySet="ProductosGruposComisionablesAlternativos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ProductosGruposComisionablesAlternativos_Productos" Association="Self.FK_ProductosGruposComisionablesAlternativos_Productos">
+            <End Role="Productos" EntitySet="Productos" />
+            <End Role="ProductosGruposComisionablesAlternativos" EntitySet="ProductosGruposComisionablesAlternativos" />
           </AssociationSet>
           <AssociationSet Name="FK_Proveedores_CCCProveedores" Association="Self.FK_Proveedores_CCCProveedores">
             <End Role="CCCProveedores" EntitySet="CCCProveedores" />
@@ -7707,6 +7796,23 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="Producto" EntitySet="Productos" />
             <End Role="CabAlquilere" EntitySet="CabAlquileres" />
           </AssociationSet>
+          <EntitySet Name="ProductosCategoriasSecundarias" EntityType="NVModel.ProductoCategoriaSecundaria" />
+          <AssociationSet Name="FK_ProductosGruposComisionablesAlternativos_GruposProducto" Association="NVModel.FK_ProductosGruposComisionablesAlternativos_GruposProducto">
+            <End Role="GruposProducto" EntitySet="GruposProductoes" />
+            <End Role="ProductoGrupoComisionableAlternativo" EntitySet="ProductosGruposComisionablesAlternativos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ProductosCategoriasSecundarias_Productos" Association="NVModel.FK_ProductosCategoriasSecundarias_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="ProductosCategoriasSecundaria" EntitySet="ProductosCategoriasSecundarias" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ProductosGruposComisionablesAlternativos_Productos" Association="NVModel.FK_ProductosGruposComisionablesAlternativos_Productos">
+            <End Role="Producto" EntitySet="Productos" />
+            <End Role="ProductoGrupoComisionableAlternativo" EntitySet="ProductosGruposComisionablesAlternativos" />
+          </AssociationSet>
+          <AssociationSet Name="FK_ProductosCategoriasSecundarias_SubGrupos" Association="NVModel.FK_ProductosCategoriasSecundarias_SubGrupos">
+            <End Role="SubGruposProducto" EntitySet="SubGruposProductoes" />
+            <End Role="ProductosCategoriasSecundaria" EntitySet="ProductosCategoriasSecundarias" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -8289,6 +8395,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Ganavisiones" Relationship="NVModel.FK_Ganavisiones_Productos" FromRole="Producto" ToRole="Ganavisione" />
           <NavigationProperty Name="PrestashopProducto" Relationship="NVModel.FK_PrestashopProductos_Productos" FromRole="Producto" ToRole="PrestashopProducto" />
           <NavigationProperty Name="CabAlquileres" Relationship="NVModel.FK_CabAlquileres_Productos" FromRole="Producto" ToRole="CabAlquilere" />
+          <NavigationProperty Name="ProductosCategoriasSecundarias" Relationship="NVModel.FK_ProductosCategoriasSecundarias_Productos" FromRole="Producto" ToRole="ProductosCategoriasSecundaria" />
+          <NavigationProperty Name="ProductosGruposComisionablesAlternativos" Relationship="NVModel.FK_ProductosGruposComisionablesAlternativos_Productos" FromRole="Producto" ToRole="ProductoGrupoComisionableAlternativo" />
         </EntityType>
         <Association Name="FK_Productos_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -8352,6 +8460,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Productos" Relationship="NVModel.FK_Productos_SubGruposProducto" FromRole="SubGruposProducto" ToRole="Producto" />
           <NavigationProperty Name="Inventarios" Relationship="NVModel.FK_Inventarios_SubGruposProducto" FromRole="SubGruposProducto" ToRole="Inventario" />
           <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_SubGruposProducto_GruposProducto" FromRole="SubGruposProducto" ToRole="GruposProducto" />
+          <NavigationProperty Name="ProductosCategoriasSecundarias" Relationship="NVModel.FK_ProductosCategoriasSecundarias_SubGrupos" FromRole="SubGruposProducto" ToRole="ProductosCategoriasSecundaria" />
         </EntityType>
         <Association Name="FK_Familias_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -8853,7 +8962,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="CtaRecargoSoportado" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
-          <Property Name="Pais" Type="String" MaxLength="2" FixedLength="true" Unicode="false" />
+          <Property Name="Pais" Type="String" MaxLength="2" FixedLength="false" Unicode="false" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_ParámetrosIVA_Empresas" FromRole="ParámetrosIVA" ToRole="Empresa" />
           <NavigationProperty Name="PlanCuenta" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas" FromRole="ParametroIVA" ToRole="PlanCuenta" />
           <NavigationProperty Name="PlanCuenta1" Relationship="NVModel.FK_ParámetrosIVA_PlanCuentas1" FromRole="ParametroIVA" ToRole="PlanCuenta" />
@@ -9660,7 +9769,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="Liquidado" Type="Int32" />
           <Property Name="FormaPago" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Remesa" Type="Int32" />
-          <Property Name="CIF_NIF" Type="String" MaxLength="20" FixedLength="false" Unicode="false" />
+          <Property Name="CIF_NIF" Type="String" MaxLength="9" FixedLength="true" Unicode="false" />
           <Property Name="CCC" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Ruta" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Origen" Type="String" MaxLength="3" FixedLength="true" Unicode="false" />
@@ -10821,6 +10930,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="GrupoAlternativo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="true" />
           <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_ProductosGruposComisionablesAlternativos_GruposProducto" FromRole="ProductoGrupoComisionableAlternativo" ToRole="GruposProducto" />
+          <NavigationProperty Name="Producto1" Relationship="NVModel.FK_ProductosGruposComisionablesAlternativos_Productos" FromRole="ProductoGrupoComisionableAlternativo" ToRole="Producto" />
         </EntityType>
         <Association Name="FK_OfertasCombinadas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
@@ -12768,6 +12879,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="VendedoresClienteGrupoProductoes" Relationship="NVModel.FK_VendedoresClienteGrupoProducto_GruposProducto" FromRole="GruposProducto" ToRole="VendedorClienteGrupoProducto" />
           <NavigationProperty Name="VendedoresCodigoPostalGrupoProductoes" Relationship="NVModel.FK_VendedoresCodigoPostalGrupoProducto_GruposProducto" FromRole="GruposProducto" ToRole="VendedorCodigoPostalGrupoProducto" />
           <NavigationProperty Name="VendedoresPedidoGrupoProductoes" Relationship="NVModel.FK_VendedoresPedidoGrupoProducto_GruposProducto" FromRole="GruposProducto" ToRole="VendedorPedidoGrupoProducto" />
+          <NavigationProperty Name="ProductosGruposComisionablesAlternativos" Relationship="NVModel.FK_ProductosGruposComisionablesAlternativos_GruposProducto" FromRole="GruposProducto" ToRole="ProductoGrupoComisionableAlternativo" />
         </EntityType>
         <Association Name="FK_DescuentosProducto_GruposProducto">
           <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="0..1" />
@@ -13615,6 +13727,80 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="CabAlquilere">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <EntityType Name="ProductoCategoriaSecundaria">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+            <PropertyRef Name="Orden" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="String" Nullable="false" MaxLength="15" FixedLength="true" Unicode="false" />
+          <Property Name="Orden" Type="Int32" Nullable="false" />
+          <Property Name="Grupo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="SubGrupo" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Usuario" Type="String" MaxLength="30" FixedLength="false" Unicode="false" />
+          <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Producto" Relationship="NVModel.FK_ProductosCategoriasSecundarias_Productos" FromRole="ProductosCategoriasSecundaria" ToRole="Producto" />
+          <NavigationProperty Name="SubGruposProducto" Relationship="NVModel.FK_ProductosCategoriasSecundarias_SubGrupos" FromRole="ProductosCategoriasSecundaria" ToRole="SubGruposProducto" />
+        </EntityType>
+        <Association Name="FK_ProductosGruposComisionablesAlternativos_GruposProducto">
+          <End Type="NVModel.GruposProducto" Role="GruposProducto" Multiplicity="1" />
+          <End Type="NVModel.ProductoGrupoComisionableAlternativo" Role="ProductoGrupoComisionableAlternativo" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="GruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ProductoGrupoComisionableAlternativo">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="GrupoAlternativo" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ProductosCategoriasSecundarias_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.ProductoCategoriaSecundaria" Role="ProductosCategoriasSecundaria" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ProductosCategoriasSecundaria">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ProductosGruposComisionablesAlternativos_Productos">
+          <End Type="NVModel.Producto" Role="Producto" Multiplicity="1" />
+          <End Type="NVModel.ProductoGrupoComisionableAlternativo" Role="ProductoGrupoComisionableAlternativo" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Producto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ProductoGrupoComisionableAlternativo">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Producto" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_ProductosCategoriasSecundarias_SubGrupos">
+          <End Type="NVModel.SubGruposProducto" Role="SubGruposProducto" Multiplicity="1" />
+          <End Type="NVModel.ProductoCategoriaSecundaria" Role="ProductosCategoriasSecundaria" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="SubGruposProducto">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="ProductosCategoriasSecundaria">
+              <PropertyRef Name="Empresa" />
+              <PropertyRef Name="Grupo" />
+              <PropertyRef Name="SubGrupo" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -15800,6 +15986,19 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="Producto" ColumnName="Producto" />
                 <ScalarProperty Name="Contacto" ColumnName="Contacto" />
                 <ScalarProperty Name="Cliente" ColumnName="Cliente" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="ProductosCategoriasSecundarias">
+            <EntityTypeMapping TypeName="NVModel.ProductoCategoriaSecundaria">
+              <MappingFragment StoreEntitySet="ProductosCategoriasSecundarias">
+                <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="SubGrupo" ColumnName="SubGrupo" />
+                <ScalarProperty Name="Grupo" ColumnName="Grupo" />
+                <ScalarProperty Name="Orden" ColumnName="Orden" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>

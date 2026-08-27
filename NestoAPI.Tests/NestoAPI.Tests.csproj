@@ -220,6 +220,7 @@
     <Compile Include="Controllers\PedidosCompraControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerTest.cs" />
     <Compile Include="Controllers\CodigosPostalesControllerTests.cs" />
+    <Compile Include="Controllers\ProductosCategoriasSecundariasControllerTests.cs" />
     <Compile Include="Controllers\CrearEtiquetaPendienteTests.cs" />
     <Compile Include="Infrastructure\GestorPedidoParaAgenciaTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\GeneradorContraasientoTests.cs" />

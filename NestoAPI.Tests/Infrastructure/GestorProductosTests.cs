@@ -107,6 +107,42 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task PublicarProductoSincronizar_LasCategoriasSecundariasViajanEnOrden()
+        {
+            // NestoAPI#414: la ristra de categorías comerciales secundarias viaja en el mensaje,
+            // en el orden de la pantalla. La principal (Grupo/Subgrupo de la ficha) va aparte y
+            // el consumidor no debe tocarla por esta lista.
+            var dto = new ProductoDTO
+            {
+                Producto = "17404",
+                Nombre = "PRODUCTO",
+                PrecioProfesional = 10M,
+                PrecioPublicoFinal = 17.29M
+            };
+            dto.CategoriasSecundarias.Add(new CategoriaSecundariaDTO
+            {
+                Grupo = "PEL",
+                DescripcionGrupo = "Peluquería",
+                Subgrupo = "OFE",
+                DescripcionSubgrupo = "Ofertas del mes"
+            });
+            dto.CategoriasSecundarias.Add(new CategoriaSecundariaDTO
+            {
+                Grupo = "APA",
+                DescripcionGrupo = "Aparatología",
+                Subgrupo = "EXP",
+                DescripcionSubgrupo = "Exclusivo Profesional"
+            });
+
+            var mensaje = await PublicarYCapturar(dto);
+
+            Assert.AreEqual(2, mensaje.CategoriasSecundarias.Count);
+            Assert.AreEqual("OFE", mensaje.CategoriasSecundarias[0].Subgrupo);
+            Assert.AreEqual("Ofertas del mes", mensaje.CategoriasSecundarias[0].DescripcionSubgrupo);
+            Assert.AreEqual("EXP", mensaje.CategoriasSecundarias[1].Subgrupo);
+        }
+
+        [TestMethod]
         public async Task PublicarProductoSincronizar_ElTipoDeIvaViajaEnElMensaje()
         {
             // NestoAPI#415: los precios viajan CON IVA y el consumidor divide para guardar la

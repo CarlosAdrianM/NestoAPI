@@ -133,5 +133,13 @@ namespace NestoAPI.Models.Sincronizacion
         /// Información de stocks por almacén
         /// </summary>
         public List<ProductoDTO.StockProducto> Stocks { get; set; }
+
+        /// <summary>
+        /// NestoAPI#414: categorías comerciales SECUNDARIAS del producto, en orden. La principal
+        /// sigue siendo Grupo/Subgrupo de la ficha y NO debe tocarse por esta lista.
+        /// Semántica: null/ausente = no tocar; lista vacía = el producto no tiene secundarias
+        /// (retirar las que sobren en el consumidor).
+        /// </summary>
+        public List<CategoriaSecundariaDTO> CategoriasSecundarias { get; set; }
     }
 }

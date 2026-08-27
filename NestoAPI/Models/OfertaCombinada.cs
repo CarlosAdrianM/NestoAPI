@@ -29,7 +29,7 @@ namespace NestoAPI.Models
         public System.DateTime FechaModificacion { get; set; }
         public bool RegalarMenorImporte { get; set; }
         public short UnidadesRegaladas { get; set; }
-
+    
         public virtual Empresa Empresa1 { get; set; }
         public virtual ICollection<OfertaCombinadaDetalle> OfertasCombinadasDetalles { get; set; }
     }

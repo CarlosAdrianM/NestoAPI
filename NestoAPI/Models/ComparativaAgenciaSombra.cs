@@ -11,7 +11,7 @@ namespace NestoAPI.Models
 {
     using System;
     using System.Collections.Generic;
-
+    
     public partial class ComparativaAgenciaSombra
     {
         public int Id { get; set; }

@@ -540,6 +540,7 @@
     <Compile Include="Controllers\CorreosController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PrestashopProductosController.cs" />
+    <Compile Include="Controllers\ProductosCategoriasSecundariasController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\PreContabilidadesController.cs" />
     <Compile Include="Controllers\ProductosController.cs" />
@@ -977,6 +978,9 @@
     <Compile Include="Models\Alquileres\ExtractoInmovilizadoDTO.cs" />
     <Compile Include="Models\Alquileres\MovimientoAlquilerDTO.cs" />
     <Compile Include="Models\Alquileres\ProductoAlquilerDTO.cs" />
+    <Compile Include="Models\ProductoCategoriaSecundaria.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
     <Compile Include="Models\Remesas\RemesaDTO.cs" />
     <Compile Include="Models\Comisiones\ClienteVenta.cs" />
     <Compile Include="Models\Comisiones\ComisionesAntiguasDTO.cs" />
@@ -1376,6 +1380,7 @@
     <Compile Include="Models\Producto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\NVEntitiesSync.cs" />
     <Compile Include="Models\PrestashopProductoDTO.cs" />
     <Compile Include="Models\ProductoDTO.cs" />
     <Compile Include="Models\Productos\ControlStockAlmacenModel.cs" />
@@ -1916,5 +1921,3 @@
   <Import Project="..\packages\SkiaSharp.NativeAssets.macOS.2.88.3\build\net462\SkiaSharp.NativeAssets.macOS.targets" Condition="Exists('..\packages\SkiaSharp.NativeAssets.macOS.2.88.3\build\net462\SkiaSharp.NativeAssets.macOS.targets')" />
   <Import Project="..\packages\SkiaSharp.NativeAssets.Win32.2.88.3\build\net462\SkiaSharp.NativeAssets.Win32.targets" Condition="Exists('..\packages\SkiaSharp.NativeAssets.Win32.2.88.3\build\net462\SkiaSharp.NativeAssets.Win32.targets')" />
 </Project>
-
-

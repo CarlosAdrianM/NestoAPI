@@ -30,7 +30,7 @@ namespace NestoAPI.Models
         public string Ruta { get; set; }
         public string Vendedor { get; set; }
         public string Pais { get; set; }
-
+    
         public virtual ICollection<Cliente> Clientes { get; set; }
         public virtual Empresa Empresa1 { get; set; }
         public virtual ICollection<Empresa> Empresas { get; set; }

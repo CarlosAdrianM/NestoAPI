@@ -17,6 +17,7 @@ namespace NestoAPI.Models
         {
             ProductosKit = new List<ProductoKit>();
             Stocks = new List<StockProducto>();
+            CategoriasSecundarias = new List<CategoriaSecundariaDTO>();
         }
         public string Producto { get; set; }
         public string Nombre { get; set; }
@@ -49,6 +50,11 @@ namespace NestoAPI.Models
 
         public ICollection<ProductoKit> ProductosKit { get; set; }
         public ICollection<StockProducto> Stocks { get; set; }
+
+        // NestoAPI#414: categorías comerciales SECUNDARIAS, ordenadas. Grupo/Subgrupo de la
+        // ficha siguen siendo los principales; esto es la ristra adicional (Ofertas del mes,
+        // Pack Regalo, Exclusivo Profesional...) que el legacy mantenía con listas a mano.
+        public ICollection<CategoriaSecundariaDTO> CategoriasSecundarias { get; set; }
 
         public class StockProducto
         {
@@ -222,6 +228,38 @@ namespace NestoAPI.Models
             dto.NombrePersonalizado = string.IsNullOrWhiteSpace(fila.Nombre) ? null : fila.Nombre.Trim();
             dto.Descripcion = fila.Descripción;
             dto.DescripcionBreve = fila.DescripciónBreve;
+        }
+
+        /// <summary>
+        /// NestoAPI#414: carga las categorías secundarias del producto, en orden. Igual que
+        /// CargarTextosTienda, hay que llamarla en TODOS los caminos que publiquen el producto.
+        /// Sin filas, la lista queda vacía (= el producto no tiene secundarias; los consumidores
+        /// pueden retirar las que sobren SIN tocar la categoría principal).
+        /// </summary>
+        internal static async Task CargarCategoriasSecundarias(ProductoDTO dto, NVEntities db)
+        {
+            var filas = await db.ProductosCategoriasSecundarias
+                .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && c.Número == dto.Producto)
+                .OrderBy(c => c.Orden)
+                .Select(c => new
+                {
+                    c.Grupo,
+                    c.SubGrupo,
+                    DescripcionSubgrupo = c.SubGruposProducto.Descripción,
+                    DescripcionGrupo = db.GruposProductoes
+                        .Where(g => g.Empresa == c.Empresa && g.Número == c.Grupo)
+                        .Select(g => g.Descripción)
+                        .FirstOrDefault()
+                })
+                .ToListAsync().ConfigureAwait(false);
+
+            dto.CategoriasSecundarias = filas.Select(f => new CategoriaSecundariaDTO
+            {
+                Grupo = f.Grupo?.Trim(),
+                DescripcionGrupo = f.DescripcionGrupo?.Trim(),
+                Subgrupo = f.SubGrupo?.Trim(),
+                DescripcionSubgrupo = f.DescripcionSubgrupo?.Trim()
+            }).ToList();
         }
 
         /// <summary>
@@ -436,6 +474,18 @@ namespace NestoAPI.Models
     {
         public string ProductoId { get; set; }
         public int Cantidad { get; set; }
+    }
+
+    /// <summary>
+    /// NestoAPI#414: una categoría secundaria de producto (par grupo/subgrupo con sus
+    /// descripciones). Viaja en el mensaje de Productos en el orden definido en la pantalla.
+    /// </summary>
+    public class CategoriaSecundariaDTO
+    {
+        public string Grupo { get; set; }
+        public string DescripcionGrupo { get; set; }
+        public string Subgrupo { get; set; }
+        public string DescripcionSubgrupo { get; set; }
     }
 
     public class SubgrupoProductoDTO

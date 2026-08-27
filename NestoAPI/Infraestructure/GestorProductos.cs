@@ -70,6 +70,7 @@ namespace NestoAPI.Infraestructure
                 // NestoAPI#412: la composición CON cantidades, para que Odoo pueda construir la
                 // BoM del kit (la lista plana de arriba se queda por compatibilidad).
                 ComponentesKit = productoDTO.ProductosKit?.ToList(),
+                CategoriasSecundarias = productoDTO.CategoriasSecundarias?.ToList(),
                 Stocks = productoDTO.Stocks?.ToList()
             };
 

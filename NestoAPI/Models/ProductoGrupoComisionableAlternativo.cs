@@ -11,7 +11,7 @@ namespace NestoAPI.Models
 {
     using System;
     using System.Collections.Generic;
-
+    
     public partial class ProductoGrupoComisionableAlternativo
     {
         public int Id { get; set; }
@@ -20,5 +20,8 @@ namespace NestoAPI.Models
         public string GrupoAlternativo { get; set; }
         public string Usuario { get; set; }
         public System.DateTime FechaModificacion { get; set; }
+    
+        public virtual GruposProducto GruposProducto { get; set; }
+        public virtual Producto Producto1 { get; set; }
     }
 }

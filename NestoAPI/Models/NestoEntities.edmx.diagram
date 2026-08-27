@@ -318,6 +318,9 @@
         <AssociationConnector Association="NVModel.FK_CabAlquileres_Clientes" />
         <AssociationConnector Association="NVModel.FK_CabAlquileres_Inmovilizados" />
         <AssociationConnector Association="NVModel.FK_CabAlquileres_Productos" />
+        <EntityTypeShape EntityType="NVModel.ProductoCategoriaSecundaria" Width="1.5" PointX="28.375" PointY="51.625" />
+        <AssociationConnector Association="NVModel.FK_ProductosCategoriasSecundarias_Productos" />
+        <AssociationConnector Association="NVModel.FK_ProductosCategoriasSecundarias_SubGrupos" />
         </Diagram>
     </edmx:Diagrams>
   </edmx:Designer>

@@ -28,7 +28,7 @@ namespace NestoAPI.Models
         public string FiltroProducto { get; set; }
         public string Grupo { get; set; }
         public string Subgrupo { get; set; }
-
+    
         public virtual Empresa Empresa1 { get; set; }
         public virtual OfertaCombinada OfertasCombinada { get; set; }
         public virtual Producto Producto1 { get; set; }

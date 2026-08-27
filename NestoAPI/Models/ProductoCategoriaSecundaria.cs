@@ -12,19 +12,17 @@ namespace NestoAPI.Models
     using System;
     using System.Collections.Generic;
     
-    public partial class VerifactuRegistro
+    public partial class ProductoCategoriaSecundaria
     {
-        public int Id { get; set; }
         public string Empresa { get; set; }
-        public string NumeroFactura { get; set; }
-        public string TipoRegistro { get; set; }
-        public string RechazoPrevio { get; set; }
-        public string Payload { get; set; }
-        public string RespuestaUuid { get; set; }
-        public string RespuestaEstado { get; set; }
-        public string RespuestaError { get; set; }
-        public bool Exitoso { get; set; }
-        public System.DateTime FechaEnvio { get; set; }
+        public string Número { get; set; }
+        public int Orden { get; set; }
+        public string Grupo { get; set; }
+        public string SubGrupo { get; set; }
         public string Usuario { get; set; }
+        public System.DateTime Fecha_Modificación { get; set; }
+    
+        public virtual Producto Producto { get; set; }
+        public virtual SubGruposProducto SubGruposProducto { get; set; }
     }
 }

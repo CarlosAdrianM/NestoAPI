@@ -26,7 +26,7 @@ namespace NestoAPI.Models
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
         public string Pais { get; set; }
-
+    
         public virtual Empresa Empresa1 { get; set; }
         public virtual PlanCuenta PlanCuenta { get; set; }
         public virtual PlanCuenta PlanCuenta1 { get; set; }
