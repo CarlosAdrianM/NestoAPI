@@ -453,6 +453,33 @@ namespace NestoAPI.Tests.Models
             Assert.IsNull(dto.DescripcionBreve);
         }
 
+        // ===== NestoAPI#415: tipo de IVA en el DTO que viaja =====
+
+        [TestMethod]
+        public async Task CargarTipoIva_TipoConocido_CargaCodigoYPorcentaje()
+        {
+            var dto = new ProductoDTO { Producto = PRODUCTO };
+
+            await ProductoDTO.CargarTipoIva(dto, db, "G21");
+
+            Assert.AreEqual("G21", dto.TipoIva);
+            Assert.AreEqual(21M, dto.PorcentajeIva);
+        }
+
+        [TestMethod]
+        public async Task CargarTipoIva_TipoSinParametro_ElCodigoViajaYElPorcentajeCaeAlGeneral()
+        {
+            // Igual que LeerPorcentajeIvaProducto: un tipo que no está en ParametrosIVA usa el
+            // general (equivocarse al alza nunca regala nada), pero el CÓDIGO viaja tal cual
+            // para que el consumidor pueda mapearlo o quejarse.
+            var dto = new ProductoDTO { Producto = PRODUCTO };
+
+            await ProductoDTO.CargarTipoIva(dto, db, "RARO");
+
+            Assert.AreEqual("RARO", dto.TipoIva);
+            Assert.AreEqual(21M, dto.PorcentajeIva);
+        }
+
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
         {
             A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())

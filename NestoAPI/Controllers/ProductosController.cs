@@ -638,6 +638,7 @@ namespace NestoAPI.Controllers
                     };
 
                     await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
+                await ProductoDTO.CargarTipoIva(productoDTO, db, producto.IVA_Repercutido).ConfigureAwait(false);
 
                     // Agregar kits si existen
                     foreach (var kit in producto.Kits)
@@ -711,6 +712,7 @@ namespace NestoAPI.Controllers
                 };
 
                 await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
+                await ProductoDTO.CargarTipoIva(productoDTO, db, producto.IVA_Repercutido).ConfigureAwait(false);
 
                 // Agregar kits si existen
                 foreach (var kit in producto.Kits)
@@ -808,6 +810,7 @@ namespace NestoAPI.Controllers
                         };
 
                         await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
+                await ProductoDTO.CargarTipoIva(productoDTO, db, producto.IVA_Repercutido).ConfigureAwait(false);
 
                         foreach (var kit in producto.Kits)
                         {

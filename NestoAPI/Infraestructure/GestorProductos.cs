@@ -64,6 +64,8 @@ namespace NestoAPI.Infraestructure
                 NombrePersonalizado = productoDTO.NombrePersonalizado,
                 Descripcion = productoDTO.Descripcion,
                 DescripcionBreve = productoDTO.DescripcionBreve,
+                TipoIva = productoDTO.TipoIva,
+                PorcentajeIva = productoDTO.PorcentajeIva,
                 ProductosKit = productoDTO.ProductosKit?.Select(k => k.ProductoId).ToList(),
                 // NestoAPI#412: la composición CON cantidades, para que Odoo pueda construir la
                 // BoM del kit (la lista plana de arriba se queda por compatibilidad).

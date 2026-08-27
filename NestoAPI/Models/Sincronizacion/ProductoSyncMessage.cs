@@ -51,6 +51,19 @@ namespace NestoAPI.Models.Sincronizacion
         public string DescripcionBreve { get; set; }
 
         /// <summary>
+        /// NestoAPI#415: tipo de IVA de la ficha (G21/R10/SR...). Los precios del mensaje viajan
+        /// CON IVA; el consumidor debe mapear este tipo a su grupo de impuestos (tax rules group
+        /// en PrestaShop) en la creación Y en los updates, en vez de usar uno fijo.
+        /// </summary>
+        public string TipoIva { get; set; }
+
+        /// <summary>
+        /// NestoAPI#415: porcentaje de IVA resuelto (21/10/4/0), por si el consumidor prefiere el
+        /// número o quiere validar su mapeo de <see cref="TipoIva"/>.
+        /// </summary>
+        public decimal? PorcentajeIva { get; set; }
+
+        /// <summary>
         /// Rotura de stock de proveedor
         /// </summary>
         public bool? RoturaStockProveedor { get; set; }

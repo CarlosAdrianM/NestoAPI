@@ -107,6 +107,28 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task PublicarProductoSincronizar_ElTipoDeIvaViajaEnElMensaje()
+        {
+            // NestoAPI#415: los precios viajan CON IVA y el consumidor divide para guardar la
+            // base. Sin el tipo, PrestaShop creaba todo con su tax group fijo del 21 % y los
+            // exentos y los del 4 % quedaban con la base mal.
+            var dto = new ProductoDTO
+            {
+                Producto = "17404",
+                Nombre = "PRODUCTO EXENTO",
+                PrecioProfesional = 10M,
+                PrecioPublicoFinal = 14.29M,
+                TipoIva = "SR",
+                PorcentajeIva = 0M
+            };
+
+            var mensaje = await PublicarYCapturar(dto);
+
+            Assert.AreEqual("SR", mensaje.TipoIva);
+            Assert.AreEqual(0M, mensaje.PorcentajeIva);
+        }
+
+        [TestMethod]
         public async Task PublicarProductoSincronizar_ConStocks_LaCantidadMontableViajaDentroDelStock()
         {
             // NestoAPI#412: el montable viaja como campo APARTE dentro de cada stock; la

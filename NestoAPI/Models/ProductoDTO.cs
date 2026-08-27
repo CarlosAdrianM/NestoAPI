@@ -40,6 +40,13 @@ namespace NestoAPI.Models
         public string Descripcion { get; set; }
         public string DescripcionBreve { get; set; }
 
+        // NestoAPI#415: el tipo de IVA de la ficha (G21/R10/SR...) y su porcentaje resuelto de
+        // ParametrosIVA (régimen general). Los precios viajan CON IVA y el consumidor divide para
+        // almacenar la base: sin el tipo, PrestaShop creaba todo con su tax group fijo del 21 % y
+        // los exentos y los del 4 % quedaban con la base mal.
+        public string TipoIva { get; set; }
+        public decimal? PorcentajeIva { get; set; }
+
         public ICollection<ProductoKit> ProductosKit { get; set; }
         public ICollection<StockProducto> Stocks { get; set; }
 
@@ -215,6 +222,16 @@ namespace NestoAPI.Models
             dto.NombrePersonalizado = string.IsNullOrWhiteSpace(fila.Nombre) ? null : fila.Nombre.Trim();
             dto.Descripcion = fila.Descripción;
             dto.DescripcionBreve = fila.DescripciónBreve;
+        }
+
+        /// <summary>
+        /// NestoAPI#415: carga en el DTO el tipo de IVA de la ficha y su porcentaje. Igual que
+        /// CargarTextosTienda, hay que llamarla en TODOS los caminos que publiquen el producto.
+        /// </summary>
+        internal static async Task CargarTipoIva(ProductoDTO dto, NVEntities db, string ivaRepercutido)
+        {
+            dto.TipoIva = ivaRepercutido?.Trim();
+            dto.PorcentajeIva = await LeerPorcentajeIvaProducto(db, ivaRepercutido).ConfigureAwait(false);
         }
 
         /// <summary>
