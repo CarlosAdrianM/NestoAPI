@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Data.SqlClient;
 using System.Threading.Tasks;
@@ -67,7 +67,7 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                                         AND e.Fecha >= @desde)
                                -- NestoAPI#413: un alta/cambio/borrado lógico en los descuentos de
                                -- tarifa del producto también cambia lo que viaja (incluido pasar
-                               -- AmbitoWeb a 0, que debe RETIRAR la oferta de la web), así que
+                               -- AudienciaOferta a 0, que debe RETIRAR la oferta de la web), así que
                                -- cualquier fila tocada en la ventana encola el producto.
                                OR EXISTS (SELECT 1 FROM DescuentosProducto d
                                       WHERE d.Empresa = @empresa

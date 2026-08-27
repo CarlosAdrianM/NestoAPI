@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Kits;
+﻿using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
@@ -84,7 +84,7 @@ namespace NestoAPI.Infraestructure
                             await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
                             await ProductoDTO.CargarTipoIva(productoDTO, db, producto.IVA_Repercutido).ConfigureAwait(false);
                             await ProductoDTO.CargarCategoriasSecundarias(productoDTO, db).ConfigureAwait(false);
-                            await ProductoDTO.CargarDescuentosWeb(productoDTO, db, producto.PVP).ConfigureAwait(false);
+                            await ProductoDTO.CargarDescuentosPorAudiencia(productoDTO, db, producto.PVP).ConfigureAwait(false);
 
                             // Agregar kits si existen
                             foreach (var kit in producto.Kits)

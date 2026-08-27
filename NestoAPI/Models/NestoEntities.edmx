@@ -608,7 +608,7 @@
           <Property Name="FiltroProducto" Type="nvarchar" MaxLength="50" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
-          <Property Name="AmbitoWeb" Type="tinyint" Nullable="false" />
+          <Property Name="AudienciaOferta" Type="tinyint" Nullable="false" />
           <Property Name="DescuentoPublico" Type="decimal" Precision="18" Scale="4" />
         </EntityType>
         <EntityType Name="DiariosProducto">
@@ -8599,8 +8599,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Proveedore" Relationship="NVModel.FK_DescuentosProducto_Proveedores" FromRole="DescuentosProducto" ToRole="Proveedore" />
           <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
           <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_DescuentosProducto_GruposProducto" FromRole="DescuentosProducto" ToRole="GruposProducto" />
-          <Property Name="AmbitoWeb" Type="Byte" Nullable="false" />
           <Property Name="DescuentoPublico" Type="Decimal" Precision="18" Scale="4" />
+          <Property Name="AudienciaOferta" Type="Byte" Nullable="false" />
         </EntityType>
         <EntityType Name="DíasPagoClientes">
           <Key>
@@ -14196,8 +14196,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="DescuentosProductoes">
             <EntityTypeMapping TypeName="NVModel.DescuentosProducto">
               <MappingFragment StoreEntitySet="DescuentosProducto">
+                <ScalarProperty Name="AudienciaOferta" ColumnName="AudienciaOferta" />
                 <ScalarProperty Name="DescuentoPublico" ColumnName="DescuentoPublico" />
-                <ScalarProperty Name="AmbitoWeb" ColumnName="AmbitoWeb" />
                 <ScalarProperty Name="FiltroProducto" ColumnName="FiltroProducto" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />

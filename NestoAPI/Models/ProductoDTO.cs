@@ -51,7 +51,7 @@ namespace NestoAPI.Models
         // NestoAPI#413: ofertas de tarifa hacia la web, en PORCENTAJE 0-100 y POR AUDIENCIA.
         // null = sin oferta para esa audiencia. Los precios (PrecioProfesional/PrecioPublicoFinal)
         // siguen siendo PLENOS: la tienda pinta el tachado + % (100 € −20 %, no 80 € a secas).
-        // El ámbito (interno de Nesto, DescuentosProducto.AmbitoWeb) NO viaja: misma filosofía
+        // El ámbito (interno de Nesto, DescuentosProducto.AudienciaOferta) NO viaja: misma filosofía
         // que los modos de precio del cutover.
         public decimal? DescuentoPorcentajeProfesional { get; set; }
         public decimal? DescuentoPorcentajePublico { get; set; }
@@ -274,9 +274,9 @@ namespace NestoAPI.Models
         /// NestoAPI#413: carga los descuentos de tarifa hacia la web. Igual que CargarTextosTienda,
         /// hay que llamarla en TODOS los caminos que publiquen el producto. Filtros del proceso
         /// legacy (pasos 5-7): filas de TARIFA (sin cliente ni proveedor), CantidadMínima menor
-        /// que 2, y desde #413 además AmbitoWeb mayor que 0 (el 0, default, es "no va a la web").
+        /// que 2, y desde #413 además AudienciaOferta mayor que 0 (el 0, default, es "no va a la web").
         /// </summary>
-        internal static async Task CargarDescuentosWeb(ProductoDTO dto, NVEntities db, decimal? pvp)
+        internal static async Task CargarDescuentosPorAudiencia(ProductoDTO dto, NVEntities db, decimal? pvp)
         {
             System.Collections.Generic.List<DescuentosProducto> filas = await db.DescuentosProductoes
                 .Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
@@ -284,10 +284,10 @@ namespace NestoAPI.Models
                     && (d.Nº_Cliente == null || d.Nº_Cliente.Trim() == string.Empty)
                     && (d.NºProveedor == null || d.NºProveedor.Trim() == string.Empty)
                     && d.CantidadMínima < 2
-                    && d.AmbitoWeb > 0)
+                    && d.AudienciaOferta > 0)
                 .ToListAsync().ConfigureAwait(false);
 
-            DescuentosWebCalculados calculados = CalcularDescuentosWeb(filas, pvp);
+            DescuentosPorAudiencia calculados = CalcularDescuentosPorAudiencia(filas, pvp);
             dto.DescuentoPorcentajeProfesional = calculados.Profesional;
             dto.DescuentoPorcentajePublico = calculados.Publico;
         }
@@ -300,10 +300,10 @@ namespace NestoAPI.Models
         /// mismo %), 3 = solo público. Con varias filas gana el % MAYOR por audiencia (el mejor
         /// para el cliente, que es el que Nesto acabaría aplicando).
         /// </summary>
-        internal static DescuentosWebCalculados CalcularDescuentosWeb(
+        internal static DescuentosPorAudiencia CalcularDescuentosPorAudiencia(
             System.Collections.Generic.IEnumerable<DescuentosProducto> filas, decimal? pvp)
         {
-            DescuentosWebCalculados resultado = new DescuentosWebCalculados();
+            DescuentosPorAudiencia resultado = new DescuentosPorAudiencia();
             if (filas == null)
             {
                 return resultado;
@@ -334,11 +334,11 @@ namespace NestoAPI.Models
                     ? Math.Round(fila.DescuentoPublico.Value * 100M, 2)
                     : pctBase.Value;
 
-                if (fila.AmbitoWeb == 1 || fila.AmbitoWeb == 2)
+                if (fila.AudienciaOferta == 1 || fila.AudienciaOferta == 2)
                 {
                     resultado.Profesional = Math.Max(resultado.Profesional ?? 0M, pctBase.Value);
                 }
-                if (fila.AmbitoWeb == 2 || fila.AmbitoWeb == 3)
+                if (fila.AudienciaOferta == 2 || fila.AudienciaOferta == 3)
                 {
                     resultado.Publico = Math.Max(resultado.Publico ?? 0M, pctPublico);
                 }
@@ -565,7 +565,7 @@ namespace NestoAPI.Models
     /// NestoAPI#413: resultado del cálculo de ofertas de tarifa hacia la web, en % 0-100 por
     /// audiencia (null = sin oferta para esa audiencia).
     /// </summary>
-    public class DescuentosWebCalculados
+    public class DescuentosPorAudiencia
     {
         public decimal? Profesional { get; set; }
         public decimal? Publico { get; set; }

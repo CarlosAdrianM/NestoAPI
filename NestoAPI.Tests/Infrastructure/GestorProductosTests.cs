@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 using System.Threading.Tasks;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -143,7 +143,7 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
-        public async Task PublicarProductoSincronizar_LosDescuentosWebViajanPorAudiencia()
+        public async Task PublicarProductoSincronizar_LosDescuentosPorAudienciaViajanEnElMensaje()
         {
             // NestoAPI#413: la oferta viaja como % APARTE por audiencia; los precios del mensaje
             // siguen siendo plenos (100 € −20 %, no 80 € a secas).
@@ -209,12 +209,12 @@ namespace NestoAPI.Tests.Infrastructure
 
     /// <summary>
     /// NestoAPI#413: cálculo de las ofertas de tarifa hacia la web por audiencia
-    /// (<c>ProductoDTO.CalcularDescuentosWeb</c>). Las filas llegan YA filtradas (tarifa pura,
-    /// CantidadMínima menor que 2, AmbitoWeb mayor que 0): aquí se prueba la lógica de ámbitos,
+    /// (<c>ProductoDTO.CalcularDescuentosPorAudiencia</c>). Las filas llegan YA filtradas (tarifa pura,
+    /// CantidadMínima menor que 2, AudienciaOferta mayor que 0): aquí se prueba la lógica de ámbitos,
     /// la derivación desde precio fijo y el criterio de "gana el mayor".
     /// </summary>
     [TestClass]
-    public class CalcularDescuentosWebTests
+    public class CalcularDescuentosPorAudienciaTests
     {
         private static DescuentosProducto Fila(byte ambito, decimal descuento = 0M,
             decimal? precio = null, decimal? descuentoPublico = null)
@@ -223,16 +223,16 @@ namespace NestoAPI.Tests.Infrastructure
             {
                 Empresa = "1",
                 Nº_Producto = "41269",
-                AmbitoWeb = ambito,
+                AudienciaOferta = ambito,
                 Descuento = descuento,
                 Precio = precio,
                 DescuentoPublico = descuentoPublico
             };
         }
 
-        private static DescuentosWebCalculados Calcular(decimal? pvp, params DescuentosProducto[] filas)
+        private static DescuentosPorAudiencia Calcular(decimal? pvp, params DescuentosProducto[] filas)
         {
-            return ProductoDTO.CalcularDescuentosWeb(filas, pvp);
+            return ProductoDTO.CalcularDescuentosPorAudiencia(filas, pvp);
         }
 
         [TestMethod]
@@ -242,7 +242,7 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsNull(resultado.Profesional);
             Assert.IsNull(resultado.Publico);
 
-            var conNull = ProductoDTO.CalcularDescuentosWeb(null, 10M);
+            var conNull = ProductoDTO.CalcularDescuentosPorAudiencia(null, 10M);
             Assert.IsNull(conNull.Profesional);
             Assert.IsNull(conNull.Publico);
         }
