@@ -21,15 +21,20 @@ namespace NestoAPI.Infraestructure.Buscador
 
         public static void IndexarTodo()
         {
+            Indexar(_luceneIndexDirectory, ObtenerProductos(), ObtenerVideos());
+        }
+
+        // Internal para tests (InternalsVisibleTo("NestoAPI.Tests")): recibe la ruta del índice y
+        // los datos ya leídos, para poder indexar en una carpeta temporal sin tocar la base de datos.
+        internal static void Indexar(string rutaIndice, List<ResultadoBusqueda> productos, List<(int Id, string Protocolo, string Transcripcion, string Nombre)> videos)
+        {
             SpanishInsensitiveAnalyzer analyzer = new SpanishInsensitiveAnalyzer(AppLuceneVersion);
             IndexWriterConfig indexConfig = new IndexWriterConfig(AppLuceneVersion, analyzer);
 
-            using (FSDirectory dir = FSDirectory.Open(_luceneIndexDirectory))
+            using (FSDirectory dir = FSDirectory.Open(rutaIndice))
             using (IndexWriter writer = new IndexWriter(dir, indexConfig))
             {
                 writer.DeleteAll();
-
-                List<ResultadoBusqueda> productos = ObtenerProductos();
 
                 foreach (var producto in productos)
                 {
@@ -37,6 +42,7 @@ namespace NestoAPI.Infraestructure.Buscador
                     {
                         new StringField("Tipo", "producto", Field.Store.YES),
                         new StringField("Id", producto.Id, Field.Store.YES),
+                        new StringField("Anulado", producto.Anulado ? "true" : "false", Field.Store.YES),
                         new TextField("Nombre", producto.Nombre, Field.Store.YES) { Boost = 4.0f },
                         new TextField("Familia", producto.Familia ?? "", Field.Store.YES) { Boost = 3.0f },
                         new TextField("Subgrupo", producto.Subgrupo ?? "", Field.Store.YES) { Boost = 3.0f },
@@ -45,7 +51,6 @@ namespace NestoAPI.Infraestructure.Buscador
                     writer.AddDocument(doc);
                 }
 
-                List<(int Id, string Protocolo, string Transcripcion, string Nombre)> videos = ObtenerVideos();
                 foreach ((int Id, string Protocolo, string Transcripcion, string Nombre) in videos)
                 {
                     string protocoloLimpio = QuitarHtml(Protocolo);
@@ -64,7 +69,7 @@ namespace NestoAPI.Infraestructure.Buscador
             }
         }
 
-        public static List<dynamic> Buscar(string q, string tipo = null, int skip = 0, int take = 20, bool usarOperadorAND = false)
+        public static List<dynamic> Buscar(string q, string tipo = null, int skip = 0, int take = 20, bool usarOperadorAND = false, bool incluirAnulados = false)
         {
             return Buscar(new ParametrosBusqueda
             {
@@ -72,56 +77,93 @@ namespace NestoAPI.Infraestructure.Buscador
                 Tipo = tipo,
                 Skip = skip,
                 Take = take,
-                Operador = usarOperadorAND ? OperadorBusqueda.AND : OperadorBusqueda.OR
+                Operador = usarOperadorAND ? OperadorBusqueda.AND : OperadorBusqueda.OR,
+                IncluirAnulados = incluirAnulados
             });
         }
 
         public static List<dynamic> Buscar(ParametrosBusqueda parametros)
         {
+            return BuscarEnIndice(_luceneIndexDirectory, parametros);
+        }
+
+        // Internal para tests (InternalsVisibleTo("NestoAPI.Tests")): recibe la ruta del índice
+        // para poder buscar sobre un índice temporal.
+        internal static List<dynamic> BuscarEnIndice(string rutaIndice, ParametrosBusqueda parametros)
+        {
             SpanishInsensitiveAnalyzer analyzer = new SpanishInsensitiveAnalyzer(AppLuceneVersion);
 
-            using (FSDirectory dir = FSDirectory.Open(_luceneIndexDirectory))
+            using (FSDirectory dir = FSDirectory.Open(rutaIndice))
             using (IndexReader reader = DirectoryReader.Open(dir))
             {
                 IndexSearcher searcher = new IndexSearcher(reader);
+                int maximo = parametros.Skip + parametros.Take;
 
-                string[] campos = new[] { "TextoCompleto", "Nombre", "Protocolo" };
-                MultiFieldQueryParser parser = new MultiFieldQueryParser(AppLuceneVersion, campos, analyzer)
+                List<dynamic> resultados = Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: false), maximo);
+
+                if (parametros.IncluirAnulados)
                 {
-                    DefaultOperator = parametros.Operador == OperadorBusqueda.AND ? Operator.AND : Operator.OR
-                };
-
-                string escapedQuery = QueryParser.Escape(parametros.Query);
-                Query query = parser.Parse(escapedQuery);
-
-                if (!string.IsNullOrEmpty(parametros.Tipo))
-                {
-                    TermQuery filtro = new TermQuery(new Term("Tipo", parametros.Tipo.ToLower()));
-                    query = new BooleanQuery
-                    {
-                        { query, Occur.MUST },
-                        { filtro, Occur.MUST }
-                    };
+                    // Los anulados van SIEMPRE detrás de los activos: la tienda los pinta
+                    // colapsados al final ("Ver N productos anulados").
+                    resultados.AddRange(Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: true), maximo));
                 }
 
-                ScoreDoc[] hits = searcher.Search(query, parametros.Skip + parametros.Take).ScoreDocs;
+                return resultados.Skip(parametros.Skip).Take(parametros.Take).ToList();
+            }
+        }
 
-                List<dynamic> resultados = new List<dynamic>();
+        private static Query ConstruirQuery(ParametrosBusqueda parametros, SpanishInsensitiveAnalyzer analyzer, bool soloAnulados)
+        {
+            string[] campos = new[] { "TextoCompleto", "Nombre", "Protocolo" };
+            MultiFieldQueryParser parser = new MultiFieldQueryParser(AppLuceneVersion, campos, analyzer)
+            {
+                DefaultOperator = parametros.Operador == OperadorBusqueda.AND ? Operator.AND : Operator.OR
+            };
 
-                foreach (ScoreDoc hit in hits.Skip(parametros.Skip).Take(parametros.Take))
-                {
-                    Document doc = searcher.Doc(hit.Doc);
-                    resultados.Add(new
-                    {
-                        Tipo = doc.Get("Tipo"),
-                        Id = doc.Get("Id"),
-                        Nombre = doc.Get("Nombre"),
-                        Familia = doc.Get("Familia")
-                    });
-                }
+            string escapedQuery = QueryParser.Escape(parametros.Query);
+            BooleanQuery query = new BooleanQuery
+            {
+                { parser.Parse(escapedQuery), Occur.MUST }
+            };
 
+            if (!string.IsNullOrEmpty(parametros.Tipo))
+            {
+                query.Add(new TermQuery(new Term("Tipo", parametros.Tipo.ToLower())), Occur.MUST);
+            }
+
+            // Los vídeos no llevan el campo Anulado, así que los activos se filtran excluyendo los
+            // anulados (MUST_NOT) y no exigiendo "Anulado:false", que dejaría fuera a los vídeos.
+            TermQuery esAnulado = new TermQuery(new Term("Anulado", "true"));
+            query.Add(esAnulado, soloAnulados ? Occur.MUST : Occur.MUST_NOT);
+
+            return query;
+        }
+
+        private static List<dynamic> Ejecutar(IndexSearcher searcher, Query query, int maximo)
+        {
+            List<dynamic> resultados = new List<dynamic>();
+
+            if (maximo <= 0)
+            {
                 return resultados;
             }
+
+            ScoreDoc[] hits = searcher.Search(query, maximo).ScoreDocs;
+
+            foreach (ScoreDoc hit in hits)
+            {
+                Document doc = searcher.Doc(hit.Doc);
+                resultados.Add(new
+                {
+                    Tipo = doc.Get("Tipo"),
+                    Id = doc.Get("Id"),
+                    Nombre = doc.Get("Nombre"),
+                    Familia = doc.Get("Familia"),
+                    Anulado = doc.Get("Anulado") == "true"
+                });
+            }
+
+            return resultados;
         }
 
         private static string QuitarHtml(string html)
@@ -151,14 +193,15 @@ namespace NestoAPI.Infraestructure.Buscador
                             ISNULL(pp.DescripciónBreve, '') AS DescripcionBreve,
                             ISNULL(pp.Descripción, '') AS DescripcionLarga,
                             ISNULL(rtrim(f.Descripción), '') AS Familia,
-	                        ISNULL(rtrim(s.Descripción), '') AS Subgrupo
+	                        ISNULL(rtrim(s.Descripción), '') AS Subgrupo,
+                            ISNULL(p.Estado, 0) AS Estado
                         FROM Productos p INNER JOIN Familias f
                         on f.Empresa = p.Empresa and f.Número = p.Familia
                         INNER JOIN SubGruposProducto s
                         on s.Empresa = p.Empresa and s.Grupo = p.Grupo and s.Número = p.SubGrupo
-                        LEFT JOIN PrestashopProductos pp 
+                        LEFT JOIN PrestashopProductos pp
                             ON p.Empresa = pp.Empresa AND p.Número = pp.Número
-                        WHERE p.Empresa = '1' and p.Estado >= 0 and p.Grupo != 'MTP' and p.Subgrupo != 'MMP'
+                        WHERE p.Empresa = '1' and p.Grupo != 'MTP' and p.Subgrupo != 'MMP'
                         ", conexion))
                     {
                         conexion.Open();
@@ -172,6 +215,7 @@ namespace NestoAPI.Infraestructure.Buscador
                                 string descripcionLarga = lector.IsDBNull(3) ? "" : lector.GetString(3);
                                 string familia = lector.IsDBNull(4) ? "" : lector.GetString(4);
                                 string subgrupo = lector.IsDBNull(5) ? "" : lector.GetString(5);
+                                short estado = lector.GetInt16(6);
 
                                 resultado.Add(new ResultadoBusqueda
                                 {
@@ -181,7 +225,8 @@ namespace NestoAPI.Infraestructure.Buscador
                                     Familia = familia,
                                     Subgrupo = subgrupo,
                                     DescripcionBreve = descripcionBreve,
-                                    DescripcionLarga = descripcionLarga
+                                    DescripcionLarga = descripcionLarga,
+                                    Anulado = estado < 0
                                 });
                             }
 
@@ -193,9 +238,11 @@ namespace NestoAPI.Infraestructure.Buscador
         }
 
 
-        private static List<(int Id, string Nombre, string Protocolo, string Transcripcion)> ObtenerVideos()
+        // Ojo al orden: la fila se añade como (id, protocolo, transcripcion, nombre), que es el que
+        // espera Indexar. Los nombres del tuple decían otra cosa y no coincidían con el contenido.
+        private static List<(int Id, string Protocolo, string Transcripcion, string Nombre)> ObtenerVideos()
         {
-            List<(int Id, string Nombre, string Protocolo, string Transcripcion)> resultado = new List<(int, string, string, string)>();
+            List<(int Id, string Protocolo, string Transcripcion, string Nombre)> resultado = new List<(int, string, string, string)>();
 
             using (NVEntities db = new NVEntities())
             {
@@ -265,6 +312,7 @@ namespace NestoAPI.Infraestructure.Buscador
             public string Familia { get; set; }
             public string DescripcionBreve { get; set; }
             public string DescripcionLarga { get; set; }
+            public bool Anulado { get; set; }
         }
 
 
@@ -291,6 +339,12 @@ namespace NestoAPI.Infraestructure.Buscador
             public int Skip { get; set; } = 0;
             public int Take { get; set; } = 20;
             public OperadorBusqueda Operador { get; set; } = OperadorBusqueda.OR;
+
+            /// <summary>
+            /// Por defecto false: los clientes que ya existían (Nesto, NestoApp) siguen sin ver
+            /// productos anulados. La tienda los pide con true para poder mostrarlos etiquetados.
+            /// </summary>
+            public bool IncluirAnulados { get; set; } = false;
         }
     }
 }
