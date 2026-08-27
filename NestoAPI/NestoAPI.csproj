@@ -509,6 +509,7 @@
     <Compile Include="Controllers\ExtractoProveedoresController.cs" />
     <Compile Include="Controllers\ExtractosClienteController.cs" />
     <Compile Include="Controllers\FacturasController.cs" />
+    <Compile Include="Controllers\FamiliasController.cs" />
     <Compile Include="Controllers\FacturacionRutasController.cs" />
     <Compile Include="Controllers\FormasPagoController.cs" />
     <Compile Include="Controllers\FormasVentaController.cs" />
@@ -890,6 +891,7 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\NotificacionBuzonDTO.cs" />
+    <Compile Include="Models\FamiliaMantenimientoDTO.cs" />
     <Compile Include="Models\Entidad.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
