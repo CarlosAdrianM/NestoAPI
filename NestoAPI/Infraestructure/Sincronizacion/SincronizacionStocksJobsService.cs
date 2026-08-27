@@ -50,11 +50,21 @@ namespace NestoAPI.Infraestructure.Sincronizacion
                         FROM Productos p
                         WHERE p.Empresa = @empresa
                           AND p.Estado >= 0
-                          AND EXISTS (SELECT 1 FROM ExtractoProducto e
+                          AND (EXISTS (SELECT 1 FROM ExtractoProducto e
                                       WHERE e.Empresa IN (@empresa, @empresaEspejo)
                                         AND e.Número = p.Número
                                         AND e.Almacén IN (@almacen1, @almacen2, @almacen3)
                                         AND e.Fecha >= @desde)
+                               -- NestoAPI#412: un kit también cambia cuando se mueve UN COMPONENTE
+                               -- (su CantidadMontable depende del stock de los componentes y el
+                               -- kit no tiene movimiento propio), así que se encola igualmente.
+                               OR EXISTS (SELECT 1 FROM Kits k
+                                          INNER JOIN ExtractoProducto e ON e.Número = k.NúmeroAsociado
+                                      WHERE k.Empresa = @empresa
+                                        AND k.Número = p.Número
+                                        AND e.Empresa IN (@empresa, @empresaEspejo)
+                                        AND e.Almacén IN (@almacen1, @almacen2, @almacen3)
+                                        AND e.Fecha >= @desde))
                           AND NOT EXISTS (SELECT 1 FROM Nesto_sync ns
                                           WHERE ns.Tabla = 'Productos'
                                             AND ns.ModificadoId = RTRIM(p.Número)

@@ -59,6 +59,20 @@ namespace NestoAPI.Models
             }
             public DateTime FechaEstimadaRecepcion { get; set; }
             public int PendienteReposicion { get; set; }
+
+            /// <summary>
+            /// NestoAPI#412: unidades ADICIONALES del kit que se pueden montar con el stock
+            /// disponible de sus componentes (el min-floor de la consulta legacy de la web).
+            /// Siempre 0 en productos que no son kits.
+            ///
+            /// Va SEPARADO a propósito: <see cref="CantidadDisponible"/> es siempre stock físico
+            /// real y ningún consumidor debe verlo inflado. El que quiera vender los montables
+            /// (PrestaShop, como hacía la consulta legacy) los suma él; el que no (Odoo, que
+            /// modelará el kit como BoM), lo ignora. El mismo físico de un componente puede
+            /// respaldar a la vez su venta suelta y este derivado: doble conteo asumido, igual
+            /// que en el legacy (repisado diario + Nesto como red de seguridad al servir).
+            /// </summary>
+            public int CantidadMontable { get; set; }
         }
 
         public static async Task<string> RutaImagen(string productoStock)

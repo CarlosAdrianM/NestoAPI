@@ -102,9 +102,19 @@ namespace NestoAPI.Models.Sincronizacion
         public int? ClasificacionMasVendidos { get; set; }
 
         /// <summary>
-        /// Lista de productos del kit
+        /// Lista de productos del kit (solo los números, sin cantidades).
+        /// Se mantiene por compatibilidad; la composición completa va en
+        /// <see cref="ComponentesKit"/>.
         /// </summary>
         public List<string> ProductosKit { get; set; }
+
+        /// <summary>
+        /// NestoAPI#412: composición del kit — cada componente con las unidades que lleva por
+        /// kit. null o vacío = el producto no es un kit. Pensado para que Odoo construya la BoM
+        /// del kit; PrestaShop puede ignorarlo (para la web basta con
+        /// <c>Stocks[].CantidadMontable</c>).
+        /// </summary>
+        public List<ProductoKit> ComponentesKit { get; set; }
 
         /// <summary>
         /// Información de stocks por almacén
