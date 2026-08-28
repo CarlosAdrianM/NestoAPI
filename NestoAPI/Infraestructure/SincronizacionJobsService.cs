@@ -62,49 +62,8 @@ namespace NestoAPI.Infraestructure
 
                             string productoId = registro.ModificadoId;
 
-                            // Construir el ProductoDTO completo
-                            ProductoDTO productoDTO = new ProductoDTO()
-                            {
-                                UrlFoto = await ProductoDTO.RutaImagen(productoId).ConfigureAwait(false),
-                                PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(productoId, db).ConfigureAwait(false),
-                                UrlEnlace = await ProductoDTO.RutaEnlace(productoId).ConfigureAwait(false),
-                                Producto = producto.Número?.Trim(),
-                                Nombre = producto.Nombre?.Trim(),
-                                Tamanno = producto.Tamaño,
-                                UnidadMedida = producto.UnidadMedida?.Trim(),
-                                Familia = producto.Familia1?.Descripción?.Trim(),
-                                PrecioProfesional = (decimal)producto.PVP,
-                                Estado = (short)producto.Estado,
-                                Grupo = producto.Grupo,
-                                SubgrupoCodigo = producto.SubGrupo?.Trim(),
-                                Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
-                                RoturaStockProveedor = producto.RoturaStockProveedor,
-                                ExclusivoProfesional = producto.ExclusivoProfesional,   // NestoAPI#421
-                                CodigoBarras = producto.CodBarras?.Trim()
-                            };
-
-                            await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
-                            await ProductoDTO.CargarTipoIva(productoDTO, db, producto.IVA_Repercutido).ConfigureAwait(false);
-                            await ProductoDTO.CargarCategoriasSecundarias(productoDTO, db).ConfigureAwait(false);
-                            await ProductoDTO.CargarDescuentosPorAudiencia(productoDTO, db, producto.PVP).ConfigureAwait(false);
-
-                            // Agregar kits si existen
-                            foreach (var kit in producto.Kits)
-                            {
-                                productoDTO.ProductosKit.Add(new ProductoKit
-                                {
-                                    ProductoId = kit.NúmeroAsociado.Trim(),
-                                    Cantidad = kit.Cantidad
-                                });
-                            }
-
-                            // Agregar stocks si no es ficticio
-                            if (!producto.Ficticio)
-                            {
-                                productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Productos.ALMACEN_POR_DEFECTO));
-                                productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Productos.ALMACEN_TIENDA));
-                                productoDTO.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Almacenes.ALCOBENDAS));
-                            }
+                            // NestoAPI#422: un unico constructor del DTO que se publica.
+                            ProductoDTO productoDTO = await ProductoDTO.ConstruirParaPublicar(producto, db, productoService).ConfigureAwait(false);
 
                             return new System.Collections.Generic.List<ProductoDTO> { productoDTO };
                         },

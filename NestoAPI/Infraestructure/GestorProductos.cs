@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Sincronizacion;
+﻿using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
 using NestoAPI.Models.Sincronizacion;
 using System;
@@ -57,9 +57,9 @@ namespace NestoAPI.Infraestructure
                 UrlEnlace = productoDTO.UrlEnlace?.Trim(),
                 UrlFoto = productoDTO.UrlFoto?.Trim(),
                 RoturaStockProveedor = productoDTO.RoturaStockProveedor,
+                ExclusivoProfesional = productoDTO.ExclusivoProfesional,
                 // NestoAPI#421: siempre con valor explícito. El null del contrato ("no toques
                 // la marca") es para el consumidor, no algo que publiquemos nosotros.
-                ExclusivoProfesional = productoDTO.ExclusivoProfesional,
                 ClasificacionMasVendidos = productoDTO.ClasificacionMasVendidos,
                 CodigoBarras = productoDTO.CodigoBarras?.Trim(),
                 // Textos de la tienda: desde el cutover del 26/08/2026 viajan aquí (el mensaje de

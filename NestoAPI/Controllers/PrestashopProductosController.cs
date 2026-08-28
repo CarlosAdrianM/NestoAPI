@@ -170,46 +170,8 @@ namespace NestoAPI.Controllers
                 return;
             }
 
-            var productoDTO = new ProductoDTO
-            {
-                UrlFoto = await ProductoDTO.RutaImagen(productoId).ConfigureAwait(false),
-                PrecioPublicoFinal = await ProductoDTO.LeerPrecioPublicoFinal(productoId, db).ConfigureAwait(false),
-                UrlEnlace = await ProductoDTO.RutaEnlace(productoId).ConfigureAwait(false),
-                Producto = productoEntity.Número?.Trim(),
-                Nombre = productoEntity.Nombre?.Trim(),
-                Tamanno = productoEntity.Tamaño,
-                UnidadMedida = productoEntity.UnidadMedida?.Trim(),
-                Familia = productoEntity.Familia1?.Descripción?.Trim(),
-                PrecioProfesional = (decimal)productoEntity.PVP,
-                Estado = (short)productoEntity.Estado,
-                Grupo = productoEntity.Grupo,
-                SubgrupoCodigo = productoEntity.SubGrupo?.Trim(),
-                Subgrupo = productoEntity.SubGruposProducto?.Descripción?.Trim(),
-                RoturaStockProveedor = productoEntity.RoturaStockProveedor,
-                ExclusivoProfesional = productoEntity.ExclusivoProfesional,   // NestoAPI#421
-                CodigoBarras = productoEntity.CodBarras?.Trim()
-            };
-
-            await ProductoDTO.CargarTextosTienda(productoDTO, db).ConfigureAwait(false);
-            await ProductoDTO.CargarTipoIva(productoDTO, db, productoEntity.IVA_Repercutido).ConfigureAwait(false);
-            await ProductoDTO.CargarCategoriasSecundarias(productoDTO, db).ConfigureAwait(false);
-            await ProductoDTO.CargarDescuentosPorAudiencia(productoDTO, db, productoEntity.PVP).ConfigureAwait(false);
-
-            foreach (var kit in productoEntity.Kits)
-            {
-                productoDTO.ProductosKit.Add(new ProductoKit
-                {
-                    ProductoId = kit.NúmeroAsociado.Trim(),
-                    Cantidad = kit.Cantidad
-                });
-            }
-
-            if (_productoService != null && !productoEntity.Ficticio)
-            {
-                productoDTO.Stocks.Add(await _productoService.CalcularStockProducto(productoId, Constantes.Almacenes.ALGETE));
-                productoDTO.Stocks.Add(await _productoService.CalcularStockProducto(productoId, Constantes.Almacenes.REINA));
-                productoDTO.Stocks.Add(await _productoService.CalcularStockProducto(productoId, Constantes.Almacenes.ALCOBENDAS));
-            }
+            // NestoAPI#422: un unico constructor del DTO que se publica.
+            ProductoDTO productoDTO = await ProductoDTO.ConstruirParaPublicar(productoEntity, db, _productoService).ConfigureAwait(false);
 
             string usuario = User?.Identity?.Name;
             await _gestorProductos.PublicarProductoSincronizar(productoDTO, "Nesto", usuario);

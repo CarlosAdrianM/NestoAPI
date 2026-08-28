@@ -1,4 +1,5 @@
-﻿using System;
+﻿using NestoAPI.Infraestructure.Kits;
+using System;
 using System.Collections.Generic;
 using System.Configuration;
 using System.Data.Entity;
@@ -285,6 +286,76 @@ namespace NestoAPI.Models
         /// Sin filas, la lista queda vacía (= el producto no tiene secundarias; los consumidores
         /// pueden retirar las que sobren SIN tocar la categoría principal).
         /// </summary>
+        /// <summary>
+        /// NestoAPI#422: EL constructor del DTO que se publica por el bus. Antes este bloque estaba
+        /// copiado en los CINCO sitios que publican un producto (la pasada de sincronización, el
+        /// job de Hangfire, la publicación manual, la masiva y la de los textos de tienda), así que
+        /// cada campo nuevo del mensaje había que añadirlo cinco veces y olvidarse de uno hacía que
+        /// un canal publicara datos distintos de otro, sin que nada lo detectara.
+        ///
+        /// Las tres diferencias que parecía haber entre los sitios resultaron no serlo:
+        ///   - Los almacenes: ALMACEN_POR_DEFECTO/ALMACEN_TIENDA y ALGETE/REINA son las mismas
+        ///     tres constantes ("ALG"/"REI"/"ALC") escritas de dos maneras.
+        ///   - El masivo parecía no mirar Ficticio al añadir stocks, pero ya los excluye en su
+        ///     propia consulta, así que ningún ficticio llega ahí.
+        ///   - TieneDatosMinimosParaSincronizar es un filtro PREVIO del job, no parte de construir
+        ///     el DTO: se queda en su sitio.
+        ///
+        /// OJO con PVP y Estado: se castean, no se hace ?? 0. Si el producto no los tiene, esto
+        /// LANZA, que es lo que hacía antes y lo que queremos: mejor que falle la publicación a
+        /// que la tienda reciba un precio de 0.
+        ///
+        /// La ficha (GetProducto con fichaCompleta) NO usa esto a propósito: es una lectura, no una
+        /// publicación, y llena menos cosas según el flag.
+        /// </summary>
+        internal static async Task<ProductoDTO> ConstruirParaPublicar(Producto producto, NVEntities db, IProductoService productoService)
+        {
+            string productoId = producto.Número?.Trim();
+
+            ProductoDTO dto = new ProductoDTO
+            {
+                UrlFoto = await RutaImagen(productoId).ConfigureAwait(false),
+                PrecioPublicoFinal = await LeerPrecioPublicoFinal(productoId, db).ConfigureAwait(false),
+                UrlEnlace = await RutaEnlace(productoId).ConfigureAwait(false),
+                Producto = productoId,
+                Nombre = producto.Nombre?.Trim(),
+                Tamanno = producto.Tamaño,
+                UnidadMedida = producto.UnidadMedida?.Trim(),
+                Familia = producto.Familia1?.Descripción?.Trim(),
+                PrecioProfesional = (decimal)producto.PVP,
+                Estado = (short)producto.Estado,
+                Grupo = producto.Grupo,
+                SubgrupoCodigo = producto.SubGrupo?.Trim(),
+                Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
+                RoturaStockProveedor = producto.RoturaStockProveedor,
+                ExclusivoProfesional = producto.ExclusivoProfesional,
+                CodigoBarras = producto.CodBarras?.Trim()
+            };
+
+            await CargarTextosTienda(dto, db).ConfigureAwait(false);
+            await CargarTipoIva(dto, db, producto.IVA_Repercutido).ConfigureAwait(false);
+            await CargarCategoriasSecundarias(dto, db).ConfigureAwait(false);
+            await CargarDescuentosPorAudiencia(dto, db, producto.PVP).ConfigureAwait(false);
+
+            foreach (Kit kit in producto.Kits)
+            {
+                dto.ProductosKit.Add(new ProductoKit
+                {
+                    ProductoId = kit.NúmeroAsociado.Trim(),
+                    Cantidad = kit.Cantidad
+                });
+            }
+
+            if (!producto.Ficticio && productoService != null)
+            {
+                dto.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Productos.ALMACEN_POR_DEFECTO).ConfigureAwait(false));
+                dto.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Productos.ALMACEN_TIENDA).ConfigureAwait(false));
+                dto.Stocks.Add(await productoService.CalcularStockProducto(productoId, Constantes.Almacenes.ALCOBENDAS).ConfigureAwait(false));
+            }
+
+            return dto;
+        }
+
         internal static async Task CargarCategoriasSecundarias(ProductoDTO dto, NVEntities db)
         {
             var filas = await db.ProductosCategoriasSecundarias
