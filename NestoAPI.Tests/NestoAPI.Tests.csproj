@@ -231,6 +231,7 @@
     <Compile Include="Controllers\PlazosPagoControllerTests.cs" />
     <Compile Include="Controllers\CabRemesasPagoControllerTests.cs" />
     <Compile Include="Controllers\FamiliasControllerTests.cs" />
+    <Compile Include="Controllers\EquiposDeVentasResumenTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SentinelPrecioPublicoJobsServiceTests.cs" />
     <Compile Include="Models\MapeoEdmxTests.cs" />
     <Compile Include="Models\PrecioPublicoFinalTests.cs" />

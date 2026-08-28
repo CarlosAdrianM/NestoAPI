@@ -199,10 +199,21 @@ namespace NestoAPI.Controllers
         [Route("api/SeguimientosClientes/Resumen")]
         public async Task<IHttpActionResult> GetResumenSeguimientosClientes(string empresa, DateTime fecha)
         {
-            string[] vendedoresPresenciales = VendedoresConJefeDeVentas();
-            string resumenPresenciales = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.JEFE_VENTAS, false);
-            string resumenResto = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.CORREO_DIRECCION, true);
-            return Ok(new { Resumen = resumenPresenciales + "\n" + resumenResto });
+            // Cada jefe de ventas recibe el resumen de SU equipo; lo que no es de ningun equipo
+            // va a direccion. Con un solo jefe esto manda exactamente los mismos dos correos que
+            // cuando su direccion estaba escrita a mano en las constantes.
+            List<EquipoDeVentas> equipos = EquiposDeVentas(empresa);
+            var resumenes = new List<string>();
+
+            foreach (EquipoDeVentas equipo in equipos)
+            {
+                resumenes.Add(await EnviarCorreoResumenRapportsDia(empresa, fecha, equipo.Vendedores, equipo.Correo, false));
+            }
+
+            string[] todosLosQueTienenJefe = equipos.SelectMany(e => e.Vendedores).Distinct().ToArray();
+            resumenes.Add(await EnviarCorreoResumenRapportsDia(empresa, fecha, todosLosQueTienenJefe, Constantes.Correos.CORREO_DIRECCION, true));
+
+            return Ok(new { Resumen = string.Join("\n", resumenes) });
         }
 
         [HttpGet]
@@ -211,7 +222,7 @@ namespace NestoAPI.Controllers
         {
             DateTime fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
             DateTime fechaSemanaAnterior = fechaSinHora.AddDays(-7);
-            string[] vendedoresPresenciales = VendedoresConJefeDeVentas();
+            Dictionary<string, string> correoDelJefe = CorreoDelJefePorVendedor(empresa);
             string resumenConjunto = string.Empty;
             string[] vendedoresConRapport = db.SeguimientosClientes
                 .Where(s => s.Empresa == empresa && s.Fecha >= fechaSemanaAnterior && s.Fecha < fechaSinHora && s.Vendedor != null)
@@ -240,7 +251,10 @@ namespace NestoAPI.Controllers
                         continue;
                     }
                     string correo = vendedorEntity.Mail.Trim();
-                    string copia = vendedoresPresenciales.Contains(vendedor) ? Constantes.Correos.JEFE_VENTAS : Constantes.Correos.CORREO_DIRECCION;
+                    // La copia va al jefe de ESE vendedor. Quien no tenga jefe, a direccion.
+                    string copia = correoDelJefe.TryGetValue(vendedor, out string correoJefe)
+                        ? correoJefe
+                        : Constantes.Correos.CORREO_DIRECCION;
                     string resumen = await EnviarCorreoResumenRapportsSemana(empresa, fechaSemanaAnterior, fechaSinHora, vendedor, correo, copia);
                     if (string.IsNullOrEmpty(resumen))
                     {
@@ -287,32 +301,108 @@ namespace NestoAPI.Controllers
         }
 
         /// <summary>
-        /// Los vendedores "presenciales": los que tienen un jefe de ventas por encima a dia de hoy.
+        /// Cada jefe de ventas con su equipo y su correo, a dia de hoy y sin nombrar a nadie: el
+        /// dato sale de EquiposVenta y de la ficha del vendedor.
         ///
-        /// Antes esto se preguntaba por Superior == Constantes.Vendedores.JEFE_DE_VENTAS, con "ASH"
-        /// escrito a mano en las constantes. El dato esta en EquiposVenta y es ahi donde hay que
-        /// leerlo: asi esto sigue funcionando el dia que el jefe de ventas sea otro, y no hay que
-        /// acordarse de tocar una constante que nadie relaciona con este correo.
+        /// Antes habia dos cosas escritas a mano, "ASH" como jefe y su direccion de correo en
+        /// Constantes.Correos.JEFE_VENTAS. Con esto, el dia que haya dos jefes de ventas cada uno
+        /// recibe el resumen de SU equipo sin tocar una linea de codigo.
         ///
-        /// Se filtra por fecha (FechaDesde/FechaHasta) como ya hace ServicioVendedores: la
-        /// pertenencia a un equipo tiene vigencia, no es para siempre. La consulta anterior no lo
-        /// hacia, pero hoy no hay ninguna fila caducada, asi que no cambia a quien le llega nada.
-        ///
-        /// Los valores van recortados: SQL Server ignora el relleno de los char al comparar, asi
-        /// que sirven igual para el IN de la consulta de seguimientos y para el Contains en
-        /// memoria del resumen semanal.
+        /// Se filtra por fecha (FechaDesde/FechaHasta) porque la pertenencia a un equipo tiene
+        /// vigencia, igual que hace ServicioVendedores.
         /// </summary>
-        private string[] VendedoresConJefeDeVentas()
+        private List<EquipoDeVentas> EquiposDeVentas(string empresa)
         {
             DateTime hoy = DateTime.Today;
-            return db.EquiposVentas
-                .Where(v => (v.FechaDesde == null || v.FechaDesde <= hoy) &&
+
+            var filas = db.EquiposVentas
+                .Where(v => v.Empresa == empresa &&
+                            (v.FechaDesde == null || v.FechaDesde <= hoy) &&
                             (v.FechaHasta == null || v.FechaHasta >= hoy))
-                .Select(v => v.Vendedor)
+                .Select(v => new { v.Superior, v.Vendedor })
                 .ToList()
-                .Select(v => v.Trim())
-                .Distinct()
-                .ToArray();
+                .Select(v => new JefeYVendedor { Jefe = v.Superior, Vendedor = v.Vendedor })
+                .ToList();
+
+            var correos = db.Vendedores
+                .Where(v => v.Empresa == empresa)
+                .Select(v => new { v.Número, v.Mail })
+                .ToList()
+                .GroupBy(v => v.Número.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Mail, StringComparer.OrdinalIgnoreCase);
+
+            List<EquipoDeVentas> equipos = ConstruirEquipos(filas, correos, Constantes.Correos.CORREO_DIRECCION);
+
+            // Un jefe sin correo en su ficha no puede dejar a su equipo sin informe: el resumen se
+            // manda a direccion y se avisa, en vez de perderse en silencio.
+            foreach (EquipoDeVentas equipo in equipos.Where(e => e.SinCorreoPropio))
+            {
+                Elmah.ErrorSignal.FromCurrentContext().Raise(new Exception(
+                    $"Resumen de rapports: el jefe de ventas {equipo.Jefe} no tiene correo en su ficha. " +
+                    "Su resumen se manda a direccion."));
+            }
+
+            return equipos;
+        }
+
+        /// <summary>
+        /// La parte con reglas, separada de la base de datos para poder probarla: agrupa por jefe,
+        /// le pone a cada uno el correo de su ficha y marca al que no lo tenga.
+        /// </summary>
+        internal static List<EquipoDeVentas> ConstruirEquipos(
+            IEnumerable<JefeYVendedor> filas,
+            IDictionary<string, string> correosPorVendedor,
+            string correoPorDefecto)
+        {
+            return filas
+                .Where(f => !string.IsNullOrWhiteSpace(f.Jefe) && !string.IsNullOrWhiteSpace(f.Vendedor))
+                .GroupBy(f => f.Jefe.Trim(), StringComparer.OrdinalIgnoreCase)
+                .Select(g =>
+                {
+                    correosPorVendedor.TryGetValue(g.Key, out string correoJefe);
+                    bool sinCorreo = string.IsNullOrWhiteSpace(correoJefe);
+                    return new EquipoDeVentas
+                    {
+                        Jefe = g.Key,
+                        Correo = sinCorreo ? correoPorDefecto : correoJefe.Trim(),
+                        SinCorreoPropio = sinCorreo,
+                        Vendedores = g.Select(f => f.Vendedor.Trim())
+                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                            .OrderBy(v => v)
+                            .ToArray()
+                    };
+                })
+                .OrderBy(e => e.Jefe)
+                .ToList();
+        }
+
+        /// <summary>Correo del jefe de cada vendedor. Quien no tenga jefe no aparece.</summary>
+        private Dictionary<string, string> CorreoDelJefePorVendedor(string empresa)
+        {
+            var correos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (EquipoDeVentas equipo in EquiposDeVentas(empresa))
+            {
+                foreach (string vendedor in equipo.Vendedores)
+                {
+                    correos[vendedor] = equipo.Correo;
+                }
+            }
+            return correos;
+        }
+
+        internal class EquipoDeVentas
+        {
+            public string Jefe { get; set; }
+            public string Correo { get; set; }
+            public string[] Vendedores { get; set; }
+            /// <summary>El jefe no tenia correo en su ficha: Correo lleva el de direccion.</summary>
+            public bool SinCorreoPropio { get; set; }
+        }
+
+        internal class JefeYVendedor
+        {
+            public string Jefe { get; set; }
+            public string Vendedor { get; set; }
         }
 
         private async Task<string> EnviarCorreoResumenRapportsDia(string empresa, DateTime fecha, string[] vendedores, string correo, bool resto)

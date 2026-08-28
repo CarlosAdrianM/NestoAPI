@@ -123,7 +123,6 @@ namespace NestoAPI.Models
             public const string CORREO_DIRECCION = "direccion@nuevavision.es";
             public const string TIENDA_ALCOBENDAS = "alcobendas@nuevavision.es";
             public const string INFORMATICA = "carlosadrian@nuevavision.es";
-            public const string JEFE_VENTAS = "albertosancho@nuevavision.es";
             public const string LOGISTICA = "logistica@nuevavision.es";
             /// <summary>NestoAPI#361: avisos del picking automatico de las 11h.</summary>
             public const string ALMACEN = "almacen@nuevavision.es";
