@@ -183,6 +183,7 @@ namespace NestoAPI.Controllers
                 PrecioProfesional = (decimal)productoEntity.PVP,
                 Estado = (short)productoEntity.Estado,
                 Grupo = productoEntity.Grupo,
+                SubgrupoCodigo = productoEntity.SubGrupo?.Trim(),
                 Subgrupo = productoEntity.SubGruposProducto?.Descripción?.Trim(),
                 RoturaStockProveedor = productoEntity.RoturaStockProveedor,
                 ExclusivoProfesional = productoEntity.ExclusivoProfesional,   // NestoAPI#421

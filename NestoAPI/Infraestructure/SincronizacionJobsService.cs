@@ -76,6 +76,7 @@ namespace NestoAPI.Infraestructure
                                 PrecioProfesional = (decimal)producto.PVP,
                                 Estado = (short)producto.Estado,
                                 Grupo = producto.Grupo,
+                                SubgrupoCodigo = producto.SubGrupo?.Trim(),
                                 Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                                 RoturaStockProveedor = producto.RoturaStockProveedor,
                                 ExclusivoProfesional = producto.ExclusivoProfesional,   // NestoAPI#421

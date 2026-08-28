@@ -2,17 +2,73 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
+using NestoAPI.Tests.Helpers;
 using System;
 using System.Collections.Generic;
+using System.Data.Entity;
+using System.Data.Entity.Infrastructure;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Web.Http.Results;
 
 namespace NestoAPI.Tests.Controllers
 {
     [TestClass]
     public class ProductosControllerTest
     {
+        /// <summary>
+        /// Nesto#456: la ficha tiene que dar el CÓDIGO del subgrupo, no solo su descripción.
+        ///
+        /// En este DTO, Grupo es el código ("COS") pero Subgrupo es la descripción ("Cremas"),
+        /// porque Subgrupo viaja así en el mensaje del bus y PrestaShop y Odoo lo consumen como
+        /// descripción. Sin SubgrupoCodigo, quien quisiera identificar la categoría principal del
+        /// producto tenía que adivinarla emparejando descripciones contra el catálogo.
+        /// </summary>
+        [TestMethod]
+        public async Task ProductosController_GetProductoFicha_DevuelveElCodigoDelSubgrupoYSuDescripcion()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            DbSet<Producto> fakeProductos = A.Fake<DbSet<Producto>>(o => o.Implements<IQueryable<Producto>>().Implements<IDbAsyncEnumerable<Producto>>());
+            A.CallTo(() => db.Productos).Returns(fakeProductos);
+            A.CallTo(() => fakeProductos.Include(A<string>.Ignored)).Returns(fakeProductos);
+
+            Producto producto = new Producto
+            {
+                Empresa = "1",
+                Número = "41269",
+                Nombre = "CREMA DE PRUEBA",
+                Grupo = "COS",
+                SubGrupo = "CRE",
+                Estado = 0,
+                PVP = 10M,
+                Kits = new List<Kit>(),
+                SubGruposProducto = new SubGruposProducto { Descripción = "Cremas" }
+            };
+            ConfigurarFakeDbSetFicha(fakeProductos, new List<Producto> { producto }.AsQueryable());
+
+            ProductosController controller = new ProductosController(db);
+
+            var resultado = await controller.GetProducto("1", "41269", fichaCompleta: false)
+                as OkNegotiatedContentResult<ProductoDTO>;
+
+            Assert.IsNotNull(resultado);
+            Assert.AreEqual("COS", resultado.Content.Grupo, "Grupo es el código");
+            Assert.AreEqual("CRE", resultado.Content.SubgrupoCodigo, "SubgrupoCodigo es el código");
+            Assert.AreEqual("Cremas", resultado.Content.Subgrupo, "Subgrupo sigue siendo la descripción: es el contrato del bus");
+        }
+
+        private static void ConfigurarFakeDbSetFicha<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class
+        {
+            A.CallTo(() => ((IDbAsyncEnumerable<T>)fakeDbSet).GetAsyncEnumerator())
+                .Returns(new TestDbAsyncEnumerator<T>(data.GetEnumerator()));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Provider)
+                .Returns(new TestDbAsyncQueryProvider<T>(data.Provider));
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).Expression).Returns(data.Expression);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).ElementType).Returns(data.ElementType);
+            A.CallTo(() => ((IQueryable<T>)fakeDbSet).GetEnumerator()).Returns(data.GetEnumerator());
+        }
+
         [TestMethod]
         public void ProductosController_CalcularStockProducto_SiElProductoEsFicticioElStockEs0()
         {

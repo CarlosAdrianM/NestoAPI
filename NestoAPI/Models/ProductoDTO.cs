@@ -28,6 +28,12 @@ namespace NestoAPI.Models
         public decimal PrecioPublicoFinal { get; set; }
         public short Estado { get; set; }
         public string Grupo { get; set; }
+        // OJO con la asimetría: Grupo es el CÓDIGO ("COS") pero Subgrupo es la DESCRIPCIÓN
+        // ("Cremas"). No se puede arreglar renombrando: Subgrupo viaja así en el mensaje del
+        // bus y PrestaShop y Odoo lo consumen como descripción. Por eso el código del subgrupo
+        // va aparte, que es lo que necesita quien tenga que identificar la categoría principal
+        // (Nesto#456) en vez de adivinarla emparejando descripciones.
+        public string SubgrupoCodigo { get; set; }
         public string Subgrupo { get; set; }
         public string UrlEnlace { get; set; }
         public string UrlFoto { get; set; }
