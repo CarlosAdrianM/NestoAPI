@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Contabilidad;
+﻿using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Models;
 using System;
@@ -49,11 +49,24 @@ namespace NestoAPI.Infraestructure.Agencias
         /// </summary>
         public async Task<ResultadoTramitacionEnvio> TramitarAsync(int numeroEnvio, string usuario)
         {
-            EnviosAgencia envio = await _db.EnviosAgencias
+            // OJO con la forma de esta consulta. Con Include + SingleOrDefaultAsync(predicado),
+            // EF6 envuelve todo en una subconsulta TOP(2) llamada "Limit1" y ahí chocan las
+            // columnas que se llaman igual en las tablas incluidas (Empresas.Número): SQL Server
+            // responde "La columna 'Número' se ha especificado varias veces para 'Limit1'" y no
+            // se puede tramitar NADA. Pasó el 28/08/2026, 17 veces en cuatro minutos.
+            //
+            // Con Where + ToListAsync no hay subconsulta: sale un SELECT plano con sus JOIN.
+            // Numero es la clave (identity), así que como mucho viene una fila.
+            //
+            // Esto NO lo pueden pillar los tests: usan dobles en memoria y el error es del SQL
+            // que genera EF. Cualquier cambio aquí hay que probarlo tramitando un envío de verdad.
+            List<EnviosAgencia> envios = await _db.EnviosAgencias
                 .Include(e => e.AgenciasTransporte)
                 .Include(e => e.Empresa1)
-                .SingleOrDefaultAsync(e => e.Numero == numeroEnvio)
+                .Where(e => e.Numero == numeroEnvio)
+                .ToListAsync()
                 .ConfigureAwait(false);
+            EnviosAgencia envio = envios.SingleOrDefault();
             if (envio == null)
             {
                 throw new NestoBusinessException($"No existe el envío {numeroEnvio}.");
