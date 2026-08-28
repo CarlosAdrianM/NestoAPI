@@ -199,7 +199,7 @@ namespace NestoAPI.Controllers
         [Route("api/SeguimientosClientes/Resumen")]
         public async Task<IHttpActionResult> GetResumenSeguimientosClientes(string empresa, DateTime fecha)
         {
-            string[] vendedoresPresenciales = db.EquiposVentas.Where(v => v.Superior == Constantes.Vendedores.JEFE_DE_VENTAS).Select(v => v.Vendedor).ToArray();
+            string[] vendedoresPresenciales = VendedoresConJefeDeVentas();
             string resumenPresenciales = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.JEFE_VENTAS, false);
             string resumenResto = await EnviarCorreoResumenRapportsDia(empresa, fecha, vendedoresPresenciales, Constantes.Correos.CORREO_DIRECCION, true);
             return Ok(new { Resumen = resumenPresenciales + "\n" + resumenResto });
@@ -211,7 +211,7 @@ namespace NestoAPI.Controllers
         {
             DateTime fechaSinHora = new DateTime(fecha.Year, fecha.Month, fecha.Day);
             DateTime fechaSemanaAnterior = fechaSinHora.AddDays(-7);
-            string[] vendedoresPresenciales = db.EquiposVentas.Where(v => v.Superior == Constantes.Vendedores.JEFE_DE_VENTAS).Select(v => v.Vendedor.Trim()).ToArray();
+            string[] vendedoresPresenciales = VendedoresConJefeDeVentas();
             string resumenConjunto = string.Empty;
             string[] vendedoresConRapport = db.SeguimientosClientes
                 .Where(s => s.Empresa == empresa && s.Fecha >= fechaSemanaAnterior && s.Fecha < fechaSinHora && s.Vendedor != null)
@@ -284,6 +284,35 @@ namespace NestoAPI.Controllers
                     break;
             }
             return tipoTexto + $"Vendedor: {vendedor}\nCliente: {numero?.Trim()}/{contacto?.Trim()} \nComentario: {comentarios?.Trim()}\nTerminó en pedido: {pedidoTexto}\n\n";
+        }
+
+        /// <summary>
+        /// Los vendedores "presenciales": los que tienen un jefe de ventas por encima a dia de hoy.
+        ///
+        /// Antes esto se preguntaba por Superior == Constantes.Vendedores.JEFE_DE_VENTAS, con "ASH"
+        /// escrito a mano en las constantes. El dato esta en EquiposVenta y es ahi donde hay que
+        /// leerlo: asi esto sigue funcionando el dia que el jefe de ventas sea otro, y no hay que
+        /// acordarse de tocar una constante que nadie relaciona con este correo.
+        ///
+        /// Se filtra por fecha (FechaDesde/FechaHasta) como ya hace ServicioVendedores: la
+        /// pertenencia a un equipo tiene vigencia, no es para siempre. La consulta anterior no lo
+        /// hacia, pero hoy no hay ninguna fila caducada, asi que no cambia a quien le llega nada.
+        ///
+        /// Los valores van recortados: SQL Server ignora el relleno de los char al comparar, asi
+        /// que sirven igual para el IN de la consulta de seguimientos y para el Contains en
+        /// memoria del resumen semanal.
+        /// </summary>
+        private string[] VendedoresConJefeDeVentas()
+        {
+            DateTime hoy = DateTime.Today;
+            return db.EquiposVentas
+                .Where(v => (v.FechaDesde == null || v.FechaDesde <= hoy) &&
+                            (v.FechaHasta == null || v.FechaHasta >= hoy))
+                .Select(v => v.Vendedor)
+                .ToList()
+                .Select(v => v.Trim())
+                .Distinct()
+                .ToArray();
         }
 
         private async Task<string> EnviarCorreoResumenRapportsDia(string empresa, DateTime fecha, string[] vendedores, string correo, bool resto)
