@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Informes;
 using System.Collections.Generic;
 
@@ -15,13 +15,14 @@ namespace NestoAPI.Tests.Infrastructure
     [TestClass]
     public class PackingUbicacionesDescuadradasTests
     {
-        private static InformesService.LineaConUbicaciones Linea(int pedido, string producto, int pedidas, int reservadas)
+        private static InformesService.LineaConUbicaciones Linea(int pedido, string producto, int pedidas, int reservadas, bool esFicticio = false)
             => new InformesService.LineaConUbicaciones
             {
                 Pedido_ = pedido,
                 Producto = producto,
                 Pedido = pedidas,
-                Ubicado = reservadas
+                Ubicado = reservadas,
+                EsFicticio = esFicticio
             };
 
         [TestMethod]
@@ -67,6 +68,61 @@ namespace NestoAPI.Tests.Infrastructure
             };
 
             Assert.AreEqual(0, InformesService.ErroresDeUbicacionesDelPicking(lineas).Count);
+        }
+
+        [TestMethod]
+        public void ErroresDeUbicaciones_LineaConCantidadNegativaSinReservar_NoEsError()
+        {
+            // El caso real del picking 99357 (28/08/2026): el pedido 924947 llevaba el cupón de
+            // descuento "TiCKET" con cantidad -1 y, como es ficticio, 0 ubicaciones reservadas.
+            // Con la comparación cruda 0 > -1 daba error y el almacén no podía imprimir la hoja.
+            List<InformesService.LineaConUbicaciones> lineas = new List<InformesService.LineaConUbicaciones>
+            {
+                Linea(924947, "24391", 2, 2),
+                Linea(924947, "TiCKET", -1, 0, esFicticio: true)
+            };
+
+            Assert.AreEqual(0, InformesService.ErroresDeUbicacionesDelPicking(lineas).Count);
+        }
+
+        [TestMethod]
+        public void ErroresDeUbicaciones_DevolucionDeProductoRealSinReservar_NoEsError()
+        {
+            // Las devoluciones se meten como línea negativa de un producto REAL, que no es
+            // ficticio: por eso no basta con saltarse los ficticios. El caso del pedido 924672
+            // (21/08/2026), con el cartucho 12633 a -3.
+            List<InformesService.LineaConUbicaciones> lineas = new List<InformesService.LineaConUbicaciones>
+            {
+                Linea(924672, "12633", -3, 0, esFicticio: false)
+            };
+
+            Assert.AreEqual(0, InformesService.ErroresDeUbicacionesDelPicking(lineas).Count);
+        }
+
+        [TestMethod]
+        public void ErroresDeUbicaciones_ProductoFicticioConAlgoReservado_NoEsError()
+        {
+            // Un ficticio no tiene stock ni se ubica: pase lo que pase con las ubicaciones, no
+            // hay nada que cuadrar y no debe frenar la hoja del almacén.
+            List<InformesService.LineaConUbicaciones> lineas = new List<InformesService.LineaConUbicaciones>
+            {
+                Linea(924947, "TiCKET", 1, 3, esFicticio: true)
+            };
+
+            Assert.AreEqual(0, InformesService.ErroresDeUbicacionesDelPicking(lineas).Count);
+        }
+
+        [TestMethod]
+        public void ErroresDeUbicaciones_ProductoRealConDeMas_SigueSiendoError()
+        {
+            // El caso que motivó el guard no se puede haber perdido por el camino: producto real,
+            // cantidad positiva y más reservado que pedido.
+            List<InformesService.LineaConUbicaciones> lineas = new List<InformesService.LineaConUbicaciones>
+            {
+                Linea(924799, "37156", 4, 8, esFicticio: false)
+            };
+
+            Assert.AreEqual(1, InformesService.ErroresDeUbicacionesDelPicking(lineas).Count);
         }
 
         [TestMethod]

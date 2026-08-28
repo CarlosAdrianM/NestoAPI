@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Entity;
@@ -234,12 +234,24 @@ namespace NestoAPI.Infraestructure.Informes
         ///
         /// Se compara solo el exceso, nunca el defecto: una línea con "Recoger" o servida a
         /// medias tiene menos ubicado que pedido y es perfectamente normal.
+        ///
+        /// Quedan fuera dos cosas que no se pueden comparar contra ubicaciones:
+        ///
+        /// 1. Los productos ficticios (el cupón "TiCKET", por ejemplo): no tienen stock ni se
+        ///    ubican, así que no hay nada que cuadrar.
+        /// 2. Las cantidades negativas, ficticias o no. El tope es Max(pedido, 0), no el pedido
+        ///    a secas, porque con -1 pedidas hasta 0 reservadas sería "más de lo pedido". Además
+        ///    del cupón, hay devoluciones metidas como línea negativa de un producto REAL
+        ///    (5 en lo que va de 2026, p.ej. el 12633 con -3 del pedido 924672), que el filtro
+        ///    de ficticios no cubre.
+        ///
+        /// El 28/08/2026 esto bloqueó el picking 99357 por el cupón del pedido 924947.
         /// </summary>
         internal static List<string> ErroresDeUbicacionesDelPicking(
             IEnumerable<LineaConUbicaciones> lineas)
         {
             return lineas
-                .Where(l => l.Ubicado > l.Pedido)
+                .Where(l => !l.EsFicticio && l.Ubicado > Math.Max(l.Pedido, 0))
                 .Select(l => $"pedido {l.Pedido_} línea {l.Producto?.Trim()}: pedidas {l.Pedido}, reservadas {l.Ubicado}")
                 .ToList();
         }
@@ -250,6 +262,7 @@ namespace NestoAPI.Infraestructure.Informes
             public string Producto { get; set; }
             public int Pedido { get; set; }
             public int Ubicado { get; set; }
+            public bool EsFicticio { get; set; }
         }
 
         private async Task ComprobarUbicacionesDelPickingAsync(int picking)
@@ -261,6 +274,11 @@ namespace NestoAPI.Infraestructure.Informes
                     Pedido_ = l.Número,
                     Producto = l.Producto,
                     Pedido = (int)l.Cantidad,
+                    // Subconsulta y no un join: si el producto no apareciera en Productos, esto
+                    // da false y la línea se sigue comprobando. Con un join se caería del
+                    // chequeo sin que nadie se entere, que es justo lo que no queremos.
+                    EsFicticio = db.Productos
+                        .Any(prod => prod.Empresa == l.Empresa && prod.Número == l.Producto && prod.Ficticio),
                     Ubicado = db.Ubicaciones
                         .Where(u => u.NºOrdenVta == l.Nº_Orden && u.Estado == Constantes.Ubicaciones.RESERVADO_PICKING)
                         .Select(u => (int?)u.Cantidad)
