@@ -71,6 +71,7 @@ namespace NestoAPI.Models
         public bool NecesitaNumSerie { get; set; }
         public string Usuario { get; set; }
         public System.DateTime Fecha_Modificación { get; set; }
+        public bool ExclusivoProfesional { get; set; }
     
         public virtual Empresa Empresa1 { get; set; }
         public virtual ICollection<Producto> Productos1 { get; set; }

@@ -35,6 +35,12 @@ namespace NestoAPI.Models
         public int ClasificacionMasVendidos { get; set; }
         public string CodigoBarras { get; set; }
 
+        // NestoAPI#421: producto que NO se vende al público. Se ve en la tienda, pero sin
+        // precio ni botón de compra para quien no sea del grupo profesional. Es un dato de la
+        // ficha, NO se deduce de las categorías: los subgrupos EP* (COS/EPC, APA/EXP...) son
+        // categorías navegables normales y sus productos sí se venden al público.
+        public bool ExclusivoProfesional { get; set; }
+
         // Textos editables de la tienda (PrestashopProductos), pensados para la web pero útiles
         // para cualquier consumidor. null = sin texto personalizado (el consumidor no toca nada).
         public string NombrePersonalizado { get; set; }

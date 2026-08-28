@@ -1394,6 +1394,7 @@
     <Compile Include="Models\Productos\ControlStockBase.cs" />
     <Compile Include="Models\Productos\ControlStockProductoModel.cs" />
     <Compile Include="Models\Productos\DiarioProductoDTO.cs" />
+    <Compile Include="Models\Productos\ProductoExclusivoProfesionalDTO.cs" />
     <Compile Include="Models\Productos\ProductoGruposComisionablesDTO.cs" />
     <Compile Include="Models\Productos\KitContienePerteneceModel.cs" />
     <Compile Include="Models\Productos\ParametrosDiarioProducto.cs" />

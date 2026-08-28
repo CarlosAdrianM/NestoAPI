@@ -107,6 +107,78 @@ namespace NestoAPI.Tests.Infrastructure
         }
 
         [TestMethod]
+        public async Task PublicarProductoSincronizar_ElExclusivoProfesionalViajaEnElMensaje()
+        {
+            // NestoAPI#421 / prestashop-nestosync#19: la marca viaja como campo propio del
+            // producto, con el nombre EXACTO que espera el módulo de la tienda.
+            var dto = new ProductoDTO
+            {
+                Producto = "41269",
+                Nombre = "PRODUCTO",
+                PrecioProfesional = 10M,
+                PrecioPublicoFinal = 17.29M,
+                ExclusivoProfesional = true
+            };
+
+            var mensaje = await PublicarYCapturar(dto);
+
+            Assert.AreEqual(true, mensaje.ExclusivoProfesional);
+        }
+
+        [TestMethod]
+        public async Task PublicarProductoSincronizar_ProductoNormal_ViajaFalseYNoNull()
+        {
+            // El contrato del consumidor distingue false ("desmárcalo") de null ("no lo toques"),
+            // así que un producto sin marcar TIENE que viajar con false explícito: si viajara null,
+            // un producto desmarcado en Nesto se quedaría restringido para siempre en la tienda.
+            var dto = new ProductoDTO
+            {
+                Producto = "41269",
+                Nombre = "PRODUCTO",
+                PrecioProfesional = 10M,
+                PrecioPublicoFinal = 17.29M,
+                ExclusivoProfesional = false
+            };
+
+            var mensaje = await PublicarYCapturar(dto);
+
+            Assert.AreEqual(false, mensaje.ExclusivoProfesional);
+            Assert.IsTrue(mensaje.ExclusivoProfesional.HasValue, "Nunca publicamos null: el null es la salvaguarda del consumidor");
+        }
+
+        [TestMethod]
+        public async Task PublicarProductoSincronizar_ElExclusivoProfesionalNoDependeDeLasCategorias()
+        {
+            // La razón de ser de #421: un producto de un subgrupo EP* (categorías navegables
+            // normales de la tienda) se vende al público con toda normalidad. Si esto se
+            // dedujera de la taxonomía, las ~240 asignaciones de esos subgrupos se quedarían
+            // sin precio ni botón de compra.
+            var dto = new ProductoDTO
+            {
+                Producto = "41269",
+                Nombre = "PRODUCTO DE APARATOLOGIA",
+                Grupo = "APA",
+                Subgrupo = "EXP",
+                PrecioProfesional = 10M,
+                PrecioPublicoFinal = 17.29M,
+                ExclusivoProfesional = false
+            };
+            dto.CategoriasSecundarias.Add(new CategoriaSecundariaDTO
+            {
+                Grupo = "COS",
+                DescripcionGrupo = "Cosmética",
+                Subgrupo = "EPC",
+                DescripcionSubgrupo = "Corporales Exclusivos Profesional"
+            });
+
+            var mensaje = await PublicarYCapturar(dto);
+
+            Assert.AreEqual(false, mensaje.ExclusivoProfesional);
+            Assert.AreEqual(1, mensaje.CategoriasSecundarias.Count, "Las categorías siguen viajando como categorías");
+            Assert.AreEqual("EPC", mensaje.CategoriasSecundarias[0].Subgrupo);
+        }
+
+        [TestMethod]
         public async Task PublicarProductoSincronizar_LasCategoriasSecundariasViajanEnOrden()
         {
             // NestoAPI#414: la ristra de categorías comerciales secundarias viaja en el mensaje,

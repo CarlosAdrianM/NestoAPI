@@ -78,6 +78,7 @@ namespace NestoAPI.Infraestructure
                                 Grupo = producto.Grupo,
                                 Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                                 RoturaStockProveedor = producto.RoturaStockProveedor,
+                                ExclusivoProfesional = producto.ExclusivoProfesional,   // NestoAPI#421
                                 CodigoBarras = producto.CodBarras?.Trim()
                             };
 

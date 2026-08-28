@@ -1828,6 +1828,7 @@
           <Property Name="NecesitaNumSerie" Type="bit" Nullable="false" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" />
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
+          <Property Name="ExclusivoProfesional" Type="bit" Nullable="false" />
         </EntityType>
         <EntityType Name="ProductosCategoriasSecundarias">
           <Key>
@@ -8395,6 +8396,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="NecesitaNumSerie" Type="Boolean" Nullable="false" />
           <Property Name="Usuario" Type="String" Nullable="false" MaxLength="30" FixedLength="false" Unicode="false" />
           <Property Name="Fecha_Modificación" Type="DateTime" Nullable="false" Precision="3" />
+          <Property Name="ExclusivoProfesional" Type="Boolean" Nullable="false" />
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_Productos_Empresas" FromRole="Producto" ToRole="Empresa" />
           <NavigationProperty Name="Productos1" Relationship="NVModel.FK_Productos_Productos" FromRole="Producto" ToRole="Producto1" />
           <NavigationProperty Name="Producto1" Relationship="NVModel.FK_Productos_Productos" FromRole="Producto1" ToRole="Producto" />
@@ -14143,6 +14145,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="Productos">
             <EntityTypeMapping TypeName="NVModel.Producto">
               <MappingFragment StoreEntitySet="Productos">
+                <ScalarProperty Name="ExclusivoProfesional" ColumnName="ExclusivoProfesional" />
                 <ScalarProperty Name="Fecha_Modificación" ColumnName="Fecha Modificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />
                 <ScalarProperty Name="NecesitaNumSerie" ColumnName="NecesitaNumSerie" />

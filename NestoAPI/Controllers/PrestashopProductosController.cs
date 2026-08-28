@@ -185,6 +185,7 @@ namespace NestoAPI.Controllers
                 Grupo = productoEntity.Grupo,
                 Subgrupo = productoEntity.SubGruposProducto?.Descripción?.Trim(),
                 RoturaStockProveedor = productoEntity.RoturaStockProveedor,
+                ExclusivoProfesional = productoEntity.ExclusivoProfesional,   // NestoAPI#421
                 CodigoBarras = productoEntity.CodBarras?.Trim()
             };
 

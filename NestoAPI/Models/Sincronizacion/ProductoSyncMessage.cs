@@ -77,6 +77,21 @@ namespace NestoAPI.Models.Sincronizacion
         public decimal? DescuentoPorcentajePublico { get; set; }
 
         /// <summary>
+        /// NestoAPI#421 / prestashop-nestosync#19: el producto NO se vende al público (se ve en
+        /// la tienda, pero sin precio ni compra para quien no sea profesional).
+        ///
+        /// Contrato con el consumidor:
+        ///   true  → restringir
+        ///   false → producto normal; si estaba marcado, DESMARCARLO
+        ///   null / clave ausente → NO tocar la marca
+        ///
+        /// El null es una salvaguarda, no un caso normal: aquí siempre viaja con valor explícito.
+        /// La asimetría es deliberada — si un fallo mandara null, un producto restringido sigue
+        /// restringido (molesto pero inocuo); al revés abriría al público lo que no debe venderse.
+        /// </summary>
+        public bool? ExclusivoProfesional { get; set; }
+
+        /// <summary>
         /// Rotura de stock de proveedor
         /// </summary>
         public bool? RoturaStockProveedor { get; set; }

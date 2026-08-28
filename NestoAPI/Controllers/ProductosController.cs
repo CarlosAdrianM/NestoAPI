@@ -161,6 +161,7 @@ namespace NestoAPI.Controllers
                 Grupo = producto.Grupo,
                 Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                 RoturaStockProveedor = producto.RoturaStockProveedor,
+                ExclusivoProfesional = producto.ExclusivoProfesional,   // NestoAPI#421
                 CodigoBarras = producto.CodBarras?.Trim()
             };
 
@@ -410,6 +411,68 @@ namespace NestoAPI.Controllers
             return Ok(gruposNuevos);
         }
 
+        /// <summary>
+        /// NestoAPI#421: marca o desmarca "exclusivo profesional" en la ficha del producto. El
+        /// producto sigue viéndose en la tienda, pero sin precio ni botón de compra para quien no
+        /// sea del grupo profesional.
+        ///
+        /// Es un dato propio de la ficha a propósito: antes se pretendía deducir de las categorías
+        /// secundarias (patrones */EP*, APA/EXP, PEL/EXP) y la premisa era falsa — esos subgrupos
+        /// son categorías navegables normales y sus productos SÍ se venden al público.
+        /// </summary>
+        [HttpPut]
+        [Authorize]
+        [Route("api/Productos/ExclusivoProfesional")]
+        public async Task<IHttpActionResult> PutExclusivoProfesional([FromBody] ProductoExclusivoProfesionalDTO dto)
+        {
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Producto))
+            {
+                return BadRequest("Hay que indicar el producto.");
+            }
+
+            string empresa = string.IsNullOrWhiteSpace(dto.Empresa)
+                ? Constantes.Empresas.EMPRESA_POR_DEFECTO
+                : dto.Empresa.Trim();
+            string numero = dto.Producto.Trim();
+
+            Producto producto = await db.Productos
+                .FirstOrDefaultAsync(p => p.Empresa == empresa && p.Número == numero)
+                .ConfigureAwait(false);
+
+            if (producto == null)
+            {
+                return NotFound();
+            }
+
+            if (producto.ExclusivoProfesional == dto.ExclusivoProfesional)
+            {
+                return Ok(ADtoExclusivoProfesional(producto));   // no hay cambio: ni se toca la auditoría
+            }
+
+            producto.ExclusivoProfesional = dto.ExclusivoProfesional;
+            producto.Usuario = UsuarioAuditoriaHelper.Resolver(User, "NestoAPI");
+            producto.Fecha_Modificación = DateTime.Now;
+
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+
+            // Hay que encolarlo a mano: el bloque de sincronización de trgProductosUpd no mira esta
+            // columna y, además, se salta al usuario del API (NUEVAVISION\RDS2016$). Mismo patrón
+            // que el mantenimiento de familias de #406.
+            _ = await db.EncolarProductoSync(numero, "Mantenimiento exclusivo profesional").ConfigureAwait(false);
+
+            return Ok(ADtoExclusivoProfesional(producto));
+        }
+
+        private static ProductoExclusivoProfesionalDTO ADtoExclusivoProfesional(Producto p)
+        {
+            return new ProductoExclusivoProfesionalDTO
+            {
+                Empresa = p.Empresa?.Trim(),
+                Producto = p.Número?.Trim(),
+                ExclusivoProfesional = p.ExclusivoProfesional
+            };
+        }
+
         [ResponseType(typeof(List<KitContienePerteneceModel>))]
         [Route("api/Productos/KitsProducto")]
         public async Task<IHttpActionResult> GetKitsProducto(string empresa, string producto)
@@ -634,6 +697,7 @@ namespace NestoAPI.Controllers
                         Grupo = producto.Grupo,
                         Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                         RoturaStockProveedor = producto.RoturaStockProveedor,
+                        ExclusivoProfesional = producto.ExclusivoProfesional,   // NestoAPI#421
                         CodigoBarras = producto.CodBarras?.Trim()
                     };
 
@@ -710,6 +774,7 @@ namespace NestoAPI.Controllers
                     Grupo = producto.Grupo,
                     Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                     RoturaStockProveedor = producto.RoturaStockProveedor,
+                    ExclusivoProfesional = producto.ExclusivoProfesional,   // NestoAPI#421
                     CodigoBarras = producto.CodBarras?.Trim()
                 };
 
@@ -810,6 +875,7 @@ namespace NestoAPI.Controllers
                             Grupo = producto.Grupo,
                             Subgrupo = producto.SubGruposProducto?.Descripción?.Trim(),
                             RoturaStockProveedor = producto.RoturaStockProveedor,
+                            ExclusivoProfesional = producto.ExclusivoProfesional,   // NestoAPI#421
                             CodigoBarras = producto.CodBarras?.Trim()
                         };
 
