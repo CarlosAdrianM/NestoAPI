@@ -34,17 +34,25 @@ BEGIN
     WHERE Empresa = '1' AND Clave = 'TramitarEnvioPorApi' AND Usuario = '(defecto)';
 END
 
--- 2. Solo el piloto va por la API. Usuario SIN dominio.
+-- 2. El piloto. Usuario SIN dominio.
+--
+-- OJO A QUIEN SE PONE AQUI: tiene que ser alguien que TRAMITE de verdad. Poner de piloto a quien
+-- no usa la funcion es la forma de no probarla nunca, que es lo que paso entre el 25 y el 28/08.
+-- El control no viene de elegir a un usuario prudente, sino de que la PRIMERA ejecucion sea un
+-- solo envio, temprano, avisando antes y con alguien mirando la comprobacion de
+-- Comprobacion_TramitacionPorApi.sql inmediatamente despues.
+DECLARE @Piloto varchar(30) = 'Enrique';
+
 IF NOT EXISTS (SELECT 1 FROM ParametrosUsuario
-               WHERE Empresa = '1' AND Clave = 'TramitarEnvioPorApi' AND Usuario = 'Carlos')
+               WHERE Empresa = '1' AND Clave = 'TramitarEnvioPorApi' AND Usuario = @Piloto)
 BEGIN
     INSERT INTO ParametrosUsuario (Empresa, Clave, Usuario, Valor, Usuario2, [Fecha Modificación])
-    VALUES ('1', 'TramitarEnvioPorApi', 'Carlos', 'API', SYSTEM_USER, GETDATE());
+    VALUES ('1', 'TramitarEnvioPorApi', @Piloto, 'API', SYSTEM_USER, GETDATE());
 END
 ELSE
 BEGIN
     UPDATE ParametrosUsuario SET Valor = 'API', Usuario2 = SYSTEM_USER, [Fecha Modificación] = GETDATE()
-    WHERE Empresa = '1' AND Clave = 'TramitarEnvioPorApi' AND Usuario = 'Carlos';
+    WHERE Empresa = '1' AND Clave = 'TramitarEnvioPorApi' AND Usuario = @Piloto;
 END
 
 -- Solo 'API' (recortado y sin distinguir mayusculas) activa el camino nuevo. Cualquier otro valor,
