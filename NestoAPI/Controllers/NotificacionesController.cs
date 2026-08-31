@@ -245,8 +245,13 @@ namespace NestoAPI.Controllers
             string apiKeyRecibida = Request?.Headers?.Authorization?.Parameter
                 ?? Request?.Headers?.Authorization?.Scheme;
 
-            if (string.IsNullOrWhiteSpace(apiKeyEsperada) ||
-                !string.Equals(apiKeyEsperada, apiKeyRecibida, StringComparison.Ordinal))
+            // NestoAPI#429: esta comprobación ya fallaba en cerrado (a diferencia de la de
+            // PrestashopLogin), pero comparaba con string.Equals, que no es de tiempo constante.
+            // Ahora las dos copias usan el mismo núcleo. La cabecera se sigue leyendo aquí y no
+            // con [ApiKey] porque NVIA manda la clave en Authorization de forma peculiar —unas
+            // veces como Parameter y otras como Scheme—, y cambiar eso sería romperle el envío de
+            // protocolos nuevos sin ganar nada.
+            if (!Infraestructure.Seguridad.ValidadorApiKey.EsValida(apiKeyEsperada, apiKeyRecibida))
             {
                 return Unauthorized();
             }

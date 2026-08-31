@@ -26,7 +26,6 @@ using System.Web.Http;
 public class AuthController : ApiController
 {
     private readonly string SecretKey = ConfigurationManager.AppSettings["as:AudienceSecret"];
-    private readonly string _apiKeyPrestashop = ConfigurationManager.AppSettings["ApiKeyPrestashop"];
 
     private readonly IGestorClientes _gestorClientes;
     private readonly IServicioCorreoElectronico _servicioCorreo;
@@ -139,9 +138,12 @@ public class AuthController : ApiController
             return Unauthorized(); // Token no encontrado o expirado
         }
 
-        // Verificamos que coincidan email y código
+        // Verificamos que coincidan email y código.
+        // NestoAPI#428 (punto 5): el codigo se compara en TIEMPO CONSTANTE. Con Equals, el tiempo
+        // de respuesta delata cuantos digitos se han acertado, y adivinarlo pasa de 900.000
+        // intentos a unas decenas. El email no es un secreto y se compara normal.
         if (!entry.Email.Equals(model.Email, StringComparison.OrdinalIgnoreCase) ||
-            !entry.Codigo.Equals(model.Codigo))
+            !ComparacionSegura.SonIguales(entry.Codigo, model.Codigo))
         {
             return Unauthorized(); // Datos incorrectos
         }
@@ -179,7 +181,8 @@ public class AuthController : ApiController
             string fullPayload = $"{expectedPayloadPrefix}{ticks}";
             string expectedSignature = FirmarConHMAC(fullPayload, SecretKey);
 
-            if (expectedSignature == request.TokenForValidation)
+            // NestoAPI#428 (punto 5): en tiempo constante, que esto es una firma HMAC.
+            if (ComparacionSegura.SonIguales(expectedSignature, request.TokenForValidation))
             {
                 // Recuperamos el cliente para el JWT
                 string cliente = await BuscarCliente(request.Email, request.NIF);
@@ -209,10 +212,17 @@ public class AuthController : ApiController
 
         try
         {
-            JwtSecurityTokenHandler handler = new JwtSecurityTokenHandler();
-            JwtSecurityToken token = handler.ReadJwtToken(accessToken);
+            // NestoAPI#427: antes esto era ReadJwtToken, que SOLO parsea. Cualquiera podia
+            // fabricarse un JWT con el cliente que quisiera y canjearlo aqui por uno autentico.
+            // ValidarFirmaSinCaducidad comprueba firma, issuer y audiencia — pero NO la caducidad,
+            // porque la app manda tokens caducados a proposito (ver el comentario del validador).
+            JwtSecurityToken token = ValidadorJwt.ValidarFirmaSinCaducidad(accessToken);
+            if (token == null)
+            {
+                return Unauthorized();
+            }
 
-            // Validar expiración manualmente
+            // Validar expiración manualmente (#430: la ventana NO se toca en esta tanda)
             if (token.ValidTo < DateTime.UtcNow.AddMonths(-1))
             {
                 return Unauthorized();
@@ -254,10 +264,16 @@ public class AuthController : ApiController
 
         try
         {
-            JwtSecurityTokenHandler handler = new JwtSecurityTokenHandler();
-            JwtSecurityToken token = handler.ReadJwtToken(accessToken);
+            // NestoAPI#427: mismo agujero que en RefreshToken, y aqui el claim que se creia a
+            // ciegas era el userName con el que se busca el usuario en Identity.
+            JwtSecurityToken token = ValidadorJwt.ValidarFirmaSinCaducidad(accessToken);
+            if (token == null)
+            {
+                return Unauthorized();
+            }
 
             // Validar que no esté expirado hace más de 2 años (temporal, ir bajando hasta 1 mes)
+            // (#430: la ventana NO se toca en esta tanda; va con #427 punto 4)
             if (token.ValidTo < DateTime.UtcNow.AddYears(-2))
             {
                 return Unauthorized();
@@ -347,21 +363,19 @@ public class AuthController : ApiController
         return Ok(new { token });
     }
 
+    // NestoAPI#429 (punto 1): la validacion de la API key sale del cuerpo del metodo y pasa al
+    // atributo, que FALLA EN CERRADO. La comprobacion de antes era `apiKey != _apiKeyPrestashop`
+    // con el campo leido de configuracion: si la setting no estaba definida valia null, una
+    // peticion sin cabecera dejaba apiKey a null, y null != null es falso — la validacion se
+    // superaba y este endpoint, que emite JWT de cliente SALTANDOSE el codigo por correo, quedaba
+    // abierto a internet. Como secretos.config no esta en control de versiones, bastaba un
+    // despliegue con ese fichero mal copiado.
     [AllowAnonymous]
+    [ApiKey("ApiKeyPrestashop", "X-API-KEY")]
     [HttpPost]
     [Route("api/auth/prestashop-login")]
     public async Task<IHttpActionResult> PrestashopLogin([FromBody] PrestashopLoginRequest request)
     {
-        // Leer API key del header manualmente (Web API 2 no soporta [FromHeader])
-        _ = Request.Headers.TryGetValues("X-API-KEY", out IEnumerable<string> headerValues);
-        string apiKey = headerValues?.FirstOrDefault();
-
-        // Validar API key
-        if (apiKey != _apiKeyPrestashop)
-        {
-            return Unauthorized();
-        }
-
         if (request == null || string.IsNullOrWhiteSpace(request.Email))
         {
             return BadRequest("Debe especificar el email.");
@@ -388,9 +402,39 @@ public class AuthController : ApiController
         return !(cliente is null) && !string.IsNullOrEmpty(cliente.cliente) ? cliente.cliente : string.Empty;
     }
 
+    /// <summary>
+    /// NestoAPI#428 (punto 2): el codigo de 6 digitos que se manda por correo.
+    ///
+    /// Antes era `new Random().Next(100000, 999999)`. Un `new Random()` sin semilla en .NET
+    /// Framework se siembra del reloj del sistema, con resolucion de unos 15 ms: dos codigos
+    /// pedidos dentro del mismo tick salian IDENTICOS. Unas lineas mas arriba, en el mismo
+    /// metodo, ya se usaba RandomNumberGenerator para el tokenForValidation.
+    ///
+    /// El bucle es RECHAZO POR SESGO, no un capricho: 2^32 no es multiplo de los 900.000 valores
+    /// posibles, asi que un modulo a secas haria unos codigos mas probables que otros y le
+    /// regalaria trabajo a quien los adivine. Se descartan los valores del ultimo tramo
+    /// incompleto y se vuelve a tirar. Da una vuelta de mas muy de vez en cuando.
+    /// </summary>
     private string GenerarCodigo()
     {
-        return new Random().Next(100000, 999999).ToString();
+        const int minimo = 100000;
+        const int total = 900000;   // de 100000 a 999999, ambos incluidos
+
+        using (RandomNumberGenerator rng = RandomNumberGenerator.Create())
+        {
+            byte[] bytes = new byte[4];
+            uint limite = uint.MaxValue - (uint.MaxValue % total);
+
+            while (true)
+            {
+                rng.GetBytes(bytes);
+                uint valor = BitConverter.ToUInt32(bytes, 0);
+                if (valor < limite)
+                {
+                    return (minimo + (int)(valor % total)).ToString();
+                }
+            }
+        }
     }
 
     private string FirmarConHMAC(string texto, string clave)

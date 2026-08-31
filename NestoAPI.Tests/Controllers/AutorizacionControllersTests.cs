@@ -1,6 +1,7 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Web.Http;
@@ -89,6 +90,47 @@ namespace NestoAPI.Tests.Controllers
             // Lo llama Google Pub/Sub (push) sin JWT nuestro: anónimo a propósito y documentado.
             Assert.IsTrue(typeof(SyncWebhookController).GetCustomAttributes<AllowAnonymousAttribute>(inherit: false).Any(),
                 "SyncWebhookController debe llevar [AllowAnonymous] explícito de clase (issue #189)");
+        }
+
+        /// <summary>
+        /// NestoAPI#427/#430: AuthController se quedó fuera de esta red cuando se hizo la #189, y
+        /// es precisamente el controlador que EMITE todOS los tokens del sistema.
+        ///
+        /// No puede llevar [Authorize] de clase —es el sitio al que se llama justo cuando todavía
+        /// no se tiene token—, así que la red aquí es otra: un inventario. Cada endpoint anónimo
+        /// está listado con el motivo por el que puede serlo. Si alguien añade uno nuevo, este
+        /// test se pone rojo y le obliga a decidir explícitamente en vez de que un endpoint
+        /// anónimo entre de tapadillo en el controlador más sensible de la API.
+        /// </summary>
+        [TestMethod]
+        public void AuthController_TodoEndpointAnonimoEstaInventariadoYRazonado()
+        {
+            var anonimosPorDiseno = new Dictionary<string, string>
+            {
+                ["RequestCodeAsync"] = "Paso 1 del login por correo: se llama sin tener token.",
+                ["ValidateCodeAsync"] = "Paso 2: canjea el código recibido por correo.",
+                ["GetToken"] = "Canjea el tokenForValidation firmado con HMAC.",
+                ["RefreshToken"] = "La app llama con el token CADUCADO; desde #430 se valida su firma.",
+                ["RefreshOAuthToken"] = "Igual, para los tokens de NestoApp; desde #430 se valida su firma.",
+                ["GetWindowsToken"] = "Nesto escritorio, autenticado por Windows contra el AD.",
+                ["PrestashopLogin"] = "El módulo de PrestaShop; protegido con [ApiKey], no con JWT."
+            };
+
+            List<string> acciones = typeof(AuthController)
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(m => !m.IsSpecialName)
+                .Where(m => m.GetCustomAttributes<System.Web.Http.Filters.ActionFilterAttribute>(true).Any()
+                         || m.GetCustomAttributes(true).Any(a => a.GetType().Name.StartsWith("Http")))
+                .Select(m => m.Name)
+                .Distinct()
+                .ToList();
+
+            List<string> sinInventariar = acciones.Where(a => !anonimosPorDiseno.ContainsKey(a)).ToList();
+
+            Assert.AreEqual(0, sinInventariar.Count,
+                "Endpoints nuevos en AuthController sin decidir su autenticación. AuthController " +
+                "es anónimo entero: cualquier endpoint que se añada queda expuesto a internet. " +
+                "Añádelo al inventario con su motivo, o protégelo: " + string.Join(", ", sinInventariar));
         }
     }
 }
