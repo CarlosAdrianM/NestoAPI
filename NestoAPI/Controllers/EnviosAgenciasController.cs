@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using NestoAPI.Models;
+using NestoAPI.Models.Agencias;
 using System.Net.Mail;
 using System.Text;
 using System.Configuration;
@@ -322,6 +323,40 @@ namespace NestoAPI.Controllers
                     && e.Reembolso != 0 && e.FechaPagoReembolso == null))
                 .ToListAsync();
             return Ok(envios);
+        }
+
+        /// <summary>
+        /// Nesto#340 (slice A3): el historial de cambios de un envío, que la pestaña de Agencias
+        /// leía con su propio DbContext (era la única consulta de Nesto sobre EnviosHistoria).
+        ///
+        /// Solo lectura. Las ESCRITURAS del historial siguen en el ViewModel, dentro de las
+        /// transacciones de contabilización de reembolsos, y se migrarán con ellas.
+        ///
+        /// Devuelve lista vacía, no 404, cuando el envío no tiene historial: es lo normal en un
+        /// envío que nadie ha tocado, y el llamante pinta una rejilla.
+        /// </summary>
+        [HttpGet]
+        [Route("api/EnviosAgencias/{id:int}/Historia")]
+        [ResponseType(typeof(List<EnvioHistoriaDTO>))]
+        public async Task<IHttpActionResult> GetHistoriaEnvio(int id)
+        {
+            List<EnvioHistoriaDTO> historia = await db.EnviosHistorias
+                .Where(h => h.NumeroEnvio == id)
+                // El orden lo fija el servidor: la consulta de Nesto no lo hacía y dependía del
+                // plan de SQL Server. Por número, que es identity, o sea orden de los hechos.
+                .OrderBy(h => h.Numero)
+                .Select(h => new EnvioHistoriaDTO
+                {
+                    Numero = h.Numero,
+                    NumeroEnvio = h.NumeroEnvio,
+                    Campo = h.Campo,
+                    ValorAnterior = h.ValorAnterior,
+                    Observaciones = h.Observaciones,
+                    Usuario = h.Usuario,
+                    FechaModificacion = h.FechaModificacion
+                })
+                .ToListAsync();
+            return Ok(historia);
         }
 
         /// <summary>Retornos pendientes de recibir (excluyendo el tipo "sin retorno" de cada

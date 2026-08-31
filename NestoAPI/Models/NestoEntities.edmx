@@ -656,24 +656,6 @@
           <Property Name="FechaUltimaActividad" Type="datetime" Nullable="false" />
           <Property Name="Activo" Type="bit" Nullable="false" />
         </EntityType>
-        <EntityType Name="NotificacionesBuzon">
-          <Key>
-            <PropertyRef Name="Id" />
-          </Key>
-          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
-          <Property Name="Usuario" Type="nvarchar" MaxLength="50" />
-          <Property Name="Empresa" Type="char" MaxLength="3" />
-          <Property Name="Vendedor" Type="char" MaxLength="3" />
-          <Property Name="Cliente" Type="char" MaxLength="10" />
-          <Property Name="Contacto" Type="char" MaxLength="3" />
-          <Property Name="Aplicacion" Type="nvarchar" MaxLength="50" Nullable="false" />
-          <Property Name="Titulo" Type="nvarchar" MaxLength="200" Nullable="false" />
-          <Property Name="Cuerpo" Type="nvarchar(max)" />
-          <Property Name="Datos" Type="nvarchar(max)" />
-          <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
-          <Property Name="FechaLeida" Type="datetime" />
-          <Property Name="FechaEliminada" Type="datetime" />
-        </EntityType>
         <EntityType Name="EfectosPedidoVenta">
           <Key>
             <PropertyRef Name="Id" />
@@ -841,6 +823,18 @@
           <Property Name="DireccionFormateada" Type="nvarchar" MaxLength="250" />
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaModificacion" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+        </EntityType>
+        <EntityType Name="EnviosHistoria">
+          <Key>
+            <PropertyRef Name="Numero" />
+          </Key>
+          <Property Name="Numero" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="NumeroEnvio" Type="int" Nullable="false" />
+          <Property Name="Campo" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="ValorAnterior" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="Observaciones" Type="nvarchar(max)" />
+          <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
+          <Property Name="FechaModificacion" Type="datetime" Nullable="false" />
         </EntityType>
         <EntityType Name="EquiposVenta">
           <Key>
@@ -1353,6 +1347,20 @@
           <Property Name="Usuario" Type="nvarchar" MaxLength="50" Nullable="false" />
           <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
         </EntityType>
+        <EntityType Name="MultiUsuarios">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="char" MaxLength="3" Nullable="false" />
+          <Property Name="Número" Type="int" Nullable="false" />
+          <Property Name="Nombre" Type="char" MaxLength="50" />
+          <Property Name="Estado" Type="smallint" Nullable="false" />
+          <Property Name="Máquina" Type="char" MaxLength="10" />
+          <Property Name="FechaUltimaConexion" Type="datetime" />
+          <Property Name="Usuario" Type="varchar" MaxLength="50" Nullable="false" />
+          <Property Name="FechaModificación" Type="datetime" Nullable="false" />
+        </EntityType>
         <EntityType Name="NotasEntrega">
           <Key>
             <PropertyRef Name="NºOrden" />
@@ -1361,6 +1369,24 @@
           <Property Name="NºOrden" Type="int" Nullable="false" />
           <Property Name="NotaEntrega" Type="int" Nullable="false" />
           <Property Name="Fecha" Type="datetime" Nullable="false" />
+        </EntityType>
+        <EntityType Name="NotificacionesBuzon">
+          <Key>
+            <PropertyRef Name="Id" />
+          </Key>
+          <Property Name="Id" Type="int" StoreGeneratedPattern="Identity" Nullable="false" />
+          <Property Name="Usuario" Type="nvarchar" MaxLength="50" />
+          <Property Name="Empresa" Type="char" MaxLength="3" />
+          <Property Name="Vendedor" Type="char" MaxLength="3" />
+          <Property Name="Cliente" Type="char" MaxLength="10" />
+          <Property Name="Contacto" Type="char" MaxLength="3" />
+          <Property Name="Aplicacion" Type="nvarchar" MaxLength="50" Nullable="false" />
+          <Property Name="Titulo" Type="nvarchar" MaxLength="200" Nullable="false" />
+          <Property Name="Cuerpo" Type="nvarchar(max)" />
+          <Property Name="Datos" Type="nvarchar(max)" />
+          <Property Name="FechaCreacion" Type="datetime" Nullable="false" />
+          <Property Name="FechaLeida" Type="datetime" />
+          <Property Name="FechaEliminada" Type="datetime" />
         </EntityType>
         <EntityType Name="OfertasCombinadas">
           <Key>
@@ -3411,6 +3437,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <Association Name="FK_EnviosHistoria_EnviosAgencia">
+          <End Role="EnviosAgencia" Type="Self.EnviosAgencia" Multiplicity="1" />
+          <End Role="EnviosHistoria" Type="Self.EnviosHistoria" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="EnviosAgencia">
+              <PropertyRef Name="Numero" />
+            </Principal>
+            <Dependent Role="EnviosHistoria">
+              <PropertyRef Name="NumeroEnvio" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
         <Association Name="FK_EquiposVenta_Vendedores">
           <End Role="Vendedores" Type="Self.Vendedores" Multiplicity="1" />
           <End Role="EquiposVenta" Type="Self.EquiposVenta" Multiplicity="*" />
@@ -4430,6 +4468,18 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <Dependent Role="LiquidacionesClientes">
               <PropertyRef Name="Empresa" />
               <PropertyRef Name="Nº Orden Liq" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_MultiUsuarios_Empresas">
+          <End Role="Empresas" Type="Self.Empresas" Multiplicity="1" />
+          <End Role="MultiUsuarios" Type="Self.MultiUsuarios" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresas">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="MultiUsuarios">
+              <PropertyRef Name="Empresa" />
             </Dependent>
           </ReferentialConstraint>
         </Association>
@@ -5616,12 +5666,12 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="DiariosProducto" EntityType="Self.DiariosProducto" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DíasPagoClientes" EntityType="Self.DíasPagoClientes" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="DispositivosNotificaciones" EntityType="Self.DispositivosNotificaciones" Schema="dbo" store:Type="Tables" />
-          <EntitySet Name="NotificacionesBuzon" EntityType="Self.NotificacionesBuzon" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EfectosPedidoVenta" EntityType="Self.EfectosPedidoVenta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Empresas" EntityType="Self.Empresas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Entidades" EntityType="Self.Entidades" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EnviosAgencia" EntityType="Self.EnviosAgencia" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EnviosAgenciaCoordenadas" EntityType="Self.EnviosAgenciaCoordenadas" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="EnviosHistoria" EntityType="Self.EnviosHistoria" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EquiposVenta" EntityType="Self.EquiposVenta" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="EstadosPlanVentajas" EntityType="Self.EstadosPlanVentajas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="ExtractoCliente" EntityType="Self.ExtractoCliente" Schema="dbo" store:Type="Tables" />
@@ -5645,7 +5695,9 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySet Name="LogVideosProductos" EntityType="Self.LogVideosProductos" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="Modificaciones" EntityType="Self.Modificaciones" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="MovimientoTPV" EntityType="Self.MovimientoTPV" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="MultiUsuarios" EntityType="Self.MultiUsuarios" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="NotasEntrega" EntityType="Self.NotasEntrega" Schema="dbo" store:Type="Tables" />
+          <EntitySet Name="NotificacionesBuzon" EntityType="Self.NotificacionesBuzon" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadas" EntityType="Self.OfertasCombinadas" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasCombinadasDetalle" EntityType="Self.OfertasCombinadasDetalle" Schema="dbo" store:Type="Tables" />
           <EntitySet Name="OfertasEscalonadas" EntityType="Self.OfertasEscalonadas" Schema="dbo" store:Type="Tables" />
@@ -6076,6 +6128,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
             <End Role="EnviosAgenciaCoordenadas" EntitySet="EnviosAgenciaCoordenadas" />
           </AssociationSet>
+          <AssociationSet Name="FK_EnviosHistoria_EnviosAgencia" Association="Self.FK_EnviosHistoria_EnviosAgencia">
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencia" />
+            <End Role="EnviosHistoria" EntitySet="EnviosHistoria" />
+          </AssociationSet>
           <AssociationSet Name="FK_EquiposVenta_Vendedores" Association="Self.FK_EquiposVenta_Vendedores">
             <End Role="Vendedores" EntitySet="Vendedores" />
             <End Role="EquiposVenta" EntitySet="EquiposVenta" />
@@ -6371,6 +6427,10 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <AssociationSet Name="FK_LiquidacionesClientes_ExtractoCliente1" Association="Self.FK_LiquidacionesClientes_ExtractoCliente1">
             <End Role="ExtractoCliente" EntitySet="ExtractoCliente" />
             <End Role="LiquidacionesClientes" EntitySet="LiquidacionesClientes" />
+          </AssociationSet>
+          <AssociationSet Name="FK_MultiUsuarios_Empresas" Association="Self.FK_MultiUsuarios_Empresas">
+            <End Role="Empresas" EntitySet="Empresas" />
+            <End Role="MultiUsuarios" EntitySet="MultiUsuarios" />
           </AssociationSet>
           <AssociationSet Name="FK_OfertasCombinadas_Empresas" Association="Self.FK_OfertasCombinadas_Empresas">
             <End Role="Empresas" EntitySet="Empresas" />
@@ -6757,6 +6817,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <Property Name="ImporteAsegurado" Type="Decimal" Nullable="false" Precision="19" Scale="4" />
           <Property Name="Peso" Type="Decimal" Nullable="false" Precision="5" Scale="2" />
           <Property Name="DetalleEstado" Type="String" MaxLength="100" FixedLength="false" Unicode="false" />
+          <NavigationProperty Name="EnviosHistorias" Relationship="NVModel.FK_EnviosHistoria_EnviosAgencia" FromRole="EnviosAgencia" ToRole="EnviosHistoria" />
         </EntityType>
         <EntityContainer Name="NVEntities" annotation:LazyLoadingEnabled="true">
           <EntitySet Name="EnviosAgencias" EntityType="Self.EnviosAgencia" />
@@ -7842,6 +7903,16 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             <End Role="SubGruposProducto" EntitySet="SubGruposProductoes" />
             <End Role="ProductosCategoriasSecundaria" EntitySet="ProductosCategoriasSecundarias" />
           </AssociationSet>
+          <EntitySet Name="EnviosHistorias" EntityType="NVModel.EnvioHistoria" />
+          <EntitySet Name="MultiUsuarios" EntityType="NVModel.MultiUsuario" />
+          <AssociationSet Name="FK_MultiUsuarios_Empresas" Association="NVModel.FK_MultiUsuarios_Empresas">
+            <End Role="Empresa" EntitySet="Empresas" />
+            <End Role="MultiUsuario" EntitySet="MultiUsuarios" />
+          </AssociationSet>
+          <AssociationSet Name="FK_EnviosHistoria_EnviosAgencia" Association="NVModel.FK_EnviosHistoria_EnviosAgencia">
+            <End Role="EnviosAgencia" EntitySet="EnviosAgencias" />
+            <End Role="EnviosHistoria" EntitySet="EnviosHistorias" />
+          </AssociationSet>
         </EntityContainer>
         <EntityType Name="Empresa">
           <Key>
@@ -8004,6 +8075,7 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="ExtractoRutas" Relationship="NVModel.FK_ExtractoRuta_Empresas" FromRole="Empresa" ToRole="ExtractoRuta" />
           <NavigationProperty Name="LiquidacionesClientes" Relationship="NVModel.FK_LiquidacionesClientes_Empresas" FromRole="Empresa" ToRole="LiquidacionesCliente" />
           <NavigationProperty Name="PlanesVentajas" Relationship="NVModel.FK_PlanesVentajas_Empresas" FromRole="Empresa" ToRole="PlanesVentaja" />
+          <NavigationProperty Name="MultiUsuarios" Relationship="NVModel.FK_MultiUsuarios_Empresas" FromRole="Empresa" ToRole="MultiUsuario" />
         </EntityType>
         <Association Name="FK_Empresas_Empresas">
           <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="0..1" />
@@ -13860,6 +13932,58 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
             </Dependent>
           </ReferentialConstraint>
         </Association>
+        <EntityType Name="EnvioHistoria">
+          <Key>
+            <PropertyRef Name="Numero" />
+          </Key>
+          <Property Name="Numero" Type="Int32" Nullable="false" annotation:StoreGeneratedPattern="Identity" />
+          <Property Name="NumeroEnvio" Type="Int32" Nullable="false" />
+          <Property Name="Campo" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="ValorAnterior" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="Observaciones" Type="String" MaxLength="Max" FixedLength="false" Unicode="true" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificacion" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="EnviosAgencia" Relationship="NVModel.FK_EnviosHistoria_EnviosAgencia" FromRole="EnviosHistoria" ToRole="EnviosAgencia" />
+        </EntityType>
+        <EntityType Name="MultiUsuario">
+          <Key>
+            <PropertyRef Name="Empresa" />
+            <PropertyRef Name="Número" />
+          </Key>
+          <Property Name="Empresa" Type="String" Nullable="false" MaxLength="3" FixedLength="true" Unicode="false" />
+          <Property Name="Número" Type="Int32" Nullable="false" />
+          <Property Name="Nombre" Type="String" MaxLength="50" FixedLength="true" Unicode="false" />
+          <Property Name="Estado" Type="Int16" Nullable="false" />
+          <Property Name="Máquina" Type="String" MaxLength="10" FixedLength="true" Unicode="false" />
+          <Property Name="FechaUltimaConexion" Type="DateTime" Precision="3" />
+          <Property Name="Usuario" Type="String" Nullable="false" MaxLength="50" FixedLength="false" Unicode="false" />
+          <Property Name="FechaModificación" Type="DateTime" Nullable="false" Precision="3" />
+          <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_MultiUsuarios_Empresas" FromRole="MultiUsuario" ToRole="Empresa" />
+        </EntityType>
+        <Association Name="FK_MultiUsuarios_Empresas">
+          <End Type="NVModel.Empresa" Role="Empresa" Multiplicity="1" />
+          <End Type="NVModel.MultiUsuario" Role="MultiUsuario" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="Empresa">
+              <PropertyRef Name="Número" />
+            </Principal>
+            <Dependent Role="MultiUsuario">
+              <PropertyRef Name="Empresa" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
+        <Association Name="FK_EnviosHistoria_EnviosAgencia">
+          <End Type="NVModel.EnviosAgencia" Role="EnviosAgencia" Multiplicity="1" />
+          <End Type="NVModel.EnvioHistoria" Role="EnviosHistoria" Multiplicity="*" />
+          <ReferentialConstraint>
+            <Principal Role="EnviosAgencia">
+              <PropertyRef Name="Numero" />
+            </Principal>
+            <Dependent Role="EnviosHistoria">
+              <PropertyRef Name="NumeroEnvio" />
+            </Dependent>
+          </ReferentialConstraint>
+        </Association>
       </Schema>
     </edmx:ConceptualModels>
     <!-- C-S mapping content -->
@@ -16083,6 +16207,33 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
                 <ScalarProperty Name="SubGrupo" ColumnName="SubGrupo" />
                 <ScalarProperty Name="Grupo" ColumnName="Grupo" />
                 <ScalarProperty Name="Orden" ColumnName="Orden" />
+                <ScalarProperty Name="Número" ColumnName="Número" />
+                <ScalarProperty Name="Empresa" ColumnName="Empresa" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="EnviosHistorias">
+            <EntityTypeMapping TypeName="NVModel.EnvioHistoria">
+              <MappingFragment StoreEntitySet="EnviosHistoria">
+                <ScalarProperty Name="FechaModificacion" ColumnName="FechaModificacion" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="Observaciones" ColumnName="Observaciones" />
+                <ScalarProperty Name="ValorAnterior" ColumnName="ValorAnterior" />
+                <ScalarProperty Name="Campo" ColumnName="Campo" />
+                <ScalarProperty Name="NumeroEnvio" ColumnName="NumeroEnvio" />
+                <ScalarProperty Name="Numero" ColumnName="Numero" />
+              </MappingFragment>
+            </EntityTypeMapping>
+          </EntitySetMapping>
+          <EntitySetMapping Name="MultiUsuarios">
+            <EntityTypeMapping TypeName="NVModel.MultiUsuario">
+              <MappingFragment StoreEntitySet="MultiUsuarios">
+                <ScalarProperty Name="FechaModificación" ColumnName="FechaModificación" />
+                <ScalarProperty Name="Usuario" ColumnName="Usuario" />
+                <ScalarProperty Name="FechaUltimaConexion" ColumnName="FechaUltimaConexion" />
+                <ScalarProperty Name="Máquina" ColumnName="Máquina" />
+                <ScalarProperty Name="Estado" ColumnName="Estado" />
+                <ScalarProperty Name="Nombre" ColumnName="Nombre" />
                 <ScalarProperty Name="Número" ColumnName="Número" />
                 <ScalarProperty Name="Empresa" ColumnName="Empresa" />
               </MappingFragment>

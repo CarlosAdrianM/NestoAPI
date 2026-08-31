@@ -214,6 +214,7 @@
     <Compile Include="Controllers\ErroresControllerTests.cs" />
     <Compile Include="Controllers\ExtractosClienteControllerTests.cs" />
     <Compile Include="Controllers\EnviosAgenciasListadosTests.cs" />
+    <Compile Include="Controllers\EnviosAgenciasHistoriaTests.cs" />
     <Compile Include="Controllers\ExtractoProveedoresControllerTests.cs" />
     <Compile Include="Controllers\ProductosControllerCodigoBarrasTests.cs" />
     <Compile Include="Controllers\GanavisionesControllerTests.cs" />

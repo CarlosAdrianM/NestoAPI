@@ -654,6 +654,7 @@
     <Compile Include="Infraestructure\PedidosVenta\GestorPedidoParaAgencia.cs" />
     <Compile Include="Models\PedidosVenta\PedidoParaAgenciaDTO.cs" />
     <Compile Include="Models\PedidosVenta\SituacionLineasPedidoDTO.cs" />
+    <Compile Include="Models\Agencias\EnvioHistoriaDTO.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
     <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
     <Compile Include="Infraestructure\Clientes\ValidacionNif.cs" />
@@ -896,6 +897,12 @@
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\DispositivoNotificacion.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\EnvioHistoria.cs">
+      <DependentUpon>NestoEntities.tt</DependentUpon>
+    </Compile>
+    <Compile Include="Models\MultiUsuario.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
     <Compile Include="Models\NotificacionBuzon.cs">

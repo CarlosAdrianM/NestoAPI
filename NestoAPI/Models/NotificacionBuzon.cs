@@ -11,7 +11,7 @@ namespace NestoAPI.Models
 {
     using System;
     using System.Collections.Generic;
-
+    
     public partial class NotificacionBuzon
     {
         public int Id { get; set; }

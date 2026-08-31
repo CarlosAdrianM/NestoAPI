@@ -14,6 +14,11 @@ namespace NestoAPI.Models
     
     public partial class EnviosAgencia
     {
+        public EnviosAgencia()
+        {
+            this.EnviosHistorias = new HashSet<EnvioHistoria>();
+        }
+    
         public int Numero { get; set; }
         public string Empresa { get; set; }
         public int Agencia { get; set; }
@@ -63,5 +68,6 @@ namespace NestoAPI.Models
         public virtual CabPedidoVta CabPedidoVta { get; set; }
         public virtual AgenciaTransporte AgenciasTransporte { get; set; }
         public virtual AgenciaTransporte AgenciasTransporte1 { get; set; }
+        public virtual ICollection<EnvioHistoria> EnviosHistorias { get; set; }
     }
 }
