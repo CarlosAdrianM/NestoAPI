@@ -103,6 +103,11 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.AreEqual(USUARIO, linea.Usuario,
                 "Sin Usuario, EF rechaza el apunte y el envio se queda abierto con la agencia ya avisada");
+
+            // La misma trampa, y la que salio DESPUES de arreglar la primera: sin fecha, EF manda
+            // 01/01/0001 y SQL Server no puede convertir ese datetime2 a datetime (minimo 1753).
+            Assert.AreNotEqual(default(DateTime), linea.Fecha_Modificación,
+                "Sin Fecha Modificacion, SQL Server rechaza el apunte por fecha fuera de intervalo");
         }
 
         [TestMethod]

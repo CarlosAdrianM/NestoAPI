@@ -144,8 +144,10 @@ namespace NestoAPI.Infraestructure.Agencias
 
         /// <summary>
         /// Apunte de PreContabilidad del reembolso, campo a campo como lo construía el cliente
-        /// (Nesto: <c>AgenciaService.ContabilizarReembolso</c>). Función pura: es el contrato que
-        /// fija el test de paridad, porque una sola diferencia aquí descuadra la contabilidad.
+        /// (Nesto: <c>AgenciaService.ContabilizarReembolso</c>). Es el contrato que fija el test de
+        /// paridad, porque una sola diferencia aquí descuadra la contabilidad. Lo único que no es
+        /// puro es <c>Fecha Modificación</c>, que es la marca de CUÁNDO se escribió la fila (y por
+        /// eso va con la hora, a diferencia de <c>Fecha</c>, que es la fecha contable).
         ///
         /// El USUARIO hay que ponerlo a mano, y es justo lo que faltaba (31/08/2026, primer día
         /// del piloto de tramitación por API): `PreContabilidad.Usuario` es NOT NULL con DEFAULT
@@ -181,7 +183,17 @@ namespace NestoAPI.Infraestructure.Agencias
                 Asiento_Automático = false,
                 FormaPago = empresa?.FormaPagoEfectivo,
                 Vendedor = envio.Vendedor,
-                Usuario = usuario
+                Usuario = usuario,
+                // MISMA trampa que Usuario, y la de al lado en la tabla: `Fecha Modificación` es
+                // NOT NULL con DEFAULT (getdate()), pero la propiedad es DateTime no nullable, así
+                // que sin asignarla EF manda 01/01/0001 — y SQL Server no puede convertir ese
+                // datetime2 a datetime, cuyo mínimo es 1753. El default no llega a actuar nunca.
+                //
+                // No se vio el 31/08 a la vez que el Usuario porque la VALIDACIÓN de EF cortaba
+                // antes de llegar al SQL: arreglado el primero, apareció el segundo. Comprobado
+                // que ya no queda ningún otro campo obligatorio sin asignar (Nº Orden es identity,
+                // Debe y CajaLiquidada valen con su valor por defecto de C#).
+                Fecha_Modificación = DateTime.Now
             };
 
             if (movimientoLiq == null)
