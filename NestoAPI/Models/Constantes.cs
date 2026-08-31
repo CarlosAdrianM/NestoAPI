@@ -300,6 +300,29 @@ namespace NestoAPI.Models
             public const string TIENDAS = "Tiendas";
         }
 
+        public static class TiposPagoTPV
+        {
+            /// <summary>Enlace de pago de siempre: contabiliza un cobro contra el extracto del cliente.</summary>
+            public const string TPV_VIRTUAL = "TPVVirtual";
+
+            /// <summary>
+            /// NestoAPI#436: cobro con tarjeta de un pedido que ha creado el propio cliente desde la
+            /// app. NO contabiliza como el enlace de pago: cuando Redsys confirma, el cobro entra
+            /// como Prepago del pedido (igual que hace CanalesExternos con PrestaShop), y se aplica
+            /// al facturarlo. El numero de pedido viaja en la columna Documento del PagoTPV.
+            /// </summary>
+            public const string PEDIDO_APP = "PedidoApp";
+        }
+
+        public static class Prepagos
+        {
+            /// <summary>
+            /// Cuenta de Redsys, donde esta el dinero de los cobros con tarjeta hasta que se
+            /// factura el pedido. Es la que usa PrestaShop para sus prepagos.
+            /// </summary>
+            public const string CUENTA_REDSYS = "57200013";
+        }
+
         public static class EstadosPagoTPV
         {
             public const string PENDIENTE = "Pendiente";

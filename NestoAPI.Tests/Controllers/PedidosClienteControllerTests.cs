@@ -6,6 +6,7 @@ using System.Web.Http.Results;
 using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
+using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 
@@ -20,7 +21,7 @@ namespace NestoAPI.Tests.Controllers
     {
         private static PedidosClienteController ControllerConIdentidad(params Claim[] claims)
         {
-            PedidosClienteController controller = new PedidosClienteController(A.Fake<NVEntities>())
+            PedidosClienteController controller = new PedidosClienteController(A.Fake<NVEntities>(), A.Fake<IServicioPagos>())
             {
                 RequestContext = new HttpRequestContext
                 {

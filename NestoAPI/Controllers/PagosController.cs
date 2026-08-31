@@ -30,6 +30,12 @@ namespace NestoAPI.Controllers
                 return BadRequest("La solicitud de pago es obligatoria");
             }
 
+            // NestoAPI#436: el pedido que se cobra NO se acepta de fuera. Un cobro con pedido entra
+            // como Prepago, y dejarlo abierto permitiria a cualquier autenticado meter un prepago
+            // en el pedido de otro (o pagar 1 EUR por uno de 100). Lo pone el servidor, llamando al
+            // servicio directamente desde PedidosClienteController con el pedido que acaba de crear.
+            solicitud.Pedido = null;
+
             if (solicitud.Efectos != null && solicitud.Efectos.Any())
             {
                 decimal sumaEfectos = solicitud.Efectos.Sum(e => e.Importe);

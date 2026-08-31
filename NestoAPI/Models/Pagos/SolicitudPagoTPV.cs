@@ -19,6 +19,15 @@ namespace NestoAPI.Models.Pagos
         public string MetodoPago { get; set; }
         public List<EfectoAPagar> Efectos { get; set; }
 
+        /// <summary>
+        /// NestoAPI#436: numero del pedido que se esta cobrando (pedidos de la app). Cuando viene,
+        /// el cobro NO se contabiliza como el enlace de pago: al confirmar Redsys entra como
+        /// Prepago del pedido y se aplica al facturarlo.
+        /// Lo pone el servidor a partir del pedido que acaba de crear, nunca el cliente: si no,
+        /// podria pagar 1 EUR por un pedido de 100.
+        /// </summary>
+        public int? Pedido { get; set; }
+
         // Campos legacy para compatibilidad con pago individual sin Efectos
         public int? ExtractoClienteId { get; set; }
         public string Documento { get; set; }

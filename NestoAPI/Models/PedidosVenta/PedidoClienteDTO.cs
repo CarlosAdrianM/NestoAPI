@@ -82,6 +82,15 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public bool RequierePago { get; set; }
 
+        /// <summary>
+        /// NestoAPI#436: los parámetros de Redsys con los que la app abre la pasarela, ya firmados
+        /// y por el importe del pedido. Van aquí, y no en una llamada aparte a <c>api/Pagos</c>,
+        /// porque el importe lo tiene que decir el servidor: si lo dijera el cliente, podría pagar
+        /// 1 € por un pedido de 100. Es <c>null</c> cuando el pedido no se cobra en el momento, y
+        /// también si el cobro no se pudo arrancar (ahí lo dicen los <see cref="Avisos"/>).
+        /// </summary>
+        public Pagos.RespuestaIniciarPago Pago { get; set; }
+
         public ICollection<LineaPedidoClienteResponse> Lineas { get; set; }
 
         /// <summary>

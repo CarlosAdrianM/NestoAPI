@@ -1106,5 +1106,81 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         #endregion
+        #region Cobro de pedidos de la app (NestoAPI#436)
+
+        // El cobro con tarjeta de un pedido que ha creado un cliente desde la app NO se contabiliza
+        // como el enlace de pago (un cobro contra el extracto del cliente): entra como Prepago del
+        // pedido, igual que hace CanalesExternos con PrestaShop, y se aplica al facturarlo.
+        // Contabilizarlo por los dos sitios seria contarlo dos veces.
+
+        [TestMethod]
+        public void EsPagoDePedido_PagoDeUnPedidoDeLaApp_Si()
+        {
+            PagoTPV pago = new PagoTPV
+            {
+                Tipo = Constantes.TiposPagoTPV.PEDIDO_APP,
+                Documento = "920123"
+            };
+
+            Assert.IsTrue(ServicioPagos.EsPagoDePedido(pago));
+        }
+
+        [TestMethod]
+        public void EsPagoDePedido_EnlaceDePagoDeSiempre_No()
+        {
+            // Red de seguridad: los enlaces de pago que ya existen siguen contabilizando como antes
+            PagoTPV pago = new PagoTPV
+            {
+                Tipo = Constantes.TiposPagoTPV.TPV_VIRTUAL,
+                Documento = "920123"
+            };
+
+            Assert.IsFalse(ServicioPagos.EsPagoDePedido(pago));
+        }
+
+        [TestMethod]
+        public void EsPagoDePedido_SinNumeroDePedido_No()
+        {
+            PagoTPV pago = new PagoTPV
+            {
+                Tipo = Constantes.TiposPagoTPV.PEDIDO_APP,
+                Documento = null
+            };
+
+            Assert.IsFalse(ServicioPagos.EsPagoDePedido(pago));
+        }
+
+        [TestMethod]
+        public void EsPagoDePedido_DocumentoQueNoEsUnNumero_No()
+        {
+            PagoTPV pago = new PagoTPV
+            {
+                Tipo = Constantes.TiposPagoTPV.PEDIDO_APP,
+                Documento = "FR26/0001"
+            };
+
+            Assert.IsFalse(ServicioPagos.EsPagoDePedido(pago));
+        }
+
+        [TestMethod]
+        public void ConceptoPrepagoPedido_LlevaElNumeroDeOrden_QueEsLoQueEvitaElCobroDuplicado()
+        {
+            // Redsys puede mandar la misma notificacion mas de una vez. El concepto lleva el numero
+            // de orden, que es unico por cobro, y es por lo que se comprueba si el prepago ya estaba.
+            string concepto = ServicioPagos.ConceptoPrepagoPedido("260901123456");
+
+            StringAssert.Contains(concepto, "260901123456");
+        }
+
+        [TestMethod]
+        public void ConceptoPrepagoPedido_NumeroDeOrdenLargo_CabeEnElCampo()
+        {
+            // ConceptoAdicional son 50 caracteres en la tabla Prepagos
+            string concepto = ServicioPagos.ConceptoPrepagoPedido(new string('9', 80));
+
+            Assert.IsTrue(concepto.Length <= 50, $"Longitud {concepto.Length}");
+        }
+
+        #endregion
     }
 }

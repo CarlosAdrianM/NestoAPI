@@ -78,7 +78,11 @@ namespace NestoAPI.Infraestructure.Pagos
                 var pago = new PagoTPV
                 {
                     NumeroOrden = parametros.NumeroOrden,
-                    Tipo = "TPVVirtual",
+                    // NestoAPI#436: el cobro de un pedido de la app no se contabiliza como el
+                    // enlace de pago; se distingue por el Tipo y lleva el pedido en Documento.
+                    Tipo = solicitud.Pedido.HasValue
+                        ? Constantes.TiposPagoTPV.PEDIDO_APP
+                        : Constantes.TiposPagoTPV.TPV_VIRTUAL,
                     Empresa = solicitud.Empresa ?? Empresas.EMPRESA_POR_DEFECTO,
                     Cliente = solicitud.Cliente,
                     Contacto = solicitud.Contacto,
@@ -87,7 +91,9 @@ namespace NestoAPI.Infraestructure.Pagos
                     Correo = solicitud.Correo,
                     // Campos legacy se mantienen para compatibilidad
                     ExtractoClienteId = solicitud.ExtractoClienteId,
-                    Documento = solicitud.Documento,
+                    Documento = solicitud.Pedido.HasValue
+                        ? solicitud.Pedido.Value.ToString()
+                        : solicitud.Documento,
                     Efecto = solicitud.Efecto,
                     Vendedor = solicitud.Vendedor,
                     FormaVenta = solicitud.FormaVenta,
@@ -188,7 +194,19 @@ namespace NestoAPI.Infraestructure.Pagos
                     string errorContabilizacion = null;
                     try
                     {
-                        await ContabilizarCobro(pago).ConfigureAwait(false);
+                        // NestoAPI#436: el cobro de un pedido de la app NO va por el circuito del
+                        // enlace de pago (que apunta un cobro contra el extracto del cliente): entra
+                        // como Prepago del pedido, igual que hace CanalesExternos con PrestaShop, y
+                        // se aplica al facturarlo. Contabilizarlo por los dos sitios seria contarlo
+                        // dos veces.
+                        if (EsPagoDePedido(pago))
+                        {
+                            await AnadirPrepagoAlPedido(pago, db).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await ContabilizarCobro(pago).ConfigureAwait(false);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -216,6 +234,99 @@ namespace NestoAPI.Infraestructure.Pagos
                 }
 
                 return true;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#436: es este cobro el de un pedido que ha creado un cliente desde la app? El
+        /// numero de pedido viaja en Documento, asi que no hizo falta columna nueva.
+        /// </summary>
+        internal static bool EsPagoDePedido(PagoTPV pago)
+        {
+            return pago != null
+                && string.Equals(pago.Tipo?.Trim(), Constantes.TiposPagoTPV.PEDIDO_APP, StringComparison.OrdinalIgnoreCase)
+                && int.TryParse(pago.Documento?.Trim(), out int numero)
+                && numero > 0;
+        }
+
+        /// <summary>
+        /// NestoAPI#436: concepto del prepago. Lleva el numero de orden de Redsys, que es unico por
+        /// cobro, y eso es lo que hace la insercion idempotente: Redsys puede mandar la misma
+        /// notificacion mas de una vez y el pedido no puede acabar con el cobro por duplicado.
+        /// El campo son 50 caracteres.
+        /// </summary>
+        internal static string ConceptoPrepagoPedido(string numeroOrden)
+        {
+            string concepto = $"Pago app {numeroOrden?.Trim()}";
+            return concepto.Length > 50 ? concepto.Substring(0, 50) : concepto;
+        }
+
+        /// <summary>
+        /// NestoAPI#436: apunta el cobro como Prepago del pedido. A partir de ahi el pedido deja de
+        /// estar retenido en el picking (PedidoPicking.RetenidoPorPrepago) y, al facturarlo, el
+        /// prepago se aplica contra la cuenta de Redsys.
+        /// </summary>
+        private async Task AnadirPrepagoAlPedido(PagoTPV pago, NVEntities db)
+        {
+            int numeroPedido = int.Parse(pago.Documento.Trim());
+            string empresa = pago.Empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO;
+            string concepto = ConceptoPrepagoPedido(pago.NumeroOrden);
+
+            CabPedidoVta pedido = await db.CabPedidoVtas
+                .FirstOrDefaultAsync(cab => cab.Empresa == empresa && cab.Número == numeroPedido)
+                .ConfigureAwait(false);
+
+            if (pedido == null)
+            {
+                // Dinero cobrado y ningun pedido al que aplicarlo: hay que enterarse hoy, no al
+                // cuadrar el mes. La excepcion la recoge ProcesarNotificacion, que igualmente
+                // manda el correo post-cobro con el error.
+                string mensaje = $"[Prepago pedido app] Cobrado {pago.Importe:N2} EUR del pedido " +
+                    $"{numeroPedido} (orden {pago.NumeroOrden}, cliente {pago.Cliente?.Trim()}), " +
+                    "pero ese pedido NO existe. El prepago no se ha creado.";
+                _logService.LogError(mensaje);
+                throw new InvalidOperationException(mensaje);
+            }
+
+            bool yaEstaba = await db.Prepagos
+                .AnyAsync(pre => pre.Empresa == empresa && pre.Pedido == numeroPedido && pre.ConceptoAdicional == concepto)
+                .ConfigureAwait(false);
+            if (yaEstaba)
+            {
+                // Notificacion repetida de Redsys: el cobro no se duplica.
+                return;
+            }
+
+            _ = db.Prepagos.Add(new Prepago
+            {
+                Empresa = empresa,
+                Pedido = numeroPedido,
+                Importe = pago.Importe,
+                CuentaContable = Constantes.Prepagos.CUENTA_REDSYS,
+                ConceptoAdicional = concepto,
+                Usuario = pago.Usuario
+            });
+            _ = await db.SaveChangesAsync().ConfigureAwait(false);
+
+            // El prepago tiene que cubrir el total para que el pedido salga en el picking. Si no
+            // llega (un pago parcial, o el pedido ha cambiado despues de cobrarlo), mejor saberlo
+            // ahora que cuando el cliente pregunte por que no le ha llegado.
+            decimal totalPedido = await db.LinPedidoVtas
+                .Where(l => l.Empresa == empresa && l.Número == numeroPedido)
+                .Select(l => l.Total)
+                .DefaultIfEmpty(0)
+                .SumAsync()
+                .ConfigureAwait(false);
+            decimal prepagos = await db.Prepagos
+                .Where(pre => pre.Empresa == empresa && pre.Pedido == numeroPedido)
+                .Select(pre => pre.Importe)
+                .DefaultIfEmpty(0)
+                .SumAsync()
+                .ConfigureAwait(false);
+            if (prepagos < Math.Round(totalPedido, 2, MidpointRounding.AwayFromZero))
+            {
+                _logService.LogError($"[Prepago pedido app] El pedido {numeroPedido} sigue retenido en " +
+                    $"el picking: cobrado {prepagos:N2} EUR de {totalPedido:N2} EUR (orden {pago.NumeroOrden}).");
             }
         }
 

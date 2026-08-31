@@ -1,9 +1,11 @@
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
+using NestoAPI.Models.Pagos;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -42,18 +44,23 @@ namespace NestoAPI.Controllers
     public class PedidosClienteController : ApiController
     {
         private readonly NVEntities db;
+        private readonly IServicioPagos servicioPagos;
 
+        // OJO con los constructores: los controllers se resuelven por el contenedor
+        // (AddControllersAsServices), que elige el que puede construir entero. NVEntities no está
+        // registrado, asi que el unico resoluble es este; el otro es para los tests.
         public PedidosClienteController()
+            : this(new NVEntities(), new ServicioPagos(new RedsysService(), new ContabilidadService(), new LectorParametrosUsuario()))
         {
-            db = new NVEntities();
             db.Configuration.LazyLoadingEnabled = false;
             db.Configuration.ProxyCreationEnabled = false;
         }
 
         // Para poder hacer tests sobre el controlador
-        public PedidosClienteController(NVEntities db)
+        public PedidosClienteController(NVEntities db, IServicioPagos servicioPagos)
         {
             this.db = db;
+            this.servicioPagos = servicioPagos;
         }
 
         // POST: api/Pedidos/Cliente
@@ -106,7 +113,52 @@ namespace NestoAPI.Controllers
                 return resultado;
             }
 
-            return Ok(ConstruirRespuesta(preparado.Pedido, preparado.FormaPago, preparado.PlazosPago));
+            PedidoClienteResponse respuesta = ConstruirRespuesta(preparado.Pedido, preparado.FormaPago, preparado.PlazosPago);
+
+            if (respuesta.RequierePago)
+            {
+                await ArrancarPago(respuesta, preparado).ConfigureAwait(false);
+            }
+
+            return Ok(respuesta);
+        }
+
+        /// <summary>
+        /// NestoAPI#436: arranca el cobro con tarjeta del pedido recien creado y devuelve a la app
+        /// los parametros de Redsys ya firmados.
+        ///
+        /// <para>El importe es el del pedido, calculado por el servidor: por eso el cobro se
+        /// arranca aqui y no dejando que la app llame a <c>api/Pagos</c> por su cuenta, donde
+        /// podria mandar el importe que quisiera. Cuando Redsys confirma, el cobro entra como
+        /// Prepago del pedido (ServicioPagos.ProcesarNotificacion).</para>
+        ///
+        /// <para>Si falla, el pedido ya esta creado y se devuelve igualmente con un aviso: un
+        /// pedido sin cobrar es recuperable, y el picking no lo va a servir mientras no haya
+        /// prepago que cubra el total.</para>
+        /// </summary>
+        private async Task ArrancarPago(PedidoClienteResponse respuesta, PedidoPreparado preparado)
+        {
+            try
+            {
+                respuesta.Pago = await servicioPagos.IniciarPago(new SolicitudPagoTPV
+                {
+                    Empresa = respuesta.Empresa,
+                    Cliente = respuesta.Cliente,
+                    Contacto = respuesta.Contacto,
+                    Importe = respuesta.Total,
+                    Descripcion = $"Pago pedido {respuesta.Numero}",
+                    Correo = preparado.Correo,
+                    Pedido = respuesta.Numero
+                }, preparado.Pedido.Usuario).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                ElmahHelper.Log(new Exception(
+                    $"[Pedido app] El pedido {respuesta.Numero} se ha creado pero no se ha podido " +
+                    $"arrancar el cobro con tarjeta: {ex.Message}", ex));
+                respuesta.Avisos.Add("El pedido se ha creado, pero no hemos podido abrir la pasarela de pago. " +
+                    "Inténtalo de nuevo desde tus pedidos o llámanos.");
+            }
         }
 
         /// <summary>
@@ -155,6 +207,9 @@ namespace NestoAPI.Controllers
             public string FormaPago { get; set; }
             public string PlazosPago { get; set; }
             public string CodigoPostal { get; set; }
+
+            /// <summary>Correo del cliente (del JWT), para el aviso previo al cobro.</summary>
+            public string Correo { get; set; }
         }
 
         private async Task<PedidoPreparado> PrepararPedido(PedidoClienteRequest peticion)
@@ -231,7 +286,8 @@ namespace NestoAPI.Controllers
                     peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today),
                 FormaPago = formaPago,
                 PlazosPago = plazosPago,
-                CodigoPostal = fichaCliente.codigoPostal?.Trim() ?? string.Empty
+                CodigoPostal = fichaCliente.codigoPostal?.Trim() ?? string.Empty,
+                Correo = identity.FindFirst(ClaimTypes.Email)?.Value
             };
         }
 
