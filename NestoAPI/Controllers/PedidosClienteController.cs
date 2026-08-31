@@ -147,6 +147,9 @@ namespace NestoAPI.Controllers
                     Contacto = respuesta.Contacto,
                     Importe = respuesta.Total,
                     Descripcion = $"Pago pedido {respuesta.Numero}",
+                    // Va a Redsys (DS_MERCHANT_CUSTOMER_MAIL, que ayuda en la autenticacion y en
+                    // el justificante del banco). NO se le manda ningun enlace de pago: el cobro
+                    // es online y ocurre en la propia app.
                     Correo = preparado.Correo,
                     Pedido = respuesta.Numero
                 }, preparado.Pedido.Usuario).ConfigureAwait(false);

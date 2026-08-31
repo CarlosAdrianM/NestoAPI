@@ -131,8 +131,15 @@ namespace NestoAPI.Infraestructure.Pagos
 
                 string urlPaginaPago = $"https://api.nuevavision.es/pago/{pago.TokenAcceso}";
 
-                // Issue #139: Correo pre-cobro al cliente
-                EnviarCorreoPreCobro(pago, efectos, urlPaginaPago);
+                // Issue #139: Correo pre-cobro al cliente.
+                // NestoAPI#436: en la app NO. Alli esto no es un enlace de pago que se manda para
+                // que lo abra cuando quiera: es un cobro online, el cliente esta delante y la
+                // pasarela se abre en el momento. Mandarle un correo con un enlace de pago
+                // ademas del cobro que acaba de hacer solo confunde (y se pagaria dos veces).
+                if (!solicitud.Pedido.HasValue)
+                {
+                    EnviarCorreoPreCobro(pago, efectos, urlPaginaPago);
+                }
 
                 return new RespuestaIniciarPago
                 {
@@ -215,7 +222,13 @@ namespace NestoAPI.Infraestructure.Pagos
                     }
 
                     // Issue #139/#142/#143: Correo post-cobro a administración (siempre, incluso si falló la contabilización)
-                    EnviarCorreoPostCobro(pago, errorContabilizacion);
+                    // NestoAPI#436: en los pedidos de la app, solo si algo ha fallado. Son cobros
+                    // online de una tienda: avisar a administracion de cada compra seria ruido, y
+                    // el ruido acaba en que nadie mira el correo que si importa.
+                    if (!EsPagoDePedido(pago) || errorContabilizacion != null)
+                    {
+                        EnviarCorreoPostCobro(pago, errorContabilizacion);
+                    }
                 }
                 else
                 {
