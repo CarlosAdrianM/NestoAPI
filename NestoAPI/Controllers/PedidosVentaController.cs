@@ -381,6 +381,28 @@ namespace NestoAPI.Controllers
             return pedido == null ? NotFound() : (IHttpActionResult)Ok(pedido);
         }
 
+        /// <summary>
+        /// Nesto#340 (slice A3): las dos preguntas sobre las lineas de un pedido que el modulo de
+        /// Agencias resolvia abriendo su propio DbContext. Devuelve solo dos booleanos.
+        ///
+        /// A diferencia de ParaAgencia, este NO devuelve 404 cuando el pedido no existe: un pedido
+        /// sin lineas tiene respuesta valida (ver SituacionLineasPedidoDTO) y los dos llamantes de
+        /// Nesto esperan un booleano, no un "no encontrado".
+        /// </summary>
+        [HttpGet]
+        [Route("api/PedidosVenta/ParaAgencia/SituacionLineas")]
+        [ResponseType(typeof(SituacionLineasPedidoDTO))]
+        public async Task<IHttpActionResult> GetSituacionLineasParaAgencia(string empresa, int numero)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+            {
+                return BadRequest("Hay que indicar 'empresa'.");
+            }
+
+            var gestor = new Infraestructure.PedidosVenta.GestorPedidoParaAgencia(db);
+            return Ok(await gestor.LeerSituacionLineas(empresa, numero).ConfigureAwait(false));
+        }
+
         // Nesto#397: el pedido YA en forma de plantilla (ofertas colapsadas, Ganavisiones como
         // regalos). La inversión vive en el backend para que Nesto y NestoApp no la dupliquen.
         [HttpGet]

@@ -233,10 +233,16 @@ namespace NestoAPI.Models
             public const string PERFUMES_CLUB = "QRU";
             public const string MIRAVIA = "BLT";
 
-            private static readonly HashSet<string> _canalesExternos = new HashSet<string>
-            {
-                AMAZON, TIENDA_ONLINE, PERFUMES_CLUB, MIRAVIA
-            };
+            /// <summary>
+            /// Los mismos cuatro codigos, pero en array y publicos, para poder usarlos DENTRO de
+            /// una consulta de Entity Framework: EsCanalExterno es un metodo de C# y EF6 no sabe
+            /// traducirlo a SQL, mientras que un Contains sobre esta coleccion se convierte en un
+            /// IN (...) — y ahi la comparacion la hace SQL Server, que ignora el relleno de los
+            /// char. Fuente unica: el HashSet de abajo se construye a partir de este array.
+            /// </summary>
+            public static readonly string[] CANALES_EXTERNOS = { AMAZON, TIENDA_ONLINE, PERFUMES_CLUB, MIRAVIA };
+
+            private static readonly HashSet<string> _canalesExternos = new HashSet<string>(CANALES_EXTERNOS);
 
             public static bool EsCanalExterno(string formaVenta)
             {

@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Models;
@@ -299,6 +299,161 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.AreEqual("1  ", dto.Empresa);
             Assert.AreEqual("22709     ", dto.Cliente);
             Assert.AreEqual("0  ", dto.Contacto);
+        }
+
+        // ===== Nesto#340 (slice A3): situacion de las lineas =====
+        // Estos ocho tests son el contrato de HayAlgunaLineaConPicking y EsTodoElPedidoOnline, los
+        // dos ultimos metodos de AgenciaService que leian LinPedidoVta con EF.
+
+        private static LinPedidoVta Linea(short estado, int picking, string formaVenta = "   ",
+            int numero = 924645, string empresa = "1  ") => new LinPedidoVta
+            {
+                Empresa = empresa,
+                Número = numero,
+                Estado = estado,
+                Picking = picking,
+                Forma_Venta = formaVenta
+            };
+
+        [TestMethod]
+        public void LeerSituacionLineas_LineaEnCursoConPicking_LoDetecta()
+        {
+            NVEntities db = CrearDb(lineas: new[] { Linea(estado: 1, picking: 98900) });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            SituacionLineasPedidoDTO dto = gestor.LeerSituacionLineas("1  ", 924645).Result;
+
+            Assert.IsTrue(dto.TieneAlgunaLineaConPicking);
+        }
+
+        [TestMethod]
+        public void LeerSituacionLineas_TodasSinPicking_DevuelveFalse()
+        {
+            NVEntities db = CrearDb(lineas: new[] { Linea(estado: 1, picking: 0), Linea(estado: -1, picking: 0) });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            SituacionLineasPedidoDTO dto = gestor.LeerSituacionLineas("1  ", 924645).Result;
+
+            Assert.IsFalse(dto.TieneAlgunaLineaConPicking);
+        }
+
+        /// <summary>
+        /// El rango de "linea viva" es [PENDIENTE, EN_CURSO] = [-1, 1]. Una linea ya facturada
+        /// (estado 4) tiene picking, pero no cuenta: si contara, un pedido entero facturado pasaria
+        /// la comprobacion y Agencias dejaria de preguntar "este pedido no tiene picking".
+        /// </summary>
+        [TestMethod]
+        public void LeerSituacionLineas_LineaFacturadaConPicking_NoCuenta()
+        {
+            NVEntities db = CrearDb(lineas: new[] { Linea(estado: 4, picking: 98900) });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            SituacionLineasPedidoDTO dto = gestor.LeerSituacionLineas("1  ", 924645).Result;
+
+            Assert.IsFalse(dto.TieneAlgunaLineaConPicking);
+        }
+
+        [TestMethod]
+        public void LeerSituacionLineas_LineaDeOtroPedido_NoSeMezcla()
+        {
+            NVEntities db = CrearDb(lineas: new[] { Linea(estado: 1, picking: 98900, numero: 999999) });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            SituacionLineasPedidoDTO dto = gestor.LeerSituacionLineas("1  ", 924645).Result;
+
+            Assert.IsFalse(dto.TieneAlgunaLineaConPicking);
+        }
+
+        [TestMethod]
+        public void LeerSituacionLineas_TodasLasLineasDeCanalExterno_EsTodoOnline()
+        {
+            NVEntities db = CrearDb(lineas: new[] { Linea(1, 0, "WEB"), Linea(1, 0, "STK"), Linea(1, 0, "BLT") });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            SituacionLineasPedidoDTO dto = gestor.LeerSituacionLineas("1  ", 924645).Result;
+
+            Assert.IsTrue(dto.EsTodoOnline);
+        }
+
+        /// <summary>
+        /// Una sola linea normal basta para que el pedido deje de ser "todo online" y SI se mande
+        /// el correo de aviso de entrega. Es el caso que de verdad importa: el pedido mixto.
+        /// </summary>
+        [TestMethod]
+        public void LeerSituacionLineas_UnaLineaNormalEntreOnline_NoEsTodoOnline()
+        {
+            NVEntities db = CrearDb(lineas: new[] { Linea(1, 0, "WEB"), Linea(1, 0, "   ") });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            SituacionLineasPedidoDTO dto = gestor.LeerSituacionLineas("1  ", 924645).Result;
+
+            Assert.IsFalse(dto.EsTodoOnline);
+        }
+
+        /// <summary>
+        /// RAREZA CONSERVADA: sin lineas, "todas son online" es TRUE (es lo que devuelve un All
+        /// sobre una coleccion vacia, y es lo que hacia el codigo que se sustituye). Si algun dia
+        /// se decide cambiarlo, que sea una decision consciente con su propio test, no un efecto
+        /// colateral de haber quitado Entity Framework.
+        /// </summary>
+        [TestMethod]
+        public void LeerSituacionLineas_PedidoSinLineas_CuentaComoTodoOnline()
+        {
+            NVEntities db = CrearDb();
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            SituacionLineasPedidoDTO dto = gestor.LeerSituacionLineas("1  ", 924645).Result;
+
+            Assert.IsTrue(dto.EsTodoOnline);
+            Assert.IsFalse(dto.TieneAlgunaLineaConPicking);
+        }
+
+        /// <summary>
+        /// El mismo numero de pedido existe en la empresa espejo, y ahi las lineas son otras: el
+        /// filtro por empresa tiene que discriminar.
+        ///
+        /// NOTA sobre el relleno de los char: contra SQL Server, "1" y "1  " son iguales, asi que
+        /// da lo mismo como llegue la empresa desde Nesto. Eso NO se puede probar aqui —con fakes
+        /// esto es LINQ to Objects, donde "1" y "1  " son distintos—, y precisamente por eso el
+        /// filtro tiene que quedarse en el servidor: si alguien "optimiza" el metodo trayendose
+        /// las lineas y filtrando en memoria, reaparece el fallo silencioso de Nesto#254 y ningun
+        /// test lo va a cazar.
+        /// </summary>
+        [TestMethod]
+        public void LeerSituacionLineas_MismoPedidoEnOtraEmpresa_NoSeMezcla()
+        {
+            NVEntities db = CrearDb(lineas: new[]
+            {
+                Linea(estado: 1, picking: 98900, empresa: "3  "),
+                Linea(estado: 1, picking: 0, empresa: "1  ")
+            });
+            var gestor = new GestorPedidoParaAgencia(db);
+
+            SituacionLineasPedidoDTO dto = gestor.LeerSituacionLineas("1  ", 924645).Result;
+
+            Assert.IsFalse(dto.TieneAlgunaLineaConPicking, "El picking de la empresa espejo no es de este pedido");
+        }
+
+        /// <summary>
+        /// El otro extremo del contrato con Nesto. Al cliente le llegan estos dos booleanos y los
+        /// lee por NOMBRE: si aqui se renombra una propiedad, alla no casa, Newtonsoft deja el
+        /// Boolean en false —que es un valor valido— y no salta nada. Los dos false son ademas los
+        /// que hacen dano: Agencias preguntaria "este pedido no tiene picking" en todos los
+        /// pedidos, y mandaria el correo de aviso de entrega tambien en los de tienda online.
+        ///
+        /// El par de este test vive en Nesto: SituacionLineasPedidoModelTests.
+        /// Se compara sin distinguir mayusculas porque Newtonsoft tampoco distingue al leer: lo
+        /// que hay que dejar clavado es el NOMBRE, no como lo escriba el serializador.
+        /// </summary>
+        [TestMethod]
+        public void SituacionLineasPedidoDTO_ElJsonQueVeNesto_ConservaLosDosNombres()
+        {
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(
+                new SituacionLineasPedidoDTO { TieneAlgunaLineaConPicking = true, EsTodoOnline = true });
+
+            StringAssert.Contains(json.ToLowerInvariant(), "tienealgunalineaconpicking");
+            StringAssert.Contains(json.ToLowerInvariant(), "estodoonline");
+            StringAssert.Contains(json.ToLowerInvariant(), "true");
         }
 
         private static void ConfigurarFakeDbSet<T>(DbSet<T> fakeDbSet, IQueryable<T> data) where T : class

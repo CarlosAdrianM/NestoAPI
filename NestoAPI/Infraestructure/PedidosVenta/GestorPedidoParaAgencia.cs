@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System.Data.Entity;
 using System.Linq;
@@ -122,6 +122,44 @@ namespace NestoAPI.Infraestructure.PedidosVenta
                 .FirstOrDefaultAsync().ConfigureAwait(false);
 
             return await Montar(pedido).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Nesto#340 (slice A3): las dos preguntas que Agencias le hacia a las LINEAS del pedido
+        /// con su propio DbContext (HayAlgunaLineaConPicking y EsTodoElPedidoOnline).
+        ///
+        /// Se resuelven con dos Any() en el servidor, sin traer ni una linea: lo unico que cruza
+        /// la red son dos booleanos. La version de Nesto tampoco traia las lineas —era LINQ to
+        /// Entities— asi que el SQL resultante es equivalente y la paridad es exacta.
+        ///
+        /// No devuelve null nunca, ni siquiera para un pedido que no existe: la respuesta correcta
+        /// para "un pedido sin lineas" es la misma que da el codigo actual (ver el DTO), y los dos
+        /// llamantes esperan un booleano, no un "no encontrado".
+        /// </summary>
+        public async Task<SituacionLineasPedidoDTO> LeerSituacionLineas(string empresa, int numero)
+        {
+            IQueryable<LinPedidoVta> lineas = db.LinPedidoVtas
+                .Where(l => l.Empresa == empresa && l.Número == numero);
+
+            // Estado entre PENDIENTE (-1) y EN_CURSO (1), que es el rango de linea viva que usaba
+            // Agencias. Ojo: es <= EN_CURSO, no < ; una linea en curso con picking cuenta.
+            bool conPicking = await lineas
+                .AnyAsync(l => l.Estado >= Constantes.EstadosLineaVenta.PENDIENTE
+                            && l.Estado <= Constantes.EstadosLineaVenta.EN_CURSO
+                            && l.Picking != 0)
+                .ConfigureAwait(false);
+
+            // "Todas online" se pregunta como "no hay ninguna que NO lo sea", que es como se
+            // traduce un All y ademas deja el caso vacio en true sin escribirlo aparte.
+            bool esTodoOnline = !await lineas
+                .AnyAsync(l => !Constantes.FormasVenta.CANALES_EXTERNOS.Contains(l.Forma_Venta))
+                .ConfigureAwait(false);
+
+            return new SituacionLineasPedidoDTO
+            {
+                TieneAlgunaLineaConPicking = conPicking,
+                EsTodoOnline = esTodoOnline
+            };
         }
 
         /// <summary>
