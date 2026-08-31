@@ -1099,21 +1099,8 @@ namespace NestoAPI.Controllers
                 // NestoAPI#299: EstadoProducto no viene del cliente; se rellena de la ficha del producto.
                 this.gestor.RellenarEstadoProducto(pedido);
                 decimal baseImponibleProductosPut = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, pedido.servirJunto, new GestorStocks());
-                var inputPortesPut = new PedidoPortesInput
-                {
-                    CodigoPostal = codigoPostalPut,
-                    Ruta = pedido.ruta?.Trim(),
-                    FormaPago = pedido.formaPago?.Trim(),
-                    PlazosPago = pedido.plazosPago?.Trim(),
-                    CCC = pedido.ccc,
-                    PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
-                    NotaEntrega = pedido.notaEntrega,
-                    EsCanalExterno = false,
-                    Iva = pedido.iva?.Trim(),
-                    BaseImponibleProductos = baseImponibleProductosPut,
-                    AnadirPortes = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()),
-                    NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso
-                };
+                var inputPortesPut = GestorPortes.ConstruirInput(pedido, codigoPostalPut, baseImponibleProductosPut,
+                    DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()));
                 var resultadoPortesPut = GestorPortes.CalcularPortes(inputPortesPut);
 
                 // Verificar si ya tiene línea de portes en BD (excluyendo reembolso,
@@ -1693,21 +1680,10 @@ namespace NestoAPI.Controllers
                 // NestoAPI#299: EstadoProducto no viene del cliente; se rellena de la ficha del producto.
                 this.gestor.RellenarEstadoProducto(pedido);
                 decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(pedido.Lineas, pedido.servirJunto, new GestorStocks());
-                var inputPortes = new PedidoPortesInput
-                {
-                    CodigoPostal = codigoPostalPortes,
-                    Ruta = pedido.ruta?.Trim(),
-                    FormaPago = pedido.formaPago?.Trim(),
-                    PlazosPago = pedido.plazosPago?.Trim(),
-                    CCC = pedido.ccc,
-                    PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
-                    NotaEntrega = pedido.notaEntrega,
-                    EsCanalExterno = false,
-                    Iva = pedido.iva?.Trim(),
-                    BaseImponibleProductos = baseImponibleProductos,
-                    AnadirPortes = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()),
-                    NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso
-                };
+                // NestoAPI#436: el input lo monta GestorPortes, que es de donde lo lee también el
+                // carrito de la app, para que el envío que se le enseña sea el que va a pagar.
+                var inputPortes = GestorPortes.ConstruirInput(pedido, codigoPostalPortes, baseImponibleProductos,
+                    DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), pedido.AnadirPortes, pedido.Lineas.FirstOrDefault()?.almacen?.Trim()));
                 var resultadoPortes = GestorPortes.CalcularPortes(inputPortes);
                 var resultadoGestionPortes = GestorPortes.GestionarLineasPortes(pedido.Lineas, resultadoPortes, pedido.iva, pedido.ParametrosIva);
 

@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Web.Http;
 using System.Web.Http.Description;
 using System.Web.Http.Results;
+using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
 using NestoAPI.Models.RecursosHumanos;
 
@@ -201,10 +202,19 @@ namespace NestoAPI.Controllers
             });
         }
 
+        /// <summary>
+        /// Condiciones de pago que se le pueden ofrecer a un cliente.
+        /// </summary>
+        /// <param name="canal">
+        /// NestoAPI#436: canal desde el que se pide (hoy solo <c>APP</c>, la app móvil). Sin canal
+        /// se devuelve la política general de siempre, que es la que usan Nesto y NestoApp. La
+        /// política de cada canal vive en <see cref="PoliticaPagoCanal"/> para que el selector y
+        /// el endpoint que crea el pedido no puedan acabar aplicando reglas distintas.
+        /// </param>
         [HttpGet]
         [Route("CondicionesPago")]
         [ResponseType(typeof(CondicionesPagoResponse))]
-        public async Task<IHttpActionResult> GetCondicionesPago(string empresa, string cliente)
+        public async Task<IHttpActionResult> GetCondicionesPago(string empresa, string cliente, string canal = null)
         {
             // Obtener plazos de pago
             IHttpActionResult resultPlazos = await GetPlazosPago(empresa, cliente);
@@ -231,14 +241,38 @@ namespace NestoAPI.Controllers
                 formaPagoRecomendada = Constantes.FormasPago.EFECTIVO;
             }
 
-            return Ok(new CondicionesPagoResponse
+            CondicionesPagoResponse condiciones = new CondicionesPagoResponse
             {
                 PlazosPago = plazosPago,
                 FormasPago = formasPago,
                 InfoDeuda = infoDeuda,
                 PlazoPagoRecomendado = plazoPagoRecomendado,
                 FormaPagoRecomendada = formaPagoRecomendada
-            });
+            };
+
+            if (PoliticaPagoCanal.EsApp(canal))
+            {
+                condiciones = PoliticaPagoCanal.AplicarPoliticaApp(condiciones, LeerCondicionesFicha(empresa, cliente));
+            }
+
+            return Ok(condiciones);
+        }
+
+        /// <summary>
+        /// NestoAPI#436: formas y plazos de pago que el cliente tiene en su ficha. En la app son
+        /// los únicos con los que se le puede ofrecer crédito.
+        /// </summary>
+        private PoliticaPagoCanal.CondicionesFicha LeerCondicionesFicha(string empresa, string cliente)
+        {
+            List<CondPagoCliente> condicionesCliente = db.CondPagoClientes
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
+                .ToList();
+
+            return new PoliticaPagoCanal.CondicionesFicha
+            {
+                FormasPago = condicionesCliente.Select(c => c.FormaPago).Where(f => f != null).ToList(),
+                PlazosPago = condicionesCliente.Select(c => c.PlazosPago).Where(p => p != null).ToList()
+            };
         }
 
         private async Task<List<FormaPagoDTO>> ObtenerFormasPagoFiltradas(string empresa, string cliente, InfoDeudaClienteDTO infoDeuda)

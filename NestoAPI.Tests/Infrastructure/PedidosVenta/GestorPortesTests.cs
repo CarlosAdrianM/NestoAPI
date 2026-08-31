@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.PedidosVenta;
@@ -1747,6 +1747,53 @@ namespace NestoAPI.Tests.Infraestructure.PedidosVenta
         {
             Assert.IsFalse(GestorPortes.EsComisionReembolsoViva(
                 LineaEntidad(tipoLinea: Constantes.TiposLineaVenta.PRODUCTO, producto: "23130")));
+        }
+
+        #endregion
+
+        #region ConstruirInput
+
+        // NestoAPI#436: el input de portes estaba escrito a mano en el POST y en el PUT de
+        // PedidosVenta, y el carrito de la app seria la tercera copia. Si se separan, al cliente
+        // se le ensena en el carrito un envio distinto del que acaba llevando su pedido.
+
+        [TestMethod]
+        public void ConstruirInput_CopiaLasCondicionesDelPedido()
+        {
+            PedidoVentaDTO pedido = new PedidoVentaDTO
+            {
+                ruta = "FW ",
+                formaPago = "TAR",
+                plazosPago = "PRE",
+                ccc = "1",
+                periodoFacturacion = "NRM",
+                notaEntrega = false,
+                iva = "G21",
+                NoCobrarComisionReembolso = true
+            };
+
+            PedidoPortesInput input = GestorPortes.ConstruirInput(pedido, "28100", 120M, anadirPortes: true);
+
+            Assert.AreEqual("28100", input.CodigoPostal);
+            Assert.AreEqual("FW", input.Ruta);
+            Assert.AreEqual("TAR", input.FormaPago);
+            Assert.AreEqual("PRE", input.PlazosPago);
+            Assert.AreEqual("1", input.CCC);
+            Assert.AreEqual("NRM", input.PeriodoFacturacion);
+            Assert.AreEqual("G21", input.Iva);
+            Assert.AreEqual(120M, input.BaseImponibleProductos);
+            Assert.IsTrue(input.AnadirPortes);
+            Assert.IsTrue(input.NoCobrarComisionReembolso);
+        }
+
+        [TestMethod]
+        public void ConstruirInput_NuncaEsCanalExterno()
+        {
+            // Los canales externos traen sus portes calculados por la plataforma de origen; estos
+            // los calcula el servidor. La app (forma de venta APP) tambien pasa por aqui.
+            PedidoPortesInput input = GestorPortes.ConstruirInput(new PedidoVentaDTO(), "28100", 0M, anadirPortes: true);
+
+            Assert.IsFalse(input.EsCanalExterno);
         }
 
         #endregion

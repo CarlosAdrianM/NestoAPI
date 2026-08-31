@@ -230,6 +230,7 @@
     <Compile Include="Controllers\AgenciasTarifasControllerTests.cs" />
     <Compile Include="Controllers\VentasClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
+    <Compile Include="Controllers\PedidosClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaDatosObligatoriosTests.cs" />
     <Compile Include="Controllers\PedidosVentaPortesTests.cs" />
     <Compile Include="Controllers\PlantillaVentasControllerTests.cs" />
@@ -374,6 +375,8 @@
     <Compile Include="Infrastructure\VigenciaDescuentosTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
+    <Compile Include="Infrastructure\ConstructorPedidoClienteTests.cs" />
+    <Compile Include="Infrastructure\PoliticaPagoCanalTests.cs" />
     <Compile Include="Infrastructure\ServicioAgenciasTests.cs" />
     <Compile Include="Infrastructure\ContabilidadServiceDeadlockTests.cs" />
     <Compile Include="Infrastructure\GestorComisionesResolverGrupoTests.cs" />

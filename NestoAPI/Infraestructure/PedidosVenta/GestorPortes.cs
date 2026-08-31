@@ -510,6 +510,39 @@ namespace NestoAPI.Infraestructure.PedidosVenta
         }
 
         /// <summary>
+        /// NestoAPI#436: los datos con los que se calculan los portes de un pedido. Estaban escritos
+        /// dos veces (POST y PUT de PedidosVenta) y el carrito de la app sería la tercera; que se
+        /// separasen significaría enseñarle al cliente un importe de envío distinto del que acaba
+        /// llevando su pedido.
+        /// </summary>
+        /// <param name="anadirPortes">
+        /// Lo decide el llamante con <c>PedidosVentaController.DebeAnadirPortes</c>, porque depende
+        /// de quién sea el usuario (solo Almacén y Compras pueden suprimirlos).
+        /// </param>
+        public static PedidoPortesInput ConstruirInput(
+            Models.PedidosVenta.PedidoVentaDTO pedido,
+            string codigoPostal,
+            decimal baseImponibleProductos,
+            bool anadirPortes)
+        {
+            return new PedidoPortesInput
+            {
+                CodigoPostal = codigoPostal,
+                Ruta = pedido.ruta?.Trim(),
+                FormaPago = pedido.formaPago?.Trim(),
+                PlazosPago = pedido.plazosPago?.Trim(),
+                CCC = pedido.ccc,
+                PeriodoFacturacion = pedido.periodoFacturacion?.Trim(),
+                NotaEntrega = pedido.notaEntrega,
+                EsCanalExterno = false,
+                Iva = pedido.iva?.Trim(),
+                BaseImponibleProductos = baseImponibleProductos,
+                AnadirPortes = anadirPortes,
+                NoCobrarComisionReembolso = pedido.NoCobrarComisionReembolso
+            };
+        }
+
+        /// <summary>
         /// Calcula la base imponible de solo productos (excluyendo líneas de cuentas contables tipo portes).
         /// Esta sobrecarga cuenta TODAS las líneas de producto: equivale al caso "servir junto" (una
         /// única entrega). Para aplicar la exclusión de líneas sobre pedido usar la sobrecarga con

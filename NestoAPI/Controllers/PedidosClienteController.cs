@@ -1,0 +1,375 @@
+using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Exceptions;
+using NestoAPI.Infraestructure.Pagos;
+using NestoAPI.Infraestructure.PedidosVenta;
+using NestoAPI.Infraestructure.Seguridad;
+using NestoAPI.Models;
+using NestoAPI.Models.PedidosVenta;
+using System;
+using System.Collections.Generic;
+using System.Data.Entity;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using System.Web.Http;
+using System.Web.Http.Description;
+using System.Web.Http.Results;
+
+namespace NestoAPI.Controllers
+{
+    /// <summary>
+    /// NestoAPI#436: el carrito de TiendasNuevaVision. Un cliente final, autenticado con el JWT de
+    /// la app, crea su propio pedido sin que intervenga nadie.
+    ///
+    /// <para><b>La regla que ordena el diseño: el cliente dice qué y cuánto; todo lo demás lo
+    /// decide el servidor.</b> Y "lo decide el servidor" significa ignorar esos campos si vienen
+    /// en la petición, no confiar en que la app los mande bien: un cliente que manipule la
+    /// petición no puede cambiar su precio, su descuento ni sus portes. Por eso
+    /// <see cref="PedidoClienteRequest"/> ni siquiera los tiene.</para>
+    ///
+    /// <para>Lo que distingue a este controller no es exigir un usuario determinado, sino el
+    /// <b>canal</b> desde el que llega la petición: el claim <c>cliente</c> del JWT que emite
+    /// <c>AuthController.CrearJWTAsync</c>. Las reglas de acceso son las que ya estaban escritas y
+    /// en producción en <see cref="ValidadorAccesoCliente"/>.</para>
+    ///
+    /// <para>El pedido se crea ANTES de cobrar (opción B de la issue): un pedido sin cobrar es
+    /// recuperable —se cancela o se persigue— y un cobro sin pedido es un problema contable.
+    /// Además no hay riesgo de que salga sin pagar: al crearse con plazos de pago PRE, el picking
+    /// lo retiene hasta que los prepagos cubren el total (ver PedidoPicking.RetenidoPorPrepago).</para>
+    /// </summary>
+    [Authorize]
+    [RoutePrefix("api/Pedidos")]
+    public class PedidosClienteController : ApiController
+    {
+        private readonly NVEntities db;
+
+        public PedidosClienteController()
+        {
+            db = new NVEntities();
+            db.Configuration.LazyLoadingEnabled = false;
+            db.Configuration.ProxyCreationEnabled = false;
+        }
+
+        // Para poder hacer tests sobre el controlador
+        public PedidosClienteController(NVEntities db)
+        {
+            this.db = db;
+        }
+
+        // POST: api/Pedidos/Cliente
+        [HttpPost]
+        [Route("Cliente")]
+        [ResponseType(typeof(PedidoClienteResponse))]
+        public async Task<IHttpActionResult> PostPedidoCliente(PedidoClienteRequest peticion)
+        {
+            PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
+            if (preparado.Error != null)
+            {
+                return preparado.Error;
+            }
+
+            // Se crea por el camino de siempre, que es el que añade los portes, valida ofertas y
+            // descuentos, manda el correo y guarda.
+            // Sin using: el controller al que se delega comparte el DbContext de este y su Dispose
+            // se lo llevaría por delante. Del contexto se encarga el Dispose de aquí abajo.
+            PedidosVentaController controllerPedidos = new PedidosVentaController(db);
+            if (Request != null)
+            {
+                controllerPedidos.Request = Request;
+            }
+            if (Configuration != null)
+            {
+                controllerPedidos.Configuration = Configuration;
+            }
+            // El principal viaja en el RequestContext: el pedido lo crea el cliente del JWT.
+            controllerPedidos.RequestContext = RequestContext;
+
+            IHttpActionResult resultado;
+            try
+            {
+                resultado = await controllerPedidos.PostPedidoVenta(preparado.Pedido).ConfigureAwait(false);
+            }
+            catch (PedidoValidacionException ex)
+            {
+                // El pedido no se ha creado. Que un pedido se quede esperando aprobación sin
+                // decir nada es peor que un error: el cliente se entera de por qué.
+                return BadRequest(MotivoParaElCliente(ex));
+            }
+            catch (NestoBusinessException ex)
+            {
+                return BadRequest(ex.Message);
+            }
+
+            if (!(resultado is CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO>))
+            {
+                // BadRequest, Conflict... lo que haya respondido el endpoint de siempre
+                return resultado;
+            }
+
+            return Ok(ConstruirRespuesta(preparado.Pedido, preparado.FormaPago, preparado.PlazosPago));
+        }
+
+        /// <summary>
+        /// NestoAPI#436 (aviso del equipo de la app): lo que cuesta el envío del carrito ANTES de
+        /// crear el pedido, con lo que necesita el aviso de "te faltan X € para el envío gratis".
+        ///
+        /// <para>Nace de que <c>POST api/PedidosVenta/CalcularPortes</c> no le sirve a la app: aquel
+        /// recibe la base imponible y el código postal en la petición, y aquí ninguno de los dos los
+        /// puede decir el cliente. Este calcula el envío del MISMO pedido que se crearía —mismos
+        /// precios, misma ficha, mismas condiciones de pago—, así que el importe que se enseña en el
+        /// carrito es exactamente el que va a pagar.</para>
+        /// </summary>
+        // POST: api/Pedidos/Cliente/Portes
+        [HttpPost]
+        [Route("Cliente/Portes")]
+        [ResponseType(typeof(PortesClienteResponse))]
+        public async Task<IHttpActionResult> PostPortesCliente(PedidoClienteRequest peticion)
+        {
+            PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
+            if (preparado.Error != null)
+            {
+                return preparado.Error;
+            }
+
+            ResultadoPortes portes = CalcularPortesDelCarrito(preparado.Pedido, preparado.CodigoPostal);
+
+            return Ok(new PortesClienteResponse
+            {
+                BaseImponibleProductos = portes.ImporteActualPedido,
+                Portes = portes.ImportePortes,
+                PortesGratis = portes.PortesGratis,
+                ImporteMinimoSinPortes = portes.ImporteMinimoPedidoSinPortes,
+                FaltaParaPortesGratis = portes.ImporteFaltaParaPortesGratis
+            });
+        }
+
+        /// <summary>
+        /// Todo lo que resuelve el servidor antes de tocar el pedido: quién pide, su ficha, sus
+        /// condiciones de pago y el precio de cada línea. Lo comparten la creación del pedido y el
+        /// cálculo de portes del carrito, para que los dos vean exactamente lo mismo.
+        /// </summary>
+        private class PedidoPreparado
+        {
+            public IHttpActionResult Error { get; set; }
+            public PedidoVentaDTO Pedido { get; set; }
+            public string FormaPago { get; set; }
+            public string PlazosPago { get; set; }
+            public string CodigoPostal { get; set; }
+        }
+
+        private async Task<PedidoPreparado> PrepararPedido(PedidoClienteRequest peticion)
+        {
+            // 1. Quién pide. El cliente sale SIEMPRE del JWT: si viniera en el cuerpo se ignora,
+            //    que es lo que impide pedir en nombre de otro.
+            ClaimsIdentity identity = User?.Identity as ClaimsIdentity;
+            string cliente = identity?.FindFirst("cliente")?.Value?.Trim();
+            if (string.IsNullOrWhiteSpace(cliente))
+            {
+                // Un empleado o un vendedor no tienen claim "cliente": este endpoint es solo para
+                // clientes finales. Ellos tienen POST api/PedidosVenta, que es el de siempre.
+                return new PedidoPreparado { Error = Unauthorized() };
+            }
+            ValidadorAccesoCliente.ResultadoValidacion acceso = ValidadorAccesoCliente.ValidarAcceso(identity, cliente);
+            if (!acceso.Autorizado)
+            {
+                return new PedidoPreparado { Error = Unauthorized() };
+            }
+
+            // 2. Qué pide
+            string errorPeticion = ConstructorPedidoCliente.ValidarPeticion(peticion);
+            if (errorPeticion != null)
+            {
+                return new PedidoPreparado { Error = BadRequest(errorPeticion) };
+            }
+
+            string empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+
+            // 3. Su ficha: de ahí salen iva, ruta, ccc, periodo de facturación, servir junto,
+            //    vendedor y el código postal con el que se calculan los portes.
+            ClienteDTO fichaCliente = await LeerFichaCliente(empresa, cliente).ConfigureAwait(false);
+            if (fichaCliente == null)
+            {
+                return new PedidoPreparado { Error = BadRequest($"No se encuentra la ficha del cliente {cliente}") };
+            }
+            if (fichaCliente.estado < Constantes.Clientes.Estados.VISITA_PRESENCIAL)
+            {
+                return new PedidoPreparado { Error = BadRequest("La ficha del cliente no está activa: no se pueden crear pedidos") };
+            }
+
+            // 4. Las condiciones de pago, con la política del canal APP (NestoAPI#435): por
+            //    defecto tarjeta al contado, crédito solo si su ficha lo permite y, con deuda,
+            //    solo tarjeta. La política vive en PoliticaPagoCanal, aplicada por el mismo
+            //    endpoint que consulta la app para pintar las opciones.
+            CondicionesPagoResponse condiciones = await LeerCondicionesPago(empresa, cliente).ConfigureAwait(false);
+            string formaPagoSolicitada = peticion.PagarConTarjeta ? Constantes.FormasPago.TARJETA : peticion.FormaPago;
+            string plazosPagoSolicitados = peticion.PagarConTarjeta ? Constantes.PlazosPago.PREPAGO : peticion.PlazosPago;
+            string formaPago = PoliticaPagoCanal.ResolverFormaPago(condiciones, formaPagoSolicitada);
+            string plazosPago = PoliticaPagoCanal.ResolverPlazosPago(condiciones, plazosPagoSolicitados);
+
+            // 5. El precio y el descuento de cada línea los calcula el servidor, exactamente igual
+            //    que GET api/Productos?cliente=&contacto=&cantidad=
+            Dictionary<string, ProductoPlantillaDTO> precios;
+            try
+            {
+                precios = await CalcularPrecios(empresa, fichaCliente, peticion.Lineas).ConfigureAwait(false);
+            }
+            catch (NestoBusinessException ex)
+            {
+                return new PedidoPreparado { Error = BadRequest(ex.Message) };
+            }
+            string productoSinPrecio = peticion.Lineas
+                .Select(l => l.Producto.Trim())
+                .FirstOrDefault(p => !precios.ContainsKey(p));
+            if (productoSinPrecio != null)
+            {
+                return new PedidoPreparado { Error = BadRequest($"No se ha podido calcular el precio del producto {productoSinPrecio}") };
+            }
+
+            return new PedidoPreparado
+            {
+                Pedido = ConstructorPedidoCliente.Construir(
+                    peticion, fichaCliente, precios, formaPago, plazosPago, DateTime.Today),
+                FormaPago = formaPago,
+                PlazosPago = plazosPago,
+                CodigoPostal = fichaCliente.codigoPostal?.Trim() ?? string.Empty
+            };
+        }
+
+        /// <summary>
+        /// Los portes del carrito, con el mismo cálculo que hace PostPedidoVenta al crear el pedido
+        /// (los dos montan el input con <see cref="GestorPortes.ConstruirInput"/>). AnadirPortes va
+        /// siempre a true: suprimirlos es cosa de Almacén y Compras, no de un cliente.
+        /// </summary>
+        private ResultadoPortes CalcularPortesDelCarrito(PedidoVentaDTO pedido, string codigoPostal)
+        {
+            GestorPedidosVenta gestorPedidos = new GestorPedidosVenta(new ServicioPedidosVenta());
+            gestorPedidos.RellenarEstadoProducto(pedido);
+            decimal baseImponibleProductos = GestorPortes.CalcularBaseImponibleProductos(
+                pedido.Lineas, pedido.servirJunto, new GestorStocks());
+            PedidoPortesInput input = GestorPortes.ConstruirInput(
+                pedido, codigoPostal, baseImponibleProductos, anadirPortes: true);
+            return GestorPortes.CalcularPortes(input);
+        }
+
+        /// <summary>
+        /// La ficha del contacto principal, que es sobre el que se crea el pedido: el JWT
+        /// identifica al cliente, no a uno de sus contactos.
+        /// </summary>
+        private async Task<ClienteDTO> LeerFichaCliente(string empresa, string cliente)
+        {
+            Cliente fichaCliente = await db.Clientes
+                .SingleOrDefaultAsync(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal)
+                .ConfigureAwait(false);
+            if (fichaCliente == null)
+            {
+                return null;
+            }
+            return new ClienteDTO
+            {
+                empresa = fichaCliente.Empresa.Trim(),
+                cliente = fichaCliente.Nº_Cliente.Trim(),
+                contacto = fichaCliente.Contacto.Trim(),
+                estado = fichaCliente.Estado,
+                iva = fichaCliente.IVA,
+                ccc = fichaCliente.CCC,
+                codigoPostal = fichaCliente.CodPostal,
+                periodoFacturacion = fichaCliente.PeriodoFacturación,
+                ruta = fichaCliente.Ruta,
+                servirJunto = fichaCliente.ServirJunto,
+                mantenerJunto = fichaCliente.MantenerJunto,
+                noComisiona = fichaCliente.NoComisiona,
+                vendedor = fichaCliente.Vendedor,
+                comentarioPicking = fichaCliente.ComentarioPicking
+            };
+        }
+
+        private async Task<CondicionesPagoResponse> LeerCondicionesPago(string empresa, string cliente)
+        {
+            // Sin using, igual que arriba: comparte el DbContext de este controller.
+            PlazosPagoController controllerPlazos = new PlazosPagoController(db);
+            IHttpActionResult resultado = await controllerPlazos
+                .GetCondicionesPago(empresa, cliente, Constantes.FormasVenta.APP)
+                .ConfigureAwait(false);
+            return resultado is OkNegotiatedContentResult<CondicionesPagoResponse> ok ? ok.Content : null;
+        }
+
+        private async Task<Dictionary<string, ProductoPlantillaDTO>> CalcularPrecios(
+            string empresa, ClienteDTO cliente, IEnumerable<LineaPedidoClienteRequest> lineas)
+        {
+            Dictionary<string, ProductoPlantillaDTO> precios = new Dictionary<string, ProductoPlantillaDTO>();
+            // Sin using, igual que arriba: comparte el DbContext de este controller.
+            ProductosController controllerProductos = new ProductosController(db);
+            foreach (LineaPedidoClienteRequest linea in lineas)
+            {
+                string producto = linea.Producto.Trim();
+                IHttpActionResult resultado = await controllerProductos
+                    .GetProducto(empresa, producto, cliente.cliente, cliente.contacto, linea.Cantidad)
+                    .ConfigureAwait(false);
+                if (resultado is OkNegotiatedContentResult<ProductoPlantillaDTO> ok)
+                {
+                    precios[producto] = ok.Content;
+                }
+            }
+            return precios;
+        }
+
+        private static PedidoClienteResponse ConstruirRespuesta(PedidoVentaDTO pedido, string formaPago, string plazosPago)
+        {
+            PedidoClienteResponse respuesta = new PedidoClienteResponse
+            {
+                Empresa = pedido.empresa,
+                Numero = pedido.numero,
+                Cliente = pedido.cliente?.Trim(),
+                Contacto = pedido.contacto?.Trim(),
+                FormaPago = formaPago,
+                PlazosPago = plazosPago,
+                BaseImponible = pedido.BaseImponible,
+                Total = pedido.Total,
+                // Los portes los ha calculado el servidor y son una línea más de cuenta contable
+                Portes = pedido.Lineas
+                    .Where(l => l.tipoLinea == Constantes.TiposLineaVenta.CUENTA_CONTABLE)
+                    .Sum(l => l.BaseImponible),
+                RequierePago = PoliticaPagoCanal.SeCobraEnElMomento(formaPago, plazosPago)
+            };
+
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas.Where(l => l.tipoLinea == Constantes.TiposLineaVenta.PRODUCTO))
+            {
+                respuesta.Lineas.Add(new LineaPedidoClienteResponse
+                {
+                    Producto = linea.Producto?.Trim(),
+                    Texto = linea.texto,
+                    Cantidad = (short)linea.Cantidad,
+                    PrecioUnitario = linea.PrecioUnitario,
+                    Descuento = linea.SumaDescuentos,
+                    BaseImponible = linea.BaseImponible,
+                    Total = linea.Total
+                });
+            }
+
+            if (respuesta.RequierePago)
+            {
+                respuesta.Avisos.Add("El pedido no se prepara hasta que se recibe el pago.");
+            }
+
+            return respuesta;
+        }
+
+        private static string MotivoParaElCliente(PedidoValidacionException ex)
+        {
+            List<string> motivos = ex.RespuestaValidacion?.Motivos;
+            string detalle = motivos != null && motivos.Any()
+                ? string.Join(". ", motivos)
+                : ex.Message;
+            return "El pedido no se ha podido crear y necesita que lo revisemos: " + detalle;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                db.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+    }
+}
