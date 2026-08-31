@@ -40,6 +40,15 @@ namespace NestoAPI.Infraestructure.Pagos
             }
             public ICollection<string> FormasPago { get; set; }
             public ICollection<string> PlazosPago { get; set; }
+
+            /// <summary>
+            /// NestoAPI#436: el CCC que lleva la ficha sobre la que se va a crear el pedido. Sin él
+            /// no se puede ofrecer una forma de pago domiciliada, porque el pedido saldría
+            /// domiciliado a ninguna cuenta. El selector general ya quita esas formas cuando el
+            /// cliente no tiene NINGÚN CCC dado de alta, pero eso no es lo mismo: puede tener
+            /// cuentas y no tener ninguna asignada en la ficha con la que se pide.
+            /// </summary>
+            public string Ccc { get; set; }
         }
 
         public static bool EsApp(string canal)
@@ -63,7 +72,7 @@ namespace NestoAPI.Infraestructure.Pagos
 
             return new CondicionesPagoResponse
             {
-                FormasPago = FiltrarFormasPagoApp(condiciones.FormasPago, tieneDeuda, ficha.FormasPago),
+                FormasPago = FiltrarFormasPagoApp(condiciones.FormasPago, tieneDeuda, ficha.FormasPago, ficha.Ccc),
                 PlazosPago = FiltrarPlazosPagoApp(condiciones.PlazosPago, tieneDeuda, ficha.PlazosPago),
                 InfoDeuda = condiciones.InfoDeuda,
                 // En la app siempre se recomienda tarjeta al contado, tenga deuda o no. El
@@ -78,7 +87,8 @@ namespace NestoAPI.Infraestructure.Pagos
             return infoDeuda != null && (infoDeuda.TieneImpagados || infoDeuda.TieneDeudaVencida);
         }
 
-        internal static List<FormaPagoDTO> FiltrarFormasPagoApp(List<FormaPagoDTO> formasPago, bool tieneDeuda, ICollection<string> formasPagoFicha)
+        internal static List<FormaPagoDTO> FiltrarFormasPagoApp(
+            List<FormaPagoDTO> formasPago, bool tieneDeuda, ICollection<string> formasPagoFicha, string cccDeLaFicha)
         {
             if (formasPago == null)
             {
@@ -92,6 +102,8 @@ namespace NestoAPI.Infraestructure.Pagos
             HashSet<string> deLaFicha = Normalizar(formasPagoFicha);
             return formasPago
                 .Where(f => EsTarjeta(f.formaPago) || deLaFicha.Contains(Normalizar(f.formaPago)))
+                .Where(f => !EsEfectivo(f.formaPago))
+                .Where(f => PuedeDomiciliarse(f, cccDeLaFicha))
                 .ToList();
         }
 
@@ -152,6 +164,32 @@ namespace NestoAPI.Infraestructure.Pagos
         {
             return EsTarjeta(formaPago) ||
                 Normalizar(plazosPago) == Normalizar(Constantes.PlazosPago.PREPAGO);
+        }
+
+        /// <summary>
+        /// NestoAPI#436: el efectivo NO se ofrece en la app, ni con deuda ni sin ella. El argumento
+        /// que lo excluía en el caso de deuda vale igual sin deuda: en una app no hay a quién darle
+        /// el efectivo, y un cliente que lo eligiera no sabría qué acaba de pedir.
+        ///
+        /// <para>OJO con lo que esto significa de verdad: en esta casa EFC sin CCC es el CONTRA
+        /// REEMBOLSO (lo mira <c>GestorPortes.EsContraReembolso</c>, con su comisión). Así que esto
+        /// no es solo "quitar el efectivo": es no ofrecer contra reembolso en la app. Si el negocio
+        /// lo quiere, se quita este filtro y la app tiene que pintarlo como "contra reembolso" con
+        /// su comisión a la vista, no como "efectivo".</para>
+        /// </summary>
+        private static bool EsEfectivo(string formaPago)
+        {
+            return Normalizar(formaPago) == Normalizar(Constantes.FormasPago.EFECTIVO);
+        }
+
+        /// <summary>
+        /// NestoAPI#436: una forma de pago domiciliada necesita una cuenta a la que domiciliar. El
+        /// pedido de la app se crea con el CCC de la ficha, así que si ahí no hay ninguno, saldría
+        /// domiciliado a ninguna cuenta.
+        /// </summary>
+        private static bool PuedeDomiciliarse(FormaPagoDTO formaPago, string cccDeLaFicha)
+        {
+            return !formaPago.cccObligatorio || !string.IsNullOrWhiteSpace(cccDeLaFicha);
         }
 
         private static bool EsTarjeta(string formaPago)

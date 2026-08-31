@@ -28,7 +28,7 @@ namespace NestoAPI.Tests.Infrastructure
                     new FormaPagoDTO { formaPago = EFECTIVO, descripcion = "Efectivo" },
                     new FormaPagoDTO { formaPago = TRANSFERENCIA, descripcion = "Transferencia" },
                     new FormaPagoDTO { formaPago = TARJETA, descripcion = "Tarjeta" },
-                    new FormaPagoDTO { formaPago = RECIBO, descripcion = "Recibo bancario" }
+                    new FormaPagoDTO { formaPago = RECIBO, descripcion = "Recibo bancario", cccObligatorio = true }
                 },
                 PlazosPago = new List<PlazoPagoDTO>
                 {
@@ -55,12 +55,13 @@ namespace NestoAPI.Tests.Infrastructure
             };
         }
 
-        private static PoliticaPagoCanal.CondicionesFicha Ficha(string formaPago, string plazoPago)
+        private static PoliticaPagoCanal.CondicionesFicha Ficha(string formaPago, string plazoPago, string ccc = "1")
         {
             return new PoliticaPagoCanal.CondicionesFicha
             {
                 FormasPago = formaPago == null ? new List<string>() : new List<string> { formaPago },
-                PlazosPago = plazoPago == null ? new List<string>() : new List<string> { plazoPago }
+                PlazosPago = plazoPago == null ? new List<string>() : new List<string> { plazoPago },
+                Ccc = ccc
             };
         }
 
@@ -220,6 +221,78 @@ namespace NestoAPI.Tests.Infrastructure
         public void SeCobraEnElMomento_ReciboA90Dias_No()
         {
             Assert.IsFalse(PoliticaPagoCanal.SeCobraEnElMomento(RECIBO, "30/60/90"));
+        }
+        // --- El efectivo, fuera del canal APP siempre (avisos del equipo de la app) ---
+
+        [TestMethod]
+        public void AplicarPoliticaApp_ClienteSinDeudaConEfectivoEnLaFicha_TampocoSeLeOfrece()
+        {
+            // El argumento que excluia el efectivo con deuda vale igual sin deuda: en una app no
+            // hay a quien darle el efectivo. Y ademas EFC sin CCC es el contra reembolso, que la
+            // app no puede ofrecer mientras no ensene la comision.
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                CondicionesGenerales(conDeuda: false), Ficha(EFECTIVO, "CONTADO"));
+
+            Assert.IsFalse(condiciones.FormasPago.Any(f => f.formaPago == EFECTIVO));
+        }
+
+        [TestMethod]
+        public void AplicarPoliticaApp_TransferenciaEnLaFicha_SiSeLeOfrece()
+        {
+            // La transferencia si se puede hacer desde casa: esa se queda.
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                CondicionesGenerales(conDeuda: false), Ficha(TRANSFERENCIA, "CONTADO"));
+
+            Assert.IsTrue(condiciones.FormasPago.Any(f => f.formaPago == TRANSFERENCIA));
+        }
+
+        // --- Domiciliadas: hace falta una cuenta a la que domiciliar ---
+
+        [TestMethod]
+        public void AplicarPoliticaApp_ReciboEnLaFichaPeroSinCccEnLaFicha_NoSeLeOfrece()
+        {
+            // El pedido se crea con el CCC de la ficha: sin el, saldria domiciliado a ninguna cuenta.
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                CondicionesGenerales(conDeuda: false), Ficha(RECIBO, "30/60/90", ccc: null));
+
+            Assert.IsFalse(condiciones.FormasPago.Any(f => f.formaPago == RECIBO));
+        }
+
+        [TestMethod]
+        public void AplicarPoliticaApp_ReciboEnLaFichaConCcc_SeLeOfrece()
+        {
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                CondicionesGenerales(conDeuda: false), Ficha(RECIBO, "30/60/90", ccc: "1"));
+
+            Assert.IsTrue(condiciones.FormasPago.Any(f => f.formaPago == RECIBO));
+        }
+
+        [TestMethod]
+        public void AplicarPoliticaApp_SinCcc_LaTarjetaSigueEstando()
+        {
+            // La tarjeta no se domicilia: no puede depender de tener cuenta bancaria.
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                CondicionesGenerales(conDeuda: false), Ficha(null, null, ccc: null));
+
+            Assert.IsTrue(condiciones.FormasPago.Any(f => f.formaPago == TARJETA));
+        }
+
+        [TestMethod]
+        public void ResolverFormaPago_PideReciboSinCccEnLaFicha_SeQuedaEnTarjeta()
+        {
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                CondicionesGenerales(conDeuda: false), Ficha(RECIBO, "30/60/90", ccc: null));
+
+            Assert.AreEqual(TARJETA, PoliticaPagoCanal.ResolverFormaPago(condiciones, RECIBO));
+        }
+
+        [TestMethod]
+        public void ResolverFormaPago_PideEfectivo_SeQuedaEnTarjeta()
+        {
+            CondicionesPagoResponse condiciones = PoliticaPagoCanal.AplicarPoliticaApp(
+                CondicionesGenerales(conDeuda: false), Ficha(EFECTIVO, "CONTADO"));
+
+            Assert.AreEqual(TARJETA, PoliticaPagoCanal.ResolverFormaPago(condiciones, EFECTIVO));
         }
     }
 }

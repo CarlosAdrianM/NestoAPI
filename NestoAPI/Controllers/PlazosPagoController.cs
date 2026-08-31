@@ -268,10 +268,18 @@ namespace NestoAPI.Controllers
                 .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
                 .ToList();
 
+            // NestoAPI#436: el CCC de la ficha principal, que es la que se usa para crear el pedido
+            // de la app. Sin él no se puede ofrecer una forma de pago domiciliada.
+            string ccc = db.Clientes
+                .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente && c.ClientePrincipal)
+                .Select(c => c.CCC)
+                .FirstOrDefault();
+
             return new PoliticaPagoCanal.CondicionesFicha
             {
                 FormasPago = condicionesCliente.Select(c => c.FormaPago).Where(f => f != null).ToList(),
-                PlazosPago = condicionesCliente.Select(c => c.PlazosPago).Where(p => p != null).ToList()
+                PlazosPago = condicionesCliente.Select(c => c.PlazosPago).Where(p => p != null).ToList(),
+                Ccc = ccc
             };
         }
 
