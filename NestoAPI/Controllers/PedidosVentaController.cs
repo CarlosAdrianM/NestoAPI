@@ -504,7 +504,7 @@ namespace NestoAPI.Controllers
                 // Tiendas puede modificar sin validación solo si todas las líneas están en su almacén
                 if (!grupoPermitidoSinValidacion && usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
                 {
-                    string usuarioParam = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
+                    string usuarioParam = UsuarioSinDominio(pedido.Usuario);
                     string almacenUsuario = ParametrosUsuarioController.LeerParametro(pedido.empresa, usuarioParam, "AlmacénPedidoVta");
 
                     if (!string.IsNullOrWhiteSpace(almacenUsuario) && pedido.Lineas.Any())
@@ -1439,6 +1439,15 @@ namespace NestoAPI.Controllers
                 return BadRequest(ModelState);
             }
 
+            // NestoAPI#434: los datos que el resto del método da por hechos se comprueban AQUÍ,
+            // antes de tocar nada. Sin esto, un pedido incompleto no daba un error entendible sino
+            // una NullReferenceException opaca (500) a mitad de la creación.
+            string faltanDatos = ValidarDatosObligatoriosPedido(pedido);
+            if (faltanDatos != null)
+            {
+                return BadRequest(faltanDatos);
+            }
+
             // NestoAPI#176: bloquear creación de pedido si servirJunto=false y alguna
             // línea MMP o bonificado Ganavisiones se quedaría pendiente. Cierra el
             // agujero de orden de operaciones sin depender del cliente.
@@ -1463,7 +1472,7 @@ namespace NestoAPI.Controllers
                 // Tiendas puede crear sin validación solo si todas las líneas están en su almacén
                 if (!grupoPermitidoSinValidacion && usuarioValidacion.IsInRoleSinDominio(Constantes.GruposSeguridad.TIENDAS))
                 {
-                    string usuarioParam = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
+                    string usuarioParam = UsuarioSinDominio(pedido.Usuario);
                     string almacenUsuario = ParametrosUsuarioController.LeerParametro(pedido.empresa, usuarioParam, "AlmacénPedidoVta");
 
                     if (!string.IsNullOrWhiteSpace(almacenUsuario) && pedido.Lineas.Any())
@@ -1478,17 +1487,23 @@ namespace NestoAPI.Controllers
                 grupoTiendasConAlmacenCorrecto = false;
             }
 
-            // Carlos 11/08/23:
-            if (string.IsNullOrEmpty(pedido.formaPago) || string.IsNullOrEmpty(pedido.plazosPago))
-            {
-                throw new Exception("El pedido tiene que tener formas y plazos de pago");
-            }
-
             // Carlos 28/09/15: ajustamos el primer vencimiento a los plazos de pago y a los días de pago
+            // (la comprobación de que formaPago y plazosPago vienen rellenos está arriba, en
+            // ValidarDatosObligatoriosPedido, junto al resto de datos obligatorios — NestoAPI#434)
             DateTime vencimientoPedido;
             System.Data.Entity.Core.Objects.ObjectParameter primerVencimiento = new System.Data.Entity.Core.Objects.ObjectParameter("FechaOut", typeof(DateTime));
             PlazoPago plazoPago = db.PlazosPago.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Número == pedido.plazosPago);
             Empresa empresa = db.Empresas.SingleOrDefault(e => e.Número == pedido.empresa);
+
+            // NestoAPI#434: la validación de arriba solo mira que vengan rellenos; aquí comprobamos
+            // que existan de verdad en la empresa. Antes, unos plazos de pago inexistentes reventaban
+            // en el AddDays de la línea siguiente con una NRE sin ninguna pista de qué faltaba.
+            string faltanMaestros = ValidarMaestrosPedido(pedido, plazoPago, empresa);
+            if (faltanMaestros != null)
+            {
+                return BadRequest(faltanMaestros);
+            }
+
             vencimientoPedido = pedido.fecha.Value.AddDays(plazoPago.DíasPrimerPlazo);
             vencimientoPedido = vencimientoPedido.AddMonths(plazoPago.MesesPrimerPlazo);
             _ = db.prdAjustarDíasPagoCliente(pedido.empresa, pedido.cliente, pedido.contacto, vencimientoPedido, primerVencimiento);
@@ -1560,16 +1575,17 @@ namespace NestoAPI.Controllers
             GestorComisiones.CrearVendedorPedidoGrupoProducto(db, cabecera, pedido);
 
 
-            //ParametrosUsuarioController parametrosUsuarioCtrl = new ParametrosUsuarioController();
-            ParametroUsuario parametroUsuario;
-
-            // Guardamos el parámetro de pedido, para que al abrir la ventana el usuario vea el pedido
-            string usuarioParametro = pedido.Usuario.Substring(pedido.Usuario.IndexOf("\\") + 1);
-            if (usuarioParametro != null && (usuarioParametro.Length < 7 || usuarioParametro.Substring(0, 7) != "Cliente"))
-            {
-                parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p => p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "UltNumPedidoVta");
-                parametroUsuario.Valor = pedido.numero.ToString();
-            }
+            // Guardamos el parámetro de pedido, para que al abrir la ventana el usuario vea el pedido.
+            // NestoAPI#434: UltNumPedidoVta es una comodidad de la UI de escritorio (reabrir el último
+            // pedido); que no exista NO puede impedir crear el pedido. Antes se le asignaba .Valor al
+            // resultado de un SingleOrDefault sin comprobar, así que reventaba con cualquier usuario
+            // sin esa fila: un empleado nuevo, o un cliente final creando su pedido desde la app.
+            // El gancho que excluía a los usuarios cuyo nombre empezaba por "Cliente" era legacy (hoy
+            // no lo cumple nadie) y sobra: la guarda de null cubre ese caso y todos los demás.
+            string usuarioParametro = UsuarioSinDominio(pedido.Usuario);
+            ParametroUsuario parametroUsuario = db.ParametrosUsuario.SingleOrDefault(p =>
+                p.Empresa == pedido.empresa && p.Usuario == usuarioParametro && p.Clave == "UltNumPedidoVta");
+            GuardarUltimoNumeroPedido(parametroUsuario, pedido.numero);
 
             // Declaramos las variables que se van a utilizar en el bucle de insertar líneas
             LinPedidoVta linPedido;
@@ -2110,6 +2126,102 @@ namespace NestoAPI.Controllers
             bool quiereAnadirPortes = !puedeSuprimirPortes || anadirPortesSolicitado;
             // REI/ALC nunca llevan portes aunque se pidan: la regla de almacén manda.
             return quiereAnadirPortes && !EsAlmacenSinPortes(almacen);
+        }
+
+        /// <summary>
+        /// NestoAPI#434: quita el dominio del usuario que mete el pedido ("NUEVAVISION\carlos" →
+        /// "carlos"), que es como se guardan las claves en ParametrosUsuario. Null-safe, y si el
+        /// usuario no lleva dominio devuelve el nombre entero (que es lo que se quiere): el
+        /// IndexOf/Substring que había hacía lo mismo pero reventaba con usuario null.
+        /// </summary>
+        internal static string UsuarioSinDominio(string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(usuario))
+            {
+                return null;
+            }
+            int posicionBarra = usuario.IndexOf("\\");
+            return posicionBarra >= 0 ? usuario.Substring(posicionBarra + 1) : usuario;
+        }
+
+        /// <summary>
+        /// NestoAPI#434: guarda el último número de pedido del usuario, si tiene esa fila.
+        /// UltNumPedidoVta es una comodidad de la UI de escritorio (reabrir el último pedido), así
+        /// que el parámetro puede no existir y eso NO puede impedir crear el pedido.
+        /// </summary>
+        internal static void GuardarUltimoNumeroPedido(ParametroUsuario parametroUsuario, int numeroPedido)
+        {
+            if (parametroUsuario == null)
+            {
+                return;
+            }
+            parametroUsuario.Valor = numeroPedido.ToString();
+        }
+
+        /// <summary>
+        /// NestoAPI#434: datos sin los que PostPedidoVenta no puede funcionar. Devuelve null si el
+        /// pedido está completo, o el mensaje de qué falta para responder un BadRequest.
+        /// El método estaba escrito para un usuario empleado con ficha y daba por hechos todos
+        /// estos campos; cuando alguno faltaba (un cliente final creando su pedido desde la app,
+        /// un DTO mal construido) reventaba con una NullReferenceException a mitad del proceso,
+        /// que ni dice qué falta ni distingue el fallo de datos del fallo del sistema.
+        /// </summary>
+        internal static string ValidarDatosObligatoriosPedido(PedidoVentaDTO pedido)
+        {
+            if (pedido == null)
+            {
+                return "No se ha recibido ningún pedido";
+            }
+            if (string.IsNullOrWhiteSpace(pedido.empresa))
+            {
+                return "El pedido tiene que llevar empresa";
+            }
+            if (string.IsNullOrWhiteSpace(pedido.cliente))
+            {
+                return "El pedido tiene que llevar cliente";
+            }
+            if (string.IsNullOrWhiteSpace(pedido.Usuario))
+            {
+                return "El pedido tiene que llevar el usuario que lo crea";
+            }
+            if (pedido.fecha == null)
+            {
+                return "El pedido tiene que llevar fecha";
+            }
+            // Carlos 11/08/23 (movido aquí en #434, junto al resto de datos obligatorios)
+            if (string.IsNullOrWhiteSpace(pedido.formaPago) || string.IsNullOrWhiteSpace(pedido.plazosPago))
+            {
+                return "El pedido tiene que tener formas y plazos de pago";
+            }
+            if (pedido.Lineas == null || !pedido.Lineas.Any())
+            {
+                return "El pedido tiene que llevar alguna línea";
+            }
+            // El tipo de línea lo necesita CrearLineaVta para saber qué está insertando; si viene
+            // nulo se detectaba mucho después, ya con las líneas construidas, y en el picking.
+            LineaPedidoVentaDTO lineaSinTipo = pedido.Lineas.FirstOrDefault(l => l.tipoLinea == null);
+            if (lineaSinTipo != null)
+            {
+                return $"La línea del producto {lineaSinTipo.Producto?.Trim()} no lleva tipo de línea";
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// NestoAPI#434: los maestros que se leen de la base de datos y luego se usan sin comprobar.
+        /// Devuelve null si están todos, o el mensaje de cuál no existe.
+        /// </summary>
+        internal static string ValidarMaestrosPedido(PedidoVentaDTO pedido, PlazoPago plazoPago, Empresa empresa)
+        {
+            if (empresa == null)
+            {
+                return $"No existe la empresa {pedido.empresa?.Trim()}";
+            }
+            if (plazoPago == null)
+            {
+                return $"No existen los plazos de pago {pedido.plazosPago?.Trim()} en la empresa {pedido.empresa?.Trim()}";
+            }
+            return null;
         }
 
         /// <summary>
