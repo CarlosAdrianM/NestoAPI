@@ -21,7 +21,10 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return respuesta;
             }
 
-            if (!pedido.Lineas.All(l => l.formaVenta == "WEB"))
+            // NestoAPI#435: solo WEB. La app (APP) NO entra: sus pedidos no llevan los regalos por
+            // importe de Prestashop ni el comentario "TOTAL PEDIDO:" que los acompana. Si algun dia
+            // la app tiene regalos por importe, se replantea.
+            if (!pedido.Lineas.All(l => l.formaVenta == Constantes.FormasVenta.TIENDA_ONLINE))
             {
                 return respuesta;
             }

@@ -156,8 +156,12 @@ namespace NestoAPI.Models.Picking
                 Empresa = p.Empresa,
                 Id = p.Número,
                 ServirJunto = p.ServirJunto,
-                EsTiendaOnline = p.LinPedidoVtas.FirstOrDefault(l => l.Forma_Venta == "QRU" || l.Forma_Venta == "WEB" || l.Forma_Venta == "BLT" || l.Forma_Venta == "STK") != null,
-                EsPrecioPublicoFinal = (p.LinPedidoVtas.FirstOrDefault(l => l.Forma_Venta == "QRU" || l.Forma_Venta == "WEB" || l.Forma_Venta == "STK") != null) && p.Cliente.Estado == 8 && p.Vendedor != null &&  p.Vendedor.Trim() == "NV",
+                // NestoAPI#435: las formas de venta salen de Constantes (antes estaban escritas a
+                // mano aqui y en media docena de sitios mas). La app (APP) se prepara y se envia
+                // como un pedido de tienda online, pero su albaran NO va a precio de publico
+                // final: sus clientes son mayoritariamente profesionales.
+                EsTiendaOnline = p.LinPedidoVtas.FirstOrDefault(l => Constantes.FormasVenta.PREPARACION_TIENDA_ONLINE.Contains(l.Forma_Venta)) != null,
+                EsPrecioPublicoFinal = (p.LinPedidoVtas.FirstOrDefault(l => Constantes.FormasVenta.PRECIO_PUBLICO_FINAL.Contains(l.Forma_Venta)) != null) && p.Cliente.Estado == 8 && p.Vendedor != null &&  p.Vendedor.Trim() == "NV",
                 EsProductoYaFacturado = p.LinPedidoVtas.FirstOrDefault(l => l.YaFacturado) != null,
                 EsNotaEntrega = p.NotaEntrega && p.LinPedidoVtas.FirstOrDefault(l => l.YaFacturado) == null,
                 ImporteOriginalSobrePedido = db.LinPedidoVtas.Where(l => l.Número == p.Número && l.EstadoProducto != Constantes.Productos.ESTADO_NO_SOBRE_PEDIDO && !l.LineaParcial).Select(l => l.Base_Imponible).DefaultIfEmpty(0).Sum(),

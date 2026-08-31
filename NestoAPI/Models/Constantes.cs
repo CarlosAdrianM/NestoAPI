@@ -234,6 +234,18 @@ namespace NestoAPI.Models
             public const string MIRAVIA = "BLT";
 
             /// <summary>
+            /// NestoAPI#435: pedidos que crea el propio cliente desde la app movil
+            /// (TiendasNuevaVision). La forma de venta "Aplicacion Moviles" ya estaba dada de alta
+            /// en la tabla FormasVenta de la empresa 1, con VisiblePorComerciales = false.
+            /// OJO: NO es un canal externo y no debe entrar en CANALES_EXTERNOS. Los canales
+            /// externos traen sus portes ya calculados por la plataforma de origen y por eso se
+            /// respetan; detras de APP no hay ninguna plataforma que los calcule, y no queremos
+            /// que sea el cliente quien diga cuanto cuesta el envio (igual que no dice el precio):
+            /// los portes los calcula el servidor con GestorPortes, como en cualquier otro pedido.
+            /// </summary>
+            public const string APP = "APP";
+
+            /// <summary>
             /// Los mismos cuatro codigos, pero en array y publicos, para poder usarlos DENTRO de
             /// una consulta de Entity Framework: EsCanalExterno es un metodo de C# y EF6 no sabe
             /// traducirlo a SQL, mientras que un Contains sobre esta coleccion se convierte en un
@@ -247,6 +259,33 @@ namespace NestoAPI.Models
             public static bool EsCanalExterno(string formaVenta)
             {
                 return !string.IsNullOrWhiteSpace(formaVenta) && _canalesExternos.Contains(formaVenta.Trim());
+            }
+
+            /// <summary>
+            /// NestoAPI#435: formas de venta que el almacen prepara y envia como un pedido de
+            /// tienda online. La app (APP) SI entra: un pedido suyo se prepara y se envia igual
+            /// que uno de la web, aunque no sea un canal externo a efectos de portes ni de
+            /// validaciones. Array (no HashSet) para poder usarlo DENTRO de una consulta de
+            /// Entity Framework, igual que CANALES_EXTERNOS.
+            /// </summary>
+            public static readonly string[] PREPARACION_TIENDA_ONLINE = { AMAZON, TIENDA_ONLINE, PERFUMES_CLUB, MIRAVIA, APP };
+
+            /// <summary>
+            /// NestoAPI#435: formas de venta cuyo albaran se imprime a precio de publico final
+            /// (cuando ademas el cliente esta en estado 8 y el vendedor es NV). APP se queda
+            /// FUERA a proposito: los clientes de la app son mayoritariamente profesionales y su
+            /// albaran debe salir a su precio, no al de publico final.
+            /// </summary>
+            public static readonly string[] PRECIO_PUBLICO_FINAL = { AMAZON, TIENDA_ONLINE, PERFUMES_CLUB };
+
+            private static readonly HashSet<string> _preparacionTiendaOnline = new HashSet<string>(PREPARACION_TIENDA_ONLINE);
+
+            /// <summary>
+            /// NestoAPI#435: ¿el almacen prepara este pedido como uno de tienda online?
+            /// </summary>
+            public static bool EsPreparacionTiendaOnline(string formaVenta)
+            {
+                return !string.IsNullOrWhiteSpace(formaVenta) && _preparacionTiendaOnline.Contains(formaVenta.Trim());
             }
         }
 

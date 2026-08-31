@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Linq;
@@ -33,6 +33,8 @@ namespace NestoAPI.Infraestructure.ValidadoresPedido
                 return respuestaDenegada;
             }
 
+            // NestoAPI#435: solo WEB. La app (APP) NO entra: no tiene vouchers de Prestashop, asi
+            // que cualquier descuento suyo debe pasar por revision manual como el de cualquiera.
             if (!pedido.Lineas.All(l => l.formaVenta == Constantes.FormasVenta.TIENDA_ONLINE))
             {
                 return respuestaDenegada;
