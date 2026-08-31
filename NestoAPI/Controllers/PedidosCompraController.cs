@@ -334,7 +334,9 @@ namespace NestoAPI.Controllers
                 .Select(g => new { Producto = g.Key, Cantidad = g.Sum(l => (int)l.Cantidad) })
                 .ToDictionary(x => x.Producto, x => x.Cantidad);
 
-            Dictionary<string, List<DescuentosProducto>> descuentos = db.DescuentosProductoes
+            // Issue #423: también en compras. Un precio pactado con el proveedor con fecha de fin
+            // (una promoción de campaña suya) deja de aplicarse solo, sin tener que acordarse.
+            Dictionary<string, List<DescuentosProducto>> descuentos = Infraestructure.Vigencia.Vigentes(db.DescuentosProductoes)
                 .Where(d => d.Empresa == empresa && d.NºProveedor == proveedor && numeros.Contains(d.Nº_Producto))
                 .ToList()
                 .GroupBy(d => d.Nº_Producto)

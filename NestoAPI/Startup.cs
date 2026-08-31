@@ -385,6 +385,23 @@ namespace NestoAPI
             );
             Console.WriteLine("✅ Job recurrente 'sentinel-precio-publico' configurado (diario a la 1:30)");
 
+            // NestoAPI#423: encola los productos cuyas campañas empiezan o terminan. A la 1:00,
+            // ANTES del sentinel y del job de stocks, por la misma razón que aquellos: lo que
+            // encole entra en la tanda nocturna y la tienda amanece con los precios del día.
+            // Es imprescindible porque una campaña que caduca por fecha NO modifica ninguna fila,
+            // así que ningún detector por [Fecha Modificación] puede verla.
+            RecurringJob.AddOrUpdate(
+                "vigencia-campanas",
+                () => Infraestructure.Sincronizacion.VigenciaCampanasJobsService.EncolarProductosConCampanasQueCambian(
+                    Infraestructure.Sincronizacion.VigenciaCampanasJobsService.DIAS_VENTANA),
+                "0 1 * * *", // Cron: todos los días a la 1:00
+                new RecurringJobOptions
+                {
+                    TimeZone = TimeZoneInfo.Local
+                }
+            );
+            Console.WriteLine("✅ Job recurrente 'vigencia-campanas' configurado (diario a la 1:00)");
+
             // Job de correos post-compra: se ejecuta los miércoles a las 20:30
             // Issue #74: Sistema de correos automáticos con videos personalizados post-compra
             RecurringJob.RemoveIfExists("correos-postcompra-procesar-albaranes"); // Eliminar job viejo (diario)

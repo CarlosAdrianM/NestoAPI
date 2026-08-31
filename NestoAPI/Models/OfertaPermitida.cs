@@ -26,6 +26,8 @@ namespace NestoAPI.Models
         public string Usuario { get; set; }
         public System.DateTime FechaModificación { get; set; }
         public string FiltroProducto { get; set; }
+        public Nullable<System.DateTime> FechaDesde { get; set; }
+        public Nullable<System.DateTime> FechaHasta { get; set; }
     
         public virtual Cliente Cliente1 { get; set; }
         public virtual Empresa Empresa1 { get; set; }

@@ -518,6 +518,7 @@
     <Compile Include="Controllers\FacturasAmazonController.cs" />
     <Compile Include="Controllers\OfertasCombinadasController.cs" />
     <Compile Include="Controllers\OfertasEscalonadasController.cs" />
+    <Compile Include="Controllers\OfertasPermitidasProductoController.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaController.cs" />
     <Compile Include="Controllers\DeepLinkController.cs" />
     <Compile Include="Controllers\HomeController.cs" />
@@ -541,6 +542,7 @@
     <Compile Include="Controllers\CorreosController.cs" />
     <Compile Include="Controllers\PlantillaVentasController.cs" />
     <Compile Include="Controllers\PrestashopProductosController.cs" />
+    <Compile Include="Controllers\CampanasController.cs" />
     <Compile Include="Controllers\ProductosCategoriasSecundariasController.cs" />
     <Compile Include="Controllers\PlazosPagoController.cs" />
     <Compile Include="Controllers\PreContabilidadesController.cs" />
@@ -789,6 +791,8 @@
     <Compile Include="Infraestructure\ServicioGestorClientes.cs" />
     <Compile Include="Infraestructure\ServicioGestorStocks.cs" />
     <Compile Include="Infraestructure\ServicioPlantillaVenta.cs" />
+    <Compile Include="Infraestructure\IConVigencia.cs" />
+    <Compile Include="Infraestructure\Vigencia.cs" />
     <Compile Include="Infraestructure\ServicioPrecios.cs" />
     <Compile Include="Infraestructure\ServicioReclamacionDeuda.cs" />
     <Compile Include="Infraestructure\Notificaciones\IServicioNotificacionesPush.cs" />
@@ -797,6 +801,8 @@
     <Compile Include="Infraestructure\Pagos\RedsysService.cs" />
     <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\VigenciaCampanasJobsService.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\AlcanceCampanas.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClienteChangeDetector.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClientesSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ProductoChangeDetector.cs" />
@@ -1188,6 +1194,7 @@
     <Compile Include="Models\Ganavisiones\GanavisionDTO.cs" />
     <Compile Include="Models\OfertasCombinadas\OfertaCombinadaDTO.cs" />
     <Compile Include="Models\OfertasEscalonadas\OfertaEscalonadaDTO.cs" />
+    <Compile Include="Models\OfertasCombinadas\OfertaPermitidaProductoDTO.cs" />
     <Compile Include="Models\OfertasCombinadas\OfertaPermitidaFamiliaDTO.cs" />
     <Compile Include="Models\FicheroCuaderno43.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
@@ -1273,6 +1280,7 @@
     <Compile Include="Models\OfertaEscalonadaTramo.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>
+    <Compile Include="Models\EntidadesConVigencia.cs" />
     <Compile Include="Models\OfertaPermitida.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

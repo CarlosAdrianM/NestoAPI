@@ -211,6 +211,8 @@
     <Compile Include="Controllers\PedidosVentaBuscarLineasTests.cs" />
     <Compile Include="Controllers\OfertasPermitidasFamiliaControllerTests.cs" />
     <Compile Include="Helpers\TestDbAsyncQueryProvider.cs" />
+    <Compile Include="Controllers\OfertasPermitidasProductoControllerTests.cs" />
+    <Compile Include="Controllers\CampanasControllerTests.cs" />
     <Compile Include="Controllers\AgenciasTarifasControllerTests.cs" />
     <Compile Include="Controllers\VentasClienteControllerTests.cs" />
     <Compile Include="Controllers\PedidosVentaControllerTests.cs" />
@@ -232,8 +234,10 @@
     <Compile Include="Controllers\CabRemesasPagoControllerTests.cs" />
     <Compile Include="Controllers\FamiliasControllerTests.cs" />
     <Compile Include="Controllers\EquiposDeVentasResumenTests.cs" />
+    <Compile Include="Infrastructure\Sincronizacion\VigenciaCampanasJobsServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SentinelPrecioPublicoJobsServiceTests.cs" />
     <Compile Include="Models\MapeoEdmxTests.cs" />
+    <Compile Include="Models\CampanasPorNivelTests.cs" />
     <Compile Include="Models\PrecioPublicoFinalTests.cs" />
     <Compile Include="Models\PedidosVenta\CuadrarEfectosTests.cs" />
     <Compile Include="Infraestructure\Buscador\LuceneBuscadorTests.cs" />
@@ -352,6 +356,7 @@
     <Compile Include="Infrastructure\PlanesVentajas\PlanesVentajasServiceTests.cs" />
     <Compile Include="Infrastructure\ServirJunto\ServicioValidarServirJuntoTests.cs" />
     <Compile Include="Controllers\NovedadesControllerTests.cs" />
+    <Compile Include="Infrastructure\VigenciaDescuentosTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosCalcularDescuentoProductoTests.cs" />
     <Compile Include="Infrastructure\GestorPreciosTests.cs" />
     <Compile Include="Infrastructure\ServicioAgenciasTests.cs" />

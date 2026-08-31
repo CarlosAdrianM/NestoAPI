@@ -41,11 +41,18 @@ namespace NestoAPI.Infraestructure
         // Si hay más de una (p.ej. dos familias que solo difieren en mayúsculas y que SQL Server
         // considera iguales), es un error de datos: se lanza un error que indica qué está duplicado
         // para que el usuario lo corrija, en vez del genérico "La secuencia contiene más de un elemento".
+        //
+        // Issue #423: este método es el embudo por el que pasan 10 de los 12 niveles de descuento,
+        // así que el filtro de vigencia se pone AQUÍ y no en cada nivel. Los otros dos niveles
+        // (precio y descuento de tarifa por producto, que no pueden usar SingleOrDefault porque
+        // admiten varias filas escalonadas por CantidadMínima) lo aplican por su cuenta.
+        // Efecto colateral bueno: una fila caducada tampoco cuenta ya como duplicada, así que dos
+        // campañas consecutivas sobre el mismo producto dejan de ser un error de datos.
         private static DescuentosProducto BuscarDescuentoUnico(NVEntities db, System.Linq.Expressions.Expression<Func<DescuentosProducto, bool>> filtro, PrecioDescuentoProducto datos, string ambito)
         {
             try
             {
-                return db.DescuentosProductoes.SingleOrDefault(filtro);
+                return Vigencia.Vigentes(db.DescuentosProductoes).SingleOrDefault(filtro);
             }
             catch (InvalidOperationException ex)
             {
@@ -93,7 +100,7 @@ namespace NestoAPI.Infraestructure
                     datos.precioCalculado = (decimal)dtoProducto.Precio;
                 }
                 //select top 1 precio,cantidadminima from descuentosproducto where cantidadminíma<=1 and  empresa='1  ' and [Nº Producto]='29352' and [nº cliente] is null and [nºproveedor] is null order by cantidadminima desc
-                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null);
+                dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes).OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null);
                 if (dtoProducto != null && dtoProducto.Precio < datos.precioCalculado)
                 {
                     datos.precioCalculado = (decimal)dtoProducto.Precio;
@@ -161,7 +168,7 @@ namespace NestoAPI.Infraestructure
                     datos.descuentoCalculado = dtoProducto.Descuento;
                 }
 
-                dtoProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Producto.Número == datos.producto.Número && d.Nº_Cliente == null && d.Familia == null && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
+                dtoProducto = Vigencia.Vigentes(db.DescuentosProductoes).OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.Empresa == datos.producto.Empresa && d.Producto.Número == datos.producto.Número && d.Nº_Cliente == null && d.Familia == null && d.CantidadMínima <= datos.cantidad && d.NºProveedor == null && d.GrupoProducto == null);
                 if (dtoProducto != null && dtoProducto.Descuento > datos.descuentoCalculado)
                 {
                     datos.descuentoCalculado = dtoProducto.Descuento;
@@ -233,12 +240,15 @@ namespace NestoAPI.Infraestructure
                 using (NVEntities db = new NVEntities())
                 {
                     // Lo hacemos así para que se pueda rellenar por fuera para los test
-                    datos.descuentosProducto = db.DescuentosProductoes.OrderByDescending(d => d.CantidadMínima).Where(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null).ToList();
+                    datos.descuentosProducto = Vigencia.Vigentes(db.DescuentosProductoes).OrderByDescending(d => d.CantidadMínima).Where(d => d.Empresa == datos.producto.Empresa && d.Nº_Producto == datos.producto.Número && d.CantidadMínima <= datos.cantidad && d.Nº_Cliente == null && d.NºProveedor == null).ToList();
                 }
             }
             if (datos.descuentosProducto != null)
             {
-                DescuentosProducto dtoProducto = datos.descuentosProducto.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.CantidadMínima <= datos.cantidad);
+                // Issue #423: la vigencia se comprueba también aquí, en memoria, porque la lista se
+                // puede rellenar desde fuera (descuentosRellenos) y entonces no ha pasado por el
+                // filtro de la consulta.
+                DescuentosProducto dtoProducto = datos.descuentosProducto.OrderByDescending(d => d.CantidadMínima).FirstOrDefault(d => d.CantidadMínima <= datos.cantidad && Vigencia.EsVigente(d));
                 if (dtoProducto != null && dtoProducto.Precio * (1 - dtoProducto.Descuento) <= datos.producto.PVP * (1 - datos.descuentoReal))
                 {
                     return true;

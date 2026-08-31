@@ -36,6 +36,17 @@ namespace NestoAPI.Models
         // (Nesto#456) en vez de adivinarla emparejando descripciones.
         public string SubgrupoCodigo { get; set; }
         public string Subgrupo { get; set; }
+
+        // NestoAPI#423: el CÓDIGO de la familia, que es lo que guardan las tablas de Nesto
+        // (DescuentosProducto.Familia, ProveedoresProducto...). `Familia`, arriba, es la
+        // DESCRIPCIÓN ("Productos Genéricos"): misma asimetría que Grupo/Subgrupo y por el mismo
+        // motivo — así viaja en el bus desde el principio y no se puede renombrar sin romper a
+        // PrestaShop y a Odoo.
+        //
+        // Se añade porque la trampa ya mordió: al montar las campañas por marca, buscar filas de
+        // DescuentosProducto con `dto.Familia` no habría casado NUNCA, y en silencio. Quien
+        // necesite identificar la marca (una campaña, un proveedor, un filtro) usa este campo.
+        public string FamiliaCodigo { get; set; }
         public string UrlEnlace { get; set; }
         public string UrlFoto { get; set; }
         public bool RoturaStockProveedor { get; set; }
@@ -322,6 +333,7 @@ namespace NestoAPI.Models
                 Tamanno = producto.Tamaño,
                 UnidadMedida = producto.UnidadMedida?.Trim(),
                 Familia = producto.Familia1?.Descripción?.Trim(),
+                FamiliaCodigo = producto.Familia?.Trim(),
                 PrecioProfesional = (decimal)producto.PVP,
                 Estado = (short)producto.Estado,
                 Grupo = producto.Grupo,
@@ -335,7 +347,12 @@ namespace NestoAPI.Models
             await CargarTextosTienda(dto, db).ConfigureAwait(false);
             await CargarTipoIva(dto, db, producto.IVA_Repercutido).ConfigureAwait(false);
             await CargarCategoriasSecundarias(dto, db).ConfigureAwait(false);
-            await CargarDescuentosPorAudiencia(dto, db, producto.PVP).ConfigureAwait(false);
+            // #423: familia y grupo salen de la FICHA, sin recortar, porque DescuentosProducto.Familia
+            // es char(10) igual que Productos.Familia y la comparación en SQL casa con el relleno.
+            // Lo que NO vale es tirar de `dto.Familia`: ahí va la DESCRIPCIÓN ("Productos Genéricos"),
+            // no el código, y no casaría con ninguna fila de descuento — en silencio. Para quien
+            // necesite el código desde el DTO está `dto.FamiliaCodigo`.
+            await CargarDescuentosPorAudiencia(dto, db, producto.PVP, producto.Familia, producto.Grupo).ConfigureAwait(false);
 
             foreach (Kit kit in producto.Kits)
             {
@@ -387,19 +404,34 @@ namespace NestoAPI.Models
         /// hay que llamarla en TODOS los caminos que publiquen el producto. Filtros del proceso
         /// legacy (pasos 5-7): filas de TARIFA (sin cliente ni proveedor), CantidadMínima menor
         /// que 2, y desde #413 además AudienciaOferta mayor que 0 (el 0, default, es "no va a la web").
+        ///
+        /// Desde #423 se filtra además por vigencia, con la MISMA regla que el motor de precios
+        /// (<see cref="Infraestructure.Vigencia"/>): la tienda no puede anunciar un
+        /// descuento que Nesto ya no cobraría. OJO: una campaña que caduca por fecha no modifica
+        /// ninguna fila, así que no basta con esto para que la oferta desaparezca de la tienda —
+        /// hace falta que algo reencole el producto en Nesto_sync (el job del Slice 2 de #423).
         /// </summary>
-        internal static async Task CargarDescuentosPorAudiencia(ProductoDTO dto, NVEntities db, decimal? pvp)
+        internal static async Task CargarDescuentosPorAudiencia(ProductoDTO dto, NVEntities db, decimal? pvp,
+            string familia = null, string grupo = null)
         {
-            System.Collections.Generic.List<DescuentosProducto> filas = await db.DescuentosProductoes
+            // #423 (Slice 3): además de las filas del producto, las de su FAMILIA. Son los dos
+            // niveles de tarifa que el motor de precios aplica de verdad (ver la precedencia en
+            // CalcularDescuentosPorAudiencia); una campaña de marca es una fila, no cuarenta.
+            //
+            // FiltroProducto fuera: el motor solo aplica esas filas junto a un cliente concreto
+            // (niveles 8 y 9), así que en tarifa pura no valen para nadie y publicarlas anunciaría
+            // un descuento que Nesto no cobra.
+            System.Collections.Generic.List<DescuentosProducto> filas = await Infraestructure.Vigencia.Vigentes(db.DescuentosProductoes)
                 .Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
-                    && d.Nº_Producto == dto.Producto
+                    && (d.Nº_Producto == dto.Producto || (familia != null && d.Familia == familia))
                     && (d.Nº_Cliente == null || d.Nº_Cliente.Trim() == string.Empty)
                     && (d.NºProveedor == null || d.NºProveedor.Trim() == string.Empty)
+                    && d.FiltroProducto == null
                     && d.CantidadMínima < 2
                     && d.AudienciaOferta > 0)
                 .ToListAsync().ConfigureAwait(false);
 
-            DescuentosPorAudiencia calculados = CalcularDescuentosPorAudiencia(filas, pvp);
+            DescuentosPorAudiencia calculados = CalcularDescuentosPorAudiencia(filas, pvp, grupo);
             dto.DescuentoPorcentajeProfesional = calculados.Profesional;
             dto.DescuentoPorcentajePublico = calculados.Publico;
         }
@@ -409,11 +441,38 @@ namespace NestoAPI.Models
         /// El % de cada fila sale de Descuento (0,20 = 20 %) o, si la fila lleva Precio fijo, se
         /// deriva contra el PVP como hacía el paso 7 del legacy (1 − Precio/PVP). Ámbitos:
         /// 1 = solo profesionales, 2 = ambos (el público usa DescuentoPublico si está, si no el
-        /// mismo %), 3 = solo público. Con varias filas gana el % MAYOR por audiencia (el mejor
-        /// para el cliente, que es el que Nesto acabaría aplicando).
+        /// mismo %), 3 = solo público.
+        ///
+        /// NestoAPI#423 (Slice 4): el 3 está PROHIBIDO en la base de datos
+        /// (<c>CK_DescuentosProducto_Audiencia</c>). GestorPrecios no mira la audiencia, así que
+        /// una fila "solo público" seguiría descontándole al profesional en el pedido: la tienda
+        /// diría una cosa y Nesto cobraría otra. El código de aquí sigue sabiendo tratarlo porque
+        /// es la definición de la semántica, y para que el día que el motor respete la audiencia
+        /// baste con retirar la restricción. Con ella puesta no puede llegar ninguna fila así.
+        ///
+        /// NestoAPI#423 (Slice 3): con filas de varios NIVELES ya no vale "gana el mayor". Se
+        /// replica la precedencia EXACTA de <c>GestorPrecios.calcularDescuentoProducto</c> para un
+        /// cliente sin filas propias, que es lo que la tienda debe anunciar:
+        ///
+        ///   1. familia            → fija el %
+        ///   2. familia + grupo    → SOBRESCRIBE al anterior (aunque sea menor)
+        ///   3. producto           → gana solo si es MAYOR que lo acumulado
+        ///
+        /// Los pasos 1 y 2 sobrescriben porque en el motor son asignaciones directas; el 3 lleva
+        /// una comparación `>`. Copiar esa asimetría es lo que hace que la tienda no anuncie un
+        /// porcentaje distinto del que Nesto acaba cobrando.
+        ///
+        /// Dentro de un mismo nivel gana la de mayor CantidadMínima, igual que el motor (que
+        /// ordena por CantidadMínima descendente), NO la del % mayor. Antes se cogía el máximo:
+        /// con dos filas de CantidadMínima 0 y 1 la tienda podía anunciar un porcentaje que el
+        /// pedido de una unidad no aplicaba.
+        ///
+        /// El Precio fijo solo se deriva a % en el nivel de PRODUCTO: el motor nunca lee el
+        /// Precio de una fila de familia (los niveles de familia solo miran Descuento), y
+        /// repartir un precio fijo entre los productos de una marca no significaría nada.
         /// </summary>
         internal static DescuentosPorAudiencia CalcularDescuentosPorAudiencia(
-            System.Collections.Generic.IEnumerable<DescuentosProducto> filas, decimal? pvp)
+            System.Collections.Generic.IEnumerable<DescuentosProducto> filas, decimal? pvp, string grupo = null)
         {
             DescuentosPorAudiencia resultado = new DescuentosPorAudiencia();
             if (filas == null)
@@ -421,42 +480,88 @@ namespace NestoAPI.Models
                 return resultado;
             }
 
-            foreach (DescuentosProducto fila in filas)
+            System.Collections.Generic.List<DescuentosProducto> lista = filas.ToList();
+
+            // Cada audiencia se calcula por separado, como si el motor corriera dos veces: primero
+            // sobre lo que se le publica al profesional y luego sobre lo que se le publica al
+            // público. Así "25 % a profesionales y 10 % al público" se puede seguir expresando con
+            // dos filas de ámbitos distintos (lo de #413), y no solo con DescuentoPublico.
+            resultado.Profesional = CalcularParaAudiencia(lista, pvp, grupo,
+                f => f.AudienciaOferta == 1 || f.AudienciaOferta == 2, usarDescuentoPublico: false);
+            resultado.Publico = CalcularParaAudiencia(lista, pvp, grupo,
+                f => f.AudienciaOferta == 2 || f.AudienciaOferta == 3, usarDescuentoPublico: true);
+
+            return resultado;
+        }
+
+        private static decimal? CalcularParaAudiencia(System.Collections.Generic.List<DescuentosProducto> lista,
+            decimal? pvp, string grupo, Func<DescuentosProducto, bool> esDeLaAudiencia, bool usarDescuentoPublico)
+        {
+            System.Collections.Generic.List<DescuentosProducto> suyas = lista.Where(esDeLaAudiencia).ToList();
+
+            // La clasificación es por la FORMA de la fila, igual que los filtros del motor.
+            DescuentosProducto deFamilia = MejorDelNivel(suyas.Where(f => f.Familia != null && f.GrupoProducto == null));
+            DescuentosProducto deFamiliaYGrupo = MejorDelNivel(suyas.Where(f => f.Familia != null && f.GrupoProducto != null
+                && grupo != null && f.GrupoProducto.Trim() == grupo.Trim()));
+            DescuentosProducto deProducto = MejorDelNivel(suyas.Where(f => f.Familia == null && f.GrupoProducto == null));
+
+            // Se acumula en decimal (no en decimal?) para que un nivel con Descuento 0 pueda
+            // ANULAR al anterior, igual que en el motor: "toda la marca al 20 %, menos su línea de
+            // peluquería" es una fila de familia+grupo al 0 %. Al final, 0 vuelve a ser "sin
+            // oferta" (null), que es lo que la tienda necesita para no pintar el tachado.
+            decimal porcentaje = 0M;
+
+            if (deFamilia != null)
             {
-                decimal? pctBase = null;
-                if (fila.Descuento > 0)
-                {
-                    pctBase = Math.Round(fila.Descuento * 100M, 2);
-                }
-                else if (fila.Precio > 0 && pvp > 0)
-                {
-                    decimal derivado = Math.Round((1M - (fila.Precio.Value / pvp.Value)) * 100M, 2);
-                    if (derivado > 0)
-                    {
-                        pctBase = derivado; // un Precio fijo POR ENCIMA del PVP no es una oferta
-                    }
-                }
+                porcentaje = PorcentajeDe(deFamilia, pvp, derivarDePrecio: false, usarDescuentoPublico);
+            }
+            if (deFamiliaYGrupo != null)
+            {
+                porcentaje = PorcentajeDe(deFamiliaYGrupo, pvp, derivarDePrecio: false, usarDescuentoPublico);
+            }
+            if (deProducto != null)
+            {
+                // El nivel de producto lleva `>` en el motor, no una asignación: no pisa a la
+                // familia si es menor.
+                porcentaje = Math.Max(porcentaje, PorcentajeDe(deProducto, pvp, derivarDePrecio: true, usarDescuentoPublico));
+            }
 
-                if (!pctBase.HasValue)
-                {
-                    continue;
-                }
+            return porcentaje > 0M ? porcentaje : (decimal?)null;
+        }
 
-                decimal pctPublico = fila.DescuentoPublico.HasValue
-                    ? Math.Round(fila.DescuentoPublico.Value * 100M, 2)
-                    : pctBase.Value;
+        /// <summary>
+        /// De las filas de un mismo nivel, la que aplicaría el motor: la de mayor CantidadMínima
+        /// (que ordena descendente y coge la primera). Si hubiera dos iguales es un duplicado de
+        /// los de #229 y el motor ya lo denuncia al calcular el precio; aquí se coge una y no se
+        /// revienta la publicación del producto por un error de datos.
+        /// </summary>
+        private static DescuentosProducto MejorDelNivel(System.Collections.Generic.IEnumerable<DescuentosProducto> delNivel)
+        {
+            return delNivel.OrderByDescending(f => f.CantidadMínima).FirstOrDefault();
+        }
 
-                if (fila.AudienciaOferta == 1 || fila.AudienciaOferta == 2)
+        private static decimal PorcentajeDe(DescuentosProducto fila, decimal? pvp, bool derivarDePrecio, bool usarDescuentoPublico)
+        {
+            if (usarDescuentoPublico && fila.DescuentoPublico.HasValue)
+            {
+                return Math.Round(fila.DescuentoPublico.Value * 100M, 2);
+            }
+
+            if (fila.Descuento > 0)
+            {
+                return Math.Round(fila.Descuento * 100M, 2);
+            }
+
+            if (derivarDePrecio && fila.Precio > 0 && pvp > 0)
+            {
+                decimal derivado = Math.Round((1M - (fila.Precio.Value / pvp.Value)) * 100M, 2);
+                if (derivado > 0)
                 {
-                    resultado.Profesional = Math.Max(resultado.Profesional ?? 0M, pctBase.Value);
-                }
-                if (fila.AudienciaOferta == 2 || fila.AudienciaOferta == 3)
-                {
-                    resultado.Publico = Math.Max(resultado.Publico ?? 0M, pctPublico);
+                    return derivado; // un Precio fijo POR ENCIMA del PVP no es una oferta
                 }
             }
 
-            return resultado;
+            return 0M;
         }
 
         /// <summary>

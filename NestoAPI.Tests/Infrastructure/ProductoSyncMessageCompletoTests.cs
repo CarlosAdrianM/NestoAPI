@@ -29,7 +29,14 @@ namespace NestoAPI.Tests.Infrastructure
             ["SubgrupoCodigo"] =
                 "Nesto#456: el codigo del subgrupo es para la ficha de Nesto. En el bus, Subgrupo " +
                 "viaja como DESCRIPCION y PrestaShop y Odoo lo consumen asi; meter el codigo sin " +
-                "avisarles cambiaria el contrato."
+                "avisarles cambiaria el contrato.",
+            ["FamiliaCodigo"] =
+                "NestoAPI#423: mismo caso y mismo criterio que SubgrupoCodigo. El codigo de la " +
+                "familia esta en el DTO para quien consume la API (la ficha de Nesto, y de paso " +
+                "para no volver a confundir el codigo con la descripcion al buscar filas de " +
+                "DescuentosProducto). Por el bus, Familia viaja como DESCRIPCION: si PrestaShop u " +
+                "Odoo llegan a necesitar el codigo para identificar la marca, se anade al mensaje " +
+                "DESPUES de acordarlo con ellos, no por sorpresa."
         };
 
         [TestMethod]

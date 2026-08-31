@@ -610,6 +610,9 @@
           <Property Name="Fecha Modificación" Type="datetime" Nullable="false" />
           <Property Name="AudienciaOferta" Type="tinyint" Nullable="false" />
           <Property Name="DescuentoPublico" Type="decimal" Precision="18" Scale="4" />
+          <Property Name="FechaDesde" Type="date" />
+          <Property Name="FechaHasta" Type="date" />
+          <Property Name="Campana" Type="nvarchar" MaxLength="50" />
         </EntityType>
         <EntityType Name="DiariosProducto">
           <Key>
@@ -1444,6 +1447,8 @@
           <Property Name="FiltroProducto" Type="nvarchar" MaxLength="50" />
           <Property Name="Usuario" Type="varchar" MaxLength="30" Nullable="false" StoreGeneratedPattern="Computed" />
           <Property Name="FechaModificación" Type="datetime" Nullable="false" StoreGeneratedPattern="Computed" />
+          <Property Name="FechaDesde" Type="date" />
+          <Property Name="FechaHasta" Type="date" />
         </EntityType>
         <EntityType Name="OfertasProveedores">
           <Key>
@@ -8625,6 +8630,9 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="GruposProducto" Relationship="NVModel.FK_DescuentosProducto_GruposProducto" FromRole="DescuentosProducto" ToRole="GruposProducto" />
           <Property Name="DescuentoPublico" Type="Decimal" Precision="18" Scale="4" />
           <Property Name="AudienciaOferta" Type="Byte" Nullable="false" />
+          <Property Name="FechaDesde" Type="DateTime" Precision="0" />
+          <Property Name="FechaHasta" Type="DateTime" Precision="0" />
+          <Property Name="Campana" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
         </EntityType>
         <EntityType Name="DíasPagoClientes">
           <Key>
@@ -10866,6 +10874,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <NavigationProperty Name="Empresa1" Relationship="NVModel.FK_OfertasPermitidas_Empresas" FromRole="OfertasPermitida" ToRole="Empresa" />
           <NavigationProperty Name="Producto" Relationship="NVModel.FK_OfertasPermitidas_Productos" FromRole="OfertasPermitida" ToRole="Producto" />
           <Property Name="FiltroProducto" Type="String" MaxLength="50" FixedLength="false" Unicode="true" />
+          <Property Name="FechaDesde" Type="DateTime" Precision="0" />
+          <Property Name="FechaHasta" Type="DateTime" Precision="0" />
         </EntityType>
         <Association Name="FK_OfertasPermitidas_Clientes">
           <End Type="NVModel.Cliente" Role="Cliente" Multiplicity="0..1" />
@@ -14240,6 +14250,9 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="DescuentosProductoes">
             <EntityTypeMapping TypeName="NVModel.DescuentosProducto">
               <MappingFragment StoreEntitySet="DescuentosProducto">
+                <ScalarProperty Name="Campana" ColumnName="Campana" />
+                <ScalarProperty Name="FechaHasta" ColumnName="FechaHasta" />
+                <ScalarProperty Name="FechaDesde" ColumnName="FechaDesde" />
                 <ScalarProperty Name="AudienciaOferta" ColumnName="AudienciaOferta" />
                 <ScalarProperty Name="DescuentoPublico" ColumnName="DescuentoPublico" />
                 <ScalarProperty Name="FiltroProducto" ColumnName="FiltroProducto" />
@@ -14892,6 +14905,8 @@ advertencia 6035: La relación 'FK__Conciliac__Apunt__4FDE596E' tiene columnas q
           <EntitySetMapping Name="OfertasPermitidas">
             <EntityTypeMapping TypeName="NVModel.OfertaPermitida">
               <MappingFragment StoreEntitySet="OfertasPermitidas">
+                <ScalarProperty Name="FechaHasta" ColumnName="FechaHasta" />
+                <ScalarProperty Name="FechaDesde" ColumnName="FechaDesde" />
                 <ScalarProperty Name="FiltroProducto" ColumnName="FiltroProducto" />
                 <ScalarProperty Name="FechaModificación" ColumnName="FechaModificación" />
                 <ScalarProperty Name="Usuario" ColumnName="Usuario" />

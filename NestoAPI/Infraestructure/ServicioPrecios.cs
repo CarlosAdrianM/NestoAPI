@@ -39,7 +39,22 @@ namespace NestoAPI.Infraestructure
                     return null;
                 }
 
-                return db.OfertasPermitidas.Where(o => o.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (o.Número == numeroProducto.Trim() || o.Familia == producto.Familia)).ToList();
+                // El filtro de vigencia va DESPUÉS del ToList, en memoria, y es a propósito: EF6 no
+                // sabe traducir el acceso a una propiedad de interfaz dentro de un árbol de
+                // expresión, así que meterlo en el Where obligaría a duplicar la regla en vez de
+                // reutilizar la de las campañas. Son unas 120 filas en toda la tabla: traerlas y
+                // filtrarlas aquí no cuesta nada.
+                //
+                // Este es el ÚNICO punto de lectura de OfertasPermitidas, así que filtrando aquí
+                // lo respetan de una vez los dos validadores que la consultan
+                // (ValidadorOfertasPermitidas y ValidadorDescuentosPermitidos): una oferta con la
+                // fecha pasada deja de autorizar el pedido, que es justo para lo que se le pone
+                // fecha de fin.
+                return db.OfertasPermitidas
+                    .Where(o => o.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO && (o.Número == numeroProducto.Trim() || o.Familia == producto.Familia))
+                    .ToList()
+                    .Where(o => Vigencia.EsVigente(o))
+                    .ToList();
             }
         }
 
@@ -59,7 +74,10 @@ namespace NestoAPI.Infraestructure
                     return null;
                 }
 
-                return db.DescuentosProductoes.Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
+                // Issue #423: un descuento caducado ya no autoriza nada. Sin este filtro, la campaña
+                // seguiría dando por bueno en el pedido un descuento que el motor de precios ya no
+                // calcula, que es la peor de las dos incoherencias posibles.
+                return Vigencia.Vigentes(db.DescuentosProductoes).Where(d => d.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
                     d.NºProveedor == null &&
                     (d.Nº_Producto == numeroProducto.Trim() || d.Familia == producto.Familia || d.GrupoProducto == producto.Grupo || (d.Familia == producto.Familia && producto.Nombre.StartsWith(d.FiltroProducto))))
                     .Where(FiltroClienteContacto(numeroCliente, contactoCliente))
