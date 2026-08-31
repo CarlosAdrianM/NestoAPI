@@ -367,6 +367,52 @@ namespace NestoAPI.Controllers
         }
 
 
+        /// <summary>
+        /// Nesto#340 (slice A3): "¿existe este cliente en esta empresa?", tal y como lo pregunta
+        /// el modulo de Agencias antes de contabilizar un reembolso. Devuelve un booleano pelado.
+        ///
+        /// NO se reutiliza GET api/Clientes (que con el contacto vacio ya devuelve el principal)
+        /// por una diferencia que NO es cosmetica: aquel NO filtra por estado y este SI. Agencias
+        /// exige Estado >= 0, o sea cliente de alta. Contestar que si con un cliente dado de baja
+        /// dejaria contabilizar un reembolso contra el, que es justo lo que la comprobacion
+        /// pretende evitar. Y como el llamante solo mira si hay cliente o no, la diferencia
+        /// pasaria inadvertida.
+        ///
+        /// Devuelve 200 con true/false, nunca 404: "no existe" es una respuesta, no un error.
+        /// </summary>
+        [HttpGet]
+        [Route("api/Clientes/ExistePrincipalActivo")]
+        [ResponseType(typeof(bool))]
+        public async Task<IHttpActionResult> GetExistePrincipalActivo(string empresa, string cliente)
+        {
+            if (string.IsNullOrWhiteSpace(empresa) || string.IsNullOrWhiteSpace(cliente))
+            {
+                return BadRequest("Hay que indicar 'empresa' y 'cliente'.");
+            }
+
+            bool existe = await PrincipalesActivos(db.Clientes, empresa, cliente)
+                .AnyAsync().ConfigureAwait(false);
+            return Ok(existe);
+        }
+
+        /// <summary>
+        /// El criterio de "cliente principal de alta", aparte para poder probarlo: el endpoint que
+        /// lo usa consulta la base de datos directamente y no se puede falsear.
+        ///
+        /// Lo que hay que dejar clavado es el filtro de estado. Sin el, el endpoint contesta que si
+        /// con un cliente dado de baja y Agencias contabiliza el reembolso contra el, que es
+        /// exactamente lo que la comprobacion existe para impedir. Y no se notaria: el llamante
+        /// solo mira si hay cliente o no.
+        /// </summary>
+        internal static IQueryable<Cliente> PrincipalesActivos(IQueryable<Cliente> clientes,
+            string empresa, string cliente)
+        {
+            return clientes.Where(c => c.Empresa == empresa
+                                    && c.Nº_Cliente == cliente
+                                    && c.ClientePrincipal
+                                    && c.Estado >= Constantes.Clientes.Estados.VISITA_PRESENCIAL);
+        }
+
         // GET: api/Clientes/5
         [ResponseType(typeof(ClienteDTO))]
         public async Task<IHttpActionResult> GetCliente(string empresa, string cliente, string contacto)

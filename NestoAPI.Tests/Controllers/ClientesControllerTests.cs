@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
@@ -7,6 +7,7 @@ using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Http.Results;
 
@@ -190,5 +191,60 @@ namespace NestoAPI.Tests.Controllers
 
             A.CallTo(() => servicio.ListarNifIncorrectos(null)).MustHaveHappenedOnceExactly();
         }
+
+        // ===== Nesto#340 (slice A3): existencia del cliente principal =====
+        // Agencias lo pregunta antes de contabilizar un reembolso. Lo que se prueba es el
+        // CRITERIO, no el endpoint: el controlador consulta la base de datos directamente.
+
+        private static IQueryable<Cliente> Clientes(params Cliente[] clientes) => clientes.AsQueryable();
+
+        private static Cliente ClienteDe(string numero, bool principal, short estado) => new Cliente
+        {
+            Empresa = "1",
+            Nº_Cliente = numero,
+            ClientePrincipal = principal,
+            Estado = estado
+        };
+
+        [TestMethod]
+        public void PrincipalesActivos_ClientePrincipalDeAlta_LoEncuentra()
+        {
+            IQueryable<Cliente> clientes = Clientes(ClienteDe("22709", principal: true, estado: 0));
+
+            Assert.IsTrue(ClientesController.PrincipalesActivos(clientes, "1", "22709").Any());
+        }
+
+        /// <summary>
+        /// EL TEST QUE IMPORTA. Un cliente dado de baja (estado negativo) NO existe a estos
+        /// efectos. Si dejara de filtrarse —por ejemplo reutilizando GET api/Clientes, que no
+        /// filtra por estado—, Agencias contabilizaria el reembolso contra un cliente de baja
+        /// sin que saltara nada.
+        /// </summary>
+        [TestMethod]
+        public void PrincipalesActivos_ClienteDeBaja_NoCuentaComoExistente()
+        {
+            IQueryable<Cliente> clientes = Clientes(ClienteDe("22709", principal: true, estado: -1));
+
+            Assert.IsFalse(ClientesController.PrincipalesActivos(clientes, "1", "22709").Any());
+        }
+
+        [TestMethod]
+        public void PrincipalesActivos_SoloTieneContactosNoPrincipales_NoCuenta()
+        {
+            IQueryable<Cliente> clientes = Clientes(ClienteDe("22709", principal: false, estado: 0));
+
+            Assert.IsFalse(ClientesController.PrincipalesActivos(clientes, "1", "22709").Any());
+        }
+
+        [TestMethod]
+        public void PrincipalesActivos_ClienteDeOtraEmpresa_NoCuenta()
+        {
+            var deLaEspejo = ClienteDe("22709", principal: true, estado: 0);
+            deLaEspejo.Empresa = "3";
+            IQueryable<Cliente> clientes = Clientes(deLaEspejo);
+
+            Assert.IsFalse(ClientesController.PrincipalesActivos(clientes, "1", "22709").Any());
+        }
+
     }
 }
