@@ -128,7 +128,7 @@ namespace NestoAPI.Infraestructure.Agencias
             }
 
             ExtractoCliente movimientoLiq = await CalcularMovimientoLiqAsync(envio).ConfigureAwait(false);
-            PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy());
+            PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy(), usuario);
             _ = _db.PreContabilidades.Add(linea);
             await _db.SaveChangesAsync().ConfigureAwait(false);
 
@@ -146,8 +146,22 @@ namespace NestoAPI.Infraestructure.Agencias
         /// Apunte de PreContabilidad del reembolso, campo a campo como lo construía el cliente
         /// (Nesto: <c>AgenciaService.ContabilizarReembolso</c>). Función pura: es el contrato que
         /// fija el test de paridad, porque una sola diferencia aquí descuadra la contabilidad.
+        ///
+        /// El USUARIO hay que ponerlo a mano, y es justo lo que faltaba (31/08/2026, primer día
+        /// del piloto de tramitación por API): `PreContabilidad.Usuario` es NOT NULL con DEFAULT
+        /// `suser_sname()`. Desde Nesto viejo el default lo rellenaba SQL Server con las
+        /// credenciales Windows del usuario; por la API, EF6 VALIDA ANTES DE ENVIAR, ve el campo
+        /// obligatorio vacío y revienta con "El campo Usuario es obligatorio" — la sentencia no
+        /// llega nunca al servidor y el default no tiene ocasión de actuar.
+        ///
+        /// Efecto: la agencia aceptaba el envío pero el reembolso no se contabilizaba y el envío
+        /// se quedaba ABIERTO. Exactamente la señal de alarma que buscábamos (agencia OK + envío
+        /// sin cerrar), y solo en los envíos CON reembolso.
+        ///
+        /// Se pone el usuario del Identity, que además es mejor dato que el `suser_sname()` de
+        /// antes: identifica a la persona, no a la cuenta con la que se conecta la aplicación.
         /// </summary>
-        internal static PreContabilidad ConstruirApunteReembolso(EnviosAgencia envio, ExtractoCliente movimientoLiq, DateTime hoy)
+        internal static PreContabilidad ConstruirApunteReembolso(EnviosAgencia envio, ExtractoCliente movimientoLiq, DateTime hoy, string usuario)
         {
             Empresa empresa = envio.Empresa1;
             PreContabilidad linea = new PreContabilidad
@@ -166,7 +180,8 @@ namespace NestoAPI.Infraestructure.Agencias
                 Contrapartida = envio.AgenciasTransporte.CuentaReembolsos.Trim(),
                 Asiento_Automático = false,
                 FormaPago = empresa?.FormaPagoEfectivo,
-                Vendedor = envio.Vendedor
+                Vendedor = envio.Vendedor,
+                Usuario = usuario
             };
 
             if (movimientoLiq == null)

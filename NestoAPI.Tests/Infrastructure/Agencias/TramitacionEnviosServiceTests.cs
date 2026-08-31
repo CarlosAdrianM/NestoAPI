@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias;
 using NestoAPI.Models;
 using System;
@@ -18,6 +18,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
     public class TramitacionEnviosServiceTests
     {
         private static readonly DateTime HOY = new DateTime(2026, 8, 25);
+        private const string USUARIO = "NUEVAVISION\\Alfredo";
 
         private static Empresa EmpresaConVarios() => new Empresa
         {
@@ -58,7 +59,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         {
             EnviosAgencia envio = EnvioConReembolso();
 
-            PreContabilidad linea = TramitacionEnviosService.ConstruirApunteReembolso(envio, null, HOY);
+            PreContabilidad linea = TramitacionEnviosService.ConstruirApunteReembolso(envio, null, HOY, USUARIO);
 
             Assert.AreEqual("1", linea.Empresa, "La empresa va trimeada");
             Assert.AreEqual("_Reembolso", linea.Diario);
@@ -83,13 +84,34 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
             Assert.IsNull(linea.Efecto);
         }
 
+        /// <summary>
+        /// Regresión del 31/08/2026, primer día del piloto de tramitación por API: el apunte se
+        /// construía SIN Usuario. `PreContabilidad.Usuario` es NOT NULL con DEFAULT suser_sname(),
+        /// y desde Nesto viejo lo rellenaba SQL Server; por la API, EF6 valida ANTES de enviar, ve
+        /// el campo obligatorio vacío y lanza "El campo Usuario es obligatorio". La sentencia no
+        /// llegaba nunca al servidor, así que el DEFAULT no tenía ocasión de actuar.
+        ///
+        /// Resultado en producción: la agencia aceptaba el envío (ASM devolvía OK) pero el
+        /// reembolso no se contabilizaba y el envío se quedaba ABIERTO. Tres envíos de Alfredo,
+        /// los tres únicos con reembolso de las 44 tramitaciones de aquel día.
+        /// </summary>
+        [TestMethod]
+        public void ConstruirApunteReembolso_LlevaSiempreUsuario_PorqueEFValidaAntesDeQueActueElDefault()
+        {
+            PreContabilidad linea = TramitacionEnviosService.ConstruirApunteReembolso(
+                EnvioConReembolso(), null, HOY, USUARIO);
+
+            Assert.AreEqual(USUARIO, linea.Usuario,
+                "Sin Usuario, EF rechaza el apunte y el envio se queda abierto con la agencia ya avisada");
+        }
+
         [TestMethod]
         public void ConstruirApunteReembolso_ConMovimientoALiquidar_TomaSusDatosYNoLosDeVarios()
         {
             EnviosAgencia envio = EnvioConReembolso();
             ExtractoCliente movimiento = MovimientoPendiente(121.50M);
 
-            PreContabilidad linea = TramitacionEnviosService.ConstruirApunteReembolso(envio, movimiento, HOY);
+            PreContabilidad linea = TramitacionEnviosService.ConstruirApunteReembolso(envio, movimiento, HOY, USUARIO);
 
             Assert.AreEqual("NV2612946", linea.Nº_Documento, "El documento es el del movimiento, no el pedido");
             Assert.AreEqual(5001, linea.Liquidado);
@@ -102,7 +124,7 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
         [TestMethod]
         public void GenerarConcepto_ComponeElTextoDelCliente()
         {
-            PreContabilidad linea = TramitacionEnviosService.ConstruirApunteReembolso(EnvioConReembolso(), null, HOY);
+            PreContabilidad linea = TramitacionEnviosService.ConstruirApunteReembolso(EnvioConReembolso(), null, HOY, USUARIO);
 
             Assert.AreEqual("S/Pago pedido 922175 a Innovatrans c/15191", linea.Concepto);
         }
