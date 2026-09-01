@@ -42,6 +42,33 @@ namespace NestoAPI.Tests.Controllers
             }
         }
 
+        /// <summary>
+        /// NestoAPI#440: el filtro corto es USO NORMAL (alguien teclea dos letras y busca), no un
+        /// fallo del sistema. Como Exception genérica acababa en ELMAH (7 fichas solo el 01/09) y
+        /// salía como 500; como NestoBusinessException el filtro global responde 400 y NO la
+        /// registra (#361), que es el circuito ya pensado para las denegaciones de negocio.
+        /// </summary>
+        [TestMethod]
+        public void ClientesController_GetClientes_FiltroCorto_EsDenegacionDeNegocioSinElmah()
+        {
+            ClientesController controller = new ClientesController(
+                A.Fake<IGestorClientes>(),
+                A.Fake<IServicioVendedores>(),
+                A.Fake<IGestorSincronizacion>());
+
+            try
+            {
+                _ = controller.GetClientes("1", "ab");
+                Assert.Fail("Debía lanzar por filtro demasiado corto");
+            }
+            catch (NestoAPI.Infraestructure.Exceptions.NestoBusinessException ex)
+            {
+                Assert.AreEqual(System.Net.HttpStatusCode.BadRequest, ex.StatusCode);
+                Assert.IsFalse(NestoAPI.Infraestructure.Filters.GlobalExceptionFilter.DebeRegistrarseEnElmah(ex),
+                    "Una denegación de negocio no debe generar ficha en ELMAH");
+            }
+        }
+
         // NestoAPI#393 (Vendedores → Clientes): cambiar SOLO el estado se descartaba en
         // silencio porque su asignación vivía dentro del if del cambio de vendedor (y el PUT
         // devolvía 204 + "guardado correctamente" en Nesto sin cambiar nada).

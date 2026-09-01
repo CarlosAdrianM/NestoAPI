@@ -1,5 +1,6 @@
 ﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
@@ -146,7 +147,7 @@ namespace NestoAPI.Controllers
         {
             if ((filtro == null) || ((filtro.Length < 4) && (!filtro.All(c => char.IsDigit(c)))))
             {
-                throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
+                throw new NestoBusinessException("Por favor, utilice un filtro de al menos 4 caracteres");
             }
             List<string> vendedoresLista;
             if (string.IsNullOrWhiteSpace(vendedor))
@@ -250,7 +251,7 @@ namespace NestoAPI.Controllers
             // se trata como filtro inválido en vez de lanzar NullReferenceException.
             if (string.IsNullOrEmpty(filtro) || (filtro.Length < 4 && !filtro.All(c => char.IsDigit(c))))
             {
-                throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
+                throw new NestoBusinessException("Por favor, utilice un filtro de al menos 4 caracteres");
             }
 
             List<ClienteDTO> clientes = db.Clientes
@@ -308,7 +309,7 @@ namespace NestoAPI.Controllers
 
             if (filtro.Length < 4)
             {
-                throw new Exception("Por favor, utilice un filtro de al menos 4 caracteres");
+                throw new NestoBusinessException("Por favor, utilice un filtro de al menos 4 caracteres");
             }
 
             List<ClienteDTO> clientes = db.Clientes
