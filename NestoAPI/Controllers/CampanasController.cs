@@ -103,6 +103,7 @@ namespace NestoAPI.Controllers
                 GrupoProducto = Vacio(campana.Grupo) ? null : campana.Grupo.Trim(),
                 CantidadMínima = 1,
                 Descuento = campana.Descuento,
+                Precio = campana.PrecioFijo,
                 DescuentoPublico = campana.DescuentoPublico,
                 AudienciaOferta = campana.AudienciaOferta,
                 FechaDesde = campana.FechaDesde,
@@ -148,6 +149,7 @@ namespace NestoAPI.Controllers
             fila.Familia = Vacio(campana.Familia) ? null : campana.Familia.Trim();
             fila.GrupoProducto = Vacio(campana.Grupo) ? null : campana.Grupo.Trim();
             fila.Descuento = campana.Descuento;
+            fila.Precio = campana.PrecioFijo;
             fila.DescuentoPublico = campana.DescuentoPublico;
             fila.AudienciaOferta = campana.AudienciaOferta;
             fila.FechaDesde = campana.FechaDesde;
@@ -430,6 +432,19 @@ namespace NestoAPI.Controllers
                 return "El descuento del público va en tanto por uno, entre 0 y 1 (0,20 = 20 %)";
             }
 
+            // NestoAPI#437: el precio fijo solo existe a nivel de producto. Una fila de familia
+            // con Precio no se la cobraría nadie (el motor no la lee) pero se ANUNCIARÍA: mejor
+            // rechazarla con explicación que publicar un precio que Nesto no aplica.
+            if (campana.PrecioFijo.HasValue && campana.PrecioFijo.Value <= 0M)
+            {
+                return "El precio fijo tiene que ser mayor que cero";
+            }
+            if (campana.PrecioFijo.HasValue && !tieneProducto)
+            {
+                return "El precio fijo solo puede ir en una fila de producto: el motor de precios " +
+                       "no aplica precios fijos por familia ni por grupo";
+            }
+
             // Mismo criterio que CK_DescuentosProducto_Audiencia, aquí para dar un mensaje decente
             // en vez de un error de restricción de SQL Server.
             if (campana.AudienciaOferta > 2)
@@ -522,6 +537,7 @@ namespace NestoAPI.Controllers
                 Familia = fila.Familia?.Trim(),
                 Grupo = fila.GrupoProducto?.Trim(),
                 Descuento = fila.Descuento,
+                PrecioFijo = fila.Precio,
                 DescuentoPublico = fila.DescuentoPublico,
                 AudienciaOferta = fila.AudienciaOferta,
                 FechaDesde = fila.FechaDesde,
@@ -559,6 +575,14 @@ namespace NestoAPI.Controllers
 
         /// <summary>En tanto por uno, como en la tabla: 0,20 = 20 %.</summary>
         public decimal Descuento { get; set; }
+
+        /// <summary>
+        /// NestoAPI#437: precio fijo de tarifa ("este producto a 10 €"). Solo a nivel de
+        /// PRODUCTO: el motor de precios no aplica precios fijos por familia ni por grupo
+        /// (GestorPrecios solo lee Precio de las filas de tarifa con producto), y lo aplica
+        /// únicamente si es menor que el precio que saldría sin él.
+        /// </summary>
+        public decimal? PrecioFijo { get; set; }
 
         /// <summary>Si va a null, el público hereda el mismo % que el profesional.</summary>
         public decimal? DescuentoPublico { get; set; }

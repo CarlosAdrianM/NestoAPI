@@ -165,6 +165,53 @@ namespace NestoAPI.Tests.Controllers
         // Validaciones de nivel: los tres que el motor aplica de verdad, y solo esos.
         // ---------------------------------------------------------------------------
 
+        // ---------------------------------------------------------------------------
+        // NestoAPI#437: precio fijo de tarifa ("este producto a 10 €"), con sus fechas.
+        // ---------------------------------------------------------------------------
+
+        [TestMethod]
+        public async Task PostCampana_ConPrecioFijo_LoGuardaYLoDevuelve()
+        {
+            CampanaDTO campana = CampanaDeProducto(descuento: 0M);
+            campana.PrecioFijo = 10M;
+
+            var resultado = await controller.PostCampana(campana)
+                as System.Web.Http.Results.OkNegotiatedContentResult<CampanaDTO>;
+
+            Assert.IsNotNull(resultado, "Debería haberse creado");
+            Assert.AreEqual(10M, resultado.Content.PrecioFijo);
+        }
+
+        [TestMethod]
+        public async Task PostCampana_PrecioFijoEnFamilia_Rechaza()
+        {
+            // El motor de precios solo lee Precio de las filas de tarifa CON producto: una fila
+            // de familia con precio fijo no se la cobraría nadie, pero se anunciaría.
+            CampanaDTO campana = new CampanaDTO
+            {
+                Familia = "Ufaes",
+                PrecioFijo = 10M,
+                AudienciaOferta = 2,
+                FechaDesde = DateTime.Today,
+                FechaHasta = DateTime.Today.AddDays(30)
+            };
+
+            string mensaje = MensajeDe(await controller.PostCampana(campana));
+
+            StringAssert.Contains(mensaje, "precio fijo solo puede ir en una fila de producto");
+        }
+
+        [TestMethod]
+        public async Task PostCampana_PrecioFijoCeroONegativo_Rechaza()
+        {
+            CampanaDTO campana = CampanaDeProducto();
+            campana.PrecioFijo = 0M;
+
+            string mensaje = MensajeDe(await controller.PostCampana(campana));
+
+            StringAssert.Contains(mensaje, "mayor que cero");
+        }
+
         [TestMethod]
         public async Task PostCampana_SinProductoNiFamilia_Rechaza()
         {
