@@ -9,8 +9,8 @@ namespace NestoAPI.Tests.Infrastructure.Filters
     /// <summary>
     /// NestoAPI#215: el JSON del pedido que falla la validación debe adjuntarse a la
     /// PedidoValidacionException y volcarse a las ServerVariables de ELMAH para poder reproducir el caso.
-    /// (Nota: GlobalExceptionFilterTests.cs es un fichero huérfano —no está en el .csproj— con tests
-    /// pre-existentes que no compilan/pasan; se deja como deuda aparte, hermana del issue #198.)
+    /// (GlobalExceptionFilterTests.cs fue huérfano una temporada; se rehabilitó con #242/#198 y
+    /// desde entonces está en el .csproj y en verde — deuda saldada, 01/09/26.)
     /// </summary>
     [TestClass]
     public class GlobalExceptionFilterContextTests
