@@ -67,6 +67,11 @@ namespace NestoAPI.Tests.Models.Picking
             Assert.IsTrue(GestorDiasEnServir.EstaAbierto("", LUNES));
             Assert.IsTrue(GestorDiasEnServir.EstaAbierto("0111", LUNES), "Longitud 4");
             Assert.IsTrue(GestorDiasEnServir.EstaAbierto("01x11", LUNES), "Caracter raro");
+            // Medido en prod: 57 fichas con "00000" y 65 con "0", todas sirviéndose hoy con
+            // normalidad. Cerrado-todos-los-días = dato roto: tomarlo en serio las bloquearía
+            // PARA SIEMPRE.
+            Assert.IsTrue(GestorDiasEnServir.EstaAbierto("00000", JUEVES), "Todo cerrado = dato roto");
+            Assert.IsTrue(GestorDiasEnServir.EstaAbierto("0", JUEVES), "El '0' suelto de 65 fichas");
         }
 
         [TestMethod]

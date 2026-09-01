@@ -47,6 +47,13 @@ namespace NestoAPI.Models.Picking
             {
                 return true;
             }
+            // "00000" no es un cliente que cierra todos los días: es un dato roto (medido en
+            // producción el 01/09/26: 57 fichas, 45 vivas, todas recibiendo pedidos con
+            // normalidad). Tomarlo en serio dejaría sus pedidos sin salir PARA SIEMPRE.
+            if (!dias.Contains('1'))
+            {
+                return true;
+            }
 
             switch (diaEntrega.DayOfWeek)
             {
