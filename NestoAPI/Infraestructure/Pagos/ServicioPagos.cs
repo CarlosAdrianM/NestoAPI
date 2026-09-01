@@ -19,6 +19,7 @@ namespace NestoAPI.Infraestructure.Pagos
         private readonly ILectorParametrosUsuario _lectorParametros;
         private readonly IServicioCorreoElectronico _servicioCorreo;
         private readonly ILogService _logService;
+        private readonly ITarjetaClienteStore _tarjetaStore;
 
         public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros)
             : this(redsysService, contabilidadService, lectorParametros, new ServicioCorreoElectronico(), new ElmahLogService())
@@ -30,13 +31,14 @@ namespace NestoAPI.Infraestructure.Pagos
         {
         }
 
-        public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros, IServicioCorreoElectronico servicioCorreo, ILogService logService)
+        public ServicioPagos(IRedsysService redsysService, IContabilidadService contabilidadService, ILectorParametrosUsuario lectorParametros, IServicioCorreoElectronico servicioCorreo, ILogService logService, ITarjetaClienteStore tarjetaStore = null)
         {
             _redsysService = redsysService;
             _contabilidadService = contabilidadService;
             _lectorParametros = lectorParametros;
             _servicioCorreo = servicioCorreo;
             _logService = logService;
+            _tarjetaStore = tarjetaStore ?? new TarjetaClienteStore();
         }
 
         public async Task<RespuestaIniciarPago> IniciarPago(SolicitudPagoTPV solicitud, string usuario)
@@ -63,6 +65,9 @@ namespace NestoAPI.Infraestructure.Pagos
             string urlOk = solicitud.UrlOk ?? urlBase + "/pago/ok.html";
             string urlKo = solicitud.UrlKo ?? urlBase + "/pago/ko.html";
 
+            // NestoAPI#178: en los cobros de pedidos de la app se pide a Redsys que tokenice la
+            // tarjeta. El objetivo es que el cliente la meta UNA vez: cada pedido cobrado sin
+            // tokenizar es un cliente al que habrá que volver a pedírsela.
             ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosTPVVirtual(
                 solicitud.Importe,
                 solicitud.Descripcion,
@@ -71,7 +76,8 @@ namespace NestoAPI.Infraestructure.Pagos
                 urlNotificacion,
                 urlOk,
                 urlKo,
-                solicitud.MetodoPago);
+                solicitud.MetodoPago,
+                solicitarToken: solicitud.Pedido.HasValue);
 
             using (NVEntities db = new NVEntities())
             {
@@ -197,6 +203,11 @@ namespace NestoAPI.Infraestructure.Pagos
                     pago.Estado = Constantes.EstadosPagoTPV.AUTORIZADO;
                     await db.SaveChangesAsync().ConfigureAwait(false);
 
+                    // NestoAPI#178: si Redsys ha tokenizado la tarjeta, se guarda para poder
+                    // cobrar al cliente en el futuro sin que vuelva a meterla. Que esto falle no
+                    // puede tirar el procesado del pago: el cobro ya está hecho.
+                    GuardarTarjetaDeLaNotificacion(resultado, pago);
+
                     // Issue #143: Contabilizar con resiliencia - si falla, el correo debe enviarse igualmente
                     string errorContabilizacion = null;
                     try
@@ -206,7 +217,12 @@ namespace NestoAPI.Infraestructure.Pagos
                         // como Prepago del pedido, igual que hace CanalesExternos con PrestaShop, y
                         // se aplica al facturarlo. Contabilizarlo por los dos sitios seria contarlo
                         // dos veces.
-                        if (EsPagoDePedido(pago))
+                        if (EsAltaTarjeta(pago))
+                        {
+                            // NestoAPI#178: 0 EUR solo para tokenizar. El token ya está guardado
+                            // (GuardarTarjetaDeLaNotificacion); no hay dinero que apuntar.
+                        }
+                        else if (EsPagoDePedido(pago))
                         {
                             await AnadirPrepagoAlPedido(pago, db).ConfigureAwait(false);
                         }
@@ -225,7 +241,8 @@ namespace NestoAPI.Infraestructure.Pagos
                     // NestoAPI#436: en los pedidos de la app, solo si algo ha fallado. Son cobros
                     // online de una tienda: avisar a administracion de cada compra seria ruido, y
                     // el ruido acaba en que nadie mira el correo que si importa.
-                    if (!EsPagoDePedido(pago) || errorContabilizacion != null)
+                    // NestoAPI#178: el alta de tarjeta (0 EUR) tampoco avisa: no hay cobro.
+                    if ((!EsPagoDePedido(pago) && !EsAltaTarjeta(pago)) || errorContabilizacion != null)
                     {
                         EnviarCorreoPostCobro(pago, errorContabilizacion);
                     }
@@ -247,6 +264,314 @@ namespace NestoAPI.Infraestructure.Pagos
                 }
 
                 return true;
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#178: da de alta (o refresca) la tarjeta guardada del cliente con el token que
+        /// viene en la notificación de un pago autorizado. Sin cliente no hay a quién asignarla y
+        /// no se guarda nada.
+        /// </summary>
+        internal void GuardarTarjetaDeLaNotificacion(ResultadoValidacionNotificacion resultado, PagoTPV pago)
+        {
+            if (!resultado.TieneTokenTarjeta || string.IsNullOrWhiteSpace(pago.Cliente))
+            {
+                return;
+            }
+
+            try
+            {
+                _tarjetaStore.GuardarOActualizar(new TarjetaCliente
+                {
+                    Empresa = pago.Empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO,
+                    Cliente = pago.Cliente?.Trim(),
+                    Contacto = pago.Contacto?.Trim(),
+                    TokenRedsys = resultado.TokenTarjeta,
+                    CofTxnId = resultado.CofTxnId,
+                    UltimosDigitos = resultado.UltimosDigitosTarjeta,
+                    TipoTarjeta = resultado.TipoTarjeta,
+                    MarcaTarjeta = resultado.MarcaTarjeta,
+                    FechaCaducidad = resultado.FechaCaducidadTarjeta,
+                    UsuarioCreacion = pago.Usuario
+                });
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[Tarjetas] No se pudo guardar el token de la tarjeta del " +
+                    $"cliente {pago.Cliente?.Trim()} (orden {pago.NumeroOrden}): {ex.Message}", ex);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#178: arranca el alta de una tarjeta SIN cobro — una autorización de 0 EUR en
+        /// la pasarela, con autenticación fuerte del cliente y tokenización. Es el pago inicial
+        /// (CIT, COF_INI=S) que ampara los cobros con token posteriores; con esto el PRIMER
+        /// pedido del cliente ya puede ir por el flujo cobrar-primero, sin el hueco de "pedido
+        /// creado y pasarela KO".
+        ///
+        /// <para>Requiere que el terminal tenga habilitadas las operaciones de importe 0; si el
+        /// banco no las activa, el plan B es una preautorización de 1 EUR anulada.</para>
+        /// </summary>
+        public async Task<RespuestaIniciarPago> IniciarAltaTarjeta(SolicitudAltaTarjeta solicitud, string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(solicitud?.Cliente))
+            {
+                throw new ArgumentException("El alta de tarjeta necesita un cliente");
+            }
+
+            string urlBase = "https://api.nuevavision.es";
+
+            ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosTPVVirtual(
+                0m,
+                "Alta de tarjeta",
+                solicitud.Correo,
+                solicitud.Cliente,
+                urlBase + "/api/Pagos/NotificacionRedsys",
+                solicitud.UrlOk ?? urlBase + "/pago/ok.html",
+                solicitud.UrlKo ?? urlBase + "/pago/ko.html",
+                metodoPago: "C", // solo tarjeta: Bizum no deja token
+                solicitarToken: true);
+
+            using (NVEntities db = new NVEntities())
+            {
+                var pago = new PagoTPV
+                {
+                    NumeroOrden = parametros.NumeroOrden,
+                    Tipo = Constantes.TiposPagoTPV.ALTA_TARJETA,
+                    Empresa = solicitud.Empresa ?? Empresas.EMPRESA_POR_DEFECTO,
+                    Cliente = solicitud.Cliente,
+                    Contacto = solicitud.Contacto,
+                    Importe = 0m,
+                    Descripcion = "Alta de tarjeta",
+                    Correo = solicitud.Correo,
+                    Estado = Constantes.EstadosPagoTPV.PENDIENTE,
+                    FechaCreacion = DateTime.Now,
+                    Usuario = usuario,
+                    TokenAcceso = Guid.NewGuid()
+                };
+                db.PagosTPV.Add(pago);
+                await db.SaveChangesAsync().ConfigureAwait(false);
+
+                return new RespuestaIniciarPago
+                {
+                    IdPago = pago.Id,
+                    UrlRedsys = _redsysService.UrlFormularioRedsys,
+                    Ds_SignatureVersion = parametros.Ds_SignatureVersion,
+                    Ds_MerchantParameters = parametros.Ds_MerchantParameters,
+                    Ds_Signature = parametros.Ds_Signature,
+                    TokenAcceso = pago.TokenAcceso
+                };
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#178: es una autorización de 0 EUR solo para tokenizar? No mueve dinero: ni
+        /// contabiliza, ni prepago, ni correos — solo la fila de TarjetasClientes.
+        /// </summary>
+        internal static bool EsAltaTarjeta(PagoTPV pago)
+        {
+            return pago != null
+                && string.Equals(pago.Tipo?.Trim(), Constantes.TiposPagoTPV.ALTA_TARJETA, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// NestoAPI#178/#181: cobro directo y síncrono con una tarjeta guardada. Al contrario que
+        /// el flujo de pasarela (crear pedido -> cobrar -> esperar la notificación), aquí el
+        /// resultado se sabe en el momento, y eso permite el flujo que quiere la app: cobrar
+        /// PRIMERO y crear el pedido solo si el cobro se autoriza (KO = no se crea nada).
+        ///
+        /// <para>El PagoTPV se crea sin Documento (el pedido aún no existe); cuando el pedido se
+        /// crea, <see cref="AplicarCobroAlPedido"/> lo enlaza y apunta el Prepago.</para>
+        /// </summary>
+        public async Task<ResultadoCobroTarjetaGuardada> CobrarConTarjetaGuardada(SolicitudCobroTarjetaGuardada solicitud, string usuario)
+        {
+            if (solicitud == null || solicitud.Importe <= 0)
+            {
+                throw new ArgumentException("El importe debe ser mayor que cero");
+            }
+
+            TarjetaCliente tarjeta = _tarjetaStore.ObtenerPorId(solicitud.TarjetaId);
+            if (tarjeta == null
+                || !string.Equals(tarjeta.Cliente?.Trim(), solicitud.Cliente?.Trim(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(tarjeta.Empresa?.Trim(), solicitud.Empresa?.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                // La misma respuesta si no existe que si es de otro: no se filtra qué ids hay
+                return new ResultadoCobroTarjetaGuardada
+                {
+                    Autorizado = false,
+                    MensajeError = "No encontramos esa tarjeta guardada. Elige otra forma de pago."
+                };
+            }
+            if (!tarjeta.Usable)
+            {
+                string motivo = tarjeta.Caducada
+                    ? $"La tarjeta acabada en {tarjeta.UltimosDigitos} está caducada."
+                    : $"La tarjeta acabada en {tarjeta.UltimosDigitos} no se puede usar ahora mismo.";
+                return new ResultadoCobroTarjetaGuardada
+                {
+                    Autorizado = false,
+                    UltimosDigitos = tarjeta.UltimosDigitos,
+                    MensajeError = motivo + " Paga con otra tarjeta para volver a activarla."
+                };
+            }
+
+            solicitud.Descripcion = FormateadorConcepto.Normalizar(solicitud.Descripcion);
+
+            ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosCobroConToken(
+                solicitud.Importe,
+                solicitud.Descripcion,
+                solicitud.Cliente,
+                tarjeta.TokenRedsys,
+                tarjeta.CofTxnId);
+
+            int idPago;
+            using (NVEntities db = new NVEntities())
+            {
+                var pago = new PagoTPV
+                {
+                    NumeroOrden = parametros.NumeroOrden,
+                    Tipo = Constantes.TiposPagoTPV.PEDIDO_APP,
+                    Empresa = solicitud.Empresa ?? Empresas.EMPRESA_POR_DEFECTO,
+                    Cliente = solicitud.Cliente,
+                    Contacto = solicitud.Contacto,
+                    Importe = solicitud.Importe,
+                    Descripcion = solicitud.Descripcion,
+                    Estado = Constantes.EstadosPagoTPV.PENDIENTE,
+                    FechaCreacion = DateTime.Now,
+                    Usuario = usuario,
+                    TokenAcceso = Guid.NewGuid()
+                };
+                db.PagosTPV.Add(pago);
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                idPago = pago.Id;
+            }
+
+            RespuestaRedsys respuesta;
+            try
+            {
+                respuesta = await _redsysService.EnviarPeticionREST(parametros).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await ActualizarEstadoCobro(idPago, Constantes.EstadosPagoTPV.DENEGADO, null, null).ConfigureAwait(false);
+                _logService.LogError($"[Tarjetas] Error al cobrar con tarjeta guardada. Orden: {parametros.NumeroOrden}, Error: {ex.Message}", ex);
+                return new ResultadoCobroTarjetaGuardada
+                {
+                    Autorizado = false,
+                    IdPago = idPago,
+                    NumeroOrden = parametros.NumeroOrden,
+                    UltimosDigitos = tarjeta.UltimosDigitos,
+                    MensajeError = "No hemos podido conectar con el banco. Inténtalo de nuevo en unos minutos."
+                };
+            }
+
+            bool autorizado = int.TryParse(respuesta?.Ds_Response, out int codigo) && codigo >= 0 && codigo <= 99;
+
+            await ActualizarEstadoCobro(idPago,
+                autorizado ? Constantes.EstadosPagoTPV.AUTORIZADO : Constantes.EstadosPagoTPV.DENEGADO,
+                respuesta?.Ds_Response,
+                respuesta?.Ds_AuthorisationCode).ConfigureAwait(false);
+
+            try
+            {
+                _tarjetaStore.RegistrarUso(tarjeta.Id, autorizado);
+            }
+            catch (Exception ex)
+            {
+                _logService.LogError($"[Tarjetas] No se pudo registrar el uso de la tarjeta {tarjeta.Id}: {ex.Message}", ex);
+            }
+
+            return new ResultadoCobroTarjetaGuardada
+            {
+                Autorizado = autorizado,
+                IdPago = idPago,
+                NumeroOrden = parametros.NumeroOrden,
+                CodigoRespuesta = respuesta?.Ds_Response,
+                UltimosDigitos = tarjeta.UltimosDigitos,
+                MensajeError = autorizado
+                    ? null
+                    : $"El banco no ha autorizado el cobro en la tarjeta acabada en {tarjeta.UltimosDigitos}. " +
+                      "Puedes intentarlo con otra tarjeta."
+            };
+        }
+
+        /// <summary>
+        /// NestoAPI#178: enlaza un cobro con tarjeta guardada con el pedido recién creado y apunta
+        /// el Prepago (el mismo circuito que los cobros de pasarela de la app, NestoAPI#436).
+        /// </summary>
+        public async Task AplicarCobroAlPedido(int idPago, int pedido)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                PagoTPV pago = await db.PagosTPV.FirstOrDefaultAsync(p => p.Id == idPago).ConfigureAwait(false);
+                if (pago == null)
+                {
+                    throw new InvalidOperationException($"No existe el pago {idPago} para aplicarlo al pedido {pedido}");
+                }
+                pago.Documento = pedido.ToString();
+                pago.FechaActualizacion = DateTime.Now;
+                await db.SaveChangesAsync().ConfigureAwait(false);
+                await AnadirPrepagoAlPedido(pago, db).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#178: devuelve un cobro hecho con tarjeta guardada. Es la red de seguridad del
+        /// flujo cobrar-primero: si el pedido no se llega a crear, el dinero vuelve. Devuelve true
+        /// si Redsys acepta la devolución.
+        /// </summary>
+        public async Task<bool> DevolverCobro(int idPago, string motivo)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                PagoTPV pago = await db.PagosTPV.FirstOrDefaultAsync(p => p.Id == idPago).ConfigureAwait(false);
+                if (pago == null)
+                {
+                    return false;
+                }
+
+                ParametrosRedsysFirmados parametros = _redsysService.CrearParametrosDevolucion(pago.Importe, pago.NumeroOrden);
+                bool devuelto;
+                try
+                {
+                    RespuestaRedsys respuesta = await _redsysService.EnviarPeticionREST(parametros).ConfigureAwait(false);
+                    // 0900 = devolución aceptada
+                    devuelto = string.Equals(respuesta?.Ds_Response?.Trim(), "0900", StringComparison.Ordinal);
+                }
+                catch (Exception ex)
+                {
+                    _logService.LogError($"[Tarjetas] Error al devolver el cobro {pago.NumeroOrden}: {ex.Message}", ex);
+                    devuelto = false;
+                }
+
+                if (devuelto)
+                {
+                    pago.Estado = Constantes.EstadosPagoTPV.DEVUELTO;
+                    pago.FechaActualizacion = DateTime.Now;
+                    await db.SaveChangesAsync().ConfigureAwait(false);
+                }
+
+                _logService.LogError($"[Tarjetas] Cobro {pago.NumeroOrden} ({pago.Importe:N2} EUR, cliente " +
+                    $"{pago.Cliente?.Trim()}): {motivo}. Devolución {(devuelto ? "ACEPTADA" : "FALLIDA: revisar en el panel de Redsys")}.");
+
+                return devuelto;
+            }
+        }
+
+        private async Task ActualizarEstadoCobro(int idPago, string estado, string codigoRespuesta, string codigoAutorizacion)
+        {
+            using (NVEntities db = new NVEntities())
+            {
+                PagoTPV pago = await db.PagosTPV.FirstOrDefaultAsync(p => p.Id == idPago).ConfigureAwait(false);
+                if (pago == null)
+                {
+                    return;
+                }
+                pago.Estado = estado;
+                pago.CodigoRespuesta = codigoRespuesta;
+                pago.CodigoAutorizacion = codigoAutorizacion;
+                pago.FechaActualizacion = DateTime.Now;
+                await db.SaveChangesAsync().ConfigureAwait(false);
             }
         }
 
@@ -1032,6 +1357,14 @@ namespace NestoAPI.Infraestructure.Pagos
             // 01/09/26 con el primer pedido real: canceló en la pasarela y le llegó el correo del
             // circuito de enlaces). El pedido queda retenido por prepago, que es el estado seguro.
             if (string.Equals(pagoDenegado.Tipo?.Trim(), Constantes.TiposPagoTPV.PEDIDO_APP, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            // NestoAPI#178: el alta de tarjeta tampoco es un enlace de pago: si el cliente
+            // cancela o el banco deniega, la app lo enseña y se puede volver a intentar desde
+            // alli. Ni enlace nuevo ni correo.
+            if (EsAltaTarjeta(pagoDenegado))
             {
                 return;
             }

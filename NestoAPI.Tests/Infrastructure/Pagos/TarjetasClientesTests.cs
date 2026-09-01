@@ -1,0 +1,362 @@
+using FakeItEasy;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Contabilidad;
+using NestoAPI.Infraestructure.Pagos;
+using NestoAPI.Models;
+using NestoAPI.Models.Pagos;
+using System;
+using System.Threading.Tasks;
+
+namespace NestoAPI.Tests.Infrastructure.Pagos
+{
+    /// <summary>
+    /// NestoAPI#178: tokenización de tarjetas. La captura del token en la notificación, las
+    /// reglas de una tarjeta usable y el cobro directo con tarjeta guardada.
+    /// </summary>
+    [TestClass]
+    public class TarjetasClientesTests
+    {
+        private IRedsysService _redsysService;
+        private ITarjetaClienteStore _tarjetaStore;
+        private ILogService _logService;
+        private ServicioPagos _servicio;
+
+        [TestInitialize]
+        public void Setup()
+        {
+            _redsysService = A.Fake<IRedsysService>();
+            _tarjetaStore = A.Fake<ITarjetaClienteStore>();
+            _logService = A.Fake<ILogService>();
+            _servicio = new ServicioPagos(
+                _redsysService,
+                A.Fake<IContabilidadService>(),
+                A.Fake<ILectorParametrosUsuario>(),
+                A.Fake<IServicioCorreoElectronico>(),
+                _logService,
+                _tarjetaStore);
+        }
+
+        #region Helpers de RedsysService
+
+        [TestMethod]
+        public void ExtraerUltimosDigitos_ConNumeroEnmascarado_DevuelveLosDigitosFinales()
+        {
+            Assert.AreEqual("04", RedsysService.ExtraerUltimosDigitos("454881******04"));
+            Assert.AreEqual("0004", RedsysService.ExtraerUltimosDigitos("454881****0004"));
+            // Nunca más de 4, que es lo que cabe en la columna
+            Assert.AreEqual("1234", RedsysService.ExtraerUltimosDigitos("****00051234"));
+        }
+
+        [TestMethod]
+        public void ExtraerUltimosDigitos_SinDigitos_DevuelveNull()
+        {
+            Assert.IsNull(RedsysService.ExtraerUltimosDigitos(null));
+            Assert.IsNull(RedsysService.ExtraerUltimosDigitos(""));
+            Assert.IsNull(RedsysService.ExtraerUltimosDigitos("******"));
+        }
+
+        [TestMethod]
+        public void ParsearCaducidadRedsys_FormatoAAMM_DevuelveUltimoDiaDelMes()
+        {
+            // "2712" = diciembre de 2027: la tarjeta vale hasta el 31/12/2027
+            Assert.AreEqual(new DateTime(2027, 12, 31), RedsysService.ParsearCaducidadRedsys("2712"));
+            Assert.AreEqual(new DateTime(2026, 2, 28), RedsysService.ParsearCaducidadRedsys("2602"));
+        }
+
+        [TestMethod]
+        public void ParsearCaducidadRedsys_ValorRoto_DevuelveNull()
+        {
+            Assert.IsNull(RedsysService.ParsearCaducidadRedsys(null));
+            Assert.IsNull(RedsysService.ParsearCaducidadRedsys("12"));
+            Assert.IsNull(RedsysService.ParsearCaducidadRedsys("2713")); // mes 13
+            Assert.IsNull(RedsysService.ParsearCaducidadRedsys("27AB"));
+        }
+
+        [TestMethod]
+        public void NombreMarcaTarjeta_CodigosConocidos_DevuelveElNombre()
+        {
+            Assert.AreEqual("Visa", RedsysService.NombreMarcaTarjeta("1"));
+            Assert.AreEqual("Mastercard", RedsysService.NombreMarcaTarjeta("2"));
+            Assert.AreEqual("Amex", RedsysService.NombreMarcaTarjeta("8"));
+            // Un código desconocido se guarda tal cual: mejor un "77" que un null
+            Assert.AreEqual("77", RedsysService.NombreMarcaTarjeta("77"));
+            Assert.IsNull(RedsysService.NombreMarcaTarjeta(null));
+        }
+
+        #endregion
+
+        #region TarjetaCliente.Usable
+
+        [TestMethod]
+        public void Usable_ActivaYSinCaducar_EsCierto()
+        {
+            var tarjeta = new TarjetaCliente { Activa = true, FechaCaducidad = DateTime.Today.AddYears(1) };
+            Assert.IsTrue(tarjeta.Usable);
+        }
+
+        [TestMethod]
+        public void Usable_Caducada_EsFalso()
+        {
+            var tarjeta = new TarjetaCliente { Activa = true, FechaCaducidad = DateTime.Today.AddDays(-1) };
+            Assert.IsFalse(tarjeta.Usable);
+        }
+
+        [TestMethod]
+        public void Usable_Desactivada_EsFalso()
+        {
+            var tarjeta = new TarjetaCliente { Activa = false };
+            Assert.IsFalse(tarjeta.Usable);
+        }
+
+        [TestMethod]
+        public void Usable_ConTresFallosConsecutivos_EsFalso()
+        {
+            // No se martillea una tarjeta que ya no funciona; un cobro bueno resetea el contador
+            var tarjeta = new TarjetaCliente { Activa = true, IntentosFallidosConsecutivos = 3 };
+            Assert.IsFalse(tarjeta.Usable);
+        }
+
+        #endregion
+
+        #region Captura del token en la notificación
+
+        [TestMethod]
+        public void GuardarTarjetaDeLaNotificacion_ConToken_DaDeAltaLaTarjetaDelCliente()
+        {
+            var resultado = new ResultadoValidacionNotificacion
+            {
+                TokenTarjeta = "token123",
+                CofTxnId = "cof456",
+                UltimosDigitosTarjeta = "1234",
+                MarcaTarjeta = "Visa",
+                TipoTarjeta = "C",
+                FechaCaducidadTarjeta = new DateTime(2027, 12, 31)
+            };
+            var pago = new PagoTPV { Empresa = "1  ", Cliente = "15191  ", Contacto = "0", NumeroOrden = "ORD1", Usuario = "app" };
+
+            _servicio.GuardarTarjetaDeLaNotificacion(resultado, pago);
+
+            A.CallTo(() => _tarjetaStore.GuardarOActualizar(A<TarjetaCliente>.That.Matches(t =>
+                t.Cliente == "15191"
+                && t.Empresa == "1"
+                && t.TokenRedsys == "token123"
+                && t.CofTxnId == "cof456"
+                && t.UltimosDigitos == "1234"
+                && t.MarcaTarjeta == "Visa"
+                && t.FechaCaducidad == new DateTime(2027, 12, 31))))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void GuardarTarjetaDeLaNotificacion_SinToken_NoGuardaNada()
+        {
+            var resultado = new ResultadoValidacionNotificacion { TokenTarjeta = null };
+            var pago = new PagoTPV { Cliente = "15191" };
+
+            _servicio.GuardarTarjetaDeLaNotificacion(resultado, pago);
+
+            A.CallTo(() => _tarjetaStore.GuardarOActualizar(A<TarjetaCliente>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GuardarTarjetaDeLaNotificacion_SinCliente_NoGuardaNada()
+        {
+            // Un enlace de pago sin cliente no tiene a quién asignarle la tarjeta
+            var resultado = new ResultadoValidacionNotificacion { TokenTarjeta = "token123" };
+            var pago = new PagoTPV { Cliente = null };
+
+            _servicio.GuardarTarjetaDeLaNotificacion(resultado, pago);
+
+            A.CallTo(() => _tarjetaStore.GuardarOActualizar(A<TarjetaCliente>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void GuardarTarjetaDeLaNotificacion_SiElStoreRevienta_NoTiraElProcesadoDelPago()
+        {
+            // El cobro ya está hecho: perder el token es un log, no una excepción
+            A.CallTo(() => _tarjetaStore.GuardarOActualizar(A<TarjetaCliente>._)).Throws(new Exception("BD caida"));
+            var resultado = new ResultadoValidacionNotificacion { TokenTarjeta = "token123" };
+            var pago = new PagoTPV { Cliente = "15191", NumeroOrden = "ORD1" };
+
+            _servicio.GuardarTarjetaDeLaNotificacion(resultado, pago); // no lanza
+
+            A.CallTo(() => _logService.LogError(A<string>._, A<Exception>._)).MustHaveHappened();
+        }
+
+        #endregion
+
+        #region IniciarPago pide tokenizar solo en pedidos de la app
+
+        [TestMethod]
+        public void IniciarPago_PedidoDeLaApp_PideTokenizarLaTarjeta()
+        {
+            // El objetivo del #178: que el cliente meta la tarjeta UNA vez. Cada pedido cobrado
+            // sin tokenizar es un cliente al que habrá que volver a pedírsela.
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
+                .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
+
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 50m,
+                Descripcion = "Pago pedido 923001",
+                Cliente = "15191",
+                Pedido = 923001
+            };
+
+            try { _servicio.IniciarPago(solicitud, "usuario").Wait(); }
+            catch (AggregateException) { /* BD no disponible en test: la llamada a Redsys ya se hizo */ }
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, true))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void IniciarPago_EnlaceDePagoNormal_NoTokeniza()
+        {
+            // Retrocompatibilidad (#178): los enlaces de pago de siempre no tokenizan
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
+                .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
+
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 50m,
+                Descripcion = "Pago factura NV123",
+                Cliente = "15191"
+            };
+
+            try { _servicio.IniciarPago(solicitud, "usuario").Wait(); }
+            catch (AggregateException) { /* BD no disponible en test */ }
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, false))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        #endregion
+
+        #region Alta de tarjeta sin cobro (0 EUR)
+
+        [TestMethod]
+        public void IniciarAltaTarjeta_PideCeroEurosSoloTarjetaYToken()
+        {
+            // El alta es una autorización de 0 EUR: tokeniza sin cobrar. Solo tarjeta (Bizum no
+            // deja token) y con la tokenización pedida.
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
+                .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
+
+            try { _servicio.IniciarAltaTarjeta(new SolicitudAltaTarjeta { Cliente = "15191" }, "15191").Wait(); }
+            catch (AggregateException) { /* BD no disponible en test: la llamada a Redsys ya se hizo */ }
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                0m, A<string>._, A<string>._, "15191", A<string>._, A<string>._, A<string>._, "C", A<string>._, true))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentException))]
+        public async Task IniciarAltaTarjeta_SinCliente_LanzaExcepcion()
+        {
+            // Una tarjeta sin cliente no tiene dueño: no hay alta que hacer
+            await _servicio.IniciarAltaTarjeta(new SolicitudAltaTarjeta { Cliente = null }, "usuario");
+        }
+
+        [TestMethod]
+        public void EsAltaTarjeta_DistinguePorElTipo()
+        {
+            Assert.IsTrue(ServicioPagos.EsAltaTarjeta(new PagoTPV { Tipo = "AltaTarjeta" }));
+            Assert.IsFalse(ServicioPagos.EsAltaTarjeta(new PagoTPV { Tipo = "PedidoApp" }));
+            Assert.IsFalse(ServicioPagos.EsAltaTarjeta(new PagoTPV { Tipo = "TPVVirtual" }));
+            Assert.IsFalse(ServicioPagos.EsAltaTarjeta(null));
+        }
+
+        [TestMethod]
+        public async Task RegenerarPagoDenegado_AltaTarjeta_NiNuevoEnlaceNiCorreo()
+        {
+            // Como los pedidos de la app: cancelar el alta en la pasarela es cosa de la app,
+            // no del circuito de enlaces de pago
+            var servicioCorreo = A.Fake<IServicioCorreoElectronico>();
+            var servicio = new ServicioPagos(_redsysService, A.Fake<IContabilidadService>(),
+                A.Fake<ILectorParametrosUsuario>(), servicioCorreo, _logService, _tarjetaStore);
+            var pagoDenegado = new PagoTPV { Id = 8, Tipo = "AltaTarjeta", Importe = 0m };
+
+            await servicio.RegenerarPagoDenegado(pagoDenegado, A.Fake<NVEntities>());
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
+                .MustNotHaveHappened();
+            A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._)).MustNotHaveHappened();
+        }
+
+        #endregion
+
+        #region CobrarConTarjetaGuardada: validaciones previas (KO = ni cargo ni pedido)
+
+        [TestMethod]
+        public async Task CobrarConTarjetaGuardada_TarjetaInexistente_NoAutorizaYNoLlamaARedsys()
+        {
+            A.CallTo(() => _tarjetaStore.ObtenerPorId(99)).Returns(null);
+
+            ResultadoCobroTarjetaGuardada resultado = await _servicio.CobrarConTarjetaGuardada(
+                new SolicitudCobroTarjetaGuardada { Cliente = "15191", Importe = 50m, TarjetaId = 99 }, "usuario");
+
+            Assert.IsFalse(resultado.Autorizado);
+            Assert.IsNotNull(resultado.MensajeError);
+            A.CallTo(() => _redsysService.EnviarPeticionREST(A<ParametrosRedsysFirmados>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CobrarConTarjetaGuardada_TarjetaDeOtroCliente_NoAutoriza()
+        {
+            // La app manda el id, pero el dueño lo comprueba el servidor
+            A.CallTo(() => _tarjetaStore.ObtenerPorId(7)).Returns(new TarjetaCliente
+            {
+                Id = 7,
+                Empresa = "1",
+                Cliente = "OTRO",
+                Activa = true
+            });
+
+            ResultadoCobroTarjetaGuardada resultado = await _servicio.CobrarConTarjetaGuardada(
+                new SolicitudCobroTarjetaGuardada { Empresa = "1", Cliente = "15191", Importe = 50m, TarjetaId = 7 }, "usuario");
+
+            Assert.IsFalse(resultado.Autorizado);
+            A.CallTo(() => _redsysService.EnviarPeticionREST(A<ParametrosRedsysFirmados>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public async Task CobrarConTarjetaGuardada_TarjetaCaducada_NoAutorizaYLoDice()
+        {
+            A.CallTo(() => _tarjetaStore.ObtenerPorId(7)).Returns(new TarjetaCliente
+            {
+                Id = 7,
+                Empresa = "1",
+                Cliente = "15191",
+                Activa = true,
+                UltimosDigitos = "1234",
+                FechaCaducidad = DateTime.Today.AddMonths(-1)
+            });
+
+            ResultadoCobroTarjetaGuardada resultado = await _servicio.CobrarConTarjetaGuardada(
+                new SolicitudCobroTarjetaGuardada { Empresa = "1", Cliente = "15191", Importe = 50m, TarjetaId = 7 }, "usuario");
+
+            Assert.IsFalse(resultado.Autorizado);
+            StringAssert.Contains(resultado.MensajeError, "caducada");
+            A.CallTo(() => _redsysService.EnviarPeticionREST(A<ParametrosRedsysFirmados>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        [ExpectedException(typeof(ArgumentException))]
+        public async Task CobrarConTarjetaGuardada_ImporteCero_LanzaExcepcion()
+        {
+            await _servicio.CobrarConTarjetaGuardada(
+                new SolicitudCobroTarjetaGuardada { Cliente = "15191", Importe = 0m, TarjetaId = 1 }, "usuario");
+        }
+
+        #endregion
+    }
+}

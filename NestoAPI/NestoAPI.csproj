@@ -536,6 +536,7 @@
     <Compile Include="Controllers\ParametrosUsuarioController.cs" />
     <Compile Include="Controllers\PedidosCompraController.cs" />
     <Compile Include="Controllers\PedidosVentaController.cs" />
+    <Compile Include="Controllers\TarjetasController.cs" />
     <Compile Include="Controllers\PedidosClienteController.cs" />
     <Compile Include="Controllers\PickingController.cs" />
     <Compile Include="Controllers\PlanCuentasController.cs" />
@@ -810,6 +811,8 @@
     <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\PoliticaPagoCanal.cs" />
+    <Compile Include="Infraestructure\Pagos\ITarjetaClienteStore.cs" />
+    <Compile Include="Infraestructure\Pagos\TarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Sincronizacion\VigenciaCampanasJobsService.cs" />
     <Compile Include="Infraestructure\Sincronizacion\AlcanceCampanas.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ClienteChangeDetector.cs" />
@@ -1473,6 +1476,8 @@
     <Compile Include="Models\Pagos\EfectoAPagar.cs" />
     <Compile Include="Models\Pagos\EfectoTPVDTO.cs" />
     <Compile Include="Models\Pagos\SolicitudPagoTPV.cs" />
+    <Compile Include="Models\Pagos\TarjetaCliente.cs" />
+    <Compile Include="Models\Pagos\CobroTarjetaGuardada.cs" />
     <Compile Include="Models\PagoTPV_Efecto.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

@@ -9,7 +9,10 @@ namespace NestoAPI.Infraestructure.Pagos
             string movil, string textoSMS, string cliente, FormatoCorreoReclamacion datosCorreo);
         ParametrosRedsysFirmados CrearParametrosTPVVirtual(decimal importe, string descripcion,
             string correo, string cliente, string urlNotificacion, string urlOk, string urlKo,
-            string metodoPago = null, string numeroOrdenExistente = null);
+            string metodoPago = null, string numeroOrdenExistente = null, bool solicitarToken = false);
+        ParametrosRedsysFirmados CrearParametrosCobroConToken(decimal importe,
+            string descripcion, string cliente, string tokenTarjeta, string cofTxnId);
+        ParametrosRedsysFirmados CrearParametrosDevolucion(decimal importe, string numeroOrden);
         Task<RespuestaRedsys> EnviarPeticionREST(ParametrosRedsysFirmados parametros);
         RespuestaRedsys DecodificarParametros(string merchantParametersBase64);
         ResultadoValidacionNotificacion ValidarNotificacion(NotificacionRedsys notificacion);

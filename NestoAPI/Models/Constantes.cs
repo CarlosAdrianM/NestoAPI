@@ -331,6 +331,14 @@ namespace NestoAPI.Models
             /// al facturarlo. El numero de pedido viaja en la columna Documento del PagoTPV.
             /// </summary>
             public const string PEDIDO_APP = "PedidoApp";
+
+            /// <summary>
+            /// NestoAPI#178: autorización de 0 EUR SOLO para tokenizar la tarjeta (alta sin cobro).
+            /// No mueve dinero: ni contabiliza, ni crea prepago, ni manda correos. Su único fruto
+            /// es la fila en TarjetasClientes, y con ella se cobran los pedidos (incluido el
+            /// primero) con el flujo cobrar-primero.
+            /// </summary>
+            public const string ALTA_TARJETA = "AltaTarjeta";
         }
 
         public static class Prepagos
@@ -347,6 +355,12 @@ namespace NestoAPI.Models
             public const string PENDIENTE = "Pendiente";
             public const string AUTORIZADO = "Autorizado";
             public const string DENEGADO = "Denegado";
+
+            /// <summary>
+            /// NestoAPI#178: cobro con tarjeta guardada devuelto porque el pedido no se llegó a
+            /// crear (red de seguridad del flujo cobrar-primero).
+            /// </summary>
+            public const string DEVUELTO = "Devuelto";
         }
 
         public static class NivelRiesgoPagos

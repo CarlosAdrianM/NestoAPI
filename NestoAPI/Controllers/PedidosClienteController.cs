@@ -75,6 +75,13 @@ namespace NestoAPI.Controllers
                 return preparado.Error;
             }
 
+            // NestoAPI#178: con tarjeta guardada el cobro es síncrono y va PRIMERO: si el banco
+            // no lo autoriza, no se crea nada y la app vuelve al carrito tal cual estaba.
+            if (peticion.PagarConTarjetaGuardada)
+            {
+                return await CrearPedidoCobrandoTarjetaGuardada(peticion, preparado).ConfigureAwait(false);
+            }
+
             // Se crea por el camino de siempre, que es el que añade los portes, valida ofertas y
             // descuentos, manda el correo y guarda.
             PedidosVentaController controllerPedidos = CrearControllerPedidos();
@@ -106,6 +113,101 @@ namespace NestoAPI.Controllers
             if (respuesta.RequierePago)
             {
                 await ArrancarPago(respuesta, preparado).ConfigureAwait(false);
+            }
+
+            return Ok(respuesta);
+        }
+
+        /// <summary>
+        /// NestoAPI#178: el flujo cobrar-primero con la tarjeta guardada del cliente.
+        ///
+        /// <para>OK = se cobra, se crea el pedido y se le aplica el cobro como Prepago. KO = no
+        /// se crea nada y el error le dice al cliente por qué. Y la rama fea —cobro autorizado
+        /// pero el pedido no se puede crear— deshace el cobro con una devolución; si hasta la
+        /// devolución falla, ELMAH y correo, porque dinero cobrado sin pedido no puede esperar
+        /// al cuadre de fin de mes.</para>
+        /// </summary>
+        private async Task<IHttpActionResult> CrearPedidoCobrandoTarjetaGuardada(
+            PedidoClienteRequest peticion, PedidoPreparado preparado)
+        {
+            if (!peticion.TarjetaId.HasValue)
+            {
+                return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
+            }
+
+            ResultadoCobroTarjetaGuardada cobro = await servicioPagos.CobrarConTarjetaGuardada(
+                new SolicitudCobroTarjetaGuardada
+                {
+                    Cliente = preparado.Pedido.cliente?.Trim(),
+                    Contacto = preparado.Pedido.contacto?.Trim(),
+                    Importe = preparado.Pedido.Total,
+                    Descripcion = "Pago pedido app",
+                    TarjetaId = peticion.TarjetaId.Value
+                }, preparado.Pedido.Usuario).ConfigureAwait(false);
+
+            if (!cobro.Autorizado)
+            {
+                // KO: sin pedido, sin cargo. La app vuelve al carrito tal cual estaba.
+                return BadRequest(cobro.MensajeError ?? "El banco no ha autorizado el cobro.");
+            }
+
+            PedidosVentaController controllerPedidos = CrearControllerPedidos();
+            IHttpActionResult resultado;
+            string motivoFallo = null;
+            try
+            {
+                resultado = await controllerPedidos.PostPedidoVenta(preparado.Pedido).ConfigureAwait(false);
+                if (!(resultado is CreatedAtRouteNegotiatedContentResult<PedidoVentaDTO>))
+                {
+                    motivoFallo = "El pedido no se ha podido crear.";
+                }
+            }
+            catch (PedidoValidacionException ex)
+            {
+                resultado = null;
+                motivoFallo = MotivoParaElCliente(ex);
+            }
+            catch (NestoBusinessException ex)
+            {
+                resultado = null;
+                motivoFallo = ex.Message;
+            }
+
+            if (motivoFallo != null)
+            {
+                bool devuelto = await servicioPagos.DevolverCobro(cobro.IdPago,
+                    "el pedido de la app no se llegó a crear").ConfigureAwait(false);
+                if (!devuelto)
+                {
+                    ElmahHelper.Log(new Exception(
+                        $"[Pedido app] Cobro {cobro.NumeroOrden} ({preparado.Pedido.Total:N2} EUR) con tarjeta " +
+                        $"guardada SIN pedido y la devolución ha fallado: anular a mano en el panel de Redsys."));
+                }
+                string queHaPasadoConElCobro = devuelto
+                    ? "No se te ha cobrado nada: hemos anulado el cargo."
+                    : "Estamos anulando el cargo; si lo ves en tu cuenta, desaparecerá en unos días.";
+                return BadRequest($"{motivoFallo} {queHaPasadoConElCobro}");
+            }
+
+            PedidoClienteResponse respuesta = ConstruirRespuesta(preparado.Pedido, preparado.FormaPago, preparado.PlazosPago);
+            respuesta.RequierePago = false;
+            respuesta.Pagado = true;
+            respuesta.TarjetaUltimosDigitos = cobro.UltimosDigitos;
+            respuesta.Avisos.Clear();
+            respuesta.Avisos.Add($"Pagado con tu tarjeta acabada en {cobro.UltimosDigitos}.");
+
+            try
+            {
+                await servicioPagos.AplicarCobroAlPedido(cobro.IdPago, respuesta.Numero).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // El cliente ya tiene pedido y cargo correctos; lo que ha fallado es el enlace
+                // interno (Documento + Prepago). Sin el prepago el pedido queda retenido en el
+                // picking, así que hay que enterarse hoy.
+                ElmahHelper.Log(new Exception(
+                    $"[Pedido app] El pedido {respuesta.Numero} está cobrado (orden {cobro.NumeroOrden}) " +
+                    $"pero no se pudo aplicar el prepago: aplicarlo a mano o el picking no lo soltará. {ex.Message}", ex));
             }
 
             return Ok(respuesta);
@@ -279,8 +381,10 @@ namespace NestoAPI.Controllers
             //    solo tarjeta. La política vive en PoliticaPagoCanal, aplicada por el mismo
             //    endpoint que consulta la app para pintar las opciones.
             CondicionesPagoResponse condiciones = await LeerCondicionesPago(empresa, cliente).ConfigureAwait(false);
-            string formaPagoSolicitada = peticion.PagarConTarjeta ? Constantes.FormasPago.TARJETA : peticion.FormaPago;
-            string plazosPagoSolicitados = peticion.PagarConTarjeta ? Constantes.PlazosPago.PREPAGO : peticion.PlazosPago;
+            // NestoAPI#178: la tarjeta guardada es tarjeta a todos los efectos de forma y plazos
+            bool pagaConTarjeta = peticion.PagarConTarjeta || peticion.PagarConTarjetaGuardada;
+            string formaPagoSolicitada = pagaConTarjeta ? Constantes.FormasPago.TARJETA : peticion.FormaPago;
+            string plazosPagoSolicitados = pagaConTarjeta ? Constantes.PlazosPago.PREPAGO : peticion.PlazosPago;
             string formaPago = PoliticaPagoCanal.ResolverFormaPago(condiciones, formaPagoSolicitada);
             string plazosPago = PoliticaPagoCanal.ResolverPlazosPago(condiciones, plazosPagoSolicitados);
 

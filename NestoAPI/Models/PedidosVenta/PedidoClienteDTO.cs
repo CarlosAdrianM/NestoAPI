@@ -42,6 +42,20 @@ namespace NestoAPI.Models.PedidosVenta
         /// Plazos de pago solicitados (opcional), con el mismo criterio que <see cref="FormaPago"/>.
         /// </summary>
         public string PlazosPago { get; set; }
+
+        /// <summary>
+        /// NestoAPI#178: cobrar con una tarjeta guardada (token Redsys) en vez de abrir la
+        /// pasarela. El cobro es síncrono y va ANTES de crear el pedido: si el banco no lo
+        /// autoriza, el pedido no se crea y la app vuelve al carrito tal cual estaba.
+        /// </summary>
+        public bool PagarConTarjetaGuardada { get; set; }
+
+        /// <summary>
+        /// La tarjeta con la que cobrar (id de <c>GET api/Tarjetas</c>). Obligatorio si
+        /// <see cref="PagarConTarjetaGuardada"/> es true. El servidor comprueba que es del
+        /// cliente del JWT.
+        /// </summary>
+        public int? TarjetaId { get; set; }
     }
 
     public class LineaPedidoClienteRequest
@@ -90,6 +104,15 @@ namespace NestoAPI.Models.PedidosVenta
         /// también si el cobro no se pudo arrancar (ahí lo dicen los <see cref="Avisos"/>).
         /// </summary>
         public Pagos.RespuestaIniciarPago Pago { get; set; }
+
+        /// <summary>
+        /// NestoAPI#178: el pedido ya está COBRADO (tarjeta guardada). No hay pasarela que abrir
+        /// ni nada pendiente: la app puede vaciar el carrito y enseñar el "todo hecho".
+        /// </summary>
+        public bool Pagado { get; set; }
+
+        /// <summary>Últimos dígitos de la tarjeta con la que se cobró, para el mensaje al cliente.</summary>
+        public string TarjetaUltimosDigitos { get; set; }
 
         public ICollection<LineaPedidoClienteResponse> Lineas { get; set; }
 

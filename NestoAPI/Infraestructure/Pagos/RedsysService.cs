@@ -115,7 +115,7 @@ namespace NestoAPI.Infraestructure.Pagos
 
         public ParametrosRedsysFirmados CrearParametrosTPVVirtual(decimal importe, string descripcion,
             string correo, string cliente, string urlNotificacion, string urlOk, string urlKo,
-            string metodoPago = null, string numeroOrdenExistente = null)
+            string metodoPago = null, string numeroOrdenExistente = null, bool solicitarToken = false)
         {
             string numeroOrden = !string.IsNullOrWhiteSpace(numeroOrdenExistente)
                 ? numeroOrdenExistente
@@ -145,6 +145,18 @@ namespace NestoAPI.Infraestructure.Pagos
                 r.SetParameter("DS_MERCHANT_PAYMETHODS", metodoPago);
             }
 
+            // NestoAPI#178: pedir a Redsys que tokenice la tarjeta. La notificación del pago
+            // autorizado devuelve Ds_Merchant_Identifier, con el que se puede cobrar al cliente
+            // en el futuro sin que vuelva a meter la tarjeta. COF_INI=S marca este pago como el
+            // inicial de una credencial en fichero (PSD2): la autenticación fuerte de ESTE pago
+            // ampara los cobros con token posteriores.
+            if (solicitarToken)
+            {
+                r.SetParameter("DS_MERCHANT_IDENTIFIER", "REQUIRED");
+                r.SetParameter("DS_MERCHANT_COF_INI", "S");
+                r.SetParameter("DS_MERCHANT_COF_TYPE", "C");
+            }
+
             string parametros = r.createMerchantParameters();
             string firma = r.createMerchantSignature(_secretKeyTPVVirtual);
 
@@ -154,6 +166,84 @@ namespace NestoAPI.Infraestructure.Pagos
                 Ds_MerchantParameters = parametros,
                 Ds_Signature = firma,
                 UrlRedsys = new Uri(UrlFormularioRedsys),
+                NumeroOrden = numeroOrden
+            };
+        }
+
+        /// <summary>
+        /// NestoAPI#178/#181: cobro directo con una tarjeta guardada (token de Redsys), sin que
+        /// el cliente meta la tarjeta. Va por el canal REST (trataPeticionREST) y la respuesta es
+        /// síncrona: el que llama sabe en el momento si el cobro se ha autorizado o no.
+        ///
+        /// <para>COF_INI=N + COF_TXNID enlazan el cobro con el pago inicial que dio de alta la
+        /// credencial (donde el cliente sí se autenticó), y EXCEP_SCA=MIT es la exención PSD2
+        /// para cobros sobre credencial en fichero.</para>
+        /// </summary>
+        public ParametrosRedsysFirmados CrearParametrosCobroConToken(decimal importe,
+            string descripcion, string cliente, string tokenTarjeta, string cofTxnId)
+        {
+            string numeroOrden = GenerarNumeroPedido(
+                string.IsNullOrWhiteSpace(cliente) ? null : "C" + cliente.Trim());
+
+            RedsysAPI r = new RedsysAPI();
+            r.SetParameter("DS_MERCHANT_AMOUNT", ((int)(importe * 100)).ToString());
+            r.SetParameter("DS_MERCHANT_ORDER", numeroOrden);
+            r.SetParameter("DS_MERCHANT_MERCHANTCODE", _merchantCode);
+            r.SetParameter("DS_MERCHANT_CURRENCY", "978");
+            r.SetParameter("DS_MERCHANT_TRANSACTIONTYPE", "0");
+            r.SetParameter("DS_MERCHANT_TERMINAL", Redsys.TERMINAL_TPV_VIRTUAL);
+            r.SetParameter("DS_MERCHANT_IDENTIFIER", tokenTarjeta);
+            r.SetParameter("DS_MERCHANT_DIRECTPAYMENT", "true");
+            r.SetParameter("DS_MERCHANT_COF_INI", "N");
+            r.SetParameter("DS_MERCHANT_COF_TYPE", "C");
+            r.SetParameter("DS_MERCHANT_EXCEP_SCA", "MIT");
+
+            if (!string.IsNullOrWhiteSpace(cofTxnId))
+            {
+                r.SetParameter("DS_MERCHANT_COF_TXNID", cofTxnId);
+            }
+            if (!string.IsNullOrWhiteSpace(descripcion))
+            {
+                r.SetParameter("DS_MERCHANT_PRODUCTDESCRIPTION", descripcion);
+            }
+
+            string parametros = r.createMerchantParameters();
+            string firma = r.createMerchantSignature(_secretKeyTPVVirtual);
+
+            return new ParametrosRedsysFirmados
+            {
+                Ds_SignatureVersion = "HMAC_SHA256_V1",
+                Ds_MerchantParameters = parametros,
+                Ds_Signature = firma,
+                UrlRedsys = UrlRedsysREST,
+                NumeroOrden = numeroOrden
+            };
+        }
+
+        /// <summary>
+        /// NestoAPI#178: devolución de un cobro hecho por REST (mismo número de orden). Se usa
+        /// para deshacer el cobro con tarjeta guardada si el pedido no se llega a crear: dinero
+        /// cobrado sin pedido es justo lo que este flujo promete que no puede pasar.
+        /// </summary>
+        public ParametrosRedsysFirmados CrearParametrosDevolucion(decimal importe, string numeroOrden)
+        {
+            RedsysAPI r = new RedsysAPI();
+            r.SetParameter("DS_MERCHANT_AMOUNT", ((int)(importe * 100)).ToString());
+            r.SetParameter("DS_MERCHANT_ORDER", numeroOrden);
+            r.SetParameter("DS_MERCHANT_MERCHANTCODE", _merchantCode);
+            r.SetParameter("DS_MERCHANT_CURRENCY", "978");
+            r.SetParameter("DS_MERCHANT_TRANSACTIONTYPE", "3");
+            r.SetParameter("DS_MERCHANT_TERMINAL", Redsys.TERMINAL_TPV_VIRTUAL);
+
+            string parametros = r.createMerchantParameters();
+            string firma = r.createMerchantSignature(_secretKeyTPVVirtual);
+
+            return new ParametrosRedsysFirmados
+            {
+                Ds_SignatureVersion = "HMAC_SHA256_V1",
+                Ds_MerchantParameters = parametros,
+                Ds_Signature = firma,
+                UrlRedsys = UrlRedsysREST,
                 NumeroOrden = numeroOrden
             };
         }
@@ -251,8 +341,71 @@ namespace NestoAPI.Infraestructure.Pagos
                 PagoAutorizado = pagoAutorizado,
                 CodigoRespuesta = respuesta.Ds_Response,
                 CodigoAutorizacion = respuesta.Ds_AuthorisationCode,
-                NumeroOrden = respuesta.Ds_Order
+                NumeroOrden = respuesta.Ds_Order,
+                // NestoAPI#178: si el pago se hizo con tokenización, aquí viene el token con el
+                // que se podrá cobrar al cliente sin que vuelva a meter la tarjeta
+                TokenTarjeta = respuesta.Ds_Merchant_Identifier,
+                CofTxnId = respuesta.Ds_Merchant_Cof_Txnid,
+                UltimosDigitosTarjeta = ExtraerUltimosDigitos(respuesta.Ds_Card_Number),
+                FechaCaducidadTarjeta = ParsearCaducidadRedsys(respuesta.Ds_ExpiryDate),
+                MarcaTarjeta = NombreMarcaTarjeta(respuesta.Ds_Card_Brand),
+                TipoTarjeta = respuesta.Ds_Card_Type?.Trim()
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#178: los últimos dígitos del número enmascarado que manda Redsys
+        /// (p.ej. "454881******04" -> "04"). Null si no hay ninguno.
+        /// </summary>
+        internal static string ExtraerUltimosDigitos(string numeroEnmascarado)
+        {
+            if (string.IsNullOrWhiteSpace(numeroEnmascarado))
+            {
+                return null;
+            }
+            string digitosFinales = new string(numeroEnmascarado.Trim()
+                .Reverse().TakeWhile(char.IsDigit).Reverse().ToArray());
+            if (digitosFinales.Length == 0)
+            {
+                return null;
+            }
+            return digitosFinales.Length > 4
+                ? digitosFinales.Substring(digitosFinales.Length - 4)
+                : digitosFinales;
+        }
+
+        /// <summary>
+        /// NestoAPI#178: la caducidad AAMM de Redsys ("2712" = diciembre 2027) como último día
+        /// de ese mes, que es hasta cuándo vale la tarjeta. Null si no se puede interpretar.
+        /// </summary>
+        internal static DateTime? ParsearCaducidadRedsys(string expiryDate)
+        {
+            if (string.IsNullOrWhiteSpace(expiryDate) || expiryDate.Trim().Length != 4)
+            {
+                return null;
+            }
+            string limpio = expiryDate.Trim();
+            if (!int.TryParse(limpio.Substring(0, 2), out int anno)
+                || !int.TryParse(limpio.Substring(2, 2), out int mes)
+                || mes < 1 || mes > 12)
+            {
+                return null;
+            }
+            return new DateTime(2000 + anno, mes, DateTime.DaysInMonth(2000 + anno, mes));
+        }
+
+        internal static string NombreMarcaTarjeta(string dsCardBrand)
+        {
+            switch (dsCardBrand?.Trim())
+            {
+                case "1": return "Visa";
+                case "2": return "Mastercard";
+                case "6": return "Diners";
+                case "8": return "Amex";
+                case "9": return "JCB";
+                case "22": return "UPI";
+                default: return string.IsNullOrWhiteSpace(dsCardBrand) ? null : dsCardBrand.Trim();
+            }
         }
 
         private string DecodificarParametrosInterno(string parametros)

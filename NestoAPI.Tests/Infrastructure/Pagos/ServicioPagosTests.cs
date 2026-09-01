@@ -36,7 +36,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // Arrange
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -52,7 +52,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
                 100m, "Pago pedido 123", "test@test.com", "15191",
                 A<string>.That.Contains("NotificacionRedsys"),
-                A<string>._, A<string>._, A<string>._, A<string>._))
+                A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -74,7 +74,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // en la parte de parámetros antes de BD
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
                 100m, "Pago pedido 123", "test@test.com", "15191",
-                A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .MustNotHaveHappened(); // Aún no hemos llamado
 
             Assert.IsNotNull(solicitud);
@@ -96,7 +96,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             await servicio.RegenerarPagoDenegado(pagoDenegado, db);
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                    A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                    A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .MustNotHaveHappened();
             A.CallTo(() => _servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._)).MustNotHaveHappened();
         }
@@ -205,7 +205,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
 
             try { servicio.IniciarPago(solicitud, "usuario").Wait(); }
@@ -215,7 +215,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 A<decimal>._, A<string>._, A<string>._, A<string>._,
                 A<string>._, A<string>._, A<string>._,
                 "C",
-                A<string>._))
+                A<string>._, A<bool>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -233,7 +233,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
 
             try { servicio.IniciarPago(solicitud, "usuario").Wait(); }
@@ -243,7 +243,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 A<decimal>._, A<string>._, A<string>._, A<string>._,
                 A<string>._, A<string>._, A<string>._,
                 "z",
-                A<string>._))
+                A<string>._, A<bool>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -261,7 +261,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
 
             try { servicio.IniciarPago(solicitud, "usuario").Wait(); }
@@ -271,7 +271,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 A<decimal>._, A<string>._, A<string>._, A<string>._,
                 A<string>._, A<string>._, A<string>._,
                 (string)null,
-                A<string>._))
+                A<string>._, A<bool>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -290,7 +290,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -315,7 +315,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 A<string>.That.Contains("NotificacionRedsys"),
                 "nestotiendas://pago/ok",
                 "nestotiendas://pago/ko",
-                A<string>._, A<string>._))
+                A<string>._, A<string>._, A<bool>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -332,7 +332,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             };
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
                 .Returns(new ParametrosRedsysFirmados
                 {
                     Ds_SignatureVersion = "HMAC_SHA256_V1",
@@ -357,7 +357,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 A<string>.That.Contains("NotificacionRedsys"),
                 "https://api.nuevavision.es/pago/ok.html",
                 "https://api.nuevavision.es/pago/ko.html",
-                A<string>._, A<string>._))
+                A<string>._, A<string>._, A<bool>._))
                 .MustHaveHappenedOnceExactly();
         }
 
