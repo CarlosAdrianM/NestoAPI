@@ -1,8 +1,12 @@
-﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using FakeItEasy;
+using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Agencias;
+using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace NestoAPI.Tests.Infrastructure.Agencias
 {
@@ -146,6 +150,32 @@ namespace NestoAPI.Tests.Infrastructure.Agencias
 
             Assert.AreEqual(50, concepto.Length);
             StringAssert.StartsWith(concepto, "S/Pago pedido 922175 a Agencia con un nombre");
+        }
+
+        /// <summary>
+        /// NestoAPI#431: el apunte del reembolso entra por ContabilidadService.CrearLineas (la
+        /// puerta canónica, que normaliza FechaVto, Fecha_Modificación y el largo del concepto),
+        /// no con un PreContabilidades.Add a pelo. El 31/08/26 los campos que la puerta ya
+        /// normalizaba se fueron descubriendo de uno en uno en producción, a despliegue por campo.
+        /// </summary>
+        [TestMethod]
+        public async Task ContabilizarReembolsoAsync_ElApunteEntraPorLaPuertaCanonica()
+        {
+            NVEntities db = A.Fake<NVEntities>();
+            IContabilidadService contabilidad = A.Fake<IContabilidadService>();
+            A.CallTo(() => contabilidad.ContabilizarDiario(db, "1", "_Reembolso", USUARIO)).Returns(1199547);
+            TramitacionEnviosService servicio = new TramitacionEnviosService(db, contabilidad, () => HOY);
+            EnviosAgencia envio = EnvioConReembolso();
+            // Cliente especial: su cobro no se liquida contra el extracto, así que no hay viaje a
+            // la base de datos y el test se queda en el cableado, que es lo que fija.
+            envio.Cliente = Constantes.ClientesEspeciales.AMAZON;
+
+            int asiento = await servicio.ContabilizarReembolsoAsync(envio, USUARIO);
+
+            Assert.AreEqual(1199547, asiento);
+            A.CallTo(() => contabilidad.CrearLineas(db, A<List<PreContabilidad>>.That.Matches(
+                    lineas => lineas.Count == 1 && lineas.Single().Usuario == USUARIO && lineas.Single().Haber == 121.50M)))
+                .MustHaveHappenedOnceExactly();
         }
 
         // ===== Elección del movimiento a liquidar =====

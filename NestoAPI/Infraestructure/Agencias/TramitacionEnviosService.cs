@@ -129,8 +129,15 @@ namespace NestoAPI.Infraestructure.Agencias
 
             ExtractoCliente movimientoLiq = await CalcularMovimientoLiqAsync(envio).ConfigureAwait(false);
             PreContabilidad linea = ConstruirApunteReembolso(envio, movimientoLiq, _hoy(), usuario);
-            _ = _db.PreContabilidades.Add(linea);
-            await _db.SaveChangesAsync().ConfigureAwait(false);
+            // NestoAPI#431: el apunte entra por la puerta canónica (ContabilidadService.CrearLineas),
+            // no con un Add a pelo. La puerta normaliza FechaVto, Fecha_Modificación y el largo del
+            // concepto — los campos que aquí se fueron descubriendo de uno en uno el 31/08/26, a
+            // despliegue por campo. ConstruirApunteReembolso los sigue asignando (es el contrato de
+            // paridad con el cliente), y la puerta queda de red para el siguiente campo que aparezca.
+            // Con empresa distinta de la 1 la puerta ejecuta además prdCopiarCliente, como el resto
+            // de apuntes de cliente (decidido 01/09/26; medido: el 100% de los envíos del último año
+            // son de la empresa 1, así que hoy esa rama no llega a ejecutarse).
+            _ = await _contabilidad.CrearLineas(_db, new List<PreContabilidad> { linea }).ConfigureAwait(false);
 
             int asiento = await _contabilidad
                 .ContabilizarDiario(_db, linea.Empresa, Constantes.Contabilidad.Diarios.DIARIO_REEMBOLSOS, usuario)
