@@ -625,43 +625,87 @@ namespace NestoAPI.Infraestructure
 
         public async Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif)
         {
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(nif))
+            {
+                return new ClienteDTO();
+            }
+
             using (NVEntities db = new NVEntities())
             {
                 string nifNormalizado = NormalizarNif(nif);
 
-                var cliente = db.Clientes
+                // El filtro por NIF va en memoria a la fuerza: NormalizarNif no se puede traducir
+                // a SQL. Por eso primero se acotan por email (eso sí lo hace SQL) y luego se elige.
+                List<Cliente> candidatos = await db.Clientes
                     .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
                                 c.PersonasContactoClientes.Any(p => p.CorreoElectrónico == email))
                     .Include(c => c.PersonasContactoClientes)
-                    .Include(c => c.Vendedore)
-                    .AsEnumerable() // cambia a LINQ en memoria
-                    .FirstOrDefault(c => NormalizarNif(c.CIF_NIF) == nifNormalizado);
+                    .ToListAsync().ConfigureAwait(false);
 
-                return cliente == null
-                    ? new ClienteDTO()
-                    : new ClienteDTO
-                    {
-                        empresa = cliente.Empresa.Trim(),
-                        cliente = cliente.Nº_Cliente.Trim(),
-                        contacto = cliente.Contacto.Trim(),
-                        clientePrincipal = cliente.ClientePrincipal,
-                        cifNif = cliente.CIF_NIF.Trim(),
-                        nombre = cliente.Nombre.Trim(),
-                        direccion = cliente.Dirección.Trim(),
-                        telefono = cliente.Teléfono.Trim(),
-                        poblacion = cliente.Población.Trim(),
-                        codigoPostal = cliente.CodPostal.Trim(),
-                        estado = cliente.Estado,
-                        provincia = cliente.Provincia.Trim(),
-                        vendedor = cliente.Vendedore.Descripción.Trim(),
-                        PersonasContacto = cliente.PersonasContactoClientes.Select(p => new PersonaContactoDTO
-                        {
-                            Nombre = p.Nombre?.Trim(),
-                            CorreoElectronico = p.CorreoElectrónico?.Trim(),
-                            FacturacionElectronica = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
-                        }).ToList()
-                    };
+                Cliente cliente = ElegirFichaParaLogin(candidatos, nifNormalizado);
+
+                return MapearClienteParaLogin(cliente, email);
             }
+        }
+
+        /// <summary>
+        /// NestoAPI#429 (punto 3): con varias fichas del mismo email+NIF, antes decidía SQL Server
+        /// (FirstOrDefault sin OrderBy). Ahora gana la principal, y a igualdad, el contacto menor.
+        /// </summary>
+        internal static Cliente ElegirFichaParaLogin(IEnumerable<Cliente> candidatos, string nifNormalizado)
+        {
+            return candidatos
+                .Where(c => NormalizarNif(c.CIF_NIF) == nifNormalizado)
+                .OrderByDescending(c => c.ClientePrincipal)
+                .ThenBy(c => c.Contacto?.Trim())
+                .FirstOrDefault();
+        }
+
+        /// <summary>
+        /// NestoAPI#428 (punto 5): lo que se sirve al login anónimo de la tienda, y nada más.
+        ///
+        /// <para>Este DTO sale por un endpoint SIN autenticación a quien acierte el par email+NIF,
+        /// así que cada campo tiene que ganarse el puesto: se sirven los que la app bindea
+        /// (ClienteModel de TiendasNuevaVision) y se quitan los demás. En particular, de las
+        /// personas de contacto solo viaja LA DEL EMAIL CONSULTADO —el llamante ya lo conoce, lo
+        /// único nuevo es el flag de facturación electrónica, que la app necesita para
+        /// PermitirVerFacturas—. Antes viajaban nombre y correo de TODAS las personas de contacto
+        /// del cliente: datos personales de terceros. El vendedor (nombre de un empleado) también
+        /// viajaba y la app no lo usa.</para>
+        ///
+        /// <para>Null-safe a conciencia (#429 punto 3): Nombre, Dirección o el resto de campos de
+        /// la ficha pueden ser null con datos legítimos pero incompletos, y aquí antes reventaba
+        /// con NullReferenceException.</para>
+        /// </summary>
+        internal static ClienteDTO MapearClienteParaLogin(Cliente cliente, string email)
+        {
+            if (cliente == null)
+            {
+                return new ClienteDTO();
+            }
+
+            string emailNormalizado = email?.Trim();
+
+            return new ClienteDTO
+            {
+                cliente = cliente.Nº_Cliente?.Trim(),
+                contacto = cliente.Contacto?.Trim(),
+                cifNif = cliente.CIF_NIF?.Trim(),
+                nombre = cliente.Nombre?.Trim(),
+                direccion = cliente.Dirección?.Trim(),
+                telefono = cliente.Teléfono?.Trim(),
+                poblacion = cliente.Población?.Trim(),
+                codigoPostal = cliente.CodPostal?.Trim(),
+                estado = cliente.Estado,
+                provincia = cliente.Provincia?.Trim(),
+                PersonasContacto = (cliente.PersonasContactoClientes ?? Enumerable.Empty<PersonaContactoCliente>())
+                    .Where(p => string.Equals(p.CorreoElectrónico?.Trim(), emailNormalizado, StringComparison.OrdinalIgnoreCase))
+                    .Select(p => new PersonaContactoDTO
+                    {
+                        CorreoElectronico = p.CorreoElectrónico?.Trim(),
+                        FacturacionElectronica = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
+                    }).ToList()
+            };
         }
 
         public async Task<string> ObtenerEmailVendedor(string empresa, string vendedor)
