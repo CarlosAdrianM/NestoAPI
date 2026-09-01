@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Models;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -215,6 +216,125 @@ namespace NestoAPI.Tests.Infrastructure
                 new List<Cliente> { ficha }, "OTRO");
 
             Assert.IsNull(elegida);
+        }
+
+        // ----- NestoAPI#438: copiar personas de contacto y CCC del principal a otro contacto -----
+
+        private static readonly DateTime AHORA = new DateTime(2026, 9, 1, 17, 0, 0);
+
+        private static Cliente PrincipalConDatos()
+        {
+            return new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "15191     ",
+                Contacto = "0  ",
+                ClientePrincipal = true,
+                CCC = "1  ",
+                PersonasContactoClientes = new List<PersonaContactoCliente>
+                {
+                    new PersonaContactoCliente { Número = "1", Nombre = "LA DUEÑA", Cargo = 22,
+                        CorreoElectrónico = "facturas@peluqueria.com", Teléfono = "911111111", EnviarBoletin = true },
+                    new PersonaContactoCliente { Número = "2", Nombre = "LA ENCARGADA", Cargo = 1,
+                        CorreoElectrónico = "cobros@peluqueria.com" }
+                },
+                CCCs = new List<CCC>
+                {
+                    new CCC { Número = "1", Pais = "ES", DC_IBAN = "21", Entidad = "0049", Oficina = "2605",
+                        DC = "95", Nº_Cuenta = "1234567890", Estado = 1, Secuencia = "RCUR" }
+                }
+            };
+        }
+
+        private static Cliente DestinoVacio()
+        {
+            return new Cliente
+            {
+                Empresa = "1  ",
+                Nº_Cliente = "15191     ",
+                Contacto = "1  ",
+                ClientePrincipal = false,
+                PersonasContactoClientes = new List<PersonaContactoCliente>(),
+                CCCs = new List<CCC>()
+            };
+        }
+
+        [TestMethod]
+        public void PrepararCopiaDelPrincipal_DestinoVacio_CopiaTodoYAsignaElCccDeLaFicha()
+        {
+            var resultado = ServicioGestorClientes.PrepararCopiaDelPrincipal(
+                PrincipalConDatos(), DestinoVacio(), "NUEVAVISION\\Vendedor", AHORA);
+
+            Assert.IsNull(resultado.Error);
+            Assert.AreEqual(2, resultado.PersonasCopiadas);
+            Assert.AreEqual(1, resultado.CccsCopiados);
+            PersonaContactoCliente facturas = resultado.NuevasPersonas.Single(p => p.Cargo == 22);
+            Assert.AreEqual("facturas@peluqueria.com", facturas.CorreoElectrónico);
+            Assert.AreEqual("1  ", facturas.Contacto, "La copia es para el contacto de DESTINO");
+            Assert.AreEqual("NUEVAVISION\\Vendedor", facturas.Usuario);
+            CCC cuenta = resultado.NuevosCccs.Single();
+            Assert.AreEqual("1234567890", cuenta.Nº_Cuenta);
+            Assert.AreEqual("RCUR", cuenta.Secuencia, "El mandato viaja tal cual: el deudor es el mismo cliente");
+            Assert.AreEqual("1", resultado.CccAsignado, "La ficha del destino apunta al equivalente del predeterminado");
+        }
+
+        [TestMethod]
+        public void PrepararCopiaDelPrincipal_LoQueYaTiene_NoSeDuplica()
+        {
+            Cliente destino = DestinoVacio();
+            destino.PersonasContactoClientes.Add(new PersonaContactoCliente
+            {
+                Número = "1", Nombre = "la dueña ", Cargo = 22, CorreoElectrónico = "FACTURAS@peluqueria.com "
+            });
+            destino.CCCs.Add(new CCC
+            {
+                Número = "7", Pais = "ES ", DC_IBAN = "21", Entidad = "0049 ", Oficina = "2605",
+                DC = "95", Nº_Cuenta = "1234567890"
+            });
+
+            var resultado = ServicioGestorClientes.PrepararCopiaDelPrincipal(
+                PrincipalConDatos(), destino, "u", AHORA);
+
+            Assert.AreEqual(1, resultado.PersonasCopiadas, "Solo la persona que faltaba (cobros)");
+            Assert.AreEqual(0, resultado.CccsCopiados, "La cuenta ya estaba: mismos dígitos");
+            Assert.AreEqual("7", resultado.CccAsignado, "La ficha apunta a la cuenta EXISTENTE equivalente");
+        }
+
+        [TestMethod]
+        public void PrepararCopiaDelPrincipal_LaNumeracionSigueLaDelDestino()
+        {
+            Cliente destino = DestinoVacio();
+            destino.PersonasContactoClientes.Add(new PersonaContactoCliente
+            {
+                Número = "3", Nombre = "OTRA PERSONA", Cargo = 14, CorreoElectrónico = "otra@x.com"
+            });
+
+            var resultado = ServicioGestorClientes.PrepararCopiaDelPrincipal(
+                PrincipalConDatos(), destino, "u", AHORA);
+
+            Assert.IsTrue(resultado.NuevasPersonas.All(p => int.Parse(p.Número) >= 4),
+                "Los números nuevos siguen a los que ya hay, sin pisar ninguno");
+        }
+
+        [TestMethod]
+        public void PrepararCopiaDelPrincipal_DestinoConCccEnFicha_NoSeLePisa()
+        {
+            Cliente destino = DestinoVacio();
+            destino.CCC = "2  ";
+
+            var resultado = ServicioGestorClientes.PrepararCopiaDelPrincipal(
+                PrincipalConDatos(), destino, "u", AHORA);
+
+            Assert.IsNull(resultado.CccAsignado, "Lo que alguien eligió en la ficha no se toca");
+        }
+
+        [TestMethod]
+        public void PrepararCopiaDelPrincipal_SinPrincipalODestinoInvalido_DevuelveError()
+        {
+            Assert.IsNotNull(ServicioGestorClientes.PrepararCopiaDelPrincipal(null, DestinoVacio(), "u", AHORA).Error);
+            Assert.IsNotNull(ServicioGestorClientes.PrepararCopiaDelPrincipal(PrincipalConDatos(), null, "u", AHORA).Error);
+            Assert.IsNotNull(ServicioGestorClientes.PrepararCopiaDelPrincipal(PrincipalConDatos(), PrincipalConDatos(), "u", AHORA).Error,
+                "Copiar el principal sobre sí mismo no tiene sentido");
         }
     }
 }

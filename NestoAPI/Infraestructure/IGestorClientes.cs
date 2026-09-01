@@ -28,6 +28,7 @@ namespace NestoAPI.Infraestructure
         ByteArrayContent MandatoEnPDF(List<Mandato> mandatos);
         Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email);
         Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif);
+        Task<ResultadoCopiaDatosPrincipal> CopiarDatosDelPrincipal(string empresa, string cliente, string contactoDestino, string usuario);
         Task<List<ClienteDTO>> BuscarClientesPorTelefono(string telefono);
         Task<List<ClienteDTO>> BuscarClientesPorNif(string nif);
         Task PublicarClienteSincronizar(Cliente cliente, string source = "Nesto", string usuario = null);

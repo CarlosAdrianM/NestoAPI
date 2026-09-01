@@ -1908,6 +1908,11 @@ namespace NestoAPI.Infraestructure
             return await servicio.BuscarClientePorEmailNif(email, nif);
         }
 
+        public async Task<ResultadoCopiaDatosPrincipal> CopiarDatosDelPrincipal(string empresa, string cliente, string contactoDestino, string usuario)
+        {
+            return await servicio.CopiarDatosDelPrincipal(empresa, cliente, contactoDestino, usuario);
+        }
+
         // Nesto#340: mínimo 7 dígitos para no devolver medio fichero de clientes por un
         // teléfono corto (misma regla que ClientesMismoTelefono)
         public async Task<List<ClienteDTO>> BuscarClientesPorTelefono(string telefono)

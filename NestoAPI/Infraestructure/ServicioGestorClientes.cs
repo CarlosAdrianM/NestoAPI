@@ -714,6 +714,193 @@ namespace NestoAPI.Infraestructure
             };
         }
 
+        /// <summary>
+        /// NestoAPI#438: copia las personas de contacto y los CCC del contacto PRINCIPAL a otro
+        /// contacto del mismo cliente. Es lo que hoy hace administración a mano cada vez que un
+        /// vendedor crea un contacto y pide por correo "copiad el email de las facturas y los
+        /// datos de banco del principal": la pregunta se la hacen Nesto y NestoApp al crear el
+        /// contacto, y la copia vive aquí una sola vez.
+        /// </summary>
+        public async Task<ResultadoCopiaDatosPrincipal> CopiarDatosDelPrincipal(
+            string empresa, string cliente, string contactoDestino, string usuario)
+        {
+            if (string.IsNullOrWhiteSpace(empresa))
+            {
+                empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO;
+            }
+
+            using (NVEntities db = new NVEntities())
+            {
+                List<Cliente> fichas = await db.Clientes
+                    .Where(c => c.Empresa == empresa && c.Nº_Cliente == cliente)
+                    .Include(c => c.PersonasContactoClientes)
+                    .Include(c => c.CCCs)
+                    .ToListAsync().ConfigureAwait(false);
+
+                Cliente principal = fichas.FirstOrDefault(c => c.ClientePrincipal);
+                Cliente destino = fichas.FirstOrDefault(c =>
+                    string.Equals(c.Contacto?.Trim(), contactoDestino?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+                ResultadoCopiaDatosPrincipal resultado = PrepararCopiaDelPrincipal(principal, destino, usuario, DateTime.Now);
+                if (resultado.Error != null)
+                {
+                    return resultado;
+                }
+
+                foreach (PersonaContactoCliente persona in resultado.NuevasPersonas)
+                {
+                    _ = db.PersonasContactoClientes.Add(persona);
+                }
+                foreach (CCC ccc in resultado.NuevosCccs)
+                {
+                    _ = db.CCCs.Add(ccc);
+                }
+                if (resultado.CccAsignado != null)
+                {
+                    destino.CCC = resultado.CccAsignado;
+                    destino.Usuario = usuario;
+                    destino.Fecha_Modificación = DateTime.Now;
+                }
+
+                _ = await db.SaveChangesAsync().ConfigureAwait(false);
+                return resultado;
+            }
+        }
+
+        /// <summary>
+        /// El núcleo puro de la copia (NestoAPI#438), sin base de datos, para poder testearlo:
+        /// decide QUÉ personas y QUÉ cuentas se copian y con qué números.
+        ///
+        /// <para>Reglas: no se duplica lo que el destino ya tiene (persona con el mismo correo y
+        /// cargo; cuenta con los mismos dígitos), los números nuevos siguen la numeración del
+        /// destino, y si el destino no tenía CCC en la ficha se le asigna el equivalente al
+        /// predeterminado del principal. Los mandatos SEPA viajan tal cual: el deudor es el mismo
+        /// cliente.</para>
+        /// </summary>
+        internal static ResultadoCopiaDatosPrincipal PrepararCopiaDelPrincipal(
+            Cliente principal, Cliente destino, string usuario, DateTime ahora)
+        {
+            if (principal == null)
+            {
+                return ResultadoCopiaDatosPrincipal.ConError("El cliente no tiene contacto principal");
+            }
+            if (destino == null)
+            {
+                return ResultadoCopiaDatosPrincipal.ConError("No existe el contacto de destino");
+            }
+            if (destino.ClientePrincipal)
+            {
+                return ResultadoCopiaDatosPrincipal.ConError("El contacto de destino es el propio principal: no hay nada que copiar");
+            }
+
+            ResultadoCopiaDatosPrincipal resultado = new ResultadoCopiaDatosPrincipal();
+
+            // Personas de contacto: se salta las que el destino ya tiene (mismo correo y cargo)
+            List<PersonaContactoCliente> personasDestino = (destino.PersonasContactoClientes ?? Enumerable.Empty<PersonaContactoCliente>()).ToList();
+            int siguientePersona = SiguienteNumero(personasDestino.Select(p => p.Número));
+            foreach (PersonaContactoCliente persona in principal.PersonasContactoClientes ?? Enumerable.Empty<PersonaContactoCliente>())
+            {
+                bool yaLaTiene = personasDestino.Any(p => p.Cargo == persona.Cargo
+                    && string.Equals(p.CorreoElectrónico?.Trim(), persona.CorreoElectrónico?.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(p.Nombre?.Trim(), persona.Nombre?.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (yaLaTiene)
+                {
+                    continue;
+                }
+                resultado.NuevasPersonas.Add(new PersonaContactoCliente
+                {
+                    Empresa = destino.Empresa,
+                    NºCliente = destino.Nº_Cliente,
+                    Contacto = destino.Contacto,
+                    Número = siguientePersona.ToString(),
+                    Nombre = persona.Nombre,
+                    Cargo = persona.Cargo,
+                    Comentarios = persona.Comentarios,
+                    Teléfono = persona.Teléfono,
+                    Fax = persona.Fax,
+                    CorreoElectrónico = persona.CorreoElectrónico,
+                    EnviarBoletin = persona.EnviarBoletin,
+                    Estado = persona.Estado,
+                    Saludo = persona.Saludo,
+                    Usuario = usuario,
+                    Fecha_Modificación = ahora
+                });
+                siguientePersona++;
+            }
+
+            // CCC: se salta las cuentas que el destino ya tiene (mismos dígitos)
+            List<CCC> cccsDestino = (destino.CCCs ?? Enumerable.Empty<CCC>()).ToList();
+            int siguienteCcc = SiguienteNumero(cccsDestino.Select(c => c.Número));
+            Dictionary<string, string> numeroDestinoPorNumeroOrigen = new Dictionary<string, string>();
+            foreach (CCC ccc in principal.CCCs ?? Enumerable.Empty<CCC>())
+            {
+                CCC yaLaTiene = cccsDestino.FirstOrDefault(c => MismaCuenta(c, ccc));
+                if (yaLaTiene != null)
+                {
+                    numeroDestinoPorNumeroOrigen[ccc.Número?.Trim() ?? string.Empty] = yaLaTiene.Número;
+                    continue;
+                }
+                CCC copia = new CCC
+                {
+                    Empresa = destino.Empresa,
+                    Cliente = destino.Nº_Cliente,
+                    Contacto = destino.Contacto,
+                    Número = siguienteCcc.ToString(),
+                    Pais = ccc.Pais,
+                    DC_IBAN = ccc.DC_IBAN,
+                    Entidad = ccc.Entidad,
+                    Oficina = ccc.Oficina,
+                    DC = ccc.DC,
+                    Nº_Cuenta = ccc.Nº_Cuenta,
+                    BIC = ccc.BIC,
+                    Estado = ccc.Estado,
+                    TipoMandato = ccc.TipoMandato,
+                    FechaMandato = ccc.FechaMandato,
+                    Secuencia = ccc.Secuencia,
+                    Usuario = usuario,
+                    Fecha_Modificación = ahora
+                };
+                resultado.NuevosCccs.Add(copia);
+                numeroDestinoPorNumeroOrigen[ccc.Número?.Trim() ?? string.Empty] = copia.Número;
+                siguienteCcc++;
+            }
+
+            // La ficha del destino apunta al equivalente del CCC predeterminado del principal,
+            // pero SOLO si no tenía ya uno puesto: lo que haya elegido alguien no se pisa.
+            if (string.IsNullOrWhiteSpace(destino.CCC) && !string.IsNullOrWhiteSpace(principal.CCC)
+                && numeroDestinoPorNumeroOrigen.TryGetValue(principal.CCC.Trim(), out string equivalente))
+            {
+                resultado.CccAsignado = equivalente;
+            }
+
+            return resultado;
+        }
+
+        /// <summary>Los números de personas/CCC son cadenas con números dentro ("1", "2"...): el
+        /// siguiente libre es el mayor numérico + 1 (los no numéricos se ignoran).</summary>
+        private static int SiguienteNumero(IEnumerable<string> numeros)
+        {
+            int mayor = 0;
+            foreach (string numero in numeros ?? Enumerable.Empty<string>())
+            {
+                if (int.TryParse(numero?.Trim(), out int valor) && valor > mayor)
+                {
+                    mayor = valor;
+                }
+            }
+            return mayor + 1;
+        }
+
+        private static bool MismaCuenta(CCC una, CCC otra)
+        {
+            return string.Equals(ClaveCuenta(una), ClaveCuenta(otra), StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ClaveCuenta(CCC ccc)
+        {
+            return $"{ccc.Pais?.Trim()}|{ccc.DC_IBAN?.Trim()}|{ccc.Entidad?.Trim()}|{ccc.Oficina?.Trim()}|{ccc.DC?.Trim()}|{ccc.Nº_Cuenta?.Trim()}";
+        }
+
         public async Task<string> ObtenerEmailVendedor(string empresa, string vendedor)
         {
             if (string.IsNullOrWhiteSpace(vendedor))
@@ -771,6 +958,28 @@ namespace NestoAPI.Infraestructure
             parteNumerica = parteNumerica.TrimStart('0');
 
             return prefijo + parteNumerica + sufijo;
+        }
+    }
+
+    /// <summary>
+    /// NestoAPI#438: lo que sale de la copia de datos del principal a otro contacto. Las listas
+    /// son el plan que la parte con base de datos aplica; los llamantes de la API solo miran los
+    /// contadores y el error.
+    /// </summary>
+    public class ResultadoCopiaDatosPrincipal
+    {
+        public string Error { get; set; }
+        public string CccAsignado { get; set; }
+
+        internal List<PersonaContactoCliente> NuevasPersonas { get; } = new List<PersonaContactoCliente>();
+        internal List<CCC> NuevosCccs { get; } = new List<CCC>();
+
+        public int PersonasCopiadas => NuevasPersonas.Count;
+        public int CccsCopiados => NuevosCccs.Count;
+
+        public static ResultadoCopiaDatosPrincipal ConError(string error)
+        {
+            return new ResultadoCopiaDatosPrincipal { Error = error };
         }
     }
 }

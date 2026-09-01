@@ -34,6 +34,7 @@ namespace NestoAPI.Infraestructure
         Task<List<Cliente>> BuscarContactos(NVEntities db, string empresa, string cliente, string contacto);
         Task<ClienteTelefonoLookup> BuscarClientePorEmail(string email);
         Task<ClienteDTO> BuscarClientePorEmailNif(string email, string nif);
+        Task<ResultadoCopiaDatosPrincipal> CopiarDatosDelPrincipal(string empresa, string cliente, string contactoDestino, string usuario);
         Task<List<ClienteDTO>> BuscarClientesPorTelefono(string telefono);
         Task<List<ClienteDTO>> BuscarClientesPorNif(string nif);
         Task<SeguimientoCliente> BuscarSeguimiento(string empresa, string cliente, string contacto);

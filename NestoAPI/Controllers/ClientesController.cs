@@ -682,6 +682,31 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        /// <summary>
+        /// NestoAPI#438: copia las personas de contacto y los CCC del contacto principal al
+        /// contacto indicado. Es la pregunta que Nesto y NestoApp hacen al crear un contacto
+        /// ("¿Desea copiar las personas de contacto y los CCC del contacto principal?"): lo que
+        /// antes se pedía a administración por correo y se copiaba a mano. Idempotente: lo que el
+        /// destino ya tiene (misma persona, misma cuenta) no se duplica.
+        /// </summary>
+        [System.Web.Http.Authorize]
+        [HttpPost]
+        [Route("api/Clientes/CopiarDatosDelPrincipal")]
+        [ResponseType(typeof(ResultadoCopiaDatosPrincipal))]
+        public async Task<IHttpActionResult> CopiarDatosDelPrincipal([FromBody] CopiaDatosPrincipalRequest peticion)
+        {
+            if (peticion == null || string.IsNullOrWhiteSpace(peticion.Cliente) || string.IsNullOrWhiteSpace(peticion.Contacto))
+            {
+                return BadRequest("Hay que indicar el cliente y el contacto de destino");
+            }
+
+            string usuario = UsuarioAuditoriaHelper.Resolver(User, null);
+            ResultadoCopiaDatosPrincipal resultado = await _gestorClientes
+                .CopiarDatosDelPrincipal(peticion.Empresa, peticion.Cliente, peticion.Contacto, usuario);
+
+            return resultado.Error != null ? BadRequest(resultado.Error) : (IHttpActionResult)Ok(resultado);
+        }
+
         // GET: api/Clientes/PorTelefono
         // Nesto#340: clientes activos cuyo teléfono contiene el buscado, para que los pedidos
         // de canales externos (Amazon) no necesiten EF en el cliente de escritorio
@@ -1051,5 +1076,14 @@ namespace NestoAPI.Controllers
         {
             return db.Clientes.Count(e => e.Empresa == empresa && e.Nº_Cliente == numCliente && e.Contacto == contacto) > 0;
         }
+    }
+
+    /// <summary>NestoAPI#438: petición de copia de datos del principal. Empresa opcional (por
+    /// defecto la 1); Contacto es el DESTINO de la copia.</summary>
+    public class CopiaDatosPrincipalRequest
+    {
+        public string Empresa { get; set; }
+        public string Cliente { get; set; }
+        public string Contacto { get; set; }
     }
 }
