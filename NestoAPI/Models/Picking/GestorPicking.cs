@@ -11,6 +11,9 @@ namespace NestoAPI.Models.Picking
         private ModulosPicking modulos;
         private List<PedidoPicking> candidatos;
         private List<PedidoPicking> retenidosPorPrepago;
+        // NestoAPI#362: pedidos retirados porque la entrega caería en día que el cliente cierra
+        private List<PedidoPicking> sinSalirPorCierreCliente;
+        private DateTime diaEntregaPicking;
         private NVEntities db = new NVEntities();
 
         public GestorPicking(ModulosPicking modulos)
@@ -154,6 +157,13 @@ namespace NestoAPI.Models.Picking
 
             GestorReservasStock.BorrarLineasQueNoDebenSalir(candidatos, fechaPicking);
 
+            // NestoAPI#362: si la entrega (el laborable siguiente a la salida) cae en un día que
+            // el cliente cierra, el pedido no sale en esta pasada; se reevalúa en la siguiente.
+            DateTime diaEntrega = GestorDiasEnServir.CalcularDiaEntrega(fechaPicking,
+                f => GestorFestivos.EsFestivo(f, Constantes.Almacenes.ALGETE));
+            sinSalirPorCierreCliente = GestorDiasEnServir.RetirarPedidosDeClientesCerrados(candidatos, diaEntrega);
+            diaEntregaPicking = diaEntrega;
+
             // Recorrer Candidatos (quitamos los que no tienen que salir)
             for (int i = 0; i < candidatos.Count(); i++)
             {
@@ -204,6 +214,8 @@ namespace NestoAPI.Models.Picking
             gestor.Rellenar(asignadorPicking.numeroPicking);
             gestor.enviarCorreo();
             GestorPrepagos.EnviarCorreo(retenidosPorPrepago);
+            // NestoAPI#362: un pedido que no sale sin decir por qué parece un cuelgue
+            GestorDiasEnServir.EnviarCorreo(sinSalirPorCierreCliente, diaEntregaPicking);
             // NestoAPI#253: aviso con importe a vendedor y usuario para los pedidos con la casilla
             // marcada. Nunca lanza (un fallo de correo no debe romper el picking).
             GestorAvisosPicking.EnviarCorreos(candidatos,

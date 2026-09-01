@@ -818,6 +818,7 @@
     <Compile Include="Infraestructure\Sincronizacion\PrestashopProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Clientes\ValidadorCambioClienteComercial.cs" />
+    <Compile Include="Models\Picking\GestorDiasEnServir.cs" />
     <Compile Include="Infraestructure\Sincronizacion\PuertaPublicacionTienda.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ISyncTableHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SincronizacionEventWrapper.cs" />
