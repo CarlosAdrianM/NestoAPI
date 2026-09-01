@@ -633,12 +633,18 @@ namespace NestoAPI.Infraestructure
             using (NVEntities db = new NVEntities())
             {
                 string nifNormalizado = NormalizarNif(nif);
+                // NestoAPI#425: el NIF se normalizaba con esmero y al email no se le hacía ni un
+                // Trim. Un espacio DELANTE (pegar desde otra app, teclado del móvil) rompía la
+                // búsqueda y el cliente veía "cliente no encontrado" con su correo bien escrito.
+                // (Los espacios finales y las mayúsculas ya los perdonaba SQL por la semántica de
+                // char y la collation; el Trim cubre el hueco que quedaba.)
+                string emailNormalizado = email.Trim();
 
                 // El filtro por NIF va en memoria a la fuerza: NormalizarNif no se puede traducir
                 // a SQL. Por eso primero se acotan por email (eso sí lo hace SQL) y luego se elige.
                 List<Cliente> candidatos = await db.Clientes
                     .Where(c => c.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO &&
-                                c.PersonasContactoClientes.Any(p => p.CorreoElectrónico == email))
+                                c.PersonasContactoClientes.Any(p => p.CorreoElectrónico == emailNormalizado))
                     .Include(c => c.PersonasContactoClientes)
                     .ToListAsync().ConfigureAwait(false);
 
