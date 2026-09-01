@@ -370,6 +370,22 @@ public class AuthController : ApiController
     // superaba y este endpoint, que emite JWT de cliente SALTANDOSE el codigo por correo, quedaba
     // abierto a internet. Como secretos.config no esta en control de versiones, bastaba un
     // despliegue con ese fichero mal copiado.
+    /// <summary>
+    /// SSO servidor-a-servidor para el módulo de vídeos de PrestaShop (commit b40d1f5, 13/10/25):
+    /// emite un JWT de cliente SALTÁNDOSE el código por correo, porque quien llama es PrestaShop,
+    /// que ya autenticó al cliente por su cuenta, y se identifica con la API key.
+    ///
+    /// <para><b>NO es un mecanismo de login de cara al usuario</b>, aunque el nombre lo sugiera:
+    /// un login de usuario nuevo (el módulo de login por CIF, por ejemplo) va por
+    /// request-code + validate-code, como TiendasNuevaVision. Escrito aquí porque el rodeo ya
+    /// se dio una vez (NestoAPI#426).</para>
+    ///
+    /// <para>NestoAPI#426: devuelve, además del token, lo que el consumidor necesita sin tener
+    /// que decodificar el JWT ni inventarse nada: la caducidad REAL (el módulo la hardcodeaba a
+    /// 1 hora), el nombre del cliente y las compras recientes como bool. Los tres se leen del
+    /// token/ficha recién emitidos, así que si algún día cambia ExpiresUtc en CrearJWTAsync,
+    /// esto sigue diciendo la verdad.</para>
+    /// </summary>
     [AllowAnonymous]
     [ApiKey("ApiKeyPrestashop", "X-API-KEY")]
     [HttpPost]
@@ -381,18 +397,24 @@ public class AuthController : ApiController
             return BadRequest("Debe especificar el email.");
         }
 
-        // Buscar cliente en base de datos
-        string clienteId = await BuscarCliente(request.Email, request.Nif);
-        if (string.IsNullOrEmpty(clienteId))
+        // Buscar cliente en base de datos (la ficha entera: el nombre viaja en la respuesta)
+        ClienteDTO cliente = await _gestorClientes.BuscarClientePorEmailNif(request.Email, request.Nif);
+        if (cliente is null || string.IsNullOrEmpty(cliente.cliente))
         {
             return Unauthorized();
         }
 
         // Generar el mismo token JWT que en los otros flujos
-        string token = await CrearJWTAsync(request.Email, request.Nif, clienteId);
+        string token = await CrearJWTAsync(request.Email, request.Nif, cliente.cliente);
 
-        // Devolver el token directamente, igual que los otros endpoints
-        return Ok(new { token });
+        JwtSecurityToken emitido = new JwtSecurityTokenHandler().ReadJwtToken(token);
+        return Ok(new
+        {
+            token,
+            expiration = emitido.ValidTo,
+            nombre = cliente.nombre,
+            hasRecentPurchases = emitido.Claims.Any(c => c.Type == "HasRecentPurchases" && c.Value == "true")
+        });
     }
 
 
