@@ -15,11 +15,12 @@ namespace NestoAPI.Infraestructure.Clientes
     /// PUT api/Clientes/ClienteComercial. Hasta ahora el endpoint no validaba nada: el filtro
     /// del combo de la ventana era una sugerencia, no una restricción.
     ///
-    /// <para>La regla: un VENDEDOR solo puede tocar clientes cuyo vendedor actual esté en su
-    /// equipo (EquiposVenta a fecha de hoy, él incluido) o sea el genérico NV, y solo puede
-    /// asignar dentro de ese mismo conjunto. Un vendedor sin equipo queda restringido a sus
-    /// propios clientes. Si el cliente lleva en la cabecera O en el grupo de producto a alguien
-    /// de fuera, no se toca nada — tampoco el estado.</para>
+    /// <para>La regla: un JEFE DE VENTAS (tiene equipo en EquiposVenta a fecha de hoy) puede
+    /// tocar los clientes de su equipo —él incluido— y los del genérico NV, y asignar dentro de
+    /// ese mismo conjunto. Un vendedor SIN equipo solo puede tocar sus propios clientes: el NV
+    /// no entra en su conjunto ni como origen ni como destino (corrección de Carlos, 01/09/26).
+    /// Si el cliente lleva en la cabecera O en el grupo de producto a alguien de fuera, no se
+    /// toca nada — tampoco el estado.</para>
     ///
     /// <para>La OFICINA no se restringe: los usuarios de los grupos de administración y los que
     /// no tienen vendedor asociado siguen como siempre. Se hace así a propósito: la ventana la
@@ -84,7 +85,6 @@ namespace NestoAPI.Infraestructure.Clientes
 
             HashSet<string> conjunto = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                Constantes.Vendedores.VENDEDOR_GENERAL,
                 datos.VendedorDelUsuario.Trim()
             };
             foreach (string vendedor in datos.EquipoDelUsuario ?? Enumerable.Empty<string>())
@@ -93,6 +93,12 @@ namespace NestoAPI.Infraestructure.Clientes
                 {
                     _ = conjunto.Add(vendedor.Trim());
                 }
+            }
+            // El genérico NV solo entra en el conjunto del JEFE (alguien más en el equipo aparte
+            // de él): un vendedor raso no toca clientes de NV ni suelta los suyos al genérico.
+            if (conjunto.Count > 1)
+            {
+                _ = conjunto.Add(Constantes.Vendedores.VENDEDOR_GENERAL);
             }
 
             // Si el cliente lo lleva alguien de fuera —en la cabecera o en el grupo de

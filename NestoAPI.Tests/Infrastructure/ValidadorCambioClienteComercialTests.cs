@@ -133,22 +133,35 @@ namespace NestoAPI.Tests.Infrastructure
             Assert.IsTrue(ValidadorCambioClienteComercial.Evaluar(datos).Permitido);
         }
 
+        /// <summary>
+        /// Corrección de Carlos (01/09/26): el genérico NV es cosa del JEFE. Un vendedor raso
+        /// solo toca SUS clientes — ni los de NV como origen, ni soltar los suyos al genérico.
+        /// </summary>
         [TestMethod]
-        public void Evaluar_VendedorSinEquipo_SoloSusClientesYElGenerico()
+        public void Evaluar_VendedorSinEquipo_SoloSusClientes()
         {
             DatosPermisoClienteComercial raso = new DatosPermisoClienteComercial
             {
                 VendedorDelUsuario = "JE",
                 EquipoDelUsuario = new List<string> { "JE" },
                 VendedorActual = "JE",
-                VendedorDestino = "NV"
+                CambiaEstado = true
             };
             Assert.IsTrue(ValidadorCambioClienteComercial.Evaluar(raso).Permitido,
-                "Su propio cliente al genérico, sí");
+                "El estado de su propio cliente, sí");
+
+            raso.VendedorDestino = "NV";
+            Assert.IsFalse(ValidadorCambioClienteComercial.Evaluar(raso).Permitido,
+                "Soltar al genérico, no: eso es del jefe");
 
             raso.VendedorDestino = "DV";
             Assert.IsFalse(ValidadorCambioClienteComercial.Evaluar(raso).Permitido,
-                "A otro vendedor, no: DV no es de su equipo");
+                "A otro vendedor, tampoco");
+
+            raso.VendedorDestino = null;
+            raso.VendedorActual = "NV";
+            Assert.IsFalse(ValidadorCambioClienteComercial.Evaluar(raso).Permitido,
+                "Un cliente de NV no es suyo: no lo toca");
         }
 
         [TestMethod]
