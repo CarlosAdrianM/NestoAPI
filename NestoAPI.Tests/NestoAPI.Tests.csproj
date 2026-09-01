@@ -422,6 +422,7 @@
     <Compile Include="Infrastructure\Contabilidad\CalculadorSaldoMayorTests.cs" />
     <Compile Include="Infrastructure\Contabilidad\ContabilidadServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PrestashopProductosSyncHandlerTests.cs" />
+    <Compile Include="Infrastructure\ValidadorCambioClienteComercialTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\PuertaPublicacionTiendaTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\SincronizacionJobsServiceTests.cs" />
     <Compile Include="Infrastructure\Sincronizacion\GestorSincronizacionTests.cs" />

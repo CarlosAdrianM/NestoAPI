@@ -1,4 +1,6 @@
 ﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Clientes;
+using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Infraestructure.Vendedores;
 using NestoAPI.Models;
 using NestoAPI.Models.Clientes;
@@ -744,6 +746,10 @@ namespace NestoAPI.Controllers
             return Ok(respuesta);
         }
 
+        // Nesto#458: [Authorize] auditado — el único llamante es la ventana de ClientesComercial
+        // de Nesto, que ya manda el JWT por IClienteApiFactory (NestoApp y TiendasNuevaVision no
+        // llaman a este endpoint: comprobado en sus repos el 01/09/26).
+        [System.Web.Http.Authorize]
         [HttpPut]
         [Route("api/Clientes/ClienteComercial")]
         // PUT: api/Clientes/5
@@ -761,6 +767,15 @@ namespace NestoAPI.Controllers
             if (clienteDB == null || cliente == null)
             {
                 return BadRequest();
+            }
+
+            // Nesto#458: la garantía vive aquí, no en el combo de la ventana. Un jefe de ventas
+            // solo mueve clientes dentro de su equipo; la oficina sigue como siempre.
+            ResultadoPermisoClienteComercial permiso = await ValidadorCambioClienteComercial.EvaluarAsync(
+                User, db, clienteDB, cliente, servicioVendedores, new ServicioUsuarioVendedor());
+            if (!permiso.Permitido)
+            {
+                return Content(HttpStatusCode.Forbidden, permiso.Motivo);
             }
 
             AplicarCambiosClienteComercial(clienteDB, cliente);
