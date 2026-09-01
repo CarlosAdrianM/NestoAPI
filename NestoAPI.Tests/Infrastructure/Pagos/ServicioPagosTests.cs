@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Contabilidad;
@@ -78,6 +78,27 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
                 .MustNotHaveHappened(); // Aún no hemos llamado
 
             Assert.IsNotNull(solicitud);
+        }
+
+        /// <summary>
+        /// #436 (detectado por Carlos con el primer pedido real, 01/09/26): al cancelar el pago
+        /// de un pedido de la app en la pasarela llegaba el correo de "Pago no procesado" con un
+        /// nuevo ENLACE de pago — el circuito de los enlaces, que no pinta nada aquí: el reintento
+        /// de un pedido de la app es cosa de la app, y el pedido queda retenido por prepago.
+        /// </summary>
+        [TestMethod]
+        public async Task RegenerarPagoDenegado_PedidoDeLaApp_NiNuevoEnlaceNiCorreo()
+        {
+            var servicio = new ServicioPagos(_redsysService, _contabilidadService, _lectorParametros, _servicioCorreo, _logService);
+            var pagoDenegado = new PagoTPV { Id = 7, Tipo = Constantes.TiposPagoTPV.PEDIDO_APP, Importe = 5.57m };
+            NVEntities db = A.Fake<NVEntities>();
+
+            await servicio.RegenerarPagoDenegado(pagoDenegado, db);
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                    A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._))
+                .MustNotHaveHappened();
+            A.CallTo(() => _servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._)).MustNotHaveHappened();
         }
 
         [TestMethod]

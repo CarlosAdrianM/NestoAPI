@@ -1026,6 +1026,16 @@ namespace NestoAPI.Infraestructure.Pagos
 
         internal async Task RegenerarPagoDenegado(PagoTPV pagoDenegado, NVEntities db)
         {
+            // El cobro de un pedido de la app (#436) no es un enlace de pago: el pago se cancela
+            // o deniega DENTRO de la app y es la app quien ofrece reintentarlo. Generar aquí un
+            // enlace y mandar el correo de "Pago no procesado" confunde (detectado por Carlos el
+            // 01/09/26 con el primer pedido real: canceló en la pasarela y le llegó el correo del
+            // circuito de enlaces). El pedido queda retenido por prepago, que es el estado seguro.
+            if (string.Equals(pagoDenegado.Tipo?.Trim(), Constantes.TiposPagoTPV.PEDIDO_APP, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             // Buscar el pago raíz de la cadena de reintentos
             int pagoRaizId = pagoDenegado.PagoOriginalId ?? pagoDenegado.Id;
 
