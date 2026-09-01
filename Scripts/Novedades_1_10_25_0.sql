@@ -35,6 +35,9 @@ VALUES
 ('1.10.25.0', '2026-09-01', 'Nuevo', 'Los jefes de ventas ya pueden cambiar estado y vendedor de los clientes de su equipo',
  'Desde Vendedores - Ficha, un jefe de ventas puede cambiar el estado y el vendedor de los clientes de su equipo sin pedirselo a informatica. El desplegable de vendedores le ensena solo su equipo (mas el generico NV), y si el cliente lo lleva alguien de fuera de su equipo, los campos salen deshabilitados con el motivo. Administracion sigue viendo y pudiendo todo, como siempre.', 'Nesto', 1, 'sa'),
 
+('1.10.25.0', '2026-09-01', 'Nuevo', 'Filtro de texto en la ventana de Ofertas y descuentos',
+ 'Cada pestana de la ventana de Ofertas y descuentos tiene ahora un cuadro de filtro: se escribe por ejemplo "apraise" o "level" y la rejilla ensena solo las ofertas que lo contienen. No distingue mayusculas ni acentos, filtra al momento segun se teclea, y cada pestana busca en sus columnas de texto (las combinadas y escalonadas por el nombre; las campanas por campana, producto, familia o grupo; las ofertas de producto por referencia o nombre). Borrar el texto vuelve a ensenarlo todo.', 'Nesto', 1, 'sa'),
+
 ('1.10.25.0', '2026-09-01', 'Mejorado', 'Cada boton del menu tiene ya su propio icono',
  'Habia 21 botones del menu compartiendo icono con otro (ocho opciones distintas con el muneco azul del cliente, por ejemplo), con lo que el icono no servia para encontrar nada. Ahora cada boton tiene el suyo: los alquileres llevan su aparato con el reloj, las remesas sus recibos, las agencias su paquete, los bancos su edificio... Encontrar una opcion de un vistazo vuelve a ser posible.', 'Nesto', 1, 'sa'),
 
