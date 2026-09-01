@@ -99,10 +99,9 @@ namespace NestoAPI.Controllers
                 .ToListAsync()
                 .ConfigureAwait(false);
 
-            foreach (string producto in productos)
-            {
-                _ = await db.EncolarProductoSync(producto.Trim(), "Mantenimiento familias").ConfigureAwait(false);
-            }
+            // NestoAPI#433: la lista entera en una sentencia. Marcar Lisap son 843 productos, y de
+            // uno en uno era un viaje a SQL por producto dentro de la petición.
+            _ = await db.EncolarProductosSync(productos, "Mantenimiento familias").ConfigureAwait(false);
 
             return Ok(ADto(familia));
         }

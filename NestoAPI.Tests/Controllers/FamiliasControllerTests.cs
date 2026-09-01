@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
@@ -143,9 +143,10 @@ namespace NestoAPI.Tests.Controllers
                 PublicoIgualQueProfesional = true
             });
 
-            A.CallTo(() => db.EncolarProductoSync("45001", A<string>._)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => db.EncolarProductoSync("45002", A<string>._)).MustNotHaveHappened();
-            A.CallTo(() => db.EncolarProductoSync("30001", A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("45001") && !l.Contains("45002") && !l.Contains("30001")),
+                    A<string>._))
+                .MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -162,7 +163,9 @@ namespace NestoAPI.Tests.Controllers
             });
 
             Assert.AreEqual("el de antes", familia.Usuario);
-            A.CallTo(() => db.EncolarProductoSync(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Any()), A<string>._))
+                .MustNotHaveHappened();
         }
 
         [TestMethod]

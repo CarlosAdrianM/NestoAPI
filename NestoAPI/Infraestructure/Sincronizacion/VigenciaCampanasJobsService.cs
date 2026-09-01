@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -52,10 +52,8 @@ namespace NestoAPI.Infraestructure.Sincronizacion
 
                     List<string> productos = await ProductosARepublicar(db, DateTime.Today, diasVentana).ConfigureAwait(false);
 
-                    foreach (string producto in productos)
-                    {
-                        _ = await db.EncolarProductoSync(producto, USUARIO_ENCOLADO).ConfigureAwait(false);
-                    }
+                    // NestoAPI#433: la lista entera en una sentencia
+                    _ = await db.EncolarProductosSync(productos, USUARIO_ENCOLADO).ConfigureAwait(false);
 
                     string resumen = $"Vigencia de campañas: {productos.Count} productos encolados en Nesto_sync " +
                         $"(campañas que empiezan o terminan en los últimos {diasVentana} días); " +

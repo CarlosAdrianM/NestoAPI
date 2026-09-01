@@ -185,10 +185,8 @@ namespace NestoAPI.Controllers
             _ = db.DescuentosProductoes.Remove(fila);
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
 
-            foreach (string producto in alcance)
-            {
-                _ = await db.EncolarProductoSync(producto, usuario).ConfigureAwait(false);
-            }
+            // NestoAPI#433: la lista entera en una sentencia
+            _ = await db.EncolarProductosSync(alcance, usuario).ConfigureAwait(false);
 
             return Ok();
         }
@@ -262,10 +260,8 @@ namespace NestoAPI.Controllers
             }
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
 
-            foreach (string producto in aRepublicar)
-            {
-                _ = await db.EncolarProductoSync(producto, usuario).ConfigureAwait(false);
-            }
+            // NestoAPI#433: la lista entera en una sentencia
+            _ = await db.EncolarProductosSync(aRepublicar, usuario).ConfigureAwait(false);
 
             return Ok(new ResultadoOperacionCampanaDTO
             {
@@ -301,10 +297,8 @@ namespace NestoAPI.Controllers
             db.DescuentosProductoes.RemoveRange(filas);
             _ = await db.SaveChangesAsync().ConfigureAwait(false);
 
-            foreach (string producto in aRepublicar)
-            {
-                _ = await db.EncolarProductoSync(producto, usuario).ConfigureAwait(false);
-            }
+            // NestoAPI#433: la lista entera en una sentencia
+            _ = await db.EncolarProductosSync(aRepublicar, usuario).ConfigureAwait(false);
 
             return Ok(new ResultadoOperacionCampanaDTO
             {
@@ -373,10 +367,8 @@ namespace NestoAPI.Controllers
             List<string> productos = await ProductosQueCambianDeMensaje(new List<DescuentosProducto> { fila })
                 .ConfigureAwait(false);
 
-            foreach (string producto in productos.Union(tambien ?? new List<string>()))
-            {
-                _ = await db.EncolarProductoSync(producto, usuario).ConfigureAwait(false);
-            }
+            // NestoAPI#433: la lista entera en una sentencia
+            _ = await db.EncolarProductosSync(productos.Union(tambien ?? new List<string>()), usuario).ConfigureAwait(false);
         }
 
         /// <summary>

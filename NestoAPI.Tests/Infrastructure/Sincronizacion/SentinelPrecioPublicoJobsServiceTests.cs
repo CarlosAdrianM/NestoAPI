@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Models;
@@ -152,7 +152,9 @@ namespace NestoAPI.Tests.Infrastructure.Sincronizacion
             int marcados = await SentinelPrecioPublicoJobsService.Marcar(db);
 
             Assert.AreEqual(0, marcados);
-            A.CallTo(() => db.EncolarProductoSync(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Any()), A<string>._))
+                .MustNotHaveHappened();
         }
 
         [TestMethod]
@@ -201,7 +203,9 @@ namespace NestoAPI.Tests.Infrastructure.Sincronizacion
             int marcados = await SentinelPrecioPublicoJobsService.Marcar(db);
 
             Assert.AreEqual(1, marcados);
-            A.CallTo(() => db.EncolarProductoSync("45001", SentinelPrecioPublicoJobsService.USUARIO))
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("45001")),
+                    SentinelPrecioPublicoJobsService.USUARIO))
                 .MustHaveHappenedOnceExactly();
         }
 

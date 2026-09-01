@@ -1,4 +1,4 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Models;
@@ -329,7 +329,9 @@ namespace NestoAPI.Tests.Controllers
         {
             _ = await controller.PostCampana(CampanaDeProducto());
 
-            A.CallTo(() => db.EncolarProductoSync("44166", A<string>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("44166")), A<string>.Ignored))
+                .MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -348,9 +350,10 @@ namespace NestoAPI.Tests.Controllers
                 FechaDesde = DateTime.Today, FechaHasta = DateTime.Today.AddDays(30)
             });
 
-            A.CallTo(() => db.EncolarProductoSync("44166", A<string>.Ignored)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => db.EncolarProductoSync("44167", A<string>.Ignored)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => db.EncolarProductoSync("44168", A<string>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("44166") && l.Contains("44167") && !l.Contains("44168")),
+                    A<string>.Ignored))
+                .MustHaveHappenedOnceExactly();
         }
 
         /// <summary>
@@ -371,7 +374,9 @@ namespace NestoAPI.Tests.Controllers
 
             _ = await controller.DeleteCampana(500);
 
-            A.CallTo(() => db.EncolarProductoSync("44166", A<string>.Ignored)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("44166")), A<string>.Ignored))
+                .MustHaveHappenedOnceExactly();
         }
 
         [TestMethod]
@@ -438,7 +443,9 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreEqual(3, resultado.Content.FilasAfectadas);
             Assert.AreEqual(0, resultado.Content.ProductosEncolados);
-            A.CallTo(() => db.EncolarProductoSync(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Any()), A<string>._))
+                .MustNotHaveHappened();
         }
 
         // Y al revés: si la campaña sí se anunciaba, hay que retirarla de la tienda.
@@ -456,8 +463,9 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.AreEqual(2, resultado.Content.FilasAfectadas);
             Assert.AreEqual(1, resultado.Content.ProductosEncolados);
-            A.CallTo(() => db.EncolarProductoSync("44166", A<string>._)).MustHaveHappenedOnceExactly();
-            A.CallTo(() => db.EncolarProductoSync("44167", A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => db.EncolarProductosSync(
+                    A<IEnumerable<string>>.That.Matches(l => l.Contains("44166") && !l.Contains("44167")), A<string>._))
+                .MustHaveHappenedOnceExactly();
         }
 
         // Una operación en bloque no puede llevarse por delante lo que no es suyo.

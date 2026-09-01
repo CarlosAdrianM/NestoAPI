@@ -1,4 +1,4 @@
-using NestoAPI.Models;
+﻿using NestoAPI.Models;
 using System;
 using System.Collections.Generic;
 using System.Data.Entity;
@@ -126,10 +126,8 @@ namespace NestoAPI.Infraestructure.Sincronizacion
 
             // Republicar: el precio que la tienda tiene publicado de estos productos es el inflado.
             // Se encola DESPUÉS de guardar, para no avisar de un cambio que no llegó a cuajar.
-            foreach (string producto in tocados)
-            {
-                _ = await db.EncolarProductoSync(producto, USUARIO).ConfigureAwait(false);
-            }
+            // NestoAPI#433: la lista entera en una sentencia
+            _ = await db.EncolarProductosSync(tocados, USUARIO).ConfigureAwait(false);
 
             return tocados.Count;
         }
