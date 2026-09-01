@@ -77,19 +77,7 @@ namespace NestoAPI.Controllers
 
             // Se crea por el camino de siempre, que es el que añade los portes, valida ofertas y
             // descuentos, manda el correo y guarda.
-            // Sin using: el controller al que se delega comparte el DbContext de este y su Dispose
-            // se lo llevaría por delante. Del contexto se encarga el Dispose de aquí abajo.
-            PedidosVentaController controllerPedidos = new PedidosVentaController(db);
-            if (Request != null)
-            {
-                controllerPedidos.Request = Request;
-            }
-            if (Configuration != null)
-            {
-                controllerPedidos.Configuration = Configuration;
-            }
-            // El principal viaja en el RequestContext: el pedido lo crea el cliente del JWT.
-            controllerPedidos.RequestContext = RequestContext;
+            PedidosVentaController controllerPedidos = CrearControllerPedidos();
 
             IHttpActionResult resultado;
             try
@@ -121,6 +109,38 @@ namespace NestoAPI.Controllers
             }
 
             return Ok(respuesta);
+        }
+
+        /// <summary>
+        /// El controller de pedidos de siempre, cableado para que actúe como si hubiera atendido
+        /// él la petición (mismo principal, misma request, misma configuración).
+        ///
+        /// <para>Sin using al consumirlo: comparte el DbContext de este controller y su Dispose se
+        /// lo llevaría por delante. Del contexto se encarga el Dispose de aquí abajo.</para>
+        ///
+        /// <para>El ORDEN de asignación no es capricho: RequestContext ANTES que Request. El setter
+        /// de Request exige que el contexto que viaja dentro del HttpRequestMessage coincida con el
+        /// RequestContext del controller destino y, si este aún tiene el suyo por defecto, revienta
+        /// con "la propiedad de contexto de solicitud debe tener un valor nulo o coincidir con
+        /// ApiController.RequestContext" (fallo del 01/09/26 en producción; los tests no lo veían
+        /// porque en ellos Request es null).</para>
+        /// </summary>
+        internal PedidosVentaController CrearControllerPedidos()
+        {
+            PedidosVentaController controllerPedidos = new PedidosVentaController(db)
+            {
+                // El principal viaja en el RequestContext: el pedido lo crea el cliente del JWT.
+                RequestContext = RequestContext
+            };
+            if (Request != null)
+            {
+                controllerPedidos.Request = Request;
+            }
+            if (Configuration != null)
+            {
+                controllerPedidos.Configuration = Configuration;
+            }
+            return controllerPedidos;
         }
 
         /// <summary>

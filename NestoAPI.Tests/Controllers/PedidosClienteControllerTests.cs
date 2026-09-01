@@ -1,6 +1,8 @@
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Security.Claims;
 using System.Threading.Tasks;
+using System.Web.Http;
 using System.Web.Http.Controllers;
 using System.Web.Http.Results;
 using FakeItEasy;
@@ -99,6 +101,33 @@ namespace NestoAPI.Tests.Controllers
 
             Assert.IsInstanceOfType(resultado, typeof(BadRequestErrorMessageResult));
         }
+        [TestMethod]
+        public void CrearControllerPedidos_LaPeticionLlevaSuContextoDentro_SeCableaSinReventar()
+        {
+            // Regresión 01/09/26: en producción el HttpRequestMessage lleva dentro su
+            // HttpRequestContext (cosa que el resto de tests no tiene, porque su Request es null).
+            // Asignar Request antes que RequestContext lanzaba ArgumentException ("la propiedad de
+            // contexto de solicitud debe tener un valor nulo o coincidir con
+            // ApiController.RequestContext") y ningún cliente podía crear un pedido.
+            ClaimsPrincipal principal = new ClaimsPrincipal(
+                new ClaimsIdentity(new[] { new Claim("cliente", "15191") }, "JWT"));
+            HttpConfiguration configuration = new HttpConfiguration();
+            HttpRequestMessage request = new HttpRequestMessage(HttpMethod.Post, "http://localhost/api/Pedidos/Cliente");
+            HttpRequestContext contexto = new HttpRequestContext { Principal = principal, Configuration = configuration };
+            request.SetRequestContext(contexto);
+            PedidosClienteController controller = new PedidosClienteController(A.Fake<NVEntities>(), A.Fake<IServicioPagos>())
+            {
+                Configuration = configuration,
+                RequestContext = contexto,
+                Request = request
+            };
+
+            PedidosVentaController delegado = controller.CrearControllerPedidos();
+
+            Assert.AreSame(request, delegado.Request);
+            Assert.AreSame(principal, delegado.RequestContext.Principal);
+        }
+
         // NestoAPI#436 (aviso del equipo de la app): el calculo de portes del carrito va por el
         // mismo camino, asi que tiene las mismas reglas de acceso.
 
