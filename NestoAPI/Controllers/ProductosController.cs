@@ -680,12 +680,17 @@ namespace NestoAPI.Controllers
                         return new List<ProductoDTO>();
                     }
 
-                    string productoId = registro.ModificadoId;
+                    // NestoAPI#432: la puerta de publicación (con la comprobación de referencia
+                    // reservada dentro). Si no pasa, el registro se da por procesado.
+                    ResultadoPuertaPublicacion puerta = await PuertaPublicacionTienda
+                        .ConstruirParaPublicarSiPasa(producto, db, productoService).ConfigureAwait(false);
+                    if (!puerta.Publicable)
+                    {
+                        Console.WriteLine($"⛔ Producto {registro.ModificadoId} no publicable: {puerta.Motivo}");
+                        return new List<ProductoDTO>();
+                    }
 
-                    // NestoAPI#422: un unico constructor del DTO que se publica.
-                    ProductoDTO productoDTO = await ProductoDTO.ConstruirParaPublicar(producto, db, productoService).ConfigureAwait(false);
-
-                    return new List<ProductoDTO> { productoDTO };
+                    return new List<ProductoDTO> { puerta.Dto };
                 },
                 publicarEntidad: async (productoDTO, usuario) =>
                 {
@@ -719,13 +724,19 @@ namespace NestoAPI.Controllers
                     return NotFound();
                 }
 
-                // NestoAPI#422: un unico constructor del DTO que se publica.
-                ProductoDTO productoDTO = await ProductoDTO.ConstruirParaPublicar(producto, db, productoService).ConfigureAwait(false);
+                // NestoAPI#432: la publicación manual también pasa por la puerta. Si el producto
+                // no debe estar en la tienda, aquí se cuenta el motivo en vez de publicarlo.
+                ResultadoPuertaPublicacion resultado = await PuertaPublicacionTienda
+                    .ConstruirParaPublicarSiPasa(producto, db, productoService).ConfigureAwait(false);
+                if (!resultado.Publicable)
+                {
+                    return BadRequest($"El producto {id} no es publicable: {resultado.Motivo}");
+                }
 
                 // Publicar en Google Pub/Sub
-                await _gestorProductos.PublicarProductoSincronizar(productoDTO, "Test manual", "PRUEBA");
+                await _gestorProductos.PublicarProductoSincronizar(resultado.Dto, "Test manual", "PRUEBA");
 
-                return Ok(productoDTO);
+                return Ok(resultado.Dto);
             }
             catch (Exception ex)
             {
@@ -781,10 +792,16 @@ namespace NestoAPI.Controllers
                     {
                         string productoId = producto.Número?.Trim();
 
-                        // NestoAPI#422: un unico constructor del DTO que se publica.
-                        ProductoDTO productoDTO = await ProductoDTO.ConstruirParaPublicar(producto, db, productoService).ConfigureAwait(false);
+                        // NestoAPI#432: la carga masiva también pasa por la puerta.
+                        ResultadoPuertaPublicacion resultado = await PuertaPublicacionTienda
+                            .ConstruirParaPublicarSiPasa(producto, db, productoService).ConfigureAwait(false);
+                        if (!resultado.Publicable)
+                        {
+                            Console.WriteLine($"⛔ Producto {productoId} no publicable: {resultado.Motivo}");
+                            continue;
+                        }
 
-                        await _gestorProductos.PublicarProductoSincronizar(productoDTO, "PublicarTodos", usuario);
+                        await _gestorProductos.PublicarProductoSincronizar(resultado.Dto, "PublicarTodos", usuario);
                     }
                     catch
                     {

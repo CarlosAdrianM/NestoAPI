@@ -170,11 +170,18 @@ namespace NestoAPI.Controllers
                 return;
             }
 
-            // NestoAPI#422: un unico constructor del DTO que se publica.
-            ProductoDTO productoDTO = await ProductoDTO.ConstruirParaPublicar(productoEntity, db, _productoService).ConfigureAwait(false);
+            // NestoAPI#432: también aquí decide la puerta de publicación. Si el producto no debe
+            // estar en la tienda, guardar sus textos no lo publica.
+            ResultadoPuertaPublicacion resultado = await PuertaPublicacionTienda
+                .ConstruirParaPublicarSiPasa(productoEntity, db, _productoService).ConfigureAwait(false);
+            if (!resultado.Publicable)
+            {
+                Console.WriteLine($"⛔ Producto {productoId} no publicable: {resultado.Motivo}");
+                return;
+            }
 
             string usuario = User?.Identity?.Name;
-            await _gestorProductos.PublicarProductoSincronizar(productoDTO, "Nesto", usuario);
+            await _gestorProductos.PublicarProductoSincronizar(resultado.Dto, "Nesto", usuario);
         }
 
         private static PrestashopProductoDTO MapToDTO(PrestashopProducto producto)

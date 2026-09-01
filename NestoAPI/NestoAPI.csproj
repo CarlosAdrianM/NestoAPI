@@ -817,6 +817,7 @@
     <Compile Include="Infraestructure\Sincronizacion\ProductoChangeDetector.cs" />
     <Compile Include="Infraestructure\Sincronizacion\PrestashopProductosSyncHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ProductosSyncHandler.cs" />
+    <Compile Include="Infraestructure\Sincronizacion\PuertaPublicacionTienda.cs" />
     <Compile Include="Infraestructure\Sincronizacion\ISyncTableHandler.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SincronizacionEventWrapper.cs" />
     <Compile Include="Infraestructure\Sincronizacion\SentinelPrecioPublicoJobsService.cs" />

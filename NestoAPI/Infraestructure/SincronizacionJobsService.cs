@@ -49,23 +49,20 @@ namespace NestoAPI.Infraestructure
                                 return new System.Collections.Generic.List<ProductoDTO>();
                             }
 
-                            // Referencias reservadas ("no usar", altas a medio hacer): existen para que
-                            // nadie ocupe el número, pero no tienen PVP ni Estado. Publicarlas no se
-                            // puede —el DTO exige ambos— y hasta ahora reventaban aquí cada 5 minutos,
-                            // reintentándose para siempre y llamando en balde a la API de PrestaShop.
-                            // Se saltan: cuando se rellene la ficha, el trigger las vuelve a encolar.
-                            if (!TieneDatosMinimosParaSincronizar(producto))
+                            // NestoAPI#432: la puerta de publicación decide si este producto debe
+                            // viajar a la tienda (dentro va también la comprobación de referencia
+                            // reservada sin PVP/Estado de siempre). Si no pasa, el registro se da
+                            // por procesado: cuando algo cambie, el trigger lo vuelve a encolar y
+                            // la puerta lo reevalúa con los datos de ese momento.
+                            ResultadoPuertaPublicacion puerta = await PuertaPublicacionTienda
+                                .ConstruirParaPublicarSiPasa(producto, db, productoService).ConfigureAwait(false);
+                            if (!puerta.Publicable)
                             {
-                                Console.WriteLine($"⚠️ Producto {registro.ModificadoId} sin PVP o sin Estado (referencia reservada): no se sincroniza");
+                                Console.WriteLine($"⛔ Producto {registro.ModificadoId} no publicable: {puerta.Motivo}");
                                 return new System.Collections.Generic.List<ProductoDTO>();
                             }
 
-                            string productoId = registro.ModificadoId;
-
-                            // NestoAPI#422: un unico constructor del DTO que se publica.
-                            ProductoDTO productoDTO = await ProductoDTO.ConstruirParaPublicar(producto, db, productoService).ConfigureAwait(false);
-
-                            return new System.Collections.Generic.List<ProductoDTO> { productoDTO };
+                            return new System.Collections.Generic.List<ProductoDTO> { puerta.Dto };
                         },
                         publicarEntidad: async (productoDTO, usuario) =>
                         {
