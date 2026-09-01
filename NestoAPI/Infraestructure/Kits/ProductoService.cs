@@ -57,6 +57,11 @@ namespace NestoAPI.Infraestructure.Kits
             }
         }
 
+        public Task<string> ObtenerRutaImagen(string productoId)
+        {
+            return ProductoDTO.RutaImagen(productoId);
+        }
+
         public async Task<ProductoDTO.StockProducto> CalcularStockProducto(string producto, string almacen, int? pedidoExcluir = null)
         {
             ProductoDTO.StockProducto stockProducto = await CalcularStockBase(producto, almacen, pedidoExcluir).ConfigureAwait(false);

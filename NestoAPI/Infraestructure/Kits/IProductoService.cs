@@ -10,5 +10,9 @@ namespace NestoAPI.Infraestructure.Kits
         // servir, su propia reserva NO debe contar contra sí misma (doble conteo). null = no excluye nada.
         Task<ProductoDTO.StockProducto> CalcularStockProducto(string producto, string almacen, int? pedidoExcluir = null);
         Task<ProductoDTO> LeerProducto(string empresa, string id, bool fichaCompleta);
+
+        // Foto del producto en la tienda (null si no hay). Está en la interfaz para que los tests
+        // no hagan la llamada HTTP externa de ProductoDTO.RutaImagen.
+        Task<string> ObtenerRutaImagen(string productoId);
     }
 }

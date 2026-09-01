@@ -349,6 +349,12 @@ namespace NestoAPI.Controllers
                 .ThenBy(p => p.Bloqueado ? p.ImporteParaDesbloquear : 0m)
                 .ToList();
 
+            // Foto para el carrito de TiendasNuevaVision. Después del filtro de stock, para no
+            // consultar la tienda por productos que no se van a devolver.
+            await Task.WhenAll(productosBonificables.Select(async p =>
+                p.UrlFoto = await productoService.ObtenerRutaImagen(p.ProductoId).ConfigureAwait(false)))
+                .ConfigureAwait(false);
+
             return Ok(new ProductosBonificablesResponse
             {
                 GanavisionesDisponibles = ganavisionesDisponibles,

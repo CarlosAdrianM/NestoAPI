@@ -724,6 +724,38 @@ namespace NestoAPI.Tests.Controllers
         }
 
         [TestMethod]
+        public async Task GetProductosBonificables_RellenaLaUrlDeLaFoto()
+        {
+            // Regresión TiendasNuevaVision: los regalos salían sin foto en el carrito de la
+            // tienda porque este endpoint no mandaba UrlFoto.
+            var ganavisiones = new List<Ganavision>
+            {
+                new Ganavision
+                {
+                    Id = 1,
+                    Empresa = "1  ",
+                    ProductoId = "PROD1",
+                    Ganavisiones = 5,
+                    FechaDesde = DateTime.Today.AddDays(-5),
+                    FechaHasta = null,
+                    Producto = new Producto { Número = "PROD1", Nombre = "Producto Barato", PVP = 5m }
+                }
+            }.AsQueryable();
+            ConfigurarFakeDbSet(fakeGanavisiones, ganavisiones);
+            MockStock("PROD1", "ALG", 10);
+            A.CallTo(() => fakeProductoService.ObtenerRutaImagen("PROD1"))
+                .Returns(Task.FromResult("https://tienda.example/foto.jpg"));
+
+            // Act
+            var resultado = await controller.GetProductosBonificables("1", 100m);
+
+            // Assert
+            var okResult = (OkNegotiatedContentResult<ProductosBonificablesResponse>)resultado;
+            Assert.AreEqual(1, okResult.Content.Productos.Count);
+            Assert.AreEqual("https://tienda.example/foto.jpg", okResult.Content.Productos[0].UrlFoto);
+        }
+
+        [TestMethod]
         public async Task GetProductosBonificables_IncluirBloqueadosTrue_DevuelveBloqueadosConImporteParaDesbloquear()
         {
             // Nesto#370: base 100 -> 10 Ganavisiones. PROD1 (5) canjeable; PROD2 (15) bloqueado.

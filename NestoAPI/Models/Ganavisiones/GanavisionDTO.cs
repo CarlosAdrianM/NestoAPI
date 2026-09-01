@@ -70,6 +70,12 @@ namespace NestoAPI.Models.Ganavisiones
         /// 0 si ya es seleccionable. Nesto#370.
         /// </summary>
         public decimal ImporteParaDesbloquear { get; set; }
+
+        /// <summary>
+        /// Foto del producto, para que el regalo se vea en el carrito de TiendasNuevaVision.
+        /// Puede venir null si la tienda no tiene imagen para esa referencia.
+        /// </summary>
+        public string UrlFoto { get; set; }
     }
 
     /// <summary>
