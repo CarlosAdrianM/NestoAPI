@@ -795,7 +795,9 @@ namespace NestoAPI.Infraestructure
             List<Cliente> contactos = await servicio.BuscarContactos(db, cliente.Empresa, cliente.Cliente, cliente.Contacto);
             List<string> vendedoresContacto = VendedoresContactosCliente(contactos);
 
-            if (clienteDB.Estado != Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO)
+            // NestoAPI#424: el estado que se compara es el del CLIENTE, no el del vendedor.
+            // Funcionaba por casualidad porque ambos catálogos usan el 9 para "telefónico".
+            if (clienteDB.Estado != Constantes.Clientes.Estados.VISITA_TELEFONICA)
             {
 
                 var vendedoresQueRecibenClientes = await servicio.VendedoresQueRecibenClientes();
@@ -819,7 +821,8 @@ namespace NestoAPI.Infraestructure
             List<string> vendedoresPresenciales = await servicio.VendedoresPresenciales();
 
             // Se lo quita un comercial de estética telefónico
-            if (cliente.VendedorEstetica == Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Vendedor != Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Estado == Constantes.Vendedores.ESTADO_VENDEDOR_TELEFONICO)
+            // NestoAPI#424: mismo caso que arriba — clienteDB.Estado es un estado de CLIENTE.
+            if (cliente.VendedorEstetica == Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Vendedor != Constantes.Vendedores.VENDEDOR_GENERAL && clienteDB.Estado == Constantes.Clientes.Estados.VISITA_TELEFONICA)
             {
                 nuevoVendedor = Constantes.Vendedores.VENDEDOR_GENERAL;
                 SeguimientoCliente seguimiento = await servicio.BuscarSeguimiento(cliente.Empresa, cliente.Cliente, cliente.Contacto).ConfigureAwait(false);

@@ -2078,7 +2078,7 @@ namespace NestoAPI.Controllers
                 NotaEntrega = cabecera.NotaEntrega,
                 EsCanalExterno = esCanalExterno,
                 EsPrecioPublicoFinal = esCanalExterno &&
-                    cliente?.Estado == 8 && cabecera.Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL,
+                    cliente?.Estado == Constantes.Clientes.Estados.PUBLICO_FINAL && cabecera.Vendedor?.Trim() == Constantes.Vendedores.VENDEDOR_GENERAL,
                 Iva = cabecera.IVA?.Trim(),
                 BaseImponibleProductos = baseImponibleProductos,
                 AnadirPortes = DebeAnadirPortes(UsuarioPuedeSuprimirPortes(), anadirPortes, cabecera.LinPedidoVtas.FirstOrDefault()?.Almacén?.Trim()),

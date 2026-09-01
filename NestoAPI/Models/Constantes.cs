@@ -68,14 +68,33 @@ namespace NestoAPI.Models
             /// <summary>Nesto#436: ruta de los clientes con dirección extranjera ("00", Fuera de
             /// Madrid): sus CPs no están en nuestra tabla y no llevan ruta de reparto propia.</summary>
             public const string RUTA_CLIENTES_EXTRANJEROS = "00";
+            /// <summary>
+            /// NestoAPI#424: el catálogo COMPLETO de estados de la ficha de cliente, que hasta
+            /// ahora era conocimiento tácito. Regla general: cualquier valor NEGATIVO es una ficha
+            /// ANULADA (por eso las consultas de fichas vivas filtran Estado &gt;= 0). Este catálogo
+            /// lo comparten TiendasNuevaVision (EstadoClienteNoProfesional) y el módulo de login de
+            /// PrestaShop: si se añade un estado, avisar a los tres.
+            /// </summary>
             public static class Estados
             {
+                /// <summary>Ficha anulada (cualquier negativo lo es; -1 es el habitual).</summary>
                 public const short NULO = -1;
+                /// <summary>Cliente normal, con visita presencial del vendedor.</summary>
                 public const short VISITA_PRESENCIAL = 0;
+                /// <summary>Cliente atendido por el equipo telefónico (mismo número que el estado
+                /// 9 de VENDEDOR telefónico, pero son catálogos DISTINTOS: no confundirlos).</summary>
                 public const short VISITA_TELEFONICA = 9;
+                /// <summary>Alta reciente, pendiente de primera visita; al completar el NIF pasa a
+                /// su estado definitivo.</summary>
                 public const short PRIMERA_VISITA = 5;
                 public const short DISTRIBUIDOR = 6;
+                /// <summary>Comisiona al vendedor aunque no se le visite.</summary>
                 public const short COMISIONA_SIN_VISITA = 7;
+                /// <summary>NestoAPI#424: cliente NO profesional, compra a precio de público final.
+                /// Los clientes extranjeros se dan de alta así (Nesto: CrearClienteViewModel).
+                /// TiendasNuevaVision lo usa para EsProfesional y el picking y los pedidos de
+                /// canales externos para EsPrecioPublicoFinal.</summary>
+                public const short PUBLICO_FINAL = 8;
                 public const short SIN_ACCION_COMERCIAL_SOLO_ESTETICA = 93;
                 public const short SIN_ACCION_COMERCIAL_SOLO_PELUQUERIA = 11;
                 public const short SIN_ACCION_COMERCIAL_ESTETICA_Y_PELUQUERIA = 22;
