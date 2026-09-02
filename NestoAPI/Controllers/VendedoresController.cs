@@ -25,6 +25,12 @@ namespace NestoAPI.Controllers
             db.Configuration.LazyLoadingEnabled = false;
             Servicio = new ServicioVendedores();
         }
+
+        public VendedoresController(IServicioVendedores servicio)
+        {
+            db.Configuration.LazyLoadingEnabled = false;
+            Servicio = servicio;
+        }
                 
 
         [ResponseType(typeof(VendedorDTO))]
@@ -47,6 +53,12 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(List<VendedorDTO>))]
         public async Task<IHttpActionResult> GetVendedores(string empresa, string vendedor)
         {
+            // Sin empresa no hay equipo que resolver: es un error del llamante (400), no un 500
+            // que ensucie ELMAH. Nesto#458 lo disparaba con la ficha a medio cargar (02/09/26).
+            if (string.IsNullOrWhiteSpace(empresa))
+            {
+                return BadRequest("La empresa es obligatoria para consultar el equipo de un vendedor");
+            }
             return Ok(await Servicio.VendedoresEquipo(empresa, vendedor).ConfigureAwait(false));
         }
 
