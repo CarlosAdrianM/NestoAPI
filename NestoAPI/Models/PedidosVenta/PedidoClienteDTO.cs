@@ -114,6 +114,12 @@ namespace NestoAPI.Models.PedidosVenta
         /// <summary>Últimos dígitos de la tarjeta con la que se cobró, para el mensaje al cliente.</summary>
         public string TarjetaUltimosDigitos { get; set; }
 
+        /// <summary>
+        /// El nombre de la tarjeta del cobro para el cliente ("Visa acabada en 1234" o, si Redsys
+        /// no mandó los dígitos, "Visa que caduca en 12/2027").
+        /// </summary>
+        public string TarjetaDescripcion { get; set; }
+
         public ICollection<LineaPedidoClienteResponse> Lineas { get; set; }
 
         /// <summary>

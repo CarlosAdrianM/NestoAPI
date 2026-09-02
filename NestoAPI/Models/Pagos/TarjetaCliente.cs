@@ -44,6 +44,29 @@ namespace NestoAPI.Models.Pagos
         /// martillear una tarjeta que ya no funciona (se resetea con cada cobro bueno).
         /// </summary>
         public bool Usable => Activa && !Caducada && IntentosFallidosConsecutivos < 3;
+
+        /// <summary>Cómo se le nombra la tarjeta al cliente. Ver <see cref="Describir"/>.</summary>
+        public string Descripcion => Describir(MarcaTarjeta, UltimosDigitos, FechaCaducidad);
+
+        /// <summary>
+        /// NestoAPI#178: el nombre de la tarjeta para el cliente con lo que tengamos. Los últimos
+        /// dígitos NO están garantizados: Redsys solo los manda si el banco activa el envío de
+        /// datos de tarjeta en el terminal, y el nuestro no lo tiene. Sin ellos, la marca y la
+        /// caducidad ("Visa que caduca en 12/2027") bastan para que el cliente sepa cuál es.
+        /// </summary>
+        public static string Describir(string marca, string ultimosDigitos, DateTime? caducidad)
+        {
+            string nombre = string.IsNullOrWhiteSpace(marca) ? "Tarjeta" : marca.Trim();
+            if (!string.IsNullOrWhiteSpace(ultimosDigitos))
+            {
+                return $"{nombre} acabada en {ultimosDigitos.Trim()}";
+            }
+            if (caducidad.HasValue)
+            {
+                return $"{nombre} que caduca en {caducidad.Value:MM/yyyy}";
+            }
+            return string.IsNullOrWhiteSpace(marca) ? "Tarjeta guardada" : nombre;
+        }
     }
 
     /// <summary>
@@ -53,11 +76,20 @@ namespace NestoAPI.Models.Pagos
     public class TarjetaClienteDTO
     {
         public int Id { get; set; }
+
+        /// <summary>Puede venir vacío: ver <see cref="TarjetaCliente.Describir"/>.</summary>
         public string UltimosDigitos { get; set; }
         public string MarcaTarjeta { get; set; }
         public DateTime? FechaCaducidad { get; set; }
         public bool Caducada { get; set; }
         public DateTime? FechaUltimoUso { get; set; }
+
+        /// <summary>
+        /// El texto con el que enseñar la tarjeta ("Visa acabada en 1234", "Visa que caduca en
+        /// 12/2027"). Lo compone el servidor para que los clientes no tengan que saber qué datos
+        /// faltan.
+        /// </summary>
+        public string Descripcion { get; set; }
 
         public static TarjetaClienteDTO Desde(TarjetaCliente tarjeta)
         {
@@ -65,6 +97,7 @@ namespace NestoAPI.Models.Pagos
             {
                 Id = tarjeta.Id,
                 UltimosDigitos = tarjeta.UltimosDigitos,
+                Descripcion = tarjeta.Descripcion,
                 MarcaTarjeta = tarjeta.MarcaTarjeta,
                 FechaCaducidad = tarjeta.FechaCaducidad,
                 Caducada = tarjeta.Caducada,

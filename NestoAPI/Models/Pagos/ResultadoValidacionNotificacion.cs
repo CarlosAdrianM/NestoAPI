@@ -28,6 +28,12 @@ namespace NestoAPI.Models.Pagos
         /// <summary>C = crédito, D = débito.</summary>
         public string TipoTarjeta { get; set; }
 
+        /// <summary>
+        /// Nombres (solo nombres, sin valores) de los campos que venían en Ds_MerchantParameters.
+        /// Para el diagnóstico de qué manda y qué no manda Redsys en cada terminal.
+        /// </summary>
+        public string CamposRecibidos { get; set; }
+
         public bool TieneTokenTarjeta => !string.IsNullOrWhiteSpace(TokenTarjeta);
     }
 }

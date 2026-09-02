@@ -346,11 +346,48 @@ namespace NestoAPI.Infraestructure.Pagos
                 // que se podrá cobrar al cliente sin que vuelva a meter la tarjeta
                 TokenTarjeta = respuesta.Ds_Merchant_Identifier,
                 CofTxnId = respuesta.Ds_Merchant_Cof_Txnid,
-                UltimosDigitosTarjeta = ExtraerUltimosDigitos(respuesta.Ds_Card_Number),
+                UltimosDigitosTarjeta = UltimosDigitosDe(respuesta),
                 FechaCaducidadTarjeta = ParsearCaducidadRedsys(respuesta.Ds_ExpiryDate),
                 MarcaTarjeta = NombreMarcaTarjeta(respuesta.Ds_Card_Brand),
-                TipoTarjeta = respuesta.Ds_Card_Type?.Trim()
+                TipoTarjeta = respuesta.Ds_Card_Type?.Trim(),
+                CamposRecibidos = NombresDeCampos(decoded)
             };
+        }
+
+        /// <summary>
+        /// NestoAPI#178: los últimos dígitos con lo que haya mandado Redsys. Ds_Card_Last4 va
+        /// primero (su documentación lo prefiere cuando viene); si no, el número enmascarado.
+        /// Null si no viene ninguno — que es lo normal en nuestro terminal, porque el envío de
+        /// datos de tarjeta lo activa el banco y no lo tenemos.
+        /// </summary>
+        internal static string UltimosDigitosDe(RespuestaRedsys respuesta)
+        {
+            if (respuesta == null)
+            {
+                return null;
+            }
+            return ExtraerUltimosDigitos(respuesta.Ds_Card_Last4)
+                ?? ExtraerUltimosDigitos(respuesta.Ds_Card_Number);
+        }
+
+        /// <summary>
+        /// Solo los NOMBRES de los campos del JSON de la notificación, separados por comas.
+        /// Nunca los valores: ahí van el token y el PAN enmascarado.
+        /// </summary>
+        internal static string NombresDeCampos(string jsonNotificacion)
+        {
+            if (string.IsNullOrWhiteSpace(jsonNotificacion))
+            {
+                return null;
+            }
+            try
+            {
+                return string.Join(", ", JObject.Parse(jsonNotificacion).Properties().Select(p => p.Name));
+            }
+            catch (JsonException)
+            {
+                return null;
+            }
         }
 
         /// <summary>

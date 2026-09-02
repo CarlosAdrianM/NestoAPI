@@ -25,8 +25,18 @@ namespace NestoAPI.Models.Pagos
         /// <summary>Caducidad de la tarjeta, formato AAMM (p.ej. "2712" = diciembre de 2027).</summary>
         public string Ds_ExpiryDate { get; set; }
 
-        /// <summary>Número de tarjeta enmascarado (p.ej. "454881******04").</summary>
+        /// <summary>
+        /// Número de tarjeta enmascarado (p.ej. "454881******04"). OJO: Redsys solo lo manda si
+        /// el comercio tiene activado "recibir datos de tarjeta" (lo activa el banco, no el
+        /// panel); el nuestro NO lo tiene (comprobado 01/09/26: alta 0 EUR autorizada sin él).
+        /// </summary>
         public string Ds_Card_Number { get; set; }
+
+        /// <summary>
+        /// Últimos 4 dígitos. Redsys lo manda en pagos con cartera (Google Pay / Apple Pay) y
+        /// su documentación dice que, si viene, es preferible a Ds_Card_Number.
+        /// </summary>
+        public string Ds_Card_Last4 { get; set; }
 
         /// <summary>Marca: 1=Visa, 2=Mastercard, 8=Amex...</summary>
         public string Ds_Card_Brand { get; set; }

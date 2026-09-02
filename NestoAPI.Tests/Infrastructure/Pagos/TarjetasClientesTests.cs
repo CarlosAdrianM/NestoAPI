@@ -184,6 +184,97 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             A.CallTo(() => _logService.LogError(A<string>._, A<Exception>._)).MustHaveHappened();
         }
 
+        [TestMethod]
+        public void GuardarTarjetaDeLaNotificacion_SinUltimosDigitos_GuardaLaTarjetaIgualYDejaRastro()
+        {
+            // 01/09/26: el terminal no manda Ds_Card_Number (lo activa el banco) y el alta real se
+            // perdió. Los dígitos son cosmética: el token se guarda con o sin ellos.
+            var resultado = new ResultadoValidacionNotificacion
+            {
+                TokenTarjeta = "token123",
+                UltimosDigitosTarjeta = null,
+                MarcaTarjeta = "Visa",
+                FechaCaducidadTarjeta = new DateTime(2027, 12, 31),
+                CamposRecibidos = "Ds_Order, Ds_Response, Ds_Merchant_Identifier, Ds_ExpiryDate"
+            };
+            var pago = new PagoTPV { Empresa = "1", Cliente = "15191", NumeroOrden = "E6E4EDC15191" };
+
+            _servicio.GuardarTarjetaDeLaNotificacion(resultado, pago);
+
+            A.CallTo(() => _tarjetaStore.GuardarOActualizar(A<TarjetaCliente>.That.Matches(t =>
+                t.TokenRedsys == "token123" && t.UltimosDigitos == null && t.MarcaTarjeta == "Visa")))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _logService.LogError(
+                A<string>.That.Matches(m => m.Contains("E6E4EDC15191") && m.Contains("Ds_Merchant_Identifier")
+                    && m.Contains("Visa que caduca en 12/2027")),
+                A<Exception>._)).MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void GuardarTarjetaDeLaNotificacion_ConUltimosDigitos_NoDejaRastroDeDiagnostico()
+        {
+            var resultado = new ResultadoValidacionNotificacion { TokenTarjeta = "token123", UltimosDigitosTarjeta = "1234" };
+            var pago = new PagoTPV { Empresa = "1", Cliente = "15191", NumeroOrden = "ORD1" };
+
+            _servicio.GuardarTarjetaDeLaNotificacion(resultado, pago);
+
+            A.CallTo(() => _logService.LogError(A<string>._, A<Exception>._)).MustNotHaveHappened();
+        }
+
+        [TestMethod]
+        public void UltimosDigitosDe_PrefiereDsCardLast4YSiNoElNumeroEnmascarado()
+        {
+            Assert.AreEqual("9876", RedsysService.UltimosDigitosDe(new RespuestaRedsys { Ds_Card_Last4 = "9876", Ds_Card_Number = "454881******0004" }));
+            Assert.AreEqual("0004", RedsysService.UltimosDigitosDe(new RespuestaRedsys { Ds_Card_Number = "454881******0004" }));
+            Assert.IsNull(RedsysService.UltimosDigitosDe(new RespuestaRedsys { Ds_Merchant_Identifier = "token" }));
+            Assert.IsNull(RedsysService.UltimosDigitosDe(null));
+        }
+
+        [TestMethod]
+        public void NombresDeCampos_DevuelveSoloLosNombresNuncaLosValores()
+        {
+            string json = "{\"Ds_Order\":\"E6E4EDC15191\",\"Ds_Merchant_Identifier\":\"tokenSecreto\",\"Ds_Response\":\"0000\"}";
+
+            string campos = RedsysService.NombresDeCampos(json);
+
+            Assert.AreEqual("Ds_Order, Ds_Merchant_Identifier, Ds_Response", campos);
+            Assert.IsFalse(campos.Contains("tokenSecreto"));
+            Assert.IsNull(RedsysService.NombresDeCampos("esto no es json"));
+            Assert.IsNull(RedsysService.NombresDeCampos(null));
+        }
+
+        [TestMethod]
+        public void Describir_ConDigitos_MarcaAcabadaEn()
+        {
+            Assert.AreEqual("Visa acabada en 1234", TarjetaCliente.Describir("Visa", "1234", new DateTime(2027, 12, 31)));
+            Assert.AreEqual("Tarjeta acabada en 1234", TarjetaCliente.Describir(null, "1234", null));
+        }
+
+        [TestMethod]
+        public void Describir_SinDigitos_MarcaYCaducidad()
+        {
+            Assert.AreEqual("Visa que caduca en 12/2027", TarjetaCliente.Describir("Visa", null, new DateTime(2027, 12, 31)));
+            Assert.AreEqual("Tarjeta que caduca en 12/2027", TarjetaCliente.Describir("", "", new DateTime(2027, 12, 31)));
+        }
+
+        [TestMethod]
+        public void Describir_SinNada_TarjetaGuardada()
+        {
+            Assert.AreEqual("Tarjeta guardada", TarjetaCliente.Describir(null, null, null));
+            Assert.AreEqual("Mastercard", TarjetaCliente.Describir("Mastercard", null, null));
+        }
+
+        [TestMethod]
+        public void TarjetaClienteDTO_LlevaLaDescripcionCompuestaPorElServidor()
+        {
+            var tarjeta = new TarjetaCliente { Id = 7, MarcaTarjeta = "Visa", UltimosDigitos = null, FechaCaducidad = new DateTime(2027, 12, 31) };
+
+            TarjetaClienteDTO dto = TarjetaClienteDTO.Desde(tarjeta);
+
+            Assert.AreEqual("Visa que caduca en 12/2027", dto.Descripcion);
+            Assert.IsNull(dto.UltimosDigitos);
+        }
+
         #endregion
 
         #region IniciarPago pide tokenizar solo en pedidos de la app

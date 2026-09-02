@@ -279,6 +279,17 @@ namespace NestoAPI.Infraestructure.Pagos
                 return;
             }
 
+            // Los últimos dígitos NO son obligatorios (01/09/26: el terminal no tiene activado el
+            // envío de datos de tarjeta y el alta se perdió por un NOT NULL). Se deja rastro de
+            // qué campos manda Redsys para saber qué tenemos sin volver a adivinar.
+            if (string.IsNullOrWhiteSpace(resultado.UltimosDigitosTarjeta))
+            {
+                _logService.LogError($"[Tarjetas] La notificación de la orden {pago.NumeroOrden} trae token pero " +
+                    $"no el número de tarjeta (el terminal no manda datos de tarjeta). La tarjeta se guarda " +
+                    $"igualmente como '{TarjetaCliente.Describir(resultado.MarcaTarjeta, null, resultado.FechaCaducidadTarjeta)}'. " +
+                    $"Campos recibidos: {resultado.CamposRecibidos ?? "(desconocidos)"}");
+            }
+
             try
             {
                 _tarjetaStore.GuardarOActualizar(new TarjetaCliente
@@ -405,12 +416,13 @@ namespace NestoAPI.Infraestructure.Pagos
             if (!tarjeta.Usable)
             {
                 string motivo = tarjeta.Caducada
-                    ? $"La tarjeta acabada en {tarjeta.UltimosDigitos} está caducada."
-                    : $"La tarjeta acabada en {tarjeta.UltimosDigitos} no se puede usar ahora mismo.";
+                    ? $"La tarjeta ({tarjeta.Descripcion}) está caducada."
+                    : $"La tarjeta ({tarjeta.Descripcion}) no se puede usar ahora mismo.";
                 return new ResultadoCobroTarjetaGuardada
                 {
                     Autorizado = false,
                     UltimosDigitos = tarjeta.UltimosDigitos,
+                    Descripcion = tarjeta.Descripcion,
                     MensajeError = motivo + " Paga con otra tarjeta para volver a activarla."
                 };
             }
@@ -461,6 +473,7 @@ namespace NestoAPI.Infraestructure.Pagos
                     IdPago = idPago,
                     NumeroOrden = parametros.NumeroOrden,
                     UltimosDigitos = tarjeta.UltimosDigitos,
+                    Descripcion = tarjeta.Descripcion,
                     MensajeError = "No hemos podido conectar con el banco. Inténtalo de nuevo en unos minutos."
                 };
             }
@@ -488,9 +501,10 @@ namespace NestoAPI.Infraestructure.Pagos
                 NumeroOrden = parametros.NumeroOrden,
                 CodigoRespuesta = respuesta?.Ds_Response,
                 UltimosDigitos = tarjeta.UltimosDigitos,
+                Descripcion = tarjeta.Descripcion,
                 MensajeError = autorizado
                     ? null
-                    : $"El banco no ha autorizado el cobro en la tarjeta acabada en {tarjeta.UltimosDigitos}. " +
+                    : $"El banco no ha autorizado el cobro en la tarjeta ({tarjeta.Descripcion}). " +
                       "Puedes intentarlo con otra tarjeta."
             };
         }

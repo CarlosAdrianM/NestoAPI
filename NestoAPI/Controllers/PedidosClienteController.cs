@@ -193,8 +193,9 @@ namespace NestoAPI.Controllers
             respuesta.RequierePago = false;
             respuesta.Pagado = true;
             respuesta.TarjetaUltimosDigitos = cobro.UltimosDigitos;
+            respuesta.TarjetaDescripcion = cobro.Descripcion;
             respuesta.Avisos.Clear();
-            respuesta.Avisos.Add($"Pagado con tu tarjeta acabada en {cobro.UltimosDigitos}.");
+            respuesta.Avisos.Add($"Pagado con tu tarjeta: {cobro.Descripcion}.");
 
             try
             {

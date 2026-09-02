@@ -41,8 +41,11 @@ namespace NestoAPI.Models.Pagos
         public string NumeroOrden { get; set; }
         public string CodigoRespuesta { get; set; }
 
-        /// <summary>Para poder decirle al cliente en qué tarjeta se ha cobrado.</summary>
+        /// <summary>Para poder decirle al cliente en qué tarjeta se ha cobrado. Puede faltar.</summary>
         public string UltimosDigitos { get; set; }
+
+        /// <summary>El nombre de la tarjeta para el cliente (<see cref="TarjetaCliente.Describir"/>).</summary>
+        public string Descripcion { get; set; }
 
         /// <summary>Motivo (para el cliente) cuando no se autoriza.</summary>
         public string MensajeError { get; set; }
