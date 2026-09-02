@@ -1188,18 +1188,21 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // Redsys puede mandar la misma notificacion mas de una vez. El concepto lleva el numero
             // de orden, que es unico por cobro, y es por lo que se comprueba si el prepago ya estaba.
-            string concepto = ServicioPagos.ConceptoPrepagoPedido("260901123456");
+            string concepto = ServicioPagos.ConceptoPrepagoPedido(925300, "EA3A1FC15191");
 
-            StringAssert.Contains(concepto, "260901123456");
+            // 02/09/26 (Carlos): al contabilizar se antepone "Prepago", así que el concepto dice
+            // qué es y de qué pedido, y el número de orden va detrás
+            Assert.AreEqual("Tarjeta app pedido 925300 EA3A1FC15191", concepto);
         }
 
         [TestMethod]
         public void ConceptoPrepagoPedido_NumeroDeOrdenLargo_CabeEnElCampo()
         {
             // ConceptoAdicional son 50 caracteres en la tabla Prepagos
-            string concepto = ServicioPagos.ConceptoPrepagoPedido(new string('9', 80));
+            string concepto = ServicioPagos.ConceptoPrepagoPedido(925300, new string('9', 80));
 
             Assert.IsTrue(concepto.Length <= 50, $"Longitud {concepto.Length}");
+            StringAssert.StartsWith(concepto, "Tarjeta app pedido 925300 ");
         }
 
         #endregion

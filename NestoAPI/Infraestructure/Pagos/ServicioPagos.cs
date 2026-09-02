@@ -646,14 +646,15 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         /// <summary>
-        /// NestoAPI#436: concepto del prepago. Lleva el numero de orden de Redsys, que es unico por
-        /// cobro, y eso es lo que hace la insercion idempotente: Redsys puede mandar la misma
-        /// notificacion mas de una vez y el pedido no puede acabar con el cobro por duplicado.
-        /// El campo son 50 caracteres.
+        /// NestoAPI#436: concepto del prepago. Al contabilizar se le antepone "Prepago", así que
+        /// dice QUÉ es (tarjeta de la app) y de QUÉ pedido, y detrás el numero de orden de Redsys,
+        /// que es unico por cobro y es lo que hace la insercion idempotente: Redsys puede mandar
+        /// la misma notificacion mas de una vez y el pedido no puede acabar con el cobro por
+        /// duplicado. El campo son 50 caracteres.
         /// </summary>
-        internal static string ConceptoPrepagoPedido(string numeroOrden)
+        internal static string ConceptoPrepagoPedido(int numeroPedido, string numeroOrden)
         {
-            string concepto = $"Pago app {numeroOrden?.Trim()}";
+            string concepto = $"Tarjeta app pedido {numeroPedido} {numeroOrden?.Trim()}";
             return concepto.Length > 50 ? concepto.Substring(0, 50) : concepto;
         }
 
@@ -666,7 +667,7 @@ namespace NestoAPI.Infraestructure.Pagos
         {
             int numeroPedido = int.Parse(pago.Documento.Trim());
             string empresa = pago.Empresa?.Trim() ?? Empresas.EMPRESA_POR_DEFECTO;
-            string concepto = ConceptoPrepagoPedido(pago.NumeroOrden);
+            string concepto = ConceptoPrepagoPedido(numeroPedido, pago.NumeroOrden);
 
             CabPedidoVta pedido = await db.CabPedidoVtas
                 .FirstOrDefaultAsync(cab => cab.Empresa == empresa && cab.Número == numeroPedido)
