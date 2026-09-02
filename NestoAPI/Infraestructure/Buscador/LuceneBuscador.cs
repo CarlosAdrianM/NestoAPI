@@ -46,7 +46,9 @@ namespace NestoAPI.Infraestructure.Buscador
                         new TextField("Nombre", producto.Nombre, Field.Store.YES) { Boost = 4.0f },
                         new TextField("Familia", producto.Familia ?? "", Field.Store.YES) { Boost = 3.0f },
                         new TextField("Subgrupo", producto.Subgrupo ?? "", Field.Store.YES) { Boost = 3.0f },
-                        new TextField("TextoCompleto", $"{producto.Nombre} {producto.Familia} {producto.Subgrupo} {producto.DescripcionBreve} {QuitarHtml(producto.DescripcionLarga)}", Field.Store.NO),
+                        // La referencia también va en el texto: "17404" tiene que encontrar el producto
+                        // (la caja del footer de la tienda, Nesto y la app buscan por referencia).
+                        new TextField("TextoCompleto", $"{producto.Id} {producto.Nombre} {producto.Familia} {producto.Subgrupo} {producto.DescripcionBreve} {QuitarHtml(producto.DescripcionLarga)}", Field.Store.NO),
                     };
                     writer.AddDocument(doc);
                 }
@@ -143,9 +145,24 @@ namespace NestoAPI.Infraestructure.Buscador
             };
 
             string escapedQuery = QueryParser.Escape(parametros.Query);
+
+            // El texto de siempre O la referencia exacta. Cada palabra de la consulta que parezca
+            // una referencia se busca también como término exacto sobre Id con un boost alto, para
+            // que el producto con esa referencia salga el primero aunque otros la mencionen en su
+            // descripción (la referencia va además en TextoCompleto, que es lo que hace que se
+            // encuentre; el término sobre Id es lo que la pone en cabeza).
+            BooleanQuery textoOReferencia = new BooleanQuery
+            {
+                { parser.Parse(escapedQuery), Occur.SHOULD }
+            };
+            foreach (string referencia in PalabrasQueParecenReferencia(parametros.Query))
+            {
+                textoOReferencia.Add(new TermQuery(new Term("Id", referencia)) { Boost = BOOST_REFERENCIA_EXACTA }, Occur.SHOULD);
+            }
+
             BooleanQuery query = new BooleanQuery
             {
-                { parser.Parse(escapedQuery), Occur.MUST }
+                { textoOReferencia, Occur.MUST }
             };
 
             if (!string.IsNullOrEmpty(parametros.Tipo))
@@ -159,6 +176,21 @@ namespace NestoAPI.Infraestructure.Buscador
             query.Add(esAnulado, soloAnulados ? Occur.MUST : Occur.MUST_NOT);
 
             return query;
+        }
+
+        private const float BOOST_REFERENCIA_EXACTA = 50f;
+
+        /// <summary>
+        /// Las palabras de la consulta que pueden ser una referencia de producto: entre 3 y 10
+        /// caracteres, solo letras y números (el Id se indexa tal cual, recortado). Internal para tests.
+        /// </summary>
+        internal static IEnumerable<string> PalabrasQueParecenReferencia(string consulta)
+        {
+            return (consulta ?? "")
+                .Replace(',', ' ').Replace(';', ' ').Split((char[])null, StringSplitOptions.RemoveEmptyEntries)
+                .Select(p => p.Trim())
+                .Where(p => p.Length >= 3 && p.Length <= 10 && p.All(char.IsLetterOrDigit))
+                .Distinct();
         }
 
         private static List<dynamic> Ejecutar(IndexSearcher searcher, Query query, int maximo, out int total)

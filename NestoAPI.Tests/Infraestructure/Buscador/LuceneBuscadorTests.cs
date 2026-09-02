@@ -1,4 +1,4 @@
-using Microsoft.VisualStudio.TestTools.UnitTesting;
+﻿using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Infraestructure.Buscador;
 using System;
 using System.Collections.Generic;
@@ -81,6 +81,62 @@ namespace NestoAPI.Tests.Infraestructure.Buscador
                 IncluirAnulados = incluirAnulados
             });
         }
+
+        #region Buscar por referencia (la caja del footer de la tienda, Nesto y la app)
+
+        [TestMethod]
+        public void LuceneBuscador_BuscarPorReferencia_EncuentraElProducto()
+        {
+            // 02/09/26: "17404" no devolvía nada. La referencia solo se guardaba para devolverla
+            // (StringField Id) y la consulta iba contra TextoCompleto/Nombre/Protocolo.
+            Indexar(
+                CrearProducto("17404", "Cera gold", anulado: false),
+                CrearProducto("22535", "Cera de abeja", anulado: false));
+
+            List<dynamic> resultados = Buscar("17404", incluirAnulados: false);
+
+            Assert.AreEqual(1, resultados.Count);
+            Assert.AreEqual("17404", (string)resultados[0].Id);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_BuscarPorReferencia_ElProductoConEsaReferenciaSaleElPrimero()
+        {
+            ResultadoBusqueda recambio = CrearProducto("30001", "Recambio cabezal", anulado: false);
+            recambio.DescripcionLarga = "Recambio para el aparato 17404 y para el 17405. Compatible con 17404.";
+            Indexar(
+                recambio,
+                CrearProducto("17404", "Aparato de presoterapia", anulado: false));
+
+            List<dynamic> resultados = Buscar("17404", incluirAnulados: false);
+
+            Assert.AreEqual(2, resultados.Count, "el recambio la menciona en la descripción y también sale");
+            Assert.AreEqual("17404", (string)resultados[0].Id, "la referencia exacta manda sobre las menciones");
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_BuscarPorReferenciaYTexto_SigueEncontrando()
+        {
+            Indexar(
+                CrearProducto("17404", "Cera gold", anulado: false),
+                CrearProducto("22535", "Cera de abeja", anulado: false));
+
+            List<dynamic> porTexto = Buscar("cera", incluirAnulados: false);
+            List<dynamic> mezcla = Buscar("cera 17404", incluirAnulados: false);
+
+            Assert.AreEqual(2, porTexto.Count);
+            Assert.AreEqual("17404", (string)mezcla[0].Id);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_BuscarPorReferencia_NoEncuentraLoQueNoExiste()
+        {
+            Indexar(CrearProducto("17404", "Cera gold", anulado: false));
+
+            Assert.AreEqual(0, Buscar("99999", incluirAnulados: false).Count);
+        }
+
+        #endregion
 
         [TestMethod]
         public void LuceneBuscador_Paginado_DevuelveElTotalYSoloLaPaginaPedida()
