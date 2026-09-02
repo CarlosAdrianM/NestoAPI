@@ -110,6 +110,10 @@ namespace NestoAPI.Controllers
             }
         }
 
+        // Público a propósito: lo llama el servidor de la tienda PrestaShop (nestobuscador) sin
+        // token; sin claim HasRecentPurchases los vídeos recientes salen con
+        // BloqueadoPorComprasRecientes = true. Explícito para que #190 no lo cierre.
+        [AllowAnonymous]
         [HttpGet]
         [Route("Buscar")]
         public async Task<IHttpActionResult> Buscar(

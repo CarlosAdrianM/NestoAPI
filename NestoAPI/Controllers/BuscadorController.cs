@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Buscador;
+﻿using NestoAPI.Infraestructure.Buscador;
 using System.Collections.Generic;
 using System.Web.Http;
 using static NestoAPI.Infraestructure.Buscador.LuceneBuscador;
@@ -32,6 +32,9 @@ namespace NestoAPI.Controllers
         /// pelada de siempre (lo que esperan Nesto y la app); para paginar con el total está
         /// <see cref="BuscarPaginado"/>.
         /// </summary>
+        // Público a propósito (solo ranking, sin precios): lo llama el servidor de la tienda
+        // PrestaShop (nestobuscador) sin token. Explícito para que #190 no lo cierre.
+        [AllowAnonymous]
         [HttpGet]
         [Route("api/buscador")]
         public IHttpActionResult Buscar(string q, string tipo = null, bool incluirAnulados = false, int skip = 0, int take = TAKE_POR_DEFECTO)
@@ -49,6 +52,7 @@ namespace NestoAPI.Controllers
         /// Resultados }</c>. Total cuenta los activos; TotalAnulados solo si se piden. Es lo que
         /// usa el buscador de la tienda PrestaShop (módulo nestobuscador).
         /// </summary>
+        [AllowAnonymous]
         [HttpGet]
         [Route("api/buscador/paginado")]
         public IHttpActionResult BuscarPaginado(string q, string tipo = null, bool incluirAnulados = false, int skip = 0, int take = TAKE_POR_DEFECTO)
