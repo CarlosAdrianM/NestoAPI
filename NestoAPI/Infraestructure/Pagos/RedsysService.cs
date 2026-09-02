@@ -266,8 +266,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 if (response.IsSuccessStatusCode)
                 {
                     string resultado = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                    PeticionRedsys respuestaPeticion = JsonConvert.DeserializeObject<PeticionRedsys>(resultado);
-                    string resultadoDecodificado = DecodificarParametrosInterno(respuestaPeticion.Ds_MerchantParameters);
+                    string resultadoDecodificado = DecodificarParametrosInterno(ParametrosDeLaRespuestaREST(resultado));
                     RespuestaRedsys respuestaRedsys = JsonConvert.DeserializeObject<RespuestaRedsys>(resultadoDecodificado);
                     if (respuestaRedsys != null)
                     {
@@ -300,6 +299,41 @@ namespace NestoAPI.Infraestructure.Pagos
                     throw new Exception(errorMostrar);
                 }
             }
+        }
+
+        /// <summary>
+        /// Los Ds_MerchantParameters de una respuesta REST de Redsys. Cuando Redsys rechaza la
+        /// petición responde 200 con <c>{"errorCode":"SIS0xxx"}</c> y SIN parámetros: hasta el
+        /// 02/09/26 eso acababa en un ArgumentNullException que no decía nada (primer cobro
+        /// real con tarjeta guardada, NestoAPI#178). Ahora el código de error y la respuesta
+        /// entera van en la excepción, que ELMAH recoge.
+        /// </summary>
+        internal static string ParametrosDeLaRespuestaREST(string cuerpoRespuesta)
+        {
+            if (string.IsNullOrWhiteSpace(cuerpoRespuesta))
+            {
+                throw new Exception("Redsys ha devuelto una respuesta REST vacía");
+            }
+            JObject respuesta;
+            try
+            {
+                respuesta = JObject.Parse(cuerpoRespuesta);
+            }
+            catch (JsonException ex)
+            {
+                throw new Exception($"Redsys ha devuelto una respuesta REST que no es JSON: {cuerpoRespuesta}", ex);
+            }
+            string errorCode = respuesta["errorCode"]?.ToString();
+            if (!string.IsNullOrWhiteSpace(errorCode))
+            {
+                throw new Exception($"Redsys ha rechazado la petición REST con el error {errorCode}. Respuesta: {cuerpoRespuesta}");
+            }
+            string parametros = respuesta["Ds_MerchantParameters"]?.ToString();
+            if (string.IsNullOrWhiteSpace(parametros))
+            {
+                throw new Exception($"La respuesta REST de Redsys no trae Ds_MerchantParameters: {cuerpoRespuesta}");
+            }
+            return parametros;
         }
 
         public RespuestaRedsys DecodificarParametros(string merchantParametersBase64)

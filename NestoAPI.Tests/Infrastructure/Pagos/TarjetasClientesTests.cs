@@ -247,6 +247,35 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         [TestMethod]
+        public void ParametrosDeLaRespuestaREST_ConErrorCode_LanzaConElCodigoYLaRespuesta()
+        {
+            // 02/09/26, primer cobro real con token: Redsys respondió 200 con {"errorCode":...} y
+            // sin parámetros, y aquello acababa en "El valor no puede ser nulo: value"
+            Exception ex = Assert.ThrowsException<Exception>(() =>
+                RedsysService.ParametrosDeLaRespuestaREST("{\"errorCode\":\"SIS0431\"}"));
+
+            StringAssert.Contains(ex.Message, "SIS0431");
+            StringAssert.Contains(ex.Message, "{\"errorCode\":\"SIS0431\"}");
+        }
+
+        [TestMethod]
+        public void ParametrosDeLaRespuestaREST_SinParametros_LanzaConLaRespuesta()
+        {
+            Assert.ThrowsException<Exception>(() => RedsysService.ParametrosDeLaRespuestaREST("{}"));
+            Assert.ThrowsException<Exception>(() => RedsysService.ParametrosDeLaRespuestaREST(""));
+            Assert.ThrowsException<Exception>(() => RedsysService.ParametrosDeLaRespuestaREST("no es json"));
+        }
+
+        [TestMethod]
+        public void ParametrosDeLaRespuestaREST_Correcta_DevuelveLosParametros()
+        {
+            string parametros = RedsysService.ParametrosDeLaRespuestaREST(
+                "{\"Ds_SignatureVersion\":\"HMAC_SHA256_V1\",\"Ds_MerchantParameters\":\"eyJEc19SZXNwb25zZSI6IjAwMDAifQ==\",\"Ds_Signature\":\"abc\"}");
+
+            Assert.AreEqual("eyJEc19SZXNwb25zZSI6IjAwMDAifQ==", parametros);
+        }
+
+        [TestMethod]
         public void LogDiagnosticoRedsys_DejaEnElmahElJsonConLaOrden()
         {
             // #445 (temporal): la respuesta al POST REST / la notificación, claves y valores
