@@ -287,7 +287,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 _logService.LogError($"[Tarjetas] La notificación de la orden {pago.NumeroOrden} trae token pero " +
                     $"no el número de tarjeta (el terminal no manda datos de tarjeta). La tarjeta se guarda " +
                     $"igualmente como '{TarjetaCliente.Describir(resultado.MarcaTarjeta, null, resultado.FechaCaducidadTarjeta)}'. " +
-                    $"Campos recibidos: {resultado.CamposRecibidos ?? "(desconocidos)"}");
+                    $"Notificación recibida (token tapado): {resultado.CamposRecibidos ?? "(desconocida)"}");
             }
 
             try

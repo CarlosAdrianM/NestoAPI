@@ -231,14 +231,18 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         }
 
         [TestMethod]
-        public void NombresDeCampos_DevuelveSoloLosNombresNuncaLosValores()
+        public void NombresDeCampos_DevuelveLaNotificacionConElTokenTapado()
         {
-            string json = "{\"Ds_Order\":\"E6E4EDC15191\",\"Ds_Merchant_Identifier\":\"tokenSecreto\",\"Ds_Response\":\"0000\"}";
+            // Diagnóstico temporal (02/09/26): se quiere ver TODO lo que manda el terminal, salvo
+            // el token, que es con lo que se cobra
+            string json = "{\"Ds_Order\":\"E6E4EDC15191\",\"Ds_Merchant_Identifier\":\"726732bcff81808ce9547f939e20b16d2fced12b\",\"Ds_ExpiryDate\":\"2803\",\"Ds_Response\":\"0000\"}";
 
             string campos = RedsysService.NombresDeCampos(json);
 
-            Assert.AreEqual("Ds_Order, Ds_Merchant_Identifier, Ds_Response", campos);
-            Assert.IsFalse(campos.Contains("tokenSecreto"));
+            Assert.IsFalse(campos.Contains("726732bcff81808ce9547f939e20b16d2fced12b"));
+            Assert.IsTrue(campos.Contains("\"Ds_Merchant_Identifier\":\"726732******************************d12b\""), campos);
+            Assert.IsTrue(campos.Contains("\"Ds_ExpiryDate\":\"2803\""));
+            Assert.IsTrue(campos.Contains("\"Ds_Order\":\"E6E4EDC15191\""));
             Assert.IsNull(RedsysService.NombresDeCampos("esto no es json"));
             Assert.IsNull(RedsysService.NombresDeCampos(null));
         }

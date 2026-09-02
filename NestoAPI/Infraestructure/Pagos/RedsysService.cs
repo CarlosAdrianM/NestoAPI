@@ -371,8 +371,10 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         /// <summary>
-        /// Solo los NOMBRES de los campos del JSON de la notificación, separados por comas.
-        /// Nunca los valores: ahí van el token y el PAN enmascarado.
+        /// La notificación decodificada tal cual la manda Redsys, para el diagnóstico de qué
+        /// campos llegan en este terminal (02/09/26: TEMPORAL, retirar cuando se hayan visto
+        /// unas cuantas — es una entrada de ELMAH por cada alta/cobro tokenizado). Lo único que
+        /// se tapa es el token (Ds_Merchant_Identifier): con él y nuestra clave se cobra.
         /// </summary>
         internal static string NombresDeCampos(string jsonNotificacion)
         {
@@ -382,12 +384,29 @@ namespace NestoAPI.Infraestructure.Pagos
             }
             try
             {
-                return string.Join(", ", JObject.Parse(jsonNotificacion).Properties().Select(p => p.Name));
+                JObject notificacion = JObject.Parse(jsonNotificacion);
+                JProperty token = notificacion.Property("Ds_Merchant_Identifier");
+                if (token != null)
+                {
+                    token.Value = Enmascarar(token.Value?.ToString());
+                }
+                return notificacion.ToString(Formatting.None);
             }
             catch (JsonException)
             {
                 return null;
             }
+        }
+
+        private static string Enmascarar(string valor)
+        {
+            if (string.IsNullOrEmpty(valor))
+            {
+                return valor;
+            }
+            return valor.Length <= 10
+                ? new string('*', valor.Length)
+                : valor.Substring(0, 6) + new string('*', valor.Length - 10) + valor.Substring(valor.Length - 4);
         }
 
         /// <summary>
