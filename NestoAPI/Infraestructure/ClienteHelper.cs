@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Models;
+using NestoAPI.Infraestructure.Clientes;
 using System;
 using System.Data.Entity;
 using System.Linq;
@@ -9,40 +10,43 @@ namespace NestoAPI.Infraestructure
     public static class ClienteHelper
     {
         /// <summary>
-        /// NestoAPI#446: ¿la persona de contacto con ese email, en ese cliente, tiene el cargo
-        /// "Pedidos sin ver precios"? Único caller: AuthController.CrearJWTAsync (login y
-        /// refresco de TiendasNuevaVision). Ante cualquier duda (error, sin email) es false: a
-        /// nadie se le esconden los precios por accidente.
+        /// NestoAPI#446: el nivel de precios que le toca a la persona de contacto con ese email
+        /// en ese cliente, por sus cargos ("Pedidos sin ver precios" = 30, "sin ver descuentos" =
+        /// 31). Con varios cargos para el mismo correo manda el más restrictivo. Único caller:
+        /// AuthController.CrearJWTAsync (login y refresco de TiendasNuevaVision). Ante cualquier
+        /// duda (error, sin email) es Completo: a nadie se le esconden los precios por accidente.
         /// </summary>
-        public static async Task<bool> PersonaSinPreciosAsync(string clienteId, string email)
+        public static async Task<PoliticaPreciosOcultos.NivelPrecios> NivelPreciosAsync(string clienteId, string email)
         {
             if (string.IsNullOrWhiteSpace(clienteId) || string.IsNullOrWhiteSpace(email))
             {
-                return false;
+                return PoliticaPreciosOcultos.NivelPrecios.Completo;
             }
             try
             {
                 using (NVEntities db = new NVEntities())
                 {
-                    return await PersonaSinPreciosAsync(db, clienteId, email);
+                    return await NivelPreciosAsync(db, clienteId, email);
                 }
             }
             catch (Exception)
             {
-                return false;
+                return PoliticaPreciosOcultos.NivelPrecios.Completo;
             }
         }
 
-        public static async Task<bool> PersonaSinPreciosAsync(NVEntities db, string clienteId, string email)
+        public static async Task<PoliticaPreciosOcultos.NivelPrecios> NivelPreciosAsync(NVEntities db, string clienteId, string email)
         {
             string cliente = clienteId.Trim();
             string correo = email.Trim().ToLower();
-            return await db.PersonasContactoClientes
-                .AnyAsync(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
+            System.Collections.Generic.List<short?> cargos = await db.PersonasContactoClientes
+                .Where(p => p.Empresa == Constantes.Empresas.EMPRESA_POR_DEFECTO
                     && p.NºCliente == cliente
-                    && p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_PEDIDOS_SIN_PRECIOS
                     && p.CorreoElectrónico != null
-                    && p.CorreoElectrónico.Trim().ToLower() == correo);
+                    && p.CorreoElectrónico.Trim().ToLower() == correo)
+                .Select(p => (short?)p.Cargo)
+                .ToListAsync();
+            return PoliticaPreciosOcultos.NivelMasRestrictivo(cargos);
         }
 
         // Issue NestoAPI#168 (TiendasNuevaVision#29): el check "¿tiene compras?" debe

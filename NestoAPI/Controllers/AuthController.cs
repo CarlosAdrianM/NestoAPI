@@ -497,12 +497,14 @@ public class AuthController : ApiController
             claims.Add(new Claim("HasRecentPurchases", "true"));
         }
 
-        // NestoAPI#446: la persona de contacto con cargo "Pedidos sin ver precios" lleva el
-        // claim en el JWT; con él el servidor tapa importes y fuerza la forma de pago habitual.
-        // Se recalcula en cada refresco, así que quitar el cargo en Nesto surte efecto en una hora.
-        if (await ClienteHelper.PersonaSinPreciosAsync(cliente, email))
+        // NestoAPI#446: la persona de contacto con cargo "Pedidos sin ver precios" (30) o "sin
+        // ver descuentos" (31) lleva su nivel en el JWT; con él el servidor tapa lo que toque y
+        // fuerza la forma de pago habitual. Con varios cargos para el mismo correo manda el más
+        // restrictivo. Se recalcula en cada refresco: cambiar el cargo en Nesto surte efecto en una hora.
+        PoliticaPreciosOcultos.NivelPrecios nivelPrecios = await ClienteHelper.NivelPreciosAsync(cliente, email);
+        if (nivelPrecios != PoliticaPreciosOcultos.NivelPrecios.Completo)
         {
-            claims.Add(new Claim(PoliticaPreciosOcultos.CLAIM_SIN_PRECIOS, "true"));
+            claims.Add(new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, nivelPrecios.ToString()));
         }
 
         // Crear la identidad especificando el AuthenticationType "JWT"

@@ -292,13 +292,10 @@ namespace NestoAPI.Controllers
             productoDTO.aplicarDescuento = precio.aplicarDescuento;
             productoDTO.descuento = precio.descuentoCalculado;
 
-            // NestoAPI#446: quien hace pedidos sin ver los precios no se lleva el precio de
-            // cliente. (Las llamadas internas —PedidosClienteController al construir el pedido—
-            // no llevan usuario y siguen calculando el precio real.)
-            if (PoliticaPreciosOcultos.EsUsuarioSinPrecios(User?.Identity))
-            {
-                PoliticaPreciosOcultos.OcultarPrecio(productoDTO);
-            }
+            // NestoAPI#446: quien hace pedidos sin ver los precios (o sin ver los descuentos) no
+            // se lleva el precio de cliente. (Las llamadas internas —PedidosClienteController al
+            // construir el pedido— no llevan usuario y siguen calculando el precio real.)
+            PoliticaPreciosOcultos.AplicarNivel(productoDTO, PoliticaPreciosOcultos.NivelDe(User?.Identity), (decimal)producto.PVP);
 
             return Ok(productoDTO);
         }

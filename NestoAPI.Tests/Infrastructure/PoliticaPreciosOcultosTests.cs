@@ -14,22 +14,84 @@ namespace NestoAPI.Tests.Infrastructure
     [TestClass]
     public class PoliticaPreciosOcultosTests
     {
-        private static ClaimsIdentity IdentidadCliente(bool sinPrecios)
+        private static ClaimsIdentity IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios nivel)
         {
             List<Claim> claims = new List<Claim> { new Claim("cliente", "15191") };
-            if (sinPrecios)
+            if (nivel != PoliticaPreciosOcultos.NivelPrecios.Completo)
             {
-                claims.Add(new Claim(PoliticaPreciosOcultos.CLAIM_SIN_PRECIOS, "true"));
+                claims.Add(new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, nivel.ToString()));
             }
             return new ClaimsIdentity(claims, "JWT");
         }
 
         [TestMethod]
-        public void EsUsuarioSinPrecios_SoloConElClaim()
+        public void NivelDe_SaleDelClaimYSinClaimEsCompleto()
         {
-            Assert.IsTrue(PoliticaPreciosOcultos.EsUsuarioSinPrecios(IdentidadCliente(sinPrecios: true)));
-            Assert.IsFalse(PoliticaPreciosOcultos.EsUsuarioSinPrecios(IdentidadCliente(sinPrecios: false)));
-            Assert.IsFalse(PoliticaPreciosOcultos.EsUsuarioSinPrecios(null));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.SinPrecios,
+                PoliticaPreciosOcultos.NivelDe(IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios.SinPrecios)));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.SinDescuentos,
+                PoliticaPreciosOcultos.NivelDe(IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios.SinDescuentos)));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.Completo,
+                PoliticaPreciosOcultos.NivelDe(IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios.Completo)));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.Completo, PoliticaPreciosOcultos.NivelDe(null));
+            // Un claim manipulado con un valor inventado no abre ni cierra nada raro
+            ClaimsIdentity raro = new ClaimsIdentity(new[] { new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, "loquesea") }, "JWT");
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.Completo, PoliticaPreciosOcultos.NivelDe(raro));
+        }
+
+        [TestMethod]
+        public void OcultaImportes_EnLosDosNivelesRestringidos()
+        {
+            Assert.IsTrue(PoliticaPreciosOcultos.OcultaImportes(IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios.SinPrecios)));
+            Assert.IsTrue(PoliticaPreciosOcultos.OcultaImportes(IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios.SinDescuentos)));
+            Assert.IsFalse(PoliticaPreciosOcultos.OcultaImportes(IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios.Completo)));
+            Assert.IsTrue(PoliticaPreciosOcultos.EsUsuarioSinPrecios(IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios.SinPrecios)));
+            Assert.IsFalse(PoliticaPreciosOcultos.EsUsuarioSinPrecios(IdentidadCliente(PoliticaPreciosOcultos.NivelPrecios.SinDescuentos)));
+        }
+
+        [TestMethod]
+        public void NivelMasRestrictivo_ConCargosIncoherentes_MandaElMasRestrictivo()
+        {
+            // El mismo correo con 22 (factura electrónica), 31 (sin descuentos) y 30 (sin precios)
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.SinPrecios,
+                PoliticaPreciosOcultos.NivelMasRestrictivo(new List<short?> { 22, 31, 30 }));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.SinDescuentos,
+                PoliticaPreciosOcultos.NivelMasRestrictivo(new List<short?> { 22, 31 }));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.SinDescuentos,
+                PoliticaPreciosOcultos.NivelMasRestrictivo(new List<short?> { 11, 31 }));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.Completo,
+                PoliticaPreciosOcultos.NivelMasRestrictivo(new List<short?> { 22, 14, null }));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.Completo,
+                PoliticaPreciosOcultos.NivelMasRestrictivo(new List<short?>()));
+            Assert.AreEqual(PoliticaPreciosOcultos.NivelPrecios.Completo, PoliticaPreciosOcultos.NivelMasRestrictivo(null));
+        }
+
+        [TestMethod]
+        public void AplicarNivel_SinDescuentos_DejaLaTarifaSinDescuentoNiPrecioEspecial()
+        {
+            // Precio especial de cliente 25,95 sobre una tarifa de 34,95 con un 15 %: ve 34,95 y nada más
+            ProductoPlantillaDTO producto = new ProductoPlantillaDTO { producto = "40056", precio = 25.95m, descuento = 0.15m, aplicarDescuento = true };
+
+            PoliticaPreciosOcultos.AplicarNivel(producto, PoliticaPreciosOcultos.NivelPrecios.SinDescuentos, tarifaProfesional: 34.95m);
+
+            Assert.AreEqual(34.95m, producto.precio);
+            Assert.AreEqual(0m, producto.descuento);
+            Assert.IsFalse(producto.aplicarDescuento);
+            Assert.IsTrue(producto.descuentoOculto);
+            Assert.IsFalse(producto.precioOculto);
+        }
+
+        [TestMethod]
+        public void AplicarNivel_Completo_NoTocaNada()
+        {
+            ProductoPlantillaDTO producto = new ProductoPlantillaDTO { precio = 25.95m, descuento = 0.15m, aplicarDescuento = true };
+
+            PoliticaPreciosOcultos.AplicarNivel(producto, PoliticaPreciosOcultos.NivelPrecios.Completo, 34.95m);
+
+            Assert.AreEqual(25.95m, producto.precio);
+            Assert.AreEqual(0.15m, producto.descuento);
+            Assert.IsFalse(producto.descuentoOculto);
+            Assert.IsFalse(producto.precioOculto);
         }
 
         [TestMethod]

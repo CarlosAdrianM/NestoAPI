@@ -123,6 +123,14 @@ namespace NestoAPI.Models
                 /// app no ofrece ni tarjeta ni elección de forma de pago.
                 /// </summary>
                 public const short CARGO_PEDIDOS_SIN_PRECIOS = 30;
+
+                /// <summary>
+                /// NestoAPI#446: nivel intermedio. Ve la tarifa profesional (la de la web para
+                /// profesionales) pero no el precio al que compra su empresa: ni "tu precio", ni
+                /// descuentos, ni importes del pedido; tampoco paga con tarjeta. Si un mismo
+                /// correo tiene varios cargos (22, 30, 31), manda el más restrictivo.
+                /// </summary>
+                public const short CARGO_PEDIDOS_SIN_DESCUENTOS = 31;
             }
 
             public static class TiposExtracto

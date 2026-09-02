@@ -710,7 +710,8 @@ namespace NestoAPI.Infraestructure
                     {
                         CorreoElectronico = p.CorreoElectrónico?.Trim(),
                         FacturacionElectronica = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO,
-                        PedidosSinPrecios = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_PEDIDOS_SIN_PRECIOS
+                        PedidosSinPrecios = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_PEDIDOS_SIN_PRECIOS,
+                        PedidosSinDescuentos = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_PEDIDOS_SIN_DESCUENTOS
                     }).ToList()
             };
         }

@@ -229,6 +229,9 @@ namespace NestoAPI.Models
         /// en el login para no pintar importes; la garantía está en el servidor (claim SinPrecios).
         /// </summary>
         public bool PedidosSinPrecios { get; set; }
+
+        /// <summary>NestoAPI#446: ve la tarifa pero no descuentos ni importes (cargo 31).</summary>
+        public bool PedidosSinDescuentos { get; set; }
         public string Telefono { get; set; }
         // Nesto#340 (1C.8, slice 4): campos que la ficha comercial de Nesto mostraba a través de
         // la entidad EF (grid de personas de contacto) y que el DTO no exponía. Cargo permite a
@@ -311,6 +314,12 @@ namespace NestoAPI.Models
         /// precios. precio y descuento van a 0: no hay que enseñarlos.
         /// </summary>
         public bool precioOculto { get; set; }
+
+        /// <summary>
+        /// NestoAPI#446: precio = tarifa profesional, sin el descuento ni el precio especial del
+        /// cliente, porque quien pregunta hace pedidos sin ver descuentos (cargo 31).
+        /// </summary>
+        public bool descuentoOculto { get; set; }
 
         public int Stock()
         {

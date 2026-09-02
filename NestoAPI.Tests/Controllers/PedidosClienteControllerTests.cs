@@ -49,14 +49,17 @@ namespace NestoAPI.Tests.Controllers
         public async Task PostPortesCliente_UsuarioSinPrecios_NoCalculaPortes()
         {
             // NestoAPI#446: "te faltan X € para el envío gratis" es un importe
-            PedidosClienteController controller = ControllerConIdentidad(
-                new Claim("cliente", "15191"), new Claim(PoliticaPreciosOcultos.CLAIM_SIN_PRECIOS, "true"));
+            foreach (string nivel in new[] { "SinPrecios", "SinDescuentos" })
+            {
+                PedidosClienteController controller = ControllerConIdentidad(
+                    new Claim("cliente", "15191"), new Claim(PoliticaPreciosOcultos.CLAIM_NIVEL_PRECIOS, nivel));
 
-            var resultado = await controller.PostPortesCliente(PeticionValida());
+                var resultado = await controller.PostPortesCliente(PeticionValida());
 
-            var badRequest = resultado as BadRequestErrorMessageResult;
-            Assert.IsNotNull(badRequest);
-            Assert.AreEqual(PoliticaPreciosOcultos.MOTIVO_PORTES, badRequest.Message);
+                var badRequest = resultado as BadRequestErrorMessageResult;
+                Assert.IsNotNull(badRequest, nivel);
+                Assert.AreEqual(PoliticaPreciosOcultos.MOTIVO_PORTES, badRequest.Message);
+            }
         }
 
         [TestMethod]

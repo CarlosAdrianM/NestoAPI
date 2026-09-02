@@ -72,7 +72,7 @@ namespace NestoAPI.Controllers
         {
             // NestoAPI#446: quien hace pedidos sin ver los precios no elige cómo paga (la pasarela
             // enseñaría el importe): se ignora lo que pida y se resuelve la forma habitual.
-            bool sinPrecios = PoliticaPreciosOcultos.EsUsuarioSinPrecios(User?.Identity);
+            bool sinPrecios = PoliticaPreciosOcultos.OcultaImportes(User?.Identity);
             if (sinPrecios)
             {
                 PoliticaPreciosOcultos.ForzarFormaDePagoHabitual(peticion);
@@ -319,7 +319,7 @@ namespace NestoAPI.Controllers
         public async Task<IHttpActionResult> PostPortesCliente(PedidoClienteRequest peticion)
         {
             // NestoAPI#446: "te faltan X € para el envío gratis" es un importe
-            if (PoliticaPreciosOcultos.EsUsuarioSinPrecios(User?.Identity))
+            if (PoliticaPreciosOcultos.OcultaImportes(User?.Identity))
             {
                 return BadRequest(PoliticaPreciosOcultos.MOTIVO_PORTES);
             }
@@ -412,7 +412,7 @@ namespace NestoAPI.Controllers
 
             // NestoAPI#446: sin ver los precios no hay tarjeta (la pasarela enseña el importe):
             // la forma habitual de la ficha, y si solo queda la tarjeta, el pedido no se crea.
-            if (PoliticaPreciosOcultos.EsUsuarioSinPrecios(identity))
+            if (PoliticaPreciosOcultos.OcultaImportes(identity))
             {
                 PoliticaPreciosOcultos.FormaYPlazos habitual = PoliticaPreciosOcultos.ResolverFormaDePagoHabitual(condiciones);
                 if (habitual == null)
