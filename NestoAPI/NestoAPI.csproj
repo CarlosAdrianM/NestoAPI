@@ -538,6 +538,7 @@
     <Compile Include="Controllers\PedidosVentaController.cs" />
     <Compile Include="Controllers\TarjetasController.cs" />
     <Compile Include="Controllers\PedidosClienteController.cs" />
+    <Compile Include="Controllers\PersonasContactoClienteController.cs" />
     <Compile Include="Controllers\PickingController.cs" />
     <Compile Include="Controllers\PlanCuentasController.cs" />
     <Compile Include="Controllers\PlanesVentajasController.cs" />
@@ -658,6 +659,7 @@
     <Compile Include="Models\PedidosVenta\SituacionLineasPedidoDTO.cs" />
     <Compile Include="Models\Agencias\EnvioHistoriaDTO.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
+    <Compile Include="Infraestructure\Clientes\PoliticaPersonasContacto.cs" />
     <Compile Include="Infraestructure\Clientes\PoliticaPreciosOcultos.cs" />
     <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
     <Compile Include="Infraestructure\Clientes\ValidacionNif.cs" />
@@ -1352,6 +1354,7 @@
     <Compile Include="Models\PedidosVenta\ParametroStringIntPedido.cs" />
     <Compile Include="Models\PedidosVenta\PedidoVentaDTO.cs" />
     <Compile Include="Models\PedidosVenta\PedidoClienteDTO.cs" />
+    <Compile Include="Models\PersonaContactoCentroDTO.cs" />
     <Compile Include="Models\PedidosVenta\PrepagoDTO.cs" />
     <Compile Include="Models\PedidosVenta\ServirJunto\LineaPortesServirJuntoDTO.cs" />
     <Compile Include="Models\PedidosVenta\ServirJunto\ProductoBonificadoConCantidadRequest.cs" />

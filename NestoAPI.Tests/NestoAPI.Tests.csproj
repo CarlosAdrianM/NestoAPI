@@ -399,6 +399,8 @@
     <Compile Include="Controllers\PagoRedirectControllerGuardarCorreoTests.cs" />
     <Compile Include="Infrastructure\ClienteHelperTests.cs" />
     <Compile Include="Infrastructure\PoliticaPreciosOcultosTests.cs" />
+    <Compile Include="Infrastructure\PoliticaPersonasContactoTests.cs" />
+    <Compile Include="Controllers\PersonasContactoClienteControllerTests.cs" />
     <Compile Include="Infrastructure\GestorUbicacionesTests.cs" />
     <Compile Include="Infrastructure\GestosStocksTests.cs" />
     <Compile Include="Infrastructure\GestorDepositosTests.cs" />
