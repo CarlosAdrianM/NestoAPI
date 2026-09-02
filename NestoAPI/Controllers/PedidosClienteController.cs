@@ -84,11 +84,28 @@ namespace NestoAPI.Controllers
                 return preparado.Error;
             }
 
-            // NestoAPI#178: con tarjeta guardada el cobro es síncrono y va PRIMERO: si el banco
-            // no lo autoriza, no se crea nada y la app vuelve al carrito tal cual estaba.
+            // NestoAPI#178: con tarjeta guardada y cobro directo (MIT), el cobro es síncrono y va
+            // PRIMERO: si el banco no lo autoriza, no se crea nada y la app vuelve al carrito.
+            // Mientras el terminal no permita MIT (SIS0883, 02/09/26) se va por el plan B: el
+            // pedido se crea y el cliente confirma el pago en la pasarela con su tarjeta guardada,
+            // sin volver a teclearla (ModoCobroTarjetaGuardada).
+            TarjetaCliente tarjetaParaLaPasarela = null;
             if (peticion.PagarConTarjetaGuardada)
             {
-                return await CrearPedidoCobrandoTarjetaGuardada(peticion, preparado).ConfigureAwait(false);
+                if (ModoCobroTarjetaGuardada.EsCobroDirecto)
+                {
+                    return await CrearPedidoCobrandoTarjetaGuardada(peticion, preparado).ConfigureAwait(false);
+                }
+                if (!peticion.TarjetaId.HasValue)
+                {
+                    return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
+                }
+                tarjetaParaLaPasarela = servicioPagos.TarjetaGuardadaDe(
+                    preparado.Pedido.empresa, preparado.Pedido.cliente, peticion.TarjetaId.Value);
+                if (tarjetaParaLaPasarela == null)
+                {
+                    return BadRequest("No encontramos esa tarjeta guardada. Elige otra forma de pago.");
+                }
             }
 
             // Se crea por el camino de siempre, que es el que añade los portes, valida ofertas y
@@ -127,7 +144,7 @@ namespace NestoAPI.Controllers
 
             if (respuesta.RequierePago)
             {
-                await ArrancarPago(respuesta, preparado).ConfigureAwait(false);
+                await ArrancarPago(respuesta, preparado, tarjetaParaLaPasarela).ConfigureAwait(false);
             }
 
             return Ok(respuesta);
@@ -274,7 +291,7 @@ namespace NestoAPI.Controllers
         /// pedido sin cobrar es recuperable, y el picking no lo va a servir mientras no haya
         /// prepago que cubra el total.</para>
         /// </summary>
-        private async Task ArrancarPago(PedidoClienteResponse respuesta, PedidoPreparado preparado)
+        private async Task ArrancarPago(PedidoClienteResponse respuesta, PedidoPreparado preparado, TarjetaCliente tarjetaGuardada = null)
         {
             try
             {
@@ -289,8 +306,18 @@ namespace NestoAPI.Controllers
                     // el justificante del banco). NO se le manda ningun enlace de pago: el cobro
                     // es online y ocurre en la propia app.
                     Correo = preparado.Correo,
-                    Pedido = respuesta.Numero
+                    Pedido = respuesta.Numero,
+                    // NestoAPI#178 (plan B): con la referencia, Redsys enseña la tarjeta guardada
+                    TarjetaGuardada = tarjetaGuardada
                 }, preparado.Pedido.Usuario).ConfigureAwait(false);
+
+                if (tarjetaGuardada != null)
+                {
+                    respuesta.TarjetaUltimosDigitos = tarjetaGuardada.UltimosDigitos;
+                    respuesta.TarjetaDescripcion = tarjetaGuardada.Descripcion;
+                    respuesta.Avisos.Add($"Confirma el pago con tu tarjeta guardada ({tarjetaGuardada.Descripcion}): " +
+                        "no tendrás que volver a teclearla.");
+                }
             }
             catch (Exception ex)
             {

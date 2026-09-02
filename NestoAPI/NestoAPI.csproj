@@ -811,6 +811,7 @@
     <Compile Include="Infraestructure\Pagos\RedsysService.cs" />
     <Compile Include="Infraestructure\Pagos\IServicioPagos.cs" />
     <Compile Include="Infraestructure\Pagos\ServicioPagos.cs" />
+    <Compile Include="Infraestructure\Pagos\ModoCobroTarjetaGuardada.cs" />
     <Compile Include="Infraestructure\Pagos\PoliticaPagoCanal.cs" />
     <Compile Include="Infraestructure\Pagos\ITarjetaClienteStore.cs" />
     <Compile Include="Infraestructure\Pagos\TarjetaClienteStore.cs" />

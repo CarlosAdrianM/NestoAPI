@@ -70,6 +70,16 @@ namespace NestoAPI.Models.Pagos
     }
 
     /// <summary>
+    /// NestoAPI#178: lo que la app necesita saber del cobro con tarjeta guardada. CobroDirecto =
+    /// el servidor cobra sin pasarela (MIT); si no, el cliente confirma en la pasarela con la
+    /// tarjeta ya cargada (plan B).
+    /// </summary>
+    public class CapacidadesTarjetasDTO
+    {
+        public bool CobroDirecto { get; set; }
+    }
+
+    /// <summary>
     /// NestoAPI#178: lo que puede ver un cliente de sus tarjetas guardadas. El token NUNCA sale
     /// por la API: cobrar con él es cosa del servidor.
     /// </summary>

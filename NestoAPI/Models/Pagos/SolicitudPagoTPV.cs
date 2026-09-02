@@ -28,6 +28,14 @@ namespace NestoAPI.Models.Pagos
         /// </summary>
         public int? Pedido { get; set; }
 
+        /// <summary>
+        /// NestoAPI#178 (plan B): la tarjeta guardada con la que se pagará por redirección. La
+        /// pone el servidor tras comprobar que es del cliente; NUNCA viene del cuerpo de la
+        /// petición (JsonIgnore), para que nadie pueda pagar con la referencia de otro.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public TarjetaCliente TarjetaGuardada { get; set; }
+
         // Campos legacy para compatibilidad con pago individual sin Efectos
         public int? ExtractoClienteId { get; set; }
         public string Documento { get; set; }

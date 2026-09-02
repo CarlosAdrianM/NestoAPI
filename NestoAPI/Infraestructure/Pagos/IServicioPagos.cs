@@ -14,6 +14,9 @@ namespace NestoAPI.Infraestructure.Pagos
 
         // NestoAPI#178/#181: cobro directo con tarjeta guardada (token Redsys), síncrono
         Task<ResultadoCobroTarjetaGuardada> CobrarConTarjetaGuardada(SolicitudCobroTarjetaGuardada solicitud, string usuario);
+
+        /// <summary>NestoAPI#178: la tarjeta guardada si es del cliente y usable; null si no.</summary>
+        TarjetaCliente TarjetaGuardadaDe(string empresa, string cliente, int tarjetaId);
         Task AplicarCobroAlPedido(int idPago, int pedido);
         Task<bool> DevolverCobro(int idPago, string motivo);
 

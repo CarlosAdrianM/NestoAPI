@@ -338,7 +338,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // El objetivo del #178: que el cliente meta la tarjeta UNA vez. Cada pedido cobrado
             // sin tokenizar es un cliente al que habrá que volver a pedírsela.
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
 
             var solicitud = new SolicitudPagoTPV
@@ -353,8 +353,63 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             catch (AggregateException) { /* BD no disponible en test: la llamada a Redsys ya se hizo */ }
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, true))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, true, A<string>._, A<string>._))
                 .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void IniciarPago_ConTarjetaGuardada_MandaLaReferenciaYNoPideTokenizar()
+        {
+            // Plan B (02/09/26, SIS0883): el cliente confirma en la pasarela con su tarjeta ya
+            // cargada. Va la referencia y el COF del alta; no se pide tokenizar (ya lo está).
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._, A<string>._, A<string>._))
+                .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
+
+            var solicitud = new SolicitudPagoTPV
+            {
+                Importe = 3.84m,
+                Descripcion = "Pago pedido 925300",
+                Cliente = "15191",
+                Pedido = 925300,
+                TarjetaGuardada = new TarjetaCliente { TokenRedsys = "a26a5b03", CofTxnId = "232026245295044" }
+            };
+
+            try { _servicio.IniciarPago(solicitud, "usuario").Wait(); }
+            catch (AggregateException) { /* BD no disponible en test: la llamada a Redsys ya se hizo */ }
+
+            A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, false, "a26a5b03", "232026245295044"))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [TestMethod]
+        public void TarjetaGuardadaDe_SoloSiEsDelClienteYUsable()
+        {
+            A.CallTo(() => _tarjetaStore.ObtenerPorId(7)).Returns(new TarjetaCliente
+            {
+                Id = 7, Empresa = "1", Cliente = "15191", TokenRedsys = "tok", Activa = true, FechaCaducidad = new DateTime(2030, 1, 31)
+            });
+            A.CallTo(() => _tarjetaStore.ObtenerPorId(8)).Returns(new TarjetaCliente
+            {
+                Id = 8, Empresa = "1", Cliente = "15191", TokenRedsys = "tok", Activa = false
+            });
+
+            Assert.IsNotNull(_servicio.TarjetaGuardadaDe("1", "15191", 7));
+            Assert.IsNull(_servicio.TarjetaGuardadaDe("1", "99999", 7), "de otro cliente");
+            Assert.IsNull(_servicio.TarjetaGuardadaDe("1", "15191", 8), "desactivada");
+            Assert.IsNull(_servicio.TarjetaGuardadaDe("1", "15191", 9), "no existe");
+        }
+
+        [TestMethod]
+        public void ModoCobroTarjetaGuardada_SoloEsDirectoConTrueExplicito()
+        {
+            // Sin la clave (o con cualquier otra cosa) manda el plan B: el más seguro hoy
+            Assert.IsTrue(ModoCobroTarjetaGuardada.Leer("true"));
+            Assert.IsTrue(ModoCobroTarjetaGuardada.Leer(" TRUE "));
+            Assert.IsFalse(ModoCobroTarjetaGuardada.Leer("false"));
+            Assert.IsFalse(ModoCobroTarjetaGuardada.Leer(null));
+            Assert.IsFalse(ModoCobroTarjetaGuardada.Leer(""));
         }
 
         [TestMethod]
@@ -362,7 +417,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // Retrocompatibilidad (#178): los enlaces de pago de siempre no tokenizan
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
 
             var solicitud = new SolicitudPagoTPV
@@ -376,7 +431,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             catch (AggregateException) { /* BD no disponible en test */ }
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, false))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, false, A<string>._, A<string>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -390,14 +445,14 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             // El alta es una autorización de 0 EUR: tokeniza sin cobrar. Solo tarjeta (Bizum no
             // deja token) y con la tokenización pedida.
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._, A<string>._, A<string>._))
                 .Returns(new ParametrosRedsysFirmados { NumeroOrden = "ORD", Ds_SignatureVersion = "V1", Ds_MerchantParameters = "p", Ds_Signature = "s" });
 
             try { _servicio.IniciarAltaTarjeta(new SolicitudAltaTarjeta { Cliente = "15191" }, "15191").Wait(); }
             catch (AggregateException) { /* BD no disponible en test: la llamada a Redsys ya se hizo */ }
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                0m, A<string>._, A<string>._, "15191", A<string>._, A<string>._, A<string>._, "C", A<string>._, true))
+                0m, A<string>._, A<string>._, "15191", A<string>._, A<string>._, A<string>._, "C", A<string>._, true, A<string>._, A<string>._))
                 .MustHaveHappenedOnceExactly();
         }
 
@@ -431,7 +486,7 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
             await servicio.RegenerarPagoDenegado(pagoDenegado, A.Fake<NVEntities>());
 
             A.CallTo(() => _redsysService.CrearParametrosTPVVirtual(
-                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._))
+                A<decimal>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<string>._, A<bool>._, A<string>._, A<string>._))
                 .MustNotHaveHappened();
             A.CallTo(() => servicioCorreo.EnviarCorreoSMTP(A<System.Net.Mail.MailMessage>._)).MustNotHaveHappened();
         }

@@ -38,6 +38,19 @@ namespace NestoAPI.Controllers
             this.servicioPagos = servicioPagos;
         }
 
+        /// <summary>
+        /// NestoAPI#178: cómo se cobra hoy con una tarjeta guardada, para que la app sepa si el
+        /// cobro es directo (sin pasarela) o si el cliente tiene que confirmarlo en la pasarela
+        /// (plan B mientras el terminal no permita MIT). Ver <see cref="ModoCobroTarjetaGuardada"/>.
+        /// </summary>
+        [HttpGet]
+        [Route("Capacidades")]
+        [ResponseType(typeof(CapacidadesTarjetasDTO))]
+        public IHttpActionResult GetCapacidades()
+        {
+            return Ok(new CapacidadesTarjetasDTO { CobroDirecto = ModoCobroTarjetaGuardada.EsCobroDirecto });
+        }
+
         // GET: api/Tarjetas
         [HttpGet]
         [Route("")]

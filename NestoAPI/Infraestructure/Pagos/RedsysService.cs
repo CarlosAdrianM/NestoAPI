@@ -115,7 +115,8 @@ namespace NestoAPI.Infraestructure.Pagos
 
         public ParametrosRedsysFirmados CrearParametrosTPVVirtual(decimal importe, string descripcion,
             string correo, string cliente, string urlNotificacion, string urlOk, string urlKo,
-            string metodoPago = null, string numeroOrdenExistente = null, bool solicitarToken = false)
+            string metodoPago = null, string numeroOrdenExistente = null, bool solicitarToken = false,
+            string tokenTarjeta = null, string cofTxnId = null)
         {
             string numeroOrden = !string.IsNullOrWhiteSpace(numeroOrdenExistente)
                 ? numeroOrdenExistente
@@ -150,7 +151,21 @@ namespace NestoAPI.Infraestructure.Pagos
             // en el futuro sin que vuelva a meter la tarjeta. COF_INI=S marca este pago como el
             // inicial de una credencial en fichero (PSD2): la autenticación fuerte de ESTE pago
             // ampara los cobros con token posteriores.
-            if (solicitarToken)
+            if (!string.IsNullOrWhiteSpace(tokenTarjeta))
+            {
+                // NestoAPI#178 (plan B, ModoCobroTarjetaGuardada): pago por referencia POR
+                // REDIRECCIÓN. Redsys enseña la tarjeta guardada y solo pide la autenticación
+                // del titular: el cliente está presente (CIT), así que no hace falta la exención
+                // MIT que el terminal no permite. COF_INI=N + COF_TXNID enlazan con el alta.
+                r.SetParameter("DS_MERCHANT_IDENTIFIER", tokenTarjeta);
+                r.SetParameter("DS_MERCHANT_COF_INI", "N");
+                r.SetParameter("DS_MERCHANT_COF_TYPE", "C");
+                if (!string.IsNullOrWhiteSpace(cofTxnId))
+                {
+                    r.SetParameter("DS_MERCHANT_COF_TXNID", cofTxnId);
+                }
+            }
+            else if (solicitarToken)
             {
                 r.SetParameter("DS_MERCHANT_IDENTIFIER", "REQUIRED");
                 r.SetParameter("DS_MERCHANT_COF_INI", "S");

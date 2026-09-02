@@ -77,7 +77,10 @@ namespace NestoAPI.Infraestructure.Pagos
                 urlOk,
                 urlKo,
                 solicitud.MetodoPago,
-                solicitarToken: solicitud.Pedido.HasValue);
+                // Con tarjeta guardada no se pide tokenizar (ya lo está): se manda la referencia
+                solicitarToken: solicitud.Pedido.HasValue && solicitud.TarjetaGuardada == null,
+                tokenTarjeta: solicitud.TarjetaGuardada?.TokenRedsys,
+                cofTxnId: solicitud.TarjetaGuardada?.CofTxnId);
 
             using (NVEntities db = new NVEntities())
             {
@@ -401,6 +404,23 @@ namespace NestoAPI.Infraestructure.Pagos
         {
             return pago != null
                 && string.Equals(pago.Tipo?.Trim(), Constantes.TiposPagoTPV.ALTA_TARJETA, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// NestoAPI#178: la tarjeta guardada con ese id SI es de ese cliente y se puede usar;
+        /// null en cualquier otro caso (misma respuesta si no existe que si es de otro).
+        /// </summary>
+        public TarjetaCliente TarjetaGuardadaDe(string empresa, string cliente, int tarjetaId)
+        {
+            TarjetaCliente tarjeta = _tarjetaStore.ObtenerPorId(tarjetaId);
+            if (tarjeta == null
+                || !tarjeta.Usable
+                || !string.Equals(tarjeta.Cliente?.Trim(), cliente?.Trim(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(tarjeta.Empresa?.Trim(), (empresa ?? Empresas.EMPRESA_POR_DEFECTO).Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+            return tarjeta;
         }
 
         /// <summary>
