@@ -71,6 +71,94 @@ namespace NestoAPI.Tests.Infraestructure.Buscador
             });
         }
 
+        private ResultadoPaginado BuscarPaginado(string texto, int skip, int take, bool incluirAnulados = false)
+        {
+            return LuceneBuscador.BuscarPaginadoEnIndice(_rutaIndice, new ParametrosBusqueda
+            {
+                Query = texto,
+                Skip = skip,
+                Take = take,
+                IncluirAnulados = incluirAnulados
+            });
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_Paginado_DevuelveElTotalYSoloLaPaginaPedida()
+        {
+            // El buscador de la tienda PrestaShop necesita saber si hay más resultados
+            Indexar(
+                CrearProducto("1", "Champú uno", anulado: false),
+                CrearProducto("2", "Champú dos", anulado: false),
+                CrearProducto("3", "Champú tres", anulado: false),
+                CrearProducto("4", "Champú cuatro", anulado: false),
+                CrearProducto("5", "Champú cinco", anulado: false));
+
+            ResultadoPaginado primera = BuscarPaginado("champú", skip: 0, take: 2);
+            ResultadoPaginado segunda = BuscarPaginado("champú", skip: 2, take: 2);
+            ResultadoPaginado ultima = BuscarPaginado("champú", skip: 4, take: 2);
+
+            Assert.AreEqual(5, primera.Total);
+            Assert.AreEqual(2, primera.Resultados.Count);
+            Assert.AreEqual(5, segunda.Total, "el total no depende de la página");
+            Assert.AreEqual(2, segunda.Resultados.Count);
+            Assert.AreEqual(1, ultima.Resultados.Count, "la última página va incompleta");
+            Assert.AreEqual(0, primera.TotalAnulados);
+
+            HashSet<string> ids = new HashSet<string>();
+            foreach (dynamic r in primera.Resultados) { ids.Add((string)r.Id); }
+            foreach (dynamic r in segunda.Resultados) { ids.Add((string)r.Id); }
+            foreach (dynamic r in ultima.Resultados) { ids.Add((string)r.Id); }
+            Assert.AreEqual(5, ids.Count, "las páginas no se solapan ni se saltan nada");
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_Paginado_ElTotalCuentaActivosYLosAnuladosAparte()
+        {
+            Indexar(
+                CrearProducto("1", "Champú uno", anulado: false),
+                CrearProducto("2", "Champú dos", anulado: false),
+                CrearProducto("3", "Champú descatalogado", anulado: true));
+
+            ResultadoPaginado sinAnulados = BuscarPaginado("champú", skip: 0, take: 10, incluirAnulados: false);
+            ResultadoPaginado conAnulados = BuscarPaginado("champú", skip: 0, take: 10, incluirAnulados: true);
+
+            Assert.AreEqual(2, sinAnulados.Total);
+            Assert.AreEqual(0, sinAnulados.TotalAnulados);
+            Assert.AreEqual(2, sinAnulados.Resultados.Count);
+            Assert.AreEqual(2, conAnulados.Total, "Total sigue siendo el de los activos");
+            Assert.AreEqual(1, conAnulados.TotalAnulados);
+            Assert.AreEqual(3, conAnulados.Resultados.Count);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_Paginado_SinResultados_TotalCero()
+        {
+            Indexar(CrearProducto("1", "Champú uno", anulado: false));
+
+            ResultadoPaginado resultado = BuscarPaginado("mascarilla", skip: 0, take: 10);
+
+            Assert.AreEqual(0, resultado.Total);
+            Assert.AreEqual(0, resultado.Resultados.Count);
+        }
+
+        [TestMethod]
+        public void BuscadorController_Parametros_AcotaSkipYTake()
+        {
+            // Nadie vuelca el índice entero con take=100000, ni pide una página negativa
+            ParametrosBusqueda grande = NestoAPI.Controllers.BuscadorController.Parametros("champú", null, false, -5, 100000);
+            ParametrosBusqueda cero = NestoAPI.Controllers.BuscadorController.Parametros("champú", "producto", true, 40, 0);
+            ParametrosBusqueda normal = NestoAPI.Controllers.BuscadorController.Parametros("champú", null, false, 20, 20);
+
+            Assert.AreEqual(0, grande.Skip);
+            Assert.AreEqual(NestoAPI.Controllers.BuscadorController.TAKE_MAXIMO, grande.Take);
+            Assert.AreEqual(NestoAPI.Controllers.BuscadorController.TAKE_POR_DEFECTO, cero.Take);
+            Assert.AreEqual(40, cero.Skip);
+            Assert.AreEqual("producto", cero.Tipo);
+            Assert.IsTrue(cero.IncluirAnulados);
+            Assert.AreEqual(20, normal.Skip);
+            Assert.AreEqual(20, normal.Take);
+        }
+
         [TestMethod]
         public void LuceneBuscador_SiNoSePidenAnulados_NoSeDevuelven()
         {

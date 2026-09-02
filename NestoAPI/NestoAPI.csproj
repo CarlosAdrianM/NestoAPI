@@ -951,7 +951,6 @@
     <Compile Include="Models\Bancos\BancoSelectorDTO.cs" />
     <Compile Include="Models\Bancos\ExtractoProveedorDTO.cs" />
     <Compile Include="Models\Bancos\MovimientoTPVDTO.cs" />
-    <Compile Include="Models\Buscador\ProductoBuscadorDTO.cs" />
     <Compile Include="Models\CabAlbaranVta.cs">
       <DependentUpon>NestoEntities.tt</DependentUpon>
     </Compile>

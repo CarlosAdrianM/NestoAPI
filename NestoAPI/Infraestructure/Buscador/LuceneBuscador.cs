@@ -87,9 +87,25 @@ namespace NestoAPI.Infraestructure.Buscador
             return BuscarEnIndice(_luceneIndexDirectory, parametros);
         }
 
+        /// <summary>
+        /// La página pedida y cuántos resultados hay en total, para que quien pagina (el buscador
+        /// de la tienda PrestaShop) sepa si hay más. <see cref="ResultadoPaginado.Total"/> cuenta
+        /// los activos (la consulta principal); los anulados, si se piden, van en
+        /// <see cref="ResultadoPaginado.TotalAnulados"/> y detrás de los activos en la lista.
+        /// </summary>
+        public static ResultadoPaginado BuscarPaginado(ParametrosBusqueda parametros)
+        {
+            return BuscarPaginadoEnIndice(_luceneIndexDirectory, parametros);
+        }
+
         // Internal para tests (InternalsVisibleTo("NestoAPI.Tests")): recibe la ruta del índice
         // para poder buscar sobre un índice temporal.
         internal static List<dynamic> BuscarEnIndice(string rutaIndice, ParametrosBusqueda parametros)
+        {
+            return BuscarPaginadoEnIndice(rutaIndice, parametros).Resultados;
+        }
+
+        internal static ResultadoPaginado BuscarPaginadoEnIndice(string rutaIndice, ParametrosBusqueda parametros)
         {
             SpanishInsensitiveAnalyzer analyzer = new SpanishInsensitiveAnalyzer(AppLuceneVersion);
 
@@ -99,16 +115,22 @@ namespace NestoAPI.Infraestructure.Buscador
                 IndexSearcher searcher = new IndexSearcher(reader);
                 int maximo = parametros.Skip + parametros.Take;
 
-                List<dynamic> resultados = Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: false), maximo);
+                List<dynamic> resultados = Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: false), maximo, out int totalActivos);
+                int totalAnulados = 0;
 
                 if (parametros.IncluirAnulados)
                 {
                     // Los anulados van SIEMPRE detrás de los activos: la tienda los pinta
                     // colapsados al final ("Ver N productos anulados").
-                    resultados.AddRange(Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: true), maximo));
+                    resultados.AddRange(Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: true), maximo, out totalAnulados));
                 }
 
-                return resultados.Skip(parametros.Skip).Take(parametros.Take).ToList();
+                return new ResultadoPaginado
+                {
+                    Total = totalActivos,
+                    TotalAnulados = totalAnulados,
+                    Resultados = resultados.Skip(parametros.Skip).Take(parametros.Take).ToList()
+                };
             }
         }
 
@@ -139,16 +161,20 @@ namespace NestoAPI.Infraestructure.Buscador
             return query;
         }
 
-        private static List<dynamic> Ejecutar(IndexSearcher searcher, Query query, int maximo)
+        private static List<dynamic> Ejecutar(IndexSearcher searcher, Query query, int maximo, out int total)
         {
             List<dynamic> resultados = new List<dynamic>();
+
+            // Lucene exige pedir al menos 1 documento; con maximo <= 0 solo interesa el total
+            TopDocs topDocs = searcher.Search(query, maximo < 1 ? 1 : maximo);
+            total = topDocs.TotalHits;
 
             if (maximo <= 0)
             {
                 return resultados;
             }
 
-            ScoreDoc[] hits = searcher.Search(query, maximo).ScoreDocs;
+            ScoreDoc[] hits = topDocs.ScoreDocs;
 
             foreach (ScoreDoc hit in hits)
             {
@@ -330,6 +356,18 @@ namespace NestoAPI.Infraestructure.Buscador
         {
             AND,
             OR
+        }
+
+        /// <summary>Una página de resultados y los totales que permiten saber si hay más.</summary>
+        public class ResultadoPaginado
+        {
+            /// <summary>Resultados activos que casan con la búsqueda (sin contar los anulados).</summary>
+            public int Total { get; set; }
+
+            /// <summary>Anulados que casan; 0 si no se pidieron (IncluirAnulados=false).</summary>
+            public int TotalAnulados { get; set; }
+
+            public List<dynamic> Resultados { get; set; } = new List<dynamic>();
         }
 
         public class ParametrosBusqueda
