@@ -268,7 +268,12 @@ namespace NestoAPI.Infraestructure.Pagos
                     string resultado = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                     PeticionRedsys respuestaPeticion = JsonConvert.DeserializeObject<PeticionRedsys>(resultado);
                     string resultadoDecodificado = DecodificarParametrosInterno(respuestaPeticion.Ds_MerchantParameters);
-                    return JsonConvert.DeserializeObject<RespuestaRedsys>(resultadoDecodificado);
+                    RespuestaRedsys respuestaRedsys = JsonConvert.DeserializeObject<RespuestaRedsys>(resultadoDecodificado);
+                    if (respuestaRedsys != null)
+                    {
+                        respuestaRedsys.JsonCrudo = resultadoDecodificado;
+                    }
+                    return respuestaRedsys;
                 }
                 else
                 {
@@ -300,7 +305,12 @@ namespace NestoAPI.Infraestructure.Pagos
         public RespuestaRedsys DecodificarParametros(string merchantParametersBase64)
         {
             string decoded = DecodificarParametrosInterno(merchantParametersBase64);
-            return JsonConvert.DeserializeObject<RespuestaRedsys>(decoded);
+            RespuestaRedsys respuesta = JsonConvert.DeserializeObject<RespuestaRedsys>(decoded);
+            if (respuesta != null)
+            {
+                respuesta.JsonCrudo = decoded;
+            }
+            return respuesta;
         }
 
         public ResultadoValidacionNotificacion ValidarNotificacion(NotificacionRedsys notificacion)
@@ -350,7 +360,7 @@ namespace NestoAPI.Infraestructure.Pagos
                 FechaCaducidadTarjeta = ParsearCaducidadRedsys(respuesta.Ds_ExpiryDate),
                 MarcaTarjeta = NombreMarcaTarjeta(respuesta.Ds_Card_Brand),
                 TipoTarjeta = respuesta.Ds_Card_Type?.Trim(),
-                CamposRecibidos = NombresDeCampos(decoded)
+                NotificacionDecodificada = ParaDiagnostico(decoded)
             };
         }
 
@@ -371,12 +381,13 @@ namespace NestoAPI.Infraestructure.Pagos
         }
 
         /// <summary>
-        /// La notificación decodificada tal cual la manda Redsys, para el diagnóstico de qué
-        /// campos llegan en este terminal (02/09/26: TEMPORAL, retirar cuando se hayan visto
-        /// unas cuantas — es una entrada de ELMAH por cada alta/cobro tokenizado). Lo único que
-        /// se tapa es el token (Ds_Merchant_Identifier): con él y nuestra clave se cobra.
+        /// Un JSON de Redsys (notificación o respuesta REST) tal cual llegó, claves y valores,
+        /// para el diagnóstico de qué campos manda este terminal (#445: TEMPORAL, una entrada de
+        /// ELMAH por cada notificación y por cada POST REST; retirar cuando se hayan visto unas
+        /// cuantas). Lo único que se tapa es el token (Ds_Merchant_Identifier): con él y
+        /// nuestra clave se cobra.
         /// </summary>
-        internal static string NombresDeCampos(string jsonNotificacion)
+        internal static string ParaDiagnostico(string jsonNotificacion)
         {
             if (string.IsNullOrWhiteSpace(jsonNotificacion))
             {

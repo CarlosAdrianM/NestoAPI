@@ -29,10 +29,10 @@ namespace NestoAPI.Models.Pagos
         public string TipoTarjeta { get; set; }
 
         /// <summary>
-        /// Nombres (solo nombres, sin valores) de los campos que venían en Ds_MerchantParameters.
-        /// Para el diagnóstico de qué manda y qué no manda Redsys en cada terminal.
+        /// La notificación decodificada completa (claves y valores) con el token tapado. Para el
+        /// diagnóstico temporal (#445) de qué manda y qué no manda Redsys en nuestro terminal.
         /// </summary>
-        public string CamposRecibidos { get; set; }
+        public string NotificacionDecodificada { get; set; }
 
         public bool TieneTokenTarjeta => !string.IsNullOrWhiteSpace(TokenTarjeta);
     }

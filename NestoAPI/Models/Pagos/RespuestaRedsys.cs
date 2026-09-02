@@ -49,5 +49,13 @@ namespace NestoAPI.Models.Pagos
         /// posteriores (DS_MERCHANT_COF_TXNID).
         /// </summary>
         public string Ds_Merchant_Cof_Txnid { get; set; }
+
+        /// <summary>
+        /// El JSON decodificado tal cual llegó de Redsys (todas las claves y valores, también
+        /// las que no están mapeadas arriba). Solo para el diagnóstico temporal de #445; no se
+        /// serializa.
+        /// </summary>
+        [Newtonsoft.Json.JsonIgnore]
+        public string JsonCrudo { get; set; }
     }
 }
