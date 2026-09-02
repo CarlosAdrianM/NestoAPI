@@ -1,4 +1,5 @@
 ﻿// Usings necesarios
+using NestoAPI.Infraestructure.Clientes;
 using Microsoft.AspNet.Identity.Owin;
 using Microsoft.Owin.Security;
 using NestoAPI.Infraestructure;
@@ -494,6 +495,14 @@ public class AuthController : ApiController
         if (tieneComprasRecientes)
         {
             claims.Add(new Claim("HasRecentPurchases", "true"));
+        }
+
+        // NestoAPI#446: la persona de contacto con cargo "Pedidos sin ver precios" lleva el
+        // claim en el JWT; con él el servidor tapa importes y fuerza la forma de pago habitual.
+        // Se recalcula en cada refresco, así que quitar el cargo en Nesto surte efecto en una hora.
+        if (await ClienteHelper.PersonaSinPreciosAsync(cliente, email))
+        {
+            claims.Add(new Claim(PoliticaPreciosOcultos.CLAIM_SIN_PRECIOS, "true"));
         }
 
         // Crear la identidad especificando el AuthenticationType "JWT"

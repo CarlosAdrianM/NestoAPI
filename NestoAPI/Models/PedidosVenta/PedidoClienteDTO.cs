@@ -120,6 +120,13 @@ namespace NestoAPI.Models.PedidosVenta
         /// </summary>
         public string TarjetaDescripcion { get; set; }
 
+        /// <summary>
+        /// NestoAPI#446: los importes (base, total, portes y los de cada línea) van a 0 porque
+        /// quien pide hace pedidos sin ver los precios. El pedido se ha creado con sus precios
+        /// reales; lo que se tapa es la respuesta.
+        /// </summary>
+        public bool ImportesOcultos { get; set; }
+
         public ICollection<LineaPedidoClienteResponse> Lineas { get; set; }
 
         /// <summary>

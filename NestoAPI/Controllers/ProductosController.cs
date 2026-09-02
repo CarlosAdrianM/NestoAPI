@@ -1,4 +1,5 @@
 ﻿using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Kits;
 using NestoAPI.Infraestructure.Sincronizacion;
 using NestoAPI.Infraestructure.Vendedores;
@@ -166,6 +167,13 @@ namespace NestoAPI.Controllers
                 CodigoBarras = producto.CodBarras?.Trim()
             };
 
+            // NestoAPI#446: la tarifa profesional también es "el precio al que compra" para
+            // quien hace pedidos sin ver los precios. El PVP público se queda: es el de la web.
+            if (PoliticaPreciosOcultos.EsUsuarioSinPrecios(User?.Identity))
+            {
+                productoDTO.PrecioProfesional = 0;
+            }
+
             foreach (var kit in producto.Kits)
             {
                 productoDTO.ProductosKit.Add(new ProductoKit
@@ -283,6 +291,14 @@ namespace NestoAPI.Controllers
             productoDTO.precio = precio.precioCalculado;
             productoDTO.aplicarDescuento = precio.aplicarDescuento;
             productoDTO.descuento = precio.descuentoCalculado;
+
+            // NestoAPI#446: quien hace pedidos sin ver los precios no se lleva el precio de
+            // cliente. (Las llamadas internas —PedidosClienteController al construir el pedido—
+            // no llevan usuario y siguen calculando el precio real.)
+            if (PoliticaPreciosOcultos.EsUsuarioSinPrecios(User?.Identity))
+            {
+                PoliticaPreciosOcultos.OcultarPrecio(productoDTO);
+            }
 
             return Ok(productoDTO);
         }

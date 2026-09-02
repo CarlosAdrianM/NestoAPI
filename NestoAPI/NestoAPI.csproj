@@ -658,6 +658,7 @@
     <Compile Include="Models\PedidosVenta\SituacionLineasPedidoDTO.cs" />
     <Compile Include="Models\Agencias\EnvioHistoriaDTO.cs" />
     <Compile Include="Infraestructure\Clientes\NombreFiscalPlaceholder.cs" />
+    <Compile Include="Infraestructure\Clientes\PoliticaPreciosOcultos.cs" />
     <Compile Include="Infraestructure\Clientes\ServicioValidacionNif.cs" />
     <Compile Include="Infraestructure\Clientes\ValidacionNif.cs" />
     <Compile Include="Infraestructure\GestorClientes.cs" />

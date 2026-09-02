@@ -1,4 +1,5 @@
 using NestoAPI.Infraestructure;
+using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Exceptions;
 using NestoAPI.Infraestructure.Pagos;
@@ -69,6 +70,14 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(PedidoClienteResponse))]
         public async Task<IHttpActionResult> PostPedidoCliente(PedidoClienteRequest peticion)
         {
+            // NestoAPI#446: quien hace pedidos sin ver los precios no elige cómo paga (la pasarela
+            // enseñaría el importe): se ignora lo que pida y se resuelve la forma habitual.
+            bool sinPrecios = PoliticaPreciosOcultos.EsUsuarioSinPrecios(User?.Identity);
+            if (sinPrecios)
+            {
+                PoliticaPreciosOcultos.ForzarFormaDePagoHabitual(peticion);
+            }
+
             PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
             if (preparado.Error != null)
             {
@@ -109,6 +118,12 @@ namespace NestoAPI.Controllers
             }
 
             PedidoClienteResponse respuesta = ConstruirRespuesta(preparado.Pedido, preparado.FormaPago, preparado.PlazosPago);
+
+            if (sinPrecios)
+            {
+                // El pedido se ha creado con sus precios reales; a este usuario no se le cuentan
+                PoliticaPreciosOcultos.OcultarImportes(respuesta);
+            }
 
             if (respuesta.RequierePago)
             {
@@ -303,6 +318,12 @@ namespace NestoAPI.Controllers
         [ResponseType(typeof(PortesClienteResponse))]
         public async Task<IHttpActionResult> PostPortesCliente(PedidoClienteRequest peticion)
         {
+            // NestoAPI#446: "te faltan X € para el envío gratis" es un importe
+            if (PoliticaPreciosOcultos.EsUsuarioSinPrecios(User?.Identity))
+            {
+                return BadRequest(PoliticaPreciosOcultos.MOTIVO_PORTES);
+            }
+
             PedidoPreparado preparado = await PrepararPedido(peticion).ConfigureAwait(false);
             if (preparado.Error != null)
             {
@@ -388,6 +409,19 @@ namespace NestoAPI.Controllers
             string plazosPagoSolicitados = pagaConTarjeta ? Constantes.PlazosPago.PREPAGO : peticion.PlazosPago;
             string formaPago = PoliticaPagoCanal.ResolverFormaPago(condiciones, formaPagoSolicitada);
             string plazosPago = PoliticaPagoCanal.ResolverPlazosPago(condiciones, plazosPagoSolicitados);
+
+            // NestoAPI#446: sin ver los precios no hay tarjeta (la pasarela enseña el importe):
+            // la forma habitual de la ficha, y si solo queda la tarjeta, el pedido no se crea.
+            if (PoliticaPreciosOcultos.EsUsuarioSinPrecios(identity))
+            {
+                PoliticaPreciosOcultos.FormaYPlazos habitual = PoliticaPreciosOcultos.ResolverFormaDePagoHabitual(condiciones);
+                if (habitual == null)
+                {
+                    return new PedidoPreparado { Error = BadRequest(PoliticaPreciosOcultos.MOTIVO_SIN_FORMA_DE_PAGO_HABITUAL) };
+                }
+                formaPago = habitual.FormaPago;
+                plazosPago = habitual.PlazosPago;
+            }
 
             // 5. El precio y el descuento de cada línea los calcula el servidor, exactamente igual
             //    que GET api/Productos?cliente=&contacto=&cantidad=

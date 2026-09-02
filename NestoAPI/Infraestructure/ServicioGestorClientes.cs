@@ -709,7 +709,8 @@ namespace NestoAPI.Infraestructure
                     .Select(p => new PersonaContactoDTO
                     {
                         CorreoElectronico = p.CorreoElectrónico?.Trim(),
-                        FacturacionElectronica = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO
+                        FacturacionElectronica = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_FACTURA_POR_CORREO,
+                        PedidosSinPrecios = p.Cargo == Constantes.Clientes.PersonasContacto.CARGO_PEDIDOS_SIN_PRECIOS
                     }).ToList()
             };
         }

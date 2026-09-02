@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using NestoAPI.Infraestructure.Clientes;
 using System.Net.Http;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -42,6 +43,20 @@ namespace NestoAPI.Tests.Controllers
                     new LineaPedidoClienteRequest { Producto = "12345", Cantidad = 1 }
                 }
             };
+        }
+
+        [TestMethod]
+        public async Task PostPortesCliente_UsuarioSinPrecios_NoCalculaPortes()
+        {
+            // NestoAPI#446: "te faltan X € para el envío gratis" es un importe
+            PedidosClienteController controller = ControllerConIdentidad(
+                new Claim("cliente", "15191"), new Claim(PoliticaPreciosOcultos.CLAIM_SIN_PRECIOS, "true"));
+
+            var resultado = await controller.PostPortesCliente(PeticionValida());
+
+            var badRequest = resultado as BadRequestErrorMessageResult;
+            Assert.IsNotNull(badRequest);
+            Assert.AreEqual(PoliticaPreciosOcultos.MOTIVO_PORTES, badRequest.Message);
         }
 
         [TestMethod]

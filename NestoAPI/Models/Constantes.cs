@@ -115,6 +115,14 @@ namespace NestoAPI.Models
                 public const short CARGO_FACTURA_POR_CORREO = 22;
                 public const short CARGO_FACTURAS_TRIMESTRE_POR_CORREO = 28;
                 public const short CARGO_COBROS = 1;
+
+                /// <summary>
+                /// NestoAPI#446: la persona puede hacer pedidos desde la app de clientes pero SIN
+                /// ver los precios a los que compra (un empleado del cliente, por ejemplo). Se
+                /// asigna desde la ficha de cliente de Nesto; el servidor tapa los importes y la
+                /// app no ofrece ni tarjeta ni elección de forma de pago.
+                /// </summary>
+                public const short CARGO_PEDIDOS_SIN_PRECIOS = 30;
             }
 
             public static class TiposExtracto

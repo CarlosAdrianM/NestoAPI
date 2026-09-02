@@ -223,6 +223,12 @@ namespace NestoAPI.Models
         [EmailAddress]
         public string CorreoElectronico { get; set; }
         public bool FacturacionElectronica { get; set; }
+
+        /// <summary>
+        /// NestoAPI#446: la persona hace pedidos sin ver los precios (cargo 30). La app lo lee
+        /// en el login para no pintar importes; la garantía está en el servidor (claim SinPrecios).
+        /// </summary>
+        public bool PedidosSinPrecios { get; set; }
         public string Telefono { get; set; }
         // Nesto#340 (1C.8, slice 4): campos que la ficha comercial de Nesto mostraba a través de
         // la entidad EF (grid de personas de contacto) y que el DTO no exponía. Cargo permite a
@@ -299,6 +305,12 @@ namespace NestoAPI.Models
         public bool aplicarDescuento { get; set; }
         public decimal descuento { get; set; }
         public string iva { get; set; }
+
+        /// <summary>
+        /// NestoAPI#446: el precio se ha tapado porque quien pregunta hace pedidos sin ver los
+        /// precios. precio y descuento van a 0: no hay que enseñarlos.
+        /// </summary>
+        public bool precioOculto { get; set; }
 
         public int Stock()
         {
