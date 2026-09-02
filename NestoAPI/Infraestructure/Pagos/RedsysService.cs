@@ -341,7 +341,7 @@ namespace NestoAPI.Infraestructure.Pagos
             string errorCode = respuesta["errorCode"]?.ToString();
             if (!string.IsNullOrWhiteSpace(errorCode))
             {
-                throw new Exception($"Redsys ha rechazado la petición REST con el error {errorCode}. Respuesta: {cuerpoRespuesta}");
+                throw new RedsysRestException(errorCode, cuerpoRespuesta);
             }
             string parametros = respuesta["Ds_MerchantParameters"]?.ToString();
             if (string.IsNullOrWhiteSpace(parametros))
@@ -528,6 +528,24 @@ namespace NestoAPI.Infraestructure.Pagos
         {
             RedsysAPI r = new RedsysAPI();
             return r.decodeMerchantParameters(parametros);
+        }
+    }
+
+    /// <summary>
+    /// Redsys ha contestado 200 a una petición REST con <c>{"errorCode":"SIS0xxx"}</c>: la
+    /// petición no se ha procesado. El código va aparte para que quien cobra pueda decidir
+    /// (NestoAPI#178: SIS0883 = el terminal no admite la exención MIT → plan B por redirección).
+    /// </summary>
+    public class RedsysRestException : Exception
+    {
+        public string ErrorCode { get; }
+        public string Respuesta { get; }
+
+        public RedsysRestException(string errorCode, string respuesta)
+            : base($"Redsys ha rechazado la petición REST con el error {errorCode}. Respuesta: {respuesta}")
+        {
+            ErrorCode = errorCode?.Trim();
+            Respuesta = respuesta;
         }
     }
 }

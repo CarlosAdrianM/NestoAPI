@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure.Contabilidad;
+﻿using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
 using System;
@@ -515,6 +515,9 @@ namespace NestoAPI.Infraestructure.Pagos
                     NumeroOrden = parametros.NumeroOrden,
                     UltimosDigitos = tarjeta.UltimosDigitos,
                     Descripcion = tarjeta.Descripcion,
+                    // Redsys rechazó la petición sin procesarla (SIS0xxx): el código va aparte
+                    // para que el que cobra pueda caer al plan B si es el SIS0883 del terminal.
+                    CodigoErrorRedsys = (ex as RedsysRestException)?.ErrorCode,
                     MensajeError = "No hemos podido conectar con el banco. Inténtalo de nuevo en unos minutos."
                 };
             }

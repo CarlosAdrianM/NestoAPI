@@ -1,3 +1,4 @@
+﻿using System;
 namespace NestoAPI.Models.Pagos
 {
     /// <summary>
@@ -49,5 +50,20 @@ namespace NestoAPI.Models.Pagos
 
         /// <summary>Motivo (para el cliente) cuando no se autoriza.</summary>
         public string MensajeError { get; set; }
+
+        /// <summary>
+        /// Código SIS con el que Redsys rechazó la petición REST (sin llegar a autorizar ni
+        /// denegar). Null si el banco sí contestó o si el fallo fue de otra cosa.
+        /// </summary>
+        public string CodigoErrorRedsys { get; set; }
+
+        /// <summary>
+        /// SIS0883: "no se puede marcar la exención MIT". El terminal (todavía) no admite el cobro
+        /// directo con token; el cobro tiene que ir por la pasarela (plan B). Exacto a propósito:
+        /// cualquier otro rechazo es un KO de verdad.
+        /// </summary>
+        public const string SIS_TERMINAL_SIN_MIT = "SIS0883";
+        public bool TerminalSinMIT => !Autorizado
+            && string.Equals(CodigoErrorRedsys, SIS_TERMINAL_SIN_MIT, StringComparison.OrdinalIgnoreCase);
     }
 }

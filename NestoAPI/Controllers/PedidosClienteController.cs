@@ -1,4 +1,4 @@
-using NestoAPI.Infraestructure;
+﻿using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Clientes;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Exceptions;
@@ -94,7 +94,13 @@ namespace NestoAPI.Controllers
             {
                 if (ModoCobroTarjetaGuardada.EsCobroDirecto)
                 {
-                    return await CrearPedidoCobrandoTarjetaGuardada(peticion, preparado).ConfigureAwait(false);
+                    IHttpActionResult cobrado = await CrearPedidoCobrandoTarjetaGuardada(peticion, preparado).ConfigureAwait(false);
+                    if (cobrado != null)
+                    {
+                        return cobrado;
+                    }
+                    // null = el terminal ha contestado SIS0883 (MIT aún no operativo): se sigue
+                    // por el plan B en esta misma petición, sin que el cliente pierda el pedido.
                 }
                 if (!peticion.TarjetaId.HasValue)
                 {
@@ -159,6 +165,20 @@ namespace NestoAPI.Controllers
         /// devolución falla, ELMAH y correo, porque dinero cobrado sin pedido no puede esperar
         /// al cuadre de fin de mes.</para>
         /// </summary>
+        /// <summary>
+        /// NestoAPI#178: con el cobro directo activado, ¿hay que caer al plan B (pasarela con la
+        /// tarjeta cargada) en vez de dar el KO al cliente? Solo cuando Redsys rechaza la petición
+        /// con el SIS0883 del terminal: cualquier otro rechazo o denegación del banco es un KO.
+        /// </summary>
+        internal static bool CaerAlPlanB(ResultadoCobroTarjetaGuardada cobro)
+        {
+            return cobro != null && cobro.TerminalSinMIT;
+        }
+
+        /// <summary>
+        /// Cobra con la tarjeta guardada por REST y después crea el pedido. Devuelve null cuando
+        /// el terminal no admite MIT (<see cref="CaerAlPlanB"/>): el que llama sigue por el plan B.
+        /// </summary>
         private async Task<IHttpActionResult> CrearPedidoCobrandoTarjetaGuardada(
             PedidoClienteRequest peticion, PedidoPreparado preparado)
         {
@@ -176,6 +196,18 @@ namespace NestoAPI.Controllers
                     Descripcion = "Pago pedido app",
                     TarjetaId = peticion.TarjetaId.Value
                 }, preparado.Pedido.Usuario).ConfigureAwait(false);
+
+            if (CaerAlPlanB(cobro))
+            {
+                // Comercia activó MIT el 02/09/26 "a falta del barrido nocturno": mientras el
+                // terminal siga diciendo SIS0883, el cliente confirma en la pasarela con su
+                // tarjeta cargada (plan B). Se apunta para saber cuándo deja de pasar.
+                ElmahHelper.Log(new Exception(
+                    $"[Tarjetas] El terminal sigue sin admitir MIT ({ResultadoCobroTarjetaGuardada.SIS_TERMINAL_SIN_MIT}): " +
+                    $"el pedido del cliente {preparado.Pedido.cliente?.Trim()} ({preparado.Pedido.Total:N2} EUR, orden {cobro.NumeroOrden}) " +
+                    "va por la pasarela con la tarjeta guardada (plan B). Si esto sigue pasando, avisar a Comercia."));
+                return null;
+            }
 
             if (!cobro.Autorizado)
             {

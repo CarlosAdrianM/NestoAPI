@@ -1,5 +1,6 @@
-using FakeItEasy;
+﻿using FakeItEasy;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using NestoAPI.Controllers;
 using NestoAPI.Infraestructure;
 using NestoAPI.Infraestructure.Contabilidad;
 using NestoAPI.Infraestructure.Pagos;
@@ -251,12 +252,44 @@ namespace NestoAPI.Tests.Infrastructure.Pagos
         {
             // 02/09/26, primer cobro real con token: Redsys respondió 200 con {"errorCode":...} y
             // sin parámetros, y aquello acababa en "El valor no puede ser nulo: value"
-            Exception ex = Assert.ThrowsException<Exception>(() =>
+            RedsysRestException ex = Assert.ThrowsException<RedsysRestException>(() =>
                 RedsysService.ParametrosDeLaRespuestaREST("{\"errorCode\":\"SIS0431\"}"));
 
+            Assert.AreEqual("SIS0431", ex.ErrorCode);
             StringAssert.Contains(ex.Message, "SIS0431");
             StringAssert.Contains(ex.Message, "{\"errorCode\":\"SIS0431\"}");
         }
+
+        #region NestoAPI#178: SIS0883 (terminal sin MIT) → plan B en vez de KO
+
+        [TestMethod]
+        public void TerminalSinMIT_SoloConElSIS0883ExactoYSinAutorizar()
+        {
+            // Comercia activó MIT el 02/09/26 "a falta del barrido nocturno": hasta que opere,
+            // Redsys sigue contestando SIS0883 y el pedido debe ir por la pasarela, no perderse.
+            Assert.IsTrue(new ResultadoCobroTarjetaGuardada { Autorizado = false, CodigoErrorRedsys = "SIS0883" }.TerminalSinMIT);
+            Assert.IsTrue(new ResultadoCobroTarjetaGuardada { Autorizado = false, CodigoErrorRedsys = "sis0883" }.TerminalSinMIT);
+
+            // Cualquier otro rechazo o denegación es un KO de verdad (sin rangos tolerantes)
+            Assert.IsFalse(new ResultadoCobroTarjetaGuardada { Autorizado = false, CodigoErrorRedsys = "SIS0431" }.TerminalSinMIT);
+            Assert.IsFalse(new ResultadoCobroTarjetaGuardada { Autorizado = false, CodigoErrorRedsys = null, CodigoRespuesta = "0180" }.TerminalSinMIT);
+            Assert.IsFalse(new ResultadoCobroTarjetaGuardada { Autorizado = false }.TerminalSinMIT);
+            Assert.IsFalse(new ResultadoCobroTarjetaGuardada { Autorizado = true, CodigoErrorRedsys = "SIS0883" }.TerminalSinMIT);
+        }
+
+        [TestMethod]
+        public void CaerAlPlanB_SoloCuandoElTerminalNoAdmiteMIT()
+        {
+            Assert.IsTrue(PedidosClienteController.CaerAlPlanB(
+                new ResultadoCobroTarjetaGuardada { Autorizado = false, CodigoErrorRedsys = "SIS0883" }));
+            Assert.IsFalse(PedidosClienteController.CaerAlPlanB(
+                new ResultadoCobroTarjetaGuardada { Autorizado = false, MensajeError = "El banco no ha autorizado el cobro" }));
+            Assert.IsFalse(PedidosClienteController.CaerAlPlanB(
+                new ResultadoCobroTarjetaGuardada { Autorizado = true }));
+            Assert.IsFalse(PedidosClienteController.CaerAlPlanB(null));
+        }
+
+        #endregion
 
         [TestMethod]
         public void ParametrosDeLaRespuestaREST_SinParametros_LanzaConLaRespuesta()
