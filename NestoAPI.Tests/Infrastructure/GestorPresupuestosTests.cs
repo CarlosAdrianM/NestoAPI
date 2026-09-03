@@ -24,6 +24,21 @@ namespace NestoAPI.Tests.Infrastructure
             => new PlazoPago { Nº_Plazos = plazos, Financiacion = financiacionDias };
 
         [TestMethod]
+        public void AsuntoCorreo_PedidoDeLaApp_VaMarcadoConElCanal()
+        {
+            // NestoAPI#444: el correo interno de un pedido hecho por el cliente desde la app
+            // llega a las mismas personas que uno de Nesto; el asunto dice de dónde viene.
+            PedidoVentaDTO app = new PedidoVentaDTO { numero = 925347, cliente = "15191", Usuario = "APP\\15191" };
+            PedidoVentaDTO nesto = new PedidoVentaDTO { numero = 925348, cliente = "15191", Usuario = "NUEVAVISION\\Carlos" };
+
+            Assert.AreEqual("[APP] Pedido 925347 - c/ 15191", GestorPresupuestos.AsuntoCorreo("Pedido", app));
+            Assert.AreEqual("Pedido 925348 - c/ 15191", GestorPresupuestos.AsuntoCorreo("Pedido", nesto));
+            Assert.IsTrue(GestorPresupuestos.EsPedidoDeLaApp("app\\15191"), "sin distinguir mayúsculas");
+            Assert.IsFalse(GestorPresupuestos.EsPedidoDeLaApp(null));
+            Assert.IsFalse(GestorPresupuestos.EsPedidoDeLaApp("APPLE\\x"), "solo el prefijo APP\\");
+        }
+
+        [TestMethod]
         public void EsFinanciacionExcesiva_LosEjemplosDeLaRegla()
         {
             // 200 € a "30 días": un efecto de 200 ≥ 150 → permitido

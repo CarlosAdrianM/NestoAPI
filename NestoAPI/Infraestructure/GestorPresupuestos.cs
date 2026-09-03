@@ -200,7 +200,7 @@ namespace NestoAPI.Infraestructure
                 }
             }
 
-            mail.Subject = string.Format("{0} {1} - c/ {2}", TEXTO_PEDIDO, pedido.numero, pedido.cliente);
+            mail.Subject = AsuntoCorreo(TEXTO_PEDIDO, pedido);
             var (tabla, faltaFotoProducto) = await GenerarTablaHTML(pedido, tipoCorreo);
             mail.Body = tabla.ToString();
             mail.IsBodyHtml = true;
@@ -264,7 +264,37 @@ namespace NestoAPI.Infraestructure
 
             // Carlos 23/10/25: Usar siempre el servicio de correo (puede ser real o mockeado)
             // El ServicioCorreoElectronico ya tiene lógica de retry interna
-            servicioCorreo.EnviarCorreoSMTP(mail);
+            bool enviado = servicioCorreo.EnviarCorreoSMTP(mail);
+            if (!enviado)
+            {
+                // NestoAPI#444: el servicio se traga el fallo del SMTP (reintenta una vez y calla) y
+                // nadie se enteraba de que el correo del pedido no había salido. Nunca bloquea el
+                // pedido: solo lo deja en ELMAH.
+                try
+                {
+                    ElmahHelper.Notificar(new Exception($"No se ha podido enviar el correo interno del {mail.Subject} a {mail.To} (cc {mail.CC}). El pedido está creado; revisar el SMTP."));
+                }
+                catch
+                {
+                    // Si ni ELMAH responde, el pedido sigue siendo lo importante
+                }
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#444: el asunto del correo interno, marcado con el canal cuando el pedido lo
+        /// ha hecho el propio cliente desde la app (usuario APP\\cliente) para que quien lo recibe
+        /// sepa que no lo ha metido un empleado.
+        /// </summary>
+        internal static string AsuntoCorreo(string textoPedido, PedidoVentaDTO pedido)
+        {
+            string asunto = string.Format("{0} {1} - c/ {2}", textoPedido, pedido.numero, pedido.cliente);
+            return EsPedidoDeLaApp(pedido.Usuario) ? "[APP] " + asunto : asunto;
+        }
+
+        internal static bool EsPedidoDeLaApp(string usuario)
+        {
+            return usuario != null && usuario.StartsWith(Constantes.FormasVenta.APP + "\\", StringComparison.OrdinalIgnoreCase);
         }
         /// <summary>NestoAPI#396: el mínimo por efecto y la financiación estándar viven en
         /// Constantes, porque la MISMA regla la aplican el correo y el selector de plazos.</summary>
