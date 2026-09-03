@@ -7,6 +7,7 @@ using NestoAPI.Infraestructure.PedidosVenta;
 using NestoAPI.Infraestructure.Seguridad;
 using NestoAPI.Models;
 using NestoAPI.Models.Pagos;
+using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosVenta;
 using System;
 using System.Collections.Generic;
@@ -187,12 +188,19 @@ namespace NestoAPI.Controllers
                 return BadRequest("Falta la tarjeta con la que pagar (TarjetaId)");
             }
 
+            // NestoAPI#452: el importe tiene que ser el DEFINITIVO (con IVA y con portes) antes de
+            // cobrar. Sin esto se cobraba la base imponible de los productos: 0,75 EUR en vez de
+            // 0,91 EUR el 03/09/26, porque el porcentaje de IVA y la línea de portes solo se
+            // rellenaban dentro de PostPedidoVenta, que va DESPUÉS del cobro.
+            await CompletarImportesDelPedido(preparado).ConfigureAwait(false);
+            decimal importeACobrar = preparado.Pedido.Total;
+
             ResultadoCobroTarjetaGuardada cobro = await servicioPagos.CobrarConTarjetaGuardada(
                 new SolicitudCobroTarjetaGuardada
                 {
                     Cliente = preparado.Pedido.cliente?.Trim(),
                     Contacto = preparado.Pedido.contacto?.Trim(),
-                    Importe = preparado.Pedido.Total,
+                    Importe = importeACobrar,
                     Descripcion = "Pago pedido app",
                     TarjetaId = peticion.TarjetaId.Value
                 }, preparado.Pedido.Usuario).ConfigureAwait(false);
@@ -254,6 +262,10 @@ namespace NestoAPI.Controllers
             }
 
             PedidoClienteResponse respuesta = ConstruirRespuesta(preparado.Pedido, preparado.FormaPago, preparado.PlazosPago);
+            // NestoAPI#452: el pedido ya está creado y PostPedidoVenta ha recalculado precios,
+            // descuentos y portes. Si lo cobrado no coincide con lo que ha acabado valiendo, hay
+            // que enterarse HOY: el cliente ha pagado de menos (o de más) y el prepago no cuadra.
+            AvisarSiElCobroNoCuadra(importeACobrar, respuesta.Total, respuesta.Numero, cobro.NumeroOrden);
             respuesta.RequierePago = false;
             respuesta.Pagado = true;
             respuesta.TarjetaUltimosDigitos = cobro.UltimosDigitos;
@@ -526,6 +538,86 @@ namespace NestoAPI.Controllers
             PedidoPortesInput input = GestorPortes.ConstruirInput(
                 pedido, codigoPostal, baseImponibleProductos, anadirPortes: true);
             return GestorPortes.CalcularPortes(input);
+        }
+
+        /// <summary>
+        /// NestoAPI#452: deja el pedido con sus importes DEFINITIVOS antes de cobrarlo, que es lo
+        /// que <see cref="PedidosVentaController.PostPedidoVenta"/> hace al crearlo pero que en el
+        /// flujo "cobrar primero" llega tarde:
+        /// <list type="number">
+        /// <item>el porcentaje de IVA (y el recargo) de cada línea, que en el DTO recién construido
+        /// vale 0 porque solo se ha puesto el CÓDIGO de IVA;</item>
+        /// <item>la línea de portes, que hasta ahora no existía hasta después del cobro.</item>
+        /// </list>
+        /// <para>Se puede llamar antes de PostPedidoVenta sin duplicar nada: el POST vuelve a
+        /// asignar los mismos porcentajes, y <see cref="GestorPortes.GestionarLineasPortes"/> solo
+        /// añade la línea de portes si no la encuentra ya.</para>
+        /// </summary>
+        private async Task CompletarImportesDelPedido(PedidoPreparado preparado)
+        {
+            PedidoVentaDTO pedido = preparado.Pedido;
+            if (pedido.ParametrosIva == null || !pedido.ParametrosIva.Any())
+            {
+                pedido.ParametrosIva = await db.ParametrosIVA
+                    .Where(p => p.Empresa == pedido.empresa && p.IVA_Cliente_Prov == pedido.iva)
+                    .Select(p => new ParametrosIvaBase
+                    {
+                        CodigoIvaProducto = p.IVA_Producto.Trim(),
+                        PorcentajeIvaProducto = (decimal)p.C__IVA / 100,
+                        PorcentajeRecargoEquivalencia = (decimal)p.C__RE / 100
+                    }).ToListAsync().ConfigureAwait(false);
+            }
+            RellenarPorcentajesIva(pedido);
+
+            ResultadoPortes portes = CalcularPortesDelCarrito(pedido, preparado.CodigoPostal);
+            _ = GestorPortes.GestionarLineasPortes(pedido.Lineas, portes, pedido.iva, pedido.ParametrosIva);
+            // La línea de portes recién creada también necesita su porcentaje para sumar al total
+            RellenarPorcentajesIva(pedido);
+        }
+
+        /// <summary>El porcentaje de IVA y de recargo de cada línea, a partir de su código de IVA. Internal para tests.</summary>
+        internal static void RellenarPorcentajesIva(PedidoVentaDTO pedido)
+        {
+            if (pedido.ParametrosIva == null || !pedido.ParametrosIva.Any())
+            {
+                return;
+            }
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                ParametrosIvaBase parametro = pedido.ParametrosIva
+                    .FirstOrDefault(p => p.CodigoIvaProducto == linea.iva?.Trim());
+                if (parametro != null)
+                {
+                    linea.PorcentajeIva = parametro.PorcentajeIvaProducto;
+                    linea.PorcentajeRecargoEquivalencia = parametro.PorcentajeRecargoEquivalencia;
+                }
+            }
+        }
+
+        /// <summary>
+        /// NestoAPI#452: avisa si lo que se cobró no es lo que ha acabado costando el pedido. No
+        /// toca nada (el cobro ya está hecho y el pedido creado): deja el rastro para arreglarlo a
+        /// mano el mismo día. Internal para tests.
+        /// </summary>
+        internal static string DiferenciaCobroPedido(decimal importeCobrado, decimal totalPedido, int numeroPedido, string numeroOrden)
+        {
+            if (importeCobrado == totalPedido)
+            {
+                return null;
+            }
+            string signo = importeCobrado < totalPedido ? "de MENOS" : "de MÁS";
+            return $"[Pedido app] Se ha cobrado {signo}: orden {numeroOrden} por {importeCobrado:N2} EUR " +
+                   $"y el pedido {numeroPedido} ha quedado en {totalPedido:N2} EUR " +
+                   $"(diferencia {totalPedido - importeCobrado:N2} EUR). Revisar el cobro y el prepago.";
+        }
+
+        private static void AvisarSiElCobroNoCuadra(decimal importeCobrado, decimal totalPedido, int numeroPedido, string numeroOrden)
+        {
+            string aviso = DiferenciaCobroPedido(importeCobrado, totalPedido, numeroPedido, numeroOrden);
+            if (aviso != null)
+            {
+                ElmahHelper.Log(new Exception(aviso));
+            }
         }
 
         /// <summary>

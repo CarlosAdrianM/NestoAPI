@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using NestoAPI.Infraestructure.Clientes;
 using System.Net.Http;
 using System.Security.Claims;
@@ -11,6 +11,7 @@ using Microsoft.VisualStudio.TestTools.UnitTesting;
 using NestoAPI.Controllers;
 using NestoAPI.Infraestructure.Pagos;
 using NestoAPI.Models;
+using NestoAPI.Models.PedidosBase;
 using NestoAPI.Models.PedidosVenta;
 
 namespace NestoAPI.Tests.Controllers
@@ -22,6 +23,95 @@ namespace NestoAPI.Tests.Controllers
     [TestClass]
     public class PedidosClienteControllerTests
     {
+        #region NestoAPI#452: el cobro directo (MIT) cobraba la base imponible, sin IVA ni portes
+
+        [TestMethod]
+        public void RellenarPorcentajesIva_AntesDeCobrar_ElTotalDejaDeSerLaBasePelada()
+        {
+            // 03/09/26 en producción: el cobro directo pidió 0,75 EUR (la base) y el pedido valía
+            // 0,91 EUR. El DTO recién construido solo trae el CÓDIGO de IVA ("G21"); el porcentaje
+            // se rellenaba dentro de PostPedidoVenta, que va DESPUÉS del cobro.
+            PedidoVentaDTO pedido = PedidoDeLaApp(precio: 0.75M, codigoIva: "G21");
+
+            Assert.AreEqual(0.75M, pedido.Total, "sin porcentaje de IVA, el total es la base: el fallo");
+
+            PedidosClienteController.RellenarPorcentajesIva(pedido);
+
+            Assert.AreEqual(0.91M, pedido.Total, "con el 21 % ya es el importe que hay que cobrar");
+            Assert.AreEqual(0.75M, pedido.BaseImponible, "la base no cambia");
+        }
+
+        [TestMethod]
+        public void RellenarPorcentajesIva_SinParametros_NoRevienta()
+        {
+            PedidoVentaDTO pedido = PedidoDeLaApp(0.75M, "G21");
+            pedido.ParametrosIva = new List<ParametrosIvaBase>();
+
+            PedidosClienteController.RellenarPorcentajesIva(pedido);
+
+            Assert.AreEqual(0.75M, pedido.Total);
+        }
+
+        [TestMethod]
+        public void DiferenciaCobroPedido_LoCobradoYElPedidoCoinciden_NoAvisa()
+        {
+            Assert.IsNull(PedidosClienteController.DiferenciaCobroPedido(0.91M, 0.91M, 925347, "F1CC0DC15191"));
+        }
+
+        [TestMethod]
+        public void DiferenciaCobroPedido_SeCobraDeMenos_AvisaConLosDosImportes()
+        {
+            string aviso = PedidosClienteController.DiferenciaCobroPedido(0.75M, 0.91M, 925347, "418F0BC15191");
+
+            Assert.IsNotNull(aviso);
+            StringAssert.Contains(aviso, "de MENOS");
+            StringAssert.Contains(aviso, "0,75");
+            StringAssert.Contains(aviso, "0,91");
+            StringAssert.Contains(aviso, "925347");
+            StringAssert.Contains(aviso, "418F0BC15191");
+        }
+
+        [TestMethod]
+        public void DiferenciaCobroPedido_SeCobraDeMas_TambienAvisa()
+        {
+            string aviso = PedidosClienteController.DiferenciaCobroPedido(10M, 9M, 925347, "X");
+
+            Assert.IsNotNull(aviso);
+            StringAssert.Contains(aviso, "de MÁS");
+        }
+
+        private static PedidoVentaDTO PedidoDeLaApp(decimal precio, string codigoIva)
+        {
+            return new PedidoVentaDTO
+            {
+                empresa = Constantes.Empresas.EMPRESA_POR_DEFECTO,
+                cliente = "15191",
+                iva = "G",
+                ParametrosIva = new List<ParametrosIvaBase>
+                {
+                    new ParametrosIvaBase
+                    {
+                        CodigoIvaProducto = codigoIva,
+                        PorcentajeIvaProducto = 0.21M,
+                        PorcentajeRecargoEquivalencia = 0M
+                    }
+                },
+                Lineas = new List<LineaPedidoVentaDTO>
+                {
+                    new LineaPedidoVentaDTO
+                    {
+                        tipoLinea = Constantes.TiposLineaVenta.PRODUCTO,
+                        Producto = "12345",
+                        Cantidad = 1,
+                        PrecioUnitario = precio,
+                        iva = codigoIva
+                    }
+                }
+            };
+        }
+
+        #endregion
+
         private static PedidosClienteController ControllerConIdentidad(params Claim[] claims)
         {
             PedidosClienteController controller = new PedidosClienteController(A.Fake<NVEntities>(), A.Fake<IServicioPagos>())
