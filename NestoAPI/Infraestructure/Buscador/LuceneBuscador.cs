@@ -35,6 +35,14 @@ namespace NestoAPI.Infraestructure.Buscador
         /// </summary>
         internal const string CAMPO_POSICION_MAS_VENDIDO = "PosicionMasVendido";
 
+        /// <summary>
+        /// El nombre convertido a cómo suena (<see cref="ClaveFoneticaEspanola"/>). Solo se consulta
+        /// en el rescate, cuando escribiendo tal cual no hay ningún resultado: es lo que permite
+        /// encontrar "ricchezza" a quien escribe "rikeza", que está a tres letras y por tanto fuera
+        /// del alcance del difuso.
+        /// </summary>
+        internal const string CAMPO_NOMBRE_FONETICO = "NombreFonetico";
+
         public static void IndexarTodo()
         {
             Indexar(_luceneIndexDirectory, ObtenerProductos(), ObtenerVideos());
@@ -60,6 +68,7 @@ namespace NestoAPI.Infraestructure.Buscador
                         new StringField("Anulado", producto.Anulado ? "true" : "false", Field.Store.YES),
                         new TextField("Nombre", producto.Nombre, Field.Store.YES) { Boost = 4.0f },
                         new TextField(CAMPO_NOMBRE_EXACTO, producto.Nombre, Field.Store.NO),
+                        new TextField(CAMPO_NOMBRE_FONETICO, producto.Nombre, Field.Store.NO),
                         new NumericDocValuesField(CAMPO_POSICION_MAS_VENDIDO, producto.PosicionMasVendido ?? 0),
                         new TextField("Familia", producto.Familia ?? "", Field.Store.YES) { Boost = 3.0f },
                         new TextField("Subgrupo", producto.Subgrupo ?? "", Field.Store.YES) { Boost = 3.0f },
@@ -85,7 +94,8 @@ namespace NestoAPI.Infraestructure.Buscador
                         // boost, la normalización por longitud y la frecuencia, y el ranking
                         // quedaba decidido solo por TextoCompleto (03/09/26: "vapore" sacaba la
                         // Vapore la 26ª, detrás de todos los vasos de vapor).
-                        new TextField("Nombre", Nombre, Field.Store.YES) { Boost = 4.0f }
+                        new TextField("Nombre", Nombre, Field.Store.YES) { Boost = 4.0f },
+                        new TextField(CAMPO_NOMBRE_FONETICO, Nombre, Field.Store.NO)
                     };
                     writer.AddDocument(doc);
                 }
@@ -99,7 +109,11 @@ namespace NestoAPI.Infraestructure.Buscador
         {
             return new PerFieldAnalyzerWrapper(
                 new SpanishInsensitiveAnalyzer(AppLuceneVersion),
-                new Dictionary<string, Analyzer> { { CAMPO_NOMBRE_EXACTO, new SpanishExactoAnalyzer(AppLuceneVersion) } });
+                new Dictionary<string, Analyzer>
+                {
+                    { CAMPO_NOMBRE_EXACTO, new SpanishExactoAnalyzer(AppLuceneVersion) },
+                    { CAMPO_NOMBRE_FONETICO, new SpanishFoneticoAnalyzer(AppLuceneVersion) }
+                });
         }
 
         public static List<dynamic> Buscar(string q, string tipo = null, int skip = 0, int take = 20, bool usarOperadorAND = false, bool incluirAnulados = false)
@@ -221,6 +235,20 @@ namespace NestoAPI.Infraestructure.Buscador
             Query nombreExacto = parserExacto.Parse(escapedQuery);
             nombreExacto.Boost = BOOST_NOMBRE_EXACTO;
             textoOReferencia.Add(nombreExacto, Occur.SHOULD);
+
+            if (difusa)
+            {
+                // Cómo suena lo que ha escrito: rescata lo que el difuso no alcanza porque son
+                // más de dos letras de diferencia ("rikeza" -> "ricchezza"). Va con la consulta
+                // ORIGINAL, sin las marcas "~": la clave fonética ya iguala las grafías.
+                QueryParser parserFonetico = new QueryParser(AppLuceneVersion, CAMPO_NOMBRE_FONETICO, new SpanishFoneticoAnalyzer(AppLuceneVersion))
+                {
+                    DefaultOperator = parser.DefaultOperator
+                };
+                Query fonetica = parserFonetico.Parse(QueryParser.Escape(parametros.Query));
+                fonetica.Boost = BOOST_NOMBRE_EXACTO;
+                textoOReferencia.Add(fonetica, Occur.SHOULD);
+            }
 
             BooleanQuery query = new BooleanQuery
             {

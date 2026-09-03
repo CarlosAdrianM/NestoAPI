@@ -621,8 +621,10 @@
     <Compile Include="Infraestructure\ApplicationUserManager.cs" />
     <Compile Include="Infraestructure\RefreshToken.cs" />
     <Compile Include="Infraestructure\Buscador\BuscadorJobsService.cs" />
+    <Compile Include="Infraestructure\Buscador\ClaveFoneticaEspanola.cs" />
     <Compile Include="Infraestructure\Buscador\LuceneBuscador.cs" />
     <Compile Include="Infraestructure\Buscador\SpanishExactoAnalyzer.cs" />
+    <Compile Include="Infraestructure\Buscador\SpanishFoneticoAnalyzer.cs" />
     <Compile Include="Infraestructure\Buscador\SpanishInsensitiveAnalyzer.cs" />
     <Compile Include="Infraestructure\ClienteHelper.cs" />
     <Compile Include="Infraestructure\ILectorParametrosUsuario.cs" />

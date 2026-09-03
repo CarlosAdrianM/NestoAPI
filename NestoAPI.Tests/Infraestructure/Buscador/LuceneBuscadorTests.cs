@@ -302,6 +302,66 @@ namespace NestoAPI.Tests.Infraestructure.Buscador
 
         #endregion
 
+        #region Rescate fonético: escrito como suena ("rikeza" -> "ricchezza")
+
+        [TestMethod]
+        public void LuceneBuscador_EscritoComoSuena_RescataElProducto()
+        {
+            // "rikeza" está a tres letras de "ricchezza": fuera del alcance del difuso (máximo dos),
+            // pero suena igual.
+            Indexar(
+                CrearProducto("35894", "ACIDO HIALURONICO RICCHEZZA", anulado: false),
+                CrearProducto("22535", "CERA GOLD", anulado: false));
+
+            List<string> resultados = Ids(Buscar("rikeza", incluirAnulados: false));
+
+            CollectionAssert.AreEqual(new List<string> { "35894" }, resultados);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_EscritoComoSuena_LasConfusionesTipicas()
+        {
+            Indexar(
+                CrearProducto("1", "GEL LIMPIADOR SPLENDORE", anulado: false),
+                CrearProducto("2", "MASCARILLA HIALURONICO", anulado: false),
+                CrearProducto("3", "QUERATINA LIQUIDA", anulado: false));
+
+            CollectionAssert.AreEqual(new List<string> { "1" }, Ids(Buscar("jel esplendore", incluirAnulados: false)), "g/j y la e- inicial");
+            CollectionAssert.AreEqual(new List<string> { "2" }, Ids(Buscar("mascariya ialuronico", incluirAnulados: false)), "ll/y y la hache muda");
+            CollectionAssert.AreEqual(new List<string> { "3" }, Ids(Buscar("keratina", incluirAnulados: false)), "k/qu");
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_LoFoneticoSoloEntraEnElRescate()
+        {
+            // "cera" y "sera" suenan igual, pero mientras "cera" encuentre algo no se mezclan
+            Indexar(
+                CrearProducto("1", "CERA GOLD", anulado: false),
+                CrearProducto("2", "SERA FACIAL", anulado: false));
+
+            CollectionAssert.AreEqual(new List<string> { "1" }, Ids(Buscar("cera", incluirAnulados: false)));
+        }
+
+        [TestMethod]
+        public void ClaveFoneticaEspanola_LasReglasDelEspanol()
+        {
+            Assert.AreEqual(ClaveFoneticaEspanola.Calcular("ricchezza"), ClaveFoneticaEspanola.Calcular("rikeza"));
+            Assert.AreEqual(ClaveFoneticaEspanola.Calcular("bomba"), ClaveFoneticaEspanola.Calcular("vomba"), "b/v");
+            Assert.AreEqual(ClaveFoneticaEspanola.Calcular("cera"), ClaveFoneticaEspanola.Calcular("sera"), "seseo");
+            Assert.AreEqual(ClaveFoneticaEspanola.Calcular("gel"), ClaveFoneticaEspanola.Calcular("jel"), "g/j");
+            Assert.AreEqual(ClaveFoneticaEspanola.Calcular("mascarilla"), ClaveFoneticaEspanola.Calcular("mascariya"), "yeísmo");
+            Assert.AreEqual(ClaveFoneticaEspanola.Calcular("hialuronico"), ClaveFoneticaEspanola.Calcular("ialuronico"), "hache muda");
+            Assert.AreEqual(ClaveFoneticaEspanola.Calcular("splendore"), ClaveFoneticaEspanola.Calcular("esplendore"), "e- inicial");
+            Assert.AreEqual(ClaveFoneticaEspanola.Calcular("keratina"), ClaveFoneticaEspanola.Calcular("queratina"), "k/qu");
+
+            Assert.AreNotEqual(ClaveFoneticaEspanola.Calcular("cera"), ClaveFoneticaEspanola.Calcular("vera"), "productos distintos siguen distintos");
+            Assert.AreNotEqual(ClaveFoneticaEspanola.Calcular("cera"), ClaveFoneticaEspanola.Calcular("cara"));
+            Assert.AreEqual(string.Empty, ClaveFoneticaEspanola.Calcular(null));
+            Assert.AreEqual(string.Empty, ClaveFoneticaEspanola.Calcular("   "));
+        }
+
+        #endregion
+
         #region Buscar por referencia (la caja del footer de la tienda, Nesto y la app)
 
         [TestMethod]
