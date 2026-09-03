@@ -916,6 +916,12 @@ namespace NestoAPI.Controllers
                     if (aceptarPresupuesto)
                     {
                         lineaPedido = db.LinPedidoVtas.SingleOrDefault(l => l.Nº_Orden == linea.id);
+                        // 03/09/26: si la línea ya no está (otro la borró mientras se aceptaba el
+                        // presupuesto) esto daba NullReference (500 en ELMAH) en vez del aviso.
+                        if (lineaPedido == null || lineaPedido.Número != pedido.numero)
+                        {
+                            errorPersonalizado("Alguien modificó o eliminó la línea mientras se aceptaba el presupuesto");
+                        }
                         lineaPedido.Estado = Constantes.EstadosLineaVenta.EN_CURSO;
                     }
 
