@@ -480,6 +480,12 @@ namespace NestoAPI.Controllers
                 return BadRequest();
             }
 
+            // NestoAPI#449: descuentos fuera de 0-100 % con mensaje claro, no con el CHECK de SQL
+            string fueraDeRango = ValidarRangosLineas(pedido);
+            if (fueraDeRango != null)
+            {
+                return BadRequest(fueraDeRango);
+            }
             // NestoAPI#176: bloquear desmarcado de servirJunto si una línea MMP o un
             // bonificado Ganavisiones se quedaría pendiente. Cierra el agujero de orden
             // de operaciones sin depender del cliente.
@@ -2185,6 +2191,46 @@ namespace NestoAPI.Controllers
             if (lineaSinTipo != null)
             {
                 return $"La línea del producto {lineaSinTipo.Producto?.Trim()} no lleva tipo de línea";
+            }
+            return ValidarRangosLineas(pedido);
+        }
+
+        /// <summary>
+        /// NestoAPI#449: los rangos que exige CK_LinPedidoVta (descuentos entre 0 y 1), comprobados
+        /// antes de guardar. Un descuento del 500 % (DescuentoLinea = 5) acababa en un SqlException
+        /// con el texto crudo de la restricción; ahora es un BadRequest que dice qué línea y cuánto.
+        /// Devuelve null si todo está en rango. La usan el POST (vía ValidarDatosObligatoriosPedido)
+        /// y el PUT.
+        /// </summary>
+        internal static string ValidarRangosLineas(PedidoVentaDTO pedido)
+        {
+            if (pedido?.Lineas == null)
+            {
+                return null;
+            }
+            foreach (LineaPedidoVentaDTO linea in pedido.Lineas)
+            {
+                string error = ValidarRangoDescuento(linea, linea.DescuentoLinea, "un descuento")
+                    ?? ValidarRangoDescuento(linea, linea.DescuentoProducto, "un descuento de producto")
+                    ?? ValidarRangoDescuento(linea, linea.DescuentoEntidad, "un descuento de cliente")
+                    ?? ValidarRangoDescuento(linea, linea.DescuentoPP, "un descuento por pronto pago");
+                if (error != null)
+                {
+                    return error;
+                }
+            }
+            return null;
+        }
+
+        private static string ValidarRangoDescuento(LineaPedidoVentaDTO linea, decimal descuento, string queDescuento)
+        {
+            if (descuento > 1)
+            {
+                return $"La línea del producto {linea.Producto?.Trim()} tiene {queDescuento} del {descuento:P0}: el máximo es el 100 %";
+            }
+            if (descuento < 0)
+            {
+                return $"La línea del producto {linea.Producto?.Trim()} tiene {queDescuento} negativo ({descuento:P0})";
             }
             return null;
         }

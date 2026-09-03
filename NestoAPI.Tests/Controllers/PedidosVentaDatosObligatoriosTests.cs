@@ -1,5 +1,6 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using System.Web.Http.Results;
 using FakeItEasy;
@@ -42,6 +43,62 @@ namespace NestoAPI.Tests.Controllers
                 }
             };
         }
+
+        #region NestoAPI#449: descuentos fuera de 0-100 % con mensaje claro (antes, SqlException CK_LinPedidoVta)
+
+        [TestMethod]
+        public void ValidarRangosLineas_DescuentoDel500PorCiento_DiceLaLineaYElMaximo()
+        {
+            // 02/09/26: la plantilla dejó DescuentoLinea = 5.0 en el 44337 y el POST acabó en
+            // "INSERT en conflicto con la restricción CHECK 'CK_LinPedidoVta'".
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas.First().Producto = "44337";
+            pedido.Lineas.First().DescuentoLinea = 5.0M;
+
+            string error = PedidosVentaController.ValidarRangosLineas(pedido);
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "44337");
+            StringAssert.Contains(error, "500 %");
+            StringAssert.Contains(error, "máximo es el 100 %");
+            Assert.AreEqual(error, PedidosVentaController.ValidarDatosObligatoriosPedido(pedido), "el POST lo comprueba con el resto de datos obligatorios");
+        }
+
+        [TestMethod]
+        public void ValidarRangosLineas_DescuentoNegativo_Avisa()
+        {
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas.First().DescuentoProducto = -0.1M;
+
+            string error = PedidosVentaController.ValidarRangosLineas(pedido);
+
+            Assert.IsNotNull(error);
+            StringAssert.Contains(error, "negativo");
+            StringAssert.Contains(error, "descuento de producto");
+        }
+
+        [TestMethod]
+        public void ValidarRangosLineas_DescuentosEntreCeroYCien_Pasan()
+        {
+            // El 100 % (muestras, material promocional) y el 0 % son válidos
+            PedidoVentaDTO pedido = PedidoCompleto();
+            pedido.Lineas.First().DescuentoLinea = 1.0M;
+            pedido.Lineas.First().DescuentoProducto = 0.5M;
+            pedido.Lineas.First().DescuentoEntidad = 0M;
+            pedido.Lineas.First().DescuentoPP = 0.02M;
+
+            Assert.IsNull(PedidosVentaController.ValidarRangosLineas(pedido));
+            Assert.IsNull(PedidosVentaController.ValidarDatosObligatoriosPedido(pedido));
+        }
+
+        [TestMethod]
+        public void ValidarRangosLineas_SinLineas_NoRevienta()
+        {
+            Assert.IsNull(PedidosVentaController.ValidarRangosLineas(new PedidoVentaDTO()));
+            Assert.IsNull(PedidosVentaController.ValidarRangosLineas(null));
+        }
+
+        #endregion
 
         // --- El pedido completo pasa: la guarda no puede bloquear lo que hoy funciona ---
 
