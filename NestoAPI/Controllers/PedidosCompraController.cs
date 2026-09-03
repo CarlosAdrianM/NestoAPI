@@ -156,11 +156,19 @@ namespace NestoAPI.Controllers
             return Ok(await pedidos.ToListAsync().ConfigureAwait(false));
         }
 
+        // Un solo cálculo de pedidos automáticos a la vez en este proceso (ver comentario de dentro)
+        private static readonly System.Threading.SemaphoreSlim _semaforoPedidosAutomaticos = new System.Threading.SemaphoreSlim(1, 1);
+
         [ResponseType(typeof(List<PedidoCompraDTO>))]
         public async Task<IHttpActionResult> GetPedidosCompraAutomaticos(string empresa)
         {
             List<PedidoCompraDTO> lista;
             List<LineaPedidoCompraDTO> listaLineas;
+            // 03/09/26 (ELMAH): "Ya hay un objeto con el nombre '##CabeceraAuto'": prdCrearPedidoCmpAuto
+            // deja sus resultados en tablas temporales GLOBALES, así que dos peticiones a la vez
+            // (dos usuarios, o un doble clic) chocan. Una a una, y la conexión se cierra siempre,
+            // también si el SP falla, para que la ## no sobreviva a la petición.
+            await _semaforoPedidosAutomaticos.WaitAsync().ConfigureAwait(false);
             try
             {
                 db.Database.Connection.Open(); // para que no cierre la sesión y siga existiendo la tabla temporal
@@ -176,14 +184,16 @@ namespace NestoAPI.Controllers
 
                 string consultaLineas = "select Número as Id, rtrim(TipoLinea) TipoLinea, rtrim(Producto) Producto, FechaRecepcion, Texto, Cantidad, Cantidad as CantidadBruta, Precio as PrecioUnitario, StockMaximo, PendienteEntregar, PendienteRecibir, Stock, Multiplos, Iva as CodigoIvaProducto, Grupo, Subgrupo, AplicarDto as AplicarDescuentos, PrecioTarifa, EstadoProducto from ##LineasAuto";
                 listaLineas = await db.Database.SqlQuery<LineaPedidoCompraDTO>(consultaLineas).ToListAsync().ConfigureAwait(false);
-
-                db.Database.Connection.Close();
-            } 
-            catch (Exception ex)
-            {
-                throw ex;
             }
-            
+            finally
+            {
+                if (db.Database.Connection.State != System.Data.ConnectionState.Closed)
+                {
+                    db.Database.Connection.Close();
+                }
+                _ = _semaforoPedidosAutomaticos.Release();
+            }
+
 
             foreach (var pedido in lista)
             {
