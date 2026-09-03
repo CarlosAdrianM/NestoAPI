@@ -158,6 +158,18 @@ namespace NestoAPI.Infraestructure.Buscador
                     resultados.AddRange(Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: true), maximo, out totalAnulados));
                 }
 
+                // Rescate difuso: si escribiendo bien no hay NADA, se reintenta admitiendo erratas
+                // ("richeza" -> "ricchezza"). Solo cuando la búsqueda normal se queda a cero, para
+                // que quien escribe bien no vea nunca un resultado peor por culpa del difuso.
+                if (totalActivos == 0 && totalAnulados == 0 && HayPalabraParaDifusa(parametros.Query))
+                {
+                    resultados = Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: false, difusa: true), maximo, out totalActivos);
+                    if (parametros.IncluirAnulados)
+                    {
+                        resultados.AddRange(Ejecutar(searcher, ConstruirQuery(parametros, analyzer, soloAnulados: true, difusa: true), maximo, out totalAnulados));
+                    }
+                }
+
                 return new ResultadoPaginado
                 {
                     Total = totalActivos,
@@ -167,15 +179,22 @@ namespace NestoAPI.Infraestructure.Buscador
             }
         }
 
-        private static Query ConstruirQuery(ParametrosBusqueda parametros, SpanishInsensitiveAnalyzer analyzer, bool soloAnulados)
+        private static Query ConstruirQuery(ParametrosBusqueda parametros, SpanishInsensitiveAnalyzer analyzer, bool soloAnulados, bool difusa = false)
         {
             string[] campos = new[] { "TextoCompleto", "Nombre", "Protocolo" };
             MultiFieldQueryParser parser = new MultiFieldQueryParser(AppLuceneVersion, campos, analyzer)
             {
-                DefaultOperator = parametros.Operador == OperadorBusqueda.AND ? Operator.AND : Operator.OR
+                DefaultOperator = parametros.Operador == OperadorBusqueda.AND ? Operator.AND : Operator.OR,
+                // Las dos primeras letras tienen que coincidir: acota el número de términos que
+                // Lucene tiene que comparar (rápido) y evita que "cera" case con "vera" o "sera".
+                FuzzyPrefixLength = PREFIJO_DIFUSA
             };
 
             string escapedQuery = QueryParser.Escape(parametros.Query);
+            if (difusa)
+            {
+                escapedQuery = ConsultaDifusa(escapedQuery);
+            }
 
             // El texto de siempre O la referencia exacta. Cada palabra de la consulta que parezca
             // una referencia se busca también como término exacto sobre Id con un boost alto, para
@@ -196,7 +215,8 @@ namespace NestoAPI.Infraestructure.Buscador
             // siempre. Es un SHOULD más: no quita resultados, solo reordena.
             QueryParser parserExacto = new QueryParser(AppLuceneVersion, CAMPO_NOMBRE_EXACTO, new SpanishExactoAnalyzer(AppLuceneVersion))
             {
-                DefaultOperator = parser.DefaultOperator
+                DefaultOperator = parser.DefaultOperator,
+                FuzzyPrefixLength = PREFIJO_DIFUSA
             };
             Query nombreExacto = parserExacto.Parse(escapedQuery);
             nombreExacto.Boost = BOOST_NOMBRE_EXACTO;
@@ -274,6 +294,47 @@ namespace NestoAPI.Infraestructure.Buscador
                     return subQueryScore * FactorMasVendido(posicion);
                 }
             }
+        }
+
+        /// <summary>
+        /// A partir de cuántas letras se admite una errata. Con menos, casi cualquier palabra está
+        /// a dos ediciones de casi cualquier otra y el rescate traería ruido en vez de ayuda.
+        /// </summary>
+        internal const int MIN_LONGITUD_DIFUSA = 4;
+
+        /// <summary>Letras iniciales que tienen que coincidir sí o sí en una búsqueda difusa.</summary>
+        private const int PREFIJO_DIFUSA = 2;
+
+        /// <summary>
+        /// La misma consulta pidiéndole a Lucene que admita erratas: cada palabra lo bastante larga
+        /// se marca con "~" (hasta dos letras de diferencia, que es el máximo de Lucene). Así
+        /// "richeza" encuentra "ricchezza". Las palabras cortas y lo que ya lleva sintaxis de
+        /// consulta (comillas, campos, comodines) se dejan tal cual. Internal para tests.
+        /// </summary>
+        internal static string ConsultaDifusa(string consulta)
+        {
+            if (string.IsNullOrWhiteSpace(consulta))
+            {
+                return consulta;
+            }
+            IEnumerable<string> palabras = consulta
+                .Split((char[])null, StringSplitOptions.RemoveEmptyEntries)
+                .Select(palabra => AdmiteErrata(palabra) ? palabra + "~" : palabra);
+            return string.Join(" ", palabras);
+        }
+
+        private static bool AdmiteErrata(string palabra)
+        {
+            // Solo palabras: un número es una referencia o una medida, y ahí una errata no es una
+            // errata (buscar el 17404 no puede traer el 17405).
+            return palabra.Length >= MIN_LONGITUD_DIFUSA && palabra.All(char.IsLetter);
+        }
+
+        /// <summary>¿Tiene la consulta alguna palabra a la que merezca la pena admitirle erratas?</summary>
+        internal static bool HayPalabraParaDifusa(string consulta)
+        {
+            return !string.IsNullOrWhiteSpace(consulta)
+                && consulta.Split((char[])null, StringSplitOptions.RemoveEmptyEntries).Any(AdmiteErrata);
         }
 
         /// <summary>

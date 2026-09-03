@@ -237,6 +237,71 @@ namespace NestoAPI.Tests.Infraestructure.Buscador
 
         #endregion
 
+        #region Rescate difuso: una errata no puede dejar la búsqueda a cero
+
+        [TestMethod]
+        public void LuceneBuscador_ConErrata_RescataElProducto()
+        {
+            // 03/09/26: "richeza" devolvía 0 resultados y "ricchezza" 13.
+            Indexar(
+                CrearProducto("35894", "ACIDO HIALURONICO RICCHEZZA", anulado: false),
+                CrearProducto("22535", "CERA GOLD", anulado: false));
+
+            List<string> conErrata = Ids(Buscar("richeza", incluirAnulados: false));
+            List<string> bienEscrito = Ids(Buscar("ricchezza", incluirAnulados: false));
+
+            CollectionAssert.AreEqual(new List<string> { "35894" }, conErrata, "la errata se rescata");
+            CollectionAssert.AreEqual(new List<string> { "35894" }, bienEscrito, "y escribiendo bien sigue igual");
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_SiLaBusquedaNormalEncuentraAlgo_NoSeMezclaElDifuso()
+        {
+            // El rescate solo entra cuando no hay NADA: quien escribe bien no puede ver resultados
+            // peores por culpa del difuso.
+            Indexar(
+                CrearProducto("1", "CERA GOLD", anulado: false),
+                CrearProducto("2", "VERA NATURAL", anulado: false),
+                CrearProducto("3", "SERA FACIAL", anulado: false));
+
+            List<string> resultados = Ids(Buscar("cera", incluirAnulados: false));
+
+            CollectionAssert.AreEqual(new List<string> { "1" }, resultados);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_ErrataEnUnaReferencia_NoRescata()
+        {
+            // Un número no es una errata: buscar el 17404 no puede devolver el 17405
+            Indexar(
+                CrearProducto("17404", "Cera gold", anulado: false),
+                CrearProducto("17405", "Cera de abeja", anulado: false));
+
+            Assert.AreEqual(0, Buscar("17406", incluirAnulados: false).Count);
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_ConsultaDifusa_MarcaSoloLasPalabrasLargas()
+        {
+            Assert.AreEqual("richeza~", LuceneBuscador.ConsultaDifusa("richeza"));
+            Assert.AreEqual("crema~ de la noche~", LuceneBuscador.ConsultaDifusa("crema de la noche"),
+                "las palabras de menos de 4 letras se quedan como están");
+            Assert.AreEqual("17404", LuceneBuscador.ConsultaDifusa("17404"), "una referencia no admite erratas");
+            Assert.AreEqual("cera~ 17404", LuceneBuscador.ConsultaDifusa("cera 17404"));
+        }
+
+        [TestMethod]
+        public void LuceneBuscador_HayPalabraParaDifusa_SoloConPalabrasLargas()
+        {
+            Assert.IsTrue(LuceneBuscador.HayPalabraParaDifusa("richeza"));
+            Assert.IsFalse(LuceneBuscador.HayPalabraParaDifusa("17404"), "una referencia no dispara el rescate");
+            Assert.IsFalse(LuceneBuscador.HayPalabraParaDifusa("de la"));
+            Assert.IsFalse(LuceneBuscador.HayPalabraParaDifusa(""));
+            Assert.IsFalse(LuceneBuscador.HayPalabraParaDifusa(null));
+        }
+
+        #endregion
+
         #region Buscar por referencia (la caja del footer de la tienda, Nesto y la app)
 
         [TestMethod]
